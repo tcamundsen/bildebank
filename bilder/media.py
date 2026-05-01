@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import re
 import struct
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -80,6 +81,11 @@ def explain_date(path: Path) -> DateExplanation:
     if exif_date is not None:
         return DateExplanation(path, is_supported_media(path), MediaDate(exif_date, "metadata"), tuple(candidates))
 
+    xmp_date = jpeg_xmp_date(path)
+    candidates.append(DateCandidate("metadata", xmp_date, "JPEG XMP"))
+    if xmp_date is not None:
+        return DateExplanation(path, is_supported_media(path), MediaDate(xmp_date, "metadata"), tuple(candidates))
+
     video_date = video_metadata_date(path)
     candidates.append(DateCandidate("metadata", video_date, "Video metadata"))
     if video_date is not None:
@@ -150,6 +156,105 @@ def jpeg_exif_date(path: Path) -> dt.date | None:
         offset += length - 2
         if marker == 0xE1 and segment.startswith(b"Exif\x00\x00"):
             return _date_from_tiff(segment[6:])
+    return None
+
+
+def jpeg_xmp_date(path: Path) -> dt.date | None:
+    if path.suffix.lower() not in {".jpg", ".jpeg"}:
+        return None
+    for segment in _jpeg_app1_segments(path):
+        xmp_prefix = b"http://ns.adobe.com/xap/1.0/\x00"
+        if not segment.startswith(xmp_prefix):
+            continue
+        xmp = segment[len(xmp_prefix) :]
+        parsed = _date_from_xmp(xmp)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _jpeg_app1_segments(path: Path):
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return
+
+    if len(data) < 4 or data[:2] != b"\xff\xd8":
+        return
+
+    offset = 2
+    while offset + 4 <= len(data):
+        if data[offset] != 0xFF:
+            return
+        marker = data[offset + 1]
+        offset += 2
+        if marker in {0xD9, 0xDA}:
+            return
+        if offset + 2 > len(data):
+            return
+        length = int.from_bytes(data[offset : offset + 2], "big")
+        offset += 2
+        if length < 2 or offset + length - 2 > len(data):
+            return
+        segment = data[offset : offset + length - 2]
+        offset += length - 2
+        if marker == 0xE1:
+            yield segment
+
+
+def _date_from_xmp(xmp: bytes) -> dt.date | None:
+    text = xmp.decode("utf-8", errors="ignore")
+    for pattern in (
+        r"(?:exif|xmp|photoshop):(?:DateTimeOriginal|DateTimeDigitized|CreateDate|ModifyDate|DateCreated)="
+        r"['\"](?P<value>[^'\"]+)['\"]",
+        r"<(?:exif|xmp|photoshop):(?:DateTimeOriginal|DateTimeDigitized|CreateDate|ModifyDate|DateCreated)>"
+        r"(?P<value>[^<]+)</",
+    ):
+        for match in re.finditer(pattern, text):
+            parsed = _parse_xmp_date(match.group("value"))
+            if parsed is not None:
+                return parsed
+
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return None
+    wanted_names = {
+        "DateTimeOriginal",
+        "DateTimeDigitized",
+        "CreateDate",
+        "ModifyDate",
+        "DateCreated",
+    }
+    for element in root.iter():
+        for key, value in element.attrib.items():
+            if key.rsplit("}", 1)[-1] in wanted_names:
+                parsed = _parse_xmp_date(value)
+                if parsed is not None:
+                    return parsed
+        if element.tag.rsplit("}", 1)[-1] in wanted_names and element.text:
+            parsed = _parse_xmp_date(element.text)
+            if parsed is not None:
+                return parsed
+    return None
+
+
+def _parse_xmp_date(value: str) -> dt.date | None:
+    value = value.strip()
+    patterns = [
+        r"(?P<y>19\d{2}|20\d{2})-(?P<m>1[0-2]|0[1-9])-(?P<d>3[01]|[12]\d|0[1-9])",
+        r"(?P<y>19\d{2}|20\d{2}):(?P<m>1[0-2]|0[1-9]):(?P<d>3[01]|[12]\d|0[1-9])",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, value)
+        if not match:
+            continue
+        try:
+            return dt.date(
+                int(match.group("y")), int(match.group("m")), int(match.group("d"))
+            )
+        except ValueError:
+            continue
     return None
 
 

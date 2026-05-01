@@ -45,6 +45,19 @@ def minimal_avi_with_idit_outside_info() -> bytes:
     return b"RIFF" + len(body).to_bytes(4, "little") + body
 
 
+def jpeg_with_xmp_date(date: str) -> bytes:
+    xmp = f"""<?xpacket begin=''?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:CreateDate="{date}" />
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end='w'?>""".encode("utf-8")
+    payload = b"http://ns.adobe.com/xap/1.0/\x00" + xmp
+    segment = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
+    return b"\xff\xd8" + segment + b"\xff\xd9"
+
+
 class MediaDateTests(unittest.TestCase):
     def test_mp4_creation_date_is_used_as_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,6 +83,16 @@ class MediaDateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "karneval og syden mars07 147.avi"
             path.write_bytes(minimal_avi_with_idit_outside_info())
+
+            result = media_date(path)
+
+            self.assertEqual(result.date, dt.date(2007, 3, 12))
+            self.assertEqual(result.source, "metadata")
+
+    def test_jpeg_xmp_date_is_used_as_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "xmp-only.jpg"
+            path.write_bytes(jpeg_with_xmp_date("2007-03-12T19:54:18+01:00"))
 
             result = media_date(path)
 
