@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bilder"
+version = "0.1.0"
+description = "Konservativt bildesorteringsprogram for å samle bilder og videoer."
+requires-python = ">=3.13"
+dependencies = []
+
+[project.scripts]
+bdb = "bilder.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["bilder*"]
+

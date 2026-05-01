@@ -1,0 +1,165 @@
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from . import __version__, db
+from .importer import import_pending_sources, import_source, validate_source_target
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        return run(args)
+    except KeyboardInterrupt:
+        print("Avbrutt.", file=sys.stderr)
+        return 130
+    except Exception as exc:  # noqa: BLE001 - CLI should present readable errors
+        print(f"Feil: {exc}", file=sys.stderr)
+        return 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="bdb")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--target", type=Path, help="Målmappe med .bilder.sqlite3")
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    target = subparsers.add_parser("target", help="Opprett målmappe og database")
+    target.add_argument("path", type=Path)
+
+    add = subparsers.add_parser("add", help="Registrer kildemappe")
+    add.add_argument("path", type=Path)
+
+    imp = subparsers.add_parser("import", help="Importer registrerte kilder")
+    imp.add_argument("--quiet", action="store_true")
+
+    removable = subparsers.add_parser("import-removable", help="Importer flyttbart medium")
+    removable.add_argument("--name", required=True)
+    removable.add_argument("path", type=Path)
+
+    subparsers.add_parser("list-sources", help="List registrerte kilder")
+    subparsers.add_parser("list-name-conflicts", help="List importerte filer med navnekollisjon")
+    subparsers.add_parser("report", help="Vis importoppsummering")
+
+    return parser
+
+
+def run(args: argparse.Namespace) -> int:
+    if args.command == "target":
+        target = args.path.resolve()
+        db.init_database(target)
+        conn = db.connect(target)
+        try:
+            db.log_command(conn, "target", {"path": str(target)})
+            conn.commit()
+        finally:
+            conn.close()
+        print(f"Målmappe opprettet: {target}")
+        return 0
+
+    target = resolve_target(args.target)
+    conn = db.connect(target)
+    try:
+        db.log_command(conn, args.command, vars_for_log(args))
+        if args.command == "add":
+            source = args.path.resolve()
+            if not source.is_dir():
+                raise ValueError(f"Kildemappen finnes ikke: {source}")
+            validate_source_target(source, target)
+            source_id = db.add_directory_source(conn, source)
+            conn.commit()
+            print(f"Registrert kildemappe #{source_id}: {source}")
+            return 0
+
+        if args.command == "import-removable":
+            source = args.path.resolve()
+            if not source.is_dir():
+                raise ValueError(f"Mediet finnes ikke som mappe: {source}")
+            validate_source_target(source, target)
+            source_id = db.add_removable_source(conn, source, args.name)
+            conn.commit()
+            print(f"Registrert flyttbart medium #{source_id}: {args.name} ({source})")
+            source_row = db.get_source(conn, source_id)
+            if source_row.imported_at is not None:
+                print(f"Flyttbart medium er allerede importert: {args.name}")
+                return 0
+            stats = import_source(conn, target, source_row, verbose=True)
+            print_summary(stats)
+            return 0 if stats.errors == 0 else 2
+
+        if args.command == "list-sources":
+            for source in db.get_sources(conn):
+                label = source.name if source.name else source.path
+                imported = source.imported_at or "-"
+                print(f"{source.id}\t{source.kind}\t{source.status}\t{imported}\t{label}")
+            return 0
+
+        if args.command == "list-name-conflicts":
+            for row in db.name_conflicts(conn):
+                print(f"{row['source_path']} -> {row['target_path']}")
+            return 0
+
+        if args.command == "report":
+            print_report(conn)
+            return 0
+
+        if args.command == "import":
+            conn.commit()
+            conn.close()
+            stats = import_pending_sources(target, verbose=not args.quiet)
+            print_summary(stats)
+            return 0 if stats.errors == 0 else 2
+
+        raise ValueError(f"Ukjent kommando: {args.command}")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def resolve_target(target_arg: Path | None) -> Path:
+    if target_arg is not None:
+        target = target_arg.resolve()
+        if not db.db_path_for_target(target).exists():
+            raise ValueError(f"Målmappen er ikke initialisert: {target}")
+        return target
+    target = db.find_target()
+    if target is None:
+        raise ValueError("Fant ingen målmappe. Kjør fra målmappen eller bruk --target.")
+    return target
+
+
+def vars_for_log(args: argparse.Namespace) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for key, value in vars(args).items():
+        if isinstance(value, Path):
+            result[key] = str(value)
+        else:
+            result[key] = str(value)
+    return result
+
+
+def print_summary(stats) -> None:
+    print(
+        "Oppsummering: "
+        f"scannet={stats.scanned}, importert={stats.imported}, "
+        f"duplikater={stats.duplicates}, eksisterende={stats.skipped_existing}, "
+        f"navnekollisjoner={stats.name_conflicts}, feil={stats.errors}"
+    )
+
+
+def print_report(conn) -> None:
+    print(f"Kilder: {db.count_rows(conn, 'sources')}")
+    print(f"Importerte filer: {db.count_rows(conn, 'files')}")
+    print(f"Duplikatfunn: {db.count_rows(conn, 'duplicate_findings')}")
+    print(f"Feil: {db.count_rows(conn, 'errors')}")
+    name_conflicts = conn.execute("SELECT COUNT(*) FROM files WHERE name_conflict = 1").fetchone()[0]
+    undated = conn.execute("SELECT COUNT(*) FROM files WHERE date_source = 'unknown'").fetchone()[0]
+    print(f"Navnekollisjoner: {name_conflicts}")
+    print(f"Filer uten dato: {undated}")
