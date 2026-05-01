@@ -38,7 +38,7 @@ skal blant annet inneholde kontroll med:
  - logg over alle kommandoer som har blitt kjørt.
 
 Etter at databasen har blitt opprettet, så krever scriptet `bdb` enten
-at det kjøres fra målmappen, eller at målmappet angis med command line
+at det kjøres fra målmappen, eller at målmappen angis med command line
 parameter `--target=/path/to/målmappe`
 
 Legge en directory til listen over kildemapper:
@@ -51,15 +51,23 @@ Scanne alle registrerte kildemapper:
 
 `bdb import` skal vise progresjon underveis, for eksempel ved å vise hvor mange bilder
 som er scannet, og hvor mange som er importert. Scriptet skal tåle å bli avbrutt
-med ctrl-C. Dette ved at kildemappe bare kan markeres som importert i databasen når
-hele importen er gjennomført. Hvis programmet kjøres igjen etter å ha blitt avbrutt med
-ctrl-C underveis, så fil det se i databasen at enkelte bilder allerede er kopiert inn,
-og unngå å kopiere en gang til.
+med ctrl-C. Dette gjøres ved at en kildemappe bare kan markeres som importert i databasen når
+hele importen er gjennomført.
+
+Databasen bør oppdateres og committes periodisk underveis i importen, for
+eksempel etter hver 200. importerte fil. Programmet trenger ikke gjøre en egen
+database-commit for hvert eneste bilde.
+
+Hvis brukeren trykker ctrl-C, skal programmet forsøke å stoppe kontrollert:
+fullføre eventuell pågående filkopiering, skrive siste databaseendringer og
+deretter avslutte. Hvis programmet avbrytes hardt før siste database-commit, er
+det akseptabelt at neste kjøring må gjøre litt ekstraarbeid. Programmet skal da
+kunne oppdage filer som allerede ligger i målmappen, og unngå å lage duplikater.
 
 Når bildene (og videoene) importeres, så skal ikke filnavnet deres endres.
 Ved navnekollisjon i samme måned, så legges "-1", "-2" etc til filnavnet,
-før filendelsen, f. eksempel `IMG1324-2.jpg`. Samtidig må det markeres
-i databasen at dette bildet har fått lagt til  "-1" pga navnekollisjon. Kommando
+før filendelsen, for eksempel `IMG1324-2.jpg`. Samtidig må det markeres
+i databasen at dette bildet har fått lagt til "-1" pga navnekollisjon. Kommando
 for å liste bilder med navnekollisjon:
 
     $ bdb list-name-conflicts
@@ -89,7 +97,7 @@ registrerer den med en brukerdefinert etikett. Etiketten bør være noe brukeren
 kan kjenne igjen senere, for eksempel teksten som står skrevet på en CD-ROM.
 
 Etter at scanningen er ferdig, antar ikke programmet at samme medium vil være
- tilgjengelig igjen på samme path.
+tilgjengelig igjen på samme path.
 
 Siden noen medier kan være skrivebeskyttet, kan ikke programmet lagre en unik
 ID på selve mediet. Programmet forutsetter derfor at brukeren bruker `--name`
@@ -98,7 +106,7 @@ konsekvent for å identifisere samme medium senere.
 ## Teknologi
 
 Programmet skal skrives i Python. Planen er at dette skal være et program
-som utelukkende kjøres fra kommandolinjen. Det er høy proritet å garantere
+som utelukkende kjøres fra kommandolinjen. Det er høy prioritet å garantere
 at alle unike bilder fra alle kildemapper som importeres blir med i 
 målmappen.
 
@@ -109,7 +117,7 @@ Programmet bør deles i tydelige deler:
 - lesing av bildedato og metadata
 - duplikatkontroll
 - kopiering til riktig år- og månedsmappe
-- lagring og lesing av datafil for scannede mapper
+- lagring og lesing av database for importerte kilder
 
 ## Målmappe
 
@@ -130,7 +138,7 @@ målmappe/
 Det skal bare opprettes mapper for år og måneder der programmet faktisk finner
 bilder.
 
-## Inkrementell scanning
+## Importmodell
 
 Målmappen skal inneholde en datafil som registrerer hvilke kildemapper som
 allerede er scannet og importert. Denne datafilen brukes til å unngå at samme
