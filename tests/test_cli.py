@@ -99,6 +99,41 @@ class CliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_parent_source_supersedes_imported_child_without_duplicate_findings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            parent = root / "Bilder"
+            child = parent / "2006"
+            child.mkdir(parents=True)
+            (child / "IMG_20061003.jpg").write_bytes(b"child")
+            (parent / "IMG_20070104.jpg").write_bytes(b"parent")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(child)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(parent)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "import", "--quiet"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("dekket=1", stdout)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 2)
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM duplicate_findings").fetchone()[0], 0
+                )
+                statuses = conn.execute(
+                    "SELECT path, status, superseded_by_source_id FROM sources ORDER BY id"
+                ).fetchall()
+                self.assertEqual(statuses[0][1], "superseded")
+                self.assertEqual(statuses[0][2], 2)
+                self.assertEqual(statuses[1][1], "imported")
+            finally:
+                conn.close()
+
     def test_name_conflict_gets_suffix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -91,6 +91,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             imported_at TEXT,
             status TEXT NOT NULL DEFAULT 'pending',
+            superseded_by_source_id INTEGER REFERENCES sources(id),
             UNIQUE(kind, path_key),
             UNIQUE(kind, name)
         );
@@ -137,6 +138,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    ensure_column(conn, "sources", "superseded_by_source_id", "INTEGER REFERENCES sources(id)")
     ensure_column(conn, "errors", "resolved_at", "TEXT")
 
 
@@ -170,6 +172,7 @@ class Source:
     name: str | None
     imported_at: str | None
     status: str
+    superseded_by_source_id: int | None
 
 
 def row_to_source(row: sqlite3.Row) -> Source:
@@ -181,13 +184,14 @@ def row_to_source(row: sqlite3.Row) -> Source:
         name=row["name"],
         imported_at=row["imported_at"],
         status=row["status"],
+        superseded_by_source_id=row["superseded_by_source_id"],
     )
 
 
 def get_sources(conn: sqlite3.Connection, *, pending_only: bool = False) -> list[Source]:
     sql = "SELECT * FROM sources"
     if pending_only:
-        sql += " WHERE imported_at IS NULL"
+        sql += " WHERE imported_at IS NULL AND status != 'superseded'"
     sql += " ORDER BY id"
     return [row_to_source(row) for row in conn.execute(sql)]
 
@@ -344,6 +348,24 @@ def mark_source_imported(conn: sqlite3.Connection, source_id: int) -> None:
 
 def mark_source_error(conn: sqlite3.Connection, source_id: int) -> None:
     conn.execute("UPDATE sources SET status = 'error' WHERE id = ?", (source_id,))
+
+
+def mark_sources_superseded(
+    conn: sqlite3.Connection, *, source_ids: Iterable[int], superseded_by_source_id: int
+) -> None:
+    ids = list(source_ids)
+    if not ids:
+        return
+    placeholders = ",".join("?" for _ in ids)
+    conn.execute(
+        f"""
+        UPDATE sources
+        SET status = 'superseded',
+            superseded_by_source_id = ?
+        WHERE id IN ({placeholders})
+        """,
+        [superseded_by_source_id, *ids],
+    )
 
 
 def count_rows(conn: sqlite3.Connection, table: str) -> int:

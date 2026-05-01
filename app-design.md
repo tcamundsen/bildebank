@@ -272,6 +272,14 @@ Etter den andre `bdb add` i eksempelet over, så skal programmet se i databasen
 at den mappen som ble lagt til først allerede er importert, og bare importere
 bilder fra den andre mappen.
 
+Hvis en overmappe legges til etter at en undermappe allerede er importert, skal
+programmet ikke behandle filene fra undermappen som duplikater. Eksempel:
+Hvis `C:\Bilder\2006` er importert først, og `C:\Bilder` legges til senere,
+skal importen av `C:\Bilder` hoppe over filer under `C:\Bilder\2006`. Når
+`C:\Bilder` er ferdig importert uten feil, markeres `C:\Bilder\2006` som
+`superseded` i databasen. Hvis importen av overmappen avbrytes eller feiler,
+skal undermappen fortsatt stå som egen importert kilde.
+
 Hvis en kilde inneholder filer som ikke kan leses, skal feilen registreres i
 databasen og vises i rapporten. En kilde skal ikke markeres som problemfritt
 importert hvis noen filer feilet under import.

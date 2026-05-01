@@ -174,7 +174,11 @@ def run(args: argparse.Namespace) -> int:
             for source in db.get_sources(conn):
                 label = source.name if source.name else source.path
                 imported = source.imported_at or "-"
-                print(f"{source.id}\t{source.kind}\t{source.status}\t{imported}\t{label}")
+                superseded_by = source.superseded_by_source_id or "-"
+                print(
+                    f"{source.id}\t{source.kind}\t{source.status}\t"
+                    f"{imported}\t{superseded_by}\t{label}"
+                )
             return 0
 
         if args.command == "list-name-conflicts":
@@ -282,7 +286,8 @@ def print_summary(stats) -> None:
         "Oppsummering: "
         f"scannet={stats.scanned}, importert={stats.imported}, "
         f"duplikater={stats.duplicates}, eksisterende={stats.skipped_existing}, "
-        f"navnekollisjoner={stats.name_conflicts}, feil={stats.errors}"
+        f"dekket={stats.skipped_covered}, navnekollisjoner={stats.name_conflicts}, "
+        f"feil={stats.errors}"
     )
 
 

@@ -18,6 +18,7 @@ class ImportStats:
     imported: int = 0
     duplicates: int = 0
     skipped_existing: int = 0
+    skipped_covered: int = 0
     name_conflicts: int = 0
     errors: int = 0
     stopped: bool = False
@@ -83,9 +84,14 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
         stats.errors += 1
         return stats
 
+    covered_sources = covered_imported_subsources(conn, source)
+    covered_roots = [covered.path.resolve() for covered in covered_sources]
     errors_before = stats.errors
     try:
         for path in iter_media_files(root):
+            if is_under_any(path, covered_roots):
+                stats.skipped_covered += 1
+                continue
             stats.scanned += 1
             try:
                 process_file(conn, target, source, path, stats)
@@ -101,7 +107,8 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
             if verbose and stats.scanned % 50 == 0:
                 print(
                     f"{source.id}: scannet={stats.scanned} "
-                    f"importert={stats.imported} duplikater={stats.duplicates} feil={stats.errors}",
+                    f"importert={stats.imported} duplikater={stats.duplicates} "
+                    f"dekket={stats.skipped_covered} feil={stats.errors}",
                     flush=True,
                 )
             if (stats.imported + stats.duplicates + stats.skipped_existing) % COMMIT_EVERY == 0:
@@ -114,6 +121,11 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
 
     if stats.errors == errors_before:
         db.mark_source_imported(conn, source.id)
+        db.mark_sources_superseded(
+            conn,
+            source_ids=[covered.id for covered in covered_sources],
+            superseded_by_source_id=source.id,
+        )
     else:
         db.mark_source_error(conn, source.id)
     conn.commit()
@@ -127,6 +139,29 @@ def iter_media_files(root: Path):
             path = Path(dirpath) / filename
             if is_supported_media(path):
                 yield path
+
+
+def covered_imported_subsources(conn, source: db.Source) -> list[db.Source]:
+    if source.kind != "directory":
+        return []
+    source_root = source.path.resolve()
+    covered: list[db.Source] = []
+    for candidate in db.get_sources(conn):
+        if candidate.id == source.id or candidate.kind != "directory":
+            continue
+        if candidate.status == "superseded" or candidate.imported_at is None:
+            continue
+        candidate_path = candidate.path.resolve()
+        if candidate_path == source_root:
+            continue
+        if _is_relative_to(candidate_path, source_root):
+            covered.append(candidate)
+    return covered
+
+
+def is_under_any(path: Path, roots: list[Path]) -> bool:
+    resolved = path.resolve()
+    return any(_is_relative_to(resolved, root) for root in roots)
 
 
 def process_file(conn, target: Path, source: db.Source, path: Path, stats: ImportStats) -> None:
@@ -360,6 +395,7 @@ def _merge_stats(total: ImportStats, item: ImportStats) -> None:
     total.imported += item.imported
     total.duplicates += item.duplicates
     total.skipped_existing += item.skipped_existing
+    total.skipped_covered += item.skipped_covered
     total.name_conflicts += item.name_conflicts
     total.errors += item.errors
     total.stopped = total.stopped or item.stopped
