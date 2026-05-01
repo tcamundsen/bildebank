@@ -420,6 +420,26 @@ class CliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_export_html_writes_index_with_relative_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG 20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "export-html"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser", stdout)
+            html = (target / "index.html").read_text(encoding="utf-8")
+            self.assertIn('"path": "2024/01/IMG 20240102.jpg"', html)
+            self.assertIn('"url": "2024/01/IMG%2020240102.jpg"', html)
+
 
 if __name__ == "__main__":
     unittest.main()

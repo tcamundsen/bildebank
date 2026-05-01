@@ -149,6 +149,14 @@ reparert markeres som løst og skjules fra standardvisningen. `--all` viser ogs�
 løste historiske feil. Dette gjør at brukeren kan undersøke aktive feil uten å
 bruke `sqlite3` direkte.
 
+For å lage en statisk HTML-browser i målmappen:
+
+    $ bdb export-html
+
+Kommandoen skriver `index.html` i målmappen. HTML-filen inneholder en innebygd
+indeks fra databasen og kan derfor åpnes direkte i nettleseren uten
+mappevelger. Den viser bilder og videoer med relative paths fra målmappen.
+
 ## Om flyttbare medier
 
 Flyttbare medier, som CD-ROM, minnepinner og eksterne disker, må behandles

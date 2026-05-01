@@ -11,6 +11,7 @@ from .importer import (
     refresh_non_metadata_files,
     validate_source_target,
 )
+from .html_export import export_html
 from .media import explain_date
 
 
@@ -86,6 +87,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Vis også feil som senere er løst",
     )
+    export = subparsers.add_parser(
+        "export-html",
+        help="Skriv index.html i målmappen for browsing av importerte filer",
+    )
+    export.add_argument("--output", type=Path)
     subparsers.add_parser("report", help="Vis importoppsummering")
 
     return parser
@@ -196,6 +202,12 @@ def run(args: argparse.Namespace) -> int:
                     f"{row['id']}\t{row['created_at']}\t{row['stage']}\t"
                     f"{resolved}\t{source_path}\t{row['message']}"
                 )
+            return 0
+
+        if args.command == "export-html":
+            output = args.output.resolve() if args.output else None
+            output_path = export_html(target, output)
+            print(f"Skrev HTML-browser: {output_path}")
             return 0
 
         if args.command == "report":
