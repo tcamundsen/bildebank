@@ -125,6 +125,30 @@ For å forklare hvilken dato programmet ville brukt for én enkelt fil:
 Kommandoen viser valgt dato, valgt datokilde og hvilke datokandidater
 programmet fant i metadata, filnavn og filens endringsdato.
 
+Når programmet får bedre metadata-støtte, skal det være mulig å sjekke filer
+som tidligere ble plassert uten metadata på nytt:
+
+    $ bdb refresh-metadata
+    $ bdb refresh-metadata --dry-run
+    $ bdb refresh-metadata --verbose
+
+Kommandoen går gjennom filer der `date_source` ikke er `metadata`, leser
+metadata på nytt og flytter filen inne i målmappen hvis den nå kan plasseres
+bedre. Dette påvirker bare filer i målmappen, aldri filer i kildemappene.
+Med `--dry-run` vises bare en oppsummering uten at filer flyttes eller databasen
+endres. Med `--verbose` vises filer som flyttes, hoppes over eller feiler.
+
+For å liste feil som er registrert i databasen:
+
+    $ bdb errors
+    $ bdb errors --stage refresh-metadata
+    $ bdb errors --all
+
+Kommandoen viser uløste feil som standard. Feil som programmet senere har
+reparert markeres som løst og skjules fra standardvisningen. `--all` viser også
+løste historiske feil. Dette gjør at brukeren kan undersøke aktive feil uten å
+bruke `sqlite3` direkte.
+
 ## Om flyttbare medier
 
 Flyttbare medier, som CD-ROM, minnepinner og eksterne disker, må behandles

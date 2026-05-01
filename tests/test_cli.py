@@ -4,13 +4,19 @@ import sqlite3
 import tempfile
 import unittest
 import datetime as dt
+import os
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 
 from bilder.cli import main
 from bilder.db import DB_FILENAME
-from tests.test_media import minimal_avi_with_creation_date, minimal_mp4_with_creation_date
+from bilder.media import sha256_file
+from tests.test_media import (
+    minimal_avi_with_creation_date,
+    minimal_avi_with_idit_outside_info,
+    minimal_mp4_with_creation_date,
+)
 
 
 def run_cli(args: list[str]) -> int:
@@ -52,6 +58,19 @@ class CliTests(unittest.TestCase):
                 )
             finally:
                 conn.close()
+
+    def test_add_accepts_path_with_accidental_trailing_quote(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "add", str(source) + '"']),
+                0,
+            )
 
     def test_duplicate_is_recorded_not_copied(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -230,6 +249,176 @@ class CliTests(unittest.TestCase):
             self.assertIn("Valgt kilde: filename", stdout)
             self.assertIn("JPEG EXIF", stdout)
             self.assertIn("Dato i filnavn", stdout)
+
+    def test_refresh_metadata_moves_non_metadata_file_when_metadata_becomes_readable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "video.avi"
+            source_file.write_bytes(b"RIFF\x04\x00\x00\x00AVI ")
+            old_time = dt.datetime(2008, 2, 29, 12, 0).timestamp()
+            os.utime(source_file, (old_time, old_time))
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            old_target = target / "2008" / "02" / "video.avi"
+            new_target = target / "2007" / "03" / "video.avi"
+            self.assertTrue(old_target.exists())
+
+            old_target.write_bytes(minimal_avi_with_idit_outside_info())
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "refresh-metadata"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("flyttet=1", stdout)
+            self.assertFalse(old_target.exists())
+            self.assertTrue(new_target.exists())
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                row = conn.execute(
+                    "SELECT target_path, taken_date, date_source FROM files"
+                ).fetchone()
+                self.assertEqual(row[0], str(new_target.resolve()))
+                self.assertEqual(row[1], "2007-03-12")
+                self.assertEqual(row[2], "metadata")
+            finally:
+                conn.close()
+
+    def test_errors_lists_recorded_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            missing = root / "missing-source"
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    "insert into errors(stage, source_path, message) values(?, ?, ?)",
+                    ("refresh-metadata", str(missing), "Målfil finnes ikke"),
+                )
+                conn.execute(
+                    """
+                    insert into errors(stage, source_path, message, resolved_at)
+                    values(?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    ("refresh-metadata", str(root / "fixed"), "Løst feil"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "errors"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("refresh-metadata", stdout)
+            self.assertIn("Målfil finnes ikke", stdout)
+            self.assertNotIn("Løst feil", stdout)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "errors", "--all"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Løst feil", stdout)
+
+    def test_refresh_metadata_verbose_prints_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"filename-date")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            imported.unlink()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "refresh-metadata", "--verbose"]
+            )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("FEIL", stdout)
+            self.assertIn("Målfil finnes ikke", stdout)
+
+    def test_refresh_metadata_repairs_missing_target_path_and_resolves_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            old_target = target / "2008" / "02" / "video.avi"
+            repaired_target = target / "2007" / "03" / "video.avi"
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            repaired_target.parent.mkdir(parents=True)
+            repaired_target.write_bytes(minimal_avi_with_idit_outside_info())
+            file_hash = sha256_file(repaired_target)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                source_id = conn.execute(
+                    "insert into sources(kind, path, path_key) values('directory', ?, ?) returning id",
+                    (str(root / "source"), str(root / "source")),
+                ).fetchone()[0]
+                conn.execute(
+                    """
+                    insert into files(
+                        source_id, source_path, source_path_key, target_path, target_path_key,
+                        original_filename, stored_filename, sha256, size_bytes, taken_date,
+                        date_source, name_conflict
+                    ) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        source_id,
+                        str(root / "source" / "video.avi"),
+                        str(root / "source" / "video.avi"),
+                        str(old_target),
+                        str(old_target),
+                        "video.avi",
+                        "video.avi",
+                        file_hash,
+                        repaired_target.stat().st_size,
+                        "2008-02-29",
+                        "mtime",
+                        0,
+                    ),
+                )
+                conn.execute(
+                    "insert into errors(stage, source_path, message) values(?, ?, ?)",
+                    ("refresh-metadata", str(old_target), "Målfil finnes ikke"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "refresh-metadata", "--verbose"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("REPARERER_DB_PATH", stdout)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                row = conn.execute(
+                    "select target_path, taken_date, date_source from files"
+                ).fetchone()
+                self.assertEqual(row[0], str(repaired_target.resolve()))
+                self.assertEqual(row[1], "2007-03-12")
+                self.assertEqual(row[2], "metadata")
+                unresolved = conn.execute(
+                    "select count(*) from errors where resolved_at is null"
+                ).fetchone()[0]
+                self.assertEqual(unresolved, 0)
+            finally:
+                conn.close()
 
 
 if __name__ == "__main__":

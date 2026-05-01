@@ -23,6 +23,15 @@ class ImportStats:
     stopped: bool = False
 
 
+@dataclass
+class MetadataRefreshStats:
+    checked: int = 0
+    metadata_found: int = 0
+    moved: int = 0
+    already_correct: int = 0
+    errors: int = 0
+
+
 def validate_source_target(source: Path, target: Path) -> None:
     source_resolved = source.resolve()
     target_resolved = target.resolve()
@@ -230,6 +239,120 @@ def safe_copy(source: Path, destination: Path, expected_hash: str) -> None:
     finally:
         if temp.exists():
             temp.unlink()
+
+
+def refresh_non_metadata_files(
+    target: Path, *, dry_run: bool = False, verbose: bool = False
+) -> MetadataRefreshStats:
+    stats = MetadataRefreshStats()
+    conn = db.connect(target)
+    try:
+        rows = list(db.non_metadata_files(conn))
+        for row in rows:
+            stats.checked += 1
+            try:
+                refresh_non_metadata_file(
+                    conn, target, row, stats, dry_run=dry_run, verbose=verbose
+                )
+            except Exception as exc:  # noqa: BLE001 - keep processing and record the file
+                stats.errors += 1
+                if verbose:
+                    print(f"FEIL\t{row['target_path']}\t{exc}", flush=True)
+                db.insert_error(
+                    conn,
+                    source_id=None,
+                    source_path=Path(row["target_path"]),
+                    stage="refresh-metadata",
+                    message=str(exc),
+                )
+        if not dry_run:
+            conn.commit()
+    finally:
+        conn.close()
+    return stats
+
+
+def refresh_non_metadata_file(
+    conn,
+    target: Path,
+    row,
+    stats: MetadataRefreshStats,
+    *,
+    dry_run: bool,
+    verbose: bool,
+) -> None:
+    current_path = Path(row["target_path"])
+    if not current_path.exists():
+        repaired_path = find_file_in_target_by_hash(target, str(row["sha256"]))
+        if repaired_path is None:
+            raise FileNotFoundError(f"Målfil finnes ikke: {current_path}")
+        if verbose:
+            print(f"REPARERER_DB_PATH\t{current_path}\t->\t{repaired_path}", flush=True)
+        if not dry_run:
+            db.resolve_errors_for_path(conn, stage="refresh-metadata", source_path=current_path)
+        current_path = repaired_path
+
+    date = media_date(current_path)
+    if date.source != "metadata" or date.date is None:
+        if verbose:
+            print(f"INGEN_METADATA\t{current_path}", flush=True)
+        return
+
+    stats.metadata_found += 1
+    destination_dir = destination_directory(target, date)
+    if not dry_run:
+        destination_dir.mkdir(parents=True, exist_ok=True)
+    file_hash = str(row["sha256"])
+    destination_path, name_conflict, already_present = find_existing_or_available_destination(
+        destination_dir, current_path.name, file_hash
+    )
+
+    if already_present:
+        if db.path_key(destination_path) == db.path_key(current_path):
+            stats.already_correct += 1
+            if verbose:
+                print(f"ALLEREDE_RIKTIG\t{current_path}", flush=True)
+        else:
+            raise FileExistsError(f"Matchende fil finnes allerede: {destination_path}")
+    elif db.path_key(destination_path) == db.path_key(current_path):
+        stats.already_correct += 1
+        if verbose:
+            print(f"ALLEREDE_RIKTIG\t{current_path}", flush=True)
+    else:
+        if not dry_run:
+            destination_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(current_path), str(destination_path))
+        stats.moved += 1
+        if verbose:
+            action = "VILLE_FLYTTE" if dry_run else "FLYTTET"
+            print(f"{action}\t{current_path}\t->\t{destination_path}", flush=True)
+
+    if not dry_run:
+        db.update_file_placement(
+            conn,
+            file_id=int(row["id"]),
+            target_path=destination_path,
+            stored_filename=destination_path.name,
+            taken_date=_date_string(date) or "",
+            date_source="metadata",
+            name_conflict=name_conflict,
+        )
+        db.resolve_errors_for_path(conn, stage="refresh-metadata", source_path=Path(row["target_path"]))
+
+
+def find_file_in_target_by_hash(target: Path, expected_hash: str) -> Path | None:
+    for dirpath, dirnames, filenames in os.walk(target):
+        dirnames[:] = [dirname for dirname in dirnames if dirname not in {"__pycache__"}]
+        for filename in filenames:
+            path = Path(dirpath) / filename
+            if path.name == db.DB_FILENAME or ".bdbtmp-" in path.name:
+                continue
+            try:
+                if sha256_file(path) == expected_hash:
+                    return path
+            except OSError:
+                continue
+    return None
 
 
 def _merge_stats(total: ImportStats, item: ImportStats) -> None:

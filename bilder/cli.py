@@ -5,7 +5,12 @@ import sys
 from pathlib import Path
 
 from . import __version__, db
-from .importer import import_pending_sources, import_source, validate_source_target
+from .importer import (
+    import_pending_sources,
+    import_source,
+    refresh_non_metadata_files,
+    validate_source_target,
+)
 from .media import explain_date
 
 
@@ -59,6 +64,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Forklar hvilken dato programmet ville brukt for en fil",
     )
     explain.add_argument("path", type=Path)
+    refresh = subparsers.add_parser(
+        "refresh-metadata",
+        help="Sjekk filer uten metadata på nytt og flytt dem hvis metadata nå kan leses",
+    )
+    refresh.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Vis oppsummering uten å flytte filer eller endre databasen",
+    )
+    refresh.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Vis filer som flyttes, hoppes over eller feiler",
+    )
+    errors = subparsers.add_parser("errors", help="List registrerte feil")
+    errors.add_argument("--limit", type=int, default=50)
+    errors.add_argument("--stage")
+    errors.add_argument(
+        "--all",
+        action="store_true",
+        help="Vis også feil som senere er løst",
+    )
     subparsers.add_parser("report", help="Vis importoppsummering")
 
     return parser
@@ -78,7 +105,7 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "explain-date":
-        path = args.path.resolve()
+        path = existing_path_arg(args.path).resolve()
         if not path.exists():
             raise ValueError(f"Filen finnes ikke: {path}")
         explanation = explain_date(path)
@@ -98,7 +125,7 @@ def run(args: argparse.Namespace) -> int:
     try:
         db.log_command(conn, args.command, vars_for_log(args))
         if args.command == "add":
-            source = args.path.resolve()
+            source = existing_path_arg(args.path).resolve()
             if not source.is_dir():
                 raise ValueError(f"Kildemappen finnes ikke: {source}")
             validate_source_target(source, target)
@@ -108,7 +135,7 @@ def run(args: argparse.Namespace) -> int:
             return 0
 
         if args.command == "import-removable":
-            source = args.path.resolve()
+            source = existing_path_arg(args.path).resolve()
             if not source.is_dir():
                 raise ValueError(f"Mediet finnes ikke som mappe: {source}")
             validate_source_target(source, target)
@@ -147,6 +174,30 @@ def run(args: argparse.Namespace) -> int:
                     print(f"{row['date_source']}\t{taken_date}\t{row['target_path']}")
             return 0
 
+        if args.command == "refresh-metadata":
+            conn.commit()
+            conn.close()
+            stats = refresh_non_metadata_files(
+                target, dry_run=args.dry_run, verbose=args.verbose
+            )
+            print_refresh_summary(stats, dry_run=args.dry_run)
+            return 0 if stats.errors == 0 else 2
+
+        if args.command == "errors":
+            for row in db.errors(
+                conn,
+                limit=args.limit,
+                stage=args.stage,
+                include_resolved=args.all,
+            ):
+                source_path = row["source_path"] or "-"
+                resolved = row["resolved_at"] or "-"
+                print(
+                    f"{row['id']}\t{row['created_at']}\t{row['stage']}\t"
+                    f"{resolved}\t{source_path}\t{row['message']}"
+                )
+            return 0
+
         if args.command == "report":
             print_report(conn)
             return 0
@@ -178,6 +229,18 @@ def resolve_target(target_arg: Path | None) -> Path:
     return target
 
 
+def existing_path_arg(path: Path) -> Path:
+    if path.exists():
+        return path
+    raw = str(path)
+    stripped = raw.rstrip("\"'")
+    if stripped != raw:
+        candidate = Path(stripped)
+        if candidate.exists():
+            return candidate
+    return path
+
+
 def vars_for_log(args: argparse.Namespace) -> dict[str, str]:
     result: dict[str, str] = {}
     for key, value in vars(args).items():
@@ -201,8 +264,18 @@ def print_report(conn) -> None:
     print(f"Kilder: {db.count_rows(conn, 'sources')}")
     print(f"Importerte filer: {db.count_rows(conn, 'files')}")
     print(f"Duplikatfunn: {db.count_rows(conn, 'duplicate_findings')}")
-    print(f"Feil: {db.count_rows(conn, 'errors')}")
+    print(f"Uløste feil: {db.error_count(conn)}")
     name_conflicts = conn.execute("SELECT COUNT(*) FROM files WHERE name_conflict = 1").fetchone()[0]
     undated = conn.execute("SELECT COUNT(*) FROM files WHERE date_source = 'unknown'").fetchone()[0]
     print(f"Navnekollisjoner: {name_conflicts}")
     print(f"Filer uten dato: {undated}")
+
+
+def print_refresh_summary(stats, *, dry_run: bool) -> None:
+    prefix = "Dry-run: " if dry_run else ""
+    print(
+        prefix
+        + "Oppsummering: "
+        f"sjekket={stats.checked}, metadata_funnet={stats.metadata_found}, "
+        f"flyttet={stats.moved}, allerede_riktig={stats.already_correct}, feil={stats.errors}"
+    )

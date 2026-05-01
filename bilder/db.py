@@ -116,10 +116,18 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             source_path TEXT,
             stage TEXT NOT NULL,
             message TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            resolved_at TEXT
         );
         """
     )
+    ensure_column(conn, "errors", "resolved_at", "TEXT")
+
+
+def ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
+    columns = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
@@ -298,6 +306,19 @@ def insert_error(
     )
 
 
+def resolve_errors_for_path(conn: sqlite3.Connection, *, stage: str, source_path: Path) -> None:
+    conn.execute(
+        """
+        UPDATE errors
+        SET resolved_at = CURRENT_TIMESTAMP
+        WHERE stage = ?
+          AND source_path = ?
+          AND resolved_at IS NULL
+        """,
+        (stage, str(source_path)),
+    )
+
+
 def mark_source_imported(conn: sqlite3.Connection, source_id: int) -> None:
     conn.execute(
         "UPDATE sources SET imported_at = CURRENT_TIMESTAMP, status = 'imported' WHERE id = ?",
@@ -315,6 +336,13 @@ def count_rows(conn: sqlite3.Connection, table: str) -> int:
     return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
 
+def error_count(conn: sqlite3.Connection, *, include_resolved: bool = False) -> int:
+    sql = "SELECT COUNT(*) FROM errors"
+    if not include_resolved:
+        sql += " WHERE resolved_at IS NULL"
+    return int(conn.execute(sql).fetchone()[0])
+
+
 def name_conflicts(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     return conn.execute(
         """
@@ -329,9 +357,64 @@ def name_conflicts(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
 def non_metadata_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     return conn.execute(
         """
-        SELECT source_path, target_path, taken_date, date_source
+        SELECT id, source_path, target_path, taken_date, date_source, sha256, stored_filename
         FROM files
         WHERE date_source != 'metadata'
         ORDER BY date_source, taken_date, target_path
         """
     )
+
+
+def update_file_placement(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    target_path: Path,
+    stored_filename: str,
+    taken_date: str,
+    date_source: str,
+    name_conflict: bool,
+) -> None:
+    conn.execute(
+        """
+        UPDATE files
+        SET target_path = ?,
+            target_path_key = ?,
+            stored_filename = ?,
+            taken_date = ?,
+            date_source = ?,
+            name_conflict = ?
+        WHERE id = ?
+        """,
+        (
+            str(target_path.resolve()),
+            path_key(target_path),
+            stored_filename,
+            taken_date,
+            date_source,
+            1 if name_conflict else 0,
+            file_id,
+        ),
+    )
+
+
+def errors(
+    conn: sqlite3.Connection,
+    *,
+    limit: int = 50,
+    stage: str | None = None,
+    include_resolved: bool = False,
+) -> Iterable[sqlite3.Row]:
+    params: list[object] = []
+    sql = "SELECT id, created_at, resolved_at, stage, source_path, message FROM errors"
+    clauses: list[str] = []
+    if stage is not None:
+        clauses.append("stage = ?")
+        params.append(stage)
+    if not include_resolved:
+        clauses.append("resolved_at IS NULL")
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY id DESC LIMIT ?"
+    params.append(limit)
+    return conn.execute(sql, params)
