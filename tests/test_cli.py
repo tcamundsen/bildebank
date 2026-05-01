@@ -440,6 +440,71 @@ class CliTests(unittest.TestCase):
             self.assertIn('"path": "2024/01/IMG 20240102.jpg"', html)
             self.assertIn('"url": "2024/01/IMG%2020240102.jpg"', html)
 
+    def test_report_migrates_old_errors_table_without_resolved_at(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.executescript(
+                    """
+                    create table meta (key text primary key, value text not null);
+                    create table sources (
+                        id integer primary key autoincrement,
+                        kind text not null,
+                        path text not null,
+                        path_key text,
+                        name text,
+                        added_at text not null default current_timestamp,
+                        imported_at text,
+                        status text not null default 'pending'
+                    );
+                    create table files (
+                        id integer primary key autoincrement,
+                        source_id integer not null,
+                        source_path text not null,
+                        source_path_key text not null,
+                        target_path text not null,
+                        target_path_key text not null unique,
+                        original_filename text not null,
+                        stored_filename text not null,
+                        sha256 text not null,
+                        size_bytes integer not null,
+                        taken_date text,
+                        date_source text not null,
+                        name_conflict integer not null default 0,
+                        imported_at text not null default current_timestamp
+                    );
+                    create table duplicate_findings (
+                        id integer primary key autoincrement,
+                        source_id integer not null,
+                        source_path text not null,
+                        source_path_key text not null,
+                        matched_file_id integer not null,
+                        sha256 text not null,
+                        found_at text not null default current_timestamp
+                    );
+                    create table errors (
+                        id integer primary key autoincrement,
+                        source_id integer,
+                        source_path text,
+                        stage text not null,
+                        message text not null,
+                        created_at text not null default current_timestamp
+                    );
+                    insert into errors(stage, message) values('test', 'old error');
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "report"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Uløste feil: 1", stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -36,7 +36,23 @@ def connect(target: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path_for_target(target))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    apply_schema(conn)
     return conn
+
+
+def migrate_schema(conn: sqlite3.Connection) -> None:
+    if table_exists(conn, "errors"):
+        ensure_column(conn, "errors", "resolved_at", "TEXT")
+
+
+def table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        is not None
+    )
 
 
 def init_database(target: Path) -> None:
