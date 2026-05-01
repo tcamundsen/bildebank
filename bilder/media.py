@@ -57,6 +57,12 @@ class DateExplanation:
     candidates: tuple[DateCandidate, ...]
 
 
+@dataclass(frozen=True)
+class MetadataInspection:
+    path: Path
+    lines: tuple[str, ...]
+
+
 def is_supported_media(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
 
@@ -67,6 +73,31 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
         for chunk in iter(lambda: fh.read(chunk_size), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def inspect_metadata(path: Path) -> MetadataInspection:
+    lines: list[str] = []
+    lines.append(f"Fil: {path}")
+    lines.append(f"Støttet mediafil: {'ja' if is_supported_media(path) else 'nei'}")
+
+    explanation = explain_date(path)
+    selected_date = explanation.selected.date.isoformat() if explanation.selected.date else "-"
+    lines.append(f"Valgt dato: {selected_date}")
+    lines.append(f"Valgt kilde: {explanation.selected.source}")
+    lines.append("Datokandidater:")
+    for candidate in explanation.candidates:
+        value = candidate.date.isoformat() if candidate.date else "-"
+        lines.append(f"  {candidate.source}\t{value}\t{candidate.detail}")
+
+    suffix = path.suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        lines.extend(inspect_jpeg_metadata(path))
+    elif suffix == ".avi":
+        lines.extend(inspect_avi_metadata(path))
+    else:
+        lines.extend(inspect_text_dates(path))
+
+    return MetadataInspection(path, tuple(lines))
 
 
 def media_date(path: Path) -> MediaDate:
@@ -159,6 +190,23 @@ def jpeg_exif_date(path: Path) -> dt.date | None:
     return None
 
 
+def inspect_jpeg_metadata(path: Path) -> list[str]:
+    lines: list[str] = ["JPEG metadata:"]
+    segments = list(_jpeg_segments(path))
+    if not segments:
+        lines.append("  Fant ingen lesbare JPEG-segmenter.")
+        return lines
+    app_segments = [(marker, segment) for marker, segment in segments if 0xE0 <= marker <= 0xEF]
+    for marker, segment in app_segments:
+        label = f"APP{marker - 0xE0}"
+        prefix = printable_sample(segment[:80])
+        lines.append(f"  {label}: {len(segment)} bytes: {prefix}")
+    lines.append(f"  EXIF dato: {jpeg_exif_date(path) or '-'}")
+    lines.append(f"  XMP dato: {jpeg_xmp_date(path) or '-'}")
+    lines.extend(inspect_text_dates(path))
+    return lines
+
+
 def jpeg_xmp_date(path: Path) -> dt.date | None:
     if path.suffix.lower() not in {".jpg", ".jpeg"}:
         return None
@@ -173,7 +221,7 @@ def jpeg_xmp_date(path: Path) -> dt.date | None:
     return None
 
 
-def _jpeg_app1_segments(path: Path):
+def _jpeg_segments(path: Path):
     try:
         data = path.read_bytes()
     except OSError:
@@ -198,6 +246,11 @@ def _jpeg_app1_segments(path: Path):
             return
         segment = data[offset : offset + length - 2]
         offset += length - 2
+        yield marker, segment
+
+
+def _jpeg_app1_segments(path: Path):
+    for marker, segment in _jpeg_segments(path):
         if marker == 0xE1:
             yield segment
 
@@ -445,6 +498,26 @@ def avi_metadata_date(path: Path) -> dt.date | None:
     return None
 
 
+def inspect_avi_metadata(path: Path) -> list[str]:
+    lines = ["AVI metadata:"]
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return lines + [f"  Kunne ikke lese fil: {exc}"]
+    if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"AVI ":
+        return lines + ["  Ikke en lesbar RIFF AVI-fil."]
+    values = _riff_date_values(data)
+    if values:
+        for key, value in sorted(values.items()):
+            text = value.decode("utf-8", errors="ignore")
+            lines.append(f"  {key.decode('ascii', errors='ignore')}: {text}")
+    else:
+        lines.append("  Fant ingen IDIT/ICRD/IDAT-felt.")
+    lines.append(f"  AVI dato: {avi_metadata_date(path) or '-'}")
+    lines.extend(inspect_text_dates(path))
+    return lines
+
+
 def _riff_date_values(data: bytes) -> dict[bytes, bytes]:
     values: dict[bytes, bytes] = {}
     _read_riff_chunks(data, 12, len(data), values)
@@ -532,3 +605,39 @@ def _month_number(month_name: str) -> int:
         "Dec": 12,
     }
     return months[month_name]
+
+
+def inspect_text_dates(path: Path) -> list[str]:
+    lines = ["Tekstlige datotreff:"]
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return lines + [f"  Kunne ikke lese fil: {exc}"]
+    text = data[:2_000_000].decode("latin-1", errors="ignore")
+    patterns = [
+        r"(19\d{2}|20\d{2})[-:/](0[1-9]|1[0-2])[-:/]([0-3]\d)",
+        r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+([0-3]?\d)\s+\d{2}:\d{2}:\d{2}\s+(19\d{2}|20\d{2})",
+        r"(DateTimeOriginal|DateTimeDigitized|CreateDate|ModifyDate|DateCreated)[^\\n\\r<]{0,80}",
+    ]
+    seen: set[str] = set()
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            sample = printable_sample(match.group(0).encode("latin-1", errors="ignore"))
+            if sample in seen:
+                continue
+            seen.add(sample)
+            lines.append(f"  {sample}")
+            if len(seen) >= 20:
+                break
+        if len(seen) >= 20:
+            break
+    if not seen:
+        lines.append("  Ingen tekstlige datotreff i de første 2 MB.")
+    return lines
+
+
+def printable_sample(data: bytes) -> str:
+    text = data.decode("utf-8", errors="ignore")
+    text = "".join(char if char.isprintable() else "." for char in text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:160] or "-"

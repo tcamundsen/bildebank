@@ -13,6 +13,7 @@ from bilder.cli import main
 from bilder.db import DB_FILENAME
 from bilder.media import sha256_file
 from tests.test_media import (
+    jpeg_with_xmp_date,
     minimal_avi_with_creation_date,
     minimal_avi_with_idit_outside_info,
     minimal_mp4_with_creation_date,
@@ -249,6 +250,18 @@ class CliTests(unittest.TestCase):
             self.assertIn("Valgt kilde: filename", stdout)
             self.assertIn("JPEG EXIF", stdout)
             self.assertIn("Dato i filnavn", stdout)
+
+    def test_inspect_metadata_shows_metadata_fragments(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "xmp-only.jpg"
+            path.write_bytes(jpeg_with_xmp_date("2007-03-12T19:54:18+01:00"))
+
+            code, stdout, stderr = capture_cli(["inspect-metadata", str(path)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("JPEG metadata:", stdout)
+            self.assertIn("APP1", stdout)
+            self.assertIn("XMP dato: 2007-03-12", stdout)
 
     def test_refresh_metadata_moves_non_metadata_file_when_metadata_becomes_readable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

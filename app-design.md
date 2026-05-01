@@ -121,9 +121,12 @@ manglende dato. Med `--source` vises også den opprinnelige kildefilen.
 For å forklare hvilken dato programmet ville brukt for én enkelt fil:
 
     $ bdb explain-date /path/to/file.jpg
+    $ bdb inspect-metadata /path/to/file.jpg
 
 Kommandoen viser valgt dato, valgt datokilde og hvilke datokandidater
 programmet fant i metadata, filnavn og filens endringsdato.
+`inspect-metadata` viser i tillegg metadatafragmenter og tekstlige datotreff
+for å kunne undersøke filer der programmet ikke finner dato automatisk.
 
 Når programmet får bedre metadata-støtte, skal det være mulig å sjekke filer
 som tidligere ble plassert uten metadata på nytt:

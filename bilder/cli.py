@@ -12,7 +12,7 @@ from .importer import (
     validate_source_target,
 )
 from .html_export import export_html
-from .media import explain_date
+from .media import explain_date, inspect_metadata
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,6 +65,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Forklar hvilken dato programmet ville brukt for en fil",
     )
     explain.add_argument("path", type=Path)
+    inspect = subparsers.add_parser(
+        "inspect-metadata",
+        help="Vis metadatafragmenter og datokandidater for en fil",
+    )
+    inspect.add_argument("path", type=Path)
     refresh = subparsers.add_parser(
         "refresh-metadata",
         help="Sjekk filer uten metadata på nytt og flytt dem hvis metadata nå kan leses",
@@ -124,6 +129,15 @@ def run(args: argparse.Namespace) -> int:
         for candidate in explanation.candidates:
             value = candidate.date.isoformat() if candidate.date else "-"
             print(f"  {candidate.source}\t{value}\t{candidate.detail}")
+        return 0
+
+    if args.command == "inspect-metadata":
+        path = existing_path_arg(args.path).resolve()
+        if not path.exists():
+            raise ValueError(f"Filen finnes ikke: {path}")
+        inspection = inspect_metadata(path)
+        for line in inspection.lines:
+            print(line)
         return 0
 
     target = resolve_target(args.target)
