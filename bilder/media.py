@@ -41,6 +41,21 @@ class MediaDate:
     source: str
 
 
+@dataclass(frozen=True)
+class DateCandidate:
+    source: str
+    date: dt.date | None
+    detail: str
+
+
+@dataclass(frozen=True)
+class DateExplanation:
+    path: Path
+    supported_media: bool
+    selected: MediaDate
+    candidates: tuple[DateCandidate, ...]
+
+
 def is_supported_media(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
 
@@ -54,18 +69,38 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
 
 
 def media_date(path: Path) -> MediaDate:
+    return explain_date(path).selected
+
+
+def explain_date(path: Path) -> DateExplanation:
+    candidates: list[DateCandidate] = []
+
     exif_date = jpeg_exif_date(path)
+    candidates.append(DateCandidate("metadata", exif_date, "JPEG EXIF"))
     if exif_date is not None:
-        return MediaDate(exif_date, "metadata")
+        return DateExplanation(path, is_supported_media(path), MediaDate(exif_date, "metadata"), tuple(candidates))
+
+    video_date = video_metadata_date(path)
+    candidates.append(DateCandidate("metadata", video_date, "Video metadata"))
+    if video_date is not None:
+        return DateExplanation(path, is_supported_media(path), MediaDate(video_date, "metadata"), tuple(candidates))
 
     filename_date = date_from_filename(path.name)
+    candidates.append(DateCandidate("filename", filename_date, "Dato i filnavn"))
     if filename_date is not None:
-        return MediaDate(filename_date, "filename")
+        return DateExplanation(path, is_supported_media(path), MediaDate(filename_date, "filename"), tuple(candidates))
 
     try:
-        return MediaDate(dt.datetime.fromtimestamp(path.stat().st_mtime).date(), "mtime")
+        mtime_date = dt.datetime.fromtimestamp(path.stat().st_mtime).date()
     except OSError:
-        return MediaDate(None, "unknown")
+        mtime_date = None
+    candidates.append(DateCandidate("mtime", mtime_date, "Filens endringsdato"))
+    if mtime_date is not None:
+        return DateExplanation(path, is_supported_media(path), MediaDate(mtime_date, "mtime"), tuple(candidates))
+
+    selected = MediaDate(None, "unknown")
+    candidates.append(DateCandidate("unknown", None, "Ingen dato funnet"))
+    return DateExplanation(path, is_supported_media(path), selected, tuple(candidates))
 
 
 def date_from_filename(filename: str) -> dt.date | None:
@@ -190,3 +225,205 @@ def _parse_exif_date(value: bytes | int | None) -> dt.date | None:
     except ValueError:
         return None
 
+
+def video_metadata_date(path: Path) -> dt.date | None:
+    if path.suffix.lower() == ".avi":
+        return avi_metadata_date(path)
+    if path.suffix.lower() not in {".mp4", ".mov", ".m4v", ".3gp"}:
+        return None
+    try:
+        with path.open("rb") as fh:
+            return _video_metadata_date_from_stream(fh, path.stat().st_size)
+    except OSError:
+        return None
+
+
+def _video_metadata_date_from_stream(fh, file_size: int) -> dt.date | None:
+    # ISO BMFF/QuickTime files store creation time in mvhd atoms. This covers
+    # common MP4, MOV, M4V and 3GP files from phones and cameras.
+    for atom_type, payload_offset, payload_size in _iter_atoms(fh, 0, file_size):
+        if atom_type == b"moov":
+            found = _find_mvhd_date(fh, payload_offset, payload_size)
+            if found is not None:
+                return found
+    return None
+
+
+def _find_mvhd_date(fh, start: int, size: int) -> dt.date | None:
+    for atom_type, payload_offset, payload_size in _iter_atoms(fh, start, size):
+        if atom_type == b"mvhd":
+            return _read_mvhd_creation_date(fh, payload_offset, payload_size)
+    return None
+
+
+def _iter_atoms(fh, start: int, size: int):
+    end = start + size
+    offset = start
+    while offset + 8 <= end:
+        fh.seek(offset)
+        header = fh.read(8)
+        if len(header) != 8:
+            return
+        atom_size = int.from_bytes(header[:4], "big")
+        atom_type = header[4:8]
+        header_size = 8
+        if atom_size == 1:
+            extended = fh.read(8)
+            if len(extended) != 8:
+                return
+            atom_size = int.from_bytes(extended, "big")
+            header_size = 16
+        elif atom_size == 0:
+            atom_size = end - offset
+
+        if atom_size < header_size:
+            return
+        payload_offset = offset + header_size
+        payload_size = atom_size - header_size
+        yield atom_type, payload_offset, payload_size
+        offset += atom_size
+
+
+def _read_mvhd_creation_date(fh, payload_offset: int, payload_size: int) -> dt.date | None:
+    if payload_size < 12:
+        return None
+    fh.seek(payload_offset)
+    version_flags = fh.read(4)
+    if len(version_flags) != 4:
+        return None
+    version = version_flags[0]
+    if version == 1:
+        if payload_size < 20:
+            return None
+        raw = fh.read(8)
+        if len(raw) != 8:
+            return None
+        seconds = int.from_bytes(raw, "big")
+    elif version == 0:
+        raw = fh.read(4)
+        if len(raw) != 4:
+            return None
+        seconds = int.from_bytes(raw, "big")
+    else:
+        return None
+    return _quicktime_seconds_to_date(seconds)
+
+
+def _quicktime_seconds_to_date(seconds: int) -> dt.date | None:
+    # QuickTime epoch is 1904-01-01 UTC. Ignore zero timestamps, which usually
+    # mean that the metadata was not set.
+    if seconds <= 0:
+        return None
+    epoch = dt.datetime(1904, 1, 1, tzinfo=dt.timezone.utc)
+    try:
+        value = epoch + dt.timedelta(seconds=seconds)
+    except OverflowError:
+        return None
+    if value.year < 1970 or value.year > dt.datetime.now(dt.timezone.utc).year + 1:
+        return None
+    return value.date()
+
+
+def avi_metadata_date(path: Path) -> dt.date | None:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"AVI ":
+        return None
+
+    values = _riff_date_values(data)
+    for key in (b"IDIT", b"ICRD", b"IDAT"):
+        parsed = _parse_avi_date(values.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _riff_date_values(data: bytes) -> dict[bytes, bytes]:
+    values: dict[bytes, bytes] = {}
+    _read_riff_chunks(data, 12, len(data), values)
+    return values
+
+
+def _read_riff_chunks(data: bytes, start: int, end: int, values: dict[bytes, bytes]) -> None:
+    offset = start
+    while offset + 8 <= end:
+        chunk_id = data[offset : offset + 4]
+        size = int.from_bytes(data[offset + 4 : offset + 8], "little")
+        payload_start = offset + 8
+        payload_end = min(payload_start + size, end)
+        if payload_start > end or payload_end > end:
+            return
+
+        if chunk_id == b"LIST" and size >= 4:
+            list_type = data[payload_start : payload_start + 4]
+            if list_type == b"INFO":
+                _read_info_chunks(data, payload_start + 4, payload_end, values)
+            else:
+                _read_riff_chunks(data, payload_start + 4, payload_end, values)
+        elif chunk_id in {b"IDIT", b"ICRD", b"IDAT"}:
+            values[chunk_id] = data[payload_start:payload_end].rstrip(b"\x00 ")
+        offset = payload_end + (size % 2)
+
+
+def _read_info_chunks(data: bytes, start: int, end: int, values: dict[bytes, bytes]) -> None:
+    offset = start
+    while offset + 8 <= end:
+        chunk_id = data[offset : offset + 4]
+        size = int.from_bytes(data[offset + 4 : offset + 8], "little")
+        payload_start = offset + 8
+        payload_end = min(payload_start + size, end)
+        if payload_start > end or payload_end > end:
+            return
+        values[chunk_id] = data[payload_start:payload_end].rstrip(b"\x00 ")
+        offset = payload_end + (size % 2)
+
+
+def _parse_avi_date(value: bytes | None) -> dt.date | None:
+    if not value:
+        return None
+    text = value.decode("utf-8", errors="ignore").strip()
+    patterns = [
+        r"(?P<weekday>Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+"
+        r"(?P<month_name>Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+"
+        r"(?P<d>3[01]|[12]\d|0?[1-9])\s+"
+        r"\d{2}:\d{2}:\d{2}\s+"
+        r"(?P<y>19\d{2}|20\d{2})",
+        r"(?P<y>19\d{2}|20\d{2})[-:/\. ](?P<m>1[0-2]|0?[1-9])[-:/\. ](?P<d>3[01]|[12]\d|0?[1-9])",
+        r"(?P<d>3[01]|[12]\d|0?[1-9])[-:/\. ](?P<m>1[0-2]|0?[1-9])[-:/\. ](?P<y>19\d{2}|20\d{2})",
+        r"(?P<m>1[0-2]|0?[1-9])[-:/\. ](?P<d>3[01]|[12]\d|0?[1-9])[-:/\. ](?P<y>19\d{2}|20\d{2})",
+        r"(?P<y>19\d{2}|20\d{2}):(?P<m>1[0-2]|0?[1-9]):(?P<d>3[01]|[12]\d|0?[1-9])",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern + r"(?!\d)", text)
+        if not match:
+            continue
+        month = match.groupdict().get("m")
+        if month is None:
+            month = str(_month_number(match.group("month_name")))
+        try:
+            return dt.date(
+                int(match.group("y")), int(month), int(match.group("d"))
+            )
+        except ValueError:
+            continue
+    return None
+
+
+def _month_number(month_name: str) -> int:
+    months = {
+        "Jan": 1,
+        "Feb": 2,
+        "Mar": 3,
+        "Apr": 4,
+        "May": 5,
+        "Jun": 6,
+        "Jul": 7,
+        "Aug": 8,
+        "Sep": 9,
+        "Oct": 10,
+        "Nov": 11,
+        "Dec": 12,
+    }
+    return months[month_name]

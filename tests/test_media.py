@@ -1,0 +1,81 @@
+from __future__ import annotations
+
+import datetime as dt
+import tempfile
+import unittest
+from pathlib import Path
+
+from bilder.media import media_date
+
+
+def atom(atom_type: bytes, payload: bytes) -> bytes:
+    return (len(payload) + 8).to_bytes(4, "big") + atom_type + payload
+
+
+def minimal_mp4_with_creation_date(date: dt.date) -> bytes:
+    epoch = dt.datetime(1904, 1, 1, tzinfo=dt.timezone.utc)
+    created = dt.datetime(date.year, date.month, date.day, tzinfo=dt.timezone.utc)
+    seconds = int((created - epoch).total_seconds())
+    mvhd_payload = (
+        b"\x00\x00\x00\x00"
+        + seconds.to_bytes(4, "big")
+        + seconds.to_bytes(4, "big")
+        + (1000).to_bytes(4, "big")
+        + (0).to_bytes(4, "big")
+    )
+    return atom(b"ftyp", b"isom\x00\x00\x00\x00isom") + atom(b"moov", atom(b"mvhd", mvhd_payload))
+
+
+def riff_chunk(chunk_id: bytes, payload: bytes) -> bytes:
+    padding = b"\x00" if len(payload) % 2 else b""
+    return chunk_id + len(payload).to_bytes(4, "little") + payload + padding
+
+
+def minimal_avi_with_creation_date(date: dt.date) -> bytes:
+    date_text = date.strftime("%Y-%m-%d").encode("ascii") + b"\x00"
+    info = b"INFO" + riff_chunk(b"ICRD", date_text)
+    body = b"AVI " + riff_chunk(b"LIST", info)
+    return b"RIFF" + len(body).to_bytes(4, "little") + body
+
+
+def minimal_avi_with_idit_outside_info() -> bytes:
+    idit = riff_chunk(b"IDIT", b"Mon Mar 12 19:54:18 2007\x00")
+    strl = riff_chunk(b"LIST", b"strl" + idit)
+    body = b"AVI " + riff_chunk(b"LIST", b"hdrl" + strl)
+    return b"RIFF" + len(body).to_bytes(4, "little") + body
+
+
+class MediaDateTests(unittest.TestCase):
+    def test_mp4_creation_date_is_used_as_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "video_without_date_in_name.mp4"
+            path.write_bytes(minimal_mp4_with_creation_date(dt.date(2010, 7, 8)))
+
+            result = media_date(path)
+
+            self.assertEqual(result.date, dt.date(2010, 7, 8))
+            self.assertEqual(result.source, "metadata")
+
+    def test_avi_info_date_is_used_as_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "oktnov07 063.avi"
+            path.write_bytes(minimal_avi_with_creation_date(dt.date(2007, 10, 31)))
+
+            result = media_date(path)
+
+            self.assertEqual(result.date, dt.date(2007, 10, 31))
+            self.assertEqual(result.source, "metadata")
+
+    def test_avi_idit_outside_info_is_used_as_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "karneval og syden mars07 147.avi"
+            path.write_bytes(minimal_avi_with_idit_outside_info())
+
+            result = media_date(path)
+
+            self.assertEqual(result.date, dt.date(2007, 3, 12))
+            self.assertEqual(result.source, "metadata")
+
+
+if __name__ == "__main__":
+    unittest.main()

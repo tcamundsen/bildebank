@@ -110,6 +110,21 @@ For å vise oppsummering av siste import eller hele databasen:
 Rapporten bør vise antall importerte filer, duplikatfunn, navnekollisjoner,
 filer uten dato og feil.
 
+For å liste filer som ble plassert basert på noe annet enn metadata:
+
+    $ bdb non-metadata
+    $ bdb non-metadata --source
+
+Kommandoen viser filer der datoen kom fra filnavn, filens endringsdato eller
+manglende dato. Med `--source` vises også den opprinnelige kildefilen.
+
+For å forklare hvilken dato programmet ville brukt for én enkelt fil:
+
+    $ bdb explain-date /path/to/file.jpg
+
+Kommandoen viser valgt dato, valgt datokilde og hvilke datokandidater
+programmet fant i metadata, filnavn og filens endringsdato.
+
 ## Om flyttbare medier
 
 Flyttbare medier, som CD-ROM, minnepinner og eksterne disker, må behandles
@@ -247,8 +262,10 @@ filen faktisk ble funnet og vurdert.
   andre bildeformater, så legges det til støtte etter hvert.
 - Videoer behandles sammen med bilder, og legges i mappe basert på 
   når filmen ble tatt opp
-- Dato hentes fra metadata i bildet hvis det finnes. Hvis ikke, må man se på om
-  filens endringsdato eller filnavn gir informasjon.
+- Dato hentes fra metadata i bildet eller videoen hvis det finnes. Første
+  versjon skal støtte JPEG EXIF, metadata i vanlige MP4/MOV/M4V/3GP-filer og
+  RIFF/INFO-dato i AVI-filer. Hvis metadata ikke finnes, må man se på om filens
+  endringsdato eller filnavn gir informasjon.
 - Hvordan skal programmet rapportere feil, for eksempel utilgjengelige mapper
   eller filer som ikke kan leses? Første utgave av programmet kan skrive om
   dette til stdout og registrere feilen i databasen.

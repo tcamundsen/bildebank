@@ -324,3 +324,14 @@ def name_conflicts(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
         ORDER BY imported_at, id
         """
     )
+
+
+def non_metadata_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT source_path, target_path, taken_date, date_source
+        FROM files
+        WHERE date_source != 'metadata'
+        ORDER BY date_source, taken_date, target_path
+        """
+    )

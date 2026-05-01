@@ -6,6 +6,7 @@ from pathlib import Path
 
 from . import __version__, db
 from .importer import import_pending_sources, import_source, validate_source_target
+from .media import explain_date
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -44,6 +45,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("list-sources", help="List registrerte kilder")
     subparsers.add_parser("list-name-conflicts", help="List importerte filer med navnekollisjon")
+    non_metadata = subparsers.add_parser(
+        "non-metadata",
+        help="List filer der datoen ikke kom fra metadata",
+    )
+    non_metadata.add_argument(
+        "--source",
+        action="store_true",
+        help="Vis kildefil i tillegg til målfil",
+    )
+    explain = subparsers.add_parser(
+        "explain-date",
+        help="Forklar hvilken dato programmet ville brukt for en fil",
+    )
+    explain.add_argument("path", type=Path)
     subparsers.add_parser("report", help="Vis importoppsummering")
 
     return parser
@@ -60,6 +75,22 @@ def run(args: argparse.Namespace) -> int:
         finally:
             conn.close()
         print(f"Målmappe opprettet: {target}")
+        return 0
+
+    if args.command == "explain-date":
+        path = args.path.resolve()
+        if not path.exists():
+            raise ValueError(f"Filen finnes ikke: {path}")
+        explanation = explain_date(path)
+        print(f"Fil: {path}")
+        print(f"Støttet mediafil: {'ja' if explanation.supported_media else 'nei'}")
+        selected_date = explanation.selected.date.isoformat() if explanation.selected.date else "-"
+        print(f"Valgt dato: {selected_date}")
+        print(f"Valgt kilde: {explanation.selected.source}")
+        print("Kandidater:")
+        for candidate in explanation.candidates:
+            value = candidate.date.isoformat() if candidate.date else "-"
+            print(f"  {candidate.source}\t{value}\t{candidate.detail}")
         return 0
 
     target = resolve_target(args.target)
@@ -102,6 +133,18 @@ def run(args: argparse.Namespace) -> int:
         if args.command == "list-name-conflicts":
             for row in db.name_conflicts(conn):
                 print(f"{row['source_path']} -> {row['target_path']}")
+            return 0
+
+        if args.command == "non-metadata":
+            for row in db.non_metadata_files(conn):
+                taken_date = row["taken_date"] or "-"
+                if args.source:
+                    print(
+                        f"{row['date_source']}\t{taken_date}\t"
+                        f"{row['target_path']}\t{row['source_path']}"
+                    )
+                else:
+                    print(f"{row['date_source']}\t{taken_date}\t{row['target_path']}")
             return 0
 
         if args.command == "report":
