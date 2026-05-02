@@ -200,6 +200,80 @@ class CliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_show_name_conflict_sources_lists_all_files_in_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            (source / "a").mkdir(parents=True)
+            (source / "b").mkdir()
+            first_source = source / "a" / "IMG_20240102.jpg"
+            second_source = source / "b" / "IMG_20240102.jpg"
+            first_source.write_bytes(b"first")
+            second_source.write_bytes(b"second")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            first_target = target / "2024" / "01" / "IMG_20240102.jpg"
+            second_target = target / "2024" / "01" / "IMG_20240102-1.jpg"
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "show-name-conflict", str(second_target)]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Navnekollisjon: IMG_20240102.jpg", stdout)
+            self.assertIn(str(first_target.resolve()), stdout)
+            self.assertIn(str(second_target.resolve()), stdout)
+            self.assertIn(str(first_source.resolve()), stdout)
+            self.assertIn(str(second_source.resolve()), stdout)
+
+    def test_show_name_conflict_sources_works_for_first_file_in_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            (source / "a").mkdir(parents=True)
+            (source / "b").mkdir()
+            (source / "a" / "IMG_20240102.jpg").write_bytes(b"first")
+            (source / "b" / "IMG_20240102.jpg").write_bytes(b"second")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            first_target = target / "2024" / "01" / "IMG_20240102.jpg"
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "show-name-conflict", str(first_target)]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("IMG_20240102-1.jpg", stdout)
+
+    def test_show_name_conflict_sources_reports_non_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"one")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            target_file = target / "2024" / "01" / "IMG_20240102.jpg"
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "show-name-conflict", str(target_file)]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("ikke del av en navnekollisjon", stdout)
+
     def test_rejects_target_inside_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

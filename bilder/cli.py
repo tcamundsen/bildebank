@@ -52,6 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("list-sources", help="List registrerte kilder")
     subparsers.add_parser("list-name-conflicts", help="List importerte filer med navnekollisjon")
+    show_name_conflict = subparsers.add_parser(
+        "show-name-conflict",
+        help="Vis alle kildefiler i samme navnekollisjon som en målfil",
+    )
+    show_name_conflict.add_argument("path", type=Path)
     non_metadata = subparsers.add_parser(
         "non-metadata",
         help="List filer der datoen ikke kom fra metadata",
@@ -188,6 +193,23 @@ def run(args: argparse.Namespace) -> int:
                 print(f"{row['source_path']} -> {row['target_path']}")
             return 0
 
+        if args.command == "show-name-conflict":
+            path = existing_path_arg(args.path).resolve()
+            row = db.file_by_target_path(conn, path)
+            if row is None:
+                raise ValueError(f"Filen finnes ikke i importdatabasen: {path}")
+            rows = name_conflict_group(conn, row)
+            if len(rows) < 2 or not any(item["name_conflict"] for item in rows):
+                print(f"Filen er ikke del av en navnekollisjon: {path}")
+                return 0
+            print(f"Navnekollisjon: {row['original_filename']}")
+            print(f"Målmappe: {Path(str(row['target_path'])).parent}")
+            for item in rows:
+                print(f"{item['stored_filename']}")
+                print(f"  mål: {item['target_path']}")
+                print(f"  kilde: {item['source_path']}")
+            return 0
+
         if args.command == "non-metadata":
             for row in db.non_metadata_files(conn):
                 taken_date = row["taken_date"] or "-"
@@ -259,6 +281,15 @@ def resolve_target(target_arg: Path | None) -> Path:
     if target is None:
         raise ValueError("Fant ingen målmappe. Kjør fra målmappen eller bruk --target.")
     return target
+
+
+def name_conflict_group(conn, row) -> list:
+    parent_key = db.path_key(Path(str(row["target_path"])).parent)
+    rows = []
+    for candidate in db.files_by_original_filename(conn, str(row["original_filename"])):
+        if db.path_key(Path(str(candidate["target_path"])).parent) == parent_key:
+            rows.append(candidate)
+    return rows
 
 
 def existing_path_arg(path: Path) -> Path:

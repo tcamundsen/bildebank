@@ -397,6 +397,28 @@ def name_conflicts(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     )
 
 
+def file_by_target_path(conn: sqlite3.Connection, target_path: Path) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM files WHERE target_path_key = ?",
+        (path_key(target_path),),
+    ).fetchone()
+
+
+def files_by_original_filename(
+    conn: sqlite3.Connection, original_filename: str
+) -> Iterable[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT source_path, target_path, original_filename, stored_filename, name_conflict,
+               imported_at, id
+        FROM files
+        WHERE original_filename = ?
+        ORDER BY imported_at, id
+        """,
+        (original_filename,),
+    )
+
+
 def non_metadata_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     return conn.execute(
         """

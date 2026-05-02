@@ -89,6 +89,15 @@ Kommando for å liste bilder med navnekollisjon:
 
     $ bdb list-name-conflicts
 
+Kommando for å undersøke én navnekollisjon nærmere:
+
+    $ bdb show-name-conflict /path/to/target/2017/08/img3331.jpg
+
+Hvis filen er del av en navnekollisjon, viser kommandoen alle filene i samme
+konfliktgruppe med både målfil og opprinnelig kildefil. Kommandoen skal også
+fungere hvis brukeren peker på den første filen i gruppen, altså filen som ikke
+fikk `-1`, `-2` eller tilsvarende suffix.
+
 Legge til og scanne flyttbare medier, som CD-ROM eller usb-brikke. Siden
 det er flyttbare medier, så kan neste scan scanne et annet medium på
 samme path:
