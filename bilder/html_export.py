@@ -531,11 +531,24 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
       place-items: center;
       border-top: 1px solid var(--border);
       overflow: hidden;
+      min-width: 0;
+      min-height: 0;
     }}
-    img, video {{
+    .media-link {{
       width: 100%;
       height: 100%;
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+    }}
+    .media img, .media video {{
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
       object-fit: contain;
+      object-position: center center;
       display: block;
     }}
     .meta {{
@@ -651,10 +664,15 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
         video.controls = true;
         media.append(video);
       }} else {{
+        const link = document.createElement("a");
+        link.className = "media-link";
+        link.href = item.url;
+        link.target = "_blank";
         const img = document.createElement("img");
         img.src = item.url;
         img.alt = item.storedFilename;
-        media.append(img);
+        link.append(img);
+        media.append(link);
       }}
       const meta = document.createElement("div");
       meta.className = "meta";
