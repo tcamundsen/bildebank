@@ -86,17 +86,21 @@ def image_dimensions(path: Path) -> ImageDimensions | None:
     try:
         with path.open("rb") as fh:
             header = fh.read(64)
-            if suffix in {".jpg", ".jpeg"}:
+            if is_jpeg_header(header):
                 return jpeg_dimensions(path)
-            if suffix == ".png":
+            if header.startswith(b"\x89PNG\r\n\x1a\n"):
                 return png_dimensions(header)
-            if suffix == ".gif":
+            if header[:6] in {b"GIF87a", b"GIF89a"}:
                 return gif_dimensions(header)
-            if suffix == ".bmp":
+            if header.startswith(b"BM"):
                 return bmp_dimensions(header)
     except OSError:
         return None
     return None
+
+
+def is_jpeg_header(data: bytes) -> bool:
+    return len(data) >= 2 and data[:2] == b"\xff\xd8"
 
 
 def png_dimensions(header: bytes) -> ImageDimensions | None:
@@ -181,10 +185,9 @@ def inspect_metadata(path: Path) -> MetadataInspection:
         value = candidate.date.isoformat() if candidate.date else "-"
         lines.append(f"  {candidate.source}\t{value}\t{candidate.detail}")
 
-    suffix = path.suffix.lower()
-    if suffix in {".jpg", ".jpeg"}:
+    if is_jpeg_file(path):
         lines.extend(inspect_jpeg_metadata(path))
-    elif suffix == ".avi":
+    elif path.suffix.lower() == ".avi":
         lines.extend(inspect_avi_metadata(path))
     else:
         lines.extend(inspect_text_dates(path))
@@ -251,8 +254,6 @@ def date_from_filename(filename: str) -> dt.date | None:
 
 
 def jpeg_exif_date(path: Path) -> dt.date | None:
-    if path.suffix.lower() not in {".jpg", ".jpeg"}:
-        return None
     try:
         data = path.read_bytes()
     except OSError:
@@ -300,8 +301,6 @@ def inspect_jpeg_metadata(path: Path) -> list[str]:
 
 
 def jpeg_xmp_date(path: Path) -> dt.date | None:
-    if path.suffix.lower() not in {".jpg", ".jpeg"}:
-        return None
     for segment in _jpeg_app1_segments(path):
         xmp_prefix = b"http://ns.adobe.com/xap/1.0/\x00"
         if not segment.startswith(xmp_prefix):
@@ -339,6 +338,14 @@ def _jpeg_segments(path: Path):
         segment = data[offset : offset + length - 2]
         offset += length - 2
         yield marker, segment
+
+
+def is_jpeg_file(path: Path) -> bool:
+    try:
+        with path.open("rb") as fh:
+            return is_jpeg_header(fh.read(2))
+    except OSError:
+        return False
 
 
 def _jpeg_app1_segments(path: Path):

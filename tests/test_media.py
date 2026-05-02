@@ -148,6 +148,16 @@ class MediaDateTests(unittest.TestCase):
             self.assertEqual(result.date, dt.date(2011, 8, 28))
             self.assertEqual(result.source, "metadata")
 
+    def test_jpeg_exif_is_used_when_file_has_png_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "20160129_170511.png"
+            path.write_bytes(jpeg_with_exif_datetime("2016:01:29 17:04:27"))
+
+            result = media_date(path)
+
+            self.assertEqual(result.date, dt.date(2016, 1, 29))
+            self.assertEqual(result.source, "metadata")
+
     def test_png_dimensions_are_read_without_external_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "image.png"
