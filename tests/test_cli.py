@@ -19,6 +19,7 @@ from tests.test_media import (
     minimal_avi_with_creation_date,
     minimal_avi_with_idit_outside_info,
     minimal_mp4_with_creation_date,
+    minimal_png,
 )
 
 
@@ -207,28 +208,33 @@ class CliTests(unittest.TestCase):
             source = root / "source"
             (source / "a").mkdir(parents=True)
             (source / "b").mkdir()
-            first_source = source / "a" / "IMG_20240102.jpg"
-            second_source = source / "b" / "IMG_20240102.jpg"
-            first_source.write_bytes(b"first")
-            second_source.write_bytes(b"second")
+            first_source = source / "a" / "IMG_20240102.png"
+            second_source = source / "b" / "IMG_20240102.png"
+            first_source.write_bytes(minimal_png(640, 480))
+            second_source.write_bytes(minimal_png(320, 240))
 
             self.assertEqual(run_cli(["target", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
-            first_target = target / "2024" / "01" / "IMG_20240102.jpg"
-            second_target = target / "2024" / "01" / "IMG_20240102-1.jpg"
+            first_target = target / "2024" / "01" / "IMG_20240102.png"
+            second_target = target / "2024" / "01" / "IMG_20240102-1.png"
 
             code, stdout, stderr = capture_cli(
                 ["--target", str(target), "show-name-conflict", str(second_target)]
             )
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Navnekollisjon: IMG_20240102.jpg", stdout)
+            self.assertIn("Navnekollisjon: IMG_20240102.png", stdout)
             self.assertIn(str(first_target.resolve()), stdout)
             self.assertIn(str(second_target.resolve()), stdout)
             self.assertIn(str(first_source.resolve()), stdout)
             self.assertIn(str(second_source.resolve()), stdout)
+            self.assertIn("oppløsning: 640x480", stdout)
+            self.assertIn("oppløsning: 320x240", stdout)
+            self.assertIn("dato: 2024-01-02 (filename)", stdout)
+            self.assertIn("sha256:", stdout)
+            self.assertIn("kildefil finnes: ja", stdout)
 
     def test_show_name_conflict_sources_works_for_first_file_in_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

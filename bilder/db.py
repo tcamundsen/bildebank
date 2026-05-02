@@ -409,8 +409,9 @@ def files_by_original_filename(
 ) -> Iterable[sqlite3.Row]:
     return conn.execute(
         """
-        SELECT source_path, target_path, original_filename, stored_filename, name_conflict,
-               imported_at, id
+        SELECT id, source_id, source_path, target_path, original_filename,
+               stored_filename, sha256, size_bytes, taken_date, date_source,
+               name_conflict, imported_at
         FROM files
         WHERE original_filename = ?
         ORDER BY imported_at, id

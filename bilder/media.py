@@ -63,6 +63,12 @@ class MetadataInspection:
     lines: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class ImageDimensions:
+    width: int
+    height: int
+
+
 def is_supported_media(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
 
@@ -73,6 +79,92 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
         for chunk in iter(lambda: fh.read(chunk_size), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def image_dimensions(path: Path) -> ImageDimensions | None:
+    suffix = path.suffix.lower()
+    try:
+        with path.open("rb") as fh:
+            header = fh.read(64)
+            if suffix in {".jpg", ".jpeg"}:
+                return jpeg_dimensions(path)
+            if suffix == ".png":
+                return png_dimensions(header)
+            if suffix == ".gif":
+                return gif_dimensions(header)
+            if suffix == ".bmp":
+                return bmp_dimensions(header)
+    except OSError:
+        return None
+    return None
+
+
+def png_dimensions(header: bytes) -> ImageDimensions | None:
+    if len(header) < 24 or not header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    if header[12:16] != b"IHDR":
+        return None
+    width = int.from_bytes(header[16:20], "big")
+    height = int.from_bytes(header[20:24], "big")
+    if width <= 0 or height <= 0:
+        return None
+    return ImageDimensions(width, height)
+
+
+def gif_dimensions(header: bytes) -> ImageDimensions | None:
+    if len(header) < 10 or header[:6] not in {b"GIF87a", b"GIF89a"}:
+        return None
+    width = int.from_bytes(header[6:8], "little")
+    height = int.from_bytes(header[8:10], "little")
+    if width <= 0 or height <= 0:
+        return None
+    return ImageDimensions(width, height)
+
+
+def bmp_dimensions(header: bytes) -> ImageDimensions | None:
+    if len(header) < 26 or not header.startswith(b"BM"):
+        return None
+    dib_size = int.from_bytes(header[14:18], "little")
+    if dib_size == 12:
+        if len(header) < 26:
+            return None
+        width = int.from_bytes(header[18:20], "little")
+        height = int.from_bytes(header[20:22], "little")
+    else:
+        if len(header) < 26:
+            return None
+        width = int.from_bytes(header[18:22], "little", signed=True)
+        height = abs(int.from_bytes(header[22:26], "little", signed=True))
+    if width <= 0 or height <= 0:
+        return None
+    return ImageDimensions(width, height)
+
+
+def jpeg_dimensions(path: Path) -> ImageDimensions | None:
+    for marker, segment in _jpeg_segments(path):
+        if marker in {
+            0xC0,
+            0xC1,
+            0xC2,
+            0xC3,
+            0xC5,
+            0xC6,
+            0xC7,
+            0xC9,
+            0xCA,
+            0xCB,
+            0xCD,
+            0xCE,
+            0xCF,
+        }:
+            if len(segment) < 5:
+                return None
+            height = int.from_bytes(segment[1:3], "big")
+            width = int.from_bytes(segment[3:5], "big")
+            if width <= 0 or height <= 0:
+                return None
+            return ImageDimensions(width, height)
+    return None
 
 
 def inspect_metadata(path: Path) -> MetadataInspection:

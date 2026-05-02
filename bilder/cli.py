@@ -13,7 +13,7 @@ from .importer import (
     validate_source_target,
 )
 from .html_export import export_html
-from .media import explain_date, inspect_metadata
+from .media import explain_date, image_dimensions, inspect_metadata
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -205,9 +205,7 @@ def run(args: argparse.Namespace) -> int:
             print(f"Navnekollisjon: {row['original_filename']}")
             print(f"Målmappe: {Path(str(row['target_path'])).parent}")
             for item in rows:
-                print(f"{item['stored_filename']}")
-                print(f"  mål: {item['target_path']}")
-                print(f"  kilde: {item['source_path']}")
+                print_name_conflict_item(item)
             return 0
 
         if args.command == "non-metadata":
@@ -290,6 +288,35 @@ def name_conflict_group(conn, row) -> list:
         if db.path_key(Path(str(candidate["target_path"])).parent) == parent_key:
             rows.append(candidate)
     return rows
+
+
+def print_name_conflict_item(row) -> None:
+    target_path = Path(str(row["target_path"]))
+    source_path = Path(str(row["source_path"]))
+    dimensions = image_dimensions(target_path)
+    dimensions_text = f"{dimensions.width}x{dimensions.height}" if dimensions else "-"
+    taken_date = row["taken_date"] or "-"
+
+    print(f"{row['stored_filename']}")
+    print(f"  mål: {target_path}")
+    print(f"  kilde: {source_path}")
+    print(f"  kilde-id: {row['source_id']}")
+    print(f"  dato: {taken_date} ({row['date_source']})")
+    print(f"  oppløsning: {dimensions_text}")
+    print(f"  filstørrelse: {format_bytes(int(row['size_bytes']))} ({row['size_bytes']} bytes)")
+    print(f"  sha256: {row['sha256']}")
+    print(f"  kildefil finnes: {'ja' if source_path.exists() else 'nei'}")
+
+
+def format_bytes(size: int) -> str:
+    units = ("bytes", "KB", "MB", "GB", "TB")
+    value = float(size)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            if unit == "bytes":
+                return f"{size} bytes"
+            return f"{value:.1f} {unit}"
+        value /= 1024
 
 
 def existing_path_arg(path: Path) -> Path:

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bilder.media import media_date
+from bilder.media import image_dimensions, media_date
 
 
 def atom(atom_type: bytes, payload: bytes) -> bytes:
@@ -58,6 +58,16 @@ def jpeg_with_xmp_date(date: str) -> bytes:
     return b"\xff\xd8" + segment + b"\xff\xd9"
 
 
+def minimal_png(width: int, height: int) -> bytes:
+    signature = b"\x89PNG\r\n\x1a\n"
+    ihdr_payload = (
+        width.to_bytes(4, "big")
+        + height.to_bytes(4, "big")
+        + b"\x08\x02\x00\x00\x00"
+    )
+    return signature + atom(b"IHDR", ihdr_payload)
+
+
 class MediaDateTests(unittest.TestCase):
     def test_mp4_creation_date_is_used_as_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -98,6 +108,17 @@ class MediaDateTests(unittest.TestCase):
 
             self.assertEqual(result.date, dt.date(2007, 3, 12))
             self.assertEqual(result.source, "metadata")
+
+    def test_png_dimensions_are_read_without_external_dependencies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "image.png"
+            path.write_bytes(minimal_png(640, 480))
+
+            result = image_dimensions(path)
+
+            self.assertIsNotNone(result)
+            self.assertEqual(result.width, 640)
+            self.assertEqual(result.height, 480)
 
 
 if __name__ == "__main__":
