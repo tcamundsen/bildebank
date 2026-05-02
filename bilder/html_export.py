@@ -529,7 +529,7 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
       background: #0f0f0f;
       display: grid;
       place-items: center;
-      border-bottom: 1px solid var(--border);
+      border-top: 1px solid var(--border);
     }}
     img, video {{
       max-width: 100%;
@@ -672,7 +672,7 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
         row("sha256", item.sha256),
         row("kildefil", item.sourceExists ? "finnes" : "finnes ikke")
       );
-      article.append(media, meta);
+      article.append(meta, media);
       return article;
     }}
     function row(label, value) {{

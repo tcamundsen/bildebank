@@ -171,7 +171,7 @@ mappevelger. Den viser bilder og videoer med relative paths fra målmappen.
 
 For å lage en statisk HTML-side for manuell gjennomgang av navnekollisjoner:
 
-    $ bdb export-html-conlict
+    $ bdb export-html-conflict
 
 Kommandoen skriver `name-conflicts.html` i målmappen. Siden lar brukeren bla
 mellom navnekollisjonene og viser filene i hver konflikt side om side, sammen

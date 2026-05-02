@@ -666,7 +666,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "export-html-conlict"])
+            code, stdout, stderr = capture_cli(["--target", str(target), "export-html-conflict"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser for navnekollisjoner", stdout)
