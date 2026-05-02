@@ -302,10 +302,30 @@ def render_html(items: list[dict[str, str]]) -> str:
     buttons.prevItem.addEventListener("click", () => moveItem(-1));
     buttons.nextItem.addEventListener("click", () => moveItem(1));
     document.addEventListener("keydown", event => {{
-      if (event.key === "ArrowLeft") moveItem(-1);
-      if (event.key === "ArrowRight") moveItem(1);
-      if (event.key === "ArrowUp") moveMonth(-1);
-      if (event.key === "ArrowDown") moveMonth(1);
+      if (event.key === "ArrowLeft") {{
+        event.preventDefault();
+        moveItem(-1);
+      }}
+      if (event.key === "ArrowRight") {{
+        event.preventDefault();
+        moveItem(1);
+      }}
+      if (event.key === "ArrowUp") {{
+        event.preventDefault();
+        moveMonth(-1);
+      }}
+      if (event.key === "ArrowDown") {{
+        event.preventDefault();
+        moveMonth(1);
+      }}
+      if (event.key === "PageUp") {{
+        event.preventDefault();
+        moveYear(-1);
+      }}
+      if (event.key === "PageDown") {{
+        event.preventDefault();
+        moveYear(1);
+      }}
     }});
     init();
     function init() {{
