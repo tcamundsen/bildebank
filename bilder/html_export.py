@@ -224,6 +224,7 @@ def render_html(items: list[dict[str, str]]) -> str:
       width: 100%;
       height: 100%;
       min-height: 0;
+      min-width: 0;
       display: grid;
       place-items: center;
       background: #0e0e0e;
@@ -231,12 +232,22 @@ def render_html(items: list[dict[str, str]]) -> str:
       border-radius: 8px;
       overflow: hidden;
     }}
-    img, video {{
+    .media-link {{
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+    }}
+    .viewer img, .viewer video {{
       max-width: 100%;
       max-height: 100%;
-      width: auto;
-      height: auto;
+      width: 100%;
+      height: 100%;
       object-fit: contain;
+      object-position: center center;
+      display: block;
     }}
     .empty {{
       color: var(--muted);
@@ -400,10 +411,15 @@ def render_html(items: list[dict[str, str]]) -> str:
         video.controls = true;
         viewer.replaceChildren(video);
       }} else {{
+        const link = document.createElement("a");
+        link.className = "media-link";
+        link.href = item.url;
+        link.target = "_blank";
         const img = document.createElement("img");
         img.src = item.url;
         img.alt = item.name;
-        viewer.replaceChildren(img);
+        link.append(img);
+        viewer.replaceChildren(link);
       }}
       const month = currentMonth();
       positionEl.textContent = `${{month.key}} ${{state.itemIndex + 1}}/${{month.items.length}}`;
