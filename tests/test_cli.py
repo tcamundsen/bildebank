@@ -312,6 +312,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("bdb=filename:2024-01-02", stdout)
             self.assertIn("IMG_20240102.jpg", stdout)
             self.assertIn("Oppsummering: exiftool_metadata_funnet=1", stdout)
+            self.assertIn("exiftool 1/1:", stderr)
 
     def test_rejects_target_inside_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

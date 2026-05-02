@@ -239,7 +239,7 @@ def run(args: argparse.Namespace) -> int:
             exiftool_path = args.exiftool.resolve() if args.exiftool else None
             conn.commit()
             conn.close()
-            gaps = exiftool_metadata_gaps(target, exiftool_path=exiftool_path)
+            gaps = exiftool_metadata_gaps(target, exiftool_path=exiftool_path, progress=True)
             for gap in gaps:
                 print(
                     f"{gap.date}\t{gap.tag}\t{gap.value}\t"

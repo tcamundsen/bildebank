@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,7 +33,7 @@ class ExifToolMetadataGap:
 
 
 def exiftool_metadata_gaps(
-    target: Path, *, exiftool_path: Path | None = None
+    target: Path, *, exiftool_path: Path | None = None, progress: bool = False
 ) -> list[ExifToolMetadataGap]:
     tool = exiftool_path or (target / "exiftool.exe")
     if not tool.exists():
@@ -45,7 +46,10 @@ def exiftool_metadata_gaps(
         conn.close()
 
     gaps: list[ExifToolMetadataGap] = []
-    for row in rows:
+    total = len(rows)
+    for index, row in enumerate(rows, start=1):
+        if progress and (index == 1 or index == total or index % 25 == 0):
+            print(f"exiftool {index}/{total}: {row['target_path']}", file=sys.stderr, flush=True)
         target_path = Path(str(row["target_path"]))
         found = exiftool_first_date(tool, target_path)
         if found is None:
