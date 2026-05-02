@@ -251,12 +251,16 @@ def run(args: argparse.Namespace) -> int:
 
         if args.command == "export-html":
             output = args.output.resolve() if args.output else None
+            conn.commit()
+            conn.close()
             output_path = export_html(target, output)
             print(f"Skrev HTML-browser: {output_path}")
             return 0
 
         if args.command == "export-html-conflict":
             output = args.output.resolve() if args.output else None
+            conn.commit()
+            conn.close()
             output_path = export_html_conflicts(target, output)
             print(f"Skrev HTML-browser for navnekollisjoner: {output_path}")
             return 0

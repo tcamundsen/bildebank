@@ -467,7 +467,7 @@ def _parse_exif_date(value: bytes | int | None) -> dt.date | None:
     if not isinstance(value, bytes):
         return None
     text = value.rstrip(b"\x00").decode("ascii", errors="ignore")
-    match = re.match(r"(?P<y>\d{4}):(?P<m>\d{2}):(?P<d>\d{2})", text)
+    match = re.match(r"(?P<y>\d{4})[:/-](?P<m>\d{2})[:/-](?P<d>\d{2})", text)
     if not match:
         return None
     try:

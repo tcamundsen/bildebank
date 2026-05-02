@@ -58,6 +58,35 @@ def jpeg_with_xmp_date(date: str) -> bytes:
     return b"\xff\xd8" + segment + b"\xff\xd9"
 
 
+def jpeg_with_exif_datetime(date: str) -> bytes:
+    date_bytes = date.encode("ascii") + b"\x00"
+    tiff_header = b"MM\x00*\x00\x00\x00\x08"
+    ifd0_offset = 8
+    ifd0_size = 2 + 12 + 4
+    exif_ifd_offset = ifd0_offset + ifd0_size
+    exif_ifd_size = 2 + 12 + 4
+    date_offset = exif_ifd_offset + exif_ifd_size
+    ifd0 = (
+        (1).to_bytes(2, "big")
+        + (0x8769).to_bytes(2, "big")
+        + (4).to_bytes(2, "big")
+        + (1).to_bytes(4, "big")
+        + exif_ifd_offset.to_bytes(4, "big")
+        + (0).to_bytes(4, "big")
+    )
+    exif_ifd = (
+        (1).to_bytes(2, "big")
+        + (0x9003).to_bytes(2, "big")
+        + (2).to_bytes(2, "big")
+        + len(date_bytes).to_bytes(4, "big")
+        + date_offset.to_bytes(4, "big")
+        + (0).to_bytes(4, "big")
+    )
+    payload = b"Exif\x00\x00" + tiff_header + ifd0 + exif_ifd + date_bytes
+    segment = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
+    return b"\xff\xd8" + segment + b"\xff\xd9"
+
+
 def minimal_png(width: int, height: int) -> bytes:
     signature = b"\x89PNG\r\n\x1a\n"
     ihdr_payload = (
@@ -107,6 +136,16 @@ class MediaDateTests(unittest.TestCase):
             result = media_date(path)
 
             self.assertEqual(result.date, dt.date(2007, 3, 12))
+            self.assertEqual(result.source, "metadata")
+
+    def test_jpeg_exif_slash_date_is_used_as_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "htc.jpg"
+            path.write_bytes(jpeg_with_exif_datetime("2011/08/28 15:13:00"))
+
+            result = media_date(path)
+
+            self.assertEqual(result.date, dt.date(2011, 8, 28))
             self.assertEqual(result.source, "metadata")
 
     def test_png_dimensions_are_read_without_external_dependencies(self) -> None:
