@@ -269,29 +269,34 @@ def insert_imported_file(
     date_source: str,
     name_conflict: bool,
 ) -> None:
-    conn.execute(
-        """
-        INSERT OR IGNORE INTO files(
-            source_id, source_path, source_path_key, target_path, target_path_key,
-            original_filename, stored_filename, sha256, size_bytes, taken_date,
-            date_source, name_conflict
-        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            source_id,
-            str(source_path.resolve()),
-            path_key(source_path),
-            str(target_path.resolve()),
-            path_key(target_path),
-            original_filename,
-            stored_filename,
-            sha256,
-            size_bytes,
-            taken_date,
-            date_source,
-            1 if name_conflict else 0,
-        ),
-    )
+    try:
+        conn.execute(
+            """
+            INSERT INTO files(
+                source_id, source_path, source_path_key, target_path, target_path_key,
+                original_filename, stored_filename, sha256, size_bytes, taken_date,
+                date_source, name_conflict
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                source_id,
+                str(source_path.resolve()),
+                path_key(source_path),
+                str(target_path.resolve()),
+                path_key(target_path),
+                original_filename,
+                stored_filename,
+                sha256,
+                size_bytes,
+                taken_date,
+                date_source,
+                1 if name_conflict else 0,
+            ),
+        )
+    except sqlite3.IntegrityError as exc:
+        raise sqlite3.IntegrityError(
+            f"Kunne ikke registrere importert fil i databasen: {exc}"
+        ) from exc
 
 
 def insert_duplicate(

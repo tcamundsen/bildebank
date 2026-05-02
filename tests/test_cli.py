@@ -8,8 +8,10 @@ import os
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 from bilder.cli import main
+from bilder.importer import safe_copy
 from bilder.db import DB_FILENAME
 from bilder.media import sha256_file
 from tests.test_media import (
@@ -168,6 +170,50 @@ class CliTests(unittest.TestCase):
             source.mkdir()
             self.assertEqual(run_cli(["target", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 1)
+
+    def test_import_records_walk_errors_and_keeps_source_pending_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            blocked = source / "blocked"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"visible")
+
+            def fake_walk(path, *args, onerror=None, **kwargs):
+                if onerror is not None:
+                    onerror(PermissionError(13, "Permission denied", str(blocked)))
+                yield str(path), [], ["IMG_20240102.jpg"]
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+
+            with patch("bilder.importer.os.walk", fake_walk):
+                self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 2)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                error = conn.execute("SELECT stage, source_path FROM errors").fetchone()
+                self.assertEqual(error[0], "scan")
+                self.assertEqual(error[1], str(blocked))
+                status = conn.execute("SELECT status FROM sources").fetchone()[0]
+                self.assertEqual(status, "error")
+            finally:
+                conn.close()
+
+    def test_safe_copy_does_not_overwrite_existing_different_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.jpg"
+            destination = root / "destination.jpg"
+            source.write_bytes(b"new-image")
+            destination.write_bytes(b"existing-image")
+
+            with self.assertRaises(FileExistsError):
+                safe_copy(source, destination, sha256_file(source))
+
+            self.assertEqual(destination.read_bytes(), b"existing-image")
 
     def test_import_recovers_file_copied_before_database_commit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

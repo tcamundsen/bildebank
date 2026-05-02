@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +32,12 @@ class MetadataRefreshStats:
     moved: int = 0
     already_correct: int = 0
     errors: int = 0
+
+
+@dataclass
+class WalkError:
+    path: Path
+    message: str
 
 
 def validate_source_target(source: Path, target: Path) -> None:
@@ -88,7 +95,18 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
     covered_roots = [covered.path.resolve() for covered in covered_sources]
     errors_before = stats.errors
     try:
-        for path in iter_media_files(root):
+        for item in iter_media_files(root):
+            if isinstance(item, WalkError):
+                stats.errors += 1
+                db.insert_error(
+                    conn,
+                    source_id=source.id,
+                    source_path=item.path,
+                    stage="scan",
+                    message=item.message,
+                )
+                continue
+            path = item
             if is_under_any(path, covered_roots):
                 stats.skipped_covered += 1
                 continue
@@ -133,12 +151,22 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
 
 
 def iter_media_files(root: Path):
-    for dirpath, dirnames, filenames in os.walk(root):
+    walk_errors: list[WalkError] = []
+
+    def onerror(exc: OSError) -> None:
+        path = Path(exc.filename) if exc.filename else root
+        walk_errors.append(WalkError(path=path, message=str(exc)))
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=onerror):
+        while walk_errors:
+            yield walk_errors.pop(0)
         dirnames.sort()
         for filename in sorted(filenames):
             path = Path(dirpath) / filename
             if is_supported_media(path):
                 yield path
+    while walk_errors:
+        yield walk_errors.pop(0)
 
 
 def covered_imported_subsources(conn, source: db.Source) -> list[db.Source]:
@@ -264,16 +292,25 @@ def find_existing_or_available_destination(
 
 
 def safe_copy(source: Path, destination: Path, expected_hash: str) -> None:
-    temp = destination.with_name(f".{destination.name}.bdbtmp-{os.getpid()}")
+    temp = destination.with_name(f".{destination.name}.bdbtmp-{os.getpid()}-{uuid.uuid4().hex}")
     try:
         shutil.copy2(source, temp)
         copied_hash = sha256_file(temp)
         if copied_hash != expected_hash:
             raise OSError("Hash på kopiert fil matcher ikke kildefilen.")
-        os.replace(temp, destination)
+        install_copied_file(temp, destination, expected_hash)
     finally:
         if temp.exists():
             temp.unlink()
+
+
+def install_copied_file(temp: Path, destination: Path, expected_hash: str) -> None:
+    try:
+        os.link(temp, destination)
+    except FileExistsError:
+        if sha256_file(destination) == expected_hash:
+            return
+        raise FileExistsError(f"Målfil finnes allerede med annet innhold: {destination}")
 
 
 def refresh_non_metadata_files(
