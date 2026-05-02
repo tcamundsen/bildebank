@@ -530,13 +530,13 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
       display: grid;
       place-items: center;
       border-top: 1px solid var(--border);
+      overflow: hidden;
     }}
     img, video {{
-      max-width: 100%;
-      max-height: 100%;
-      width: auto;
-      height: auto;
+      width: 100%;
+      height: 100%;
       object-fit: contain;
+      display: block;
     }}
     .meta {{
       display: grid;
