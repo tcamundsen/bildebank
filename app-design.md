@@ -127,6 +127,15 @@ For å liste filer som ble plassert basert på noe annet enn metadata:
 Kommandoen viser filer der datoen kom fra filnavn, filens endringsdato eller
 manglende dato. Med `--source` vises også den opprinnelige kildefilen.
 
+For å sammenligne programmet med en lokal ExifTool-installasjon:
+
+    $ bdb exiftool-metadata-gaps
+
+Kommandoen forventer som standard `exiftool.exe` i målmappen. Den kjører
+ExifTool på filer der `bdb` ikke har funnet metadata-dato, og viser filer der
+ExifTool finner en datotag som programmet fortsatt ikke leser. Kommandoen skal
+bare brukes som diagnosehjelp for å forbedre metadata-støtten.
+
 For å forklare hvilken dato programmet ville brukt for én enkelt fil:
 
     $ bdb explain-date /path/to/file.jpg

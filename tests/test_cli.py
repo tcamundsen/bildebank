@@ -280,6 +280,39 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIn("ikke del av en navnekollisjon", stdout)
 
+    def test_exiftool_metadata_gaps_lists_dates_bdb_does_not_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            exiftool = target / "exiftool.exe"
+            exiftool.write_text(
+                """#!/usr/bin/env python3
+import json
+print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}]))
+""",
+                encoding="utf-8",
+                newline="\n",
+            )
+            exiftool.chmod(0o755)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "exiftool-metadata-gaps"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("2024-01-02\tDateTimeOriginal", stdout)
+            self.assertIn("bdb=filename:2024-01-02", stdout)
+            self.assertIn("IMG_20240102.jpg", stdout)
+            self.assertIn("Oppsummering: exiftool_metadata_funnet=1", stdout)
+
     def test_rejects_target_inside_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

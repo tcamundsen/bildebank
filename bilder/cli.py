@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from . import __version__, db
+from .exiftool_probe import exiftool_metadata_gaps
 from .importer import (
     import_pending_sources,
     import_source,
@@ -65,6 +66,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--source",
         action="store_true",
         help="Vis kildefil i tillegg til målfil",
+    )
+    exiftool_gaps = subparsers.add_parser(
+        "exiftool-metadata-gaps",
+        help="Finn filer der ExifTool ser metadata-dato som bdb ikke leser",
+    )
+    exiftool_gaps.add_argument(
+        "--exiftool",
+        type=Path,
+        help="Path til exiftool.exe. Standard er exiftool.exe i målmappen.",
     )
     explain = subparsers.add_parser(
         "explain-date",
@@ -223,6 +233,19 @@ def run(args: argparse.Namespace) -> int:
                     )
                 else:
                     print(f"{row['date_source']}\t{taken_date}\t{row['target_path']}")
+            return 0
+
+        if args.command == "exiftool-metadata-gaps":
+            exiftool_path = args.exiftool.resolve() if args.exiftool else None
+            conn.commit()
+            conn.close()
+            gaps = exiftool_metadata_gaps(target, exiftool_path=exiftool_path)
+            for gap in gaps:
+                print(
+                    f"{gap.date}\t{gap.tag}\t{gap.value}\t"
+                    f"bdb={gap.bdb_source}:{gap.bdb_date}\t{gap.target_path}"
+                )
+            print(f"Oppsummering: exiftool_metadata_funnet={len(gaps)}")
             return 0
 
         if args.command == "refresh-metadata":
