@@ -309,6 +309,14 @@ def jpeg_xmp_date(path: Path) -> dt.date | None:
         parsed = _date_from_xmp(xmp)
         if parsed is not None:
             return parsed
+    for marker, segment in _jpeg_segments(path):
+        if not 0xE0 <= marker <= 0xEF:
+            continue
+        if b"xmp" not in segment.lower() and b"CreateDate" not in segment:
+            continue
+        parsed = _date_from_xmp(segment)
+        if parsed is not None:
+            return parsed
     return None
 
 

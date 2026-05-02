@@ -58,6 +58,19 @@ def jpeg_with_xmp_date(date: str) -> bytes:
     return b"\xff\xd8" + segment + b"\xff\xd9"
 
 
+def jpeg_with_photoshop_xmp_date(date: str) -> bytes:
+    xmp = f"""<?xpacket begin=''?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:CreateDate="{date}" />
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end='w'?>""".encode("utf-8")
+    payload = b"Photoshop 3.0\x00" + xmp
+    segment = b"\xff\xed" + (len(payload) + 2).to_bytes(2, "big") + payload
+    return b"\xff\xd8" + segment + b"\xff\xd9"
+
+
 def jpeg_with_exif_datetime(date: str) -> bytes:
     date_bytes = date.encode("ascii") + b"\x00"
     tiff_header = b"MM\x00*\x00\x00\x00\x08"
@@ -136,6 +149,16 @@ class MediaDateTests(unittest.TestCase):
             result = media_date(path)
 
             self.assertEqual(result.date, dt.date(2007, 3, 12))
+            self.assertEqual(result.source, "metadata")
+
+    def test_jpeg_photoshop_xmp_date_is_used_as_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "photoshop.jpg"
+            path.write_bytes(jpeg_with_photoshop_xmp_date("2009:01:29 12:09:44+01:00"))
+
+            result = media_date(path)
+
+            self.assertEqual(result.date, dt.date(2009, 1, 29))
             self.assertEqual(result.source, "metadata")
 
     def test_jpeg_exif_slash_date_is_used_as_metadata(self) -> None:
