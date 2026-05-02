@@ -58,6 +58,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Vis alle kildefiler i samme navnekollisjon som en målfil",
     )
     show_name_conflict.add_argument("path", type=Path)
+    show_source = subparsers.add_parser(
+        "show-source",
+        help="Vis hvilken kilde en importert målfil kommer fra",
+    )
+    show_source.add_argument("path", type=Path)
     non_metadata = subparsers.add_parser(
         "non-metadata",
         help="List filer der datoen ikke kom fra metadata",
@@ -223,6 +228,14 @@ def run(args: argparse.Namespace) -> int:
                 print_name_conflict_item(item)
             return 0
 
+        if args.command == "show-source":
+            path = existing_path_arg(args.path).resolve()
+            row = db.file_source_by_target_path(conn, path)
+            if row is None:
+                raise ValueError(f"Filen finnes ikke i importdatabasen: {path}")
+            print_source_item(row)
+            return 0
+
         if args.command == "non-metadata":
             for row in db.non_metadata_files(conn):
                 taken_date = row["taken_date"] or "-"
@@ -344,6 +357,24 @@ def print_name_conflict_item(row) -> None:
     print(f"  filstørrelse: {format_bytes(int(row['size_bytes']))} ({row['size_bytes']} bytes)")
     print(f"  sha256: {row['sha256']}")
     print(f"  kildefil finnes: {'ja' if source_path.exists() else 'nei'}")
+
+
+def print_source_item(row) -> None:
+    source_path = Path(str(row["source_path"]))
+    source_label = row["source_name"] or row["source_root"]
+    print(f"Målfil: {row['target_path']}")
+    print(f"Kildefil: {source_path}")
+    print(f"Kildefil finnes: {'ja' if source_path.exists() else 'nei'}")
+    print(f"Kilde-id: {row['source_id']}")
+    print(f"Kildetype: {row['source_kind']}")
+    print(f"Kilde: {source_label}")
+    print(f"Kildestatus: {row['source_status']}")
+    print(f"Originalt filnavn: {row['original_filename']}")
+    print(f"Lagret filnavn: {row['stored_filename']}")
+    print(f"Importert: {row['file_imported_at']}")
+    print(f"Dato: {row['taken_date'] or '-'} ({row['date_source']})")
+    print(f"Filstørrelse: {format_bytes(int(row['size_bytes']))} ({row['size_bytes']} bytes)")
+    print(f"SHA-256: {row['sha256']}")
 
 
 def format_bytes(size: int) -> str:

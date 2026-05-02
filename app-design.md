@@ -127,6 +127,13 @@ For å liste filer som ble plassert basert på noe annet enn metadata:
 Kommandoen viser filer der datoen kom fra filnavn, filens endringsdato eller
 manglende dato. Med `--source` vises også den opprinnelige kildefilen.
 
+For å se hvilken kilde en importert målfil kommer fra:
+
+    $ bdb show-source /path/to/target/2010/09/image.jpg
+
+Kommandoen viser målfil, opprinnelig kildefil, kilde-id, kildetype, registrert
+kilde, importdato, valgt dato/datokilde, filstørrelse og SHA-256.
+
 For å sammenligne programmet med en lokal ExifTool-installasjon:
 
     $ bdb exiftool-metadata-gaps

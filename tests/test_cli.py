@@ -76,6 +76,35 @@ class CliTests(unittest.TestCase):
                 0,
             )
 
+    def test_show_source_displays_origin_for_imported_target_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "show-source", str(imported)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn(f"Målfil: {imported.resolve()}", stdout)
+            self.assertIn(f"Kildefil: {source_file.resolve()}", stdout)
+            self.assertIn("Kildefil finnes: ja", stdout)
+            self.assertIn("Kilde-id: 1", stdout)
+            self.assertIn("Kildetype: directory", stdout)
+            self.assertIn(f"Kilde: {source.resolve()}", stdout)
+            self.assertIn("Originalt filnavn: IMG_20240102.jpg", stdout)
+            self.assertIn("Lagret filnavn: IMG_20240102.jpg", stdout)
+            self.assertIn("Dato: 2024-01-02 (filename)", stdout)
+            self.assertIn("SHA-256:", stdout)
+
     def test_duplicate_is_recorded_not_copied(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

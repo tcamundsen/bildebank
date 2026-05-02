@@ -404,6 +404,35 @@ def file_by_target_path(conn: sqlite3.Connection, target_path: Path) -> sqlite3.
     ).fetchone()
 
 
+def file_source_by_target_path(conn: sqlite3.Connection, target_path: Path) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT
+            files.id AS file_id,
+            files.source_id,
+            files.source_path,
+            files.target_path,
+            files.original_filename,
+            files.stored_filename,
+            files.sha256,
+            files.size_bytes,
+            files.taken_date,
+            files.date_source,
+            files.name_conflict,
+            files.imported_at AS file_imported_at,
+            sources.kind AS source_kind,
+            sources.path AS source_root,
+            sources.name AS source_name,
+            sources.status AS source_status,
+            sources.imported_at AS source_imported_at
+        FROM files
+        JOIN sources ON sources.id = files.source_id
+        WHERE files.target_path_key = ?
+        """,
+        (path_key(target_path),),
+    ).fetchone()
+
+
 def files_by_original_filename(
     conn: sqlite3.Connection, original_filename: str
 ) -> Iterable[sqlite3.Row]:
