@@ -12,7 +12,7 @@ from .importer import (
     validate_new_directory_source,
     validate_source_target,
 )
-from .html_export import export_html
+from .html_export import export_html, export_html_conflicts
 from .media import explain_date, image_dimensions, inspect_metadata
 
 
@@ -103,6 +103,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skriv index.html i målmappen for browsing av importerte filer",
     )
     export.add_argument("--output", type=Path)
+    export_conflicts = subparsers.add_parser(
+        "export-html-conflict",
+        help="Skriv HTML-side for browsing av navnekollisjoner",
+    )
+    export_conflicts.add_argument("--output", type=Path)
     subparsers.add_parser("report", help="Vis importoppsummering")
 
     return parser
@@ -248,6 +253,12 @@ def run(args: argparse.Namespace) -> int:
             output = args.output.resolve() if args.output else None
             output_path = export_html(target, output)
             print(f"Skrev HTML-browser: {output_path}")
+            return 0
+
+        if args.command == "export-html-conlict":
+            output = args.output.resolve() if args.output else None
+            output_path = export_html_conflicts(target, output)
+            print(f"Skrev HTML-browser for navnekollisjoner: {output_path}")
             return 0
 
         if args.command == "report":

@@ -169,6 +169,15 @@ Kommandoen skriver `index.html` i målmappen. HTML-filen inneholder en innebygd
 indeks fra databasen og kan derfor åpnes direkte i nettleseren uten
 mappevelger. Den viser bilder og videoer med relative paths fra målmappen.
 
+For å lage en statisk HTML-side for manuell gjennomgang av navnekollisjoner:
+
+    $ bdb export-html-conlict
+
+Kommandoen skriver `name-conflicts.html` i målmappen. Siden lar brukeren bla
+mellom navnekollisjonene og viser filene i hver konflikt side om side, sammen
+med målfil, kildefil, kilde-id, dato, datokilde, oppløsning, filstørrelse,
+SHA-256 og om kildefilen fortsatt finnes.
+
 ## Om flyttbare medier
 
 Flyttbare medier, som CD-ROM, minnepinner og eksterne disker, må behandles

@@ -420,6 +420,18 @@ def files_by_original_filename(
     )
 
 
+def conflict_candidate_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT id, source_id, source_path, target_path, original_filename,
+               stored_filename, sha256, size_bytes, taken_date, date_source,
+               name_conflict, imported_at
+        FROM files
+        ORDER BY original_filename, imported_at, id
+        """
+    )
+
+
 def non_metadata_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     return conn.execute(
         """

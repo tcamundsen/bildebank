@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from . import db
+from .media import image_dimensions
 
 
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "webp", "tif", "tiff", "heic", "heif"}
@@ -21,6 +22,18 @@ def export_html(target: Path, output: Path | None = None) -> Path:
         conn.close()
 
     output_path.write_text(render_html(items), encoding="utf-8", newline="\n")
+    return output_path
+
+
+def export_html_conflicts(target: Path, output: Path | None = None) -> Path:
+    output_path = output or (target / "name-conflicts.html")
+    conn = db.connect(target)
+    try:
+        conflicts = conflict_groups(target, list(db.conflict_candidate_files(conn)))
+    finally:
+        conn.close()
+
+    output_path.write_text(render_conflicts_html(conflicts), encoding="utf-8", newline="\n")
     return output_path
 
 
@@ -43,6 +56,74 @@ def row_to_item(target: Path, row) -> dict[str, str]:
         "dateSource": row["date_source"],
         "name": row["stored_filename"],
     }
+
+
+def conflict_groups(target: Path, rows: list) -> list[dict]:
+    grouped: dict[tuple[str, str], list] = {}
+    for row in rows:
+        target_path = Path(str(row["target_path"]))
+        key = (db.path_key(target_path.parent), str(row["original_filename"]))
+        grouped.setdefault(key, []).append(row)
+
+    conflicts = []
+    for (_parent_key, original_filename), items in grouped.items():
+        if len(items) < 2 or not any(item["name_conflict"] for item in items):
+            continue
+        first_target = Path(str(items[0]["target_path"]))
+        conflicts.append(
+            {
+                "originalFilename": original_filename,
+                "targetDir": display_relative_path(target, first_target.parent),
+                "items": [conflict_row_to_item(target, item) for item in items],
+            }
+        )
+    conflicts.sort(key=lambda item: (item["targetDir"], item["originalFilename"]))
+    return conflicts
+
+
+def conflict_row_to_item(target: Path, row) -> dict[str, object]:
+    target_path = Path(str(row["target_path"]))
+    relative_path = relative_to_target(target, target_path)
+    ext = target_path.suffix.lower().lstrip(".")
+    dimensions = image_dimensions(target_path)
+    return {
+        "storedFilename": row["stored_filename"],
+        "originalFilename": row["original_filename"],
+        "targetPath": display_relative_path(target, target_path),
+        "sourcePath": str(row["source_path"]),
+        "sourceId": row["source_id"],
+        "takenDate": row["taken_date"] or "-",
+        "dateSource": row["date_source"],
+        "dimensions": f"{dimensions.width}x{dimensions.height}" if dimensions else "-",
+        "sizeBytes": int(row["size_bytes"]),
+        "sizeText": format_bytes(int(row["size_bytes"])),
+        "sha256": row["sha256"],
+        "sourceExists": Path(str(row["source_path"])).exists(),
+        "url": path_to_url(relative_path),
+        "kind": "video" if ext in VIDEO_EXTENSIONS else "image",
+    }
+
+
+def relative_to_target(target: Path, path: Path) -> Path:
+    try:
+        return path.resolve().relative_to(target.resolve())
+    except ValueError:
+        return Path(os.path.relpath(path, target))
+
+
+def display_relative_path(target: Path, path: Path) -> str:
+    return relative_to_target(target, path).as_posix()
+
+
+def format_bytes(size: int) -> str:
+    units = ("bytes", "KB", "MB", "GB", "TB")
+    value = float(size)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            if unit == "bytes":
+                return f"{size} bytes"
+            return f"{value:.1f} {unit}"
+        value /= 1024
 
 
 def path_to_url(path: Path) -> str:
@@ -331,6 +412,280 @@ def render_html(items: list[dict[str, str]]) -> str:
       const textarea = document.createElement("textarea");
       textarea.innerHTML = value;
       return textarea.value;
+    }}
+  </script>
+</body>
+</html>
+"""
+
+
+def render_conflicts_html(conflicts: list[dict]) -> str:
+    conflicts_json = json.dumps(conflicts, ensure_ascii=False)
+    return f"""<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Navnekollisjoner</title>
+  <style>
+    :root {{
+      color-scheme: dark;
+      --bg: #181818;
+      --panel: #242424;
+      --panel-2: #2d2d2d;
+      --border: #404040;
+      --text: #f2f2f2;
+      --muted: #b8b8b8;
+      --accent: #7db7ff;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    .app {{
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }}
+    header {{
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }}
+    .topline, .controls {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .title {{
+      font-weight: 700;
+      margin-right: 12px;
+    }}
+    .status {{
+      color: var(--muted);
+      font-size: 14px;
+    }}
+    .position {{
+      color: var(--accent);
+      font-weight: 650;
+    }}
+    button {{
+      border: 1px solid var(--border);
+      background: #303030;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      cursor: pointer;
+      min-height: 38px;
+    }}
+    button:hover {{ background: #3a3a3a; }}
+    button:disabled {{
+      opacity: 0.45;
+      cursor: default;
+    }}
+    main {{
+      min-height: 0;
+      overflow: auto;
+      padding: 14px;
+    }}
+    .heading {{
+      margin: 0 0 12px;
+      display: grid;
+      gap: 4px;
+    }}
+    h1 {{
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.25;
+    }}
+    .target-dir {{
+      color: var(--muted);
+      font-size: 14px;
+      overflow-wrap: anywhere;
+    }}
+    .grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      align-items: start;
+    }}
+    .item {{
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--panel);
+      overflow: hidden;
+    }}
+    .media {{
+      height: min(52vh, 520px);
+      min-height: 220px;
+      background: #0f0f0f;
+      display: grid;
+      place-items: center;
+      border-bottom: 1px solid var(--border);
+    }}
+    img, video {{
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }}
+    .meta {{
+      display: grid;
+      gap: 7px;
+      padding: 10px;
+      font-size: 13px;
+    }}
+    .name {{
+      font-size: 15px;
+      font-weight: 650;
+      overflow-wrap: anywhere;
+    }}
+    .row {{
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
+      gap: 8px;
+      line-height: 1.35;
+    }}
+    .label {{
+      color: var(--muted);
+    }}
+    .value {{
+      overflow-wrap: anywhere;
+    }}
+    .empty {{
+      color: var(--muted);
+      text-align: center;
+      padding: 48px 16px;
+      line-height: 1.5;
+    }}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="topline">
+        <div class="title">Navnekollisjoner</div>
+        <span id="status" class="status"></span>
+      </div>
+      <div class="controls">
+        <button id="prevConflict" type="button">Forrige konflikt</button>
+        <button id="nextConflict" type="button">Neste konflikt</button>
+        <span id="position" class="position"></span>
+      </div>
+    </header>
+    <main id="main">
+      <div class="empty">Ingen navnekollisjoner i indeksen.</div>
+    </main>
+  </div>
+  <script>
+    const conflicts = {conflicts_json};
+    const state = {{ index: 0 }};
+    const main = document.getElementById("main");
+    const statusEl = document.getElementById("status");
+    const positionEl = document.getElementById("position");
+    const buttons = {{
+      prev: document.getElementById("prevConflict"),
+      next: document.getElementById("nextConflict")
+    }};
+    buttons.prev.addEventListener("click", () => move(-1));
+    buttons.next.addEventListener("click", () => move(1));
+    document.addEventListener("keydown", event => {{
+      if (event.key === "ArrowLeft") move(-1);
+      if (event.key === "ArrowRight") move(1);
+    }});
+    init();
+    function init() {{
+      statusEl.textContent = `${{conflicts.length}} konflikter`;
+      if (conflicts.length === 0) {{
+        buttons.prev.disabled = true;
+        buttons.next.disabled = true;
+        return;
+      }}
+      render();
+    }}
+    function move(delta) {{
+      const next = state.index + delta;
+      if (next < 0 || next >= conflicts.length) return;
+      state.index = next;
+      render();
+    }}
+    function render() {{
+      const conflict = conflicts[state.index];
+      positionEl.textContent = `${{state.index + 1}}/${{conflicts.length}}`;
+      buttons.prev.disabled = state.index <= 0;
+      buttons.next.disabled = state.index >= conflicts.length - 1;
+
+      const heading = document.createElement("section");
+      heading.className = "heading";
+      const title = document.createElement("h1");
+      title.textContent = conflict.originalFilename;
+      const targetDir = document.createElement("div");
+      targetDir.className = "target-dir";
+      targetDir.textContent = conflict.targetDir;
+      heading.append(title, targetDir);
+
+      const grid = document.createElement("section");
+      grid.className = "grid";
+      for (const item of conflict.items) {{
+        grid.append(renderItem(item));
+      }}
+      main.replaceChildren(heading, grid);
+    }}
+    function renderItem(item) {{
+      const article = document.createElement("article");
+      article.className = "item";
+      const media = document.createElement("div");
+      media.className = "media";
+      if (item.kind === "video") {{
+        const video = document.createElement("video");
+        video.src = item.url;
+        video.controls = true;
+        media.append(video);
+      }} else {{
+        const img = document.createElement("img");
+        img.src = item.url;
+        img.alt = item.storedFilename;
+        media.append(img);
+      }}
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = item.storedFilename;
+      meta.append(
+        name,
+        row("mål", item.targetPath),
+        row("kilde", item.sourcePath),
+        row("kilde-id", item.sourceId),
+        row("dato", `${{item.takenDate}} (${{item.dateSource}})`),
+        row("oppløsning", item.dimensions),
+        row("filstørrelse", `${{item.sizeText}} (${{item.sizeBytes}} bytes)`),
+        row("sha256", item.sha256),
+        row("kildefil", item.sourceExists ? "finnes" : "finnes ikke")
+      );
+      article.append(media, meta);
+      return article;
+    }}
+    function row(label, value) {{
+      const div = document.createElement("div");
+      div.className = "row";
+      const labelEl = document.createElement("div");
+      labelEl.className = "label";
+      labelEl.textContent = label;
+      const valueEl = document.createElement("div");
+      valueEl.className = "value";
+      valueEl.textContent = String(value);
+      div.append(labelEl, valueEl);
+      return div;
     }}
   </script>
 </body>

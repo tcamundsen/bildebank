@@ -652,6 +652,32 @@ class CliTests(unittest.TestCase):
             self.assertIn('"path": "2024/01/IMG 20240102.jpg"', html)
             self.assertIn('"url": "2024/01/IMG%2020240102.jpg"', html)
 
+    def test_export_html_conlict_writes_conflict_browser(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            (source / "a").mkdir(parents=True)
+            (source / "b").mkdir()
+            (source / "a" / "IMG_20240102.png").write_bytes(minimal_png(640, 480))
+            (source / "b" / "IMG_20240102.png").write_bytes(minimal_png(320, 240))
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "export-html-conlict"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser for navnekollisjoner", stdout)
+            html = (target / "name-conflicts.html").read_text(encoding="utf-8")
+            self.assertIn("<title>Navnekollisjoner</title>", html)
+            self.assertIn('"originalFilename": "IMG_20240102.png"', html)
+            self.assertIn('"storedFilename": "IMG_20240102-1.png"', html)
+            self.assertIn('"dimensions": "640x480"', html)
+            self.assertIn('"dimensions": "320x240"', html)
+            self.assertIn('"sourceExists": true', html)
+
     def test_report_migrates_old_errors_table_without_resolved_at(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
