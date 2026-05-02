@@ -136,6 +136,44 @@ class CliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_rejects_child_source_after_parent_is_registered(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            parent = root / "Bilder"
+            child = parent / "2007"
+            child.mkdir(parents=True)
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(parent)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "add", str(child)])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("allerede registrert kildemappe", stderr)
+
+    def test_rejects_superseded_child_source_added_again(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            parent = root / "Bilder"
+            child = parent / "2006"
+            child.mkdir(parents=True)
+            (child / "IMG_20061003.jpg").write_bytes(b"child")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(child)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(parent)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "add", str(child)])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Kildemappen er allerede registrert", stderr)
+
     def test_name_conflict_gets_suffix(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

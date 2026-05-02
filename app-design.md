@@ -280,6 +280,21 @@ skal importen av `C:\Bilder` hoppe over filer under `C:\Bilder\2006`. Når
 `superseded` i databasen. Hvis importen av overmappen avbrytes eller feiler,
 skal undermappen fortsatt stå som egen importert kilde.
 
+En vanlig kildemappe behandles som en avsluttet importjobb, ikke som en mappe
+som senere synkroniseres automatisk. `bdb add` skal derfor avvise en
+kildemappe som allerede er registrert, og også avvise en kildemappe som ligger
+under en allerede registrert vanlig kildemappe. Det gir ikke mening å registrere
+en undermappe som egen kilde når en overmappe allerede er lagt til.
+
+Det er fortsatt lov å registrere en overmappe etter at en undermappe allerede er
+importert, slik at man kan gå fra en liten testimport til en større import. Når
+overmappen er ferdig importert uten feil, markeres den tidligere undermappen som
+`superseded`.
+
+Hvis det senere blir behov for å scanne en tidligere importert kilde om igjen,
+bør det være en egen eksplisitt kommando, for eksempel `bdb rescan-source ID`,
+slik at brukeren tydelig ber om en ny gjennomgang.
+
 Hvis en kilde inneholder filer som ikke kan leses, skal feilen registreres i
 databasen og vises i rapporten. En kilde skal ikke markeres som problemfritt
 importert hvis noen filer feilet under import.

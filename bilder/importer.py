@@ -51,6 +51,34 @@ def validate_source_target(source: Path, target: Path) -> None:
         raise ValueError("Målmappen kan ikke ligge inni kildemappen.")
 
 
+def validate_new_directory_source(conn, source: Path) -> None:
+    source_resolved = source.resolve()
+    for registered in db.get_sources(conn):
+        if registered.kind != "directory":
+            continue
+        registered_path = registered.path.resolve()
+        if _same_path(source_resolved, registered_path):
+            raise ValueError(f"Kildemappen er allerede registrert: {registered.path}")
+        if _is_same_or_under(source_resolved, registered_path):
+            raise ValueError(
+                "Kildemappen ligger under en allerede registrert kildemappe: "
+                f"{registered.path}"
+            )
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    return db.path_key(left) == db.path_key(right)
+
+
+def _is_same_or_under(child: Path, parent: Path) -> bool:
+    child_key = db.path_key(child)
+    parent_key = db.path_key(parent)
+    try:
+        return os.path.commonpath([child_key, parent_key]) == parent_key
+    except ValueError:
+        return False
+
+
 def _is_relative_to(child: Path, parent: Path) -> bool:
     try:
         child.relative_to(parent)

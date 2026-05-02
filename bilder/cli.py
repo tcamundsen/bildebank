@@ -9,6 +9,7 @@ from .importer import (
     import_pending_sources,
     import_source,
     refresh_non_metadata_files,
+    validate_new_directory_source,
     validate_source_target,
 )
 from .html_export import export_html
@@ -149,6 +150,7 @@ def run(args: argparse.Namespace) -> int:
             if not source.is_dir():
                 raise ValueError(f"Kildemappen finnes ikke: {source}")
             validate_source_target(source, target)
+            validate_new_directory_source(conn, source)
             source_id = db.add_directory_source(conn, source)
             conn.commit()
             print(f"Registrert kildemappe #{source_id}: {source}")
