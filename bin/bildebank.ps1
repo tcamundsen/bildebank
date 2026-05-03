@@ -1,5 +1,6 @@
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Python = Join-Path $ScriptDir ".venv\Scripts\python.exe"
+$RepoDir = Split-Path -Parent $ScriptDir
+$Python = Join-Path $RepoDir ".venv\Scripts\python.exe"
 
 if (-not (Test-Path -LiteralPath $Python)) {
     Write-Error "Fant ikke '$Python'. Opprett venv og installer prosjektet først: py -3.13 -m venv .venv; .\.venv\Scripts\python.exe -m pip install -e ."

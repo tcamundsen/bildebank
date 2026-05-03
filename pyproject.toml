@@ -11,7 +11,7 @@ dependencies = []
 
 [project.scripts]
 bdb = "bilder.cli:main"
+bildebank = "bilder.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["bilder*"]
-

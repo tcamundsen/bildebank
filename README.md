@@ -1,3 +1,8 @@
+# Lisens
+
+Bildebank er fri programvare lisensiert under GNU General Public License,
+versjon 3 eller senere. Se `LICENSE` for full lisens.
+
 # Installasjon
 
 Denne oppskriften er skrevet for Windows 11 og for deg som ikke vanligvis
@@ -17,6 +22,30 @@ Du trenger:
 4. En Python-venv i programmappen
 
 Selve bildesamlingen bør ligge i en egen mappe utenfor programmappen.
+
+## Anbefalt installasjon
+
+Last ned `setup-windows.ps1` fra GitHub. Høyreklikk på filen og velg
+`Run with PowerShell`.
+
+Scriptet forsøker å:
+
+- installere Git for Windows hvis Git mangler
+- installere Python 3.13 hvis Python 3.13 mangler
+- laste ned programmet fra GitHub
+- lage Python-miljøet `.venv`
+- installere programmet i Python-miljøet
+- legge `bin`-mappen i brukerens `PATH`
+
+Når scriptet er ferdig, lukk PowerShell og åpne PowerShell på nytt. Da skal du
+kunne skrive:
+
+```powershell
+bildebank --help
+```
+
+Hvis scriptet ikke får installert Git eller Python automatisk, kan du følge den
+manuelle oppskriften under.
 
 ## Installer Git for Windows
 
@@ -88,10 +117,16 @@ py -3.14 -m venv .venv
 Sjekk at programmet starter:
 
 ```powershell
-.\bdb.ps1 --help
+.\bin\bildebank.cmd --help
 ```
 
-Hvis PowerShell nekter å kjøre `bdb.ps1`, kjør dette én gang:
+Det finnes også et PowerShell-script:
+
+```powershell
+.\bin\bildebank.ps1 --help
+```
+
+Hvis PowerShell nekter å kjøre `bildebank.ps1`, kjør dette én gang:
 
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
@@ -102,7 +137,7 @@ igjen:
 
 ```powershell
 cd $HOME\kode\bilder
-.\bdb.ps1 --help
+.\bin\bildebank.ps1 --help
 ```
 
 ## Opprett en bildesamling
@@ -120,13 +155,13 @@ cd $HOME\BildeSamling
 Opprett målmappe og database:
 
 ```powershell
-..\kode\bilder\bdb.ps1 target .
+..\kode\bilder\bin\bildebank.cmd target .
 ```
 
 Nå kan du legge til en kildemappe med bilder og videoer:
 
 ```powershell
-..\kode\bilder\bdb.ps1 add "sti\til\kildemappe"
+..\kode\bilder\bin\bildebank.cmd add "sti\til\kildemappe"
 ```
 
 Bytt ut `sti\til\kildemappe` med mappen der bildene ligger.
@@ -134,19 +169,19 @@ Bytt ut `sti\til\kildemappe` med mappen der bildene ligger.
 Importer:
 
 ```powershell
-..\kode\bilder\bdb.ps1 import
+..\kode\bilder\bin\bildebank.cmd import
 ```
 
 Se status:
 
 ```powershell
-..\kode\bilder\bdb.ps1 status
+..\kode\bilder\bin\bildebank.cmd status
 ```
 
 Lag HTML-browser:
 
 ```powershell
-..\kode\bilder\bdb.ps1 export-html
+..\kode\bilder\bin\bildebank.cmd export-html
 ```
 
 Etterpå kan du åpne `index.html` i bildesamlingsmappen.
@@ -160,7 +195,7 @@ plasserer filene slik du forventer før du kjører en større import.
 Du kan også kjøre en tørrtest før import:
 
 ```powershell
-..\kode\bilder\bdb.ps1 import --dry-run
+..\kode\bilder\bin\bildebank.cmd import --dry-run
 ```
 
 Da viser programmet hva det ville gjort, uten å kopiere filer eller endre
@@ -172,13 +207,13 @@ Når det kommer en ny versjon av programmet, gå til programmappen og kjør:
 
 ```powershell
 cd $HOME\kode\bilder
-git pull
+.\update.ps1
 ```
 
-Vanligvis er det nok. Hvis oppdateringen endrer installasjonsoppsettet, kjør
-også:
+Hvis `update.ps1` ikke virker, kan du gjøre det manuelt:
 
 ```powershell
+git pull
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
 
@@ -197,7 +232,7 @@ Python er ikke installert, eller Python ble installert uten å bli lagt i PATH.
 Installer Python på nytt og huk av for `Add python.exe to PATH` hvis valget
 vises.
 
-### PowerShell nekter å kjøre `bdb.ps1`
+### PowerShell nekter å kjøre `bildebank.ps1`
 
 Kjør:
 
@@ -209,16 +244,16 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 ### `bdb.exe` virker ikke
 
-Ikke bruk `bdb.exe` direkte. Bruk `bdb.ps1`:
+Ikke bruk `bdb.exe` direkte. Bruk `bildebank.cmd`:
 
 ```powershell
-.\bdb.ps1 --help
+.\bin\bildebank.cmd --help
 ```
 
 Eller, hvis du står i en bildesamlingsmappe:
 
 ```powershell
-..\kode\bilder\bdb.ps1 --help
+..\kode\bilder\bin\bildebank.cmd --help
 ```
 
 ### Programmet finner ikke kildemappen
@@ -226,19 +261,19 @@ Eller, hvis du står i en bildesamlingsmappe:
 Sjekk at stien er riktig. Bruk hermetegn rundt stier med mellomrom:
 
 ```powershell
-..\kode\bilder\bdb.ps1 add "sti med mellomrom\bilder"
+..\kode\bilder\bin\bildebank.cmd add "sti med mellomrom\bilder"
 ```
 
 Unngå å avslutte stien med `\` rett før avsluttende hermetegn. Skriv heller:
 
 ```powershell
-..\kode\bilder\bdb.ps1 add "sti med mellomrom\bilder"
+..\kode\bilder\bin\bildebank.cmd add "sti med mellomrom\bilder"
 ```
 
 ikke:
 
 ```powershell
-..\kode\bilder\bdb.ps1 add "sti med mellomrom\bilder\"
+..\kode\bilder\bin\bildebank.cmd add "sti med mellomrom\bilder\"
 ```
 
 ## Viktig om sikkerhet og backup

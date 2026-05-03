@@ -292,7 +292,7 @@ den faktiske bildesamlingen må importflyten testes i Windows 11 med ekte
 Windows-stier og et lite testsett med bilder og videoer.
 
 Repo-/prosjektmappen kan hete `bilder`, og Python-pakken kan også hete
-`bilder`. CLI-kommandoen kan fortsatt hete `bdb`. Python-pakken bør ikke hete
+`bilder`. Brukerkommandoen bør hete `bildebank`. Python-pakken bør ikke hete
 `bdb`, fordi `bdb` også er navnet på en modul i Pythons standardbibliotek.
 
 Programmet bør deles i tydelige deler:

@@ -2,7 +2,8 @@
 setlocal
 
 set "SCRIPT_DIR=%~dp0"
-set "PYTHON=%SCRIPT_DIR%.venv\Scripts\python.exe"
+for %%I in ("%SCRIPT_DIR%..") do set "REPO_DIR=%%~fI"
+set "PYTHON=%REPO_DIR%\.venv\Scripts\python.exe"
 
 if not exist "%PYTHON%" (
     echo Fant ikke "%PYTHON%".
