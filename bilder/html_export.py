@@ -268,6 +268,48 @@ def render_html(items: list[dict[str, str]]) -> str:
       object-position: center center;
       display: block;
     }}
+    .month-grid {{
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      grid-auto-rows: 130px;
+      gap: 8px;
+      align-content: start;
+    }}
+    .thumb {{
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #181818;
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      padding: 0;
+      font: inherit;
+      text-align: center;
+    }}
+    .thumb:hover {{
+      border-color: var(--accent);
+      background: #242424;
+    }}
+    .thumb img {{
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }}
+    .thumb-video {{
+      padding: 10px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }}
     .empty {{
       color: var(--muted);
       text-align: center;
@@ -319,7 +361,8 @@ def render_html(items: list[dict[str, str]]) -> str:
   </div>
   <script>
     const embeddedItems = {items_json};
-    const state = {{ months: [], monthIndex: 0, itemIndex: 0 }};
+    const THUMB_LIMIT = 40;
+    const state = {{ months: [], monthIndex: 0, itemIndex: 0, viewMode: "item" }};
     const statusEl = document.getElementById("status");
     const positionEl = document.getElementById("position");
     const viewer = document.getElementById("viewer");
@@ -370,6 +413,7 @@ def render_html(items: list[dict[str, str]]) -> str:
       state.months = buildMonths(items);
       state.monthIndex = 0;
       state.itemIndex = 0;
+      state.viewMode = "item";
       statusEl.textContent = `${{items.length}} filer, ${{state.months.length}} måneder`;
       if (items.length === 0) {{
         setButtonsEnabled(false);
@@ -404,6 +448,7 @@ def render_html(items: list[dict[str, str]]) -> str:
       if (!nextYear) return;
       state.monthIndex = state.months.findIndex(item => item.key.startsWith(nextYear));
       state.itemIndex = 0;
+      state.viewMode = "month";
       render();
     }}
     function moveMonth(delta) {{
@@ -411,11 +456,18 @@ def render_html(items: list[dict[str, str]]) -> str:
       if (next < 0 || next >= state.months.length) return;
       state.monthIndex = next;
       state.itemIndex = 0;
+      state.viewMode = "month";
       render();
     }}
     function moveItem(delta) {{
       const month = currentMonth();
       if (!month) return;
+      if (state.viewMode === "month") {{
+        state.itemIndex = delta < 0 ? month.items.length - 1 : 0;
+        state.viewMode = "item";
+        render();
+        return;
+      }}
       const nextItem = state.itemIndex + delta;
       if (nextItem >= 0 && nextItem < month.items.length) {{
         state.itemIndex = nextItem;
@@ -429,6 +481,13 @@ def render_html(items: list[dict[str, str]]) -> str:
       render();
     }}
     function render() {{
+      if (state.viewMode === "month") {{
+        renderMonth();
+        return;
+      }}
+      renderItem();
+    }}
+    function renderItem() {{
       const item = currentItem();
       if (!item) return;
       if (item.kind === "video") {{
@@ -454,6 +513,56 @@ def render_html(items: list[dict[str, str]]) -> str:
       filenameEl.target = "_blank";
       updateButtons();
     }}
+    function renderMonth() {{
+      const month = currentMonth();
+      if (!month) return;
+      const grid = document.createElement("div");
+      grid.className = "month-grid";
+      for (const item of representativeItems(month.items, THUMB_LIMIT)) {{
+        const index = month.items.indexOf(item);
+        const button = document.createElement("button");
+        button.className = "thumb";
+        button.type = "button";
+        button.title = item.path;
+        button.addEventListener("click", () => {{
+          state.itemIndex = index;
+          state.viewMode = "item";
+          render();
+        }});
+        if (item.kind === "image") {{
+          const img = document.createElement("img");
+          img.src = item.thumbnailSrc || item.url;
+          img.alt = item.name;
+          img.loading = "lazy";
+          button.append(img);
+        }} else {{
+          const label = document.createElement("span");
+          label.className = "thumb-video";
+          label.textContent = `Video\\n${{item.name}}`;
+          button.append(label);
+        }}
+        grid.append(button);
+      }}
+      viewer.replaceChildren(grid);
+      positionEl.textContent = `${{month.key}} oversikt (${{month.items.length}} filer)`;
+      filenameEl.textContent = `Månedsoversikt: ${{month.key}}`;
+      filenameEl.removeAttribute("href");
+      filenameEl.removeAttribute("target");
+      updateButtons();
+    }}
+    function representativeItems(items, limit) {{
+      if (items.length <= limit) return items;
+      const selected = [];
+      const last = items.length - 1;
+      const selectedIndexes = new Set();
+      for (let i = 0; i < limit; i += 1) {{
+        selectedIndexes.add(Math.round((i * last) / (limit - 1)));
+      }}
+      for (const index of Array.from(selectedIndexes).sort((a, b) => a - b)) {{
+        selected.push(items[index]);
+      }}
+      return selected;
+    }}
     function setButtonsEnabled(enabled) {{
       for (const button of Object.values(buttons)) button.disabled = !enabled;
     }}
@@ -466,6 +575,11 @@ def render_html(items: list[dict[str, str]]) -> str:
       buttons.nextYear.disabled = currentYearIndex < 0 || currentYearIndex >= years.length - 1;
       buttons.prevMonth.disabled = state.monthIndex <= 0;
       buttons.nextMonth.disabled = state.monthIndex >= state.months.length - 1;
+      if (state.viewMode === "month") {{
+        buttons.prevItem.disabled = false;
+        buttons.nextItem.disabled = false;
+        return;
+      }}
       buttons.prevItem.disabled = state.monthIndex === 0 && state.itemIndex === 0;
       buttons.nextItem.disabled =
         state.monthIndex === state.months.length - 1 &&

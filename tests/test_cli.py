@@ -846,6 +846,10 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn('"url": "2024/01/IMG%2020240102.jpg"', html)
             self.assertIn('"sizeText": "9 bytes"', html)
             self.assertIn("item.sizeText", html)
+            self.assertIn('const THUMB_LIMIT = 40;', html)
+            self.assertIn('state.viewMode = "month";', html)
+            self.assertIn("function representativeItems(items, limit)", html)
+            self.assertIn('img.loading = "lazy";', html)
 
     def test_export_html_filters_by_media_and_date_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
