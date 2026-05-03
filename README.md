@@ -4,6 +4,9 @@ Denne oppskriften er skrevet for Windows 11 og for deg som ikke vanligvis
 bruker Git eller Python. Målet er å laste ned programmet fra GitHub, kjøre det
 fra en lokal mappe, og senere kunne hente oppdateringer med `git pull`.
 
+**Foreløpig er ikke programmet klart til å slippes løs på slekta.
+Jeg skal si fra når det er klart.**
+
 ## Kortversjon
 
 Du trenger:
