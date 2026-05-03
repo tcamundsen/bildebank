@@ -31,14 +31,36 @@ Selve bildesamlingen bør ligge i en egen mappe utenfor programmappen.
 
 Klikk på nedlastingsknappen på GitHub-siden, eller klikk `Raw` og lagre siden
 som `setup-windows.ps1`. Disse knappene ligger på høyre side av skjermen, noen
-linjer ned. Jeg lette lenge etter dem da jeg skulle teste 🙂
-Høyreklikk på den nedlastede filen og velg
-`Run with PowerShell`.
+linjer ned.
 
-Mens scriptet kjører kommer det til å poppe opp melding om at du må logge deg
-inn 
+Windows kan blokkere PowerShell-script som er lastet ned fra nettleseren. Kjør
+derfor setup-scriptet slik:
+
+1. Åpne PowerShell.
+2. Gå til nedlastingsmappen:
+
+```powershell
+cd $HOME\Downloads
+```
+
+3. Fjern blokkeringen fra filen:
+
+```powershell
+Unblock-File .\setup-windows.ps1
+```
+
+4. Kjør scriptet:
+
+```powershell
+.\setup-windows.ps1
+```
+
+Hvis du høyreklikker og velger `Run with PowerShell` på en blokkert fil, kan
+vinduet bare blinke og forsvinne før du rekker å lese feilen.
+
 Hvis repoet fortsatt er privat, må du være innlogget på GitHub og ha tilgang
-til repoet for at lenken skal fungere.
+til repoet for at lenken skal fungere. Når scriptet kloner repoet, kan Git også
+åpne et innloggingsvindu for GitHub.
 
 Scriptet forsøker å:
 
