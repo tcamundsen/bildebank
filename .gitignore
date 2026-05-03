@@ -8,3 +8,4 @@ __pycache__/
 *.sqlite3-*
 *.bdbtmp-*
 .*.swp
+Installasjon.html
