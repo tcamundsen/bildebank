@@ -130,6 +130,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skriv index.html i målmappen for browsing av importerte filer",
     )
     export.add_argument("--output", type=Path)
+    export.add_argument(
+        "--media",
+        choices=("all", "image", "video"),
+        default="all",
+        help="Filtrer eksporten til bilder, videoer eller begge deler.",
+    )
+    export.add_argument(
+        "--date-source",
+        choices=("all", "metadata", "filename", "mtime", "unknown"),
+        default="all",
+        help="Filtrer eksporten etter hvilken datokilde filene er plassert med.",
+    )
     export_conflicts = subparsers.add_parser(
         "export-html-conflict",
         help="Skriv HTML-side for browsing av navnekollisjoner",
@@ -317,7 +329,12 @@ def run(args: argparse.Namespace) -> int:
             output = args.output.resolve() if args.output else None
             conn.commit()
             conn.close()
-            output_path = export_html(target, output)
+            output_path = export_html(
+                target,
+                output,
+                media_filter=args.media,
+                date_source_filter=args.date_source,
+            )
             print(f"Skrev HTML-browser: {output_path}")
             return 0
 

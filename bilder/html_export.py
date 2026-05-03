@@ -13,11 +13,21 @@ IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "webp", "tif", "tiff", "
 VIDEO_EXTENSIONS = {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}
 
 
-def export_html(target: Path, output: Path | None = None) -> Path:
+def export_html(
+    target: Path,
+    output: Path | None = None,
+    *,
+    media_filter: str = "all",
+    date_source_filter: str = "all",
+) -> Path:
     output_path = output or (target / "index.html")
     conn = db.connect(target)
     try:
-        items = [row_to_item(target, row) for row in db.browser_files(conn)]
+        items = [
+            item
+            for item in (row_to_item(target, row) for row in db.browser_files(conn))
+            if item_matches_filters(item, media_filter, date_source_filter)
+        ]
     finally:
         conn.close()
 
@@ -56,6 +66,14 @@ def row_to_item(target: Path, row) -> dict[str, str]:
         "dateSource": row["date_source"],
         "name": row["stored_filename"],
     }
+
+
+def item_matches_filters(item: dict[str, str], media_filter: str, date_source_filter: str) -> bool:
+    if media_filter != "all" and item["kind"] != media_filter:
+        return False
+    if date_source_filter != "all" and item["dateSource"] != date_source_filter:
+        return False
+    return True
 
 
 def conflict_groups(target: Path, rows: list) -> list[dict]:

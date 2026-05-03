@@ -806,6 +806,37 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn('"path": "2024/01/IMG 20240102.jpg"', html)
             self.assertIn('"url": "2024/01/IMG%2020240102.jpg"', html)
 
+    def test_export_html_filters_by_media_and_date_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+            (source / "video.mp4").write_bytes(minimal_mp4_with_creation_date(dt.date(2010, 7, 8)))
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "export-html",
+                    "--media",
+                    "video",
+                    "--date-source",
+                    "metadata",
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser", stdout)
+            html = (target / "index.html").read_text(encoding="utf-8")
+            self.assertIn('"path": "2010/07/video.mp4"', html)
+            self.assertNotIn("IMG_20240102.jpg", html)
+
     def test_export_html_conlict_writes_conflict_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

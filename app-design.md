@@ -196,6 +196,18 @@ For å lage en statisk HTML-browser i målmappen:
 Kommandoen skriver `index.html` i målmappen. HTML-filen inneholder en innebygd
 indeks fra databasen og kan derfor åpnes direkte i nettleseren uten
 mappevelger. Den viser bilder og videoer med relative paths fra målmappen.
+Eksporten kan filtreres på medietype og datokilde:
+
+    $ bdb export-html --media=image
+    $ bdb export-html --media=video
+    $ bdb export-html --date-source=metadata
+    $ bdb export-html --date-source=filename
+    $ bdb export-html --date-source=mtime
+
+Filtrene kan kombineres, for eksempel for å lage en HTML-browser med bare
+videoer som er plassert basert på metadata:
+
+    $ bdb export-html --media=video --date-source=metadata
 
 For å lage en statisk HTML-side for manuell gjennomgang av navnekollisjoner:
 
