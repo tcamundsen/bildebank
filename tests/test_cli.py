@@ -616,6 +616,49 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertFalse((target / "2024" / "01" / "NORMAL_20240102.jpg").exists())
             self.assertTrue((target / "2024" / "02" / "REM_20240203.jpg").exists())
 
+    def test_import_removable_dry_run_does_not_register_or_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            removable = root / "removable"
+            removable.mkdir()
+            removable_file = removable / "REM_20240203.jpg"
+            removable_file.write_bytes(b"removable")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                commands_before = conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0]
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "import-removable",
+                    "--name",
+                    "usb-test",
+                    "--dry-run",
+                    str(removable),
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("IMPORT\t2024-02-03\tfilename", stdout)
+            self.assertIn(str(removable_file.resolve()), stdout)
+            self.assertIn("importert=1", stdout)
+            self.assertFalse((target / "2024" / "02" / "REM_20240203.jpg").exists())
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
+                commands_after = conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0]
+                self.assertEqual(commands_after, commands_before)
+            finally:
+                conn.close()
+
     def test_import_video_uses_mp4_metadata_date(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

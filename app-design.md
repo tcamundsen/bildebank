@@ -117,10 +117,13 @@ det er flyttbare medier, så kan neste scan scanne et annet medium på
 samme path:
 
     $ bdb import-removable --name="cd-2005" /path/to/media
+    $ bdb import-removable --name="cd-2005" --dry-run /path/to/media
 
 `--name` er etiketten som er skrevet på CD-rom, eller en annen måte for
 brukeren å identifisere kilden på. `import-removable` brukes uten `add` først:
 kommandoen både registrerer og importerer det flyttbare mediet i samme steg.
+Med `--dry-run` vises filene som ville blitt importert, uten å registrere
+mediet, kopiere filer eller endre databasen.
 
 For å liste opp alle kildemapper, og id for alle flyttbare medier som er 
 lagt til:

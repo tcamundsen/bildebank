@@ -11,6 +11,7 @@ from .importer import (
     import_pending_sources,
     import_pending_sources_dry_run,
     import_source,
+    import_source_dry_run,
     refresh_non_metadata_files,
     validate_new_directory_source,
     validate_source_target,
@@ -72,6 +73,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--name",
         required=True,
         help="Stabil etikett for mediet, for eksempel teksten på en CD eller USB-disk",
+    )
+    removable.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List filer som ville blitt importert uten å registrere mediet eller endre databasen",
     )
     removable.add_argument("path", type=Path, help="Path til mediet slik det er montert nå")
 
@@ -225,7 +231,8 @@ def run(args: argparse.Namespace) -> int:
 
     conn = db.connect(target)
     try:
-        db.log_command(conn, args.command, vars_for_log(args))
+        if not (args.command == "import-removable" and args.dry_run):
+            db.log_command(conn, args.command, vars_for_log(args))
         if args.command == "add":
             source = existing_path_arg(args.path).resolve()
             if not source.is_dir():
@@ -242,6 +249,22 @@ def run(args: argparse.Namespace) -> int:
             if not source.is_dir():
                 raise ValueError(f"Mediet finnes ikke som mappe: {source}")
             validate_source_target(source, target)
+            if args.dry_run:
+                source_row = db.Source(
+                    id=0,
+                    kind="removable",
+                    path=source,
+                    path_key=None,
+                    name=args.name,
+                    imported_at=None,
+                    status="dry-run",
+                    superseded_by_source_id=None,
+                )
+                stats = import_source_dry_run(
+                    conn, target, source_row, output=sys.stdout, verbose=True
+                )
+                print_summary(stats)
+                return 0 if stats.errors == 0 else 2
             source_id = db.add_removable_source(conn, source, args.name)
             conn.commit()
             print(f"Registrert flyttbart medium #{source_id}: {args.name} ({source})")
