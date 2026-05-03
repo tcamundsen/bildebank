@@ -63,6 +63,20 @@ class CliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_rejects_target_inside_program_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "bildebank"
+            target = repo / "samling"
+            repo.mkdir()
+
+            with patch("bilder.cli.program_repo_root", return_value=repo.resolve()):
+                code, stdout, stderr = capture_cli(["target", str(target)])
+
+            self.assertEqual(code, 1)
+            self.assertIn("Målmappen kan ikke ligge inni programmappen", stderr)
+            self.assertFalse((target / DB_FILENAME).exists())
+
     def test_add_accepts_path_with_accidental_trailing_quote(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

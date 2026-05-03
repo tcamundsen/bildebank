@@ -162,6 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
 def run(args: argparse.Namespace) -> int:
     if args.command == "target":
         target = args.path.resolve()
+        validate_target_not_in_program_repo(target)
         db.init_database(target)
         conn = db.connect(target)
         try:
@@ -416,6 +417,22 @@ def resolve_target(target_arg: Path | None) -> Path:
     if target is None:
         raise ValueError("Fant ingen målmappe. Kjør fra målmappen eller bruk --target.")
     return target
+
+
+def validate_target_not_in_program_repo(target: Path) -> None:
+    repo_root = program_repo_root()
+    try:
+        target.resolve().relative_to(repo_root)
+    except ValueError:
+        return
+    raise ValueError(
+        "Målmappen kan ikke ligge inni programmappen. "
+        "Velg en egen bildesamlingsmappe utenfor repoet."
+    )
+
+
+def program_repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
 
 
 def resolve_target_file_arg(target: Path, path: Path) -> Path:

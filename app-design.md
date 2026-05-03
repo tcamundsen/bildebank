@@ -309,6 +309,11 @@ Programmet bør deles i tydelige deler:
 Målmappen skal inneholde alle unike bilder som er kopiert inn fra
 kildemappene.
 
+Målmappen skal ikke ligge inni programrepoet, for eksempel under
+`$HOME/kode/bildebank`. Programmet skal avvise dette når brukeren kjører
+`bildebank target`, slik at testbilder, importerte bilder, database og generert
+HTML ikke blandes med programkode og Git-status.
+
 Målmappen skal ikke ligge inni en kildemappe, og en kildemappe skal ikke ligge
 inni målmappen. Programmet skal avvise slike oppsett for å unngå at målmappen
 importeres inn i seg selv.
