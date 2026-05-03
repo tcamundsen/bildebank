@@ -59,11 +59,18 @@ Legge en mappe til listen over kildemapper:
 Scanne alle registrerte kildemapper:
 
     $ bdb import
+    $ bdb import --dry-run
+    $ bdb import --dry-run --log-file=importliste.txt
 
 `bdb import` skal vise progresjon underveis, for eksempel ved å vise hvor mange bilder
 som er scannet, og hvor mange som er importert. Scriptet skal tåle å bli avbrutt
 med ctrl-C. Dette gjøres ved at en kildemappe bare kan markeres som importert i databasen når
 hele importen er gjennomført.
+
+Med `--dry-run` skal programmet bare liste filer som ville blitt importert.
+Det skal ikke kopiere filer, opprette målmapper, registrere importerte filer,
+registrere duplikatfunn, logge importkommandoen eller markere kilder som
+importert. Med `--log-file` skrives dry-run-listen til fil.
 
 Databasen bør oppdateres og lagres periodisk underveis i importen, for
 eksempel etter hver 200. importerte fil. Programmet trenger ikke gjøre en egen

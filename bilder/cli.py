@@ -8,6 +8,7 @@ from . import __version__, db
 from .exiftool_probe import exiftool_metadata_gaps
 from .importer import (
     import_pending_sources,
+    import_pending_sources_dry_run,
     import_source,
     refresh_non_metadata_files,
     validate_new_directory_source,
@@ -46,6 +47,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     imp = subparsers.add_parser("import", help="Importer registrerte kilder")
     imp.add_argument("--quiet", action="store_true")
+    imp.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List filer som ville blitt importert uten å kopiere eller endre databasen",
+    )
+    imp.add_argument(
+        "--log-file",
+        type=Path,
+        help="Skriv dry-run-listen til fil i stedet for stdout",
+    )
 
     removable = subparsers.add_parser("import-removable", help="Importer flyttbart medium")
     removable.add_argument("--name", required=True)
@@ -167,6 +178,18 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     target = resolve_target(args.target)
+    if args.command == "import" and args.dry_run:
+        output_path = args.log_file.resolve() if args.log_file else None
+        if output_path is None:
+            stats = import_pending_sources_dry_run(target, output=sys.stdout, verbose=not args.quiet)
+        else:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with output_path.open("w", encoding="utf-8", newline="\n") as output:
+                stats = import_pending_sources_dry_run(target, output=output, verbose=not args.quiet)
+            print(f"Skrev dry-run importliste: {output_path}")
+        print_summary(stats)
+        return 0 if stats.errors == 0 else 2
+
     conn = db.connect(target)
     try:
         db.log_command(conn, args.command, vars_for_log(args))
@@ -306,6 +329,8 @@ def run(args: argparse.Namespace) -> int:
             return 0
 
         if args.command == "import":
+            if args.log_file:
+                raise ValueError("--log-file kan bare brukes sammen med --dry-run.")
             conn.commit()
             conn.close()
             stats = import_pending_sources(target, verbose=not args.quiet)

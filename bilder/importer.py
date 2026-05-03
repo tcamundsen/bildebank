@@ -5,6 +5,7 @@ import shutil
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TextIO
 
 from . import db
 from .media import MediaDate, is_supported_media, media_date, sha256_file
@@ -103,6 +104,25 @@ def import_pending_sources(target: Path, *, verbose: bool = True) -> ImportStats
     return stats
 
 
+def import_pending_sources_dry_run(
+    target: Path, *, output: TextIO, verbose: bool = True
+) -> ImportStats:
+    stats = ImportStats()
+    conn = db.connect(target)
+    try:
+        sources = db.get_sources(conn, pending_only=True)
+        for source in sources:
+            source_stats = import_source_dry_run(
+                conn, target, source, output=output, verbose=verbose
+            )
+            _merge_stats(stats, source_stats)
+            if source_stats.stopped:
+                break
+    finally:
+        conn.close()
+    return stats
+
+
 def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True) -> ImportStats:
     stats = ImportStats()
     root = source.path
@@ -175,6 +195,48 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
     else:
         db.mark_source_error(conn, source.id)
     conn.commit()
+    return stats
+
+
+def import_source_dry_run(
+    conn, target: Path, source: db.Source, *, output: TextIO, verbose: bool = True
+) -> ImportStats:
+    stats = ImportStats()
+    root = source.path
+    if not root.exists() or not root.is_dir():
+        stats.errors += 1
+        print(f"FEIL\t{root}\tKilden finnes ikke eller er ikke en mappe.", file=output)
+        return stats
+
+    covered_sources = covered_imported_subsources(conn, source)
+    covered_roots = [covered.path.resolve() for covered in covered_sources]
+    try:
+        for item in iter_media_files(root):
+            if isinstance(item, WalkError):
+                stats.errors += 1
+                print(f"FEIL\t{item.path}\t{item.message}", file=output)
+                continue
+            path = item
+            if is_under_any(path, covered_roots):
+                stats.skipped_covered += 1
+                continue
+            stats.scanned += 1
+            try:
+                process_file_dry_run(conn, target, source, path, stats, output=output)
+            except Exception as exc:  # noqa: BLE001 - dry-run should keep reporting
+                stats.errors += 1
+                print(f"FEIL\t{path}\t{exc}", file=output)
+            if verbose and stats.scanned % 50 == 0:
+                print(
+                    f"{source.id}: dry-run scannet={stats.scanned} "
+                    f"ville_importert={stats.imported} duplikater={stats.duplicates} "
+                    f"dekket={stats.skipped_covered} feil={stats.errors}",
+                    flush=True,
+                )
+    except KeyboardInterrupt:
+        stats.stopped = True
+        print("Avbrutt. Dry-run har ikke endret databasen.", flush=True)
+        return stats
     return stats
 
 
@@ -286,6 +348,44 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
     stats.imported += 1
     if name_conflict:
         stats.name_conflicts += 1
+
+
+def process_file_dry_run(
+    conn, target: Path, source: db.Source, path: Path, stats: ImportStats, *, output: TextIO
+) -> None:
+    source_key = db.path_key(path)
+    if db.get_file_for_source_path(conn, source.id, source_key) is not None:
+        stats.skipped_existing += 1
+        return
+    if db.get_duplicate_for_source_path(conn, source.id, source_key) is not None:
+        stats.skipped_existing += 1
+        return
+
+    file_hash = sha256_file(path)
+    existing = db.find_file_by_hash(conn, file_hash)
+    if existing is not None:
+        stats.duplicates += 1
+        return
+
+    date = media_date(path)
+    destination_dir = destination_directory(target, date)
+    destination_path, name_conflict, already_present = find_existing_or_available_destination(
+        destination_dir, path.name, file_hash
+    )
+    if already_present:
+        stats.skipped_existing += 1
+        if name_conflict:
+            stats.name_conflicts += 1
+        return
+
+    stats.imported += 1
+    if name_conflict:
+        stats.name_conflicts += 1
+    taken_date = _date_string(date) or "-"
+    print(
+        f"IMPORT\t{taken_date}\t{date.source}\t{path.resolve()}\t->\t{destination_path.resolve()}",
+        file=output,
+    )
 
 
 def destination_directory(target: Path, date: MediaDate) -> Path:

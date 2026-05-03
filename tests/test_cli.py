@@ -105,6 +105,74 @@ class CliTests(unittest.TestCase):
             self.assertIn("Dato: 2024-01-02 (filename)", stdout)
             self.assertIn("SHA-256:", stdout)
 
+    def test_import_dry_run_lists_files_without_database_or_copy_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                commands_before = conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0]
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "import", "--dry-run", "--quiet"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("IMPORT\t2024-01-02\tfilename", stdout)
+            self.assertIn(str(source_file.resolve()), stdout)
+            self.assertIn(str((target / "2024" / "01" / "IMG_20240102.jpg").resolve()), stdout)
+            self.assertIn("importert=1", stdout)
+            self.assertFalse((target / "2024").exists())
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
+                self.assertIsNone(conn.execute("SELECT imported_at FROM sources").fetchone()[0])
+                commands_after = conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0]
+                self.assertEqual(commands_after, commands_before)
+            finally:
+                conn.close()
+
+    def test_import_dry_run_log_file_writes_list_to_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+            log_file = root / "dry-run.txt"
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "import",
+                    "--dry-run",
+                    "--quiet",
+                    "--log-file",
+                    str(log_file),
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev dry-run importliste", stdout)
+            self.assertNotIn("IMG_20240102.jpg\t->", stdout)
+            content = log_file.read_text(encoding="utf-8")
+            self.assertIn("IMPORT\t2024-01-02\tfilename", content)
+            self.assertIn("IMG_20240102.jpg", content)
+
     def test_duplicate_is_recorded_not_copied(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
