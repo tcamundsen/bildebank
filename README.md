@@ -25,8 +25,14 @@ Selve bildesamlingen bør ligge i en egen mappe utenfor programmappen.
 
 ## Anbefalt installasjon
 
-Last ned `setup-windows.ps1` fra GitHub. Høyreklikk på filen og velg
-`Run with PowerShell`.
+Last ned setup-scriptet her:
+
+[Last ned setup-windows.ps1](https://raw.githubusercontent.com/tcamundsen/bildebank/main/setup-windows.ps1)
+
+Høyreklikk på den nedlastede filen og velg `Run with PowerShell`.
+
+Hvis repoet fortsatt er privat, må du være innlogget på GitHub og ha tilgang
+til repoet for at lenken skal fungere.
 
 Scriptet forsøker å:
 
@@ -91,8 +97,8 @@ cd $HOME\kode
 Last ned programmet:
 
 ```powershell
-git clone https://github.com/tcamundsen/bilder.git
-cd bilder
+git clone https://github.com/tcamundsen/bildebank.git
+cd bildebank
 ```
 
 Hvis repoet senere får et annet navn eller en annen adresse, bruker du den
@@ -100,7 +106,7 @@ adressen i stedet.
 
 ## Lag Python-miljø for programmet
 
-Kjør disse kommandoene fra programmappen `bilder`:
+Kjør disse kommandoene fra programmappen `bildebank`:
 
 ```powershell
 py -3.13 -m venv .venv
@@ -136,7 +142,7 @@ Lukk PowerShell, åpne PowerShell på nytt, gå tilbake til programmappen og pr�
 igjen:
 
 ```powershell
-cd $HOME\kode\bilder
+cd $HOME\kode\bildebank
 .\bin\bildebank.ps1 --help
 ```
 
@@ -155,13 +161,13 @@ cd $HOME\BildeSamling
 Opprett målmappe og database:
 
 ```powershell
-..\kode\bilder\bin\bildebank.cmd target .
+..\kode\bildebank\bin\bildebank.cmd target .
 ```
 
 Nå kan du legge til en kildemappe med bilder og videoer:
 
 ```powershell
-..\kode\bilder\bin\bildebank.cmd add "sti\til\kildemappe"
+..\kode\bildebank\bin\bildebank.cmd add "sti\til\kildemappe"
 ```
 
 Bytt ut `sti\til\kildemappe` med mappen der bildene ligger.
@@ -169,19 +175,19 @@ Bytt ut `sti\til\kildemappe` med mappen der bildene ligger.
 Importer:
 
 ```powershell
-..\kode\bilder\bin\bildebank.cmd import
+..\kode\bildebank\bin\bildebank.cmd import
 ```
 
 Se status:
 
 ```powershell
-..\kode\bilder\bin\bildebank.cmd status
+..\kode\bildebank\bin\bildebank.cmd status
 ```
 
 Lag HTML-browser:
 
 ```powershell
-..\kode\bilder\bin\bildebank.cmd export-html
+..\kode\bildebank\bin\bildebank.cmd export-html
 ```
 
 Etterpå kan du åpne `index.html` i bildesamlingsmappen.
@@ -195,7 +201,7 @@ plasserer filene slik du forventer før du kjører en større import.
 Du kan også kjøre en tørrtest før import:
 
 ```powershell
-..\kode\bilder\bin\bildebank.cmd import --dry-run
+..\kode\bildebank\bin\bildebank.cmd import --dry-run
 ```
 
 Da viser programmet hva det ville gjort, uten å kopiere filer eller endre
@@ -206,7 +212,7 @@ databasen.
 Når det kommer en ny versjon av programmet, gå til programmappen og kjør:
 
 ```powershell
-cd $HOME\kode\bilder
+cd $HOME\kode\bildebank
 .\update.ps1
 ```
 
@@ -242,9 +248,9 @@ Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 
 Åpne PowerShell på nytt etterpå.
 
-### `bdb.exe` virker ikke
+### `bildebank.exe` virker ikke
 
-Ikke bruk `bdb.exe` direkte. Bruk `bildebank.cmd`:
+Ikke bruk `bildebank.exe` direkte. Bruk `bildebank.cmd`:
 
 ```powershell
 .\bin\bildebank.cmd --help
@@ -253,7 +259,7 @@ Ikke bruk `bdb.exe` direkte. Bruk `bildebank.cmd`:
 Eller, hvis du står i en bildesamlingsmappe:
 
 ```powershell
-..\kode\bilder\bin\bildebank.cmd --help
+..\kode\bildebank\bin\bildebank.cmd --help
 ```
 
 ### Programmet finner ikke kildemappen
@@ -261,19 +267,19 @@ Eller, hvis du står i en bildesamlingsmappe:
 Sjekk at stien er riktig. Bruk hermetegn rundt stier med mellomrom:
 
 ```powershell
-..\kode\bilder\bin\bildebank.cmd add "sti med mellomrom\bilder"
+..\kode\bildebank\bin\bildebank.cmd add "sti med mellomrom\bilder"
 ```
 
 Unngå å avslutte stien med `\` rett før avsluttende hermetegn. Skriv heller:
 
 ```powershell
-..\kode\bilder\bin\bildebank.cmd add "sti med mellomrom\bilder"
+..\kode\bildebank\bin\bildebank.cmd add "sti med mellomrom\bilder"
 ```
 
 ikke:
 
 ```powershell
-..\kode\bilder\bin\bildebank.cmd add "sti med mellomrom\bilder\"
+..\kode\bildebank\bin\bildebank.cmd add "sti med mellomrom\bilder\"
 ```
 
 ## Viktig om sikkerhet og backup
