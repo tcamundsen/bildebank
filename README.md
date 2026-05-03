@@ -310,6 +310,16 @@ ikke:
 ..\kode\bildebank\bin\bildebank.cmd add "sti med mellomrom\bilder\"
 ```
 
+### Målmappen er låst
+
+Hvis import blir avbrutt hardt, for eksempel ved strømbrudd eller lukking av
+terminalvinduet, kan lockfilen `.bildebank.lock` bli liggende igjen i
+bildesamlingsmappen. Da stopper neste import med beskjed om at målmappen er
+låst.
+
+Sjekk først at ingen annen import fortsatt kjører. Hvis du er sikker på det,
+kan du slette lockfilen fra bildesamlingsmappen og kjøre import på nytt.
+
 ## Viktig om sikkerhet og backup
 
 Programmet skal samle og organisere bilder og videoer, men det er ikke en

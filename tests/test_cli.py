@@ -11,9 +11,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bilder.cli import main
-from bilder.importer import safe_copy
 from bilder.db import DB_FILENAME
+from bilder.importer import safe_copy
 from bilder.media import sha256_file
+from bilder.target_lock import LOCK_FILENAME
 from tests.test_media import (
     jpeg_with_xmp_date,
     minimal_avi_with_creation_date,
@@ -235,6 +236,30 @@ class CliTests(unittest.TestCase):
             content = log_file.read_text(encoding="utf-8")
             self.assertIn("IMPORT\t2024-01-02\tfilename", content)
             self.assertIn("IMG_20240102.jpg", content)
+
+    def test_import_stops_when_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            lock_path = target / LOCK_FILENAME
+            lock_path.write_text("command=import\npid=123\n", encoding="utf-8")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "import", "--quiet"]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Målmappen er låst", stderr)
+            self.assertIn(str(lock_path), stderr)
+            self.assertTrue(lock_path.exists())
+            self.assertFalse((target / "2024").exists())
 
     def test_duplicate_is_recorded_not_copied(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

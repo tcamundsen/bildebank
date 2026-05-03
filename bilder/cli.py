@@ -18,6 +18,7 @@ from .importer import (
 )
 from .html_export import export_html, export_html_conflicts
 from .media import explain_date, image_dimensions, inspect_metadata
+from .target_lock import TargetLock
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -265,14 +266,15 @@ def run(args: argparse.Namespace) -> int:
                 )
                 print_summary(stats)
                 return 0 if stats.errors == 0 else 2
-            source_id = db.add_removable_source(conn, source, args.name)
-            conn.commit()
-            print(f"Registrert flyttbart medium #{source_id}: {args.name} ({source})")
-            source_row = db.get_source(conn, source_id)
-            if source_row.imported_at is not None:
-                print(f"Flyttbart medium er allerede importert: {args.name}")
-                return 0
-            stats = import_source(conn, target, source_row, verbose=True)
+            with TargetLock(target, command="import-removable"):
+                source_id = db.add_removable_source(conn, source, args.name)
+                conn.commit()
+                print(f"Registrert flyttbart medium #{source_id}: {args.name} ({source})")
+                source_row = db.get_source(conn, source_id)
+                if source_row.imported_at is not None:
+                    print(f"Flyttbart medium er allerede importert: {args.name}")
+                    return 0
+                stats = import_source(conn, target, source_row, verbose=True)
             print_summary(stats)
             return 0 if stats.errors == 0 else 2
 
@@ -430,7 +432,8 @@ def run(args: argparse.Namespace) -> int:
                 raise ValueError("--log-file kan bare brukes sammen med --dry-run.")
             conn.commit()
             conn.close()
-            stats = import_pending_sources(target, verbose=not args.quiet)
+            with TargetLock(target, command="import"):
+                stats = import_pending_sources(target, verbose=not args.quiet)
             print_summary(stats)
             return 0 if stats.errors == 0 else 2
 
