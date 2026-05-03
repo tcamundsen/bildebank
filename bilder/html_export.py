@@ -259,11 +259,18 @@ def render_html(items: list[dict[str, str]]) -> str:
     footer {{
       border-top: 1px solid var(--border);
       padding: 8px 12px;
-      color: var(--muted);
       font-size: 13px;
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
+    }}
+    footer a {{
+      color: var(--muted);
+      text-decoration: none;
+    }}
+    footer a:hover {{
+      color: var(--accent);
+      text-decoration: underline;
     }}
   </style>
 </head>
@@ -289,7 +296,7 @@ def render_html(items: list[dict[str, str]]) -> str:
         <div class="empty">Ingen filer i indeksen.</div>
       </div>
     </main>
-    <footer id="filename">Ingen fil valgt</footer>
+    <footer><a id="filename" href="#">Ingen fil valgt</a></footer>
   </div>
   <script>
     const embeddedItems = {items_json};
@@ -424,6 +431,8 @@ def render_html(items: list[dict[str, str]]) -> str:
       const month = currentMonth();
       positionEl.textContent = `${{month.key}} ${{state.itemIndex + 1}}/${{month.items.length}}`;
       filenameEl.textContent = htmlDecode(item.path);
+      filenameEl.href = item.url;
+      filenameEl.target = "_blank";
       updateButtons();
     }}
     function setButtonsEnabled(enabled) {{
