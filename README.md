@@ -25,11 +25,13 @@ Selve bildesamlingen bør ligge i en egen mappe utenfor programmappen.
 
 ## Anbefalt installasjon
 
-Last ned setup-scriptet her:
+Åpne setup-scriptet her:
 
-[Last ned setup-windows.ps1](https://raw.githubusercontent.com/tcamundsen/bildebank/main/setup-windows.ps1)
+[setup-windows.ps1](https://github.com/tcamundsen/bildebank/blob/main/setup-windows.ps1)
 
-Høyreklikk på den nedlastede filen og velg `Run with PowerShell`.
+Klikk på nedlastingsknappen på GitHub-siden, eller klikk `Raw` og lagre siden
+som `setup-windows.ps1`. Høyreklikk på den nedlastede filen og velg
+`Run with PowerShell`.
 
 Hvis repoet fortsatt er privat, må du være innlogget på GitHub og ha tilgang
 til repoet for at lenken skal fungere.
