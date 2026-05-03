@@ -65,6 +65,7 @@ def row_to_item(target: Path, row) -> dict[str, str]:
         "takenDate": row["taken_date"] or "",
         "dateSource": row["date_source"],
         "name": row["stored_filename"],
+        "sizeText": format_bytes(int(row["size_bytes"])),
     }
 
 
@@ -448,7 +449,7 @@ def render_html(items: list[dict[str, str]]) -> str:
       }}
       const month = currentMonth();
       positionEl.textContent = `${{month.key}} ${{state.itemIndex + 1}}/${{month.items.length}}`;
-      filenameEl.textContent = htmlDecode(item.path);
+      filenameEl.textContent = `${{htmlDecode(item.path)}} (${{item.sizeText}})`;
       filenameEl.href = item.url;
       filenameEl.target = "_blank";
       updateButtons();
