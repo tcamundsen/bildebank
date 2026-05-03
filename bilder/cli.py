@@ -34,7 +34,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="bdb")
+    parser = argparse.ArgumentParser(prog="bildebank")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--target", type=Path, help="Målmappe med .bilder.sqlite3")
 
@@ -93,7 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     exiftool_gaps = subparsers.add_parser(
         "exiftool-metadata-gaps",
-        help="Finn filer der ExifTool ser metadata-dato som bdb ikke leser",
+        help="Finn filer der ExifTool ser metadata-dato som bildebank ikke leser",
     )
     exiftool_gaps.add_argument(
         "--exiftool",
@@ -336,7 +336,7 @@ def run(args: argparse.Namespace) -> int:
             for gap in gaps:
                 print(
                     f"{gap.date}\t{gap.tag}\t{gap.value}\t"
-                    f"bdb={gap.bdb_source}:{gap.bdb_date}\t{gap.target_path}"
+                    f"bildebank={gap.bdb_source}:{gap.bdb_date}\t{gap.target_path}"
                 )
             print(f"Oppsummering: exiftool_metadata_funnet={len(gaps)}")
             return 0

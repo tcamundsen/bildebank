@@ -463,7 +463,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIn("ikke del av en navnekollisjon", stdout)
 
-    def test_exiftool_metadata_gaps_lists_dates_bdb_does_not_read(self) -> None:
+    def test_exiftool_metadata_gaps_lists_dates_bildebank_does_not_read(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -492,7 +492,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("2024-01-02\tDateTimeOriginal", stdout)
-            self.assertIn("bdb=filename:2024-01-02", stdout)
+            self.assertIn("bildebank=filename:2024-01-02", stdout)
             self.assertIn("IMG_20240102.jpg", stdout)
             self.assertIn("Oppsummering: exiftool_metadata_funnet=1", stdout)
             self.assertIn("exiftool 1/1:", stderr)
