@@ -105,6 +105,45 @@ class CliTests(unittest.TestCase):
             self.assertIn("Dato: 2024-01-02 (filename)", stdout)
             self.assertIn("SHA-256:", stdout)
 
+    def test_delete_moves_file_marks_database_and_hides_from_export(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "delete", "2024/01/IMG_20240102.jpg"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Flyttet til slettet mappe", stdout)
+            self.assertFalse(imported.exists())
+            self.assertTrue(deleted.exists())
+            self.assertEqual(deleted.read_bytes(), b"image-one")
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute("SELECT * FROM files").fetchone()
+                self.assertEqual(Path(row["target_path"]), deleted.resolve())
+                self.assertEqual(Path(row["deleted_original_target_path"]), imported.resolve())
+                self.assertIsNotNone(row["deleted_at"])
+            finally:
+                conn.close()
+
+            self.assertEqual(run_cli(["--target", str(target), "export-html"]), 0)
+            html = (target / "index.html").read_text(encoding="utf-8")
+            self.assertNotIn("IMG_20240102.jpg", html)
+
     def test_import_dry_run_lists_files_without_database_or_copy_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -44,6 +44,9 @@ def connect(target: Path) -> sqlite3.Connection:
 def migrate_schema(conn: sqlite3.Connection) -> None:
     if table_exists(conn, "errors"):
         ensure_column(conn, "errors", "resolved_at", "TEXT")
+    if table_exists(conn, "files"):
+        ensure_column(conn, "files", "deleted_at", "TEXT")
+        ensure_column(conn, "files", "deleted_original_target_path", "TEXT")
 
 
 def table_exists(conn: sqlite3.Connection, table: str) -> bool:
@@ -112,6 +115,8 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             date_source TEXT NOT NULL,
             name_conflict INTEGER NOT NULL DEFAULT 0,
             imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT,
+            deleted_original_target_path TEXT,
             UNIQUE(source_id, source_path_key)
         );
 
@@ -141,6 +146,8 @@ def apply_schema(conn: sqlite3.Connection) -> None:
     )
     ensure_column(conn, "sources", "superseded_by_source_id", "INTEGER REFERENCES sources(id)")
     ensure_column(conn, "errors", "resolved_at", "TEXT")
+    ensure_column(conn, "files", "deleted_at", "TEXT")
+    ensure_column(conn, "files", "deleted_original_target_path", "TEXT")
 
 
 def ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
@@ -389,7 +396,7 @@ def error_count(conn: sqlite3.Connection, *, include_resolved: bool = False) -> 
 
 def status_counts(conn: sqlite3.Connection) -> dict[str, dict[str, int] | int]:
     media = {"bilder": 0, "videoer": 0}
-    for row in conn.execute("SELECT stored_filename FROM files"):
+    for row in conn.execute("SELECT stored_filename FROM files WHERE deleted_at IS NULL"):
         suffix = Path(str(row["stored_filename"])).suffix.lower()
         if suffix in VIDEO_EXTENSIONS:
             media["videoer"] += 1
@@ -399,7 +406,12 @@ def status_counts(conn: sqlite3.Connection) -> dict[str, dict[str, int] | int]:
     date_sources = {
         str(row["date_source"]): int(row["count"])
         for row in conn.execute(
-            "SELECT date_source, COUNT(*) AS count FROM files GROUP BY date_source"
+            """
+            SELECT date_source, COUNT(*) AS count
+            FROM files
+            WHERE deleted_at IS NULL
+            GROUP BY date_source
+            """
         )
     }
     total = sum(media.values())
@@ -412,6 +424,7 @@ def name_conflicts(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
         SELECT source_path, target_path, original_filename, stored_filename
         FROM files
         WHERE name_conflict = 1
+          AND deleted_at IS NULL
         ORDER BY imported_at, id
         """
     )
@@ -463,6 +476,7 @@ def files_by_original_filename(
                name_conflict, imported_at
         FROM files
         WHERE original_filename = ?
+          AND deleted_at IS NULL
         ORDER BY imported_at, id
         """,
         (original_filename,),
@@ -476,6 +490,7 @@ def conflict_candidate_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
                stored_filename, sha256, size_bytes, taken_date, date_source,
                name_conflict, imported_at
         FROM files
+        WHERE deleted_at IS NULL
         ORDER BY original_filename, imported_at, id
         """
     )
@@ -487,6 +502,7 @@ def non_metadata_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
         SELECT id, source_path, target_path, taken_date, date_source, sha256, stored_filename
         FROM files
         WHERE date_source != 'metadata'
+          AND deleted_at IS NULL
         ORDER BY date_source, taken_date, target_path
         """
     )
@@ -497,8 +513,35 @@ def browser_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
         """
         SELECT target_path, stored_filename, taken_date, date_source
         FROM files
+        WHERE deleted_at IS NULL
         ORDER BY taken_date, target_path
         """
+    )
+
+
+def mark_file_deleted(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    deleted_path: Path,
+    original_target_path: Path,
+) -> None:
+    conn.execute(
+        """
+        UPDATE files
+        SET target_path = ?,
+            target_path_key = ?,
+            deleted_at = CURRENT_TIMESTAMP,
+            deleted_original_target_path = ?
+        WHERE id = ?
+          AND deleted_at IS NULL
+        """,
+        (
+            str(deleted_path.resolve()),
+            path_key(deleted_path),
+            str(original_target_path.resolve()),
+            file_id,
+        ),
     )
 
 

@@ -146,6 +146,16 @@ For å se hvilken kilde en importert målfil kommer fra:
 Kommandoen viser målfil, opprinnelig kildefil, kilde-id, kildetype, registrert
 kilde, importdato, valgt dato/datokilde, filstørrelse og SHA-256.
 
+For å fjerne en importert fil fra den aktive samlingen uten å slette den
+permanent:
+
+    $ bdb delete 2007/02/filename.png
+
+Kommandoen flytter filen til tilsvarende sti under `deleted/`, for eksempel
+`deleted/2007/02/filename.png`. Raden beholdes i databasen, men markeres som
+slettet med tidspunkt og opprinnelig målsti. Slettede filer skal ikke tas med i
+`export-html`, og de skal kunne listes av en senere kommando.
+
 For å sammenligne programmet med en lokal ExifTool-installasjon:
 
     $ bdb exiftool-metadata-gaps

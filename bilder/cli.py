@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -75,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Vis hvilken kilde en importert målfil kommer fra",
     )
     show_source.add_argument("path", type=Path)
+    delete = subparsers.add_parser(
+        "delete",
+        help="Flytt en importert målfil til deleted/ og marker den som slettet",
+    )
+    delete.add_argument("path", type=Path)
     non_metadata = subparsers.add_parser(
         "non-metadata",
         help="List filer der datoen ikke kom fra metadata",
@@ -276,6 +282,33 @@ def run(args: argparse.Namespace) -> int:
             print_source_item(row)
             return 0
 
+        if args.command == "delete":
+            original_path = resolve_target_file_arg(target, args.path)
+            row = db.file_by_target_path(conn, original_path)
+            if row is None:
+                raise ValueError(f"Filen finnes ikke i importdatabasen: {original_path}")
+            if row["deleted_at"] is not None:
+                raise ValueError(f"Filen er allerede markert som slettet: {original_path}")
+            if not original_path.exists():
+                raise ValueError(f"Målfilen finnes ikke på disk: {original_path}")
+
+            relative_path = relative_path_under_target(target, original_path)
+            deleted_path = target / "deleted" / relative_path
+            if deleted_path.exists():
+                raise ValueError(f"Slettemål finnes allerede: {deleted_path}")
+
+            deleted_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(original_path), str(deleted_path))
+            db.mark_file_deleted(
+                conn,
+                file_id=int(row["id"]),
+                deleted_path=deleted_path,
+                original_target_path=original_path,
+            )
+            conn.commit()
+            print(f"Flyttet til slettet mappe: {deleted_path}")
+            return 0
+
         if args.command == "non-metadata":
             for row in db.non_metadata_files(conn):
                 taken_date = row["taken_date"] or "-"
@@ -377,6 +410,26 @@ def resolve_target(target_arg: Path | None) -> Path:
     if target is None:
         raise ValueError("Fant ingen målmappe. Kjør fra målmappen eller bruk --target.")
     return target
+
+
+def resolve_target_file_arg(target: Path, path: Path) -> Path:
+    candidate = existing_path_arg(path)
+    if candidate.is_absolute():
+        resolved = candidate.resolve()
+    else:
+        resolved = (target / candidate).resolve()
+    relative_path_under_target(target, resolved)
+    return resolved
+
+
+def relative_path_under_target(target: Path, path: Path) -> Path:
+    try:
+        relative_path = path.resolve().relative_to(target.resolve())
+    except ValueError as exc:
+        raise ValueError(f"Filen ligger ikke i målmappen: {path}") from exc
+    if not relative_path.parts or relative_path.parts[0] == "deleted":
+        raise ValueError(f"Kan ikke slette filer fra deleted/: {path}")
+    return relative_path
 
 
 def name_conflict_group(conn, row) -> list:
