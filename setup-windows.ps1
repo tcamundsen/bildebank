@@ -1,6 +1,6 @@
 param(
-    [string]$RepoUrl = "https://github.com/tcamundsen/bilder.git",
-    [string]$InstallDir = (Join-Path $HOME "kode\bilder"),
+    [string]$RepoUrl = "https://github.com/tcamundsen/bildebank.git",
+    [string]$InstallDir = (Join-Path $HOME "kode\bildebank"),
     [switch]$SkipInstall
 )
 
