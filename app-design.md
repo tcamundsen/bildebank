@@ -39,7 +39,7 @@ skal bare kopiere filer fra kildemapper til målmappen.
 Opprette en målmappe. Dette er første kommando som kan kjøres. Alle
 andre skal feile hvis denne ikke er utført:
 
-    $ bdb target /path/to/target/bilder
+    $ bildebank target /path/to/target/bilder
 
 Denne kommandoen oppretter målmappen og initierer en databasefil. Databasen
 skal blant annet inneholde kontroll med:
@@ -48,21 +48,21 @@ skal blant annet inneholde kontroll med:
  - info om alle bildene i målmappen, for å kunne sjekke etter duplikater.
  - logg over alle kommandoer som har blitt kjørt.
 
-Etter at databasen har blitt opprettet, så krever scriptet `bdb` enten
+Etter at databasen har blitt opprettet, så krever scriptet `bildebank` enten
 at det kjøres fra målmappen, eller at målmappen angis med
 kommandolinjeparameteren `--target=/path/to/målmappe`
 
 Legge en mappe til listen over kildemapper:
 
-    $ bdb add /path/to/directory
+    $ bildebank add /path/to/directory
 
 Scanne alle registrerte kildemapper:
 
-    $ bdb import
-    $ bdb import --dry-run
-    $ bdb import --dry-run --log-file=importliste.txt
+    $ bildebank import
+    $ bildebank import --dry-run
+    $ bildebank import --dry-run --log-file=importliste.txt
 
-`bdb import` skal vise progresjon underveis, for eksempel ved å vise hvor mange bilder
+`bildebank import` skal vise progresjon underveis, for eksempel ved å vise hvor mange bilder
 som er scannet, og hvor mange som er importert. Scriptet skal tåle å bli avbrutt
 med ctrl-C. Dette gjøres ved at en kildemappe bare kan markeres som importert i databasen når
 hele importen er gjennomført.
@@ -101,11 +101,11 @@ før filendelsen, for eksempel `IMG1324-2.jpg`. Samtidig må det markeres
 i databasen at dette bildet har fått lagt til "-1" på grunn av navnekollisjon.
 Kommando for å liste bilder med navnekollisjon:
 
-    $ bdb list-name-conflicts
+    $ bildebank list-name-conflicts
 
 Kommando for å undersøke én navnekollisjon nærmere:
 
-    $ bdb show-name-conflict /path/to/target/2017/08/img3331.jpg
+    $ bildebank show-name-conflict /path/to/target/2017/08/img3331.jpg
 
 Hvis filen er del av en navnekollisjon, viser kommandoen alle filene i samme
 konfliktgruppe med både målfil og opprinnelig kildefil. Kommandoen skal også
@@ -116,8 +116,8 @@ Legge til og scanne flyttbare medier, som CD-ROM eller usb-brikke. Siden
 det er flyttbare medier, så kan neste scan scanne et annet medium på
 samme path:
 
-    $ bdb import-removable --name="cd-2005" /path/to/media
-    $ bdb import-removable --name="cd-2005" --dry-run /path/to/media
+    $ bildebank import-removable --name="cd-2005" /path/to/media
+    $ bildebank import-removable --name="cd-2005" --dry-run /path/to/media
 
 `--name` er etiketten som er skrevet på CD-rom, eller en annen måte for
 brukeren å identifisere kilden på. `import-removable` brukes uten `add` først:
@@ -128,31 +128,31 @@ mediet, kopiere filer eller endre databasen.
 For å liste opp alle kildemapper, og id for alle flyttbare medier som er 
 lagt til:
 
-    $ bdb list-sources
+    $ bildebank list-sources
 
 For å vise oppsummering av siste import eller hele databasen:
 
-    $ bdb report
-    $ bdb status
+    $ bildebank report
+    $ bildebank status
 
 Rapporten bør vise antall importerte filer, duplikatfunn, navnekollisjoner,
 filer uten dato og feil.
 
-`bdb status` viser antall importerte filer fordelt på bilder og videoer, og
+`bildebank status` viser antall importerte filer fordelt på bilder og videoer, og
 hvor mange filer som er plassert basert på metadata, filnavn, mtime eller
 manglende dato.
 
 For å liste filer som ble plassert basert på noe annet enn metadata:
 
-    $ bdb non-metadata
-    $ bdb non-metadata --source
+    $ bildebank non-metadata
+    $ bildebank non-metadata --source
 
 Kommandoen viser filer der datoen kom fra filnavn, filens endringsdato eller
 manglende dato. Med `--source` vises også den opprinnelige kildefilen.
 
 For å se hvilken kilde en importert målfil kommer fra:
 
-    $ bdb show-source /path/to/target/2010/09/image.jpg
+    $ bildebank show-source /path/to/target/2010/09/image.jpg
 
 Kommandoen viser målfil, opprinnelig kildefil, kilde-id, kildetype, registrert
 kilde, importdato, valgt dato/datokilde, filstørrelse og SHA-256.
@@ -160,13 +160,13 @@ kilde, importdato, valgt dato/datokilde, filstørrelse og SHA-256.
 For å fjerne en importert fil fra den aktive samlingen uten å slette den
 permanent:
 
-    $ bdb delete 2007/02/filename.png
-    $ bdb list-deleted
+    $ bildebank delete 2007/02/filename.png
+    $ bildebank list-deleted
 
 Kommandoen flytter filen til tilsvarende sti under `deleted/`, for eksempel
 `deleted/2007/02/filename.png`. Raden beholdes i databasen, men markeres som
 slettet med tidspunkt og opprinnelig målsti. Slettede filer skal ikke tas med i
-`export-html`. `bdb list-deleted` viser filer som er markert som slettet, hvor
+`export-html`. `bildebank list-deleted` viser filer som er markert som slettet, hvor
 de opprinnelig lå, hvor de ble flyttet, og om filen fortsatt finnes på disk.
 
 Programmet er ikke avhengig av at filene under `deleted/` blir liggende for å
@@ -177,17 +177,17 @@ gjenopprette selve filinnholdet hvis filen er fysisk slettet fra `deleted/`.
 
 For å sammenligne programmet med en lokal ExifTool-installasjon:
 
-    $ bdb exiftool-metadata-gaps
+    $ bildebank exiftool-metadata-gaps
 
 Kommandoen forventer som standard `exiftool.exe` i målmappen. Den kjører
-ExifTool på filer der `bdb` ikke har funnet metadata-dato, og viser filer der
+ExifTool på filer der `bildebank` ikke har funnet metadata-dato, og viser filer der
 ExifTool finner en datotag som programmet fortsatt ikke leser. Kommandoen skal
 bare brukes som diagnosehjelp for å forbedre metadata-støtten.
 
 For å forklare hvilken dato programmet ville brukt for én enkelt fil:
 
-    $ bdb explain-date /path/to/file.jpg
-    $ bdb inspect-metadata /path/to/file.jpg
+    $ bildebank explain-date /path/to/file.jpg
+    $ bildebank inspect-metadata /path/to/file.jpg
 
 Kommandoen viser valgt dato, valgt datokilde og hvilke datokandidater
 programmet fant i metadata, filnavn og filens endringsdato.
@@ -197,9 +197,9 @@ for å kunne undersøke filer der programmet ikke finner dato automatisk.
 Når programmet får bedre metadata-støtte, skal det være mulig å sjekke filer
 som tidligere ble plassert uten metadata på nytt:
 
-    $ bdb refresh-metadata
-    $ bdb refresh-metadata --dry-run
-    $ bdb refresh-metadata --verbose
+    $ bildebank refresh-metadata
+    $ bildebank refresh-metadata --dry-run
+    $ bildebank refresh-metadata --verbose
 
 Kommandoen går gjennom filer der `date_source` ikke er `metadata`, leser
 metadata på nytt og flytter filen inne i målmappen hvis den nå kan plasseres
@@ -209,9 +209,9 @@ endres. Med `--verbose` vises filer som flyttes, hoppes over eller feiler.
 
 For å liste feil som er registrert i databasen:
 
-    $ bdb errors
-    $ bdb errors --stage refresh-metadata
-    $ bdb errors --all
+    $ bildebank errors
+    $ bildebank errors --stage refresh-metadata
+    $ bildebank errors --all
 
 Kommandoen viser uløste feil som standard. Feil som programmet senere har
 reparert markeres som løst og skjules fra standardvisningen. `--all` viser også
@@ -220,27 +220,27 @@ bruke `sqlite3` direkte.
 
 For å lage en statisk HTML-browser i målmappen:
 
-    $ bdb export-html
+    $ bildebank export-html
 
 Kommandoen skriver `index.html` i målmappen. HTML-filen inneholder en innebygd
 indeks fra databasen og kan derfor åpnes direkte i nettleseren uten
 mappevelger. Den viser bilder og videoer med relative paths fra målmappen.
 Eksporten kan filtreres på medietype og datokilde:
 
-    $ bdb export-html --media=image
-    $ bdb export-html --media=video
-    $ bdb export-html --date-source=metadata
-    $ bdb export-html --date-source=filename
-    $ bdb export-html --date-source=mtime
+    $ bildebank export-html --media=image
+    $ bildebank export-html --media=video
+    $ bildebank export-html --date-source=metadata
+    $ bildebank export-html --date-source=filename
+    $ bildebank export-html --date-source=mtime
 
 Filtrene kan kombineres, for eksempel for å lage en HTML-browser med bare
 videoer som er plassert basert på metadata:
 
-    $ bdb export-html --media=video --date-source=metadata
+    $ bildebank export-html --media=video --date-source=metadata
 
 For å lage en statisk HTML-side for manuell gjennomgang av navnekollisjoner:
 
-    $ bdb export-html-conflict
+    $ bildebank export-html-conflict
 
 Kommandoen skriver `name-conflicts.html` i målmappen. Siden lar brukeren bla
 mellom navnekollisjonene og viser filene i hver konflikt side om side, sammen
@@ -297,9 +297,8 @@ Enhetstester kan kjøres i WSL under utvikling, men før programmet tas i bruk p
 den faktiske bildesamlingen må importflyten testes i Windows 11 med ekte
 Windows-stier og et lite testsett med bilder og videoer.
 
-Repo-/prosjektmappen kan hete `bilder`, og Python-pakken kan også hete
-`bilder`. Brukerkommandoen bør hete `bildebank`. Python-pakken bør ikke hete
-`bdb`, fordi `bdb` også er navnet på en modul i Pythons standardbibliotek.
+Prosjektet heter nå `bildebank`. Se etter rester fra tidligere der det
+har het `bdb` eller `bilder`. De bør helst endres til `bildebank` om mulig.
 
 Programmet bør deles i tydelige deler:
 
@@ -355,14 +354,14 @@ kildemappe behandles flere ganger når programmet kjøres på nytt.
 Typisk arbeidsflyt:
 
 ```bash
-$ bdb target /path/to/target/bilder
-$ bdb add /path/folder/with/images
-$ bdb import
-$ bdb add /path/to/more/images
-$ bdb import
+$ bildebank target /path/to/target/bilder
+$ bildebank add /path/folder/with/images
+$ bildebank import
+$ bildebank add /path/to/more/images
+$ bildebank import
 ```
 
-Etter den andre `bdb add` i eksempelet over, så skal programmet se i databasen
+Etter den andre `bildebank add` i eksempelet over, så skal programmet se i databasen
 at den mappen som ble lagt til først allerede er importert, og bare importere
 bilder fra den andre mappen.
 
@@ -375,7 +374,7 @@ skal importen av `C:\Bilder` hoppe over filer under `C:\Bilder\2006`. Når
 skal undermappen fortsatt stå som egen importert kilde.
 
 En vanlig kildemappe behandles som en avsluttet importjobb, ikke som en mappe
-som senere synkroniseres automatisk. `bdb add` skal derfor avvise en
+som senere synkroniseres automatisk. `bildebank add` skal derfor avvise en
 kildemappe som allerede er registrert, og også avvise en kildemappe som ligger
 under en allerede registrert vanlig kildemappe. Det gir ikke mening å registrere
 en undermappe som egen kilde når en overmappe allerede er lagt til.
@@ -386,7 +385,7 @@ overmappen er ferdig importert uten feil, markeres den tidligere undermappen som
 `superseded`.
 
 Hvis det senere blir behov for å scanne en tidligere importert kilde om igjen,
-bør det være en egen eksplisitt kommando, for eksempel `bdb rescan-source ID`,
+bør det være en egen eksplisitt kommando, for eksempel `bildebank rescan-source ID`,
 slik at brukeren tydelig ber om en ny gjennomgang.
 
 Hvis en kilde inneholder filer som ikke kan leses, skal feilen registreres i
