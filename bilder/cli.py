@@ -59,9 +59,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skriv dry-run-listen til fil i stedet for stdout",
     )
 
-    removable = subparsers.add_parser("import-removable", help="Importer flyttbart medium")
-    removable.add_argument("--name", required=True)
-    removable.add_argument("path", type=Path)
+    removable = subparsers.add_parser(
+        "import-removable",
+        help="Registrer og importer ett flyttbart medium direkte; ikke bruk add først",
+        description=(
+            "Registrerer og importerer ett flyttbart medium i samme kommando. "
+            "Bruk denne uten å kjøre add først. --name er en stabil etikett for "
+            "mediet, siden samme drive letter/path kan brukes av ulike medier."
+        ),
+    )
+    removable.add_argument(
+        "--name",
+        required=True,
+        help="Stabil etikett for mediet, for eksempel teksten på en CD eller USB-disk",
+    )
+    removable.add_argument("path", type=Path, help="Path til mediet slik det er montert nå")
 
     subparsers.add_parser("list-sources", help="List registrerte kilder")
     subparsers.add_parser("status", help="Vis antall filer fordelt på type og datokilde")

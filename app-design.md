@@ -119,7 +119,8 @@ samme path:
     $ bdb import-removable --name="cd-2005" /path/to/media
 
 `--name` er etiketten som er skrevet på CD-rom, eller en annen måte for
-brukeren å identifisere kilden på.
+brukeren å identifisere kilden på. `import-removable` brukes uten `add` først:
+kommandoen både registrerer og importerer det flyttbare mediet i samme steg.
 
 For å liste opp alle kildemapper, og id for alle flyttbare medier som er 
 lagt til:
@@ -250,8 +251,10 @@ annerledes enn vanlige kildemapper. Grunnen er at samme mount path kan brukes
 for forskjellige medier på forskjellige tidspunkt.
 
 Kommandoen `import-removable` scanner derfor en konkret kilde én gang og
-registrerer den med en brukerdefinert etikett. Etiketten bør være noe brukeren
-kan kjenne igjen senere, for eksempel teksten som står skrevet på en CD-ROM.
+registrerer den med en brukerdefinert etikett i samme operasjon. Den skal
+brukes direkte, uten at brukeren først kjører `add`. Etiketten bør være noe
+brukeren kan kjenne igjen senere, for eksempel teksten som står skrevet på en
+CD-ROM.
 
 Etter at scanningen er ferdig, antar ikke programmet at samme medium vil være
 tilgjengelig igjen på samme path.
