@@ -10,6 +10,7 @@ from typing import Any, Iterable
 
 DB_FILENAME = ".bilder.sqlite3"
 SCHEMA_VERSION = 1
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
 
 
 def path_key(path: Path) -> str:
@@ -384,6 +385,25 @@ def error_count(conn: sqlite3.Connection, *, include_resolved: bool = False) -> 
     if not include_resolved:
         sql += " WHERE resolved_at IS NULL"
     return int(conn.execute(sql).fetchone()[0])
+
+
+def status_counts(conn: sqlite3.Connection) -> dict[str, dict[str, int] | int]:
+    media = {"bilder": 0, "videoer": 0}
+    for row in conn.execute("SELECT stored_filename FROM files"):
+        suffix = Path(str(row["stored_filename"])).suffix.lower()
+        if suffix in VIDEO_EXTENSIONS:
+            media["videoer"] += 1
+        else:
+            media["bilder"] += 1
+
+    date_sources = {
+        str(row["date_source"]): int(row["count"])
+        for row in conn.execute(
+            "SELECT date_source, COUNT(*) AS count FROM files GROUP BY date_source"
+        )
+    }
+    total = sum(media.values())
+    return {"total": total, "media": media, "date_sources": date_sources}
 
 
 def name_conflicts(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:

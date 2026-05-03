@@ -199,6 +199,29 @@ class CliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_status_counts_media_types_and_date_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            (source / "video.mp4").write_bytes(minimal_mp4_with_creation_date(dt.date(2010, 7, 8)))
+
+            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "status"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Totalt: 2", stdout)
+            self.assertIn("Bilder: 1", stdout)
+            self.assertIn("Videoer: 1", stdout)
+            self.assertIn("  metadata: 1", stdout)
+            self.assertIn("  filename: 1", stdout)
+            self.assertIn("  mtime: 0", stdout)
+
     def test_parent_source_supersedes_imported_child_without_duplicate_findings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

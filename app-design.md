@@ -122,9 +122,14 @@ lagt til:
 For å vise oppsummering av siste import eller hele databasen:
 
     $ bdb report
+    $ bdb status
 
 Rapporten bør vise antall importerte filer, duplikatfunn, navnekollisjoner,
 filer uten dato og feil.
+
+`bdb status` viser antall importerte filer fordelt på bilder og videoer, og
+hvor mange filer som er plassert basert på metadata, filnavn, mtime eller
+manglende dato.
 
 For å liste filer som ble plassert basert på noe annet enn metadata:
 

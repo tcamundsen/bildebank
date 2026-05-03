@@ -63,6 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     removable.add_argument("path", type=Path)
 
     subparsers.add_parser("list-sources", help="List registrerte kilder")
+    subparsers.add_parser("status", help="Vis antall filer fordelt på type og datokilde")
     subparsers.add_parser("list-name-conflicts", help="List importerte filer med navnekollisjon")
     show_name_conflict = subparsers.add_parser(
         "show-name-conflict",
@@ -229,6 +230,10 @@ def run(args: argparse.Namespace) -> int:
                     f"{source.id}\t{source.kind}\t{source.status}\t"
                     f"{imported}\t{superseded_by}\t{label}"
                 )
+            return 0
+
+        if args.command == "status":
+            print_status(conn)
             return 0
 
         if args.command == "list-name-conflicts":
@@ -443,6 +448,21 @@ def print_summary(stats) -> None:
         f"dekket={stats.skipped_covered}, navnekollisjoner={stats.name_conflicts}, "
         f"feil={stats.errors}"
     )
+
+
+def print_status(conn) -> None:
+    counts = db.status_counts(conn)
+    media = counts["media"]
+    date_sources = counts["date_sources"]
+    print(f"Totalt: {counts['total']}")
+    print(f"Bilder: {media['bilder']}")
+    print(f"Videoer: {media['videoer']}")
+    print("Datokilde:")
+    for source in ("metadata", "filename", "mtime", "unknown"):
+        print(f"  {source}: {date_sources.get(source, 0)}")
+    extra_sources = sorted(set(date_sources) - {"metadata", "filename", "mtime", "unknown"})
+    for source in extra_sources:
+        print(f"  {source}: {date_sources[source]}")
 
 
 def print_report(conn) -> None:
