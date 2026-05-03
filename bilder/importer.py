@@ -433,12 +433,11 @@ def safe_copy(source: Path, destination: Path, expected_hash: str) -> None:
 
 
 def install_copied_file(temp: Path, destination: Path, expected_hash: str) -> None:
-    try:
-        os.link(temp, destination)
-    except FileExistsError:
+    if destination.exists():
         if sha256_file(destination) == expected_hash:
             return
         raise FileExistsError(f"Målfil finnes allerede med annet innhold: {destination}")
+    temp.rename(destination)
 
 
 def refresh_non_metadata_files(

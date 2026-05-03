@@ -526,6 +526,18 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(destination.read_bytes(), b"existing-image")
 
+    def test_safe_copy_does_not_require_hardlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.jpg"
+            destination = root / "destination.jpg"
+            source.write_bytes(b"image")
+
+            with patch("bilder.importer.os.link", side_effect=OSError("hardlink unsupported")):
+                safe_copy(source, destination, sha256_file(source))
+
+            self.assertEqual(destination.read_bytes(), b"image")
+
     def test_import_recovers_file_copied_before_database_commit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

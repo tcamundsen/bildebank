@@ -88,6 +88,13 @@ hash på målfilen matcher hash på kildefilen, og deretter gi filen endelig nav
 Filen skal først registreres som importert i databasen etter vellykket kopiering
 og verifisering.
 
+Kopieringen skal fungere på vanlige filsystemer som brukes på Windows, eksterne
+disker og Linux, for eksempel NTFS, exFAT, FAT32, SMB/nettverksmapper og ext4.
+Programmet skal derfor ikke være avhengig av filsystemfunksjoner som ikke er
+universelt tilgjengelige, for eksempel hardlinks. Midlertidig fil bør ligge i
+samme mappe som endelig målfil slik at endelig rename/flytting skjer innenfor
+samme filsystem.
+
 Når bildene (og videoene) importeres, så skal ikke filnavnet deres endres.
 Ved navnekollisjon i samme måned, så legges "-1", "-2" etc til filnavnet,
 før filendelsen, for eksempel `IMG1324-2.jpg`. Samtidig må det markeres
