@@ -508,6 +508,27 @@ def non_metadata_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     )
 
 
+def deleted_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT
+            id,
+            source_path,
+            target_path,
+            deleted_original_target_path,
+            deleted_at,
+            stored_filename,
+            size_bytes,
+            taken_date,
+            date_source,
+            sha256
+        FROM files
+        WHERE deleted_at IS NOT NULL
+        ORDER BY deleted_at, deleted_original_target_path, target_path
+        """
+    )
+
+
 def browser_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     return conn.execute(
         """

@@ -81,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Flytt en importert målfil til deleted/ og marker den som slettet",
     )
     delete.add_argument("path", type=Path)
+    subparsers.add_parser("list-deleted", help="List filer som er markert som slettet")
     non_metadata = subparsers.add_parser(
         "non-metadata",
         help="List filer der datoen ikke kom fra metadata",
@@ -309,6 +310,11 @@ def run(args: argparse.Namespace) -> int:
             print(f"Flyttet til slettet mappe: {deleted_path}")
             return 0
 
+        if args.command == "list-deleted":
+            for row in db.deleted_files(conn):
+                print_deleted_item(row)
+            return 0
+
         if args.command == "non-metadata":
             for row in db.non_metadata_files(conn):
                 taken_date = row["taken_date"] or "-"
@@ -475,6 +481,18 @@ def print_source_item(row) -> None:
     print(f"Dato: {row['taken_date'] or '-'} ({row['date_source']})")
     print(f"Filstørrelse: {format_bytes(int(row['size_bytes']))} ({row['size_bytes']} bytes)")
     print(f"SHA-256: {row['sha256']}")
+
+
+def print_deleted_item(row) -> None:
+    deleted_path = Path(str(row["target_path"]))
+    original_path = row["deleted_original_target_path"] or "-"
+    taken_date = row["taken_date"] or "-"
+    exists = "ja" if deleted_path.exists() else "nei"
+    print(f"{row['deleted_at']}\t{exists}\t{taken_date}\t{row['date_source']}\t{original_path}")
+    print(f"  slettet fil: {deleted_path}")
+    print(f"  kildefil: {row['source_path']}")
+    print(f"  filstørrelse: {format_bytes(int(row['size_bytes']))} ({row['size_bytes']} bytes)")
+    print(f"  sha256: {row['sha256']}")
 
 
 def format_bytes(size: int) -> str:

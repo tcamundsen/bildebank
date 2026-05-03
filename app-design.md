@@ -157,11 +157,19 @@ For å fjerne en importert fil fra den aktive samlingen uten å slette den
 permanent:
 
     $ bdb delete 2007/02/filename.png
+    $ bdb list-deleted
 
 Kommandoen flytter filen til tilsvarende sti under `deleted/`, for eksempel
 `deleted/2007/02/filename.png`. Raden beholdes i databasen, men markeres som
 slettet med tidspunkt og opprinnelig målsti. Slettede filer skal ikke tas med i
-`export-html`, og de skal kunne listes av en senere kommando.
+`export-html`. `bdb list-deleted` viser filer som er markert som slettet, hvor
+de opprinnelig lå, hvor de ble flyttet, og om filen fortsatt finnes på disk.
+
+Programmet er ikke avhengig av at filene under `deleted/` blir liggende for å
+bruke den aktive samlingen videre. Brukeren kan derfor slette filer under
+`deleted/` manuelt når de er ferdig kontrollert. Databasen beholder fortsatt
+historikken, men programmet kan naturligvis ikke lenger vise, åpne eller
+gjenopprette selve filinnholdet hvis filen er fysisk slettet fra `deleted/`.
 
 For å sammenligne programmet med en lokal ExifTool-installasjon:
 

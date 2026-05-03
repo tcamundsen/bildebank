@@ -144,6 +144,16 @@ class CliTests(unittest.TestCase):
             html = (target / "index.html").read_text(encoding="utf-8")
             self.assertNotIn("IMG_20240102.jpg", html)
 
+            code, stdout, stderr = capture_cli(["--target", str(target), "list-deleted"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("ja\t2024-01-02\tfilename", stdout)
+            self.assertIn(str(imported.resolve()), stdout)
+            self.assertIn(f"  slettet fil: {deleted.resolve()}", stdout)
+            self.assertIn(f"  kildefil: {(source / 'IMG_20240102.jpg').resolve()}", stdout)
+            self.assertIn("filstørrelse: 9 bytes (9 bytes)", stdout)
+            self.assertIn("sha256:", stdout)
+
     def test_import_dry_run_lists_files_without_database_or_copy_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
