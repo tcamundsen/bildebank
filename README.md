@@ -30,9 +30,13 @@ Selve bildesamlingen bør ligge i en egen mappe utenfor programmappen.
 [setup-windows.ps1](https://github.com/tcamundsen/bildebank/blob/main/setup-windows.ps1)
 
 Klikk på nedlastingsknappen på GitHub-siden, eller klikk `Raw` og lagre siden
-som `setup-windows.ps1`. Høyreklikk på den nedlastede filen og velg
+som `setup-windows.ps1`. Disse knappene ligger på høyre side av skjermen, noen
+linjer ned. Jeg lette lenge etter dem da jeg skulle teste 🙂
+Høyreklikk på den nedlastede filen og velg
 `Run with PowerShell`.
 
+Mens scriptet kjører kommer det til å poppe opp melding om at du må logge deg
+inn 
 Hvis repoet fortsatt er privat, må du være innlogget på GitHub og ha tilgang
 til repoet for at lenken skal fungere.
 
