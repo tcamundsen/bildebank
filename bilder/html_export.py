@@ -241,8 +241,8 @@ def render_html(items: list[dict[str, str]]) -> str:
       place-items: center;
     }}
     .viewer img, .viewer video {{
-      max-width: 100%;
-      max-height: 100%;
+      max-width: 100vw;
+      max-height: calc(100vh - 10rem);
       width: 100%;
       height: 100%;
       object-fit: contain;
