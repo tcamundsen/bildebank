@@ -1069,10 +1069,29 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn('"url": "2024/01/IMG%2020240102.jpg"', html)
             self.assertIn('"sizeText": "9 bytes"', html)
             self.assertIn("item.sizeText", html)
-            self.assertIn('const THUMB_LIMIT = 40;', html)
+            self.assertIn("const MONTH_PREVIEW_LIMIT = null;", html)
             self.assertIn('state.viewMode = "month";', html)
             self.assertIn("function representativeItems(items, limit)", html)
             self.assertIn('img.loading = "lazy";', html)
+
+            limited_output = root / "limited.html"
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "make-browser",
+                    "--month-preview-limit",
+                    "40",
+                    "--output",
+                    str(limited_output),
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser", stdout)
+            limited_html = limited_output.read_text(encoding="utf-8")
+            self.assertIn("const MONTH_PREVIEW_LIMIT = 40;", limited_html)
+            self.assertIn("if (limit === 1) return [items[0]];", limited_html)
 
     def test_make_browser_filters_by_media_and_date_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

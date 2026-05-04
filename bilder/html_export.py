@@ -19,6 +19,7 @@ def export_html(
     *,
     media_filter: str = "all",
     date_source_filter: str = "all",
+    month_preview_limit: int | None = None,
 ) -> Path:
     output_path = output or (target / "index.html")
     conn = db.connect(target)
@@ -31,7 +32,11 @@ def export_html(
     finally:
         conn.close()
 
-    output_path.write_text(render_html(items), encoding="utf-8", newline="\n")
+    output_path.write_text(
+        render_html(items, month_preview_limit=month_preview_limit),
+        encoding="utf-8",
+        newline="\n",
+    )
     return output_path
 
 
@@ -158,8 +163,9 @@ def month_key_from_path(path: Path) -> str:
     return "ukjent"
 
 
-def render_html(items: list[dict[str, str]]) -> str:
+def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None = None) -> str:
     items_json = json.dumps(items, ensure_ascii=False)
+    month_preview_limit_json = json.dumps(month_preview_limit)
     return f"""<!doctype html>
 <html lang="no">
 <head>
@@ -361,7 +367,7 @@ def render_html(items: list[dict[str, str]]) -> str:
   </div>
   <script>
     const embeddedItems = {items_json};
-    const THUMB_LIMIT = 40;
+    const MONTH_PREVIEW_LIMIT = {month_preview_limit_json};
     const state = {{ months: [], monthIndex: 0, itemIndex: 0, viewMode: "item" }};
     const statusEl = document.getElementById("status");
     const positionEl = document.getElementById("position");
@@ -518,7 +524,7 @@ def render_html(items: list[dict[str, str]]) -> str:
       if (!month) return;
       const grid = document.createElement("div");
       grid.className = "month-grid";
-      for (const item of representativeItems(month.items, THUMB_LIMIT)) {{
+      for (const item of representativeItems(month.items, MONTH_PREVIEW_LIMIT)) {{
         const index = month.items.indexOf(item);
         const button = document.createElement("button");
         button.className = "thumb";
@@ -551,7 +557,9 @@ def render_html(items: list[dict[str, str]]) -> str:
       updateButtons();
     }}
     function representativeItems(items, limit) {{
+      if (limit === null) return items;
       if (items.length <= limit) return items;
+      if (limit === 1) return [items[0]];
       const selected = [];
       const last = items.length - 1;
       const selectedIndexes = new Set();

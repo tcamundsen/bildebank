@@ -241,6 +241,28 @@ videoer som er plassert basert på metadata:
 
     $ bildebank make-browser --media=video --date-source=metadata
 
+Månedsoversikten viser som standard alle filer i måneden. Hvis det senere viser
+seg å bli tungt på enkelte maskiner eller i svært store måneder, kan brukeren
+sette et tak:
+
+    $ bildebank make-browser --month-preview-limit=40
+
+Senere kan programmet få en lokal interaktiv browser:
+
+    $ bildebank serve
+
+`serve` skal være en egen arbeidsmodus, ikke en erstatning for den statiske
+HTML-filen. Den starter en lokal webserver som viser en browser med samme
+grunnleggende navigasjon som `index.html`: år, måneder, bilder, videoer og
+filtre. Forskjellen er at nettleseren da kan sende handlinger tilbake til
+Bildebank-programmet. Trinn 1 bør være å kunne bla i bildene omtrent som i den
+statiske browseren, åpne ett bilde, og fjerne bildet man ser på. Fjerning skal
+bruke samme semantikk som `bildebank remove`: filen flyttes til `deleted/`,
+databasen markeres, og kildemappen røres ikke. Serveren bør tilby én HTML/app,
+API for liste over filer eller en valgt måned, media-URL-er for filvisning og et
+POST-endepunkt for fjerning. Dermed kan `make-browser` fortsatt være en trygg
+lesevisning, mens `serve` blir modusen for arbeid som endrer samlingen.
+
 For å lage en statisk HTML-side for manuell gjennomgang av navnekollisjoner:
 
     $ bildebank make-conflict-browser

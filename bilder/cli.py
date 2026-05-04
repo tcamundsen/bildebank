@@ -316,6 +316,11 @@ def add_browser_filter_arguments(parser: argparse.ArgumentParser) -> None:
         default="all",
         help="Filtrer browseren etter hvilken datokilde filene er plassert med.",
     )
+    parser.add_argument(
+        "--month-preview-limit",
+        type=positive_int_arg,
+        help="Maks antall filer i månedsoversikten. Standard: vis alle.",
+    )
 
 
 def add_command(
@@ -586,6 +591,7 @@ def run(args: argparse.Namespace) -> int:
                 output,
                 media_filter=args.media,
                 date_source_filter=args.date_source,
+                month_preview_limit=args.month_preview_limit,
             )
             print(f"Skrev HTML-browser: {output_path}")
             return 0
@@ -598,6 +604,7 @@ def run(args: argparse.Namespace) -> int:
                 None,
                 media_filter=args.media,
                 date_source_filter=args.date_source,
+                month_preview_limit=args.month_preview_limit,
             )
             open_file_in_browser(output_path)
             print(f"Åpnet HTML-browser: {output_path}")
@@ -796,6 +803,16 @@ def existing_path_arg(path: Path) -> Path:
         if candidate.exists():
             return candidate
     return path
+
+
+def positive_int_arg(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("må være et heltall") from exc
+    if number < 1:
+        raise argparse.ArgumentTypeError("må være minst 1")
+    return number
 
 
 def vars_for_log(args: argparse.Namespace) -> dict[str, str]:
