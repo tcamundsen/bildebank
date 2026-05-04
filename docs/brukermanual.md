@@ -57,7 +57,7 @@ cd $HOME\kode\bildebank
 Sjekk at Bildebank starter:
 
 ```powershell
-.\bin\bildebank.cmd --help
+bildebank --help
 ```
 
 Når du skal jobbe med bildesamlingen, gå til bildesamlingsmappen:
@@ -73,10 +73,10 @@ mkdir $HOME\BildeSamling
 cd $HOME\BildeSamling
 ```
 
-Når du står i bildesamlingsmappen, kan du kjøre Bildebank via programmappen:
+Når du står i bildesamlingsmappen, kan du kjøre Bildebank direkte:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd --help
+bildebank --help
 ```
 
 ## Første test med en liten bildemappe
@@ -108,7 +108,7 @@ betyr "denne mappen".
 Kjør dette fra bildesamlingsmappen:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd create .
+bildebank create .
 ```
 
 Bildebank oppretter databasen sin i bildesamlingsmappen. Etterpå er dette
@@ -122,13 +122,13 @@ importeres.
 Legg til testmappen:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd add "$HOME\TestBilder"
+bildebank add "$HOME\TestBilder"
 ```
 
 For en annen mappe bruker du samme mønster:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd add "sti\til\bilder"
+bildebank add "sti\til\bilder"
 ```
 
 Bruk hermetegn rundt stier. Det er spesielt viktig hvis mappenavnet inneholder
@@ -139,7 +139,7 @@ mellomrom.
 Før du importerer på ordentlig, kan du kjøre en tørrtest:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd import --dry-run
+bildebank import --dry-run
 ```
 
 Da viser Bildebank hva programmet ville importert, uten å kopiere filer og uten
@@ -152,7 +152,7 @@ Se gjennom listen. Hvis den ser riktig ut, kan du importere på ordentlig.
 Kjør import slik:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd import
+bildebank import
 ```
 
 Bildebank kopierer støttede bilder og videoer inn i bildesamlingsmappen og
@@ -176,7 +176,7 @@ mappen og deretter `import` igjen.
 Kjør:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd status
+bildebank status
 ```
 
 Status viser blant annet totalt antall importerte filer, hvor mange som er
@@ -192,7 +192,7 @@ bilder og videoer, og hvor datoen kom fra:
 Kjør:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd export-html
+bildebank export-html
 ```
 
 Bildebank lager da filen `index.html` i bildesamlingsmappen.
@@ -214,13 +214,13 @@ CD-en, navnet på USB-disken, eller et annet navn du vil kjenne igjen senere.
 Tørrtest først:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd import-removable --name "Familie-CD-2004" --dry-run "E:\"
+bildebank import-removable --name "Familie-CD-2004" --dry-run E:\
 ```
 
 Importer på ordentlig:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd import-removable --name "Familie-CD-2004" "E:\"
+bildebank import-removable --name "Familie-CD-2004" E:\
 ```
 
 Bytt ut `E:\` med stasjonen eller mappen der mediet finnes hos deg. Grunnen til
@@ -232,7 +232,7 @@ CD-er og USB-disker på forskjellige tidspunkt.
 Kjør:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd list-sources
+bildebank list-sources
 ```
 
 Listen viser kildene Bildebank kjenner til. Vanlige mapper vises som
@@ -250,13 +250,13 @@ navn.
 List navnekollisjoner:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd conflicts
+bildebank conflicts
 ```
 
 Se detaljer for en bestemt importert målfil:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd show-conflict "2024\01\IMG_0001.jpg"
+bildebank show-conflict "2024\01\IMG_0001.jpg"
 ```
 
 Bytt ut stien med en fil fra listen. Kommandoen viser hvilke kildefiler som
@@ -267,7 +267,7 @@ hører til samme kollisjon, hvor de ble importert fra, filstørrelse og hash.
 Kjør:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd non-metadata --with-source
+bildebank non-metadata --with-source
 ```
 
 Denne listen viser filer der datoen ikke kom fra metadata. Med `--with-source`
@@ -281,7 +281,7 @@ filens endringstidspunkt eller ukjent dato.
 Kjør:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd errors
+bildebank errors
 ```
 
 Dette viser registrerte feil som fortsatt ikke er løst.
@@ -289,7 +289,7 @@ Dette viser registrerte feil som fortsatt ikke er løst.
 For å se både uløste og løste feil:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd errors --include-resolved
+bildebank errors --include-resolved
 ```
 
 Løste feil kan for eksempel være feil som senere ble rettet ved en ny kontroll
@@ -304,13 +304,13 @@ Hvis du vil fjerne en importert fil fra den aktive bildebanken, bruk
 Eksempel:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd remove "2024\01\IMG_0001.jpg"
+bildebank remove "2024\01\IMG_0001.jpg"
 ```
 
 Se filer som er markert som slettet:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd list-removed
+bildebank list-removed
 ```
 
 Slettede filer blir ikke med i vanlig `export-html`.

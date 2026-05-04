@@ -32,16 +32,10 @@ derfor setup-scriptet slik:
 cd $HOME\Downloads
 ```
 
-3. Fjern blokkeringen fra filen:
+3. Kjør scriptet:
 
 ```powershell
-Unblock-File .\setup-windows.ps1
-```
-
-4. Kjør scriptet:
-
-```powershell
-.\setup-windows.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\setup-windows.ps1
 ```
 
 Hvis du høyreklikker og velger `Run with PowerShell` på en blokkert fil, kan
@@ -159,7 +153,7 @@ bruke `.\bin\bildebank.cmd` fra programmappen i stedet.
 Hvis du vil legge `bin`-mappen i `PATH` manuelt, kjør dette fra programmappen:
 
 ```powershell
-.\fix-path.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\fix-path.ps1
 ```
 
 Lukk PowerShell og åpne PowerShell på nytt. Sjekk deretter at kortkommandoen
@@ -196,7 +190,7 @@ være neste trinn for deg.
 
 ## Hente oppdateringer
 
-For sikre at du har siste versjon av programmet, kjør:
+For å sikre at du har siste versjon av programmet, kjør:
 
 ```powershell
 bildebank update
@@ -208,7 +202,7 @@ Hvis `bildebank update` ikke virker, kan du kjøre oppdateringsscriptet direkte:
 
 ```powershell
 cd $HOME\kode\bildebank
-.\update.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\update.ps1
 ```
 
 Hvis det heller ikke virker, kan du gjøre det manuelt:

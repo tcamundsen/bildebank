@@ -10,6 +10,19 @@ function Write-Step {
     Write-Host "== $Message =="
 }
 
+function Invoke-Native {
+    param(
+        [string]$FilePath,
+        [string[]]$ArgumentList
+    )
+
+    & $FilePath @ArgumentList
+    if ($LASTEXITCODE -ne 0) {
+        $command = "$FilePath $($ArgumentList -join ' ')"
+        throw "Kommando feilet med exit code $LASTEXITCODE: $command"
+    }
+}
+
 if (-not (Test-Path -LiteralPath (Join-Path $RepoDir ".git"))) {
     throw "Fant ikke git-repo: $RepoDir"
 }
@@ -21,7 +34,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $RepoDir "pyproject.toml"))) {
 Write-Step "Henter oppdateringer"
 Push-Location $RepoDir
 try {
-    git pull --ff-only
+    Invoke-Native -FilePath "git" -ArgumentList @("pull", "--ff-only")
 } finally {
     Pop-Location
 }
@@ -31,7 +44,7 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
     Write-Step "Lager Python-miljo"
     Push-Location $RepoDir
     try {
-        py -3.13 -m venv .venv
+        Invoke-Native -FilePath "py" -ArgumentList @("-3.13", "-m", "venv", ".venv")
     } finally {
         Pop-Location
     }
@@ -40,7 +53,7 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
 Write-Step "Oppdaterer Python-installasjon"
 Push-Location $RepoDir
 try {
-    & $venvPython -m pip install -e .
+    Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "pip", "install", "-e", ".")
 } finally {
     Pop-Location
 }

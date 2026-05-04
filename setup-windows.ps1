@@ -17,6 +17,19 @@ function Test-Command {
     return $null -ne (Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Invoke-Native {
+    param(
+        [string]$FilePath,
+        [string[]]$ArgumentList
+    )
+
+    & $FilePath @ArgumentList
+    if ($LASTEXITCODE -ne 0) {
+        $command = "$FilePath $($ArgumentList -join ' ')"
+        throw "Kommando feilet med exit code $LASTEXITCODE: $command"
+    }
+}
+
 function Refresh-ProcessPath {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -37,7 +50,16 @@ function Ensure-WingetPackage {
     }
 
     Write-Step "Installerer $Name med winget"
-    winget install --id $PackageId --exact --source winget --accept-package-agreements --accept-source-agreements
+    Invoke-Native -FilePath "winget" -ArgumentList @(
+        "install",
+        "--id",
+        $PackageId,
+        "--exact",
+        "--source",
+        "winget",
+        "--accept-package-agreements",
+        "--accept-source-agreements"
+    )
     Refresh-ProcessPath
 }
 
@@ -90,7 +112,7 @@ function Ensure-Repo {
         Write-Step "Oppdaterer eksisterende repo"
         Push-Location $RepoDir
         try {
-            git pull --ff-only
+            Invoke-Native -FilePath "git" -ArgumentList @("pull", "--ff-only")
         } finally {
             Pop-Location
         }
@@ -107,7 +129,7 @@ function Ensure-Repo {
     }
 
     Write-Step "Laster ned bildebank fra GitHub"
-    git clone $RepoUrl $RepoDir
+    Invoke-Native -FilePath "git" -ArgumentList @("clone", $RepoUrl, $RepoDir)
 }
 
 function Ensure-Venv {
@@ -118,7 +140,7 @@ function Ensure-Venv {
         Write-Step "Lager Python-miljo"
         Push-Location $RepoDir
         try {
-            py -3.13 -m venv .venv
+            Invoke-Native -FilePath "py" -ArgumentList @("-3.13", "-m", "venv", ".venv")
         } finally {
             Pop-Location
         }
@@ -127,7 +149,7 @@ function Ensure-Venv {
     Write-Step "Installerer bildebank i Python-miljoet"
     Push-Location $RepoDir
     try {
-        & $venvPython -m pip install -e .
+        Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "pip", "install", "-e", ".")
     } finally {
         Pop-Location
     }
@@ -194,5 +216,4 @@ Write-Host "Start en ny PowerShell og test:"
 Write-Host "  bildebank --help"
 Write-Host ""
 Write-Host "Hvis du vil oppdatere senere:"
-Write-Host "  cd `"$repoDir`""
-Write-Host "  .\update.ps1"
+Write-Host "  bildebank update"
