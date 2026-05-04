@@ -38,7 +38,7 @@ HELP_COMMAND_GROUPS = (
         (
             ("status", "Vis antall importerte bilder og videoer"),
             ("make-browser", "Lag index.html for nettleseren"),
-            ("open-browser", "Lag index.html og åpne den i nettleseren"),
+            ("open-browser", "Åpne HTML-browseren i nettleseren"),
             ("list-sources", "Vis registrerte kilder"),
             ("show-source", "Vis hvor en importert fil kom fra"),
         ),
@@ -274,13 +274,19 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "open-browser",
         usage="bildebank open-browser [valg]",
-        help="Lag index.html og åpne den i standard nettleser",
+        help="Åpne HTML-browseren i standard nettleser",
         description=(
-            "Lager eller oppdaterer index.html i målmappen og åpner den i "
-            "standard nettleser. Kommandoen kopierer ikke bilder eller videoer."
+            "Åpner en eksisterende HTML-browser i standard nettleser. "
+            "Standard er index.html i målmappen."
         ),
     )
-    add_browser_filter_arguments(open_browser)
+    open_browser.add_argument(
+        "-f",
+        "--file",
+        dest="file",
+        type=Path,
+        help="HTML-filen som skal åpnes. Standard: index.html i målmappen.",
+    )
 
     export_conflicts = add_command(
         subparsers,
@@ -599,15 +605,14 @@ def run(args: argparse.Namespace) -> int:
         if args.command == "open-browser":
             conn.commit()
             conn.close()
-            output_path = export_html(
-                target,
-                None,
-                media_filter=args.media,
-                date_source_filter=args.date_source,
-                month_preview_limit=args.month_preview_limit,
-            )
-            open_file_in_browser(output_path)
-            print(f"Åpnet HTML-browser: {output_path}")
+            browser_path = resolve_browser_file_arg(target, args.file)
+            if not browser_path.exists():
+                raise ValueError(
+                    f"Fant ikke HTML-browseren: {browser_path}. "
+                    "Kjør bildebank make-browser først."
+                )
+            open_file_in_browser(browser_path)
+            print(f"Åpnet HTML-browser: {browser_path}")
             return 0
 
         if args.command == "make-conflict-browser":
@@ -703,6 +708,14 @@ def run_update() -> int:
 def open_file_in_browser(path: Path) -> None:
     if not webbrowser.open(path.resolve().as_uri()):
         raise ValueError(f"Klarte ikke åpne nettleseren for: {path}")
+
+
+def resolve_browser_file_arg(target: Path, path: Path | None) -> Path:
+    if path is None:
+        return target / "index.html"
+    if path.is_absolute():
+        return path.resolve()
+    return (target / path).resolve()
 
 
 def resolve_target_file_arg(target: Path, path: Path) -> Path:

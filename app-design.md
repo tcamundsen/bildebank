@@ -227,8 +227,9 @@ For å lage en statisk HTML-browser i målmappen:
 `make-browser` skriver `index.html` i målmappen. HTML-filen inneholder en
 innebygd indeks fra databasen og kan derfor åpnes direkte i nettleseren uten
 mappevelger. Den viser bilder og videoer med relative paths fra målmappen, men
-kopierer ikke bilde- eller videofilene. `open-browser` lager samme fil og åpner
-den i standard nettleser. Browseren kan filtreres på medietype og datokilde:
+kopierer ikke bilde- eller videofilene. `open-browser` åpner som standard
+`index.html` i standard nettleser. Med `--file` kan den åpne en annen HTML-fil
+i målmappen. Browseren kan filtreres på medietype og datokilde når den lages:
 
     $ bildebank make-browser --media=image
     $ bildebank make-browser --media=video

@@ -1139,7 +1139,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("Skrev HTML-browser", stdout)
             self.assertTrue(custom_output.exists())
 
-    def test_open_browser_writes_index_and_opens_it(self) -> None:
+    def test_open_browser_opens_existing_index_without_rewriting_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -1150,15 +1150,28 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "make-browser"]), 0)
+            index = target / "index.html"
+            index.write_text("custom browser\n", encoding="utf-8")
 
             with patch("bilder.cli.webbrowser.open", return_value=True) as browser_open:
                 code, stdout, stderr = capture_cli(["--target", str(target), "open-browser"])
 
-            index = target / "index.html"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Åpnet HTML-browser", stdout)
-            self.assertTrue(index.exists())
+            self.assertEqual(index.read_text(encoding="utf-8"), "custom browser\n")
             browser_open.assert_called_once_with(index.resolve().as_uri())
+
+            custom_browser = target / "annet.html"
+            custom_browser.write_text("custom file\n", encoding="utf-8")
+            with patch("bilder.cli.webbrowser.open", return_value=True) as browser_open:
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "open-browser", "--file", "annet.html"]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Åpnet HTML-browser", stdout)
+            browser_open.assert_called_once_with(custom_browser.resolve().as_uri())
 
     def test_make_conflict_browser_writes_conflict_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
