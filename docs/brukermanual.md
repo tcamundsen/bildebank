@@ -210,6 +210,12 @@ med `--month-preview-limit`:
 bildebank make-browser --month-preview-limit 40
 ```
 
+Browseren åpnes ved å dobbeltklikke på `index.html` med filutforskeren
+i Windows, eller med `open-browser`:
+
+```powershell
+bildebank open-browser
+```
 
 ## Import fra CD, USB og flyttbare medier
 
