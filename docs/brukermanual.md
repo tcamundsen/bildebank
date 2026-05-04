@@ -187,12 +187,12 @@ bilder og videoer, og hvor datoen kom fra:
 - `mtime`: dato fra filens endringstidspunkt
 - `unknown`: ingen sikker dato funnet
 
-## Lag HTML-visning: `bildebank export-html`
+## Lag HTML-visning: `bildebank browser-browser`
 
 Kjør:
 
 ```powershell
-bildebank export-html
+bildebank make-browser
 ```
 
 Bildebank lager da filen `index.html` i bildesamlingsmappen.
@@ -200,8 +200,16 @@ Bildebank lager da filen `index.html` i bildesamlingsmappen.
 Åpne `index.html` i nettleseren for å bla i de importerte bildene og videoene.
 Du kan dobbeltklikke på filen i Filutforsker, eller åpne den fra nettleseren.
 
-Hvis du importerer flere filer senere, kjør `export-html` på nytt for å lage en
+Hvis du importerer flere filer senere, kjør `make-browser` på nytt for å lage en
 oppdatert `index.html`.
+
+For å unngå at månedsoversikten blir for tung å laste kan antall bilder begrenses
+med `--month-preview-limit`:
+
+```powershell
+bildebank make-browser --month-preview-limit 40
+```
+
 
 ## Import fra CD, USB og flyttbare medier
 
@@ -312,8 +320,6 @@ Se filer som er markert som slettet:
 ```powershell
 bildebank list-removed
 ```
-
-Slettede filer blir ikke med i vanlig `export-html`.
 
 ## Sikkerhet og backup
 
