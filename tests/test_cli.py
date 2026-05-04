@@ -46,7 +46,8 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 0)
         stdout = stdout_buffer.getvalue()
-        self.assertIn("usage: bildebank [-h] [--version] [--target TARGET] <kommando> [<args>]", stdout)
+        self.assertIn("usage: bildebank [-h] [--version] <kommando> [<args>]", stdout)
+        self.assertNotIn("--target", stdout)
         self.assertIn("Vanlige kommandoer:", stdout)
         self.assertIn("kom i gang\n   create", stdout)
         self.assertIn("se og kontrollere samlingen\n   status", stdout)

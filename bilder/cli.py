@@ -101,12 +101,12 @@ def main(argv: list[str] | None = None) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bildebank",
-        usage="%(prog)s [-h] [--version] [--target TARGET] <kommando> [<args>]",
+        usage="%(prog)s [-h] [--version] <kommando> [<args>]",
         formatter_class=BildebankHelpFormatter,
         epilog=main_help_epilog(),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    parser.add_argument("--target", type=Path, help="Målmappe med .bilder.sqlite3")
+    parser.add_argument("--target", type=Path, help=argparse.SUPPRESS)
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -609,7 +609,7 @@ def resolve_target(target_arg: Path | None) -> Path:
         return target
     target = db.find_target()
     if target is None:
-        raise ValueError("Fant ingen målmappe. Kjør fra målmappen eller bruk --target.")
+        raise ValueError("Fant ingen målmappe. Kjør kommandoen fra bildesamlingsmappen.")
     return target
 
 
