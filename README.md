@@ -239,12 +239,22 @@ databasen.
 
 Når det kommer en ny versjon av programmet, gå til programmappen og kjør:
 
+I Windows PowerShell:
+
 ```powershell
 cd $HOME\kode\bildebank
+.\bin\bildebank.cmd update
+```
+
+`bildebank update` er ikke ment å kjøres fra Linux/WSL.
+
+Hvis `bildebank update` ikke virker, kan du kjøre oppdateringsscriptet direkte:
+
+```powershell
 .\update.ps1
 ```
 
-Hvis `update.ps1` ikke virker, kan du gjøre det manuelt:
+Hvis det heller ikke virker, kan du gjøre det manuelt:
 
 ```powershell
 git pull

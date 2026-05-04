@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -174,6 +175,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     export_conflicts.add_argument("--output", type=Path)
     subparsers.add_parser("report", help="Vis importoppsummering")
+    subparsers.add_parser("update", help="Oppdater programinstallasjonen")
 
     return parser
 
@@ -216,6 +218,9 @@ def run(args: argparse.Namespace) -> int:
         for line in inspection.lines:
             print(line)
         return 0
+
+    if args.command == "update":
+        return run_update()
 
     target = resolve_target(args.target)
     if args.command == "import" and args.dry_run:
@@ -471,6 +476,38 @@ def validate_target_not_in_program_repo(target: Path) -> None:
 
 def program_repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
+
+
+def run_update() -> int:
+    if sys.platform != "win32":
+        raise ValueError(
+            "bildebank update kan bare kjøres fra Windows/PowerShell. "
+            "Oppdater manuelt med git pull og ny installasjon i .venv."
+        )
+    repo_root = program_repo_root()
+    update_script = repo_root / "update.ps1"
+    if not update_script.exists():
+        raise ValueError(
+            f"Fant ikke update.ps1 i programmappen: {repo_root}. "
+            f"Kjør manuelt fra programmappen hvis nødvendig."
+        )
+    try:
+        completed = subprocess.run(
+            [
+                "powershell.exe",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(update_script),
+            ],
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise ValueError(
+            "Fant ikke PowerShell. Kjør oppdatering manuelt fra programmappen: "
+            f"cd {repo_root}; .\\update.ps1"
+        ) from exc
+    return completed.returncode
 
 
 def resolve_target_file_arg(target: Path, path: Path) -> Path:

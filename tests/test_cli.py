@@ -78,6 +78,82 @@ class CliTests(unittest.TestCase):
             self.assertIn("Målmappen kan ikke ligge inni programmappen", stderr)
             self.assertFalse((target / DB_FILENAME).exists())
 
+    def test_update_runs_update_script_without_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            update_script = repo / "update.ps1"
+            update_script.write_text("# update\n", encoding="utf-8")
+
+            with (
+                patch("bilder.cli.sys.platform", "win32"),
+                patch("bilder.cli.program_repo_root", return_value=repo),
+                patch("bilder.cli.subprocess.run") as subprocess_run,
+            ):
+                subprocess_run.return_value.returncode = 7
+
+                code, stdout, stderr = capture_cli(["update"])
+
+            self.assertEqual(code, 7)
+            self.assertEqual(stdout, "")
+            self.assertEqual(stderr, "")
+            subprocess_run.assert_called_once_with(
+                [
+                    "powershell.exe",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(update_script),
+                ],
+                check=False,
+            )
+
+    def test_update_rejects_non_windows_before_running_script(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "update.ps1").write_text("# update\n", encoding="utf-8")
+
+            with (
+                patch("bilder.cli.sys.platform", "linux"),
+                patch("bilder.cli.program_repo_root", return_value=repo),
+                patch("bilder.cli.subprocess.run") as subprocess_run,
+            ):
+                code, stdout, stderr = capture_cli(["update"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("kan bare kjøres fra Windows/PowerShell", stderr)
+            subprocess_run.assert_not_called()
+
+    def test_update_reports_missing_update_script(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+
+            with (
+                patch("bilder.cli.sys.platform", "win32"),
+                patch("bilder.cli.program_repo_root", return_value=repo),
+            ):
+                code, stdout, stderr = capture_cli(["update"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Fant ikke update.ps1", stderr)
+
+    def test_update_reports_missing_powershell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / "update.ps1").write_text("# update\n", encoding="utf-8")
+
+            with (
+                patch("bilder.cli.sys.platform", "win32"),
+                patch("bilder.cli.program_repo_root", return_value=repo),
+                patch("bilder.cli.subprocess.run", side_effect=FileNotFoundError),
+            ):
+                code, stdout, stderr = capture_cli(["update"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Fant ikke PowerShell", stderr)
+
     def test_add_accepts_path_with_accidental_trailing_quote(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
