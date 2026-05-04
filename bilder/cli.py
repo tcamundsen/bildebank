@@ -49,7 +49,11 @@ def build_parser() -> argparse.ArgumentParser:
     add = subparsers.add_parser("add", help="Registrer kildemappe")
     add.add_argument("path", type=Path)
 
-    imp = subparsers.add_parser("import", help="Importer registrerte kilder")
+    imp = subparsers.add_parser(
+        "import",
+        help="Importer registrerte kilder",
+        description="Importer registrerte kilder som ikke er importert før. Hvis ingen nye kilder er lagt til siden sist import ble kjørt, blir resultatet 0 scannet.",
+        )
     imp.add_argument("--quiet", action="store_true")
     imp.add_argument(
         "--dry-run",
