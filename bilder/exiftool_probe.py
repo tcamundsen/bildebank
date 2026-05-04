@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
+from .progress import ProgressLine
 
 
 EXIFTOOL_DATE_TAGS = (
@@ -47,24 +48,28 @@ def exiftool_metadata_gaps(
 
     gaps: list[ExifToolMetadataGap] = []
     total = len(rows)
-    for index, row in enumerate(rows, start=1):
-        if progress and (index == 1 or index == total or index % 25 == 0):
-            print(f"exiftool {index}/{total}: {row['target_path']}", file=sys.stderr, flush=True)
-        target_path = Path(str(row["target_path"]))
-        found = exiftool_first_date(tool, target_path)
-        if found is None:
-            continue
-        tag, value, date = found
-        gaps.append(
-            ExifToolMetadataGap(
-                target_path=target_path,
-                bdb_date=row["taken_date"] or "-",
-                bdb_source=row["date_source"],
-                tag=tag,
-                value=value,
-                date=date,
+    progress_line = ProgressLine(sys.stderr)
+    try:
+        for index, row in enumerate(rows, start=1):
+            if progress and (index == 1 or index == total or index % 25 == 0):
+                progress_line.write(f"exiftool {index}/{total}: {row['target_path']}")
+            target_path = Path(str(row["target_path"]))
+            found = exiftool_first_date(tool, target_path)
+            if found is None:
+                continue
+            tag, value, date = found
+            gaps.append(
+                ExifToolMetadataGap(
+                    target_path=target_path,
+                    bdb_date=row["taken_date"] or "-",
+                    bdb_source=row["date_source"],
+                    tag=tag,
+                    value=value,
+                    date=date,
+                )
             )
-        )
+    finally:
+        progress_line.finish()
     return gaps
 
 

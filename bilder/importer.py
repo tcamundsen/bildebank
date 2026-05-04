@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import TextIO
 
 from . import db
 from .media import MediaDate, is_supported_media, media_date, sha256_file
+from .progress import ProgressLine
 
 
 COMMIT_EVERY = 200
@@ -142,6 +144,7 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
     covered_sources = covered_imported_subsources(conn, source)
     covered_roots = [covered.path.resolve() for covered in covered_sources]
     errors_before = stats.errors
+    progress = ProgressLine(sys.stderr)
     try:
         for item in iter_media_files(root):
             if isinstance(item, WalkError):
@@ -171,19 +174,21 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
                     message=str(exc),
                 )
             if verbose and stats.scanned % 50 == 0:
-                print(
+                progress.write(
                     f"{source.id}: scannet={stats.scanned} "
                     f"importert={stats.imported} duplikater={stats.duplicates} "
-                    f"dekket={stats.skipped_covered} feil={stats.errors}",
-                    flush=True,
+                    f"dekket={stats.skipped_covered} feil={stats.errors}"
                 )
             if (stats.imported + stats.duplicates + stats.skipped_existing) % COMMIT_EVERY == 0:
                 conn.commit()
     except KeyboardInterrupt:
         stats.stopped = True
         conn.commit()
+        progress.finish()
         print("Avbrutt. Databaseendringer er lagret så langt det var mulig.", flush=True)
         return stats
+    finally:
+        progress.finish()
 
     if stats.errors == errors_before:
         db.mark_source_imported(conn, source.id)
@@ -210,6 +215,7 @@ def import_source_dry_run(
 
     covered_sources = covered_imported_subsources(conn, source)
     covered_roots = [covered.path.resolve() for covered in covered_sources]
+    progress = ProgressLine(sys.stderr)
     try:
         for item in iter_media_files(root):
             if isinstance(item, WalkError):
@@ -227,16 +233,18 @@ def import_source_dry_run(
                 stats.errors += 1
                 print(f"FEIL\t{path}\t{exc}", file=output)
             if verbose and stats.scanned % 50 == 0:
-                print(
+                progress.write(
                     f"{source.id}: dry-run scannet={stats.scanned} "
                     f"ville_importert={stats.imported} duplikater={stats.duplicates} "
-                    f"dekket={stats.skipped_covered} feil={stats.errors}",
-                    flush=True,
+                    f"dekket={stats.skipped_covered} feil={stats.errors}"
                 )
     except KeyboardInterrupt:
         stats.stopped = True
+        progress.finish()
         print("Avbrutt. Dry-run har ikke endret databasen.", flush=True)
         return stats
+    finally:
+        progress.finish()
     return stats
 
 
