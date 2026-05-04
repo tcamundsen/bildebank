@@ -26,7 +26,7 @@ derfor setup-scriptet slik:
 1. Åpne PowerShell. Det gjør du ved å åpne startmenyen og begynne å skrive "PowerShell". Klikk på
    PowerShell-logoen som dukker opp. Du skal ikke velge "Run as Administrator" eller
    "PowerShell ISE". 
-2. Gå til nedlastingsmappen:
+2. Skriv dette i PowerShell for å gå til nedlastingsmappen:
 
 ```powershell
 cd $HOME\Downloads
@@ -41,10 +41,6 @@ powershell.exe -ExecutionPolicy Bypass -File .\setup-windows.ps1
 Hvis du høyreklikker og velger `Run with PowerShell` på en blokkert fil, kan
 vinduet bare blinke og forsvinne før du rekker å lese feilen.
 
-Siden repoet fortsatt er privat, må du være innlogget på GitHub og ha tilgang
-til repoet for at lenken skal fungere. Når scriptet kloner repoet, kan Git også
-åpne et innloggingsvindu for GitHub.
-
 Scriptet forsøker å:
 
 - installere Git for Windows hvis Git mangler
@@ -54,12 +50,29 @@ Scriptet forsøker å:
 - installere programmet i Python-miljøet
 - legge `bin`-mappen i brukerens `PATH`
 
-Når scriptet er ferdig, lukk PowerShell og åpne PowerShell på nytt. Da skal du
+Når scriptet er ferdig, **lukk PowerShell og åpne PowerShell på nytt**. Da skal du
 kunne skrive:
 
 ```powershell
 bildebank --help
 ```
+
+Hvis `bildebank --help` ikke virker etter at du har åpnet PowerShell på nytt,
+  gå til programmappen og prøv den fulle kommandoen:
+
+```powershell
+cd $HOME\kode\bildebank
+.\bin\bildebank.cmd --help
+```
+
+Hvis dette virker, kan PATH repareres med:
+```powershell
+  powershell.exe -ExecutionPolicy Bypass -File .\fix-path.ps1
+```
+
+Hvis dette ikke virker, ble ikke installasjonen ferdig.
+
+Da er det på tide å ta kontakt med Tom Cato.
 
 Hvis dette fungerer kan du fortsette med å lese [brukermanualen](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
 
@@ -146,6 +159,8 @@ Sjekk at programmet starter:
 .\bin\bildebank.cmd --help
 ```
 
+Bildebank kjøres via `bildebank.cmd` på Windows.
+
 Den korte kommandoen `bildebank` virker bare hvis `bin`-mappen er lagt i
 `PATH`. Setup-scriptet gjør dette automatisk. Ved manuell installasjon kan du
 bruke `.\bin\bildebank.cmd` fra programmappen i stedet.
@@ -161,26 +176,6 @@ virker:
 
 ```powershell
 bildebank --help
-```
-
-Det finnes også et PowerShell-script:
-
-```powershell
-.\bin\bildebank.ps1 --help
-```
-
-Hvis PowerShell nekter å kjøre `bildebank.ps1`, kjør dette én gang:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
-Lukk PowerShell, åpne PowerShell på nytt, gå tilbake til programmappen og prøv
-igjen:
-
-```powershell
-cd $HOME\kode\bildebank
-.\bin\bildebank.ps1 --help
 ```
 
 Nå skal forhåpentligvis [brukermanual](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md)
@@ -227,16 +222,6 @@ Installer Git for Windows og åpne PowerShell på nytt.
 Python er ikke installert, eller Python ble installert uten å bli lagt i PATH.
 Installer Python på nytt og huk av for `Add python.exe to PATH` hvis valget
 vises.
-
-### PowerShell nekter å kjøre `bildebank.ps1`
-
-Kjør:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-```
-
-Åpne PowerShell på nytt etterpå.
 
 ### `bildebank.exe` virker ikke
 

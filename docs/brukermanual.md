@@ -1,3 +1,16 @@
+## Om programmet
+
+Noen ideer eller prinsipper som ligger bak programmet:
+
+* Programmet skal ikke endre noen av mappene der det henter bilder fra. Alle bilder
+  kopieres inn i en ny mappestruktur.
+* Den nye bildesamlingen skal ikke avhenge av noe installert programvare. Man
+  skal kunne kopiere det rett over på en minnepinne, plugge i en annen PC og
+  bla i bildene, enten med de vanlige verktøyene som Windows eller Linux har,
+  eller med en generert HTML-fil som visningsverktøy.
+* Du skal kunne vite hvilken minnebrikke eller mappe alle bildene stammer fra.
+* Vi vil unngå duplikater.
+
 # Brukermanual for Bildebank
 
 Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
@@ -11,6 +24,7 @@ Eksemplene under bruker disse mappene:
 
 Bytt ut mappenavnene hvis du har valgt andre steder.
 
+
 ## Programmappen og bildesamlingsmappen
 
 Bildebank bruker to forskjellige typer mapper.
@@ -23,7 +37,9 @@ $HOME\kode\bildebank
 ```
 
 I programmappen ligger filer som `README.md`, `setup-windows.ps1`,
-`update.ps1`, `bin\bildebank.cmd` og Python-miljøet `.venv`.
+`update.ps1`, `bin\bildebank.cmd` og Python-miljøet `.venv`. På Windows kjører
+Bildebank via `bildebank.cmd`; du trenger ikke noe eget PowerShell-script for å
+starte programmet.
 
 **Bildesamlingsmappen** er mappen der din nye bildebank skal ligge. Det er her
 Bildebank lager databasen, årsmappene, månedsmappene og `index.html`.
@@ -36,6 +52,7 @@ $HOME\BildeSamling
 
 Bildesamlingsmappen skal ikke ligge inni programmappen. Hold programmet og
 bildesamlingen adskilt.
+
 
 ## Åpne PowerShell og gå til riktig mappe
 
@@ -259,7 +276,9 @@ kilde er importert.
 
 En navnekollisjon betyr at flere importerte filer ville hatt samme filnavn i
 samme målmappe. Bildebank beholder filene, men lagrer noen av dem med justert
-navn.
+navn. Dette er egentlig ikke et problem, men hvis du feilsøker, eller hvis du
+tror at du har for eksempel samme bilde i forskjellig oppløsning fra to kilder,
+med samme filanvn, så kan dette være nyttig å se på.
 
 List navnekollisjoner:
 
