@@ -25,7 +25,7 @@ derfor setup-scriptet slik:
 
 1. Åpne PowerShell. Det gjør du ved å åpne startmenyen og begynne å skrive "PowerShell". Klikk på
    PowerShell-logoen som dukker opp. Du skal ikke velge "Run as Administrator" eller
-   "PowerShell ICE". 
+   "PowerShell ISE". 
 2. Gå til nedlastingsmappen:
 
 ```powershell
@@ -152,6 +152,23 @@ Sjekk at programmet starter:
 .\bin\bildebank.cmd --help
 ```
 
+Den korte kommandoen `bildebank` virker bare hvis `bin`-mappen er lagt i
+`PATH`. Setup-scriptet gjør dette automatisk. Ved manuell installasjon kan du
+bruke `.\bin\bildebank.cmd` fra programmappen i stedet.
+
+Hvis du vil legge `bin`-mappen i `PATH` manuelt, kjør dette fra programmappen:
+
+```powershell
+.\fix-path.ps1
+```
+
+Lukk PowerShell og åpne PowerShell på nytt. Sjekk deretter at kortkommandoen
+virker:
+
+```powershell
+bildebank --help
+```
+
 Det finnes også et PowerShell-script:
 
 ```powershell
@@ -179,9 +196,7 @@ være neste trinn for deg.
 
 ## Hente oppdateringer
 
-Når det kommer en ny versjon av programmet, gå til programmappen og kjør:
-
-I Windows PowerShell:
+For sikre at du har siste versjon av programmet, kjør:
 
 ```powershell
 bildebank update
