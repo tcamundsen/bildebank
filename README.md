@@ -6,22 +6,9 @@ versjon 3 eller senere. Se `LICENSE` for full lisens.
 # Installasjon
 
 Denne oppskriften er skrevet for Windows 11 og for deg som ikke vanligvis
-bruker Git eller Python. Målet er å laste ned programmet fra GitHub, kjøre det
-fra en lokal mappe, og senere kunne hente oppdateringer med `git pull`.
-
-**Foreløpig er ikke programmet klart til å slippes løs på slekta.
-Jeg skal si fra når det er klart.**
-
-## Kortversjon
-
-Du trenger:
-
-1. Git for Windows
-2. Python 3.13 eller nyere
-3. En lokal kopi av programmet fra GitHub
-4. En Python-venv i programmappen
-
-Selve bildesamlingen bør ligge i en egen mappe utenfor programmappen.
+bruker Git eller Python. Etter at programmet er installert skal du
+forhåpentligvis slippe å bruke Git eller Python selv. Det brukes
+bare av Bildebank.
 
 ## Anbefalt installasjon
 
@@ -83,7 +70,17 @@ bildebank --help
 Hvis dette fungerer kan du fortsette med å lese [brukermanual](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
 
 Hvis scriptet ikke får installert Git eller Python automatisk, kan du følge den
-manuelle oppskriften under.
+manuelle oppskriften under. Men jeg foreslår egentlig at du ringer Tom Cato som
+kan finne ut hvorfor ikke automatikken fungerer.
+
+## Kortversjon hvis setup-windows.ps1 feiler
+
+Du trenger:
+
+1. Git for Windows
+2. Python 3.13 eller nyere
+3. En lokal kopi av programmet fra GitHub
+4. En Python-venv i programmappen
 
 ## Installer Git for Windows
 
@@ -133,9 +130,6 @@ git clone https://github.com/tcamundsen/bildebank.git
 cd bildebank
 ```
 
-Hvis repoet senere får et annet navn eller en annen adresse, bruker du den
-adressen i stedet.
-
 ## Lag Python-miljø for programmet
 
 Kjør disse kommandoene fra programmappen `bildebank`:
@@ -178,66 +172,10 @@ cd $HOME\kode\bildebank
 .\bin\bildebank.ps1 --help
 ```
 
-## Opprett en bildesamling
+Nå skal forhåpentligvis [brukermanual](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md)
+være neste trinn for deg.
 
-Lag en egen mappe for den nye samlingen. Den skal ikke ligge inni
-programmappen.
 
-Eksempel:
-
-```powershell
-mkdir $HOME\BildeSamling
-cd $HOME\BildeSamling
-```
-
-Opprett målmappe og database:
-
-```powershell
-..\kode\bildebank\bin\bildebank.cmd target .
-```
-
-Nå kan du legge til en kildemappe med bilder og videoer:
-
-```powershell
-..\kode\bildebank\bin\bildebank.cmd add "sti\til\kildemappe"
-```
-
-Bytt ut `sti\til\kildemappe` med mappen der bildene ligger.
-
-Importer:
-
-```powershell
-..\kode\bildebank\bin\bildebank.cmd import
-```
-
-Se status:
-
-```powershell
-..\kode\bildebank\bin\bildebank.cmd status
-```
-
-Lag HTML-browser:
-
-```powershell
-..\kode\bildebank\bin\bildebank.cmd export-html
-```
-
-Etterpå kan du åpne `index.html` i bildesamlingsmappen.
-
-## Anbefalt første test
-
-Ikke start med hele hovedsamlingen første gang. Lag heller en liten testmappe
-med noen få bilder og videoer, og importer den først. Da ser du at programmet
-plasserer filene slik du forventer før du kjører en større import.
-
-Du kan også kjøre en tørrtest før import:
-
-```powershell
-..\kode\bildebank\bin\bildebank.cmd import --dry-run
-```
-
-Da viser programmet hva det ville gjort, uten å kopiere filer eller endre
-databasen.
 
 ## Hente oppdateringer
 
@@ -246,8 +184,7 @@ Når det kommer en ny versjon av programmet, gå til programmappen og kjør:
 I Windows PowerShell:
 
 ```powershell
-cd $HOME\kode\bildebank
-.\bin\bildebank.cmd update
+bildebank update
 ```
 
 `bildebank update` er ikke ment å kjøres fra Linux/WSL.
@@ -255,12 +192,14 @@ cd $HOME\kode\bildebank
 Hvis `bildebank update` ikke virker, kan du kjøre oppdateringsscriptet direkte:
 
 ```powershell
+cd $HOME\kode\bildebank
 .\update.ps1
 ```
 
 Hvis det heller ikke virker, kan du gjøre det manuelt:
 
 ```powershell
+cd $HOME\kode\bildebank
 git pull
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
