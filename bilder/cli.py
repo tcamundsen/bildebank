@@ -43,8 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    target = subparsers.add_parser("target", help="Opprett målmappe og database")
-    target.add_argument("path", type=Path)
+    create = subparsers.add_parser("create", help="Opprett målmappe og database")
+    create.add_argument("path", type=Path)
 
     add = subparsers.add_parser("add", help="Registrer kildemappe")
     add.add_argument("path", type=Path)
@@ -198,13 +198,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> int:
-    if args.command == "target":
+    if args.command == "create":
         target = args.path.resolve()
         validate_target_not_in_program_repo(target)
         db.init_database(target)
         conn = db.connect(target)
         try:
-            db.log_command(conn, "target", {"path": str(target)})
+            db.log_command(conn, "create", {"path": str(target)})
             conn.commit()
         finally:
             conn.close()

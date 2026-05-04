@@ -100,15 +100,15 @@ mkdir $HOME\BildeSamling
 cd $HOME\BildeSamling
 ```
 
-## Opprett målmappe: `bildebank target .`
+## Opprett målmappe: `bildebank create .`
 
-Kommandoen `target` gjør den mappen du står i til en Bildebank-målmappe. Punktum
+Kommandoen `create` gjør den mappen du står i til en Bildebank-målmappe. Punktum
 betyr "denne mappen".
 
 Kjør dette fra bildesamlingsmappen:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd target .
+..\kode\bildebank\bin\bildebank.cmd create .
 ```
 
 Bildebank oppretter databasen sin i bildesamlingsmappen. Etterpå er dette

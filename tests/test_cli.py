@@ -10,7 +10,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from bilder.cli import main
+from bilder.cli import build_parser, main
 from bilder.db import DB_FILENAME
 from bilder.importer import safe_copy
 from bilder.media import sha256_file
@@ -38,6 +38,10 @@ def capture_cli(args: list[str]) -> tuple[int, str, str]:
 
 
 class CliTests(unittest.TestCase):
+    def test_target_command_is_not_available(self) -> None:
+        with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+            build_parser().parse_args(["target", "."])
+
     def test_target_add_and_import(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -46,7 +50,7 @@ class CliTests(unittest.TestCase):
             source.mkdir()
             (source / "IMG_20240102.jpg").write_bytes(b"image-one")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertTrue((target / DB_FILENAME).exists())
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
@@ -72,7 +76,7 @@ class CliTests(unittest.TestCase):
             repo.mkdir()
 
             with patch("bilder.cli.program_repo_root", return_value=repo.resolve()):
-                code, stdout, stderr = capture_cli(["target", str(target)])
+                code, stdout, stderr = capture_cli(["create", str(target)])
 
             self.assertEqual(code, 1)
             self.assertIn("Målmappen kan ikke ligge inni programmappen", stderr)
@@ -161,7 +165,7 @@ class CliTests(unittest.TestCase):
             source = root / "source"
             source.mkdir()
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
                 run_cli(["--target", str(target), "add", str(source) + '"']),
                 0,
@@ -176,7 +180,7 @@ class CliTests(unittest.TestCase):
             source_file = source / "IMG_20240102.jpg"
             source_file.write_bytes(b"image-one")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -204,7 +208,7 @@ class CliTests(unittest.TestCase):
             source.mkdir()
             (source / "IMG_20240102.jpg").write_bytes(b"image-one")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -254,7 +258,7 @@ class CliTests(unittest.TestCase):
             source_file = source / "IMG_20240102.jpg"
             source_file.write_bytes(b"image-one")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
@@ -291,7 +295,7 @@ class CliTests(unittest.TestCase):
             (source / "IMG_20240102.jpg").write_bytes(b"image-one")
             log_file = root / "dry-run.txt"
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
 
             code, stdout, stderr = capture_cli(
@@ -321,7 +325,7 @@ class CliTests(unittest.TestCase):
             source.mkdir()
             (source / "IMG_20240102.jpg").write_bytes(b"image-one")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             lock_path = target / LOCK_FILENAME
             lock_path.write_text("command=import\npid=123\n", encoding="utf-8")
@@ -348,7 +352,7 @@ class CliTests(unittest.TestCase):
             (source1 / "IMG_20240102.jpg").write_bytes(b"same")
             (source2 / "COPY_20240203.jpg").write_bytes(b"same")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source1)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source2)]), 0)
@@ -372,7 +376,7 @@ class CliTests(unittest.TestCase):
             (source / "IMG_20240102.jpg").write_bytes(b"image")
             (source / "video.mp4").write_bytes(minimal_mp4_with_creation_date(dt.date(2010, 7, 8)))
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -396,7 +400,7 @@ class CliTests(unittest.TestCase):
             (child / "IMG_20061003.jpg").write_bytes(b"child")
             (parent / "IMG_20070104.jpg").write_bytes(b"parent")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(child)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(parent)]), 0)
@@ -429,7 +433,7 @@ class CliTests(unittest.TestCase):
             child = parent / "2007"
             child.mkdir(parents=True)
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(parent)]), 0)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "add", str(child)])
@@ -447,7 +451,7 @@ class CliTests(unittest.TestCase):
             child.mkdir(parents=True)
             (child / "IMG_20061003.jpg").write_bytes(b"child")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(child)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(parent)]), 0)
@@ -469,7 +473,7 @@ class CliTests(unittest.TestCase):
             (source / "a" / "IMG_20240102.jpg").write_bytes(b"first")
             (source / "b" / "IMG_20240102.jpg").write_bytes(b"second")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -497,7 +501,7 @@ class CliTests(unittest.TestCase):
             first_source.write_bytes(minimal_png(640, 480))
             second_source.write_bytes(minimal_png(320, 240))
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -530,7 +534,7 @@ class CliTests(unittest.TestCase):
             (source / "a" / "IMG_20240102.jpg").write_bytes(b"first")
             (source / "b" / "IMG_20240102.jpg").write_bytes(b"second")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -551,7 +555,7 @@ class CliTests(unittest.TestCase):
             source.mkdir()
             (source / "IMG_20240102.jpg").write_bytes(b"one")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -572,7 +576,7 @@ class CliTests(unittest.TestCase):
             source.mkdir()
             (source / "IMG_20240102.jpg").write_bytes(b"image")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -604,7 +608,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             source = root / "source"
             target = source / "target"
             source.mkdir()
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 1)
 
     def test_import_records_walk_errors_and_keeps_source_pending_error(self) -> None:
@@ -621,7 +625,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                     onerror(PermissionError(13, "Permission denied", str(blocked)))
                 yield str(path), [], ["IMG_20240102.jpg"]
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
 
             with patch("bilder.importer.os.walk", fake_walk):
@@ -671,7 +675,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             source.mkdir()
             (source / "IMG_20240102.jpg").write_bytes(b"already-copied")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
 
             recovered = target / "2024" / "01" / "IMG_20240102.jpg"
@@ -698,7 +702,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             (normal / "NORMAL_20240102.jpg").write_bytes(b"normal")
             (removable / "REM_20240203.jpg").write_bytes(b"removable")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(normal)]), 0)
             self.assertEqual(
                 run_cli(
@@ -726,7 +730,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             removable_file = removable / "REM_20240203.jpg"
             removable_file.write_bytes(b"removable")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 commands_before = conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0]
@@ -768,7 +772,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             source.mkdir()
             (source / "video.mp4").write_bytes(minimal_mp4_with_creation_date(dt.date(2010, 7, 8)))
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -784,7 +788,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 minimal_avi_with_creation_date(dt.date(2007, 10, 31))
             )
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -799,7 +803,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             (source / "video.mp4").write_bytes(minimal_mp4_with_creation_date(dt.date(2010, 7, 8)))
             (source / "IMG_20240102.jpg").write_bytes(b"filename-date")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -846,7 +850,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             old_time = dt.datetime(2008, 2, 29, 12, 0).timestamp()
             os.utime(source_file, (old_time, old_time))
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -880,7 +884,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             target = root / "target"
             missing = root / "missing-source"
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 conn.execute(
@@ -921,7 +925,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             source_file = source / "IMG_20240102.jpg"
             source_file.write_bytes(b"filename-date")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -943,7 +947,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             old_target = target / "2008" / "02" / "video.avi"
             repaired_target = target / "2007" / "03" / "video.avi"
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             repaired_target.parent.mkdir(parents=True)
             repaired_target.write_bytes(minimal_avi_with_idit_outside_info())
             file_hash = sha256_file(repaired_target)
@@ -1015,7 +1019,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             source.mkdir()
             (source / "IMG 20240102.jpg").write_bytes(b"image-one")
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -1042,7 +1046,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             (source / "IMG_20240102.jpg").write_bytes(b"image-one")
             (source / "video.mp4").write_bytes(minimal_mp4_with_creation_date(dt.date(2010, 7, 8)))
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
@@ -1089,7 +1093,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             (source / "a" / "IMG_20240102.png").write_bytes(minimal_png(640, 480))
             (source / "b" / "IMG_20240102.png").write_bytes(minimal_png(320, 240))
 
-            self.assertEqual(run_cli(["target", str(target)]), 0)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
