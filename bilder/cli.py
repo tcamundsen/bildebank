@@ -22,6 +22,68 @@ from .media import explain_date, image_dimensions, inspect_metadata
 from .target_lock import TargetLock
 
 
+HELP_COMMAND_GROUPS = (
+    (
+        "kom i gang",
+        (
+            ("create", "Opprett en ny bildesamlingsmappe"),
+            ("add", "Registrer en vanlig kildemappe"),
+            ("import", "Importer registrerte kilder"),
+            ("import-removable", "Importer CD, USB og andre flyttbare medier"),
+        ),
+    ),
+    (
+        "se og kontrollere samlingen",
+        (
+            ("status", "Vis antall importerte bilder og videoer"),
+            ("export-html", "Lag index.html for nettleseren"),
+            ("list-sources", "Vis registrerte kilder"),
+            ("show-source", "Vis hvor en importert fil kom fra"),
+        ),
+    ),
+    (
+        "finne ting som bør kontrolleres",
+        (
+            ("conflicts", "List filer med navnekollisjon"),
+            ("show-conflict", "Vis detaljer om en navnekollisjon"),
+            ("non-metadata", "List filer der datoen ikke kom fra metadata"),
+            ("errors", "List registrerte feil"),
+        ),
+    ),
+    (
+        "rydde",
+        (
+            ("remove", "Flytt en importert fil til deleted/"),
+            ("list-removed", "List filer som er flyttet til deleted/"),
+        ),
+    ),
+    (
+        "avansert kontroll",
+        (
+            ("explain-date", "Forklar hvilken dato Bildebank ville brukt"),
+            ("inspect-metadata", "Vis metadatafragmenter og datokandidater"),
+            ("refresh-metadata", "Sjekk filer uten metadata på nytt"),
+            ("exiftool-metadata-gaps", "Finn metadata Bildebank ikke leser ennå"),
+            ("export-html-conflicts", "Lag HTML-side for navnekollisjoner"),
+            ("report", "Vis importoppsummering"),
+        ),
+    ),
+    (
+        "programmet",
+        (
+            ("update", "Oppdater programinstallasjonen"),
+        ),
+    ),
+)
+
+
+class BildebankHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    def _format_action(self, action: argparse.Action) -> str:
+        if isinstance(action, argparse._SubParsersAction):
+            return ""
+        return super()._format_action(action)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -37,20 +99,37 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="bildebank")
+    parser = argparse.ArgumentParser(
+        prog="bildebank",
+        usage="%(prog)s [-h] [--version] [--target TARGET] <kommando> [<args>]",
+        formatter_class=BildebankHelpFormatter,
+        epilog=main_help_epilog(),
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("--target", type=Path, help="Målmappe med .bilder.sqlite3")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    create = subparsers.add_parser("create", help="Opprett målmappe og database")
-    create.add_argument("path", type=Path)
+    create = add_command(
+        subparsers,
+        "create",
+        usage="bildebank create [valg] mappe",
+        help="Opprett målmappe og database",
+    )
+    create.add_argument("path", metavar="mappe", type=Path, help="Mappen som skal bli bildesamling")
 
-    add = subparsers.add_parser("add", help="Registrer kildemappe")
-    add.add_argument("path", type=Path)
+    add = add_command(
+        subparsers,
+        "add",
+        usage="bildebank add [valg] mappe",
+        help="Registrer kildemappe",
+    )
+    add.add_argument("path", metavar="mappe", type=Path, help="Kildemappe med bilder og videoer")
 
-    imp = subparsers.add_parser(
+    imp = add_command(
+        subparsers,
         "import",
+        usage="bildebank import [valg]",
         help="Importer registrerte kilder",
         description="Importer registrerte kilder som ikke er importert før. Hvis ingen nye kilder er lagt til siden sist import ble kjørt, blir resultatet 0 scannet.",
         )
@@ -66,8 +145,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skriv dry-run-listen til fil i stedet for stdout",
     )
 
-    removable = subparsers.add_parser(
+    removable = add_command(
+        subparsers,
         "import-removable",
+        usage="bildebank import-removable [valg] --name navn mappe",
         help="Registrer og importer ett flyttbart medium direkte; ikke bruk add først",
         description=(
             "Registrerer og importerer ett flyttbart medium i samme kommando. "
@@ -85,29 +166,37 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="List filer som ville blitt importert uten å registrere mediet eller endre databasen",
     )
-    removable.add_argument("path", type=Path, help="Path til mediet slik det er montert nå")
+    removable.add_argument("path", metavar="mappe", type=Path, help="Path til mediet slik det er montert nå")
 
-    subparsers.add_parser("list-sources", help="List registrerte kilder")
-    subparsers.add_parser("status", help="Vis antall filer fordelt på type og datokilde")
-    subparsers.add_parser("conflicts", help="List importerte filer med navnekollisjon")
-    show_conflict = subparsers.add_parser(
+    add_command(subparsers, "list-sources", usage="bildebank list-sources [valg]", help="List registrerte kilder")
+    add_command(subparsers, "status", usage="bildebank status [valg]", help="Vis antall filer fordelt på type og datokilde")
+    add_command(subparsers, "conflicts", usage="bildebank conflicts [valg]", help="List importerte filer med navnekollisjon")
+    show_conflict = add_command(
+        subparsers,
         "show-conflict",
+        usage="bildebank show-conflict [valg] fil",
         help="Vis alle kildefiler i samme navnekollisjon som en målfil",
     )
-    show_conflict.add_argument("path", type=Path)
-    show_source = subparsers.add_parser(
+    show_conflict.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    show_source = add_command(
+        subparsers,
         "show-source",
+        usage="bildebank show-source [valg] fil",
         help="Vis hvilken kilde en importert målfil kommer fra",
     )
-    show_source.add_argument("path", type=Path)
-    remove = subparsers.add_parser(
+    show_source.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    remove = add_command(
+        subparsers,
         "remove",
+        usage="bildebank remove [valg] fil",
         help="Flytt en importert målfil til deleted/ og marker den som slettet",
     )
-    remove.add_argument("path", type=Path)
-    subparsers.add_parser("list-removed", help="List filer som er markert som slettet")
-    non_metadata = subparsers.add_parser(
+    remove.add_argument("path", metavar="fil", type=Path, help="Importert målfil som skal fjernes")
+    add_command(subparsers, "list-removed", usage="bildebank list-removed [valg]", help="List filer som er markert som slettet")
+    non_metadata = add_command(
+        subparsers,
         "non-metadata",
+        usage="bildebank non-metadata [valg]",
         help="List filer der datoen ikke kom fra metadata",
     )
     non_metadata.add_argument(
@@ -115,8 +204,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Vis kildefil i tillegg til målfil",
     )
-    exiftool_gaps = subparsers.add_parser(
+    exiftool_gaps = add_command(
+        subparsers,
         "exiftool-metadata-gaps",
+        usage="bildebank exiftool-metadata-gaps [valg]",
         help="Finn filer der ExifTool ser metadata-dato som bildebank ikke leser",
     )
     exiftool_gaps.add_argument(
@@ -124,18 +215,24 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Path til exiftool.exe. Standard er exiftool.exe i målmappen.",
     )
-    explain = subparsers.add_parser(
+    explain = add_command(
+        subparsers,
         "explain-date",
+        usage="bildebank explain-date [valg] fil",
         help="Forklar hvilken dato programmet ville brukt for en fil",
     )
-    explain.add_argument("path", type=Path)
-    inspect = subparsers.add_parser(
+    explain.add_argument("path", metavar="fil", type=Path, help="Bilde- eller videofil")
+    inspect = add_command(
+        subparsers,
         "inspect-metadata",
+        usage="bildebank inspect-metadata [valg] fil",
         help="Vis metadatafragmenter og datokandidater for en fil",
     )
-    inspect.add_argument("path", type=Path)
-    refresh = subparsers.add_parser(
+    inspect.add_argument("path", metavar="fil", type=Path, help="Bilde- eller videofil")
+    refresh = add_command(
+        subparsers,
         "refresh-metadata",
+        usage="bildebank refresh-metadata [valg]",
         help="Sjekk filer uten metadata på nytt og flytt dem hvis metadata nå kan leses",
     )
     refresh.add_argument(
@@ -148,7 +245,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Vis filer som flyttes, hoppes over eller feiler",
     )
-    errors = subparsers.add_parser("errors", help="List registrerte feil")
+    errors = add_command(subparsers, "errors", usage="bildebank errors [valg]", help="List registrerte feil")
     errors.add_argument("--limit", type=int, default=50)
     errors.add_argument("--stage")
     errors.add_argument(
@@ -156,8 +253,10 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Vis også feil som senere er løst",
     )
-    export = subparsers.add_parser(
+    export = add_command(
+        subparsers,
         "export-html",
+        usage="bildebank export-html [valg]",
         help="Skriv index.html i målmappen for browsing av importerte filer",
     )
     export.add_argument(
@@ -180,8 +279,10 @@ def build_parser() -> argparse.ArgumentParser:
         default="all",
         help="Filtrer eksporten etter hvilken datokilde filene er plassert med.",
     )
-    export_conflicts = subparsers.add_parser(
+    export_conflicts = add_command(
+        subparsers,
         "export-html-conflicts",
+        usage="bildebank export-html-conflicts [valg]",
         help="Skriv HTML-side for browsing av navnekollisjoner",
     )
     export_conflicts.add_argument(
@@ -191,10 +292,43 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Skriv HTML-filen hit. Standard: name-conflicts.html i målmappen.",
     )
-    subparsers.add_parser("report", help="Vis importoppsummering")
-    subparsers.add_parser("update", help="Oppdater programinstallasjonen")
+    add_command(subparsers, "report", usage="bildebank report [valg]", help="Vis importoppsummering")
+    add_command(subparsers, "update", usage="bildebank update [valg]", help="Oppdater programinstallasjonen",
+                description="Laster ned aller siste versjon av programmet fra GitHub.")
 
     return parser
+
+
+def add_command(
+    subparsers: argparse._SubParsersAction,
+    name: str,
+    *,
+    usage: str,
+    help: str,
+    description: str | None = None,
+) -> argparse.ArgumentParser:
+    return subparsers.add_parser(
+        name,
+        help=help,
+        description=description,
+        usage=usage,
+    )
+
+
+def main_help_epilog() -> str:
+    lines = ["Vanlige kommandoer:"]
+    for heading, commands in HELP_COMMAND_GROUPS:
+        lines.append("")
+        lines.append(heading)
+        for command, description in commands:
+            lines.append(f"   {command:<22} {description}")
+    lines.append("")
+    lines.append("Se hjelp for en kommando med:")
+    lines.append("   bildebank <kommando> -h")
+    lines.append("")
+    lines.append("Eksempel:")
+    lines.append("   bildebank import --dry-run")
+    return "\n".join(lines)
 
 
 def run(args: argparse.Namespace) -> int:

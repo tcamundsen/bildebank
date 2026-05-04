@@ -38,6 +38,36 @@ def capture_cli(args: list[str]) -> tuple[int, str, str]:
 
 
 class CliTests(unittest.TestCase):
+    def test_main_help_groups_commands_by_user_task(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("usage: bildebank [-h] [--version] [--target TARGET] <kommando> [<args>]", stdout)
+        self.assertIn("Vanlige kommandoer:", stdout)
+        self.assertIn("kom i gang\n   create", stdout)
+        self.assertIn("se og kontrollere samlingen\n   status", stdout)
+        self.assertIn("finne ting som bør kontrolleres\n   conflicts", stdout)
+        self.assertIn("bildebank <kommando> -h", stdout)
+        self.assertNotIn("{create,add,import", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_subcommand_help_has_clean_usage(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["create", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("usage: bildebank create [valg] mappe", stdout)
+        self.assertIn("mappe       Mappen som skal bli bildesamling", stdout)
+        self.assertNotIn("<kommando> [<args>] create", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             build_parser().parse_args(["target", "."])
