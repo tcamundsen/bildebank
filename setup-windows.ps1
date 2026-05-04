@@ -26,7 +26,7 @@ function Invoke-Native {
     & $FilePath @ArgumentList
     if ($LASTEXITCODE -ne 0) {
         $command = "$FilePath $($ArgumentList -join ' ')"
-        throw "Kommando feilet med exit code $LASTEXITCODE: $command"
+        throw "Kommando feilet med exit code ${LASTEXITCODE}: $command"
     }
 }
 
