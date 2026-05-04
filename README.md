@@ -36,7 +36,9 @@ linjer ned.
 Windows kan blokkere PowerShell-script som er lastet ned fra nettleseren. Kjør
 derfor setup-scriptet slik:
 
-1. Åpne PowerShell.
+1. Åpne PowerShell. Det gjør du ved å åpne startmenyen og begynne å skrive "PowerShell". Klikk på
+   PowerShell-logoen som dukker opp. Du skal ikke velge "Run as Administrator" eller
+   "PowerShell ICE". 
 2. Gå til nedlastingsmappen:
 
 ```powershell
@@ -58,7 +60,7 @@ Unblock-File .\setup-windows.ps1
 Hvis du høyreklikker og velger `Run with PowerShell` på en blokkert fil, kan
 vinduet bare blinke og forsvinne før du rekker å lese feilen.
 
-Hvis repoet fortsatt er privat, må du være innlogget på GitHub og ha tilgang
+Siden repoet fortsatt er privat, må du være innlogget på GitHub og ha tilgang
 til repoet for at lenken skal fungere. Når scriptet kloner repoet, kan Git også
 åpne et innloggingsvindu for GitHub.
 
@@ -77,6 +79,8 @@ kunne skrive:
 ```powershell
 bildebank --help
 ```
+
+Hvis dette fungerer kan du fortsette med å lese [brukermanual](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
 
 Hvis scriptet ikke får installert Git eller Python automatisk, kan du følge den
 manuelle oppskriften under.
