@@ -4,6 +4,7 @@ import argparse
 import shutil
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 from . import __version__, db
@@ -36,7 +37,8 @@ HELP_COMMAND_GROUPS = (
         "se og kontrollere samlingen",
         (
             ("status", "Vis antall importerte bilder og videoer"),
-            ("export-html", "Lag index.html for nettleseren"),
+            ("make-browser", "Lag index.html for nettleseren"),
+            ("open-browser", "Lag index.html og åpne den i nettleseren"),
             ("list-sources", "Vis registrerte kilder"),
             ("show-source", "Vis hvor en importert fil kom fra"),
         ),
@@ -64,7 +66,7 @@ HELP_COMMAND_GROUPS = (
             ("inspect-metadata", "Vis metadatafragmenter og datokandidater"),
             ("refresh-metadata", "Sjekk filer uten metadata på nytt"),
             ("exiftool-metadata-gaps", "Finn metadata Bildebank ikke leser ennå"),
-            ("export-html-conflicts", "Lag HTML-side for navnekollisjoner"),
+            ("make-conflict-browser", "Lag HTML-side for navnekollisjoner"),
             ("report", "Vis importoppsummering"),
         ),
     ),
@@ -253,37 +255,38 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Vis også feil som senere er løst",
     )
-    export = add_command(
+    browser = add_command(
         subparsers,
-        "export-html",
-        usage="bildebank export-html [valg]",
-        help="Skriv index.html i målmappen for browsing av importerte filer",
+        "make-browser",
+        usage="bildebank make-browser [valg]",
+        help="Lag index.html for å bla i importerte bilder og videoer",
     )
-    export.add_argument(
+    browser.add_argument(
         "-o",
         "--output",
         dest="output",
         type=Path,
         help="Skriv HTML-filen hit. Standard: index.html i målmappen.",
     )
-    export.add_argument(
-        "-m",
-        "--media",
-        choices=("all", "image", "video"),
-        default="all",
-        help="Filtrer eksporten til bilder, videoer eller begge deler.",
+    add_browser_filter_arguments(browser)
+
+    open_browser = add_command(
+        subparsers,
+        "open-browser",
+        usage="bildebank open-browser [valg]",
+        help="Lag index.html og åpne den i standard nettleser",
+        description=(
+            "Lager eller oppdaterer index.html i målmappen og åpner den i "
+            "standard nettleser. Kommandoen kopierer ikke bilder eller videoer."
+        ),
     )
-    export.add_argument(
-        "--date-source",
-        choices=("all", "metadata", "filename", "mtime", "unknown"),
-        default="all",
-        help="Filtrer eksporten etter hvilken datokilde filene er plassert med.",
-    )
+    add_browser_filter_arguments(open_browser)
+
     export_conflicts = add_command(
         subparsers,
-        "export-html-conflicts",
-        usage="bildebank export-html-conflicts [valg]",
-        help="Skriv HTML-side for browsing av navnekollisjoner",
+        "make-conflict-browser",
+        usage="bildebank make-conflict-browser [valg]",
+        help="Lag HTML-side for browsing av navnekollisjoner",
     )
     export_conflicts.add_argument(
         "-o",
@@ -297,6 +300,22 @@ def build_parser() -> argparse.ArgumentParser:
                 description="Laster ned aller siste versjon av programmet fra GitHub.")
 
     return parser
+
+
+def add_browser_filter_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "-m",
+        "--media",
+        choices=("all", "image", "video"),
+        default="all",
+        help="Filtrer browseren til bilder, videoer eller begge deler.",
+    )
+    parser.add_argument(
+        "--date-source",
+        choices=("all", "metadata", "filename", "mtime", "unknown"),
+        default="all",
+        help="Filtrer browseren etter hvilken datokilde filene er plassert med.",
+    )
 
 
 def add_command(
@@ -558,7 +577,7 @@ def run(args: argparse.Namespace) -> int:
                 )
             return 0
 
-        if args.command == "export-html":
+        if args.command == "make-browser":
             output = args.output.resolve() if args.output else None
             conn.commit()
             conn.close()
@@ -571,7 +590,20 @@ def run(args: argparse.Namespace) -> int:
             print(f"Skrev HTML-browser: {output_path}")
             return 0
 
-        if args.command == "export-html-conflicts":
+        if args.command == "open-browser":
+            conn.commit()
+            conn.close()
+            output_path = export_html(
+                target,
+                None,
+                media_filter=args.media,
+                date_source_filter=args.date_source,
+            )
+            open_file_in_browser(output_path)
+            print(f"Åpnet HTML-browser: {output_path}")
+            return 0
+
+        if args.command == "make-conflict-browser":
             output = args.output.resolve() if args.output else None
             conn.commit()
             conn.close()
@@ -659,6 +691,11 @@ def run_update() -> int:
             f"cd {repo_root}; .\\update.ps1"
         ) from exc
     return completed.returncode
+
+
+def open_file_in_browser(path: Path) -> None:
+    if not webbrowser.open(path.resolve().as_uri()):
+        raise ValueError(f"Klarte ikke åpne nettleseren for: {path}")
 
 
 def resolve_target_file_arg(target: Path, path: Path) -> Path:

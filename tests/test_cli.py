@@ -272,7 +272,7 @@ class CliTests(unittest.TestCase):
             finally:
                 conn.close()
 
-            self.assertEqual(run_cli(["--target", str(target), "export-html"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "make-browser"]), 0)
             html = (target / "index.html").read_text(encoding="utf-8")
             self.assertNotIn("IMG_20240102.jpg", html)
 
@@ -1048,7 +1048,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             finally:
                 conn.close()
 
-    def test_export_html_writes_index_with_relative_paths(self) -> None:
+    def test_make_browser_writes_index_with_relative_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -1060,7 +1060,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "export-html"])
+            code, stdout, stderr = capture_cli(["--target", str(target), "make-browser"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser", stdout)
@@ -1074,7 +1074,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("function representativeItems(items, limit)", html)
             self.assertIn('img.loading = "lazy";', html)
 
-    def test_export_html_filters_by_media_and_date_source(self) -> None:
+    def test_make_browser_filters_by_media_and_date_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -1091,7 +1091,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 [
                     "--target",
                     str(target),
-                    "export-html",
+                    "make-browser",
                     "--media",
                     "video",
                     "--date-source",
@@ -1110,7 +1110,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 [
                     "--target",
                     str(target),
-                    "export-html",
+                    "make-browser",
                     "--output",
                     str(custom_output),
                 ]
@@ -1120,7 +1120,28 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("Skrev HTML-browser", stdout)
             self.assertTrue(custom_output.exists())
 
-    def test_export_html_conlicts_writes_conflict_browser(self) -> None:
+    def test_open_browser_writes_index_and_opens_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            with patch("bilder.cli.webbrowser.open", return_value=True) as browser_open:
+                code, stdout, stderr = capture_cli(["--target", str(target), "open-browser"])
+
+            index = target / "index.html"
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Åpnet HTML-browser", stdout)
+            self.assertTrue(index.exists())
+            browser_open.assert_called_once_with(index.resolve().as_uri())
+
+    def test_make_conflict_browser_writes_conflict_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -1134,7 +1155,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "export-html-conflicts"])
+            code, stdout, stderr = capture_cli(["--target", str(target), "make-conflict-browser"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser for navnekollisjoner", stdout)
@@ -1151,7 +1172,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 [
                     "--target",
                     str(target),
-                    "export-html-conflicts",
+                    "make-conflict-browser",
                     "-o",
                     str(custom_output),
                 ]

@@ -167,7 +167,7 @@ permanent:
 Kommandoen flytter filen til tilsvarende sti under `deleted/`, for eksempel
 `deleted/2007/02/filename.png`. Raden beholdes i databasen, men markeres som
 slettet med tidspunkt og opprinnelig målsti. Slettede filer skal ikke tas med i
-`export-html`. `bildebank list-deleted` viser filer som er markert som slettet, hvor
+`make-browser`. `bildebank list-deleted` viser filer som er markert som slettet, hvor
 de opprinnelig lå, hvor de ble flyttet, og om filen fortsatt finnes på disk.
 
 Programmet er ikke avhengig av at filene under `deleted/` blir liggende for å
@@ -221,27 +221,29 @@ undersøke aktive feil uten å bruke `sqlite3` direkte.
 
 For å lage en statisk HTML-browser i målmappen:
 
-    $ bildebank export-html
+    $ bildebank make-browser
+    $ bildebank open-browser
 
-Kommandoen skriver `index.html` i målmappen. HTML-filen inneholder en innebygd
-indeks fra databasen og kan derfor åpnes direkte i nettleseren uten
-mappevelger. Den viser bilder og videoer med relative paths fra målmappen.
-Eksporten kan filtreres på medietype og datokilde:
+`make-browser` skriver `index.html` i målmappen. HTML-filen inneholder en
+innebygd indeks fra databasen og kan derfor åpnes direkte i nettleseren uten
+mappevelger. Den viser bilder og videoer med relative paths fra målmappen, men
+kopierer ikke bilde- eller videofilene. `open-browser` lager samme fil og åpner
+den i standard nettleser. Browseren kan filtreres på medietype og datokilde:
 
-    $ bildebank export-html --media=image
-    $ bildebank export-html --media=video
-    $ bildebank export-html --date-source=metadata
-    $ bildebank export-html --date-source=filename
-    $ bildebank export-html --date-source=mtime
+    $ bildebank make-browser --media=image
+    $ bildebank make-browser --media=video
+    $ bildebank make-browser --date-source=metadata
+    $ bildebank make-browser --date-source=filename
+    $ bildebank make-browser --date-source=mtime
 
 Filtrene kan kombineres, for eksempel for å lage en HTML-browser med bare
 videoer som er plassert basert på metadata:
 
-    $ bildebank export-html --media=video --date-source=metadata
+    $ bildebank make-browser --media=video --date-source=metadata
 
 For å lage en statisk HTML-side for manuell gjennomgang av navnekollisjoner:
 
-    $ bildebank export-html-conflicts
+    $ bildebank make-conflict-browser
 
 Kommandoen skriver `name-conflicts.html` i målmappen. Siden lar brukeren bla
 mellom navnekollisjonene og viser filene i hver konflikt side om side, sammen
