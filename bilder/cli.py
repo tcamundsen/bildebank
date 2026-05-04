@@ -89,23 +89,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("list-sources", help="List registrerte kilder")
     subparsers.add_parser("status", help="Vis antall filer fordelt på type og datokilde")
-    subparsers.add_parser("list-name-conflicts", help="List importerte filer med navnekollisjon")
-    show_name_conflict = subparsers.add_parser(
-        "show-name-conflict",
+    subparsers.add_parser("conflicts", help="List importerte filer med navnekollisjon")
+    show_conflict = subparsers.add_parser(
+        "show-conflict",
         help="Vis alle kildefiler i samme navnekollisjon som en målfil",
     )
-    show_name_conflict.add_argument("path", type=Path)
+    show_conflict.add_argument("path", type=Path)
     show_source = subparsers.add_parser(
         "show-source",
         help="Vis hvilken kilde en importert målfil kommer fra",
     )
     show_source.add_argument("path", type=Path)
-    delete = subparsers.add_parser(
-        "delete",
+    remove = subparsers.add_parser(
+        "remove",
         help="Flytt en importert målfil til deleted/ og marker den som slettet",
     )
-    delete.add_argument("path", type=Path)
-    subparsers.add_parser("list-deleted", help="List filer som er markert som slettet")
+    remove.add_argument("path", type=Path)
+    subparsers.add_parser("list-removed", help="List filer som er markert som slettet")
     non_metadata = subparsers.add_parser(
         "non-metadata",
         help="List filer der datoen ikke kom fra metadata",
@@ -315,12 +315,12 @@ def run(args: argparse.Namespace) -> int:
             print_status(conn)
             return 0
 
-        if args.command == "list-name-conflicts":
+        if args.command == "conflicts":
             for row in db.name_conflicts(conn):
                 print(f"{row['source_path']} -> {row['target_path']}")
             return 0
 
-        if args.command == "show-name-conflict":
+        if args.command == "show-conflict":
             path = existing_path_arg(args.path).resolve()
             row = db.file_by_target_path(conn, path)
             if row is None:
@@ -343,7 +343,7 @@ def run(args: argparse.Namespace) -> int:
             print_source_item(row)
             return 0
 
-        if args.command == "delete":
+        if args.command == "remove":
             original_path = resolve_target_file_arg(target, args.path)
             row = db.file_by_target_path(conn, original_path)
             if row is None:
@@ -370,7 +370,7 @@ def run(args: argparse.Namespace) -> int:
             print(f"Flyttet til slettet mappe: {deleted_path}")
             return 0
 
-        if args.command == "list-deleted":
+        if args.command == "list-removed":
             for row in db.deleted_files(conn):
                 print_deleted_item(row)
             return 0

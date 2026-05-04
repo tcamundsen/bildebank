@@ -42,6 +42,12 @@ class CliTests(unittest.TestCase):
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             build_parser().parse_args(["target", "."])
 
+    def test_old_conflict_and_remove_commands_are_not_available(self) -> None:
+        for command in ("list-name-conflicts", "show-name-conflict", "delete", "list-deleted"):
+            with self.subTest(command=command):
+                with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                    build_parser().parse_args([command])
+
     def test_target_add_and_import(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -200,7 +206,7 @@ class CliTests(unittest.TestCase):
             self.assertIn("Dato: 2024-01-02 (filename)", stdout)
             self.assertIn("SHA-256:", stdout)
 
-    def test_delete_moves_file_marks_database_and_hides_from_export(self) -> None:
+    def test_remove_moves_file_marks_database_and_hides_from_export(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -216,7 +222,7 @@ class CliTests(unittest.TestCase):
             deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
 
             code, stdout, stderr = capture_cli(
-                ["--target", str(target), "delete", "2024/01/IMG_20240102.jpg"]
+                ["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]
             )
 
             self.assertEqual(code, 0, stderr)
@@ -239,7 +245,7 @@ class CliTests(unittest.TestCase):
             html = (target / "index.html").read_text(encoding="utf-8")
             self.assertNotIn("IMG_20240102.jpg", html)
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "list-deleted"])
+            code, stdout, stderr = capture_cli(["--target", str(target), "list-removed"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("ja\t2024-01-02\tfilename", stdout)
@@ -509,7 +515,7 @@ class CliTests(unittest.TestCase):
             second_target = target / "2024" / "01" / "IMG_20240102-1.png"
 
             code, stdout, stderr = capture_cli(
-                ["--target", str(target), "show-name-conflict", str(second_target)]
+                ["--target", str(target), "show-conflict", str(second_target)]
             )
 
             self.assertEqual(code, 0, stderr)
@@ -541,7 +547,7 @@ class CliTests(unittest.TestCase):
             first_target = target / "2024" / "01" / "IMG_20240102.jpg"
 
             code, stdout, stderr = capture_cli(
-                ["--target", str(target), "show-name-conflict", str(first_target)]
+                ["--target", str(target), "show-conflict", str(first_target)]
             )
 
             self.assertEqual(code, 0, stderr)
@@ -562,7 +568,7 @@ class CliTests(unittest.TestCase):
             target_file = target / "2024" / "01" / "IMG_20240102.jpg"
 
             code, stdout, stderr = capture_cli(
-                ["--target", str(target), "show-name-conflict", str(target_file)]
+                ["--target", str(target), "show-conflict", str(target_file)]
             )
 
             self.assertEqual(code, 0, stderr)

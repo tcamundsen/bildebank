@@ -250,13 +250,13 @@ navn.
 List navnekollisjoner:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd list-name-conflicts
+..\kode\bildebank\bin\bildebank.cmd conflicts
 ```
 
 Se detaljer for en bestemt importert målfil:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd show-name-conflict "2024\01\IMG_0001.jpg"
+..\kode\bildebank\bin\bildebank.cmd show-conflict "2024\01\IMG_0001.jpg"
 ```
 
 Bytt ut stien med en fil fra listen. Kommandoen viser hvilke kildefiler som
@@ -298,19 +298,19 @@ eller ny import.
 ## Slette en importert fil
 
 Hvis du vil fjerne en importert fil fra den aktive bildebanken, bruk
-`delete`. Kommandoen sletter ikke filen helt. Den flytter filen til
+`remove`. Kommandoen sletter ikke filen helt. Den flytter filen til
 `deleted`-mappen i bildesamlingsmappen og markerer den som slettet i databasen.
 
 Eksempel:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd delete "2024\01\IMG_0001.jpg"
+..\kode\bildebank\bin\bildebank.cmd remove "2024\01\IMG_0001.jpg"
 ```
 
 Se filer som er markert som slettet:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd list-deleted
+..\kode\bildebank\bin\bildebank.cmd list-removed
 ```
 
 Slettede filer blir ikke med i vanlig `export-html`.
