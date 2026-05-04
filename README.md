@@ -12,9 +12,9 @@ bare av Bildebank.
 
 ## Anbefalt installasjon
 
-Åpne setup-scriptet her:
-
+Høyreklikk 
 [setup-windows.ps1](https://github.com/tcamundsen/bildebank/blob/main/setup-windows.ps1)
+gjerne og velg "Åpne linken i en ny fane", så beholder du veiledningen her.
 
 Klikk på nedlastingsknappen på GitHub-siden, eller klikk `Raw` og lagre siden
 som `setup-windows.ps1`. Disse knappene ligger på høyre side av skjermen, noen
@@ -67,7 +67,7 @@ kunne skrive:
 bildebank --help
 ```
 
-Hvis dette fungerer kan du fortsette med å lese [brukermanual](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
+Hvis dette fungerer kan du fortsette med å lese [brukermanualen](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
 
 Hvis scriptet ikke får installert Git eller Python automatisk, kan du følge den
 manuelle oppskriften under. Men jeg foreslår egentlig at du ringer Tom Cato som

@@ -325,5 +325,8 @@ Kontroller først at importen ser riktig ut, at `index.html` viser det du
 forventer, og at bildesamlingen er sikkerhetskopiert til mer enn ett trygt
 sted.
 
+En enkel regel er 3-2-1-regelen: ha minst 3 kopier av viktige filer, på minst
+2 forskjellige lagringsmedier, og minst 1 kopi et annet sted enn hjemme.
+
 Behold gamle kilder til du er sikker på at den nye samlingen er kontrollert og
 sikkerhetskopiert.
