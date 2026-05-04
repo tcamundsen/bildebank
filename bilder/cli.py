@@ -107,7 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="List filer der datoen ikke kom fra metadata",
     )
     non_metadata.add_argument(
-        "--source",
+        "--with-source",
         action="store_true",
         help="Vis kildefil i tillegg til målfil",
     )
@@ -148,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     errors.add_argument("--limit", type=int, default=50)
     errors.add_argument("--stage")
     errors.add_argument(
-        "--all",
+        "--include-resolved",
         action="store_true",
         help="Vis også feil som senere er løst",
     )
@@ -156,8 +156,15 @@ def build_parser() -> argparse.ArgumentParser:
         "export-html",
         help="Skriv index.html i målmappen for browsing av importerte filer",
     )
-    export.add_argument("--output", type=Path)
     export.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        type=Path,
+        help="Skriv HTML-filen hit. Standard: index.html i målmappen.",
+    )
+    export.add_argument(
+        "-m",
         "--media",
         choices=("all", "image", "video"),
         default="all",
@@ -170,10 +177,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filtrer eksporten etter hvilken datokilde filene er plassert med.",
     )
     export_conflicts = subparsers.add_parser(
-        "export-html-conflict",
+        "export-html-conflicts",
         help="Skriv HTML-side for browsing av navnekollisjoner",
     )
-    export_conflicts.add_argument("--output", type=Path)
+    export_conflicts.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        type=Path,
+        help="Skriv HTML-filen hit. Standard: name-conflicts.html i målmappen.",
+    )
     subparsers.add_parser("report", help="Vis importoppsummering")
     subparsers.add_parser("update", help="Oppdater programinstallasjonen")
 
@@ -361,7 +374,7 @@ def run(args: argparse.Namespace) -> int:
         if args.command == "non-metadata":
             for row in db.non_metadata_files(conn):
                 taken_date = row["taken_date"] or "-"
-                if args.source:
+                if args.with_source:
                     print(
                         f"{row['date_source']}\t{taken_date}\t"
                         f"{row['target_path']}\t{row['source_path']}"
@@ -397,7 +410,7 @@ def run(args: argparse.Namespace) -> int:
                 conn,
                 limit=args.limit,
                 stage=args.stage,
-                include_resolved=args.all,
+                include_resolved=args.include_resolved,
             ):
                 source_path = row["source_path"] or "-"
                 resolved = row["resolved_at"] or "-"
@@ -420,7 +433,7 @@ def run(args: argparse.Namespace) -> int:
             print(f"Skrev HTML-browser: {output_path}")
             return 0
 
-        if args.command == "export-html-conflict":
+        if args.command == "export-html-conflicts":
             output = args.output.resolve() if args.output else None
             conn.commit()
             conn.close()

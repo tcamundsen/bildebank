@@ -51,6 +51,7 @@ skal blant annet inneholde kontroll med:
 Etter at databasen har blitt opprettet, så krever scriptet `bildebank` enten
 at det kjøres fra målmappen, eller at målmappen angis med
 kommandolinjeparameteren `--target=/path/to/målmappe`
+Brukeren bør alltid kjøre `bildebank` fra målmappen for å gjøre et enkelt for seg.
 
 Legge en mappe til listen over kildemapper:
 
@@ -145,10 +146,10 @@ manglende dato.
 For å liste filer som ble plassert basert på noe annet enn metadata:
 
     $ bildebank non-metadata
-    $ bildebank non-metadata --source
+    $ bildebank non-metadata --with-source
 
 Kommandoen viser filer der datoen kom fra filnavn, filens endringsdato eller
-manglende dato. Med `--source` vises også den opprinnelige kildefilen.
+manglende dato. Med `--with-source` vises også den opprinnelige kildefilen.
 
 For å se hvilken kilde en importert målfil kommer fra:
 
@@ -211,12 +212,12 @@ For å liste feil som er registrert i databasen:
 
     $ bildebank errors
     $ bildebank errors --stage refresh-metadata
-    $ bildebank errors --all
+    $ bildebank errors --include-resolved
 
 Kommandoen viser uløste feil som standard. Feil som programmet senere har
-reparert markeres som løst og skjules fra standardvisningen. `--all` viser også
-løste historiske feil. Dette gjør at brukeren kan undersøke aktive feil uten å
-bruke `sqlite3` direkte.
+reparert markeres som løst og skjules fra standardvisningen.
+`--include-resolved` viser også løste historiske feil. Dette gjør at brukeren kan
+undersøke aktive feil uten å bruke `sqlite3` direkte.
 
 For å lage en statisk HTML-browser i målmappen:
 
@@ -240,7 +241,7 @@ videoer som er plassert basert på metadata:
 
 For å lage en statisk HTML-side for manuell gjennomgang av navnekollisjoner:
 
-    $ bildebank export-html-conflict
+    $ bildebank export-html-conflicts
 
 Kommandoen skriver `name-conflicts.html` i målmappen. Siden lar brukeren bla
 mellom navnekollisjonene og viser filene i hver konflikt side om side, sammen

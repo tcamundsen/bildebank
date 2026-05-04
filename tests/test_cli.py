@@ -905,7 +905,9 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("Målfil finnes ikke", stdout)
             self.assertNotIn("Løst feil", stdout)
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "errors", "--all"])
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "errors", "--include-resolved"]
+            )
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Løst feil", stdout)
@@ -1062,7 +1064,22 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn('"path": "2010/07/video.mp4"', html)
             self.assertNotIn("IMG_20240102.jpg", html)
 
-    def test_export_html_conlict_writes_conflict_browser(self) -> None:
+            custom_output = root / "filtered.html"
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "export-html",
+                    "--output",
+                    str(custom_output),
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser", stdout)
+            self.assertTrue(custom_output.exists())
+
+    def test_export_html_conlicts_writes_conflict_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -1076,7 +1093,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "export-html-conflict"])
+            code, stdout, stderr = capture_cli(["--target", str(target), "export-html-conflicts"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser for navnekollisjoner", stdout)
@@ -1087,6 +1104,21 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn('"dimensions": "640x480"', html)
             self.assertIn('"dimensions": "320x240"', html)
             self.assertIn('"sourceExists": true', html)
+
+            custom_output = root / "conflicts.html"
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "export-html-conflicts",
+                    "-o",
+                    str(custom_output),
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser for navnekollisjoner", stdout)
+            self.assertTrue(custom_output.exists())
 
     def test_report_migrates_old_errors_table_without_resolved_at(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
