@@ -187,7 +187,7 @@ bilder og videoer, og hvor datoen kom fra:
 - `mtime`: dato fra filens endringstidspunkt
 - `unknown`: ingen sikker dato funnet
 
-## Lag HTML-visning: `bildebank browser-browser`
+## Lag HTML-visning: `bildebank make-browser`
 
 Kjør:
 
