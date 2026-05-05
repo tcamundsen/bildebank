@@ -88,6 +88,11 @@ class BildebankHelpFormatter(argparse.RawDescriptionHelpFormatter):
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
+    if argv is None:
+        argv = sys.argv[1:]
+    if not argv:
+        parser.print_help()
+        return 0
     args = parser.parse_args(argv)
 
     try:

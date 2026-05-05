@@ -1,3 +1,16 @@
+# Brukermanual for Bildebank
+
+Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
+har fulgt `README.md` og installert Bildebank.
+
+Eksemplene under bruker disse mappene:
+
+- programmappen: `$HOME\kode\bildebank`
+- bildesamlingsmappen: `$HOME\BildeSamling`
+- en liten testkilde: `$HOME\Pictures\TestBilder`
+
+Bytt ut mappenavnene hvis du har valgt andre steder.
+
 ## Om programmet
 
 Noen ideer eller prinsipper som ligger bak programmet:
@@ -11,19 +24,6 @@ Noen ideer eller prinsipper som ligger bak programmet:
 * Du skal kunne vite hvilken minnebrikke eller mappe alle bildene stammer fra.
 * Vi vil unngå duplikater.
 
-# Brukermanual for Bildebank
-
-Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
-har fulgt `README.md` og installert Bildebank.
-
-Eksemplene under bruker disse mappene:
-
-- programmappen: `$HOME\kode\bildebank`
-- bildesamlingsmappen: `$HOME\BildeSamling`
-- en liten testkilde: `$HOME\TestBilder`
-
-Bytt ut mappenavnene hvis du har valgt andre steder.
-
 
 ## Programmappen og bildesamlingsmappen
 
@@ -36,10 +36,9 @@ fulgt `README.md`, heter den ofte:
 $HOME\kode\bildebank
 ```
 
-I programmappen ligger filer som `README.md`, `setup-windows.ps1`,
-`update.ps1`, `bin\bildebank.cmd` og Python-miljøet `.venv`. På Windows kjører
-Bildebank via `bildebank.cmd`; du trenger ikke noe eget PowerShell-script for å
-starte programmet.
+I programmappen ligger selve programmet og filer som Bildebank trenger for å
+starte, oppdatere seg og kjøre riktig. Til vanlig trenger du ikke åpne eller
+endre filene i programmappen.
 
 **Bildesamlingsmappen** er mappen der din nye bildebank skal ligge. Det er her
 Bildebank lager databasen, årsmappene, månedsmappene og `index.html`.
@@ -53,6 +52,25 @@ $HOME\BildeSamling
 Bildesamlingsmappen skal ikke ligge inni programmappen. Hold programmet og
 bildesamlingen adskilt.
 
+Bildesamlingsmappen er en mappe Bildebank styrer. Ikke flytt, gi nytt navn til
+eller slett filer inne i denne mappen manuelt, med mindre manualen sier det.
+Bruk Bildebank-kommandoer som `remove` når du vil fjerne noe fra samlingen.
+
+Du kan åpne og se på filene i bildesamlingsmappen, men ikke rydd manuelt i
+årsmappene og månedsmappene. Da kan databasen og filene komme ut av sync.
+
+## Opprett en testmappe med noen få bilder
+
+Ikke start med hele hovedsamlingen første gang. Lag heller en mappe du gir
+navnet TestBilder i Bilder-mappen som du finner med Explorer på windows.
+Kopier inn noen få bilder dit.
+Da kan du kontrollere at importen fungerer før du
+bruker Bildebank på større mengder.
+
+Trykk WindowsTast+E for å åpne Explorer. Du kan enten bla det frem til Bilder-mappen
+eller klikke i adressefeltet øverst i Explorer-vinduet og skrive inn Bilder og
+trykke linjeskift.
+
 
 ## Åpne PowerShell og gå til riktig mappe
 
@@ -65,55 +83,23 @@ bildesamlingen adskilt.
 Når du skriver kommandoer, er det viktig hvilken mappe PowerShell står i. Du
 ser ofte gjeldende mappe helt til venstre på linjen.
 
-Gå til programmappen slik:
-
-```powershell
-cd $HOME\kode\bildebank
-```
-
 Sjekk at Bildebank starter:
 
 ```powershell
-bildebank --help
+bildebank
 ```
 
-Når du skal jobbe med bildesamlingen, gå til bildesamlingsmappen:
+Programmet vil da skrive ut en liste over kommandoer som kan kjøres.
 
-```powershell
-cd $HOME\BildeSamling
-```
-
-Hvis mappen ikke finnes ennå, kan du lage den først:
+Hvis bildesamlingsmappen ikke finnes ennå, kan du lage den først:
 
 ```powershell
 mkdir $HOME\BildeSamling
-cd $HOME\BildeSamling
 ```
 
-Når du står i bildesamlingsmappen, kan du kjøre Bildebank direkte:
+Når du skal jobbe med bildesamlingen, går du til bildesamlingsmappen:
 
 ```powershell
-bildebank --help
-```
-
-## Første test med en liten bildemappe
-
-Ikke start med hele hovedsamlingen første gang. Lag heller en liten mappe med
-noen få bilder og videoer. Da kan du kontrollere at importen fungerer før du
-bruker Bildebank på større mengder.
-
-Eksempel:
-
-```powershell
-mkdir $HOME\TestBilder
-```
-
-Kopier noen få testbilder inn i `TestBilder` med Filutforsker.
-
-Lag deretter bildesamlingsmappen:
-
-```powershell
-mkdir $HOME\BildeSamling
 cd $HOME\BildeSamling
 ```
 
@@ -139,7 +125,7 @@ importeres.
 Legg til testmappen:
 
 ```powershell
-bildebank add "$HOME\TestBilder"
+bildebank add "$HOME\Pictures\TestBilder"
 ```
 
 For en annen mappe bruker du samme mønster:
@@ -278,7 +264,7 @@ En navnekollisjon betyr at flere importerte filer ville hatt samme filnavn i
 samme målmappe. Bildebank beholder filene, men lagrer noen av dem med justert
 navn. Dette er egentlig ikke et problem, men hvis du feilsøker, eller hvis du
 tror at du har for eksempel samme bilde i forskjellig oppløsning fra to kilder,
-med samme filanvn, så kan dette være nyttig å se på.
+med samme filnavn, så kan dette være nyttig å se på.
 
 List navnekollisjoner:
 

@@ -38,6 +38,15 @@ def capture_cli(args: list[str]) -> tuple[int, str, str]:
 
 
 class CliTests(unittest.TestCase):
+    def test_main_without_arguments_shows_help(self) -> None:
+        code, stdout, stderr = capture_cli([])
+
+        self.assertEqual(code, 0)
+        self.assertIn("usage: bildebank [-h] [--version] <kommando> [<args>]", stdout)
+        self.assertIn("Vanlige kommandoer:", stdout)
+        self.assertIn("bildebank <kommando> -h", stdout)
+        self.assertEqual(stderr, "")
+
     def test_main_help_groups_commands_by_user_task(self) -> None:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()

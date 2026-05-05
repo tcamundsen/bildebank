@@ -54,20 +54,20 @@ Når scriptet er ferdig, **lukk PowerShell og åpne PowerShell på nytt**. Da sk
 kunne skrive:
 
 ```powershell
-bildebank --help
+bildebank
 ```
 
-Hvis `bildebank --help` ikke virker etter at du har åpnet PowerShell på nytt,
-  gå til programmappen og prøv den fulle kommandoen:
+Hvis `bildebank` ikke virker etter at du har åpnet PowerShell på nytt,
+gå til programmappen og prøv den fulle kommandoen:
 
 ```powershell
 cd $HOME\kode\bildebank
-.\bin\bildebank.cmd --help
+.\bin\bildebank.cmd
 ```
 
 Hvis dette virker, kan PATH repareres med:
 ```powershell
-  powershell.exe -ExecutionPolicy Bypass -File .\fix-path.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\fix-path.ps1
 ```
 
 Hvis dette ikke virker, ble ikke installasjonen ferdig.
@@ -156,7 +156,7 @@ py -3.14 -m venv .venv
 Sjekk at programmet starter:
 
 ```powershell
-.\bin\bildebank.cmd --help
+.\bin\bildebank.cmd
 ```
 
 Bildebank kjøres via `bildebank.cmd` på Windows.
@@ -175,7 +175,7 @@ Lukk PowerShell og åpne PowerShell på nytt. Sjekk deretter at kortkommandoen
 virker:
 
 ```powershell
-bildebank --help
+bildebank
 ```
 
 Nå skal forhåpentligvis [brukermanual](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md)
@@ -228,13 +228,13 @@ vises.
 Ikke bruk `bildebank.exe` direkte. Bruk `bildebank.cmd`:
 
 ```powershell
-.\bin\bildebank.cmd --help
+.\bin\bildebank.cmd
 ```
 
 Eller, hvis du står i en bildesamlingsmappe:
 
 ```powershell
-..\kode\bildebank\bin\bildebank.cmd --help
+..\kode\bildebank\bin\bildebank.cmd
 ```
 
 ### Programmet finner ikke kildemappen
