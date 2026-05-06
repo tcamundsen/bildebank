@@ -1,3 +1,5 @@
+[TOC]
+
 # Brukermanual for Bildebank
 
 Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
@@ -132,6 +134,12 @@ For en annen mappe bruker du samme mønster:
 
 ```powershell
 bildebank add "sti\til\bilder"
+```
+
+eller
+
+```powershell
+bildebank add "\Users\Tom\Julen2022"
 ```
 
 Bruk hermetegn rundt stier. Det er spesielt viktig hvis mappenavnet inneholder
@@ -281,7 +289,7 @@ bildebank show-conflict "2024\01\IMG_0001.jpg"
 Bytt ut stien med en fil fra listen. Kommandoen viser hvilke kildefiler som
 hører til samme kollisjon, hvor de ble importert fra, filstørrelse og hash.
 
-## Finn filer uten metadatodato
+## Finn filer uten metadata-dato
 
 Kjør:
 
