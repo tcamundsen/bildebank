@@ -24,6 +24,12 @@ Noen ideer eller prinsipper som ligger bak programmet:
 * Du skal kunne vite hvilken minnebrikke eller mappe alle bildene stammer fra.
 * Vi vil unngå duplikater.
 
+Det er noen kommandoer som er planlagt, men ikke på plass ennå. Dette gjelder
+blant annet muligheten til å angre på en import. Browseren skal nok også komme
+it en ny utgave med mulighet for å slette bilder, og så vurderer jeg å kunne
+samle bilder i en underkategori for en måned, slikat man for eksempel kan samle
+alle bildene fra en bestemt hendelse, for eksempel julaften eller ferieuke. Må
+vurdere hvordan det skal gjøres for ferieuker som dekker deler av to måneder.
 
 ## Programmappen og bildesamlingsmappen
 
@@ -103,7 +109,7 @@ Når du skal jobbe med bildesamlingen, går du til bildesamlingsmappen:
 cd $HOME\BildeSamling
 ```
 
-## Opprett målmappe: `bildebank create .`
+## Opprett målmappe
 
 Kommandoen `create` gjør den mappen du står i til en Bildebank-målmappe. Punktum
 betyr "denne mappen".
@@ -117,7 +123,7 @@ bildebank create .
 Bildebank oppretter databasen sin i bildesamlingsmappen. Etterpå er dette
 mappen du vanligvis står i når du bruker Bildebank.
 
-## Legg til en kildemappe: `bildebank add "sti\til\bilder"`
+## Legg til en kildemappe
 
 En kildemappe er en mappe der du allerede har bilder eller videoer som skal
 importeres.
@@ -143,7 +149,7 @@ bildebank add "\Users\Tom\Julen2022"
 Bruk hermetegn rundt stier. Det er spesielt viktig hvis mappenavnet inneholder
 mellomrom.
 
-## Tørrtest importen: `bildebank import --dry-run`
+## Tørrtest importen
 
 Før du importerer på ordentlig, kan du kjøre en tørrtest:
 
@@ -156,7 +162,7 @@ Da viser Bildebank hva programmet ville importert, uten å kopiere filer og uten
 
 Se gjennom listen. Hvis den ser riktig ut, kan du importere på ordentlig.
 
-## Importer: `bildebank import`
+## Importer
 
 Kjør import slik:
 
@@ -180,7 +186,7 @@ kjører `import` en gang til uten å ha lagt til noe nytt, er det normalt å få
 Hvis du vil importere en ny vanlig mappe senere, kjør først `add` på den nye
 mappen og deretter `import` igjen.
 
-## Se status: `bildebank status`
+## Se status
 
 Kjør:
 
@@ -196,7 +202,7 @@ bilder og videoer, og hvor datoen kom fra:
 - `mtime`: dato fra filens endringstidspunkt
 - `unknown`: ingen sikker dato funnet
 
-## Lag HTML-visning: `bildebank make-browser`
+## Lag HTML-visning
 
 Kjør:
 
@@ -250,7 +256,7 @@ Bytt ut `E:\` med stasjonen eller mappen der mediet finnes hos deg. Grunnen til
 at `--name` er viktig, er at samme stasjonsbokstav kan brukes av forskjellige
 CD-er og USB-disker på forskjellige tidspunkt.
 
-## Se registrerte kilder: `list-sources`
+## Se registrerte kilder
 
 Kjør:
 
