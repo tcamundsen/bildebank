@@ -185,33 +185,6 @@ være neste trinn for deg.
 
 
 
-## Hente oppdateringer
-
-For å sikre at du har siste versjon av programmet, kjør:
-
-```powershell
-bildebank update
-```
-
-`bildebank update` er ikke ment å kjøres fra Linux/WSL.
-
-Hvis `bildebank update` ikke virker, kan du kjøre oppdateringsscriptet direkte:
-
-```powershell
-cd $HOME\kode\bildebank
-powershell.exe -ExecutionPolicy Bypass -File .\update.ps1
-```
-
-Hvis det heller ikke virker, kan du gjøre det manuelt:
-
-```powershell
-cd $HOME\kode\bildebank
-git pull
-.\.venv\Scripts\python.exe -m pip install -e .
-```
-
-Deretter kan du bruke programmet som før.
-
 ## Vanlige problemer
 
 ### `git` finnes ikke
