@@ -344,6 +344,42 @@ Se filer som er markert som slettet:
 bildebank list-removed
 ```
 
+## Hente oppdateringer
+
+For å sikre at du har siste versjon av programmet, kjør:
+
+```powershell
+bildebank update
+```
+
+`bildebank update` virker både i Windows/PowerShell og i Linux/WSL.
+
+Hvis `bildebank update` ikke virker i Windows/PowerShell, kan du kjøre oppdateringsscriptet direkte:
+
+```powershell
+cd $HOME\kode\bildebank
+powershell.exe -ExecutionPolicy Bypass -File .\update.ps1
+```
+
+Hvis det heller ikke virker, kan du gjøre det manuelt i Windows/PowerShell:
+
+```powershell
+cd $HOME\kode\bildebank
+git pull
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+I Linux/WSL er den manuelle varianten:
+
+```bash
+cd ~/kode/bildebank
+git pull --ff-only
+./.venv/bin/python -m pip install -e .
+```
+
+Deretter kan du bruke programmet som før.
+
+
 ## Sikkerhet og backup
 
 Bildebank er ikke en backup-løsning. Programmet organiserer og kopierer bilder

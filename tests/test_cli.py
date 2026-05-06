@@ -157,22 +157,57 @@ class CliTests(unittest.TestCase):
                 check=False,
             )
 
-    def test_update_rejects_non_windows_before_running_script(self) -> None:
+    def test_update_runs_linux_update_commands(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
-            (repo / "update.ps1").write_text("# update\n", encoding="utf-8")
+            (repo / ".git").mkdir()
+            (repo / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
+            venv_python = repo / ".venv" / "bin" / "python"
+            venv_python.parent.mkdir(parents=True)
+            venv_python.write_text("# python\n", encoding="utf-8")
 
             with (
                 patch("bilder.cli.sys.platform", "linux"),
                 patch("bilder.cli.program_repo_root", return_value=repo),
                 patch("bilder.cli.subprocess.run") as subprocess_run,
             ):
+                subprocess_run.return_value.returncode = 0
                 code, stdout, stderr = capture_cli(["update"])
 
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("kan bare kjøres fra Windows/PowerShell", stderr)
-            subprocess_run.assert_not_called()
+            self.assertEqual(code, 0)
+            self.assertIn("Ferdig", stdout)
+            self.assertEqual(stderr, "")
+            self.assertEqual(subprocess_run.call_count, 2)
+            subprocess_run.assert_any_call(["git", "pull", "--ff-only"], cwd=repo, check=False)
+            subprocess_run.assert_any_call(
+                [str(venv_python), "-m", "pip", "install", "-e", "."],
+                cwd=repo,
+                check=False,
+            )
+
+    def test_update_creates_linux_venv_when_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            (repo / ".git").mkdir()
+            (repo / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
+
+            with (
+                patch("bilder.cli.sys.platform", "linux"),
+                patch("bilder.cli.program_repo_root", return_value=repo),
+                patch("bilder.cli.shutil.which", return_value="/usr/bin/python3.13"),
+                patch("bilder.cli.subprocess.run") as subprocess_run,
+            ):
+                subprocess_run.return_value.returncode = 0
+                code, stdout, stderr = capture_cli(["update"])
+
+            self.assertEqual(code, 0)
+            self.assertIn("Ferdig", stdout)
+            self.assertEqual(stderr, "")
+            subprocess_run.assert_any_call(
+                ["/usr/bin/python3.13", "-m", "venv", ".venv"],
+                cwd=repo,
+                check=False,
+            )
 
     def test_update_reports_missing_update_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
