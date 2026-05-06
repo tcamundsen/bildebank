@@ -292,10 +292,7 @@ def is_under_any(path: Path, roots: list[Path]) -> bool:
 
 def process_file(conn, target: Path, source: db.Source, path: Path, stats: ImportStats) -> None:
     source_key = db.path_key(path)
-    if db.get_file_for_source_path(conn, source.id, source_key) is not None:
-        stats.skipped_existing += 1
-        return
-    if db.get_duplicate_for_source_path(conn, source.id, source_key) is not None:
+    if db.get_file_source_for_source_path(conn, source.id, source_key) is not None:
         stats.skipped_existing += 1
         return
 
@@ -310,6 +307,7 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
             source_path=path,
             matched_file_id=int(existing["id"]),
             sha256=file_hash,
+            size_bytes=size_bytes,
         )
         stats.duplicates += 1
         return
@@ -333,6 +331,7 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
             taken_date=_date_string(date),
             date_source=date.source,
             name_conflict=name_conflict,
+            source_kind="already-present",
         )
         stats.skipped_existing += 1
         if name_conflict:
@@ -362,10 +361,7 @@ def process_file_dry_run(
     conn, target: Path, source: db.Source, path: Path, stats: ImportStats, *, output: TextIO
 ) -> None:
     source_key = db.path_key(path)
-    if db.get_file_for_source_path(conn, source.id, source_key) is not None:
-        stats.skipped_existing += 1
-        return
-    if db.get_duplicate_for_source_path(conn, source.id, source_key) is not None:
+    if db.get_file_source_for_source_path(conn, source.id, source_key) is not None:
         stats.skipped_existing += 1
         return
 

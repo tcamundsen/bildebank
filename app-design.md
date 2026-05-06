@@ -313,6 +313,74 @@ målmappen.
 Databasen bør være SQLite. SQLite gir transaksjoner, indekser og trygg lokal
 lagring uten å kreve en separat databaseserver.
 
+## Database v2
+
+Databasen ligger i målmappen som `.bilder.sqlite3`. Fra schema v2 er
+proveniens normalisert slik at én målfil kan ha flere kildefilforekomster.
+Dette er nødvendig for å kunne vite forskjell på "denne filen finnes bare i én
+kilde" og "denne målfilen er bevist av flere kilder med samme innhold".
+
+Nye databaser som opprettes med schema v2 skal bruke disse tabellene:
+
+- `meta`: nøkkel/verdi-tabell for database-metadata. Den viktigste verdien er
+  `schema_version`, som skal være `2` for v2-databaser.
+- `command_log`: logg over kommandoer som har endret eller forsøkt å endre
+  databasen.
+- `sources`: registrerte kilder. En kilde kan være en vanlig kildemappe eller
+  et flyttbart medium. Tabellen inneholder blant annet kildetype, path,
+  brukerdefinert navn for flyttbare medier, importstatus og eventuell
+  superseding av underkilder.
+- `files`: målfilene i samlingen. Hver rad beskriver én fil som finnes eller
+  har funnet sted i målmappen: målsti, lagret filnavn, originalt filnavn,
+  SHA-256, filstørrelse, valgt dato, datokilde, navnekollisjon og eventuell
+  slettemarkering.
+- `file_sources`: kildefilforekomstene som beviser målfilene. Hver rad peker
+  på én `files`-rad og én `sources`-rad, og inneholder kildefilens path,
+  normalisert path-nøkkel, SHA-256, filstørrelse og type forekomst.
+  `kind='imported'` betyr kildefilen som førte til en ny målfil,
+  `kind='duplicate'` betyr en senere kildefil med samme innhold som en
+  eksisterende målfil, og `kind='already-present'` betyr at riktig målfil
+  allerede lå fysisk i målmappen da importen ble registrert.
+- `errors`: feil som er oppdaget under scanning, import eller senere
+  vedlikehold. Feil kan senere markeres som løst med `resolved_at`.
+
+Viktige v2-regler:
+
+- `files` er sannheten om målfilene i samlingen.
+- `file_sources` er sannheten om hvilke kilder som peker på hver målfil.
+- En målfil kan ha mange `file_sources`.
+- En kildefilforekomst identifiseres unikt med `(source_id, source_path_key)`.
+- Runtime-kode skal lese proveniens fra `file_sources`, ikke fra gamle
+  provenienskolonner på `files`.
+- Nye duplikater skal registreres som `file_sources.kind='duplicate'`.
+
+Schema v1 hadde en enklere proveniensmodell som nå er obsolete:
+
+- `duplicate_findings`: registrerte kildefiler som var eksakte duplikater av
+  en eksisterende målfil. I v2 erstattes dette av rader i `file_sources` med
+  `kind='duplicate'`. Tabellen skal ikke opprettes i nye v2-databaser.
+- `files.source_id`, `files.source_path` og `files.source_path_key`: pekte på
+  én "hovedkilde" for målfilen. I v2 ligger alle kildefilforekomster i
+  `file_sources`, også den første/importerte kilden. Disse kolonnene skal ikke
+  opprettes i nye v2-databaser.
+
+Når en gammel v1-database migreres til v2, kan de obsolete v1-tabellene og
+kolonnene fortsatt finnes fysisk i SQLite-filen for å unngå risikabel
+tabellombygging. De skal da behandles som legacy historikk. Ny kode skal ikke
+være avhengig av dem for import, rapportering, kildevisning eller fremtidig
+reversering.
+
+På et senere tidspunkt kan programmet få en egen eksplisitt cleanup-migrering
+som fjerner obsolete v1-struktur fra allerede migrerte v2-databaser. Dette skal
+ikke skje som sideeffekt av vanlig bruk. En slik cleanup må minst ta backup,
+ta målmappelås, kjøre i én transaksjon, validere at `schema_version=2`, sjekke
+at alle `files`-rader har forventede `file_sources`, fjerne
+`duplicate_findings`, bygge om `files` uten `source_id`, `source_path` og
+`source_path_key` hvis SQLite ikke kan droppe kolonnene trygt direkte, og først
+committe etter at radantall, sentrale kontrollsummer, `PRAGMA foreign_key_check`
+og `PRAGMA integrity_check` er OK. Hvis en kontroll feiler, skal cleanup
+rulles tilbake og backupen beholdes.
+
 ## Plattform
 
 Utvikling kan gjøres i WSL Debian, men programmet skal kjøres nativt i

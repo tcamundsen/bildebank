@@ -37,6 +37,122 @@ def capture_cli(args: list[str]) -> tuple[int, str, str]:
     return code, stdout.getvalue(), stderr.getvalue()
 
 
+def create_legacy_database(
+    target: Path,
+    source: Path,
+    *,
+    include_duplicate: bool = False,
+    corrupt_duplicate: bool = False,
+) -> None:
+    target.mkdir()
+    conn = sqlite3.connect(target / DB_FILENAME)
+    try:
+        conn.executescript(
+            """
+            create table meta (key text primary key, value text not null);
+            create table sources (
+                id integer primary key autoincrement,
+                kind text not null,
+                path text not null,
+                path_key text,
+                name text,
+                added_at text not null default current_timestamp,
+                imported_at text,
+                status text not null default 'pending'
+            );
+            create table files (
+                id integer primary key autoincrement,
+                source_id integer not null,
+                source_path text not null,
+                source_path_key text not null,
+                target_path text not null,
+                target_path_key text not null unique,
+                original_filename text not null,
+                stored_filename text not null,
+                sha256 text not null,
+                size_bytes integer not null,
+                taken_date text,
+                date_source text not null,
+                name_conflict integer not null default 0,
+                imported_at text not null default current_timestamp,
+                unique(source_id, source_path_key)
+            );
+            create table duplicate_findings (
+                id integer primary key autoincrement,
+                source_id integer not null,
+                source_path text not null,
+                source_path_key text not null,
+                matched_file_id integer not null,
+                sha256 text not null,
+                found_at text not null default current_timestamp,
+                unique(source_id, source_path_key)
+            );
+            create table errors (
+                id integer primary key autoincrement,
+                source_id integer,
+                source_path text,
+                stage text not null,
+                message text not null,
+                created_at text not null default current_timestamp
+            );
+            insert into meta(key, value) values('schema_version', '1');
+            """
+        )
+        source.mkdir(exist_ok=True)
+        source_file = source / "IMG_20240102.jpg"
+        source_file.write_bytes(b"legacy-image")
+        imported = target / "2024" / "01" / "IMG_20240102.jpg"
+        imported.parent.mkdir(parents=True)
+        imported.write_bytes(b"legacy-image")
+        file_hash = sha256_file(imported)
+        source_id = conn.execute(
+            "insert into sources(kind, path, path_key, imported_at, status) values('directory', ?, ?, current_timestamp, 'imported') returning id",
+            (str(source.resolve()), str(source.resolve())),
+        ).fetchone()[0]
+        conn.execute(
+            """
+            insert into files(
+                source_id, source_path, source_path_key, target_path, target_path_key,
+                original_filename, stored_filename, sha256, size_bytes, taken_date,
+                date_source, name_conflict
+            ) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            """,
+            (
+                source_id,
+                str(source_file.resolve()),
+                str(source_file.resolve()),
+                str(imported.resolve()),
+                str(imported.resolve()),
+                source_file.name,
+                imported.name,
+                file_hash,
+                imported.stat().st_size,
+                "2024-01-02",
+                "filename",
+            ),
+        )
+        if include_duplicate:
+            duplicate = source / "COPY_20240203.jpg"
+            duplicate.write_bytes(b"legacy-image")
+            conn.execute(
+                """
+                insert into duplicate_findings(
+                    source_id, source_path, source_path_key, matched_file_id, sha256
+                ) values(?, ?, ?, ?, ?)
+                """,
+                (
+                    source_id,
+                    str(duplicate.resolve()),
+                    str(duplicate.resolve()),
+                    9999 if corrupt_duplicate else 1,
+                    file_hash,
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 class CliTests(unittest.TestCase):
     def test_main_without_arguments_shows_help(self) -> None:
         code, stdout, stderr = capture_cli([])
@@ -108,8 +224,17 @@ class CliTests(unittest.TestCase):
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
                 self.assertEqual(
-                    conn.execute("SELECT COUNT(*) FROM duplicate_findings").fetchone()[0], 0
+                    conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
+                    "2",
+                )
+                file_columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
+                self.assertNotIn("source_id", file_columns)
+                self.assertNotIn("source_path", file_columns)
+                self.assertNotIn("source_path_key", file_columns)
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM file_sources WHERE kind = 'duplicate'").fetchone()[0], 0
                 )
             finally:
                 conn.close()
@@ -442,11 +567,44 @@ class CliTests(unittest.TestCase):
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 2)
                 self.assertEqual(
-                    conn.execute("SELECT COUNT(*) FROM duplicate_findings").fetchone()[0], 1
+                    conn.execute("SELECT COUNT(*) FROM file_sources WHERE kind = 'duplicate'").fetchone()[0], 1
+                )
+                self.assertFalse(
+                    conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'duplicate_findings'"
+                    ).fetchone()
                 )
             finally:
                 conn.close()
+
+    def test_show_source_lists_duplicate_sources_for_same_target_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source1 = root / "source1"
+            source2 = root / "source2"
+            source1.mkdir()
+            source2.mkdir()
+            first = source1 / "IMG_20240102.jpg"
+            duplicate = source2 / "COPY_20240203.jpg"
+            first.write_bytes(b"same")
+            duplicate.write_bytes(b"same")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source1)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source2)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            code, stdout, stderr = capture_cli(["--target", str(target), "show-source", str(imported)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Kildefiler:", stdout)
+            self.assertIn(f"- imported: {first.resolve()}", stdout)
+            self.assertIn(f"- duplicate: {duplicate.resolve()}", stdout)
 
     def test_status_counts_media_types_and_date_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -495,7 +653,7 @@ class CliTests(unittest.TestCase):
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 2)
                 self.assertEqual(
-                    conn.execute("SELECT COUNT(*) FROM duplicate_findings").fetchone()[0], 0
+                    conn.execute("SELECT COUNT(*) FROM file_sources WHERE kind = 'duplicate'").fetchone()[0], 0
                 )
                 statuses = conn.execute(
                     "SELECT path, status, superseded_by_source_id FROM sources ORDER BY id"
@@ -1039,18 +1197,15 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                     "insert into sources(kind, path, path_key) values('directory', ?, ?) returning id",
                     (str(root / "source"), str(root / "source")),
                 ).fetchone()[0]
-                conn.execute(
+                file_id = conn.execute(
                     """
                     insert into files(
-                        source_id, source_path, source_path_key, target_path, target_path_key,
-                        original_filename, stored_filename, sha256, size_bytes, taken_date,
-                        date_source, name_conflict
-                    ) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        target_path, target_path_key, original_filename, stored_filename, sha256,
+                        size_bytes, taken_date, date_source, name_conflict
+                    ) values(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    returning id
                     """,
                     (
-                        source_id,
-                        str(root / "source" / "video.avi"),
-                        str(root / "source" / "video.avi"),
                         str(old_target),
                         str(old_target),
                         "video.avi",
@@ -1060,6 +1215,21 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                         "2008-02-29",
                         "mtime",
                         0,
+                    ),
+                ).fetchone()[0]
+                conn.execute(
+                    """
+                    insert into file_sources(
+                        file_id, source_id, source_path, source_path_key, sha256, size_bytes, kind
+                    ) values(?, ?, ?, ?, ?, ?, 'imported')
+                    """,
+                    (
+                        file_id,
+                        source_id,
+                        str(root / "source" / "video.avi"),
+                        str(root / "source" / "video.avi"),
+                        file_hash,
+                        repaired_target.stat().st_size,
                     ),
                 )
                 conn.execute(
@@ -1258,70 +1428,127 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("Skrev HTML-browser for navnekollisjoner", stdout)
             self.assertTrue(custom_output.exists())
 
-    def test_report_migrates_old_errors_table_without_resolved_at(self) -> None:
+    def test_writing_command_requires_explicit_migration_for_old_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
-            target.mkdir()
+            source = root / "source"
+            create_legacy_database(target, source)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "add", str(source)])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("schema_version=1", stderr)
+            self.assertIn("bildebank migrate", stderr)
+
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
-                conn.executescript(
-                    """
-                    create table meta (key text primary key, value text not null);
-                    create table sources (
-                        id integer primary key autoincrement,
-                        kind text not null,
-                        path text not null,
-                        path_key text,
-                        name text,
-                        added_at text not null default current_timestamp,
-                        imported_at text,
-                        status text not null default 'pending'
-                    );
-                    create table files (
-                        id integer primary key autoincrement,
-                        source_id integer not null,
-                        source_path text not null,
-                        source_path_key text not null,
-                        target_path text not null,
-                        target_path_key text not null unique,
-                        original_filename text not null,
-                        stored_filename text not null,
-                        sha256 text not null,
-                        size_bytes integer not null,
-                        taken_date text,
-                        date_source text not null,
-                        name_conflict integer not null default 0,
-                        imported_at text not null default current_timestamp
-                    );
-                    create table duplicate_findings (
-                        id integer primary key autoincrement,
-                        source_id integer not null,
-                        source_path text not null,
-                        source_path_key text not null,
-                        matched_file_id integer not null,
-                        sha256 text not null,
-                        found_at text not null default current_timestamp
-                    );
-                    create table errors (
-                        id integer primary key autoincrement,
-                        source_id integer,
-                        source_path text,
-                        stage text not null,
-                        message text not null,
-                        created_at text not null default current_timestamp
-                    );
-                    insert into errors(stage, message) values('test', 'old error');
-                    """
+                self.assertFalse(
+                    conn.execute(
+                        "select 1 from sqlite_master where type = 'table' and name = 'command_log'"
+                    ).fetchone()
                 )
-                conn.commit()
+                self.assertEqual(
+                    conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
+                    "1",
+                )
+            finally:
+                conn.close()
+
+    def test_migrate_check_reports_plan_without_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            create_legacy_database(target, source, include_duplicate=True)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate", "--check"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Nåværende schema_version: 1", stdout)
+            self.assertIn("Ny schema_version: 2", stdout)
+            self.assertIn("Vil opprette tabellen file_sources.", stdout)
+            self.assertIn("  importerte filer: 1", stdout)
+            self.assertIn("  duplikatfunn: 1", stdout)
+            self.assertIn("Ingen endringer er gjort (--check).", stdout)
+            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-2-*")))
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertFalse(
+                    conn.execute(
+                        "select 1 from sqlite_master where type = 'table' and name = 'file_sources'"
+                    ).fetchone()
+                )
+            finally:
+                conn.close()
+
+    def test_migrate_backfills_file_sources_and_then_report_works(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            create_legacy_database(target, source, include_duplicate=True)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Lager backup:", stdout)
+            self.assertIn("Ferdig. Databasen er migrert.", stdout)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-2-*"))), 1)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
+                    "2",
+                )
+                self.assertEqual(conn.execute("select count(*) from file_sources").fetchone()[0], 2)
+                kinds = [
+                    row[0]
+                    for row in conn.execute("select kind from file_sources order by id").fetchall()
+                ]
+                self.assertEqual(kinds, ["imported", "duplicate"])
+                self.assertIsNotNone(
+                    conn.execute("pragma table_info(errors)").fetchone()
+                )
+                self.assertEqual(conn.execute("select count(*) from command_log").fetchone()[0], 1)
             finally:
                 conn.close()
 
             code, stdout, stderr = capture_cli(["--target", str(target), "report"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Uløste feil: 1", stdout)
+            self.assertIn("Importerte filer: 1", stdout)
+            self.assertIn("Kildefilforekomster: 2", stdout)
+            self.assertIn("Duplikatkilder: 1", stdout)
+
+    def test_migrate_keeps_backup_and_rolls_back_when_validation_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            create_legacy_database(target, source, include_duplicate=True, corrupt_duplicate=True)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 1)
+            self.assertIn("Lager backup:", stdout)
+            self.assertIn("Databasen ble ikke migrert", stderr)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-2-*"))), 1)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
+                    "1",
+                )
+                self.assertFalse(
+                    conn.execute(
+                        "select 1 from sqlite_master where type = 'table' and name = 'file_sources'"
+                    ).fetchone()
+                )
+            finally:
+                conn.close()
 
 
 if __name__ == "__main__":

@@ -73,6 +73,7 @@ HELP_COMMAND_GROUPS = (
     (
         "programmet",
         (
+            ("migrate", "Oppgrader databasen etter programoppdatering"),
             ("update", "Oppdater programinstallasjonen"),
         ),
     ),
@@ -307,6 +308,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skriv HTML-filen hit. Standard: name-conflicts.html i målmappen.",
     )
     add_command(subparsers, "report", usage="bildebank report [valg]", help="Vis importoppsummering")
+    migrate = add_command(
+        subparsers,
+        "migrate",
+        usage="bildebank migrate [valg]",
+        help="Oppgrader databasen til gjeldende format",
+        description="Validerer og oppgraderer databasen etter en programoppdatering.",
+    )
+    migrate.add_argument(
+        "--check",
+        action="store_true",
+        help="Vis hva migreringen vil gjøre uten å endre databasen",
+    )
     add_command(subparsers, "update", usage="bildebank update [valg]", help="Oppdater programinstallasjonen",
                 description="Laster ned aller siste versjon av programmet fra GitHub.")
 
@@ -409,6 +422,9 @@ def run(args: argparse.Namespace) -> int:
         return run_update()
 
     target = resolve_target(args.target)
+    if args.command == "migrate":
+        return run_migrate(target, check=args.check)
+
     if args.command == "import" and args.dry_run:
         output_path = args.log_file.resolve() if args.log_file else None
         if output_path is None:
@@ -506,10 +522,10 @@ def run(args: argparse.Namespace) -> int:
 
         if args.command == "show-source":
             path = existing_path_arg(args.path).resolve()
-            row = db.file_source_by_target_path(conn, path)
-            if row is None:
+            rows = db.file_sources_by_target_path(conn, path)
+            if not rows:
                 raise ValueError(f"Filen finnes ikke i importdatabasen: {path}")
-            print_source_item(row)
+            print_source_items(rows)
             return 0
 
         if args.command == "remove":
@@ -684,6 +700,53 @@ def run_update() -> int:
     return run_update_linux()
 
 
+def run_migrate(target: Path, *, check: bool) -> int:
+    plan = db.migration_plan(target, validate=check)
+    print(f"Målmappe: {target}")
+    print(f"Database: {db.db_path_for_target(target)}")
+    print(f"Nåværende schema_version: {plan.current_version}")
+    print(f"Ny schema_version: {plan.target_version}")
+    if plan.current_version == plan.target_version:
+        print("Databasen er allerede migrert.")
+        return 0
+
+    if plan.creates_file_sources:
+        print("Vil opprette tabellen file_sources.")
+    else:
+        print("Vil validere eksisterende file_sources-tabell.")
+    print("Vil migrere:")
+    print(f"  importerte filer: {plan.imported_files}")
+    print(f"  duplikatfunn: {plan.duplicate_findings}")
+    print("Vil lage backup før endring.")
+    if check:
+        print("Ingen endringer er gjort (--check).")
+        return 0
+
+    with TargetLock(target, command="migrate"):
+        print("Låser målmappe.")
+        backup_path = db.backup_database(target)
+        print(f"Lager backup: {backup_path}")
+        print("Validerer eksisterende database.")
+        try:
+            result = db.migrate_database(target)
+        except Exception as exc:
+            raise ValueError(
+                f"{exc}\n"
+                "Databasen ble ikke migrert. Ingen endringer er skrevet.\n"
+                "Backup er beholdt for sikkerhet."
+            ) from exc
+
+    if result.creates_file_sources:
+        print("Oppretter file_sources.")
+    else:
+        print("Validerer file_sources.")
+    print(f"Migrerer importerte filer: {result.imported_files}")
+    print(f"Migrerer duplikatfunn: {result.duplicate_findings}")
+    print(f"Setter schema_version={result.target_version}.")
+    print("Ferdig. Databasen er migrert.")
+    return 0
+
+
 def run_update_windows() -> int:
     repo_root = program_repo_root()
     update_script = repo_root / "update.ps1"
@@ -728,7 +791,8 @@ def run_update_linux() -> int:
         run_update_command([python, "-m", "venv", ".venv"], cwd=repo_root)
 
     run_update_command([str(venv_python), "-m", "pip", "install", "-e", "."], cwd=repo_root)
-    print("Ferdig. Test gjerne: bildebank --help")
+    print("Ferdig. Databasen migreres ikke automatisk.")
+    print("Kjør bildebank migrate i en bildesamling hvis programmet ber om det.")
     return 0
 
 
@@ -821,6 +885,31 @@ def print_source_item(row) -> None:
     print(f"SHA-256: {row['sha256']}")
 
 
+def print_source_items(rows: list) -> None:
+    if len(rows) == 1:
+        print_source_item(rows[0])
+        return
+
+    first = rows[0]
+    print(f"Målfil: {first['target_path']}")
+    print(f"Originalt filnavn: {first['original_filename']}")
+    print(f"Lagret filnavn: {first['stored_filename']}")
+    print(f"Importert: {first['file_imported_at']}")
+    print(f"Dato: {first['taken_date'] or '-'} ({first['date_source']})")
+    print(f"Filstørrelse: {format_bytes(int(first['size_bytes']))} ({first['size_bytes']} bytes)")
+    print(f"SHA-256: {first['sha256']}")
+    print("Kildefiler:")
+    for row in rows:
+        source_path = Path(str(row["source_path"]))
+        source_label = row["source_name"] or row["source_root"]
+        print(f"- {row['source_kind_label']}: {source_path}")
+        print(f"  finnes: {'ja' if source_path.exists() else 'nei'}")
+        print(f"  kilde-id: {row['source_id']}")
+        print(f"  kildetype: {row['source_kind']}")
+        print(f"  kilde: {source_label}")
+        print(f"  kildestatus: {row['source_status']}")
+
+
 def print_deleted_item(row) -> None:
     deleted_path = Path(str(row["target_path"]))
     original_path = row["deleted_original_target_path"] or "-"
@@ -904,7 +993,8 @@ def print_status(conn) -> None:
 def print_report(conn) -> None:
     print(f"Kilder: {db.count_rows(conn, 'sources')}")
     print(f"Importerte filer: {db.count_rows(conn, 'files')}")
-    print(f"Duplikatfunn: {db.count_rows(conn, 'duplicate_findings')}")
+    print(f"Kildefilforekomster: {db.count_rows(conn, 'file_sources')}")
+    print(f"Duplikatkilder: {db.duplicate_source_count(conn)}")
     print(f"Uløste feil: {db.error_count(conn)}")
     name_conflicts = conn.execute("SELECT COUNT(*) FROM files WHERE name_conflict = 1").fetchone()[0]
     undated = conn.execute("SELECT COUNT(*) FROM files WHERE date_source = 'unknown'").fetchone()[0]
