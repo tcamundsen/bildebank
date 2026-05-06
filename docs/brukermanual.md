@@ -1,5 +1,3 @@
-[TOC]
-
 # Brukermanual for Bildebank
 
 Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
