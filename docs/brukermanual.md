@@ -362,6 +362,32 @@ git pull --ff-only
 
 Deretter kan du bruke programmet som før.
 
+### Migrere gammel database
+
+Noen programoppdateringer kan kreve at databasen i bildesamlingsmappen
+oppgraderes før du kan importere eller gjøre andre endringer. Hvis Bildebank
+ber om det etter `bildebank update`, gå til bildesamlingsmappen og kjør:
+
+```powershell
+cd $HOME\BildeSamling
+bildebank migrate
+```
+
+Migrering til databaseformat v2 gjelder bare brukere som har opprettet
+bildesamlingsdatabasen med en versjon av Bildebank fra før 7. mai 2026. Nye
+databaser opprettet med Bildebank fra og med 7. mai 2026 bruker v2-formatet
+allerede og trenger ikke denne migreringen.
+
+Du kan kontrollere hva migreringen vil gjøre uten å endre databasen:
+
+```powershell
+bildebank migrate --check
+```
+
+Når `bildebank migrate` faktisk kjøres, lager programmet en backup av
+`.bilder.sqlite3` før databasen endres. Hvis migreringen feiler, skal databasen
+ikke oppgraderes, og backupen beholdes.
+
 
 ## Sikkerhet og backup
 
