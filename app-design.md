@@ -18,6 +18,17 @@ en ekstra kopi enn å risikere at et unikt bilde eller en unik video går tapt.
 Programmet skal aldri slette, flytte eller endre filer i kildemappene. Import
 skal bare kopiere filer fra kildemapper til målmappen.
 
+## Planlagte brukerfunksjoner
+
+Det er noen brukerfunksjoner som er planlagt, men ikke på plass ennå. Dette
+gjelder blant annet muligheten til å angre på en import.
+
+Browseren bør senere komme i en ny utgave med mulighet for å slette bilder.
+Det bør også vurderes om bilder kan samles i en underkategori for en måned, slik
+at alle bildene fra en bestemt hendelse kan grupperes, for eksempel julaften
+eller en ferieuke. Det må vurderes hvordan ferieuker som dekker deler av to
+måneder skal håndteres.
+
 ## Begreper
 
 - **Kildemappe**: En mappe programmet skal scanne etter bilder.
@@ -307,7 +318,7 @@ lagring uten å kreve en separat databaseserver.
 Utvikling kan gjøres i WSL Debian, men programmet skal kjøres nativt i
 Windows 11. Implementasjonen må derfor være plattformuavhengig og ikke bygge på
 Linux-spesifikke filsystemantakelser. Python-versjon som er tilgjengelig i
-WSL nå er 3.13.5. På windows er 3.14.3 tilgjengelig.
+WSL nå er 3.13.5. På Windows er 3.14.3 tilgjengelig.
 
 Programmet skal bruke Python-biblioteker som fungerer godt på Windows, for
 eksempel `pathlib` for filstier, `shutil` for filkopiering og `sqlite3` for

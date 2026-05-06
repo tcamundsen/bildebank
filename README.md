@@ -5,12 +5,14 @@ versjon 3 eller senere. Se `LICENSE` for full lisens.
 
 # Installasjon
 
-Hvis du allerede har installer Bildebank, så kan du fortsette til [brukermanualen](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
+Hvis du allerede har installert Bildebank, så kan du fortsette til [brukermanualen](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
 
 Denne oppskriften er skrevet for Windows 11 og for deg som ikke vanligvis
 bruker Git eller Python. Etter at programmet er installert skal du
 forhåpentligvis slippe å bruke Git eller Python selv. Det brukes
 bare av Bildebank.
+
+Hvis du bruker Linux eller WSL, se [README.linux.md](README.linux.md).
 
 ## Anbefalt installasjon
 
@@ -117,7 +119,7 @@ Hvis du får et versjonsnummer, er Git installert.
 Sjekk etterpå i PowerShell:
 
 ```powershell
-py --version
+py -3.13 --version
 ```
 
 Hvis du får et versjonsnummer på 3.13 eller nyere, er Python klar.

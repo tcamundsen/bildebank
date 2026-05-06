@@ -14,7 +14,9 @@ sudo apt install git python3 python3-venv
 python3 --version
 ```
 
-Hvis `python3 --version` viser eldre enn 3.13, må du installere Python 3.13 eller nyere først.
+Hvis `python3 --version` viser eldre enn 3.13, må du installere Python 3.13
+eller nyere før du fortsetter. Hvis du er usikker på hvordan, er dette et godt
+sted å be om hjelp.
 
 ## Installer programmet
 
@@ -38,14 +40,22 @@ cd ~/kode/bildebank
 ./.venv/bin/python -m bilder --help
 ```
 
-Hvis du vil bruke den korte kommandoen `bildebank`, legg `.venv/bin` i `PATH`:
+For å kunne skrive bare `bildebank`, legg programmets `.venv/bin` i `PATH`:
 
 ```bash
 export PATH="$HOME/kode/bildebank/.venv/bin:$PATH"
 bildebank --help
 ```
 
-Legg samme `export`-linje i `~/.bashrc` hvis den skal gjelde i nye terminaler.
+Denne linjen gjelder bare i terminalvinduet du står i nå. Legg samme
+`export`-linje i `~/.bashrc` hvis den skal gjelde i nye terminaler også:
+
+```bash
+echo 'export PATH="$HOME/kode/bildebank/.venv/bin:$PATH"' >> ~/.bashrc
+```
+
+Neste gang du åpner terminalen, skal `bildebank --help` virke uten den lange
+stien.
 
 ## Eksempel
 
@@ -68,9 +78,17 @@ Når programmet er installert, kan du hente siste versjon slik:
 bildebank update
 ```
 
-Hvis `bildebank` ikke ligger i `PATH`, bruk:
+Hvis `bildebank` ikke ligger i `PATH`, bruk den lange kommandoen:
 
 ```bash
 cd ~/kode/bildebank
 ./.venv/bin/python -m bilder update
+```
+
+Hvis det heller ikke virker, kan du gjøre det samme manuelt:
+
+```bash
+cd ~/kode/bildebank
+git pull --ff-only
+./.venv/bin/python -m pip install -e .
 ```

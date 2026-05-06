@@ -24,13 +24,6 @@ Noen ideer eller prinsipper som ligger bak programmet:
 * Du skal kunne vite hvilken minnebrikke eller mappe alle bildene stammer fra.
 * Vi vil unngå duplikater.
 
-Det er noen kommandoer som er planlagt, men ikke på plass ennå. Dette gjelder
-blant annet muligheten til å angre på en import. Browseren skal nok også komme
-it en ny utgave med mulighet for å slette bilder, og så vurderer jeg å kunne
-samle bilder i en underkategori for en måned, slikat man for eksempel kan samle
-alle bildene fra en bestemt hendelse, for eksempel julaften eller ferieuke. Må
-vurdere hvordan det skal gjøres for ferieuker som dekker deler av to måneder.
-
 ## Programmappen og bildesamlingsmappen
 
 Bildebank bruker to forskjellige typer mapper.
@@ -68,14 +61,14 @@ Du kan åpne og se på filene i bildesamlingsmappen, men ikke rydd manuelt i
 ## Opprett en testmappe med noen få bilder
 
 Ikke start med hele hovedsamlingen første gang. Lag heller en mappe du gir
-navnet TestBilder i Bilder-mappen som du finner med Explorer på windows.
+navnet TestBilder i Bilder-mappen som du finner med Filutforsker i Windows.
 Kopier inn noen få bilder dit.
 Da kan du kontrollere at importen fungerer før du
 bruker Bildebank på større mengder.
 
-Trykk WindowsTast+E for å åpne Explorer. Du kan enten bla det frem til Bilder-mappen
-eller klikke i adressefeltet øverst i Explorer-vinduet og skrive inn Bilder og
-trykke linjeskift.
+Trykk Windows-tast+E for å åpne Filutforsker. Du kan enten bla deg frem til
+Bilder-mappen, eller klikke i adressefeltet øverst i vinduet, skrive `Bilder`
+og trykke Enter.
 
 
 ## Åpne PowerShell og gå til riktig mappe
@@ -225,7 +218,7 @@ med `--month-preview-limit`:
 bildebank make-browser --month-preview-limit 40
 ```
 
-Browseren åpnes ved å dobbeltklikke på `index.html` med filutforskeren
+HTML-visningen åpnes ved å dobbeltklikke på `index.html` med Filutforsker
 i Windows, eller med `open-browser`:
 
 ```powershell
@@ -352,29 +345,19 @@ For å sikre at du har siste versjon av programmet, kjør:
 bildebank update
 ```
 
-`bildebank update` virker både i Windows/PowerShell og i Linux/WSL.
-
-Hvis `bildebank update` ikke virker i Windows/PowerShell, kan du kjøre oppdateringsscriptet direkte:
+Hvis `bildebank update` ikke virker, kan du kjøre oppdateringsscriptet direkte:
 
 ```powershell
 cd $HOME\kode\bildebank
 powershell.exe -ExecutionPolicy Bypass -File .\update.ps1
 ```
 
-Hvis det heller ikke virker, kan du gjøre det manuelt i Windows/PowerShell:
+Hvis det heller ikke virker, kan du gjøre det manuelt:
 
 ```powershell
 cd $HOME\kode\bildebank
-git pull
-.\.venv\Scripts\python.exe -m pip install -e .
-```
-
-I Linux/WSL er den manuelle varianten:
-
-```bash
-cd ~/kode/bildebank
 git pull --ff-only
-./.venv/bin/python -m pip install -e .
+.\.venv\Scripts\python.exe -m pip install -e .
 ```
 
 Deretter kan du bruke programmet som før.
