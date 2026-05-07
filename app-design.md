@@ -142,6 +142,57 @@ lagt til:
 
     $ bildebank list-sources
 
+For å reversere en tidligere import:
+
+    $ bildebank unimport /path/to/source
+
+`unimport` skal gjøre samlingen slik den ville vært hvis denne importen aldri
+hadde skjedd. Dette er en destruktiv kommando og må derfor være ekstra
+konservativ. Programmet skal først finne den registrerte kilden som matcher
+pathen, og kontrollere at alle kildefilene som ble registrert for denne kilden
+fortsatt finnes i kilden, har samme filstørrelse og samme SHA-256 som da de ble
+importert eller registrert som duplikat. Hvis én eneste fil mangler eller har
+endret innhold, skal kommandoen avbrytes uten å endre databasen eller
+målmappen. Kravet finnes fordi en ny import av samme kilde må være mulig etter
+en unimport, slik at ingen bilder går tapt.
+
+Når kontrollen er godkjent, skal programmet vise hvilken kilde som blir
+reversert, hvor mange målfilreferanser som fjernes fra samlingen, og hvor mange
+av disse filene som fortsatt blir liggende i målmappen fordi samme fil også er
+registrert fra andre kilder. Hvis en målfil bare har denne kilden som
+proveniens, fjernes målfilen fra den aktive samlingen. Hvis målfilen også har
+andre `file_sources`, skal selve målfilen ikke slettes; bare henvisningen til
+kilden som unimporteres fjernes. Etterpå skal `make-browser` og
+`open-browser` vise bildene som om denne importen aldri hadde skjedd.
+
+Før noe endres skal brukeren bekrefte med en nøyaktig tekst:
+
+```text
+Kilde: /path/to/source
+Filer som fjernes fra aktiv samling: 142
+Filer som blir liggende fordi de også finnes i andre kilder: 37
+Skriv "ja, det vil jeg" for å gjennomføre unimport:
+```
+
+Bare svaret `ja, det vil jeg` skal gjennomføre kommandoen. Alle andre svar,
+inkludert tomt svar, skal avbryte uten endringer.
+
+For å fjerne en kilde fra kildelisten når den ikke har en aktiv import:
+
+    $ bildebank remove-source /path/to/source
+
+`remove-source` skal fjerne en registrert kilde fra databasen uten å røre
+bildefilene i målmappen eller i kildemappen. Kommandoen skal bare lykkes når
+kilden enten aldri har blitt importert, eller når importen allerede er reversert
+med `unimport`. Hvis kilden fortsatt har aktive `file_sources`, skal programmet
+avvise kommandoen og forklare at brukeren først må kjøre:
+
+    $ bildebank unimport /path/to/source
+
+Dette skiller mellom to handlinger: `unimport` reverserer en import og kan
+fjerne bilder fra den aktive samlingen, mens `remove-source` bare rydder bort
+en kilde som ikke lenger peker på aktive filer.
+
 For å vise oppsummering av siste import eller hele databasen:
 
     $ bildebank report
