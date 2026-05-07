@@ -826,6 +826,13 @@ def validate_unimport_source_files(conn, source: db.Source) -> None:
     for row in db.source_file_sources(conn, source.id):
         source_path = Path(str(row["source_path"]))
         if not source_path.exists():
+            if source.kind == "removable":
+                raise ValueError(
+                    f"Kildefil mangler: {source_path}\n"
+                    "Dette er et flyttbart medium. Sjekk at riktig USB-disk, CD "
+                    "eller minnekort er satt inn, og at det har samme stasjon/path "
+                    "som da importen ble kjørt."
+                )
             raise ValueError(f"Kildefil mangler: {source_path}")
         if not source_path.is_file():
             raise ValueError(f"Kildefil er ikke en fil: {source_path}")

@@ -1603,6 +1603,43 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             finally:
                 conn.close()
 
+    def test_unimport_removable_missing_source_file_explains_media_may_be_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            removable = root / "removable"
+            removable.mkdir()
+            source_file = removable / "REM_20240203.jpg"
+            source_file.write_bytes(b"removable")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import-removable",
+                        "--name",
+                        "usb-test",
+                        str(removable),
+                    ]
+                ),
+                0,
+            )
+            source_file.unlink()
+
+            with patch("builtins.input", return_value="ja, det vil jeg"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--name", "usb-test"]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Kildefil mangler", stderr)
+            self.assertIn("Dette er et flyttbart medium", stderr)
+            self.assertIn("Sjekk at riktig USB-disk", stderr)
+            self.assertTrue((target / "2024" / "02" / "REM_20240203.jpg").exists())
+
     def test_remove_source_removable_requires_name_and_rejects_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
