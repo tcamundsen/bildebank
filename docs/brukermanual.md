@@ -1,6 +1,7 @@
 # Brukermanual for Bildebank
 
-['Detalj-referanse'](reference.html)
+['Detalj-referanse'](reference.md)
+
 Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
 har fulgt `README.md` og installert Bildebank.
 Den viser de vanligste arbeidsflytene. Mer detaljer finner du i lenkene
