@@ -180,6 +180,11 @@ Skriv "ja, det vil jeg" for å gjennomføre unimport:
 Bare svaret `ja, det vil jeg` skal gjennomføre kommandoen. Alle andre svar,
 inkludert tomt svar, skal avbryte uten endringer.
 
+Når `unimport` kjøres på et flyttbart medium med `--name`, skal source-raden
+fjernes helt etter vellykket reversering. Den skal ikke bli stående som
+`pending`, fordi flere pending flyttbare medier vil skape rot ved neste
+`bildebank import` hvis bare ett av mediene er satt inn.
+
 For å fjerne en kilde fra kildelisten når den ikke har en aktiv import:
 
     $ bildebank remove-source /path/to/source

@@ -614,7 +614,7 @@ def run(args: argparse.Namespace) -> int:
             if active_count:
                 raise ValueError(
                     "Kilden har fortsatt aktive importerte filer. "
-                    f"Kjør først: bildebank unimport {source.path}"
+                    f"Kjør først: {unimport_command_for_source(source)}"
                 )
             if args.dry_run:
                 print(f"Kilde: {source.name or source.path}")
@@ -810,6 +810,12 @@ def resolve_source_for_unimport_or_remove(
             f'  bildebank {command} --name "{source.name}"'
         )
     return source
+
+
+def unimport_command_for_source(source: db.Source) -> str:
+    if source.kind == "removable":
+        return f'bildebank unimport --name "{source.name}"'
+    return f"bildebank unimport {source.path}"
 
 
 def validate_unimport_source_files(conn, source: db.Source) -> None:

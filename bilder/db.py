@@ -1050,16 +1050,19 @@ def apply_unimport(conn: sqlite3.Connection, plan: UnimportPlan) -> None:
     if file_ids_to_delete:
         placeholders = ",".join("?" for _ in file_ids_to_delete)
         conn.execute(f"DELETE FROM files WHERE id IN ({placeholders})", file_ids_to_delete)
-    conn.execute(
-        """
-        UPDATE sources
-        SET imported_at = NULL,
-            status = 'pending',
-            superseded_by_source_id = NULL
-        WHERE id = ?
-        """,
-        (source_id,),
-    )
+    if plan.source.kind == "removable":
+        conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+    else:
+        conn.execute(
+            """
+            UPDATE sources
+            SET imported_at = NULL,
+                status = 'pending',
+                superseded_by_source_id = NULL
+            WHERE id = ?
+            """,
+            (source_id,),
+        )
     conn.execute(
         """
         UPDATE sources

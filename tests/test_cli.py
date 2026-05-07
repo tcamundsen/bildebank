@@ -1594,6 +1594,11 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(code, 0, stderr)
             self.assertIn("Unimport gjennomført.", stdout)
             self.assertFalse((target / "2024" / "02" / "REM_20240203.jpg").exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 0)
+            finally:
+                conn.close()
 
     def test_remove_source_removable_requires_name_and_rejects_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1617,11 +1622,6 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 ),
                 0,
             )
-            with patch("builtins.input", return_value="ja, det vil jeg"):
-                self.assertEqual(
-                    run_cli(["--target", str(target), "unimport", "--name", "usb-test"]),
-                    0,
-                )
 
             code, stdout, stderr = capture_cli(
                 ["--target", str(target), "remove-source", str(removable)]
@@ -1632,12 +1632,21 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("må angis med --name", stderr)
             self.assertIn('bildebank remove-source --name "usb-test"', stderr)
 
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "remove-source", "--name", "usb-test"]
-            )
+            code, stdout, stderr = capture_cli(["--target", str(target), "remove-source", "--name", "usb-test"])
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn('bildebank unimport --name "usb-test"', stderr)
 
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Fjernet kilde", stdout)
+            with patch("builtins.input", return_value="ja, det vil jeg"):
+                self.assertEqual(
+                    run_cli(["--target", str(target), "unimport", "--name", "usb-test"]),
+                    0,
+                )
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "remove-source", "--name", "usb-test"])
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Fant ikke flyttbart medium med navn", stderr)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 0)

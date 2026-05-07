@@ -350,6 +350,10 @@ bildebank make-browser
 Da blir `index.html` oppdatert slik at den viser samlingen etter at importen er
 angret.
 
+Når du angrer en import som ble gjort med `import-removable`, fjerner Bildebank
+også denne kilden fra kildelisten. Du trenger derfor ikke kjøre `remove-source`
+etterpå for CD-er, USB-disker og andre flyttbare medier.
+
 ## Fjerne en kilde fra kildelisten
 
 Hvis du har lagt til feil kilde med `add`, men ikke importert den ennå, kan du
@@ -371,8 +375,8 @@ bildebank remove-source --name "Familie-CD-2004"
 `remove-source` sletter ikke bilder. Den fjerner bare kilden fra listen over
 kilder Bildebank kjenner til.
 
-Hvis kilden fortsatt har importerte filer i samlingen, nekter Bildebank å fjerne
-den. Da må du først angre importen:
+Hvis en vanlig kildemappe fortsatt har importerte filer i samlingen, nekter
+Bildebank å fjerne den. Da må du først angre importen:
 
 ```powershell
 bildebank unimport "$HOME\Pictures\TestBilder"
@@ -383,6 +387,9 @@ og deretter fjerne kilden fra listen:
 ```powershell
 bildebank remove-source "$HOME\Pictures\TestBilder"
 ```
+
+For flyttbare medier gjør `unimport --name` begge deler: den angrer importen og
+fjerner kilden fra kildelisten.
 
 ## Finn navnekollisjoner
 
