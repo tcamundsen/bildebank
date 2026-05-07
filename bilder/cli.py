@@ -209,6 +209,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     unimport.add_argument("--name", help="Navn på flyttbart medium som skal reverseres")
+    unimport.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Vis hva som ville blitt gjort uten å slette filer eller endre databasen",
+    )
     unimport.add_argument("path", metavar="mappe", nargs="?", type=Path, help="Vanlig kildemappe som skal reverseres")
     remove_source = add_command(
         subparsers,
@@ -412,6 +417,7 @@ def main_help_epilog() -> str:
     lines.append("")
     lines.append("Eksempel:")
     lines.append("   bildebank import --dry-run")
+    lines.append("   bildebank import-removable --name \"USB-2024\" --dry-run E:\\")
     return "\n".join(lines)
 
 
@@ -482,6 +488,7 @@ def run(args: argparse.Namespace) -> int:
     try:
         if not (
             (args.command == "import-removable" and args.dry_run)
+            or (args.command == "unimport" and args.dry_run)
             or (args.command == "remove-source" and args.dry_run)
         ):
             db.log_command(conn, args.command, vars_for_log(args))
@@ -584,6 +591,10 @@ def run(args: argparse.Namespace) -> int:
                 validate_unimport_source_files(conn, source)
                 validate_unimport_target_files(plan)
                 print_unimport_plan(plan)
+                if args.dry_run:
+                    print_unimport_dry_run_note(source)
+                    print("Dry-run: ingen endringer er gjort.")
+                    return 0
                 answer = input('Skriv "ja, det vil jeg" for å gjennomføre unimport: ')
                 if answer != "ja, det vil jeg":
                     conn.rollback()
@@ -863,6 +874,13 @@ def print_unimport_plan(plan: db.UnimportPlan) -> None:
         "Filer som blir liggende fordi de også finnes i andre kilder: "
         f"{plan.active_keep_count}"
     )
+
+
+def print_unimport_dry_run_note(source: db.Source) -> None:
+    if source.kind == "removable":
+        print("Flyttbar kilde ville blitt fjernet fra kildelisten.")
+    else:
+        print("Kilden ville blitt satt tilbake til pending.")
 
 
 def validate_remove_superseded_source_files(

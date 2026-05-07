@@ -145,7 +145,9 @@ lagt til:
 For å reversere en tidligere import:
 
     $ bildebank unimport /path/to/source
+    $ bildebank unimport --dry-run /path/to/source
     $ bildebank unimport --name "cd-2005"
+    $ bildebank unimport --dry-run --name "cd-2005"
 
 `unimport` skal gjøre samlingen slik den ville vært hvis denne importen aldri
 hadde skjedd. Dette er en destruktiv kommando og må derfor være ekstra
@@ -179,6 +181,10 @@ Skriv "ja, det vil jeg" for å gjennomføre unimport:
 
 Bare svaret `ja, det vil jeg` skal gjennomføre kommandoen. Alle andre svar,
 inkludert tomt svar, skal avbryte uten endringer.
+
+Med `--dry-run` skal programmet gjøre alle kontroller og vise samme oppsummering,
+men ikke spørre om bekreftelse, ikke slette filer, ikke endre databasen og ikke
+skrive kommandologg.
 
 Når `unimport` kjøres på et flyttbart medium med `--name`, skal source-raden
 fjernes helt etter vellykket reversering. Den skal ikke bli stående som

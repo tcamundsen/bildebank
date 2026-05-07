@@ -173,6 +173,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("Bildebank 0.2.0", stdout)
         self.assertIn("Vanlige kommandoer:", stdout)
         self.assertIn("bildebank <kommando> -h", stdout)
+        self.assertIn('bildebank import-removable --name "USB-2024" --dry-run', stdout)
         self.assertEqual(stderr, "")
 
     def test_main_help_groups_commands_by_user_task(self) -> None:
@@ -747,6 +748,43 @@ class CliTests(unittest.TestCase):
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_unimport_dry_run_reports_directory_plan_without_changes_or_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+
+            with patch("builtins.input", side_effect=AssertionError("dry-run should not ask")):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--dry-run", str(source)]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Filer som fjernes fra aktiv samling: 1", stdout)
+            self.assertIn("Kilden ville blitt satt tilbake til pending.", stdout)
+            self.assertIn("Dry-run: ingen endringer er gjort.", stdout)
+            self.assertTrue(imported.exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
+                status = conn.execute("SELECT status FROM sources").fetchone()[0]
+                self.assertEqual(status, "imported")
+                commands = [
+                    row[0]
+                    for row in conn.execute("SELECT command FROM command_log ORDER BY id").fetchall()
+                ]
+                self.assertEqual(commands, ["create", "add", "import"])
             finally:
                 conn.close()
 
@@ -1600,6 +1638,53 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_unimport_dry_run_reports_removable_plan_without_changes_or_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            removable = root / "removable"
+            removable.mkdir()
+            (removable / "REM_20240203.jpg").write_bytes(b"removable")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import-removable",
+                        "--name",
+                        "usb-test",
+                        str(removable),
+                    ]
+                ),
+                0,
+            )
+            imported = target / "2024" / "02" / "REM_20240203.jpg"
+
+            with patch("builtins.input", side_effect=AssertionError("dry-run should not ask")):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--dry-run", "--name", "usb-test"]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Filer som fjernes fra aktiv samling: 1", stdout)
+            self.assertIn("Flyttbar kilde ville blitt fjernet fra kildelisten.", stdout)
+            self.assertIn("Dry-run: ingen endringer er gjort.", stdout)
+            self.assertTrue(imported.exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
+                commands = [
+                    row[0]
+                    for row in conn.execute("SELECT command FROM command_log ORDER BY id").fetchall()
+                ]
+                self.assertEqual(commands, ["create", "import-removable"])
             finally:
                 conn.close()
 

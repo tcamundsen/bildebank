@@ -295,6 +295,12 @@ cd "C:\Users\Tom\BildeSamling"
 Hvis du har importert feil mappe, CD eller USB-disk, kan du bruke `unimport`
 for å angre akkurat den importen.
 
+Tørrtest først:
+
+```powershell
+bildebank unimport --dry-run "$HOME\Pictures\TestBilder"
+```
+
 Eksempel:
 
 ```powershell
@@ -308,6 +314,16 @@ USB-disken eller CD-en:
 ```powershell
 bildebank unimport --name "Familie-CD-2004"
 ```
+
+For en import som ble gjort med `import-removable`, kan du også tørrteste med
+navnet:
+
+```powershell
+bildebank unimport --dry-run --name "Familie-CD-2004"
+```
+
+Med `--dry-run` kontrollerer Bildebank filene og viser hva som ville blitt
+fjernet, men endrer ikke databasen og sletter ingen filer.
 
 `unimport` er en kraftig kommando, fordi den kan fjerne filer fra den aktive
 bildesamlingen. Bruk den derfor bare når du er sikker på at du har valgt riktig
