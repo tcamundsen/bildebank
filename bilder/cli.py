@@ -110,6 +110,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bildebank",
         usage="%(prog)s [-h] [--version] <kommando> [<args>]",
+        description=f"Bildebank {__version__}",
         formatter_class=BildebankHelpFormatter,
         epilog=main_help_epilog(),
     )

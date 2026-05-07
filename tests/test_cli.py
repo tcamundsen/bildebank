@@ -159,6 +159,7 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertIn("usage: bildebank [-h] [--version] <kommando> [<args>]", stdout)
+        self.assertIn("Bildebank 0.2.0", stdout)
         self.assertIn("Vanlige kommandoer:", stdout)
         self.assertIn("bildebank <kommando> -h", stdout)
         self.assertEqual(stderr, "")
@@ -172,6 +173,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 0)
         stdout = stdout_buffer.getvalue()
         self.assertIn("usage: bildebank [-h] [--version] <kommando> [<args>]", stdout)
+        self.assertIn("Bildebank 0.2.0", stdout)
         self.assertNotIn("--target", stdout)
         self.assertIn("Vanlige kommandoer:", stdout)
         self.assertIn("kom i gang\n   create", stdout)
