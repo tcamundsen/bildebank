@@ -263,6 +263,33 @@ Listen viser kildene Bildebank kjenner til. Vanlige mapper vises som
 Dette er nyttig når du vil kontrollere hva som allerede er registrert og om en
 kilde er importert.
 
+## Finne programmappen og bildesamlingen igjen
+
+Hvis du er usikker på hvor Bildebank ligger, eller hvor bildesamlingen din ble
+opprettet, kan du kjøre:
+
+```powershell
+bildebank where-is
+```
+
+Kommandoen viser:
+
+- hvor Bildebank-programmet ligger
+- hvor Bildebank lagrer sin lille oversikt over kjente bildesamlinger
+- hvilken mappe PowerShell står i akkurat nå
+- hvilke bildesamlingsmapper Bildebank kjenner til
+
+Når du oppretter en ny bildesamling med `create`, lagres den automatisk i denne
+oversikten. Hvis du allerede hadde en bildesamling fra før, blir den også lagt
+til automatisk neste gang du bruker Bildebank med den målmappen.
+
+Hvis `where-is` viser en bildesamlingsmappe, kan du kopiere `cd`-linjen som
+kommandoen foreslår, for eksempel:
+
+```powershell
+cd "C:\Users\Tom\BildeSamling"
+```
+
 ## Angre import av en kilde
 
 Hvis du har importert feil mappe, CD eller USB-disk, kan du bruke `unimport`

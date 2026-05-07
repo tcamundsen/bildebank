@@ -20,6 +20,7 @@ from .importer import (
 )
 from .html_export import export_html, export_html_conflicts
 from .media import explain_date, image_dimensions, inspect_metadata, sha256_file
+from .program_state import known_targets, program_db_path, record_target_best_effort
 from .target_lock import TargetLock
 
 
@@ -75,6 +76,7 @@ HELP_COMMAND_GROUPS = (
     (
         "programmet",
         (
+            ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
             ("update", "Oppdater programinstallasjonen"),
         ),
@@ -334,6 +336,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skriv HTML-filen hit. Standard: name-conflicts.html i målmappen.",
     )
     add_command(subparsers, "report", usage="bildebank report [valg]", help="Vis importoppsummering")
+    add_command(
+        subparsers,
+        "where-is",
+        usage="bildebank where-is [valg]",
+        help="Vis hvor Bildebank og kjente bildesamlinger ligger",
+    )
     migrate = add_command(
         subparsers,
         "migrate",
@@ -416,6 +424,7 @@ def run(args: argparse.Namespace) -> int:
             conn.commit()
         finally:
             conn.close()
+        record_target_best_effort(program_repo_root(), target, created=True)
         print(f"Målmappe opprettet: {target}")
         return 0
 
@@ -447,7 +456,11 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "update":
         return run_update()
 
+    if args.command == "where-is":
+        return run_where_is()
+
     target = resolve_target(args.target)
+    record_target_best_effort(program_repo_root(), target)
     if args.command == "migrate":
         return run_migrate(target, check=args.check)
 
@@ -873,6 +886,38 @@ def run_update() -> int:
     if sys.platform == "win32":
         return run_update_windows()
     return run_update_linux()
+
+
+def run_where_is() -> int:
+    repo_root = program_repo_root()
+    print("Bildebank-program:")
+    print(f"  {repo_root}")
+    print()
+    print("Programdata:")
+    print(f"  {program_db_path(repo_root)}")
+    print()
+    print("Gjeldende mappe:")
+    print(f"  {Path.cwd().resolve()}")
+    print()
+    print("Kjente bildesamlingsmapper:")
+    targets = known_targets(repo_root)
+    if not targets:
+        print("  Ingen registrert ennå.")
+        print()
+        print("Når du oppretter eller bruker en bildesamling, blir den lagt til her.")
+        return 0
+    for target in targets:
+        exists = "finnes" if target.exists else "finnes ikke"
+        last_seen = target.last_seen_at or "-"
+        print(f"  {target.path}")
+        print(f"    status: {exists}")
+        print(f"    sist brukt: {last_seen}")
+    first_existing = next((target for target in targets if target.exists), None)
+    if first_existing is not None:
+        print()
+        print("For å jobbe med en bildesamling kan du skrive:")
+        print(f'  cd "{first_existing.path}"')
+    return 0
 
 
 def run_migrate(target: Path, *, check: bool) -> int:

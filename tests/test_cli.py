@@ -14,6 +14,7 @@ from bilder.cli import build_parser, main
 from bilder.db import DB_FILENAME
 from bilder.importer import safe_copy
 from bilder.media import sha256_file
+from bilder.program_state import PROGRAM_DB_FILENAME
 from bilder.target_lock import LOCK_FILENAME
 from tests.test_media import (
     jpeg_with_xmp_date,
@@ -154,6 +155,16 @@ def create_legacy_database(
 
 
 class CliTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.program_root_tempdir = tempfile.TemporaryDirectory()
+        self.program_root = Path(self.program_root_tempdir.name)
+        self.program_root_patcher = patch("bilder.cli.program_repo_root", return_value=self.program_root)
+        self.program_root_patcher.start()
+
+    def tearDown(self) -> None:
+        self.program_root_patcher.stop()
+        self.program_root_tempdir.cleanup()
+
     def test_main_without_arguments_shows_help(self) -> None:
         code, stdout, stderr = capture_cli([])
 
@@ -179,6 +190,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("kom i gang\n   create", stdout)
         self.assertIn("se og kontrollere samlingen\n   status", stdout)
         self.assertIn("finne ting som bør kontrolleres\n   conflicts", stdout)
+        self.assertIn("programmet\n   where-is", stdout)
         self.assertIn("bildebank <kommando> -h", stdout)
         self.assertNotIn("{create,add,import", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
@@ -240,6 +252,45 @@ class CliTests(unittest.TestCase):
                 )
             finally:
                 conn.close()
+
+    def test_where_is_lists_program_and_registered_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            code, stdout, stderr = capture_cli(["where-is"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Bildebank-program:", stdout)
+            self.assertIn(str(self.program_root), stdout)
+            self.assertIn("Programdata:", stdout)
+            self.assertIn(str(self.program_root / PROGRAM_DB_FILENAME), stdout)
+            self.assertIn("Kjente bildesamlingsmapper:", stdout)
+            self.assertIn(str(target.resolve()), stdout)
+            self.assertIn('cd "', stdout)
+
+    def test_existing_target_is_registered_when_used(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (self.program_root / PROGRAM_DB_FILENAME).unlink()
+
+            self.assertEqual(run_cli(["--target", str(target), "status"]), 0)
+            code, stdout, stderr = capture_cli(["where-is"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn(str(target.resolve()), stdout)
+
+    def test_where_is_works_without_target(self) -> None:
+        code, stdout, stderr = capture_cli(["where-is"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Bildebank-program:", stdout)
+        self.assertIn("Ingen registrert ennå.", stdout)
 
     def test_rejects_target_inside_program_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
