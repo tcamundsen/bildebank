@@ -1,7 +1,10 @@
 # Brukermanual for Bildebank
 
+['Detalj-referanse'](reference.html)
 Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
 har fulgt `README.md` og installert Bildebank.
+Den viser de vanligste arbeidsflytene. Mer detaljer finner du i lenkene
+øverst i dokumentet.
 
 Eksemplene under bruker disse mappene:
 
@@ -23,20 +26,6 @@ Noen ideer eller prinsipper som ligger bak programmet:
   eller med en generert HTML-fil som visningsverktøy.
 * Du skal kunne vite hvilken minnebrikke eller mappe alle bildene stammer fra.
 * Vi vil unngå duplikater.
-
-## Mer om hver kommando
-
-Denne brukermanualen viser de vanligste arbeidsflytene. Det finnes også egne
-sider med mer forklaring for de viktigste kommandoene:
-
-- [`create`](create.md)
-- [`add`](add.md)
-- [`import`](import.md)
-- [`import-removable`](import-removable.md)
-- [`unimport`](unimport.md)
-- [`remove-source`](remove-source.md)
-- [`where-is`](where-is.md)
-- [`migrate`](migrate.md)
 
 ## Programmappen og bildesamlingsmappen
 
