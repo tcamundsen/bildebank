@@ -1553,6 +1553,97 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             finally:
                 conn.close()
 
+    def test_unimport_removable_requires_name_and_rejects_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            removable = root / "removable"
+            removable.mkdir()
+            (removable / "REM_20240203.jpg").write_bytes(b"removable")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import-removable",
+                        "--name",
+                        "usb-test",
+                        str(removable),
+                    ]
+                ),
+                0,
+            )
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "unimport", str(removable)]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("må angis med --name", stderr)
+            self.assertIn('bildebank unimport --name "usb-test"', stderr)
+            self.assertTrue((target / "2024" / "02" / "REM_20240203.jpg").exists())
+
+            with patch("builtins.input", return_value="ja, det vil jeg"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--name", "usb-test"]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Unimport gjennomført.", stdout)
+            self.assertFalse((target / "2024" / "02" / "REM_20240203.jpg").exists())
+
+    def test_remove_source_removable_requires_name_and_rejects_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            removable = root / "removable"
+            removable.mkdir()
+            (removable / "REM_20240203.jpg").write_bytes(b"removable")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import-removable",
+                        "--name",
+                        "usb-test",
+                        str(removable),
+                    ]
+                ),
+                0,
+            )
+            with patch("builtins.input", return_value="ja, det vil jeg"):
+                self.assertEqual(
+                    run_cli(["--target", str(target), "unimport", "--name", "usb-test"]),
+                    0,
+                )
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "remove-source", str(removable)]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("må angis med --name", stderr)
+            self.assertIn('bildebank remove-source --name "usb-test"', stderr)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "remove-source", "--name", "usb-test"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Fjernet kilde", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 0)
+            finally:
+                conn.close()
+
     def test_import_removable_dry_run_does_not_register_or_copy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

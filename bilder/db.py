@@ -679,6 +679,14 @@ def find_sources_by_path(conn: sqlite3.Connection, path: Path) -> list[Source]:
     return [row_to_source(row) for row in rows]
 
 
+def find_removable_source_by_name(conn: sqlite3.Connection, name: str) -> Source | None:
+    row = conn.execute(
+        "SELECT * FROM sources WHERE kind = 'removable' AND name = ?",
+        (name,),
+    ).fetchone()
+    return row_to_source(row) if row is not None else None
+
+
 def source_file_sources(conn: sqlite3.Connection, source_id: int) -> list[sqlite3.Row]:
     return list(
         conn.execute(

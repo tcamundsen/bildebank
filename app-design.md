@@ -145,16 +145,19 @@ lagt til:
 For å reversere en tidligere import:
 
     $ bildebank unimport /path/to/source
+    $ bildebank unimport --name "cd-2005"
 
 `unimport` skal gjøre samlingen slik den ville vært hvis denne importen aldri
 hadde skjedd. Dette er en destruktiv kommando og må derfor være ekstra
 konservativ. Programmet skal først finne den registrerte kilden som matcher
-pathen, og kontrollere at alle kildefilene som ble registrert for denne kilden
-fortsatt finnes i kilden, har samme filstørrelse og samme SHA-256 som da de ble
-importert eller registrert som duplikat. Hvis én eneste fil mangler eller har
-endret innhold, skal kommandoen avbrytes uten å endre databasen eller
-målmappen. Kravet finnes fordi en ny import av samme kilde må være mulig etter
-en unimport, slik at ingen bilder går tapt.
+pathen eller navnet, og kontrollere at alle kildefilene som ble registrert for
+denne kilden fortsatt finnes i kilden, har samme filstørrelse og samme SHA-256
+som da de ble importert eller registrert som duplikat. Vanlige kildemapper
+angis med path. Flyttbare medier skal alltid angis med `--name`, fordi pathen
+bare er stedet mediet var montert da importen ble kjørt. Hvis én eneste fil
+mangler eller har endret innhold, skal kommandoen avbrytes uten å endre
+databasen eller målmappen. Kravet finnes fordi en ny import av samme kilde må
+være mulig etter en unimport, slik at ingen bilder går tapt.
 
 Når kontrollen er godkjent, skal programmet vise hvilken kilde som blir
 reversert, hvor mange målfilreferanser som fjernes fra samlingen, og hvor mange
@@ -180,14 +183,16 @@ inkludert tomt svar, skal avbryte uten endringer.
 For å fjerne en kilde fra kildelisten når den ikke har en aktiv import:
 
     $ bildebank remove-source /path/to/source
+    $ bildebank remove-source --name "cd-2005"
     $ bildebank remove-source --dry-run /path/to/source
 
 `remove-source` skal fjerne en registrert kilde fra databasen uten å røre
-bildefilene i målmappen eller i kildemappen. For en vanlig kilde skal kommandoen
-bare lykkes når kilden enten aldri har blitt importert, eller når importen
-allerede er reversert med `unimport`. Hvis en vanlig kilde fortsatt har aktive
-`file_sources`, skal programmet avvise kommandoen og forklare at brukeren først
-må kjøre:
+bildefilene i målmappen eller i kildemappen. Vanlige kildemapper angis med path,
+mens flyttbare medier alltid angis med `--name`. For en vanlig kilde skal
+kommandoen bare lykkes når kilden enten aldri har blitt importert, eller når
+importen allerede er reversert med `unimport`. Hvis en vanlig kilde fortsatt har
+aktive `file_sources`, skal programmet avvise kommandoen og forklare at brukeren
+først må kjøre:
 
     $ bildebank unimport /path/to/source
 

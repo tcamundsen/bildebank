@@ -201,26 +201,28 @@ def build_parser() -> argparse.ArgumentParser:
     unimport = add_command(
         subparsers,
         "unimport",
-        usage="bildebank unimport [valg] mappe",
+        usage="bildebank unimport [valg] [mappe]",
         help="Reverser en tidligere importert kilde",
         description=(
             "Kontrollerer først at alle registrerte kildefiler fortsatt finnes "
             "med samme innhold. Krever nøyaktig bekreftelse før noe endres."
         ),
     )
-    unimport.add_argument("path", metavar="mappe", type=Path, help="Kilden som skal reverseres")
+    unimport.add_argument("--name", help="Navn på flyttbart medium som skal reverseres")
+    unimport.add_argument("path", metavar="mappe", nargs="?", type=Path, help="Vanlig kildemappe som skal reverseres")
     remove_source = add_command(
         subparsers,
         "remove-source",
-        usage="bildebank remove-source [valg] mappe",
+        usage="bildebank remove-source [valg] [mappe]",
         help="Fjern en registrert kilde som ikke har aktiv import",
     )
+    remove_source.add_argument("--name", help="Navn på flyttbart medium som skal fjernes")
     remove_source.add_argument(
         "--dry-run",
         action="store_true",
         help="Vis hva som ville blitt gjort uten å endre databasen",
     )
-    remove_source.add_argument("path", metavar="mappe", type=Path, help="Kilden som skal fjernes")
+    remove_source.add_argument("path", metavar="mappe", nargs="?", type=Path, help="Vanlig kildemappe som skal fjernes")
     remove = add_command(
         subparsers,
         "remove",
@@ -571,10 +573,7 @@ def run(args: argparse.Namespace) -> int:
             return 0
 
         if args.command == "unimport":
-            source_path = existing_path_arg(args.path).resolve()
-            if not source_path.exists() or not source_path.is_dir():
-                raise ValueError(f"Kilden finnes ikke som mappe: {source_path}")
-            source = resolve_source_arg(conn, source_path)
+            source = resolve_source_for_unimport_or_remove(conn, args.path, args.name, command="unimport")
             if source.status == "superseded":
                 raise ValueError(
                     "Kan ikke unimportere en superseded kilde. "
@@ -598,7 +597,7 @@ def run(args: argparse.Namespace) -> int:
             return 0
 
         if args.command == "remove-source":
-            source = resolve_source_arg(conn, args.path)
+            source = resolve_source_for_unimport_or_remove(conn, args.path, args.name, command="remove-source")
             if source.status == "superseded":
                 plan = db.build_remove_superseded_source_plan(conn, source)
                 validate_remove_superseded_source_files(conn, plan)
@@ -786,6 +785,31 @@ def resolve_source_arg(conn, path: Path) -> db.Source:
         labels = ", ".join(f"#{source.id} {source.name or source.path}" for source in sources)
         raise ValueError(f"Kilden matcher flere registrerte kilder: {labels}")
     return sources[0]
+
+
+def resolve_source_for_unimport_or_remove(
+    conn, path: Path | None, name: str | None, *, command: str
+) -> db.Source:
+    if name and path is not None:
+        raise ValueError("Bruk enten --name eller mappe, ikke begge deler.")
+    if name:
+        source = db.find_removable_source_by_name(conn, name)
+        if source is None:
+            raise ValueError(f"Fant ikke flyttbart medium med navn: {name}")
+        return source
+    if path is None:
+        raise ValueError(f"Du må angi mappe, eller --name for flyttbart medium: bildebank {command} --name NAVN")
+
+    source_path = existing_path_arg(path).resolve()
+    if not source_path.exists() or not source_path.is_dir():
+        raise ValueError(f"Kilden finnes ikke som mappe: {source_path}")
+    source = resolve_source_arg(conn, source_path)
+    if source.kind == "removable":
+        raise ValueError(
+            "Kilden er et flyttbart medium og må angis med --name:\n"
+            f'  bildebank {command} --name "{source.name}"'
+        )
+    return source
 
 
 def validate_unimport_source_files(conn, source: db.Source) -> None:

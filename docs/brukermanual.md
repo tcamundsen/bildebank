@@ -301,7 +301,13 @@ Eksempel:
 bildebank unimport "$HOME\Pictures\TestBilder"
 ```
 
-Bytt ut stien med kilden du vil angre.
+Bytt ut stien med kilden du vil angre. Hvis importen ble gjort med
+`import-removable`, skal du bruke navnet du ga med `--name`, ikke stien til
+USB-disken eller CD-en:
+
+```powershell
+bildebank unimport --name "Familie-CD-2004"
+```
 
 `unimport` er en kraftig kommando, fordi den kan fjerne filer fra den aktive
 bildesamlingen. Bruk den derfor bare når du er sikker på at du har valgt riktig
@@ -355,6 +361,12 @@ bildebank remove-source "$HOME\Pictures\TestBilder"
 
 Den samme kommandoen kan også brukes etter at du først har kjørt `unimport` på
 en kilde.
+
+For en kilde som ble importert med `import-removable`, bruk navnet:
+
+```powershell
+bildebank remove-source --name "Familie-CD-2004"
+```
 
 `remove-source` sletter ikke bilder. Den fjerner bare kilden fra listen over
 kilder Bildebank kjenner til.
