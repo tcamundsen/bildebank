@@ -503,6 +503,17 @@ class UnimportPlan:
     target_paths_to_delete: tuple[Path, ...]
 
 
+@dataclass(frozen=True)
+class RemoveSupersededSourcePlan:
+    source: Source
+    superseding_source: Source
+    source_file_count: int
+    already_represented_count: int
+    reassign_count: int
+    file_source_ids_to_delete: tuple[int, ...]
+    file_source_ids_to_reassign: tuple[int, ...]
+
+
 def row_to_source(row: sqlite3.Row) -> Source:
     return Source(
         id=int(row["id"]),
@@ -555,8 +566,10 @@ def source_file_sources(conn: sqlite3.Connection, source_id: int) -> list[sqlite
                 file_sources.id,
                 file_sources.file_id,
                 file_sources.source_path,
+                file_sources.source_path_key,
                 file_sources.sha256,
                 file_sources.size_bytes,
+                file_sources.kind,
                 files.target_path,
                 files.deleted_at
             FROM file_sources
@@ -919,6 +932,80 @@ def apply_unimport(conn: sqlite3.Connection, plan: UnimportPlan) -> None:
         """,
         (source_id,),
     )
+
+
+def build_remove_superseded_source_plan(
+    conn: sqlite3.Connection, source: Source
+) -> RemoveSupersededSourcePlan:
+    if source.status != "superseded" or source.superseded_by_source_id is None:
+        raise ValueError(f"Kilden er ikke superseded: {source.path}")
+    superseding_source = get_source(conn, int(source.superseded_by_source_id))
+    delete_ids: list[int] = []
+    reassign_ids: list[int] = []
+    rows = source_file_sources(conn, source.id)
+    for row in rows:
+        existing = conn.execute(
+            """
+            SELECT file_id, source_path, sha256, size_bytes
+            FROM file_sources
+            WHERE source_id = ?
+              AND source_path_key = ?
+            """,
+            (superseding_source.id, row["source_path_key"]),
+        ).fetchone()
+        if existing is None:
+            reassign_ids.append(int(row["id"]))
+            continue
+        mismatches = []
+        for key in ("file_id", "source_path", "sha256", "size_bytes"):
+            if existing[key] != row[key]:
+                mismatches.append(f"{key}: eksisterende={existing[key]!r}, forventet={row[key]!r}")
+        if mismatches:
+            raise ValueError(
+                "Konflikt i file_sources ved fjerning av superseded kilde "
+                f"#{source.id}: " + "; ".join(mismatches)
+            )
+        delete_ids.append(int(row["id"]))
+
+    return RemoveSupersededSourcePlan(
+        source=source,
+        superseding_source=superseding_source,
+        source_file_count=len(rows),
+        already_represented_count=len(delete_ids),
+        reassign_count=len(reassign_ids),
+        file_source_ids_to_delete=tuple(delete_ids),
+        file_source_ids_to_reassign=tuple(reassign_ids),
+    )
+
+
+def apply_remove_superseded_source(
+    conn: sqlite3.Connection, plan: RemoveSupersededSourcePlan
+) -> None:
+    if plan.file_source_ids_to_delete:
+        placeholders = ",".join("?" for _ in plan.file_source_ids_to_delete)
+        conn.execute(
+            f"DELETE FROM file_sources WHERE id IN ({placeholders})",
+            list(plan.file_source_ids_to_delete),
+        )
+    if plan.file_source_ids_to_reassign:
+        placeholders = ",".join("?" for _ in plan.file_source_ids_to_reassign)
+        conn.execute(
+            f"""
+            UPDATE file_sources
+            SET source_id = ?
+            WHERE id IN ({placeholders})
+            """,
+            [plan.superseding_source.id, *plan.file_source_ids_to_reassign],
+        )
+    conn.execute(
+        """
+        UPDATE sources
+        SET superseded_by_source_id = ?
+        WHERE superseded_by_source_id = ?
+        """,
+        (plan.superseding_source.id, plan.source.id),
+    )
+    conn.execute("DELETE FROM sources WHERE id = ?", (plan.source.id,))
 
 
 def remove_source(conn: sqlite3.Connection, source_id: int) -> None:

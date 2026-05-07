@@ -213,6 +213,11 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank remove-source [valg] mappe",
         help="Fjern en registrert kilde som ikke har aktiv import",
     )
+    remove_source.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Vis hva som ville blitt gjort uten å endre databasen",
+    )
     remove_source.add_argument("path", metavar="mappe", type=Path, help="Kilden som skal fjernes")
     remove = add_command(
         subparsers,
@@ -460,7 +465,10 @@ def run(args: argparse.Namespace) -> int:
 
     conn = db.connect(target)
     try:
-        if not (args.command == "import-removable" and args.dry_run):
+        if not (
+            (args.command == "import-removable" and args.dry_run)
+            or (args.command == "remove-source" and args.dry_run)
+        ):
             db.log_command(conn, args.command, vars_for_log(args))
         if args.command == "add":
             source = existing_path_arg(args.path).resolve()
@@ -554,6 +562,11 @@ def run(args: argparse.Namespace) -> int:
             if not source_path.exists() or not source_path.is_dir():
                 raise ValueError(f"Kilden finnes ikke som mappe: {source_path}")
             source = resolve_source_arg(conn, source_path)
+            if source.status == "superseded":
+                raise ValueError(
+                    "Kan ikke unimportere en superseded kilde. "
+                    f"Bruk remove-source for å fjerne kilden fra kildelisten: {source.path}"
+                )
             with TargetLock(target, command="unimport"):
                 plan = db.build_unimport_plan(conn, source)
                 validate_unimport_source_files(conn, source)
@@ -573,14 +586,32 @@ def run(args: argparse.Namespace) -> int:
 
         if args.command == "remove-source":
             source = resolve_source_arg(conn, args.path)
+            if source.status == "superseded":
+                plan = db.build_remove_superseded_source_plan(conn, source)
+                validate_remove_superseded_source_files(conn, plan)
+                print_remove_superseded_source_plan(plan)
+                if args.dry_run:
+                    print("Dry-run: ingen endringer er gjort.")
+                    return 0
+                with TargetLock(target, command="remove-source"):
+                    db.apply_remove_superseded_source(conn, plan)
+                    conn.commit()
+                print(f"Fjernet superseded kilde #{source.id}: {source.path}")
+                return 0
             active_count = db.active_file_source_count(conn, source.id)
             if active_count:
                 raise ValueError(
                     "Kilden har fortsatt aktive importerte filer. "
                     f"Kjør først: bildebank unimport {source.path}"
                 )
-            db.remove_source(conn, source.id)
-            conn.commit()
+            if args.dry_run:
+                print(f"Kilde: {source.name or source.path}")
+                print("Kilden kan fjernes fra kildelisten.")
+                print("Dry-run: ingen endringer er gjort.")
+                return 0
+            with TargetLock(target, command="remove-source"):
+                db.remove_source(conn, source.id)
+                conn.commit()
             print(f"Fjernet kilde #{source.id}: {source.name or source.path}")
             return 0
 
@@ -778,6 +809,48 @@ def print_unimport_plan(plan: db.UnimportPlan) -> None:
         "Filer som blir liggende fordi de også finnes i andre kilder: "
         f"{plan.active_keep_count}"
     )
+
+
+def validate_remove_superseded_source_files(
+    conn, plan: db.RemoveSupersededSourcePlan
+) -> None:
+    parent = plan.superseding_source.path.resolve()
+    for row in db.source_file_sources(conn, plan.source.id):
+        source_path = Path(str(row["source_path"])).resolve()
+        try:
+            source_path.relative_to(parent)
+        except ValueError as exc:
+            raise ValueError(
+                "Kildefil fra superseded kilde ligger ikke under overordnet kilde: "
+                f"{source_path}"
+            ) from exc
+        if not source_path.exists():
+            raise ValueError(f"Kildefil mangler under overordnet kilde: {source_path}")
+        if not source_path.is_file():
+            raise ValueError(f"Kildefil er ikke en fil: {source_path}")
+        size_bytes = source_path.stat().st_size
+        if size_bytes != int(row["size_bytes"]):
+            raise ValueError(
+                f"Kildefil har endret størrelse under overordnet kilde: {source_path} "
+                f"(nå {size_bytes}, forventet {row['size_bytes']})"
+            )
+        file_hash = sha256_file(source_path)
+        if file_hash != row["sha256"]:
+            raise ValueError(
+                f"Kildefil har endret innhold under overordnet kilde: {source_path}"
+            )
+
+
+def print_remove_superseded_source_plan(plan: db.RemoveSupersededSourcePlan) -> None:
+    print(f"Kilde: {plan.source.path}")
+    print(f"Erstattet av: {plan.superseding_source.path}")
+    print(f"Registrerte kildefiler kontrollert: {plan.source_file_count}")
+    print(
+        "Rader som allerede finnes på overordnet kilde: "
+        f"{plan.already_represented_count}"
+    )
+    print(f"Rader som omregistreres til overordnet kilde: {plan.reassign_count}")
+    print("Målfiler som slettes: 0")
 
 
 def validate_target_not_in_program_repo(target: Path) -> None:

@@ -749,6 +749,112 @@ class CliTests(unittest.TestCase):
             self.assertIn("Kildefil har endret", stderr)
             self.assertTrue((target / "2024" / "01" / "IMG_20240102.jpg").exists())
 
+    def test_unimport_rejects_superseded_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            parent = root / "Bilder"
+            child = parent / "2006"
+            child.mkdir(parents=True)
+            (child / "IMG_20061003.jpg").write_bytes(b"child")
+            (parent / "IMG_20070104.jpg").write_bytes(b"parent")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(child)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(parent)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            with patch("builtins.input", return_value="ja, det vil jeg"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", str(child)]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Kan ikke unimportere en superseded kilde", stderr)
+            self.assertTrue((target / "2006" / "10" / "IMG_20061003.jpg").exists())
+
+    def test_remove_source_dry_run_reports_superseded_reassignment_without_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            parent = root / "Bilder"
+            child = parent / "2006"
+            child.mkdir(parents=True)
+            (child / "IMG_20061003.jpg").write_bytes(b"child")
+            (parent / "IMG_20070104.jpg").write_bytes(b"parent")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(child)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(parent)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "remove-source", "--dry-run", str(child)]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Rader som omregistreres til overordnet kilde: 1", stdout)
+            self.assertIn("Dry-run: ingen endringer er gjort.", stdout)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 2)
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT status FROM sources WHERE path = ?",
+                        (str(child.resolve()),),
+                    ).fetchone()[0],
+                    "superseded",
+                )
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0], 5)
+            finally:
+                conn.close()
+
+    def test_remove_source_reassigns_superseded_source_to_parent(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            parent = root / "Bilder"
+            child = parent / "2006"
+            child.mkdir(parents=True)
+            child_file = child / "IMG_20061003.jpg"
+            parent_file = parent / "IMG_20070104.jpg"
+            child_file.write_bytes(b"child")
+            parent_file.write_bytes(b"parent")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(child)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(parent)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "remove-source", str(child)]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Fjernet superseded kilde", stdout)
+            self.assertTrue((target / "2006" / "10" / "IMG_20061003.jpg").exists())
+            self.assertTrue((target / "2007" / "01" / "IMG_20070104.jpg").exists())
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                sources = conn.execute("SELECT id, path FROM sources").fetchall()
+                self.assertEqual(len(sources), 1)
+                self.assertEqual(sources[0][1], str(parent.resolve()))
+                file_sources = conn.execute(
+                    "SELECT source_id, source_path FROM file_sources ORDER BY source_path"
+                ).fetchall()
+                self.assertEqual(len(file_sources), 2)
+                self.assertEqual({row[0] for row in file_sources}, {sources[0][0]})
+                self.assertIn(str(child_file.resolve()), {row[1] for row in file_sources})
+                self.assertIn(str(parent_file.resolve()), {row[1] for row in file_sources})
+            finally:
+                conn.close()
+
     def test_show_source_lists_duplicate_sources_for_same_target_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

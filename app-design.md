@@ -180,18 +180,48 @@ inkludert tomt svar, skal avbryte uten endringer.
 For å fjerne en kilde fra kildelisten når den ikke har en aktiv import:
 
     $ bildebank remove-source /path/to/source
+    $ bildebank remove-source --dry-run /path/to/source
 
 `remove-source` skal fjerne en registrert kilde fra databasen uten å røre
-bildefilene i målmappen eller i kildemappen. Kommandoen skal bare lykkes når
-kilden enten aldri har blitt importert, eller når importen allerede er reversert
-med `unimport`. Hvis kilden fortsatt har aktive `file_sources`, skal programmet
-avvise kommandoen og forklare at brukeren først må kjøre:
+bildefilene i målmappen eller i kildemappen. For en vanlig kilde skal kommandoen
+bare lykkes når kilden enten aldri har blitt importert, eller når importen
+allerede er reversert med `unimport`. Hvis en vanlig kilde fortsatt har aktive
+`file_sources`, skal programmet avvise kommandoen og forklare at brukeren først
+må kjøre:
 
     $ bildebank unimport /path/to/source
 
 Dette skiller mellom to handlinger: `unimport` reverserer en import og kan
 fjerne bilder fra den aktive samlingen, mens `remove-source` bare rydder bort
 en kilde som ikke lenger peker på aktive filer.
+
+For en kilde med `status='superseded'` er regelen annerledes. En slik kilde er
+erstattet av en overordnet kilde i `superseded_by_source_id`, og `unimport` skal
+ikke være lov. `remove-source` skal derimot kunne brukes for å rydde bort den
+gamle underkilden, slik at databasen ser ut som om underkilden aldri ble
+importert separat.
+
+Før `remove-source` sletter en superseded kilde, skal programmet kontrollere
+hver eneste `file_sources`-rad for den kilden:
+
+- Hvis samme kildefil allerede har en tilsvarende `file_sources`-rad på den
+  overordnede kilden, kan raden for den superseded kilden slettes som
+  overflødig.
+- Ellers skal programmet kontrollere at kildefilen ligger under den overordnede
+  kilden, fortsatt finnes, har samme filstørrelse og samme SHA-256, og deretter
+  omregistrere `file_sources`-raden til den overordnede kilden.
+- Hvis filen ikke finnes under den overordnede kilden, eller innholdet ikke er
+  identisk, skal kommandoen avbrytes uten endringer.
+
+Når alle rader enten er slettet som overflødige eller omregistrert til
+overkilden, kan den superseded source-raden slettes. Ingen målfil skal slettes
+som del av `remove-source` på en superseded kilde.
+
+Med `--dry-run` skal programmet ikke endre databasen. Det skal vise hvilken
+kilde som fjernes, hvilken overordnet kilde den er erstattet av, hvor mange
+`file_sources`-rader som allerede finnes på overkilden, hvor mange rader som må
+omregistreres til overkilden, og eventuelle filer som mangler eller ikke matcher
+under overkilden.
 
 For å vise oppsummering av siste import eller hele databasen:
 
