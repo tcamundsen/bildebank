@@ -24,6 +24,20 @@ Noen ideer eller prinsipper som ligger bak programmet:
 * Du skal kunne vite hvilken minnebrikke eller mappe alle bildene stammer fra.
 * Vi vil unngå duplikater.
 
+## Mer om hver kommando
+
+Denne brukermanualen viser de vanligste arbeidsflytene. Det finnes også egne
+sider med mer forklaring for de viktigste kommandoene:
+
+- [`create`](create.md)
+- [`add`](add.md)
+- [`import`](import.md)
+- [`import-removable`](import-removable.md)
+- [`unimport`](unimport.md)
+- [`remove-source`](remove-source.md)
+- [`where-is`](where-is.md)
+- [`migrate`](migrate.md)
+
 ## Programmappen og bildesamlingsmappen
 
 Bildebank bruker to forskjellige typer mapper.
