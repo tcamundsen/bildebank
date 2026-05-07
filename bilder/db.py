@@ -494,6 +494,15 @@ class Source:
     superseded_by_source_id: int | None
 
 
+@dataclass(frozen=True)
+class UnimportPlan:
+    source: Source
+    source_file_count: int
+    active_remove_count: int
+    active_keep_count: int
+    target_paths_to_delete: tuple[Path, ...]
+
+
 def row_to_source(row: sqlite3.Row) -> Source:
     return Source(
         id=int(row["id"]),
@@ -520,6 +529,57 @@ def get_source(conn: sqlite3.Connection, source_id: int) -> Source:
     if row is None:
         raise ValueError(f"Fant ikke kilde #{source_id}")
     return row_to_source(row)
+
+
+def find_sources_by_path(conn: sqlite3.Connection, path: Path) -> list[Source]:
+    resolved = path.resolve()
+    key = path_key(path)
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM sources
+        WHERE path_key = ?
+           OR (path_key IS NULL AND path = ?)
+        ORDER BY id
+        """,
+        (key, str(resolved)),
+    ).fetchall()
+    return [row_to_source(row) for row in rows]
+
+
+def source_file_sources(conn: sqlite3.Connection, source_id: int) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT
+                file_sources.id,
+                file_sources.file_id,
+                file_sources.source_path,
+                file_sources.sha256,
+                file_sources.size_bytes,
+                files.target_path,
+                files.deleted_at
+            FROM file_sources
+            JOIN files ON files.id = file_sources.file_id
+            WHERE file_sources.source_id = ?
+            ORDER BY file_sources.id
+            """,
+            (source_id,),
+        )
+    )
+
+
+def active_file_source_count(conn: sqlite3.Connection, source_id: int) -> int:
+    return int(
+        conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM file_sources
+            WHERE file_sources.source_id = ?
+            """,
+            (source_id,),
+        ).fetchone()[0]
+    )
 
 
 def add_directory_source(conn: sqlite3.Connection, path: Path) -> int:
@@ -769,6 +829,110 @@ def mark_sources_superseded(
         """,
         [superseded_by_source_id, *ids],
     )
+
+
+def build_unimport_plan(conn: sqlite3.Connection, source: Source) -> UnimportPlan:
+    rows = source_file_sources(conn, source.id)
+    source_counts: dict[int, int] = {}
+    for row in rows:
+        file_id = int(row["file_id"])
+        source_counts[file_id] = source_counts.get(file_id, 0) + 1
+
+    active_remove_file_ids: set[int] = set()
+    active_keep_file_ids: set[int] = set()
+    target_paths_to_delete: list[Path] = []
+    seen_delete_file_ids: set[int] = set()
+
+    for row in rows:
+        if row["deleted_at"] is not None:
+            continue
+        file_id = int(row["file_id"])
+        total_sources = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM file_sources WHERE file_id = ?",
+                (file_id,),
+            ).fetchone()[0]
+        )
+        if total_sources == source_counts[file_id]:
+            active_remove_file_ids.add(file_id)
+            if file_id not in seen_delete_file_ids:
+                target_paths_to_delete.append(Path(str(row["target_path"])))
+                seen_delete_file_ids.add(file_id)
+        else:
+            active_keep_file_ids.add(file_id)
+
+    return UnimportPlan(
+        source=source,
+        source_file_count=len(rows),
+        active_remove_count=len(active_remove_file_ids),
+        active_keep_count=len(active_keep_file_ids),
+        target_paths_to_delete=tuple(target_paths_to_delete),
+    )
+
+
+def apply_unimport(conn: sqlite3.Connection, plan: UnimportPlan) -> None:
+    source_id = plan.source.id
+    file_ids_to_delete = [
+        int(row["id"])
+        for row in conn.execute(
+            """
+            SELECT files.id
+            FROM files
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM file_sources other_sources
+                WHERE other_sources.file_id = files.id
+                  AND other_sources.source_id != ?
+            )
+              AND EXISTS (
+                SELECT 1
+                FROM file_sources source_rows
+                WHERE source_rows.file_id = files.id
+                  AND source_rows.source_id = ?
+            )
+            """,
+            (source_id, source_id),
+        )
+    ]
+
+    conn.execute("DELETE FROM file_sources WHERE source_id = ?", (source_id,))
+    if file_ids_to_delete:
+        placeholders = ",".join("?" for _ in file_ids_to_delete)
+        conn.execute(f"DELETE FROM files WHERE id IN ({placeholders})", file_ids_to_delete)
+    conn.execute(
+        """
+        UPDATE sources
+        SET imported_at = NULL,
+            status = 'pending',
+            superseded_by_source_id = NULL
+        WHERE id = ?
+        """,
+        (source_id,),
+    )
+    conn.execute(
+        """
+        UPDATE sources
+        SET status = 'imported',
+            superseded_by_source_id = NULL
+        WHERE superseded_by_source_id = ?
+          AND imported_at IS NOT NULL
+        """,
+        (source_id,),
+    )
+
+
+def remove_source(conn: sqlite3.Connection, source_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE sources
+        SET status = 'imported',
+            superseded_by_source_id = NULL
+        WHERE superseded_by_source_id = ?
+          AND imported_at IS NOT NULL
+        """,
+        (source_id,),
+    )
+    conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
 
 
 def count_rows(conn: sqlite3.Connection, table: str) -> int:

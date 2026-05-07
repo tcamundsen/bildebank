@@ -263,6 +263,88 @@ Listen viser kildene Bildebank kjenner til. Vanlige mapper vises som
 Dette er nyttig når du vil kontrollere hva som allerede er registrert og om en
 kilde er importert.
 
+## Angre import av en kilde
+
+Hvis du har importert feil mappe, CD eller USB-disk, kan du bruke `unimport`
+for å angre akkurat den importen.
+
+Eksempel:
+
+```powershell
+bildebank unimport "$HOME\Pictures\TestBilder"
+```
+
+Bytt ut stien med kilden du vil angre.
+
+`unimport` er en kraftig kommando, fordi den kan fjerne filer fra den aktive
+bildesamlingen. Bruk den derfor bare når du er sikker på at du har valgt riktig
+kilde.
+
+Før Bildebank endrer noe, kontrollerer programmet at alle filene fra denne
+kilden fortsatt finnes i kilden, og at de er helt identiske med det som ble
+importert. Hvis en fil mangler eller er endret, stopper programmet uten å gjøre
+endringer. Grunnen er at du skal kunne importere samme kilde på nytt senere.
+
+Hvis et bilde også finnes i andre kilder, blir bildet liggende i
+bildesamlingsmappen. Da fjernes bare koblingen til kilden du angrer. Hvis bildet
+bare kom fra denne ene kilden, fjernes det fra den aktive bildesamlingen.
+
+Før kommandoen gjennomføres, viser Bildebank en oppsummering, for eksempel:
+
+```text
+Kilde: C:\Users\Tom\Pictures\TestBilder
+Registrerte kildefiler kontrollert: 179
+Filer som fjernes fra aktiv samling: 142
+Filer som blir liggende fordi de også finnes i andre kilder: 37
+Skriv "ja, det vil jeg" for å gjennomføre unimport:
+```
+
+Les oppsummeringen nøye. For å gjennomføre må du skrive nøyaktig:
+
+```text
+ja, det vil jeg
+```
+
+Hvis du skriver noe annet, eller bare trykker Enter, avbryter Bildebank uten å
+endre noe.
+
+Etter en `unimport` kan du lage HTML-visningen på nytt:
+
+```powershell
+bildebank make-browser
+```
+
+Da blir `index.html` oppdatert slik at den viser samlingen etter at importen er
+angret.
+
+## Fjerne en kilde fra kildelisten
+
+Hvis du har lagt til feil kilde med `add`, men ikke importert den ennå, kan du
+fjerne den fra kildelisten:
+
+```powershell
+bildebank remove-source "$HOME\Pictures\TestBilder"
+```
+
+Den samme kommandoen kan også brukes etter at du først har kjørt `unimport` på
+en kilde.
+
+`remove-source` sletter ikke bilder. Den fjerner bare kilden fra listen over
+kilder Bildebank kjenner til.
+
+Hvis kilden fortsatt har importerte filer i samlingen, nekter Bildebank å fjerne
+den. Da må du først angre importen:
+
+```powershell
+bildebank unimport "$HOME\Pictures\TestBilder"
+```
+
+og deretter fjerne kilden fra listen:
+
+```powershell
+bildebank remove-source "$HOME\Pictures\TestBilder"
+```
+
 ## Finn navnekollisjoner
 
 En navnekollisjon betyr at flere importerte filer ville hatt samme filnavn i

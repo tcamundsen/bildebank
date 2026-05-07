@@ -581,6 +581,174 @@ class CliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_remove_source_removes_pending_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "remove-source", str(source)]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Fjernet kilde", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_remove_source_rejects_active_import(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "remove-source", str(source)]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("bildebank unimport", stderr)
+
+    def test_unimport_duplicate_source_keeps_shared_target_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source1 = root / "source1"
+            source2 = root / "source2"
+            source1.mkdir()
+            source2.mkdir()
+            (source1 / "IMG_20240102.jpg").write_bytes(b"same")
+            (source2 / "COPY_20240203.jpg").write_bytes(b"same")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source1)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source2)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            with patch("builtins.input", return_value="ja, det vil jeg"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", str(source2)]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Filer som fjernes fra aktiv samling: 0", stdout)
+            self.assertIn("Filer som blir liggende fordi de også finnes i andre kilder: 1", stdout)
+            self.assertTrue(imported.exists())
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
+                status = conn.execute(
+                    "SELECT status, imported_at FROM sources WHERE path = ?",
+                    (str(source2.resolve()),),
+                ).fetchone()
+                self.assertEqual(status[0], "pending")
+                self.assertIsNone(status[1])
+            finally:
+                conn.close()
+
+            self.assertEqual(
+                run_cli(["--target", str(target), "remove-source", str(source2)]), 0
+            )
+
+    def test_unimport_only_source_removes_target_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            self.assertTrue(imported.exists())
+
+            with patch("builtins.input", return_value="ja, det vil jeg"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", str(source)]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Filer som fjernes fra aktiv samling: 1", stdout)
+            self.assertFalse(imported.exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_unimport_aborts_without_exact_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+
+            with patch("builtins.input", return_value="ja"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", str(source)]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Avbrutt. Ingen endringer er gjort.", stdout)
+            self.assertTrue(imported.exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
+            finally:
+                conn.close()
+
+    def test_unimport_aborts_when_source_file_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
+            source_file.write_bytes(b"changed")
+
+            with patch("builtins.input", return_value="ja, det vil jeg"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", str(source)]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Kildefil har endret", stderr)
+            self.assertTrue((target / "2024" / "01" / "IMG_20240102.jpg").exists())
+
     def test_show_source_lists_duplicate_sources_for_same_target_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -19,7 +19,7 @@ from .importer import (
     validate_source_target,
 )
 from .html_export import export_html, export_html_conflicts
-from .media import explain_date, image_dimensions, inspect_metadata
+from .media import explain_date, image_dimensions, inspect_metadata, sha256_file
 from .target_lock import TargetLock
 
 
@@ -56,6 +56,8 @@ HELP_COMMAND_GROUPS = (
         "rydde",
         (
             ("remove", "Flytt en importert fil til deleted/"),
+            ("unimport", "Reverser en tidligere importert kilde"),
+            ("remove-source", "Fjern en kilde uten aktiv import"),
             ("list-removed", "List filer som er flyttet til deleted/"),
         ),
     ),
@@ -194,6 +196,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="Vis hvilken kilde en importert målfil kommer fra",
     )
     show_source.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    unimport = add_command(
+        subparsers,
+        "unimport",
+        usage="bildebank unimport [valg] mappe",
+        help="Reverser en tidligere importert kilde",
+        description=(
+            "Kontrollerer først at alle registrerte kildefiler fortsatt finnes "
+            "med samme innhold. Krever nøyaktig bekreftelse før noe endres."
+        ),
+    )
+    unimport.add_argument("path", metavar="mappe", type=Path, help="Kilden som skal reverseres")
+    remove_source = add_command(
+        subparsers,
+        "remove-source",
+        usage="bildebank remove-source [valg] mappe",
+        help="Fjern en registrert kilde som ikke har aktiv import",
+    )
+    remove_source.add_argument("path", metavar="mappe", type=Path, help="Kilden som skal fjernes")
     remove = add_command(
         subparsers,
         "remove",
@@ -529,6 +549,41 @@ def run(args: argparse.Namespace) -> int:
             print_source_items(rows)
             return 0
 
+        if args.command == "unimport":
+            source_path = existing_path_arg(args.path).resolve()
+            if not source_path.exists() or not source_path.is_dir():
+                raise ValueError(f"Kilden finnes ikke som mappe: {source_path}")
+            source = resolve_source_arg(conn, source_path)
+            with TargetLock(target, command="unimport"):
+                plan = db.build_unimport_plan(conn, source)
+                validate_unimport_source_files(conn, source)
+                validate_unimport_target_files(plan)
+                print_unimport_plan(plan)
+                answer = input('Skriv "ja, det vil jeg" for å gjennomføre unimport: ')
+                if answer != "ja, det vil jeg":
+                    conn.rollback()
+                    print("Avbrutt. Ingen endringer er gjort.")
+                    return 0
+                db.apply_unimport(conn, plan)
+                for target_path in plan.target_paths_to_delete:
+                    target_path.unlink()
+                conn.commit()
+            print("Unimport gjennomført.")
+            return 0
+
+        if args.command == "remove-source":
+            source = resolve_source_arg(conn, args.path)
+            active_count = db.active_file_source_count(conn, source.id)
+            if active_count:
+                raise ValueError(
+                    "Kilden har fortsatt aktive importerte filer. "
+                    f"Kjør først: bildebank unimport {source.path}"
+                )
+            db.remove_source(conn, source.id)
+            conn.commit()
+            print(f"Fjernet kilde #{source.id}: {source.name or source.path}")
+            return 0
+
         if args.command == "remove":
             original_path = resolve_target_file_arg(target, args.path)
             row = db.file_by_target_path(conn, original_path)
@@ -677,6 +732,52 @@ def resolve_target(target_arg: Path | None) -> Path:
     if target is None:
         raise ValueError("Fant ingen målmappe. Kjør kommandoen fra bildesamlingsmappen.")
     return target
+
+
+def resolve_source_arg(conn, path: Path) -> db.Source:
+    sources = db.find_sources_by_path(conn, path)
+    if not sources:
+        raise ValueError(f"Fant ikke registrert kilde: {path}")
+    if len(sources) > 1:
+        labels = ", ".join(f"#{source.id} {source.name or source.path}" for source in sources)
+        raise ValueError(f"Kilden matcher flere registrerte kilder: {labels}")
+    return sources[0]
+
+
+def validate_unimport_source_files(conn, source: db.Source) -> None:
+    for row in db.source_file_sources(conn, source.id):
+        source_path = Path(str(row["source_path"]))
+        if not source_path.exists():
+            raise ValueError(f"Kildefil mangler: {source_path}")
+        if not source_path.is_file():
+            raise ValueError(f"Kildefil er ikke en fil: {source_path}")
+        size_bytes = source_path.stat().st_size
+        if size_bytes != int(row["size_bytes"]):
+            raise ValueError(
+                f"Kildefil har endret størrelse: {source_path} "
+                f"(nå {size_bytes}, forventet {row['size_bytes']})"
+            )
+        file_hash = sha256_file(source_path)
+        if file_hash != row["sha256"]:
+            raise ValueError(f"Kildefil har endret innhold: {source_path}")
+
+
+def validate_unimport_target_files(plan: db.UnimportPlan) -> None:
+    for target_path in plan.target_paths_to_delete:
+        if not target_path.exists():
+            raise ValueError(f"Målfilen som skulle fjernes finnes ikke: {target_path}")
+        if not target_path.is_file():
+            raise ValueError(f"Målfilen som skulle fjernes er ikke en fil: {target_path}")
+
+
+def print_unimport_plan(plan: db.UnimportPlan) -> None:
+    print(f"Kilde: {plan.source.name or plan.source.path}")
+    print(f"Registrerte kildefiler kontrollert: {plan.source_file_count}")
+    print(f"Filer som fjernes fra aktiv samling: {plan.active_remove_count}")
+    print(
+        "Filer som blir liggende fordi de også finnes i andre kilder: "
+        f"{plan.active_keep_count}"
+    )
 
 
 def validate_target_not_in_program_repo(target: Path) -> None:
