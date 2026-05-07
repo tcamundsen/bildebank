@@ -455,9 +455,9 @@ cd $HOME\BildeSamling
 bildebank migrate
 ```
 
-Migrering til databaseformat v2 gjelder bare brukere som har opprettet
+Migrering til databaseformat v3 gjelder bare brukere som har opprettet
 bildesamlingsdatabasen med en versjon av Bildebank fra før 7. mai 2026. Nye
-databaser opprettet med Bildebank fra og med 7. mai 2026 bruker v2-formatet
+databaser opprettet med Bildebank fra og med 7. mai 2026 bruker v3-formatet
 allerede og trenger ikke denne migreringen.
 
 Du kan kontrollere hva migreringen vil gjøre uten å endre databasen:

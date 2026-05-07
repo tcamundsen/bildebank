@@ -229,7 +229,7 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "2",
+                    "3",
                 )
                 file_columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 self.assertNotIn("source_id", file_columns)
@@ -852,6 +852,223 @@ class CliTests(unittest.TestCase):
                 self.assertEqual({row[0] for row in file_sources}, {sources[0][0]})
                 self.assertIn(str(child_file.resolve()), {row[1] for row in file_sources})
                 self.assertIn(str(parent_file.resolve()), {row[1] for row in file_sources})
+            finally:
+                conn.close()
+
+    def test_migrate_v2_removes_legacy_source_fk_before_remove_superseded_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+            parent = root / "Bilder"
+            child = parent / "2006"
+            child.mkdir(parents=True)
+            child_source_file = child / "IMG_20061003.jpg"
+            parent_source_file = parent / "IMG_20070104.jpg"
+            child_source_file.write_bytes(b"child")
+            parent_source_file.write_bytes(b"parent")
+            child_target_file = target / "2006" / "10" / "IMG_20061003.jpg"
+            parent_target_file = target / "2007" / "01" / "IMG_20070104.jpg"
+            child_target_file.parent.mkdir(parents=True)
+            parent_target_file.parent.mkdir(parents=True)
+            child_target_file.write_bytes(b"child")
+            parent_target_file.write_bytes(b"parent")
+            child_hash = sha256_file(child_target_file)
+            parent_hash = sha256_file(parent_target_file)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute("PRAGMA foreign_keys = ON")
+                conn.executescript(
+                    """
+                    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                    CREATE TABLE command_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        command TEXT NOT NULL,
+                        args_json TEXT NOT NULL,
+                        started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE TABLE sources (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        kind TEXT NOT NULL,
+                        path TEXT NOT NULL,
+                        path_key TEXT,
+                        name TEXT,
+                        added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        imported_at TEXT,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        superseded_by_source_id INTEGER REFERENCES sources(id)
+                    );
+                    CREATE TABLE files (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        source_id INTEGER REFERENCES sources(id),
+                        source_path TEXT,
+                        source_path_key TEXT,
+                        target_path TEXT NOT NULL,
+                        target_path_key TEXT NOT NULL UNIQUE,
+                        original_filename TEXT NOT NULL,
+                        stored_filename TEXT NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        size_bytes INTEGER NOT NULL,
+                        taken_date TEXT,
+                        date_source TEXT NOT NULL,
+                        name_conflict INTEGER NOT NULL DEFAULT 0,
+                        imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        deleted_at TEXT,
+                        deleted_original_target_path TEXT
+                    );
+                    CREATE TABLE file_sources (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        file_id INTEGER NOT NULL REFERENCES files(id),
+                        source_id INTEGER NOT NULL REFERENCES sources(id),
+                        source_path TEXT NOT NULL,
+                        source_path_key TEXT NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        size_bytes INTEGER NOT NULL,
+                        kind TEXT NOT NULL,
+                        recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(source_id, source_path_key)
+                    );
+                    CREATE TABLE errors (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        source_id INTEGER REFERENCES sources(id),
+                        source_path TEXT,
+                        stage TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        resolved_at TEXT
+                    );
+                    INSERT INTO meta(key, value) VALUES('schema_version', '2');
+                    """
+                )
+                parent_id = conn.execute(
+                    """
+                    INSERT INTO sources(id, kind, path, path_key, imported_at, status)
+                    VALUES(2, 'directory', ?, ?, CURRENT_TIMESTAMP, 'imported')
+                    RETURNING id
+                    """,
+                    (str(parent.resolve()), str(parent.resolve())),
+                ).fetchone()[0]
+                child_id = conn.execute(
+                    """
+                    INSERT INTO sources(id, kind, path, path_key, imported_at, status, superseded_by_source_id)
+                    VALUES(1, 'directory', ?, ?, CURRENT_TIMESTAMP, 'superseded', 2)
+                    RETURNING id
+                    """,
+                    (str(child.resolve()), str(child.resolve())),
+                ).fetchone()[0]
+                child_file_id = conn.execute(
+                    """
+                    INSERT INTO files(
+                        source_id, source_path, source_path_key, target_path, target_path_key,
+                        original_filename, stored_filename, sha256, size_bytes, taken_date,
+                        date_source, name_conflict
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'filename', 0)
+                    RETURNING id
+                    """,
+                    (
+                        child_id,
+                        str(child_source_file.resolve()),
+                        str(child_source_file.resolve()),
+                        str(child_target_file.resolve()),
+                        str(child_target_file.resolve()),
+                        child_source_file.name,
+                        child_target_file.name,
+                        child_hash,
+                        child_target_file.stat().st_size,
+                        "2006-10-03",
+                    ),
+                ).fetchone()[0]
+                parent_file_id = conn.execute(
+                    """
+                    INSERT INTO files(
+                        source_id, source_path, source_path_key, target_path, target_path_key,
+                        original_filename, stored_filename, sha256, size_bytes, taken_date,
+                        date_source, name_conflict
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'filename', 0)
+                    RETURNING id
+                    """,
+                    (
+                        parent_id,
+                        str(parent_source_file.resolve()),
+                        str(parent_source_file.resolve()),
+                        str(parent_target_file.resolve()),
+                        str(parent_target_file.resolve()),
+                        parent_source_file.name,
+                        parent_target_file.name,
+                        parent_hash,
+                        parent_target_file.stat().st_size,
+                        "2007-01-04",
+                    ),
+                ).fetchone()[0]
+                conn.execute(
+                    """
+                    INSERT INTO file_sources(
+                        file_id, source_id, source_path, source_path_key, sha256, size_bytes, kind
+                    ) VALUES(?, ?, ?, ?, ?, ?, 'imported')
+                    """,
+                    (
+                        child_file_id,
+                        child_id,
+                        str(child_source_file.resolve()),
+                        str(child_source_file.resolve()),
+                        child_hash,
+                        child_target_file.stat().st_size,
+                    ),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO file_sources(
+                        file_id, source_id, source_path, source_path_key, sha256, size_bytes, kind
+                    ) VALUES(?, ?, ?, ?, ?, ?, 'imported')
+                    """,
+                    (
+                        parent_file_id,
+                        parent_id,
+                        str(parent_source_file.resolve()),
+                        str(parent_source_file.resolve()),
+                        parent_hash,
+                        parent_target_file.stat().st_size,
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Nåværende schema_version: 2", stdout)
+            self.assertIn("Ny schema_version: 3", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
+                    "3",
+                )
+                file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
+                self.assertFalse({"source_id", "source_path", "source_path_key"} & file_columns)
+                self.assertEqual(conn.execute("pragma foreign_key_list(errors)").fetchall(), [])
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "remove-source", str(child)]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Fjernet superseded kilde", stdout)
+            self.assertTrue(child_target_file.exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("select count(*) from sources").fetchone()[0], 1)
+                self.assertEqual(
+                    conn.execute(
+                        "select count(*) from file_sources where source_id = ?",
+                        (parent_id,),
+                    ).fetchone()[0],
+                    2,
+                )
             finally:
                 conn.close()
 
@@ -1743,12 +1960,14 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 1", stdout)
-            self.assertIn("Ny schema_version: 2", stdout)
+            self.assertIn("Ny schema_version: 3", stdout)
             self.assertIn("Vil opprette tabellen file_sources.", stdout)
             self.assertIn("  importerte filer: 1", stdout)
             self.assertIn("  duplikatfunn: 1", stdout)
+            self.assertIn("  bygge om files uten gamle v1-kildekolonner", stdout)
+            self.assertIn("  fjerne legacy-tabellen duplicate_findings", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
-            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-2-*")))
+            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-3-*")))
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertFalse(
@@ -1771,13 +1990,13 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(code, 0, stderr)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Ferdig. Databasen er migrert.", stdout)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-2-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-3-*"))), 1)
 
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "2",
+                    "3",
                 )
                 self.assertEqual(conn.execute("select count(*) from file_sources").fetchone()[0], 2)
                 kinds = [
@@ -1785,9 +2004,14 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                     for row in conn.execute("select kind from file_sources order by id").fetchall()
                 ]
                 self.assertEqual(kinds, ["imported", "duplicate"])
-                self.assertIsNotNone(
-                    conn.execute("pragma table_info(errors)").fetchone()
+                file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
+                self.assertFalse({"source_id", "source_path", "source_path_key"} & file_columns)
+                self.assertFalse(
+                    conn.execute(
+                        "select 1 from sqlite_master where type = 'table' and name = 'duplicate_findings'"
+                    ).fetchone()
                 )
+                self.assertEqual(conn.execute("pragma foreign_key_list(errors)").fetchall(), [])
                 self.assertEqual(conn.execute("select count(*) from command_log").fetchone()[0], 1)
             finally:
                 conn.close()
@@ -1811,7 +2035,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(code, 1)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Databasen ble ikke migrert", stderr)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-2-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-3-*"))), 1)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(

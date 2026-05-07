@@ -394,17 +394,17 @@ målmappen.
 Databasen bør være SQLite. SQLite gir transaksjoner, indekser og trygg lokal
 lagring uten å kreve en separat databaseserver.
 
-## Database v2
+## Database v3
 
 Databasen ligger i målmappen som `.bilder.sqlite3`. Fra schema v2 er
 proveniens normalisert slik at én målfil kan ha flere kildefilforekomster.
 Dette er nødvendig for å kunne vite forskjell på "denne filen finnes bare i én
 kilde" og "denne målfilen er bevist av flere kilder med samme innhold".
 
-Nye databaser som opprettes med schema v2 skal bruke disse tabellene:
+Nye databaser som opprettes med schema v3 skal bruke disse tabellene:
 
 - `meta`: nøkkel/verdi-tabell for database-metadata. Den viktigste verdien er
-  `schema_version`, som skal være `2` for v2-databaser.
+  `schema_version`, som skal være `3` for v3-databaser.
 - `command_log`: logg over kommandoer som har endret eller forsøkt å endre
   databasen.
 - `sources`: registrerte kilder. En kilde kan være en vanlig kildemappe eller
@@ -425,7 +425,7 @@ Nye databaser som opprettes med schema v2 skal bruke disse tabellene:
 - `errors`: feil som er oppdaget under scanning, import eller senere
   vedlikehold. Feil kan senere markeres som løst med `resolved_at`.
 
-Viktige v2-regler:
+Viktige v3-regler:
 
 - `files` er sannheten om målfilene i samlingen.
 - `file_sources` er sannheten om hvilke kilder som peker på hver målfil.
@@ -438,29 +438,23 @@ Viktige v2-regler:
 Schema v1 hadde en enklere proveniensmodell som nå er obsolete:
 
 - `duplicate_findings`: registrerte kildefiler som var eksakte duplikater av
-  en eksisterende målfil. I v2 erstattes dette av rader i `file_sources` med
-  `kind='duplicate'`. Tabellen skal ikke opprettes i nye v2-databaser.
+  en eksisterende målfil. I v2 og v3 erstattes dette av rader i `file_sources`
+  med `kind='duplicate'`. Tabellen skal ikke finnes i v3-databaser.
 - `files.source_id`, `files.source_path` og `files.source_path_key`: pekte på
   én "hovedkilde" for målfilen. I v2 ligger alle kildefilforekomster i
-  `file_sources`, også den første/importerte kilden. Disse kolonnene skal ikke
-  opprettes i nye v2-databaser.
+  `file_sources`, også den første/importerte kilden. I v3 er de gamle
+  kolonnene fysisk fjernet fra `files`.
 
-Når en gammel v1-database migreres til v2, kan de obsolete v1-tabellene og
-kolonnene fortsatt finnes fysisk i SQLite-filen for å unngå risikabel
-tabellombygging. De skal da behandles som legacy historikk. Ny kode skal ikke
-være avhengig av dem for import, rapportering, kildevisning eller fremtidig
-reversering.
-
-På et senere tidspunkt kan programmet få en egen eksplisitt cleanup-migrering
-som fjerner obsolete v1-struktur fra allerede migrerte v2-databaser. Dette skal
-ikke skje som sideeffekt av vanlig bruk. En slik cleanup må minst ta backup,
-ta målmappelås, kjøre i én transaksjon, validere at `schema_version=2`, sjekke
-at alle `files`-rader har forventede `file_sources`, fjerne
-`duplicate_findings`, bygge om `files` uten `source_id`, `source_path` og
-`source_path_key` hvis SQLite ikke kan droppe kolonnene trygt direkte, og først
-committe etter at radantall, sentrale kontrollsummer, `PRAGMA foreign_key_check`
-og `PRAGMA integrity_check` er OK. Hvis en kontroll feiler, skal cleanup
-rulles tilbake og backupen beholdes.
+Migrering til v3 skal ta en backup, ta målmappelås og kjøre i én transaksjon.
+En gammel v1-database skal først få `file_sources` bygget fra `files` og
+`duplicate_findings`, og deretter ryddes helt opp til v3 i samme migrering.
+En v2-database som fortsatt har fysisk v1-struktur skal også ryddes opp til v3.
+Migreringen skal fjerne `duplicate_findings`, bygge om `files` uten
+`source_id`, `source_path` og `source_path_key`, og bygge om `errors` slik at
+gamle source-referanser ikke blokkerer sletting av kilder. Migreringen skal
+først committe etter at `PRAGMA foreign_key_check` og `PRAGMA integrity_check`
+er OK. Hvis en kontroll feiler, skal migreringen rulles tilbake og backupen
+beholdes.
 
 ## Plattform
 

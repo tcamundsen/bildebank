@@ -11,7 +11,7 @@ from typing import Any, Iterable
 
 
 DB_FILENAME = ".bilder.sqlite3"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
 
 
@@ -46,6 +46,9 @@ class MigrationPlan:
     imported_files: int
     duplicate_findings: int
     creates_file_sources: bool
+    rebuilds_files_without_legacy_source_columns: bool = False
+    drops_duplicate_findings: bool = False
+    rebuilds_errors_without_source_fk: bool = False
 
 
 def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection:
@@ -76,7 +79,7 @@ def require_current_schema(conn: sqlite3.Connection) -> None:
     if version == SCHEMA_VERSION:
         if not table_exists(conn, "file_sources"):
             raise SchemaMigrationRequired(
-                "Databasen mangler tabellen file_sources selv om schema_version er 2. "
+                f"Databasen mangler tabellen file_sources selv om schema_version er {SCHEMA_VERSION}. "
                 "Kjør bildebank migrate før du gjør endringer."
             )
         return
@@ -207,7 +210,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS errors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_id INTEGER REFERENCES sources(id),
+            source_id INTEGER,
             source_path TEXT,
             stage TEXT NOT NULL,
             message TEXT NOT NULL,
@@ -260,12 +263,19 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             )
         if validate:
             validate_pre_migration(conn, version)
+        file_columns = table_columns(conn, "files") if table_exists(conn, "files") else set()
         return MigrationPlan(
             current_version=version,
             target_version=SCHEMA_VERSION,
             imported_files=count_rows(conn, "files"),
             duplicate_findings=count_rows(conn, "duplicate_findings"),
             creates_file_sources=not table_exists(conn, "file_sources"),
+            rebuilds_files_without_legacy_source_columns=bool(
+                {"source_id", "source_path", "source_path_key"} & file_columns
+            ),
+            drops_duplicate_findings=table_exists(conn, "duplicate_findings"),
+            rebuilds_errors_without_source_fk=table_exists(conn, "errors")
+            and bool(conn.execute("PRAGMA foreign_key_list(errors)").fetchall()),
         )
     finally:
         conn.close()
@@ -296,37 +306,64 @@ def migrate_database(target: Path) -> MigrationPlan:
         imported_files = count_rows(conn, "files")
         duplicate_findings = count_rows(conn, "duplicate_findings")
         creates_file_sources = not table_exists(conn, "file_sources")
+        file_columns = table_columns(conn, "files")
+        rebuilds_files = bool({"source_id", "source_path", "source_path_key"} & file_columns)
+        drops_duplicate_findings = table_exists(conn, "duplicate_findings")
+        rebuilds_errors = table_exists(conn, "errors") and bool(
+            conn.execute("PRAGMA foreign_key_list(errors)").fetchall()
+        )
         try:
+            conn.execute("PRAGMA foreign_keys = OFF")
             conn.execute("BEGIN IMMEDIATE")
             ensure_compatible_columns(conn)
             create_file_sources_schema(conn)
             validate_file_sources_schema(conn)
-            backfill_file_sources(conn)
+            if {"source_id", "source_path", "source_path_key"} <= table_columns(conn, "files"):
+                backfill_file_sources(conn)
+            rebuild_files_without_legacy_source_columns(conn)
+            rebuild_errors_without_source_fk(conn)
+            if table_exists(conn, "duplicate_findings"):
+                conn.execute("DROP TABLE duplicate_findings")
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
+            validate_file_sources_schema(conn)
+            foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if foreign_key_errors:
+                raise ValueError(f"foreign_key_check feilet: {foreign_key_errors[0]}")
+            integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+            if integrity != "ok":
+                raise ValueError(f"integrity_check feilet: {integrity}")
             conn.commit()
         except Exception:
             conn.rollback()
             raise
+        finally:
+            conn.execute("PRAGMA foreign_keys = ON")
         return MigrationPlan(
             current_version=version,
             target_version=SCHEMA_VERSION,
             imported_files=imported_files,
             duplicate_findings=duplicate_findings,
             creates_file_sources=creates_file_sources,
+            rebuilds_files_without_legacy_source_columns=rebuilds_files,
+            drops_duplicate_findings=drops_duplicate_findings,
+            rebuilds_errors_without_source_fk=rebuilds_errors,
         )
     finally:
         conn.close()
 
 
 def validate_pre_migration(conn: sqlite3.Connection, version: int) -> None:
-    if version != 1:
+    if version not in {1, 2}:
         raise ValueError(f"Kan ikke migrere database med schema_version={version}.")
-    required_tables = {"meta", "sources", "files", "duplicate_findings", "errors"}
+    required_tables = {"meta", "sources", "files", "errors"}
+    if version == 1:
+        required_tables.add("duplicate_findings")
     missing = sorted(table for table in required_tables if not table_exists(conn, table))
     if missing:
         raise ValueError(f"Databasen mangler forventede tabeller: {', '.join(missing)}")
-    validate_existing_file_source_references(conn)
+    if version == 1:
+        validate_existing_file_source_references(conn)
     if table_exists(conn, "file_sources"):
         validate_file_sources_schema(conn)
 
@@ -435,30 +472,114 @@ def backfill_file_sources(conn: sqlite3.Connection) -> None:
             kind="imported",
         )
 
-    for row in conn.execute(
+    if table_exists(conn, "duplicate_findings"):
+        for row in conn.execute(
+            """
+            SELECT
+                duplicate_findings.matched_file_id AS file_id,
+                duplicate_findings.source_id,
+                duplicate_findings.source_path,
+                duplicate_findings.source_path_key,
+                duplicate_findings.sha256,
+                files.size_bytes
+            FROM duplicate_findings
+            JOIN files ON files.id = duplicate_findings.matched_file_id
+            ORDER BY duplicate_findings.id
+            """
+        ):
+            insert_or_validate_file_source(
+                conn,
+                file_id=int(row["file_id"]),
+                source_id=int(row["source_id"]),
+                source_path=str(row["source_path"]),
+                source_path_key=str(row["source_path_key"]),
+                sha256=str(row["sha256"]),
+                size_bytes=int(row["size_bytes"]),
+                kind="duplicate",
+            )
+
+
+def rebuild_files_without_legacy_source_columns(conn: sqlite3.Connection) -> None:
+    legacy_columns = {"source_id", "source_path", "source_path_key"}
+    if not (legacy_columns & table_columns(conn, "files")):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256)")
+        return
+    conn.executescript(
         """
-        SELECT
-            duplicate_findings.matched_file_id AS file_id,
-            duplicate_findings.source_id,
-            duplicate_findings.source_path,
-            duplicate_findings.source_path_key,
-            duplicate_findings.sha256,
-            files.size_bytes
-        FROM duplicate_findings
-        JOIN files ON files.id = duplicate_findings.matched_file_id
-        ORDER BY duplicate_findings.id
-        """
-    ):
-        insert_or_validate_file_source(
-            conn,
-            file_id=int(row["file_id"]),
-            source_id=int(row["source_id"]),
-            source_path=str(row["source_path"]),
-            source_path_key=str(row["source_path_key"]),
-            sha256=str(row["sha256"]),
-            size_bytes=int(row["size_bytes"]),
-            kind="duplicate",
+        CREATE TABLE files_v3 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_path TEXT NOT NULL,
+            target_path_key TEXT NOT NULL UNIQUE,
+            original_filename TEXT NOT NULL,
+            stored_filename TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            taken_date TEXT,
+            date_source TEXT NOT NULL,
+            name_conflict INTEGER NOT NULL DEFAULT 0,
+            imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TEXT,
+            deleted_original_target_path TEXT
+        );
+
+        INSERT INTO files_v3(
+            id, target_path, target_path_key, original_filename, stored_filename,
+            sha256, size_bytes, taken_date, date_source, name_conflict, imported_at,
+            deleted_at, deleted_original_target_path
         )
+        SELECT
+            id, target_path, target_path_key, original_filename, stored_filename,
+            sha256, size_bytes, taken_date, date_source, name_conflict, imported_at,
+            deleted_at, deleted_original_target_path
+        FROM files;
+
+        DROP TABLE files;
+        ALTER TABLE files_v3 RENAME TO files;
+        CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);
+        """
+    )
+
+
+def rebuild_errors_without_source_fk(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "errors"):
+        conn.executescript(
+            """
+            CREATE TABLE errors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_id INTEGER,
+                source_path TEXT,
+                stage TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TEXT
+            );
+            """
+        )
+        return
+    if not conn.execute("PRAGMA foreign_key_list(errors)").fetchall():
+        return
+    conn.executescript(
+        """
+        CREATE TABLE errors_v3 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            source_id INTEGER,
+            source_path TEXT,
+            stage TEXT NOT NULL,
+            message TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            resolved_at TEXT
+        );
+
+        INSERT INTO errors_v3(
+            id, source_id, source_path, stage, message, created_at, resolved_at
+        )
+        SELECT id, source_id, source_path, stage, message, created_at, resolved_at
+        FROM errors;
+
+        DROP TABLE errors;
+        ALTER TABLE errors_v3 RENAME TO errors;
+        """
+    )
 
 
 def ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:

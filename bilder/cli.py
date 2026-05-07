@@ -892,6 +892,12 @@ def run_migrate(target: Path, *, check: bool) -> int:
     print("Vil migrere:")
     print(f"  importerte filer: {plan.imported_files}")
     print(f"  duplikatfunn: {plan.duplicate_findings}")
+    if plan.rebuilds_files_without_legacy_source_columns:
+        print("  bygge om files uten gamle v1-kildekolonner")
+    if plan.drops_duplicate_findings:
+        print("  fjerne legacy-tabellen duplicate_findings")
+    if plan.rebuilds_errors_without_source_fk:
+        print("  bygge om errors slik at source-historikk ikke blokkerer sletting")
     print("Vil lage backup før endring.")
     if check:
         print("Ingen endringer er gjort (--check).")
@@ -917,6 +923,12 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Validerer file_sources.")
     print(f"Migrerer importerte filer: {result.imported_files}")
     print(f"Migrerer duplikatfunn: {result.duplicate_findings}")
+    if result.rebuilds_files_without_legacy_source_columns:
+        print("Bygger om files uten gamle v1-kildekolonner.")
+    if result.drops_duplicate_findings:
+        print("Fjerner legacy-tabellen duplicate_findings.")
+    if result.rebuilds_errors_without_source_fk:
+        print("Bygger om errors uten foreign key til sources.")
     print(f"Setter schema_version={result.target_version}.")
     print("Ferdig. Databasen er migrert.")
     return 0
