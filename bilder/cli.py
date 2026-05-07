@@ -594,6 +594,10 @@ def run(args: argparse.Namespace) -> int:
                     target_path.unlink()
                 conn.commit()
             print("Unimport gjennomført.")
+            if source.kind == "directory":
+                print("Kilden er satt tilbake til pending.")
+                print("Hvis du ikke vil importere den igjen, kjør:")
+                print(f'  bildebank remove-source "{source.path}"')
             return 0
 
         if args.command == "remove-source":

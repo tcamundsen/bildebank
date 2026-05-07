@@ -740,6 +740,8 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Filer som fjernes fra aktiv samling: 1", stdout)
+            self.assertIn("Kilden er satt tilbake til pending.", stdout)
+            self.assertIn(f'bildebank remove-source "{source.resolve()}"', stdout)
             self.assertFalse(imported.exists())
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
@@ -1593,6 +1595,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Unimport gjennomført.", stdout)
+            self.assertNotIn("Kilden er satt tilbake til pending.", stdout)
             self.assertFalse((target / "2024" / "02" / "REM_20240203.jpg").exists())
             conn = sqlite3.connect(target / DB_FILENAME)
             try:

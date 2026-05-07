@@ -354,6 +354,10 @@ Når du angrer en import som ble gjort med `import-removable`, fjerner Bildebank
 også denne kilden fra kildelisten. Du trenger derfor ikke kjøre `remove-source`
 etterpå for CD-er, USB-disker og andre flyttbare medier.
 
+Når du angrer en vanlig kildemappe, blir kilden satt tilbake til `pending`.
+Hvis du ikke vil importere den mappen igjen senere, kjør `remove-source` etterpå.
+Bildebank skriver ut riktig kommando når `unimport` er ferdig.
+
 ## Fjerne en kilde fra kildelisten
 
 Hvis du har lagt til feil kilde med `add`, men ikke importert den ennå, kan du
