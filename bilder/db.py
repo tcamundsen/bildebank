@@ -731,6 +731,15 @@ def add_directory_source(conn: sqlite3.Connection, path: Path) -> int:
 
 
 def add_removable_source(conn: sqlite3.Connection, path: Path, name: str) -> int:
+    existing = conn.execute(
+        "SELECT id, path, imported_at FROM sources WHERE kind = 'removable' AND name = ?",
+        (name,),
+    ).fetchone()
+    if existing is not None and existing["imported_at"] is not None:
+        raise ValueError(
+            f"Flyttbart medium med navn {name!r} er allerede importert som "
+            f"{existing['path']}. Bruk et nytt --name hvis dette er en annen mappe/import."
+        )
     cur = conn.execute(
         """
         INSERT INTO sources(kind, path, name)

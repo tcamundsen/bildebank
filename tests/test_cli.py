@@ -1504,6 +1504,55 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertFalse((target / "2024" / "01" / "NORMAL_20240102.jpg").exists())
             self.assertTrue((target / "2024" / "02" / "REM_20240203.jpg").exists())
 
+    def test_import_removable_rejects_reused_imported_name_without_changing_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            first = root / "first"
+            second = root / "second"
+            first.mkdir()
+            second.mkdir()
+            (first / "REM_20240203.jpg").write_bytes(b"first")
+            (second / "REM_20240304.jpg").write_bytes(b"second")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import-removable",
+                        "--name",
+                        "usb-test",
+                        str(first),
+                    ]
+                ),
+                0,
+            )
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "import-removable",
+                    "--name",
+                    "usb-test",
+                    str(second),
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("er allerede importert", stderr)
+            self.assertIn("Bruk et nytt --name", stderr)
+            self.assertFalse((target / "2024" / "03" / "REM_20240304.jpg").exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                rows = conn.execute("SELECT path FROM sources WHERE name = 'usb-test'").fetchall()
+                self.assertEqual(rows, [(str(first.resolve()),)])
+            finally:
+                conn.close()
+
     def test_import_removable_dry_run_does_not_register_or_copy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
