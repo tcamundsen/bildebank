@@ -213,6 +213,12 @@ class CliTests(unittest.TestCase):
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             build_parser().parse_args(["target", "."])
 
+    def test_import_requires_name(self) -> None:
+        for args in (["import", "."], ["import", "--dry-run", "."]):
+            with self.subTest(args=args):
+                with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
+                    build_parser().parse_args(args)
+
     def test_old_commands_are_not_available(self) -> None:
         for command in (
             "add",
@@ -2211,6 +2217,30 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 )
             finally:
                 conn.close()
+
+    def test_current_schema_rejects_v4_database_with_legacy_tables_and_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            create_legacy_database(target, source)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute("UPDATE meta SET value = '4' WHERE key = 'schema_version'")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "import", "--name", source.name, str(source)]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("mangler forventet v4-struktur", stderr)
+            self.assertIn("duplicate_findings", stderr)
+            self.assertIn("bildebank migrate", stderr)
 
 
 if __name__ == "__main__":

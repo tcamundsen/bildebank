@@ -463,11 +463,22 @@ def source_name_is_not_null(conn: sqlite3.Connection) -> bool:
 def validate_current_schema(conn: sqlite3.Connection) -> None:
     if not table_exists(conn, "sources"):
         raise ValueError("Databasen mangler tabellen sources.")
+    if table_exists(conn, "duplicate_findings"):
+        raise ValueError("Databasen inneholder legacy-tabellen duplicate_findings. Kjør bildebank migrate.")
     source_columns = table_columns(conn, "sources")
     if "kind" in source_columns:
         raise ValueError("sources inneholder gammel kind-kolonne. Kjør bildebank migrate.")
     if "name" not in source_columns or not source_name_is_not_null(conn):
         raise ValueError("sources.name er ikke påkrevd. Kjør bildebank migrate.")
+    file_columns = table_columns(conn, "files") if table_exists(conn, "files") else set()
+    legacy_file_columns = sorted({"source_id", "source_path", "source_path_key"} & file_columns)
+    if legacy_file_columns:
+        raise ValueError(
+            "files inneholder gamle kildekolonner "
+            f"({', '.join(legacy_file_columns)}). Kjør bildebank migrate."
+        )
+    if table_exists(conn, "errors") and conn.execute("PRAGMA foreign_key_list(errors)").fetchall():
+        raise ValueError("errors har gammel foreign key til sources. Kjør bildebank migrate.")
     validate_file_sources_schema(conn)
 
 
@@ -805,12 +816,8 @@ def row_to_source(row: sqlite3.Row) -> Source:
     )
 
 
-def get_sources(conn: sqlite3.Connection, *, pending_only: bool = False) -> list[Source]:
-    sql = "SELECT * FROM sources"
-    if pending_only:
-        sql += " WHERE imported_at IS NULL AND status != 'superseded'"
-    sql += " ORDER BY id"
-    return [row_to_source(row) for row in conn.execute(sql)]
+def get_sources(conn: sqlite3.Connection) -> list[Source]:
+    return [row_to_source(row) for row in conn.execute("SELECT * FROM sources ORDER BY id")]
 
 
 def get_source(conn: sqlite3.Connection, source_id: int) -> Source:
@@ -818,22 +825,6 @@ def get_source(conn: sqlite3.Connection, source_id: int) -> Source:
     if row is None:
         raise ValueError(f"Fant ikke kilde #{source_id}")
     return row_to_source(row)
-
-
-def find_sources_by_path(conn: sqlite3.Connection, path: Path) -> list[Source]:
-    resolved = path.resolve()
-    key = path_key(path)
-    rows = conn.execute(
-        """
-        SELECT *
-        FROM sources
-        WHERE path_key = ?
-           OR (path_key IS NULL AND path = ?)
-        ORDER BY id
-        """,
-        (key, str(resolved)),
-    ).fetchall()
-    return [row_to_source(row) for row in rows]
 
 
 def find_source_by_name(conn: sqlite3.Connection, name: str) -> Source | None:
@@ -933,52 +924,26 @@ def insert_imported_file(
     name_conflict: bool,
 ) -> int:
     try:
-        if "source_id" in table_columns(conn, "files"):
-            cur = conn.execute(
-                """
-                INSERT INTO files(
-                    source_id, source_path, source_path_key, target_path, target_path_key,
-                    original_filename, stored_filename, sha256, size_bytes, taken_date,
-                    date_source, name_conflict
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                RETURNING id
-                """,
-                (
-                    source_id,
-                    str(source_path.resolve()),
-                    path_key(source_path),
-                    str(target_path.resolve()),
-                    path_key(target_path),
-                    original_filename,
-                    stored_filename,
-                    sha256,
-                    size_bytes,
-                    taken_date,
-                    date_source,
-                    1 if name_conflict else 0,
-                ),
-            )
-        else:
-            cur = conn.execute(
-                """
-                INSERT INTO files(
-                    target_path, target_path_key, original_filename, stored_filename, sha256,
-                    size_bytes, taken_date, date_source, name_conflict
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-                RETURNING id
-                """,
-                (
-                    str(target_path.resolve()),
-                    path_key(target_path),
-                    original_filename,
-                    stored_filename,
-                    sha256,
-                    size_bytes,
-                    taken_date,
-                    date_source,
-                    1 if name_conflict else 0,
-                ),
-            )
+        cur = conn.execute(
+            """
+            INSERT INTO files(
+                target_path, target_path_key, original_filename, stored_filename, sha256,
+                size_bytes, taken_date, date_source, name_conflict
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+            """,
+            (
+                str(target_path.resolve()),
+                path_key(target_path),
+                original_filename,
+                stored_filename,
+                sha256,
+                size_bytes,
+                taken_date,
+                date_source,
+                1 if name_conflict else 0,
+            ),
+        )
         file_id = int(cur.fetchone()["id"])
         insert_or_validate_file_source(
             conn,
