@@ -1635,6 +1635,17 @@ model_name = "test-model"
             self.assertIn("Forslag:", stdout)
             self.assertIn("Kari\tface-id=2", stdout)
 
+            code, stdout, stderr = capture_cli(["--target", str(target), "make-person-browser", "Kari"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser for person", stdout)
+            html = (target / "person-Kari.html").read_text(encoding="utf-8")
+            self.assertIn("Kari (1 bilder)", html)
+            self.assertIn("IMG_20240102.jpg", html)
+            self.assertIn("bekreftet: face-id 1", html)
+            self.assertIn("forslag: face-id 2", html)
+            self.assertIn('class="box suggested"', html)
+
             conn = sqlite3.connect(target / FACE_DB_FILENAME)
             try:
                 suggestion = conn.execute(

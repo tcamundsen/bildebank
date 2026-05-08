@@ -22,6 +22,7 @@ from .face import (
     create_person,
     export_face_browser,
     export_face_groups_browser,
+    export_person_browser,
     face_db_path,
     face_db_summary,
     face_report,
@@ -106,6 +107,7 @@ HELP_COMMAND_GROUPS = (
             ("face-suggest", "Foreslå personer for ukjente ansikter"),
             ("make-face-browser", "Lag HTML-side for scannede ansikter"),
             ("make-face-groups-browser", "Lag HTML-side for ansiktsgrupper"),
+            ("make-person-browser", "Lag HTML-side for en person"),
             ("face-reset", "Slett eksperimentelle ansiktsdata"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
             ("update", "Oppdater programinstallasjonen"),
@@ -451,6 +453,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Skriv HTML-filen hit. Standard: face-groups.html i bildesamlingen.",
     )
+    person_browser = add_command(
+        subparsers,
+        "make-person-browser",
+        usage="bildebank make-person-browser [valg] navn",
+        help="Lag HTML-side for en person",
+    )
+    person_browser.add_argument("name", metavar="navn", help="Personnavn")
+    person_browser.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        type=Path,
+        help="Skriv HTML-filen hit. Standard: person-Navn.html i bildesamlingen.",
+    )
     add_command(
         subparsers,
         "face-reset",
@@ -629,6 +645,12 @@ def run(args: argparse.Namespace) -> int:
         output = args.output.resolve() if args.output else None
         output_path = export_face_groups_browser(target, output)
         print(f"Skrev HTML-browser for ansiktsgrupper: {output_path}")
+        return 0
+
+    if args.command == "make-person-browser":
+        output = args.output.resolve() if args.output else None
+        output_path = export_person_browser(target, args.name, output)
+        print(f"Skrev HTML-browser for person: {output_path}")
         return 0
 
     if args.command == "face-reset":

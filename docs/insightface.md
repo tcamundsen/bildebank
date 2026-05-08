@@ -200,6 +200,21 @@ bildebank face-suggest --threshold 0.70
 
 Høyere tall gir færre og strengere forslag.
 
+For å se bildene der Bildebank mener at en person finnes:
+
+```powershell
+bildebank make-person-browser "Kari"
+```
+
+Da lages for eksempel:
+
+```text
+person-Kari.html
+```
+
+Siden viser både bekreftede ansikter og forslag. Bekreftede ansikter og forslag
+har ulik farge på boksen rundt ansiktet.
+
 ## Slette ansiktsdata
 
 Hvis du vil fjerne alle eksperimentelle ansiktsdata fra bildesamlingen:

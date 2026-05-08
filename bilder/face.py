@@ -587,6 +587,28 @@ def export_face_groups_browser(target: Path, output: Path | None = None) -> Path
     return output_path
 
 
+def export_person_browser(target: Path, person_name: str, output: Path | None = None) -> Path:
+    clean_name = normalize_person_name(person_name)
+    output_path = output or (target / f"person-{safe_filename(clean_name)}.html")
+    path = face_db_path(target)
+    if not path.exists():
+        raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
+    conn = connect_face_db(target)
+    try:
+        person = conn.execute("SELECT id, name FROM persons WHERE name = ?", (clean_name,)).fetchone()
+        if person is None:
+            raise ValueError(f"Fant ikke person: {clean_name}")
+        items = person_browser_items(target, conn, person_id=int(person["id"]))
+    finally:
+        conn.close()
+    output_path.write_text(
+        render_person_browser_html(clean_name, items),
+        encoding="utf-8",
+        newline="\n",
+    )
+    return output_path
+
+
 def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str, Any]]:
     run = conn.execute("SELECT * FROM face_group_runs ORDER BY id DESC LIMIT 1").fetchone()
     if run is None:
@@ -640,6 +662,76 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
             },
         )["faces"].append(face)
     return list(groups.values())
+
+
+def person_browser_items(target: Path, conn: sqlite3.Connection, *, person_id: int) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT
+            'bekreftet' AS status,
+            faces.id AS face_id,
+            1.0 AS similarity,
+            scanned_files.target_path,
+            scanned_files.face_count,
+            faces.bbox_x,
+            faces.bbox_y,
+            faces.bbox_width,
+            faces.bbox_height,
+            faces.detection_score
+        FROM person_faces
+        JOIN faces ON faces.id = person_faces.face_id
+        JOIN scanned_files ON scanned_files.file_id = faces.file_id
+        WHERE person_faces.person_id = ?
+
+        UNION ALL
+
+        SELECT
+            'forslag' AS status,
+            faces.id AS face_id,
+            face_suggestions.similarity,
+            scanned_files.target_path,
+            scanned_files.face_count,
+            faces.bbox_x,
+            faces.bbox_y,
+            faces.bbox_width,
+            faces.bbox_height,
+            faces.detection_score
+        FROM face_suggestions
+        JOIN faces ON faces.id = face_suggestions.face_id
+        JOIN scanned_files ON scanned_files.file_id = faces.file_id
+        WHERE face_suggestions.person_id = ?
+
+        ORDER BY target_path, status, face_id
+        """,
+        (person_id, person_id),
+    ).fetchall()
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        target_path = Path(str(row["target_path"]))
+        key = str(target_path)
+        item = grouped.setdefault(
+            key,
+            {
+                "path": display_relative_path(target, target_path),
+                "url": path_to_url(relative_to_target(target, target_path)),
+                "faceCount": int(row["face_count"]),
+                "dimensions": image_dimensions(target_path),
+                "faces": [],
+            },
+        )
+        item["faces"].append(
+            {
+                "faceId": int(row["face_id"]),
+                "status": str(row["status"]),
+                "similarity": float(row["similarity"]),
+                "x": float(row["bbox_x"]),
+                "y": float(row["bbox_y"]),
+                "width": float(row["bbox_width"]),
+                "height": float(row["bbox_height"]),
+                "score": float(row["detection_score"]),
+            }
+        )
+    return list(grouped.values())
 
 
 def person_name_for_group(conn: sqlite3.Connection, group_index: int) -> str | None:
@@ -924,6 +1016,94 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
 """
 
 
+def render_person_browser_html(person_name: str, items: list[dict[str, Any]]) -> str:
+    cards = "\n".join(render_person_card(item) for item in items)
+    if not cards:
+        cards = '<p class="empty">Ingen bekreftede ansikter eller forslag for denne personen ennå.</p>'
+    return f"""<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html_escape(person_name)}</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #f7f7f5;
+      --text: #202020;
+      --muted: #666;
+      --border: #d8d8d2;
+      --panel: #fff;
+      --confirmed: #14804a;
+      --suggested: #b26a00;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    header {{
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }}
+    h1 {{ margin: 0; font-size: 20px; }}
+    main {{
+      padding: 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }}
+    .card {{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }}
+    .media {{ position: relative; background: #eee; }}
+    .media img {{ display: block; width: 100%; height: auto; }}
+    .box {{
+      position: absolute;
+      border: 2px solid var(--confirmed);
+      background: rgb(20 128 74 / 13%);
+      pointer-events: none;
+    }}
+    .box.suggested {{
+      border-color: var(--suggested);
+      background: rgb(178 106 0 / 14%);
+    }}
+    .meta {{
+      padding: 10px;
+      display: grid;
+      gap: 4px;
+      font-size: 13px;
+    }}
+    .path {{ overflow-wrap: anywhere; font-weight: 600; }}
+    .muted {{ color: var(--muted); }}
+    .empty {{
+      grid-column: 1 / -1;
+      margin: 0;
+      color: var(--muted);
+    }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{html_escape(person_name)} ({len(items)} bilder)</h1>
+  </header>
+  <main>
+    {cards}
+  </main>
+</body>
+</html>
+"""
+
+
 def render_face_group_section(group: dict[str, Any]) -> str:
     faces = "\n".join(render_group_face(face) for face in group["faces"])
     person = (
@@ -979,6 +1159,27 @@ def render_face_card(item: dict[str, Any]) -> str:
 </article>"""
 
 
+def render_person_card(item: dict[str, Any]) -> str:
+    boxes = "\n".join(render_person_box(face, item["dimensions"]) for face in item["faces"])
+    confirmed = sum(1 for face in item["faces"] if face["status"] == "bekreftet")
+    suggested = sum(1 for face in item["faces"] if face["status"] == "forslag")
+    details = "<br>".join(
+        f"{html_escape(face['status'])}: face-id {face['faceId']}, score {float(face['similarity']):.3f}"
+        for face in item["faces"]
+    )
+    return f"""<article class="card">
+  <div class="media">
+    <img src="{html_escape(item['url'])}" alt="">
+    {boxes}
+  </div>
+  <div class="meta">
+    <div class="path">{html_escape(item['path'])}</div>
+    <div>{confirmed} bekreftet, {suggested} forslag</div>
+    <div class="muted">{details}</div>
+  </div>
+</article>"""
+
+
 def render_face_box(face: dict[str, Any], dimensions) -> str:
     percent = face_box_percent(face, dimensions)
     if percent is None:
@@ -988,6 +1189,25 @@ def render_face_box(face: dict[str, Any], dimensions) -> str:
     return (
         '<div class="box" '
         f'title="score {float(face["score"]):.3f}" '
+        'style="'
+        f'left: {left:.4f}%; '
+        f'top: {top:.4f}%; '
+        f'width: {width:.4f}%; '
+        f'height: {height:.4f}%;'
+        '"></div>'
+    )
+
+
+def render_person_box(face: dict[str, Any], dimensions) -> str:
+    percent = face_box_percent(face, dimensions)
+    if percent is None:
+        left = top = width = height = 0.0
+    else:
+        left, top, width, height = percent
+    css_class = "box suggested" if face["status"] == "forslag" else "box"
+    return (
+        f'<div class="{css_class}" '
+        f'title="{html_escape(face["status"])} face-id {face["faceId"]} score {float(face["similarity"]):.3f}" '
         'style="'
         f'left: {left:.4f}%; '
         f'top: {top:.4f}%; '
@@ -1030,6 +1250,12 @@ def html_escape(value: object) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+def safe_filename(value: str) -> str:
+    safe = "".join(char if char.isalnum() or char in ("-", "_") else "-" for char in value.strip())
+    safe = "-".join(part for part in safe.split("-") if part)
+    return safe or "person"
 
 
 def count_scanned_files(conn: sqlite3.Connection, where_sql: str) -> int:
