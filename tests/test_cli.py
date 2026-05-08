@@ -1477,6 +1477,63 @@ model_name = "test-model"
             self.assertIn("Face-database finnes ikke.", stdout)
             self.assertIn("Kjør bildebank face-scan først.", stdout)
 
+    def test_face_group_creates_group_and_browser(self) -> None:
+        class FakeFace:
+            def __init__(self, bbox, embedding):
+                self.bbox = bbox
+                self.det_score = 0.9
+                self.embedding = embedding
+
+        class FakeApp:
+            def get(self, image):
+                return [
+                    FakeFace([1.0, 2.0, 11.0, 22.0], [1.0, 0.0, 0.0]),
+                    FakeFace([30.0, 4.0, 42.0, 24.0], [0.99, 0.01, 0.0]),
+                ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            (self.program_root / "bildebank-config.toml").write_text(
+                """
+[face_recognition]
+enabled = true
+provider = "cpu"
+model_root = ".bildebank-insightface"
+model_name = "test-model"
+""",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            with (
+                patch("bilder.face.load_face_app", return_value=FakeApp()),
+                patch("bilder.face.read_image", return_value=object()),
+            ):
+                self.assertEqual(run_cli(["--target", str(target), "face-scan", "--limit", "1"]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-group", "--threshold", "0.9"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("grupper=1", stdout)
+            self.assertIn("grupperte_ansikter=2", stdout)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "make-face-groups-browser"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser for ansiktsgrupper", stdout)
+            html = (target / "face-groups.html").read_text(encoding="utf-8")
+            self.assertIn("Ansiktsgrupper (1 grupper)", html)
+            self.assertIn("Gruppe 1 (2 ansikter)", html)
+            self.assertIn("likhet", html)
+
     def test_face_reset_requires_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

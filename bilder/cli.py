@@ -11,7 +11,16 @@ from pathlib import Path
 from . import __version__, db
 from .config import CONFIG_FILENAME, load_config
 from .exiftool_probe import exiftool_metadata_gaps
-from .face import FaceReport, export_face_browser, face_db_path, face_db_summary, face_report, scan_faces
+from .face import (
+    FaceReport,
+    export_face_browser,
+    export_face_groups_browser,
+    face_db_path,
+    face_db_summary,
+    face_report,
+    group_faces,
+    scan_faces,
+)
 from .importer import (
     import_source,
     import_source_dry_run,
@@ -77,7 +86,9 @@ HELP_COMMAND_GROUPS = (
             ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
             ("face-scan", "Eksperimentell scanning etter ansikter"),
             ("face-report", "Vis rapport for scannede ansikter"),
+            ("face-group", "Beregn mulige ansiktsgrupper"),
             ("make-face-browser", "Lag HTML-side for scannede ansikter"),
+            ("make-face-groups-browser", "Lag HTML-side for ansiktsgrupper"),
             ("face-reset", "Slett eksperimentelle ansiktsdata"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
             ("update", "Oppdater programinstallasjonen"),
@@ -336,6 +347,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Vis rapport for scannede ansikter",
     )
     face_report_parser.add_argument("--limit", type=positive_int_arg, default=20, help="Maks antall linjer per liste")
+    face_group = add_command(
+        subparsers,
+        "face-group",
+        usage="bildebank face-group [valg]",
+        help="Beregn mulige ansiktsgrupper",
+    )
+    face_group.add_argument(
+        "--threshold",
+        type=similarity_threshold_arg,
+        default=0.6,
+        help="Likhetsterskel fra 0.0 til 1.0. Standard: 0.6",
+    )
     face_browser = add_command(
         subparsers,
         "make-face-browser",
@@ -348,6 +371,19 @@ def build_parser() -> argparse.ArgumentParser:
         dest="output",
         type=Path,
         help="Skriv HTML-filen hit. Standard: faces.html i bildesamlingen.",
+    )
+    face_groups_browser = add_command(
+        subparsers,
+        "make-face-groups-browser",
+        usage="bildebank make-face-groups-browser [valg]",
+        help="Lag HTML-side for ansiktsgrupper",
+    )
+    face_groups_browser.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        type=Path,
+        help="Skriv HTML-filen hit. Standard: face-groups.html i bildesamlingen.",
     )
     add_command(
         subparsers,
@@ -487,10 +523,19 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "face-report":
         return run_face_report(target, limit=args.limit)
 
+    if args.command == "face-group":
+        return run_face_group(target, threshold=args.threshold)
+
     if args.command == "make-face-browser":
         output = args.output.resolve() if args.output else None
         output_path = export_face_browser(target, output)
         print(f"Skrev HTML-browser for ansikter: {output_path}")
+        return 0
+
+    if args.command == "make-face-groups-browser":
+        output = args.output.resolve() if args.output else None
+        output_path = export_face_groups_browser(target, output)
+        print(f"Skrev HTML-browser for ansiktsgrupper: {output_path}")
         return 0
 
     if args.command == "face-reset":
@@ -886,6 +931,17 @@ def run_face_report(target: Path, *, limit: int) -> int:
     return 0
 
 
+def run_face_group(target: Path, *, threshold: float) -> int:
+    stats = group_faces(target, threshold=threshold)
+    print(
+        "Ansiktsgrupper: "
+        f"ansikter={stats.faces}, grupper={stats.groups}, "
+        f"grupperte_ansikter={stats.grouped_faces}, threshold={stats.threshold:.3f}"
+    )
+    print("Dette er beregnede forslag, ikke bekreftede personer.")
+    return 0
+
+
 def print_face_report(target: Path, report: FaceReport) -> None:
     print("Ansiktsrapport")
     print(f"Bildesamling: {target}")
@@ -1246,6 +1302,16 @@ def positive_int_arg(value: str) -> int:
         raise argparse.ArgumentTypeError("må være et heltall") from exc
     if number < 1:
         raise argparse.ArgumentTypeError("må være minst 1")
+    return number
+
+
+def similarity_threshold_arg(value: str) -> float:
+    try:
+        number = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("må være et tall mellom 0.0 og 1.0") from exc
+    if not 0.0 <= number <= 1.0:
+        raise argparse.ArgumentTypeError("må være mellom 0.0 og 1.0")
     return number
 
 

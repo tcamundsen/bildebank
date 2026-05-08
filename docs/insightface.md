@@ -115,6 +115,40 @@ faces.html
 Første versjon viser bildene der ansikter er funnet, og tegner en boks rundt
 hvert ansikt. Den grupperer ikke personer ennå.
 
+## Ansiktsgrupper
+
+Du kan beregne foreløpige grupper basert på embeddingene fra InsightFace:
+
+```powershell
+bildebank face-group
+```
+
+Dette lager mulige grupper av ansikter som ligner hverandre. Gruppene er bare
+forslag, ikke bekreftede personer.
+
+Du kan justere hvor strengt ansikter skal sammenlignes:
+
+```powershell
+bildebank face-group --threshold 0.65
+```
+
+Høyere tall gir strengere grupper. Standard er `0.60`.
+
+Lag HTML-side for gruppene:
+
+```powershell
+bildebank make-face-groups-browser
+```
+
+Da lages:
+
+```text
+face-groups.html
+```
+
+Første versjon viser ansiktsutsnitt gruppert etter beregnet likhet. Den lar deg
+ikke sette personnavn ennå.
+
 ## Slette ansiktsdata
 
 Hvis du vil fjerne alle eksperimentelle ansiktsdata fra bildesamlingen:

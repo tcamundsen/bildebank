@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,14 @@ class FaceReport:
     scan_errors: int = 0
     top_files: tuple[sqlite3.Row, ...] = ()
     errors: tuple[sqlite3.Row, ...] = ()
+
+
+@dataclass(frozen=True)
+class FaceGroupStats:
+    faces: int
+    groups: int
+    grouped_faces: int
+    threshold: float
 
 
 def face_db_path(target: Path) -> Path:
@@ -84,6 +93,30 @@ def apply_face_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_faces_file_id ON faces(file_id);
         CREATE INDEX IF NOT EXISTS idx_faces_target_path_key ON faces(target_path_key);
+
+        CREATE TABLE IF NOT EXISTS face_group_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            threshold REAL NOT NULL,
+            method TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS face_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id INTEGER NOT NULL REFERENCES face_group_runs(id) ON DELETE CASCADE,
+            group_index INTEGER NOT NULL,
+            member_count INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS face_group_members (
+            group_id INTEGER NOT NULL REFERENCES face_groups(id) ON DELETE CASCADE,
+            face_id INTEGER NOT NULL,
+            similarity REAL NOT NULL,
+            PRIMARY KEY(group_id, face_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_face_groups_run_id ON face_groups(run_id);
+        CREATE INDEX IF NOT EXISTS idx_face_group_members_face_id ON face_group_members(face_id);
         """
     )
     conn.execute(
@@ -162,6 +195,144 @@ def export_face_browser(target: Path, output: Path | None = None) -> Path:
         conn.close()
     output_path.write_text(render_face_browser_html(items), encoding="utf-8", newline="\n")
     return output_path
+
+
+def group_faces(target: Path, *, threshold: float = 0.6) -> FaceGroupStats:
+    path = face_db_path(target)
+    if not path.exists():
+        raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
+    conn = connect_face_db(target)
+    try:
+        face_rows = list(
+            conn.execute(
+                """
+                SELECT id, embedding
+                FROM faces
+                ORDER BY id
+                """
+            )
+        )
+        vectors = [(int(row["id"]), embedding_from_blob(bytes(row["embedding"]))) for row in face_rows]
+        parent = {face_id: face_id for face_id, _vector in vectors}
+        similarities: dict[tuple[int, int], float] = {}
+        for index, (left_id, left_vector) in enumerate(vectors):
+            for right_id, right_vector in vectors[index + 1 :]:
+                score = cosine_similarity(left_vector, right_vector)
+                if score >= threshold:
+                    union(parent, left_id, right_id)
+                    similarities[(min(left_id, right_id), max(left_id, right_id))] = score
+
+        grouped: dict[int, list[int]] = {}
+        for face_id, _vector in vectors:
+            grouped.setdefault(find(parent, face_id), []).append(face_id)
+        groups = [sorted(members) for members in grouped.values() if len(members) >= 2]
+        groups.sort(key=lambda members: (-len(members), members[0]))
+
+        conn.execute("DELETE FROM face_group_members")
+        conn.execute("DELETE FROM face_groups")
+        conn.execute("DELETE FROM face_group_runs")
+        run_id = int(
+            conn.execute(
+                "INSERT INTO face_group_runs(threshold, method) VALUES(?, 'cosine-threshold') RETURNING id",
+                (threshold,),
+            ).fetchone()["id"]
+        )
+        grouped_faces = 0
+        for group_index, members in enumerate(groups, start=1):
+            grouped_faces += len(members)
+            group_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO face_groups(run_id, group_index, member_count)
+                    VALUES(?, ?, ?)
+                    RETURNING id
+                    """,
+                    (run_id, group_index, len(members)),
+                ).fetchone()["id"]
+            )
+            for face_id in members:
+                conn.execute(
+                    """
+                    INSERT INTO face_group_members(group_id, face_id, similarity)
+                    VALUES(?, ?, ?)
+                    """,
+                    (group_id, face_id, best_group_similarity(face_id, members, similarities)),
+                )
+        conn.commit()
+        return FaceGroupStats(
+            faces=len(vectors),
+            groups=len(groups),
+            grouped_faces=grouped_faces,
+            threshold=threshold,
+        )
+    finally:
+        conn.close()
+
+
+def export_face_groups_browser(target: Path, output: Path | None = None) -> Path:
+    output_path = output or (target / "face-groups.html")
+    path = face_db_path(target)
+    if not path.exists():
+        raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
+    conn = connect_face_db(target)
+    try:
+        items = face_group_browser_items(target, conn)
+    finally:
+        conn.close()
+    output_path.write_text(render_face_groups_html(items), encoding="utf-8", newline="\n")
+    return output_path
+
+
+def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    run = conn.execute("SELECT * FROM face_group_runs ORDER BY id DESC LIMIT 1").fetchone()
+    if run is None:
+        return []
+    rows = conn.execute(
+        """
+        SELECT
+            face_groups.group_index,
+            face_groups.member_count,
+            face_group_members.similarity,
+            scanned_files.target_path,
+            faces.bbox_x,
+            faces.bbox_y,
+            faces.bbox_width,
+            faces.bbox_height,
+            faces.detection_score
+        FROM face_groups
+        JOIN face_group_members ON face_group_members.group_id = face_groups.id
+        JOIN faces ON faces.id = face_group_members.face_id
+        JOIN scanned_files ON scanned_files.file_id = faces.file_id
+        WHERE face_groups.run_id = ?
+        ORDER BY face_groups.group_index, face_group_members.similarity DESC, faces.id
+        """,
+        (run["id"],),
+    )
+    groups: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        group_index = int(row["group_index"])
+        target_path = Path(str(row["target_path"]))
+        dimensions = image_dimensions(target_path)
+        face = {
+            "path": display_relative_path(target, target_path),
+            "url": path_to_url(relative_to_target(target, target_path)),
+            "x": float(row["bbox_x"]),
+            "y": float(row["bbox_y"]),
+            "width": float(row["bbox_width"]),
+            "height": float(row["bbox_height"]),
+            "score": float(row["detection_score"]),
+            "similarity": float(row["similarity"]),
+            "dimensions": dimensions,
+        }
+        groups.setdefault(
+            group_index,
+            {
+                "index": group_index,
+                "memberCount": int(row["member_count"]),
+                "faces": [],
+            },
+        )["faces"].append(face)
+    return list(groups.values())
 
 
 def face_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -325,6 +496,122 @@ def render_face_browser_html(items: list[dict[str, Any]]) -> str:
 """
 
 
+def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
+    sections = "\n".join(render_face_group_section(group) for group in groups)
+    if not sections:
+        sections = '<p class="empty">Ingen grupper beregnet ennå. Kjør bildebank face-group først.</p>'
+    return f"""<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ansiktsgrupper</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #f7f7f5;
+      --text: #202020;
+      --muted: #666;
+      --border: #d8d8d2;
+      --panel: #fff;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    header {{
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }}
+    h1 {{ margin: 0; font-size: 20px; }}
+    main {{ padding: 16px; display: grid; gap: 18px; }}
+    section {{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }}
+    h2 {{ margin: 0 0 10px; font-size: 16px; }}
+    .faces {{
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 10px;
+    }}
+    .face {{
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }}
+    .crop {{
+      position: relative;
+      aspect-ratio: 1;
+      overflow: hidden;
+      background: #eee;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }}
+    .crop img {{
+      position: absolute;
+      height: auto;
+      max-width: none;
+    }}
+    .meta {{
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }}
+    .empty {{ margin: 0; color: var(--muted); }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Ansiktsgrupper ({len(groups)} grupper)</h1>
+  </header>
+  <main>
+    {sections}
+  </main>
+</body>
+</html>
+"""
+
+
+def render_face_group_section(group: dict[str, Any]) -> str:
+    faces = "\n".join(render_group_face(face) for face in group["faces"])
+    return f"""<section>
+  <h2>Gruppe {group['index']} ({group['memberCount']} ansikter)</h2>
+  <div class="faces">
+    {faces}
+  </div>
+</section>"""
+
+
+def render_group_face(face: dict[str, Any]) -> str:
+    style = crop_image_style(face)
+    return f"""<div class="face">
+  <div class="crop"><img src="{html_escape(face['url'])}" alt="" style="{style}"></div>
+  <div class="meta">likhet {float(face['similarity']):.3f}<br>{html_escape(face['path'])}</div>
+</div>"""
+
+
+def crop_image_style(face: dict[str, Any]) -> str:
+    crop = face_crop_percent(face, face["dimensions"])
+    if crop is None:
+        return "left: 0; top: 0; width: 100%;"
+    left, top, width, _height = crop
+    return (
+        f"left: {-100.0 * left / width:.4f}%; "
+        f"top: {-100.0 * top / width:.4f}%; "
+        f"width: {10000.0 / width:.4f}%;"
+    )
+
+
 def render_face_card(item: dict[str, Any]) -> str:
     boxes = "\n".join(render_face_box(face, item["dimensions"]) for face in item["faces"])
     face_count = int(item["faceCount"])
@@ -368,6 +655,20 @@ def face_box_percent(face: dict[str, Any], dimensions) -> tuple[float, float, fl
         100.0 * float(face["width"]) / dimensions.width,
         100.0 * float(face["height"]) / dimensions.height,
     )
+
+
+def face_crop_percent(face: dict[str, Any], dimensions) -> tuple[float, float, float, float] | None:
+    box = face_box_percent(face, dimensions)
+    if box is None:
+        return None
+    left, top, width, height = box
+    size = max(width, height) * 2.2
+    size = min(max(size, 12.0), 100.0)
+    center_x = left + width / 2
+    center_y = top + height / 2
+    crop_left = min(max(center_x - size / 2, 0.0), max(100.0 - size, 0.0))
+    crop_top = min(max(center_y - size / 2, 0.0), max(100.0 - size, 0.0))
+    return crop_left, crop_top, size, size
 
 
 def html_escape(value: object) -> str:
@@ -592,3 +893,49 @@ def embedding_blob(face: Any) -> bytes:
 
     values = array.array("f", [float(value) for value in embedding])
     return values.tobytes()
+
+
+def embedding_from_blob(blob: bytes) -> list[float]:
+    import array
+
+    values = array.array("f")
+    values.frombytes(blob)
+    return list(values)
+
+
+def cosine_similarity(left: list[float], right: list[float]) -> float:
+    if len(left) != len(right) or not left:
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(value * value for value in left))
+    right_norm = math.sqrt(sum(value * value for value in right))
+    if left_norm == 0.0 or right_norm == 0.0:
+        return 0.0
+    return dot / (left_norm * right_norm)
+
+
+def find(parent: dict[int, int], value: int) -> int:
+    root = value
+    while parent[root] != root:
+        root = parent[root]
+    while parent[value] != value:
+        next_value = parent[value]
+        parent[value] = root
+        value = next_value
+    return root
+
+
+def union(parent: dict[int, int], left: int, right: int) -> None:
+    left_root = find(parent, left)
+    right_root = find(parent, right)
+    if left_root != right_root:
+        parent[max(left_root, right_root)] = min(left_root, right_root)
+
+
+def best_group_similarity(face_id: int, members: list[int], similarities: dict[tuple[int, int], float]) -> float:
+    scores = [
+        similarities[(min(face_id, other_id), max(face_id, other_id))]
+        for other_id in members
+        if other_id != face_id and (min(face_id, other_id), max(face_id, other_id)) in similarities
+    ]
+    return max(scores) if scores else 1.0
