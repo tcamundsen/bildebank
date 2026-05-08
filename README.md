@@ -18,8 +18,7 @@ Hvis du bruker Linux eller WSL, se [README.linux.md](README.linux.md).
 
 ## Anbefalt installasjon
 
-Høyreklikk [setup-windows.ps1]
-(https://raw.githubusercontent.com/tcamundsen/bildebank/refs/heads/main/setup-windows.ps1)
+Høyreklikk [setup-windows.ps1](https://raw.githubusercontent.com/tcamundsen/bildebank/refs/heads/main/setup-windows.ps1)
 og velg "Lagre linken som..."
 
 1. Åpne PowerShell. Det gjør du ved å åpne startmenyen og begynne å skrive "PowerShell". Klikk på
