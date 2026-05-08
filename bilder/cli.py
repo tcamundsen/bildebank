@@ -5,6 +5,7 @@ import importlib.util
 import shutil
 import subprocess
 import sys
+import time
 import webbrowser
 from pathlib import Path
 
@@ -47,6 +48,9 @@ from .html_export import export_html, export_html_conflicts
 from .media import explain_date, image_dimensions, inspect_metadata, sha256_file
 from .program_state import known_targets, program_db_path, record_target_best_effort
 from .target_lock import TargetLock
+
+
+FACE_SCAN_PROGRESS_STARTED_AT: float | None = None
 
 
 HELP_COMMAND_GROUPS = (
@@ -1107,7 +1111,9 @@ def print_face_scan_progress(
     stats,
     path: Path | None,
 ) -> None:
+    global FACE_SCAN_PROGRESS_STARTED_AT
     if stage == "start":
+        FACE_SCAN_PROGRESS_STARTED_AT = None
         print(f"Face-scan: {total} bildefiler skal kontrolleres.")
         return
     if stage == "check":
@@ -1119,20 +1125,49 @@ def print_face_scan_progress(
             )
         return
     if stage == "load_model":
+        FACE_SCAN_PROGRESS_STARTED_AT = None
         print(f"Face-scan: {total} nye eller endrede bilder skal scannes. Laster ansiktsmodell.")
         return
     if stage == "scan":
+        if FACE_SCAN_PROGRESS_STARTED_AT is None:
+            FACE_SCAN_PROGRESS_STARTED_AT = time.monotonic()
         if should_print_progress(current, total):
+            eta = face_scan_eta_text(current, total, FACE_SCAN_PROGRESS_STARTED_AT)
             print(
                 "Face-scan: "
                 f"scannet={current}/{total}, "
-                f"ansikter={stats.faces}, feil={stats.errors}"
+                f"ansikter={stats.faces}, feil={stats.errors}, "
+                f"gjenstår={eta}"
             )
         return
 
 
 def should_print_progress(current: int, total: int) -> bool:
     return total <= 20 or current == total or current % 25 == 0
+
+
+def face_scan_eta_text(current: int, total: int, started_at: float | None) -> str:
+    if started_at is None or current <= 0:
+        return "ukjent"
+    remaining = total - current
+    if remaining <= 0:
+        return "0s"
+    elapsed = max(time.monotonic() - started_at, 0.0)
+    if current < 3 and elapsed < 5.0:
+        return "beregner"
+    seconds = elapsed * remaining / current
+    return format_duration(seconds)
+
+
+def format_duration(seconds: float) -> str:
+    seconds = max(int(round(seconds)), 0)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {seconds:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}t {minutes:02d}m"
 
 
 def run_face_report(target: Path, *, limit: int) -> int:

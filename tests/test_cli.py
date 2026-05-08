@@ -1448,6 +1448,7 @@ model_name = "test-model"
             self.assertIn("Face-scan: 1 bildefiler skal kontrolleres.", stdout)
             self.assertIn("Face-scan: 1 nye eller endrede bilder skal scannes.", stdout)
             self.assertIn("Face-scan: scannet=1/1", stdout)
+            self.assertIn("gjenstår=0s", stdout)
             self.assertNotIn("internal model", stdout)
             self.assertNotIn("internal model", stderr)
             self.assertIn("ansikter=1", stdout)

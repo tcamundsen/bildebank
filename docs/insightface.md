@@ -214,7 +214,8 @@ allerede er scannet med samme innhold hoppes over.
 
 Kommandoen viser progresjon mens den jobber. Først kontrollerer den hvilke
 bilder som allerede er scannet, og deretter scanner den nye eller endrede
-bilder.
+bilder. Under selve scanningen viser den også et enkelt estimat for hvor mye tid
+som gjenstår.
 
 Bildebank skjuler vanligvis intern output fra InsightFace og ONNX Runtime. Hvis
 du feilsøker selve ansiktsmodellen, kan den vises med:
