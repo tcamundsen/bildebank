@@ -467,6 +467,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Skriv HTML-filen hit. Standard: person-Navn.html i bildesamlingen.",
     )
+    person_browser.add_argument(
+        "--month-preview-limit",
+        type=positive_int_arg,
+        help="Maks antall bilder i månedsoversikten. Standard: vis alle.",
+    )
     add_command(
         subparsers,
         "face-reset",
@@ -649,7 +654,12 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "make-person-browser":
         output = args.output.resolve() if args.output else None
-        output_path = export_person_browser(target, args.name, output)
+        output_path = export_person_browser(
+            target,
+            args.name,
+            output,
+            month_preview_limit=args.month_preview_limit,
+        )
         print(f"Skrev HTML-browser for person: {output_path}")
         return 0
 

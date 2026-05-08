@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import math
 from collections.abc import Callable
@@ -592,7 +593,13 @@ def export_face_groups_browser(target: Path, output: Path | None = None) -> Path
     return output_path
 
 
-def export_person_browser(target: Path, person_name: str, output: Path | None = None) -> Path:
+def export_person_browser(
+    target: Path,
+    person_name: str,
+    output: Path | None = None,
+    *,
+    month_preview_limit: int | None = None,
+) -> Path:
     clean_name = normalize_person_name(person_name)
     output_path = output or (target / f"person-{safe_filename(clean_name)}.html")
     path = face_db_path(target)
@@ -607,7 +614,7 @@ def export_person_browser(target: Path, person_name: str, output: Path | None = 
     finally:
         conn.close()
     output_path.write_text(
-        render_person_browser_html(clean_name, items),
+        render_person_browser_html(clean_name, items, month_preview_limit=month_preview_limit),
         encoding="utf-8",
         newline="\n",
     )
@@ -714,28 +721,38 @@ def person_browser_items(target: Path, conn: sqlite3.Connection, *, person_id: i
     for row in rows:
         target_path = Path(str(row["target_path"]))
         key = str(target_path)
+        dimensions = image_dimensions(target_path)
         item = grouped.setdefault(
             key,
             {
                 "path": display_relative_path(target, target_path),
                 "url": path_to_url(relative_to_target(target, target_path)),
+                "name": target_path.name,
+                "monthKey": person_month_key(target, target_path),
+                "sizeText": format_person_file_size(target_path),
                 "faceCount": int(row["face_count"]),
-                "dimensions": image_dimensions(target_path),
+                "dimensions": dimensions,
                 "faces": [],
             },
         )
-        item["faces"].append(
-            {
-                "faceId": int(row["face_id"]),
-                "status": str(row["status"]),
-                "similarity": float(row["similarity"]),
-                "x": float(row["bbox_x"]),
-                "y": float(row["bbox_y"]),
-                "width": float(row["bbox_width"]),
-                "height": float(row["bbox_height"]),
-                "score": float(row["detection_score"]),
-            }
-        )
+        face = {
+            "faceId": int(row["face_id"]),
+            "status": str(row["status"]),
+            "similarity": float(row["similarity"]),
+            "x": float(row["bbox_x"]),
+            "y": float(row["bbox_y"]),
+            "width": float(row["bbox_width"]),
+            "height": float(row["bbox_height"]),
+            "score": float(row["detection_score"]),
+        }
+        percent = face_box_percent(face, dimensions)
+        if percent is not None:
+            left, top, width, height = percent
+            face["left"] = left
+            face["top"] = top
+            face["boxWidth"] = width
+            face["boxHeight"] = height
+        item["faces"].append(face)
     return list(grouped.values())
 
 
@@ -1021,10 +1038,14 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
 """
 
 
-def render_person_browser_html(person_name: str, items: list[dict[str, Any]]) -> str:
-    cards = "\n".join(render_person_card(item) for item in items)
-    if not cards:
-        cards = '<p class="empty">Ingen bekreftede ansikter eller forslag for denne personen ennå.</p>'
+def render_person_browser_html(
+    person_name: str,
+    items: list[dict[str, Any]],
+    *,
+    month_preview_limit: int | None = None,
+) -> str:
+    items_json = json.dumps(person_browser_json_items(items), ensure_ascii=False)
+    month_preview_limit_json = json.dumps(month_preview_limit)
     return f"""<!doctype html>
 <html lang="no">
 <head>
@@ -1039,71 +1060,410 @@ def render_person_browser_html(person_name: str, items: list[dict[str, Any]]) ->
       --muted: #666;
       --border: #d8d8d2;
       --panel: #fff;
-      --confirmed: #14804a;
-      --suggested: #b26a00;
+      --accent: #7db7ff;
+      --confirmed: #2fbf71;
+      --suggested: #e19b2d;
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
+      min-height: 100vh;
       background: var(--bg);
       color: var(--text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }}
+    .app {{
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+    }}
     header {{
-      padding: 16px;
+      padding: 12px;
       border-bottom: 1px solid var(--border);
       background: var(--panel);
       position: sticky;
       top: 0;
       z-index: 2;
+      display: grid;
+      gap: 10px;
+    }}
+    .topline, .controls {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
     }}
     h1 {{ margin: 0; font-size: 20px; }}
+    button {{
+      border: 1px solid var(--border);
+      background: #303030;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      cursor: pointer;
+      min-height: 38px;
+    }}
+    button:hover {{ background: #3a3a3a; }}
+    button:disabled {{ opacity: 0.45; cursor: default; }}
+    .status {{ color: var(--muted); font-size: 14px; }}
+    .position {{ color: var(--accent); font-weight: 650; }}
     main {{
+      min-height: 0;
       padding: 16px;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 16px;
+      place-items: center;
+      overflow: hidden;
     }}
-    .card {{
-      background: var(--panel);
+    .viewer {{
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      background: #0e0e0e;
       border: 1px solid var(--border);
       border-radius: 8px;
       overflow: hidden;
     }}
-    .media {{ position: relative; background: #eee; }}
-    .media img {{ display: block; width: 100%; height: auto; }}
+    .media {{
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+    }}
+    .media img {{
+      max-width: 100vw;
+      max-height: calc(100vh - 11rem);
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center center;
+      display: block;
+    }}
     .box {{
       position: absolute;
       border: 2px solid var(--confirmed);
-      background: rgb(20 128 74 / 13%);
+      background: rgb(47 191 113 / 13%);
       pointer-events: none;
     }}
     .box.suggested {{
       border-color: var(--suggested);
-      background: rgb(178 106 0 / 14%);
+      background: rgb(225 155 45 / 14%);
     }}
-    .meta {{
-      padding: 10px;
+    .month-grid {{
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      padding: 12px;
       display: grid;
-      gap: 4px;
-      font-size: 13px;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      grid-auto-rows: 130px;
+      gap: 8px;
+      align-content: start;
     }}
-    .path {{ overflow-wrap: anywhere; font-weight: 600; }}
-    .muted {{ color: var(--muted); }}
+    .thumb {{
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #181818;
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      padding: 0;
+    }}
+    .thumb:hover {{ border-color: var(--accent); background: #242424; }}
+    .thumb img {{ width: 100%; height: 100%; object-fit: cover; display: block; }}
     .empty {{
-      grid-column: 1 / -1;
       margin: 0;
       color: var(--muted);
+      text-align: center;
+      max-width: 560px;
+      line-height: 1.5;
+      padding: 24px;
     }}
+    footer {{
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      padding: 8px 12px;
+      font-size: 13px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }}
+    footer a {{ color: var(--muted); text-decoration: none; }}
+    footer a:hover {{ color: var(--accent); text-decoration: underline; }}
+    .detail {{ color: var(--muted); margin-left: 8px; }}
+    .confirmed {{ color: var(--confirmed); }}
+    .suggested-text {{ color: var(--suggested); }}
+    .meta-line {{ overflow: hidden; text-overflow: ellipsis; }}
   </style>
 </head>
 <body>
-  <header>
-    <h1>{html_escape(person_name)} ({len(items)} bilder)</h1>
-  </header>
-  <main>
-    {cards}
-  </main>
+  <div class="app">
+    <header>
+      <div class="topline">
+        <h1>{html_escape(person_name)}</h1>
+        <span id="status" class="status"></span>
+      </div>
+      <div class="controls">
+        <button id="prevYear" type="button">Forrige år</button>
+        <button id="nextYear" type="button">Neste år</button>
+        <button id="prevMonth" type="button">Forrige måned</button>
+        <button id="nextMonth" type="button">Neste måned</button>
+        <button id="prevItem" type="button">Forrige bilde</button>
+        <button id="nextItem" type="button">Neste bilde</button>
+        <span id="position" class="position"></span>
+      </div>
+    </header>
+    <main>
+      <div id="viewer" class="viewer">
+        <div class="empty">Ingen bekreftede ansikter eller forslag for denne personen ennå.</div>
+      </div>
+    </main>
+    <footer><a id="filename" href="#">Ingen fil valgt</a><span id="details" class="detail"></span></footer>
+  </div>
+  <script>
+    const embeddedItems = {items_json};
+    const MONTH_PREVIEW_LIMIT = {month_preview_limit_json};
+    const state = {{ months: [], monthIndex: 0, itemIndex: 0, viewMode: "item" }};
+    const statusEl = document.getElementById("status");
+    const positionEl = document.getElementById("position");
+    const viewer = document.getElementById("viewer");
+    const filenameEl = document.getElementById("filename");
+    const detailsEl = document.getElementById("details");
+    const buttons = {{
+      prevYear: document.getElementById("prevYear"),
+      nextYear: document.getElementById("nextYear"),
+      prevMonth: document.getElementById("prevMonth"),
+      nextMonth: document.getElementById("nextMonth"),
+      prevItem: document.getElementById("prevItem"),
+      nextItem: document.getElementById("nextItem")
+    }};
+    buttons.prevYear.addEventListener("click", () => moveYear(-1));
+    buttons.nextYear.addEventListener("click", () => moveYear(1));
+    buttons.prevMonth.addEventListener("click", () => moveMonth(-1));
+    buttons.nextMonth.addEventListener("click", () => moveMonth(1));
+    buttons.prevItem.addEventListener("click", () => moveItem(-1));
+    buttons.nextItem.addEventListener("click", () => moveItem(1));
+    document.addEventListener("keydown", event => {{
+      if (event.key === "ArrowLeft") {{ event.preventDefault(); moveItem(-1); }}
+      if (event.key === "ArrowRight") {{ event.preventDefault(); moveItem(1); }}
+      if (event.key === "ArrowUp") {{ event.preventDefault(); moveMonth(-1); }}
+      if (event.key === "ArrowDown") {{ event.preventDefault(); moveMonth(1); }}
+      if (event.key === "PageUp") {{ event.preventDefault(); moveYear(-1); }}
+      if (event.key === "PageDown") {{ event.preventDefault(); moveYear(1); }}
+    }});
+    init();
+    function init() {{
+      const items = embeddedItems.slice().sort(compareItems);
+      state.months = buildMonths(items);
+      statusEl.textContent = `${{items.length}} bilder, ${{state.months.length}} måneder`;
+      if (items.length === 0) {{
+        setButtonsEnabled(false);
+        return;
+      }}
+      setButtonsEnabled(true);
+      render();
+    }}
+    function compareItems(a, b) {{
+      return a.monthKey.localeCompare(b.monthKey, "nb") ||
+        a.path.localeCompare(b.path, "nb", {{ numeric: true }});
+    }}
+    function buildMonths(items) {{
+      const map = new Map();
+      for (const item of items) {{
+        if (!map.has(item.monthKey)) map.set(item.monthKey, []);
+        map.get(item.monthKey).push(item);
+      }}
+      return Array.from(map.entries()).map(([key, monthItems]) => ({{ key, items: monthItems }}));
+    }}
+    function currentMonth() {{ return state.months[state.monthIndex] || null; }}
+    function currentItem() {{
+      const month = currentMonth();
+      return month ? month.items[state.itemIndex] : null;
+    }}
+    function moveYear(delta) {{
+      const month = currentMonth();
+      if (!month) return;
+      const year = month.key.slice(0, 4);
+      const years = Array.from(new Set(state.months.map(item => item.key.slice(0, 4))));
+      const nextYear = years[years.indexOf(year) + delta];
+      if (!nextYear) return;
+      state.monthIndex = state.months.findIndex(item => item.key.startsWith(nextYear));
+      state.itemIndex = 0;
+      state.viewMode = "month";
+      render();
+    }}
+    function moveMonth(delta) {{
+      const next = state.monthIndex + delta;
+      if (next < 0 || next >= state.months.length) return;
+      state.monthIndex = next;
+      state.itemIndex = 0;
+      state.viewMode = "month";
+      render();
+    }}
+    function moveItem(delta) {{
+      const month = currentMonth();
+      if (!month) return;
+      if (state.viewMode === "month") {{
+        state.itemIndex = delta < 0 ? month.items.length - 1 : 0;
+        state.viewMode = "item";
+        render();
+        return;
+      }}
+      const nextItem = state.itemIndex + delta;
+      if (nextItem >= 0 && nextItem < month.items.length) {{
+        state.itemIndex = nextItem;
+        render();
+        return;
+      }}
+      const nextMonth = state.monthIndex + (delta > 0 ? 1 : -1);
+      if (nextMonth < 0 || nextMonth >= state.months.length) return;
+      state.monthIndex = nextMonth;
+      state.itemIndex = delta > 0 ? 0 : state.months[nextMonth].items.length - 1;
+      render();
+    }}
+    function render() {{
+      if (state.viewMode === "month") renderMonth();
+      else renderItem();
+    }}
+    function renderItem() {{
+      const item = currentItem();
+      if (!item) return;
+      const media = document.createElement("div");
+      media.className = "media";
+      const img = document.createElement("img");
+      img.src = item.url;
+      img.alt = item.name;
+      img.addEventListener("load", () => positionBoxes(media, img, item.faces));
+      media.append(img);
+      for (const face of item.faces) {{
+        const box = document.createElement("div");
+        box.className = face.status === "forslag" ? "box suggested" : "box";
+        box.title = `${{face.status}} face-id ${{face.faceId}} score ${{face.similarity.toFixed(3)}}`;
+        box.dataset.faceId = String(face.faceId);
+        media.append(box);
+      }}
+      viewer.replaceChildren(media);
+      const month = currentMonth();
+      positionEl.textContent = `${{month.key}} ${{state.itemIndex + 1}}/${{month.items.length}}`;
+      filenameEl.textContent = `${{item.path}} (${{item.sizeText}})`;
+      filenameEl.href = item.url;
+      filenameEl.target = "_blank";
+      detailsEl.innerHTML = item.faces.map(face => {{
+        const cls = face.status === "forslag" ? "suggested-text" : "confirmed";
+        return `<span class="${{cls}}">${{face.status}}: face-id ${{face.faceId}}, score ${{face.similarity.toFixed(3)}}<\\/span>`;
+      }}).join(" ");
+      updateButtons();
+    }}
+    function renderMonth() {{
+      const month = currentMonth();
+      if (!month) return;
+      const grid = document.createElement("div");
+      grid.className = "month-grid";
+      for (const item of representativeItems(month.items, MONTH_PREVIEW_LIMIT)) {{
+        const index = month.items.indexOf(item);
+        const button = document.createElement("button");
+        button.className = "thumb";
+        button.type = "button";
+        button.title = item.path;
+        button.addEventListener("click", () => {{
+          state.itemIndex = index;
+          state.viewMode = "item";
+          render();
+        }});
+        const img = document.createElement("img");
+        img.src = item.url;
+        img.alt = item.name;
+        img.loading = "lazy";
+        button.append(img);
+        grid.append(button);
+      }}
+      viewer.replaceChildren(grid);
+      positionEl.textContent = `${{month.key}} oversikt (${{month.items.length}} bilder)`;
+      filenameEl.textContent = `Månedsoversikt: ${{month.key}}`;
+      filenameEl.removeAttribute("href");
+      filenameEl.removeAttribute("target");
+      detailsEl.textContent = "";
+      updateButtons();
+    }}
+    function positionBoxes(media, img, faces) {{
+      const rendered = renderedImageRect(media, img);
+      for (const face of faces) {{
+        const box = media.querySelector(`[data-face-id="${{face.faceId}}"]`);
+        if (!box || face.left === undefined) continue;
+        box.style.left = `${{rendered.left + rendered.width * face.left / 100}}px`;
+        box.style.top = `${{rendered.top + rendered.height * face.top / 100}}px`;
+        box.style.width = `${{rendered.width * face.boxWidth / 100}}px`;
+        box.style.height = `${{rendered.height * face.boxHeight / 100}}px`;
+      }}
+    }}
+    function renderedImageRect(media, img) {{
+      const mediaRect = media.getBoundingClientRect();
+      const mediaRatio = mediaRect.width / mediaRect.height;
+      const imageRatio = img.naturalWidth / img.naturalHeight;
+      if (imageRatio > mediaRatio) {{
+        const width = mediaRect.width;
+        const height = width / imageRatio;
+        return {{ left: 0, top: (mediaRect.height - height) / 2, width, height }};
+      }}
+      const height = mediaRect.height;
+      const width = height * imageRatio;
+      return {{ left: (mediaRect.width - width) / 2, top: 0, width, height }};
+    }}
+    function representativeItems(items, limit) {{
+      if (limit === null) return items;
+      if (items.length <= limit) return items;
+      if (limit === 1) return [items[0]];
+      const selected = [];
+      const last = items.length - 1;
+      const selectedIndexes = new Set();
+      for (let i = 0; i < limit; i += 1) {{
+        selectedIndexes.add(Math.round((i * last) / (limit - 1)));
+      }}
+      for (const index of Array.from(selectedIndexes).sort((a, b) => a - b)) {{
+        selected.push(items[index]);
+      }}
+      return selected;
+    }}
+    function setButtonsEnabled(enabled) {{
+      for (const button of Object.values(buttons)) button.disabled = !enabled;
+    }}
+    function updateButtons() {{
+      const month = currentMonth();
+      const years = Array.from(new Set(state.months.map(item => item.key.slice(0, 4))));
+      const currentYear = month ? month.key.slice(0, 4) : "";
+      const currentYearIndex = years.indexOf(currentYear);
+      buttons.prevYear.disabled = currentYearIndex <= 0;
+      buttons.nextYear.disabled = currentYearIndex < 0 || currentYearIndex >= years.length - 1;
+      buttons.prevMonth.disabled = state.monthIndex <= 0;
+      buttons.nextMonth.disabled = state.monthIndex >= state.months.length - 1;
+      if (state.viewMode === "month") {{
+        buttons.prevItem.disabled = false;
+        buttons.nextItem.disabled = false;
+        return;
+      }}
+      buttons.prevItem.disabled = state.monthIndex === 0 && state.itemIndex === 0;
+      buttons.nextItem.disabled =
+        state.monthIndex === state.months.length - 1 &&
+        month &&
+        state.itemIndex === month.items.length - 1;
+    }}
+    window.addEventListener("resize", () => {{
+      if (state.viewMode !== "item") return;
+      const item = currentItem();
+      const media = viewer.querySelector(".media");
+      const img = viewer.querySelector("img");
+      if (item && media && img) positionBoxes(media, img, item.faces);
+    }});
+  </script>
 </body>
 </html>
 """
@@ -1255,6 +1615,45 @@ def html_escape(value: object) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+
+def person_browser_json_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "path": item["path"],
+            "url": item["url"],
+            "name": item["name"],
+            "monthKey": item["monthKey"],
+            "sizeText": item["sizeText"],
+            "faces": item["faces"],
+        }
+        for item in items
+    ]
+
+
+def person_month_key(target: Path, path: Path) -> str:
+    parts = relative_to_target(target, path).parts
+    if len(parts) >= 3 and parts[0].isdigit() and len(parts[0]) == 4 and parts[1].isdigit():
+        return f"{parts[0]}-{parts[1]}"
+    if parts and parts[0] == "udatert":
+        return "udatert"
+    return "ukjent"
+
+
+def format_person_file_size(path: Path) -> str:
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return "-"
+    units = ("bytes", "KB", "MB", "GB", "TB")
+    value = float(size)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            if unit == "bytes":
+                return f"{size} bytes"
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    return f"{size} bytes"
 
 
 def safe_filename(value: str) -> str:

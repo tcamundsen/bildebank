@@ -1,7 +1,9 @@
 # InsightFace
 
 NB: Denne funksjonen er ikke ferdig ennå, så det er foreløpig bortkastet
-for andre enn Tom Cato å teste dette.
+for andre enn Tom Cato å teste dette. På samme måte som import av bilder
+i begynnelsen bestod av flere trinn, så regner jeg med at dette forenkles
+etterhvert som jeg ser at alle trinnene fungerer greit.
 
 InsightFace er en valgfri testkomponent for ansiktsgjenkjenning.
 
@@ -220,8 +222,12 @@ Da lages for eksempel:
 person-Kari.html
 ```
 
-Siden viser både bekreftede ansikter og forslag. Bekreftede ansikter og forslag
-har ulik farge på boksen rundt ansiktet.
+Siden viser ett bilde om gangen, slik at den også kan brukes når personen finnes
+i mange bilder. Du kan bla til forrige/neste bilde, forrige/neste måned og
+forrige/neste år. Når du hopper måned eller år, vises en månedsoversikt med
+bilder fra den måneden.
+
+Bekreftede ansikter og forslag har ulik farge på boksen rundt ansiktet.
 
 ## Slette ansiktsdata
 
