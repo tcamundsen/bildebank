@@ -169,7 +169,8 @@ face-groups.html
 
 Siden viser én gruppe om gangen. Bruk pil venstre og pil høyre for å bla mellom
 gruppene. Bildene vises med ansiktsboks, ikke som et lite crop-utsnitt, slik at
-det er lettere å se om riktig ansikt er markert.
+det er lettere å se om riktig ansikt er markert. Klikk på et bilde for å åpne
+det i full størrelse.
 
 ## Personer
 

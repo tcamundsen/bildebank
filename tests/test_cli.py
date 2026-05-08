@@ -1585,6 +1585,8 @@ model_name = "test-model"
             self.assertIn("likhet", html)
             self.assertIn('"faceId": 1', html)
             self.assertIn("className = \"box\"", html)
+            self.assertIn("link.target = \"_blank\"", html)
+            self.assertIn("link.title = \"Åpne bildet\"", html)
             self.assertIn('face-person-add-group "Navn"', html)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-create", "Kari"])

@@ -1188,10 +1188,15 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       card.className = "face";
       const media = document.createElement("div");
       media.className = "media";
+      const link = document.createElement("a");
+      link.href = face.url;
+      link.target = "_blank";
+      link.title = "Åpne bildet";
       const img = document.createElement("img");
       img.src = face.url;
       img.alt = "";
-      media.append(img);
+      link.append(img);
+      media.append(link);
       if (face.left !== undefined) {{
         const box = document.createElement("div");
         box.className = "box";
