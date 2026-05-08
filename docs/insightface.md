@@ -417,14 +417,55 @@ Bekreftede ansikter og forslag har ulik farge på boksen rundt ansiktet.
 
 ## Slette ansiktsdata
 
+`face-reset` krever alltid bekreftelse før noe slettes.
+
+Det finnes tre nivåer.
+
+### Slette alt
+
 Hvis du vil fjerne alle eksperimentelle ansiktsdata fra bildesamlingen:
 
 ```powershell
-bildebank face-reset
+bildebank face-reset --all
 ```
 
-Kommandoen sletter `.bilder-faces.sqlite3`. Den sletter ingen bilder og endrer
-ikke den vanlige Bildebank-databasen.
+Dette sletter `.bilder-faces.sqlite3`. Det fjerner resultatene fra `face-scan`,
+grupper fra `face-group`, personer, bekreftede ansiktskoblinger og forslag.
+
+Hvis du kjører `face-reset` uten nivåvalg, er dette standardnivået.
+
+Kommandoen sletter ingen bilder og endrer ikke den vanlige Bildebank-databasen.
+
+### Beholde face-scan
+
+Hvis du vil slippe å scanne bildene på nytt, men vil starte på nytt med grupper
+og personer:
+
+```powershell
+bildebank face-reset --keep-scan
+```
+
+Dette beholder resultatene fra `face-scan`, men sletter grupper, personer,
+bekreftede ansiktskoblinger og forslag.
+
+Etterpå kan du kjøre:
+
+```powershell
+bildebank face-group
+bildebank make-face-groups-browser
+```
+
+### Beholde face-scan og grupper
+
+Hvis du bare vil fjerne personer, bekreftede ansiktskoblinger og forslag:
+
+```powershell
+bildebank face-reset --keep-scan-and-groups
+```
+
+Dette beholder både resultatene fra `face-scan` og gruppene fra `face-group`.
+Det kan brukes hvis personnavn og koblinger har blitt rotete, men gruppene
+fortsatt er nyttige.
 
 ## Modeller
 

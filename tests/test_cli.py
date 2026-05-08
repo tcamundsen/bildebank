@@ -15,7 +15,7 @@ from unittest.mock import patch
 from bilder.cli import build_parser, main
 from bilder.config import load_config
 from bilder.db import DB_FILENAME
-from bilder.face import FACE_DB_FILENAME, read_image
+from bilder.face import FACE_DB_FILENAME, connect_face_db, read_image
 from bilder.importer import safe_copy
 from bilder.media import sha256_file
 from bilder.program_state import PROGRAM_DB_FILENAME
@@ -211,6 +211,20 @@ class CliTests(unittest.TestCase):
         self.assertIn("usage: bildebank create [valg] mappe", stdout)
         self.assertIn("mappe       Mappen som skal bli bildesamling", stdout)
         self.assertNotIn("<kommando> [<args>] create", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_face_reset_help_documents_reset_levels(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["face-reset", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("--all", stdout)
+        self.assertIn("--keep-scan", stdout)
+        self.assertIn("--keep-scan-and-groups", stdout)
+        self.assertIn("krever alltid", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_target_command_is_not_available(self) -> None:
@@ -1771,6 +1785,78 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Slettet face-database", stdout)
             self.assertFalse(face_db.exists())
+
+    def test_face_reset_can_keep_scan_or_groups(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = connect_face_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                    VALUES(1, 'image.jpg', 'image.jpg', 'hash', 'ok', 1)
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    ) VALUES(1, 1, 'image.jpg', 1, 2, 10, 20, 0.9, 'test', x'00000000')
+                    """
+                )
+                conn.execute("INSERT INTO face_group_runs(id, threshold, method) VALUES(1, 0.6, 'test')")
+                conn.execute("INSERT INTO face_groups(id, run_id, group_index, member_count) VALUES(1, 1, 1, 1)")
+                conn.execute("INSERT INTO face_group_members(group_id, face_id, similarity) VALUES(1, 1, 1.0)")
+                conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 1, 0.95)")
+                conn.commit()
+            finally:
+                conn.close()
+
+            with patch("builtins.input", return_value="ja, slett personer"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "face-reset", "--keep-scan-and-groups"]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Face-scan-resultater og grupper er beholdt", stdout)
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_members").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            try:
+                conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 1, 0.95)")
+                conn.commit()
+            finally:
+                conn.close()
+
+            with patch("builtins.input", return_value="ja, slett grupper og personer"):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-reset", "--keep-scan"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Face-scan-resultater er beholdt", stdout)
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_runs").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_members").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 0)
+            finally:
+                conn.close()
 
     def test_safe_copy_does_not_overwrite_existing_different_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

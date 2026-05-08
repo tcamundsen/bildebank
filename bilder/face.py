@@ -86,6 +86,17 @@ class DeletePersonResult:
 
 
 @dataclass(frozen=True)
+class FaceResetResult:
+    mode: str
+    removed_persons: int
+    removed_person_faces: int
+    removed_suggestions: int
+    removed_group_runs: int
+    removed_groups: int
+    removed_group_members: int
+
+
+@dataclass(frozen=True)
 class FaceSuggestStats:
     persons: int
     unknown_faces: int
@@ -333,6 +344,41 @@ def delete_person(target: Path, person_name: str) -> DeletePersonResult:
         conn.execute("DELETE FROM persons WHERE id = ?", (person_id,))
         conn.commit()
         return DeletePersonResult(clean_name, removed_faces, removed_suggestions)
+    finally:
+        conn.close()
+
+
+def reset_face_database(target: Path, *, mode: str) -> FaceResetResult:
+    conn = connect_face_db(target)
+    try:
+        removed_persons = count_rows_if_table_exists(conn, "persons")
+        removed_person_faces = count_rows_if_table_exists(conn, "person_faces")
+        removed_suggestions = count_rows_if_table_exists(conn, "face_suggestions")
+        removed_group_runs = 0
+        removed_groups = 0
+        removed_group_members = 0
+        if mode == "keep-scan":
+            removed_group_runs = count_rows_if_table_exists(conn, "face_group_runs")
+            removed_groups = count_rows_if_table_exists(conn, "face_groups")
+            removed_group_members = count_rows_if_table_exists(conn, "face_group_members")
+            conn.execute("DELETE FROM face_group_members")
+            conn.execute("DELETE FROM face_groups")
+            conn.execute("DELETE FROM face_group_runs")
+        elif mode != "keep-scan-and-groups":
+            raise ValueError(f"Ukjent face-reset-nivå: {mode}")
+        conn.execute("DELETE FROM face_suggestions")
+        conn.execute("DELETE FROM person_faces")
+        conn.execute("DELETE FROM persons")
+        conn.commit()
+        return FaceResetResult(
+            mode=mode,
+            removed_persons=removed_persons,
+            removed_person_faces=removed_person_faces,
+            removed_suggestions=removed_suggestions,
+            removed_group_runs=removed_group_runs,
+            removed_groups=removed_groups,
+            removed_group_members=removed_group_members,
+        )
     finally:
         conn.close()
 
@@ -1868,6 +1914,16 @@ def count_scanned_files(conn: sqlite3.Connection, where_sql: str) -> int:
 def count_rows(conn: sqlite3.Connection, table: str) -> int:
     if table not in {"scanned_files", "faces"}:
         raise ValueError(f"Ukjent face-tabell: {table}")
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    if row is None:
+        return 0
+    return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+
+
+def count_rows_if_table_exists(conn: sqlite3.Connection, table: str) -> int:
     row = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
         (table,),
