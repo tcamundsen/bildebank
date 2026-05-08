@@ -64,7 +64,7 @@ Du kan åpne og se på filene i bildesamlingsmappen, men ikke rydd manuelt i
 årsmappene og månedsmappene. Da kan databasen og filene komme ut av sync.
 
 Nedenfor viser jeg trinn for trinn hvordan du kan lage en samling med
-bilder og vise dem i nettleser. Når du er klar for å gå igang for alvor,
+bilder og vise dem i nettleser. Når du er klar for å gå i gang for alvor,
 så finner du lenke til detaljer om alle kommandoene øverst i dette dokumentet.
 
 ## Opprett en testmappe med noen få bilder
@@ -105,7 +105,7 @@ PS C:\Users\Tom>
 meg at PowerShell ser på mappen `C:\Users\Tom`.
 
 Hvis det i denne mappen finnes en mappe som heter kode, så bruker vi kommandoen `cd`
-(som er forkortelse for Change Direcory) til å gå inn i den mappen:
+(som er forkortelse for Change Directory) til å gå inn i den mappen:
 
 ```powershell
 PS C:\Users\Tom> cd kode
@@ -113,7 +113,7 @@ PS C:\Users\Tom\kode>
 ```
 
 Vi kan da jobbe med filene i denne mappa, bare ved å skrive navnet deres, istedet
-for å også ta me navnet på mappen de ligger i.
+for å også ta med navnet på mappen de ligger i.
 Du ser at at det som står til venstre for markøren har endret seg og viser at du nå er
 mappen kode. For å gå ut av mappen, dvs opp et nivå skriver du `cd ..`:
 
@@ -125,7 +125,7 @@ PS C:\Users\Tom>
 
 Men i alle eksemplene i denne manualen, så tar jeg ikke med alt som viser
 hvilken mappe, dvs `PS C:\Users\Tom\kode` i dette eksempelet, for du har jo
-sansynligvis noe annet som står der.
+sannsynligvis noe annet som står der.
 
 ## Tilbake til Bildebank
 
@@ -137,12 +137,12 @@ bildebank
 
 Programmet vil da skrive ut en liste over kommandoer som kan kjøres.
 
-`$HOME` er en varabel som vet hvor hjemmemappen for din bruker er på PCen.
+`$HOME` er en varabel som vet hvor hjemmemappen for din bruker er på PC-en.
 For meg så betyr de to linjene her det samme:
 
 ```powershell
 $HOME
-C:\Users\Tom\kode
+C:\Users\Tom
 ```
 Hvis bildesamlingsmappen ikke finnes ennå, kan du lage den først:
 
@@ -188,11 +188,19 @@ minnekort eller en ekstern disk.
 Hver import skal ha et navn. Navnet bruker du senere hvis du vil se hvor bildene
 kom fra eller angre importen.
 
+Vi skal nå prøve å importere mappen TestBilder som du opprettet. Windows kan
+være satt opp på mange måter, så det er mulig at `$HOME\Pictures\TestBilder`
+ikke finner testmappen din. Men vi forsøker først standard måte:
+
 Tørrtest testmappen først:
 
 ```powershell
 bildebank import --name "TestBilder" --dry-run "$HOME\Pictures\TestBilder"
 ```
+
+Hvis du får feilmelding eller noe som tyder på at vi ikke finner mappen
+høyreklikk mappen i Filutforsker og velg Kopier som bane. Lim inn banen i
+kommandoen i stedet for "$HOME\Pictures\TestBilder".
 
 Da viser Bildebank hva programmet ville importert, uten å kopiere filer og uten
 å endre databasen.
@@ -206,7 +214,7 @@ bildebank import --name "TestBilder" "$HOME\Pictures\TestBilder"
 For en annen mappe bruker du samme mønster:
 
 ```powershell
-bildebank import --name "Julen2022" "\Users\Tom\Julen2022"
+bildebank import --name "Julen2022" "C:\Users\Tom\Julen2022"
 ```
 
 Bruk hermetegn rundt stier. Det er spesielt viktig hvis mappenavnet inneholder
@@ -303,7 +311,7 @@ bildebank list-sources
 ```
 
 Listen viser kildene Bildebank kjenner til. Hver kilde har et navn, status,
-importtidspunkt og pathen den ble importert fra.
+importtidspunkt og filstien den ble importert fra.
 
 Dette er nyttig når du vil kontrollere hva som allerede er registrert og om en
 kilde er importert.
