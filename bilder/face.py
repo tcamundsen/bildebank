@@ -32,6 +32,7 @@ class FaceScanStats:
 
 
 FaceScanProgress = Callable[[str, int, int, FaceScanStats, Path | None], None]
+FaceGroupProgress = Callable[[str, int, int], None]
 
 
 @dataclass(frozen=True)
@@ -510,7 +511,12 @@ def export_face_browser(target: Path, output: Path | None = None) -> Path:
     return output_path
 
 
-def group_faces(target: Path, *, threshold: float = 0.6) -> FaceGroupStats:
+def group_faces(
+    target: Path,
+    *,
+    threshold: float = 0.6,
+    progress: FaceGroupProgress | None = None,
+) -> FaceGroupStats:
     path = face_db_path(target)
     if not path.exists():
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
@@ -528,12 +534,21 @@ def group_faces(target: Path, *, threshold: float = 0.6) -> FaceGroupStats:
         vectors = [(int(row["id"]), embedding_from_blob(bytes(row["embedding"]))) for row in face_rows]
         parent = {face_id: face_id for face_id, _vector in vectors}
         similarities: dict[tuple[int, int], float] = {}
+        total_pairs = len(vectors) * (len(vectors) - 1) // 2
+        compared_pairs = 0
+        if progress is not None:
+            progress("start", 0, total_pairs)
         for index, (left_id, left_vector) in enumerate(vectors):
             for right_id, right_vector in vectors[index + 1 :]:
+                compared_pairs += 1
                 score = cosine_similarity(left_vector, right_vector)
                 if score >= threshold:
                     union(parent, left_id, right_id)
                     similarities[(min(left_id, right_id), max(left_id, right_id))] = score
+                if progress is not None:
+                    progress("compare", compared_pairs, total_pairs)
+        if progress is not None:
+            progress("build_groups", len(vectors), len(vectors))
 
         grouped: dict[int, list[int]] = {}
         for face_id, _vector in vectors:
@@ -541,6 +556,8 @@ def group_faces(target: Path, *, threshold: float = 0.6) -> FaceGroupStats:
         groups = [sorted(members) for members in grouped.values() if len(members) >= 2]
         groups.sort(key=lambda members: (-len(members), members[0]))
 
+        if progress is not None:
+            progress("write", 0, len(groups))
         conn.execute("DELETE FROM face_group_members")
         conn.execute("DELETE FROM face_groups")
         conn.execute("DELETE FROM face_group_runs")
@@ -571,7 +588,11 @@ def group_faces(target: Path, *, threshold: float = 0.6) -> FaceGroupStats:
                     """,
                     (group_id, face_id, best_group_similarity(face_id, members, similarities)),
                 )
+            if progress is not None:
+                progress("write", group_index, len(groups))
         conn.commit()
+        if progress is not None:
+            progress("done", total_pairs, total_pairs)
         return FaceGroupStats(
             faces=len(vectors),
             groups=len(groups),

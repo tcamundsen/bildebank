@@ -1103,7 +1103,7 @@ def run_face_report(target: Path, *, limit: int) -> int:
 
 
 def run_face_group(target: Path, *, threshold: float) -> int:
-    stats = group_faces(target, threshold=threshold)
+    stats = group_faces(target, threshold=threshold, progress=print_face_group_progress)
     print(
         "Ansiktsgrupper: "
         f"ansikter={stats.faces}, grupper={stats.groups}, "
@@ -1111,6 +1111,30 @@ def run_face_group(target: Path, *, threshold: float) -> int:
     )
     print("Dette er beregnede forslag, ikke bekreftede personer.")
     return 0
+
+
+def print_face_group_progress(stage: str, current: int, total: int) -> None:
+    if stage == "start":
+        print(f"Face-group: sammenligner {total} ansiktspar.")
+        return
+    if stage == "compare":
+        if should_print_group_progress(current, total):
+            percent = (100.0 * current / total) if total else 100.0
+            print(f"Face-group: sammenlignet={current}/{total} ({percent:.0f}%)")
+        return
+    if stage == "build_groups":
+        print(f"Face-group: bygger grupper fra {total} ansikter.")
+        return
+    if stage == "write":
+        if should_print_progress(current, total):
+            print(f"Face-group: skriver grupper={current}/{total}")
+
+
+def should_print_group_progress(current: int, total: int) -> bool:
+    if total <= 100:
+        return True
+    step = max(1000, total // 100)
+    return current == total or current % step == 0
 
 
 def run_face_suggest(target: Path, *, threshold: float) -> int:

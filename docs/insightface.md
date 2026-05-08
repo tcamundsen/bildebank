@@ -144,6 +144,9 @@ bildebank face-group
 Dette lager mulige grupper av ansikter som ligner hverandre. Gruppene er bare
 forslag, ikke bekreftede personer.
 
+Kommandoen viser progresjon mens den sammenligner ansikter. Dette kan ta tid,
+fordi hvert ansikt sammenlignes med mange andre ansikter.
+
 Du kan justere hvor strengt ansikter skal sammenlignes:
 
 ```powershell

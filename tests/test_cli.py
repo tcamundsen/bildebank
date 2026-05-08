@@ -1538,6 +1538,8 @@ model_name = "test-model"
             code, stdout, stderr = capture_cli(["--target", str(target), "face-group", "--threshold", "0.9"])
 
             self.assertEqual(code, 0, stderr)
+            self.assertIn("Face-group: sammenligner 1 ansiktspar.", stdout)
+            self.assertIn("Face-group: bygger grupper fra 2 ansikter.", stdout)
             self.assertIn("grupper=1", stdout)
             self.assertIn("grupperte_ansikter=2", stdout)
 
