@@ -1515,11 +1515,12 @@ model_name = "test-model"
 
             class FakeCv2:
                 IMREAD_COLOR = 1
+                IMREAD_IGNORE_ORIENTATION = 128
 
                 @staticmethod
                 def imdecode(data, flags):
                     self.assertIsInstance(data, FakeData)
-                    self.assertEqual(flags, FakeCv2.IMREAD_COLOR)
+                    self.assertEqual(flags, FakeCv2.IMREAD_COLOR | FakeCv2.IMREAD_IGNORE_ORIENTATION)
                     return {"decoded": True}
 
             modules = {"cv2": FakeCv2, "numpy": FakeNp}
@@ -1619,6 +1620,7 @@ model_name = "test-model"
             self.assertIn('"index": 1', html)
             self.assertIn('"memberCount": 2', html)
             self.assertIn("likhet", html)
+            self.assertIn("deteksjon", html)
             self.assertIn('"faceId": 1', html)
             self.assertIn("className = \"box\"", html)
             self.assertIn("link.target = \"_blank\"", html)

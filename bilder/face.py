@@ -1267,7 +1267,7 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       }}
       const meta = document.createElement("div");
       meta.className = "meta";
-      meta.textContent = `face-id ${{face.faceId}}, likhet ${{face.similarity.toFixed(3)}} - ${{face.path}}`;
+      meta.textContent = `face-id ${{face.faceId}}, gruppelikhet ${{face.similarity.toFixed(3)}}, deteksjon ${{face.score.toFixed(3)}} - ${{face.path}}`;
       card.append(media, meta);
       return card;
     }}
@@ -2231,7 +2231,8 @@ def read_image(path: Path):
         raise ValueError(f"Kunne ikke lese bildefil: {path}") from exc
     if data.size == 0:
         return None
-    return cv2.imdecode(data, cv2.IMREAD_COLOR)
+    ignore_orientation = getattr(cv2, "IMREAD_IGNORE_ORIENTATION", 0)
+    return cv2.imdecode(data, cv2.IMREAD_COLOR | ignore_orientation)
 
 
 def face_bbox(face: Any) -> tuple[float, float, float, float]:
