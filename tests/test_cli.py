@@ -1584,6 +1584,7 @@ model_name = "test-model"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-group: sammenligner 1 ansiktspar.", stdout)
+            self.assertIn("Face-group: sammenlignet=1/1 (100%), gjenstår=0s", stdout)
             self.assertIn("Face-group: bygger grupper fra 2 ansikter.", stdout)
             self.assertIn("grupper=1", stdout)
             self.assertIn("grupperte_ansikter=2", stdout)

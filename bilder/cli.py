@@ -51,6 +51,7 @@ from .target_lock import TargetLock
 
 
 FACE_SCAN_PROGRESS_STARTED_AT: float | None = None
+FACE_GROUP_PROGRESS_STARTED_AT: float | None = None
 
 
 HELP_COMMAND_GROUPS = (
@@ -1188,13 +1189,18 @@ def run_face_group(target: Path, *, threshold: float) -> int:
 
 
 def print_face_group_progress(stage: str, current: int, total: int) -> None:
+    global FACE_GROUP_PROGRESS_STARTED_AT
     if stage == "start":
+        FACE_GROUP_PROGRESS_STARTED_AT = None
         print(f"Face-group: sammenligner {total} ansiktspar.")
         return
     if stage == "compare":
+        if FACE_GROUP_PROGRESS_STARTED_AT is None:
+            FACE_GROUP_PROGRESS_STARTED_AT = time.monotonic()
         if should_print_group_progress(current, total):
             percent = (100.0 * current / total) if total else 100.0
-            print(f"Face-group: sammenlignet={current}/{total} ({percent:.0f}%)")
+            eta = face_scan_eta_text(current, total, FACE_GROUP_PROGRESS_STARTED_AT)
+            print(f"Face-group: sammenlignet={current}/{total} ({percent:.0f}%), gjenstår={eta}")
         return
     if stage == "build_groups":
         print(f"Face-group: bygger grupper fra {total} ansikter.")

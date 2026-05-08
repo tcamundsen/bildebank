@@ -287,8 +287,9 @@ fremst en måte å finne gode, sikre eksempler på. Når noen grupper eller
 enkeltansikter er bekreftet for en person, kan `face-suggest` bruke dette til å
 foreslå flere ansikter.
 
-Kommandoen viser progresjon mens den sammenligner ansikter. Dette kan ta tid,
-fordi hvert ansikt sammenlignes med mange andre ansikter.
+Kommandoen viser progresjon og estimert tid igjen mens den sammenligner
+ansikter. Dette kan ta tid, fordi hvert ansikt sammenlignes med mange andre
+ansikter.
 
 Det er trygt å kjøre `face-group` på nytt, også med en annen `--threshold`,
 etter at du har koblet grupper eller ansikter til personer. Bekreftede personer
