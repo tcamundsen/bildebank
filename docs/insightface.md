@@ -149,6 +149,27 @@ face-groups.html
 Første versjon viser ansiktsutsnitt gruppert etter beregnet likhet. Den lar deg
 ikke sette personnavn ennå.
 
+## Personer
+
+Når en gruppe ser riktig ut, kan du opprette en person og koble gruppen til
+personen:
+
+```powershell
+bildebank face-person-create "Kari"
+bildebank face-person-add-group "Kari" 3
+```
+
+Tallet er gruppe-id fra `face-groups.html`.
+
+Du kan se registrerte personer:
+
+```powershell
+bildebank face-person-list
+```
+
+Dette er brukerbekreftet informasjon. Det er fortsatt bare ansiktene i gruppen
+som kobles til personen; Bildebank foreslår ikke nye ansikter automatisk ennå.
+
 ## Slette ansiktsdata
 
 Hvis du vil fjerne alle eksperimentelle ansiktsdata fra bildesamlingen:

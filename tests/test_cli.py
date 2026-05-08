@@ -1533,6 +1533,30 @@ model_name = "test-model"
             self.assertIn("Ansiktsgrupper (1 grupper)", html)
             self.assertIn("Gruppe 1 (2 ansikter)", html)
             self.assertIn("likhet", html)
+            self.assertIn('face-person-add-group "Navn" 1', html)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-create", "Kari"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Person #", stdout)
+            self.assertIn("Kari", stdout)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "face-person-add-group", "Kari", "1"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Person: Kari", stdout)
+            self.assertIn("Nye ansikter koblet til person: 2", stdout)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Kari\tansikter=2", stdout)
+
+            self.assertEqual(run_cli(["--target", str(target), "make-face-groups-browser"]), 0)
+            html = (target / "face-groups.html").read_text(encoding="utf-8")
+            self.assertIn("Koblet til: Kari", html)
 
     def test_face_reset_requires_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

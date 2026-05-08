@@ -12,13 +12,17 @@ from . import __version__, db
 from .config import CONFIG_FILENAME, load_config
 from .exiftool_probe import exiftool_metadata_gaps
 from .face import (
+    AddGroupToPersonResult,
     FaceReport,
+    add_group_to_person,
+    create_person,
     export_face_browser,
     export_face_groups_browser,
     face_db_path,
     face_db_summary,
     face_report,
     group_faces,
+    list_persons,
     scan_faces,
 )
 from .importer import (
@@ -87,6 +91,9 @@ HELP_COMMAND_GROUPS = (
             ("face-scan", "Eksperimentell scanning etter ansikter"),
             ("face-report", "Vis rapport for scannede ansikter"),
             ("face-group", "Beregn mulige ansiktsgrupper"),
+            ("face-person-create", "Opprett person i ansiktsdatabasen"),
+            ("face-person-add-group", "Koble ansiktsgruppe til person"),
+            ("face-person-list", "List personer i ansiktsdatabasen"),
             ("make-face-browser", "Lag HTML-side for scannede ansikter"),
             ("make-face-groups-browser", "Lag HTML-side for ansiktsgrupper"),
             ("face-reset", "Slett eksperimentelle ansiktsdata"),
@@ -359,6 +366,27 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.6,
         help="Likhetsterskel fra 0.0 til 1.0. Standard: 0.6",
     )
+    face_person_create = add_command(
+        subparsers,
+        "face-person-create",
+        usage="bildebank face-person-create [valg] navn",
+        help="Opprett person i ansiktsdatabasen",
+    )
+    face_person_create.add_argument("name", metavar="navn", help="Personnavn")
+    face_person_add_group = add_command(
+        subparsers,
+        "face-person-add-group",
+        usage="bildebank face-person-add-group [valg] navn gruppe",
+        help="Koble ansiktsgruppe til person",
+    )
+    face_person_add_group.add_argument("name", metavar="navn", help="Personnavn")
+    face_person_add_group.add_argument("group", metavar="gruppe", type=positive_int_arg, help="Gruppe-id fra face-groups.html")
+    add_command(
+        subparsers,
+        "face-person-list",
+        usage="bildebank face-person-list [valg]",
+        help="List personer i ansiktsdatabasen",
+    )
     face_browser = add_command(
         subparsers,
         "make-face-browser",
@@ -525,6 +553,20 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "face-group":
         return run_face_group(target, threshold=args.threshold)
+
+    if args.command == "face-person-create":
+        person_id = create_person(target, args.name)
+        print(f"Person #{person_id}: {args.name.strip()}")
+        return 0
+
+    if args.command == "face-person-add-group":
+        result = add_group_to_person(target, args.name, args.group)
+        print_add_group_to_person_result(result)
+        return 0
+
+    if args.command == "face-person-list":
+        print_persons(target)
+        return 0
 
     if args.command == "make-face-browser":
         output = args.output.resolve() if args.output else None
@@ -940,6 +982,22 @@ def run_face_group(target: Path, *, threshold: float) -> int:
     )
     print("Dette er beregnede forslag, ikke bekreftede personer.")
     return 0
+
+
+def print_add_group_to_person_result(result: AddGroupToPersonResult) -> None:
+    print(f"Person: {result.person_name}")
+    print(f"Gruppe: {result.group_index}")
+    print(f"Nye ansikter koblet til person: {result.added_faces}")
+    print(f"Ansikter som allerede var koblet: {result.already_linked_faces}")
+
+
+def print_persons(target: Path) -> None:
+    rows = list_persons(target)
+    if not rows:
+        print("Ingen personer registrert.")
+        return
+    for row in rows:
+        print(f"{row['name']}\tansikter={row['face_count']}\toppdatert={row['updated_at']}")
 
 
 def print_face_report(target: Path, report: FaceReport) -> None:

@@ -46,6 +46,14 @@ class FaceGroupStats:
     threshold: float
 
 
+@dataclass(frozen=True)
+class AddGroupToPersonResult:
+    person_name: str
+    group_index: int
+    added_faces: int
+    already_linked_faces: int
+
+
 def face_db_path(target: Path) -> Path:
     return target / FACE_DB_FILENAME
 
@@ -117,6 +125,22 @@ def apply_face_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_face_groups_run_id ON face_groups(run_id);
         CREATE INDEX IF NOT EXISTS idx_face_group_members_face_id ON face_group_members(face_id);
+
+        CREATE TABLE IF NOT EXISTS persons (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS person_faces (
+            person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+            face_id INTEGER NOT NULL,
+            confirmed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(person_id, face_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_person_faces_face_id ON person_faces(face_id);
         """
     )
     conn.execute(
@@ -136,6 +160,107 @@ def face_db_summary(target: Path) -> tuple[bool, int, int]:
         return True, scanned, faces
     finally:
         conn.close()
+
+
+def create_person(target: Path, name: str) -> int:
+    clean_name = normalize_person_name(name)
+    conn = connect_face_db(target)
+    try:
+        row = conn.execute("SELECT id FROM persons WHERE name = ?", (clean_name,)).fetchone()
+        if row is not None:
+            return int(row["id"])
+        person_id = int(
+            conn.execute(
+                "INSERT INTO persons(name) VALUES(?) RETURNING id",
+                (clean_name,),
+            ).fetchone()["id"]
+        )
+        conn.commit()
+        return person_id
+    finally:
+        conn.close()
+
+
+def add_group_to_person(target: Path, person_name: str, group_index: int) -> AddGroupToPersonResult:
+    clean_name = normalize_person_name(person_name)
+    conn = connect_face_db(target)
+    try:
+        person_id = ensure_person(conn, clean_name)
+        group = latest_group_by_index(conn, group_index)
+        if group is None:
+            raise ValueError(f"Fant ikke ansiktsgruppe {group_index}. Kjør bildebank face-group først.")
+        face_ids = [
+            int(row["face_id"])
+            for row in conn.execute(
+                "SELECT face_id FROM face_group_members WHERE group_id = ? ORDER BY face_id",
+                (int(group["id"]),),
+            )
+        ]
+        added = 0
+        already = 0
+        for face_id in face_ids:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO person_faces(person_id, face_id) VALUES(?, ?)",
+                (person_id, face_id),
+            )
+            if cur.rowcount:
+                added += 1
+            else:
+                already += 1
+        conn.execute("UPDATE persons SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (person_id,))
+        conn.commit()
+        return AddGroupToPersonResult(clean_name, group_index, added, already)
+    finally:
+        conn.close()
+
+
+def list_persons(target: Path) -> list[sqlite3.Row]:
+    path = face_db_path(target)
+    if not path.exists():
+        return []
+    conn = connect_face_db(target)
+    try:
+        return list(
+            conn.execute(
+                """
+                SELECT
+                    persons.name,
+                    persons.created_at,
+                    persons.updated_at,
+                    COUNT(person_faces.face_id) AS face_count
+                FROM persons
+                LEFT JOIN person_faces ON person_faces.person_id = persons.id
+                GROUP BY persons.id
+                ORDER BY persons.name
+                """
+            )
+        )
+    finally:
+        conn.close()
+
+
+def normalize_person_name(name: str) -> str:
+    clean_name = name.strip()
+    if not clean_name:
+        raise ValueError("Personnavn kan ikke være tomt.")
+    return clean_name
+
+
+def ensure_person(conn: sqlite3.Connection, name: str) -> int:
+    row = conn.execute("SELECT id FROM persons WHERE name = ?", (name,)).fetchone()
+    if row is not None:
+        return int(row["id"])
+    return int(conn.execute("INSERT INTO persons(name) VALUES(?) RETURNING id", (name,)).fetchone()["id"])
+
+
+def latest_group_by_index(conn: sqlite3.Connection, group_index: int) -> sqlite3.Row | None:
+    run = conn.execute("SELECT id FROM face_group_runs ORDER BY id DESC LIMIT 1").fetchone()
+    if run is None:
+        return None
+    return conn.execute(
+        "SELECT * FROM face_groups WHERE run_id = ? AND group_index = ?",
+        (int(run["id"]), group_index),
+    ).fetchone()
 
 
 def face_report(target: Path, *, limit: int = 20) -> FaceReport:
@@ -329,10 +454,31 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
             {
                 "index": group_index,
                 "memberCount": int(row["member_count"]),
+                "personName": person_name_for_group(conn, group_index),
                 "faces": [],
             },
         )["faces"].append(face)
     return list(groups.values())
+
+
+def person_name_for_group(conn: sqlite3.Connection, group_index: int) -> str | None:
+    group = latest_group_by_index(conn, group_index)
+    if group is None:
+        return None
+    row = conn.execute(
+        """
+        SELECT persons.name
+        FROM face_group_members
+        JOIN person_faces ON person_faces.face_id = face_group_members.face_id
+        JOIN persons ON persons.id = person_faces.person_id
+        WHERE face_group_members.group_id = ?
+        GROUP BY persons.id
+        ORDER BY COUNT(*) DESC, persons.name
+        LIMIT 1
+        """,
+        (int(group["id"]),),
+    ).fetchone()
+    return str(row["name"]) if row is not None else None
 
 
 def face_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -567,6 +713,19 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       font-size: 12px;
       overflow-wrap: anywhere;
     }}
+    .person, .command {{
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .command {{
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      background: #f0f0eb;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px;
+      overflow-wrap: anywhere;
+    }}
     .empty {{ margin: 0; color: var(--muted); }}
   </style>
 </head>
@@ -584,8 +743,15 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
 
 def render_face_group_section(group: dict[str, Any]) -> str:
     faces = "\n".join(render_group_face(face) for face in group["faces"])
+    person = (
+        f'<p class="person">Koblet til: {html_escape(group["personName"])}</p>'
+        if group.get("personName")
+        else '<p class="person">Forslag. Ikke bekreftet person.</p>'
+    )
     return f"""<section>
   <h2>Gruppe {group['index']} ({group['memberCount']} ansikter)</h2>
+  {person}
+  <p class="command">bildebank face-person-add-group "Navn" {group['index']}</p>
   <div class="faces">
     {faces}
   </div>
