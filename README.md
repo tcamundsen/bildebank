@@ -196,13 +196,13 @@ bildebank import --name etnavn "sti med mellomrom\bilder"
 Unngå å avslutte stien med `\` rett før avsluttende hermetegn. Skriv heller:
 
 ```powershell
-bildebank import --navn etnavn "sti med mellomrom\bilder"
+bildebank import --name etnavn "sti med mellomrom\bilder"
 ```
 
 ikke:
 
 ```powershell
-bildebank import --navn "sti med mellomrom\bilder\"
+bildebank import --name "sti med mellomrom\bilder\"
 ```
 
 ### Målmappen er låst
