@@ -7,6 +7,7 @@ Dette er en kort referanse over de viktigste kommandoene:
  - [`unimport`](unimport.md)
  - [`remove`](remove.md)
  - [`make-browser`](make-browser.md)
+ - [`make-person-browser`](make-person-browser.md)
  - [`open-browser`](open-browser.md)
  - [`where-is`](where-is.md)
  - [`InsightFace`](insightface.md)
