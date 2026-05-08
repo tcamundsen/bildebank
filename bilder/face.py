@@ -1322,7 +1322,7 @@ def render_person_browser_html(
     h1 {{ margin: 0; font-size: 20px; }}
     button {{
       border: 1px solid var(--border);
-      background: #303030;
+      background: #f0f0eb;
       color: var(--text);
       border-radius: 6px;
       padding: 8px 10px;
@@ -1330,8 +1330,13 @@ def render_person_browser_html(
       cursor: pointer;
       min-height: 38px;
     }}
-    button:hover {{ background: #3a3a3a; }}
-    button:disabled {{ opacity: 0.45; cursor: default; }}
+    button:hover {{ background: #e6e6df; }}
+    button:disabled {{
+      background: #eeeeea;
+      color: #9a9a92;
+      border-color: #ddddd7;
+      cursor: default;
+    }}
     .status {{ color: var(--muted); font-size: 14px; }}
     .position {{ color: var(--accent); font-weight: 650; }}
     main {{

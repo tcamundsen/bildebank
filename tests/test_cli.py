@@ -1745,6 +1745,8 @@ model_name = "test-model"
             html = (target / "person-Kari.html").read_text(encoding="utf-8")
             self.assertIn("<h1>Kari</h1>", html)
             self.assertIn("Forrige måned", html)
+            self.assertIn("button:hover { background: #e6e6df; }", html)
+            self.assertIn("color: #9a9a92;", html)
             self.assertIn("const embeddedItems", html)
             self.assertIn("IMG_20240102.jpg", html)
             self.assertIn('"faceId": 1', html)
