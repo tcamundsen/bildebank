@@ -1,6 +1,7 @@
 # Brukermanual for Bildebank
 
 [Detalj-referanse](reference.md)
+[Siste nytt: import-endringer](import-endringer.md)
 
 Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
 har fulgt `README.md` og installert Bildebank.
