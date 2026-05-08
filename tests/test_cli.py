@@ -1422,6 +1422,9 @@ model_name = "test-model"
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
 
             self.assertEqual(code, 0, stderr)
+            self.assertIn("Face-scan: 1 bildefiler skal kontrolleres.", stdout)
+            self.assertIn("Face-scan: 1 nye eller endrede bilder skal scannes.", stdout)
+            self.assertIn("Face-scan: scannet=1/1", stdout)
             self.assertIn("ansikter=1", stdout)
             face_db = target / FACE_DB_FILENAME
             self.assertTrue(face_db.exists())
@@ -1442,6 +1445,7 @@ model_name = "test-model"
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
 
             self.assertEqual(code, 0, stderr)
+            self.assertIn("Face-scan: kontrollert=1/1", stdout)
             self.assertIn("hoppet_over=1", stdout)
             self.assertIn("scannet=0", stdout)
 

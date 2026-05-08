@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -18,11 +19,15 @@ FACE_SCHEMA_VERSION = 2
 
 @dataclass
 class FaceScanStats:
+    total: int = 0
     checked: int = 0
     skipped: int = 0
     scanned: int = 0
     faces: int = 0
     errors: int = 0
+
+
+FaceScanProgress = Callable[[str, int, int, FaceScanStats, Path | None], None]
 
 
 @dataclass(frozen=True)
@@ -1274,25 +1279,45 @@ def count_rows(conn: sqlite3.Connection, table: str) -> int:
     return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
 
-def scan_faces(target: Path, config: FaceRecognitionConfig, *, limit: int | None = None) -> FaceScanStats:
+def scan_faces(
+    target: Path,
+    config: FaceRecognitionConfig,
+    *,
+    limit: int | None = None,
+    progress: FaceScanProgress | None = None,
+) -> FaceScanStats:
     stats = FaceScanStats()
     main_conn = db.connect(target)
     face_conn = connect_face_db(target)
     try:
+        rows = active_image_files(main_conn, limit=limit)
+        stats.total = len(rows)
+        if progress is not None:
+            progress("start", 0, stats.total, stats, None)
+
         rows_to_scan = []
-        for row in active_image_files(main_conn, limit=limit):
+        for row in rows:
             stats.checked += 1
             file_id = int(row["id"])
             sha256 = str(row["sha256"])
+            target_path = Path(str(row["target_path"]))
             if is_file_scanned(face_conn, file_id, sha256):
                 stats.skipped += 1
+                if progress is not None:
+                    progress("check", stats.checked, stats.total, stats, target_path)
                 continue
             rows_to_scan.append(row)
+            if progress is not None:
+                progress("check", stats.checked, stats.total, stats, target_path)
         if not rows_to_scan:
+            if progress is not None:
+                progress("done", stats.checked, stats.total, stats, None)
             return stats
 
+        if progress is not None:
+            progress("load_model", 0, len(rows_to_scan), stats, None)
         app = load_face_app(config)
-        for row in rows_to_scan:
+        for scan_index, row in enumerate(rows_to_scan, start=1):
             file_id = int(row["id"])
             target_path = Path(str(row["target_path"]))
             target_path_key = str(row["target_path_key"])
@@ -1324,6 +1349,10 @@ def scan_faces(target: Path, config: FaceRecognitionConfig, *, limit: int | None
                 )
                 stats.errors += 1
             face_conn.commit()
+            if progress is not None:
+                progress("scan", scan_index, len(rows_to_scan), stats, target_path)
+        if progress is not None:
+            progress("done", stats.checked, stats.total, stats, None)
     finally:
         main_conn.close()
         face_conn.close()

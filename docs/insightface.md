@@ -74,6 +74,14 @@ bildebank face-scan --limit 10
 `face-scan` scanner bare importerte bildefiler, ikke videoer. Bilder som
 allerede er scannet med samme innhold hoppes over.
 
+Kommandoen viser progresjon mens den jobber. Først kontrollerer den hvilke
+bilder som allerede er scannet, og deretter scanner den nye eller endrede
+bilder.
+
+Det er trygt å avbryte med `Ctrl-C`. Bildebank lagrer resultatet etter hvert
+bilde. Neste gang du kjører `face-scan`, fortsetter den ved å hoppe over bilder
+som allerede er ferdig scannet.
+
 Ansiktsdata lagres i bildesamlingen:
 
 ```text

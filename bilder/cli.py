@@ -1030,7 +1030,7 @@ def module_available(module_name: str) -> str:
 def run_face_scan(target: Path, *, limit: int | None) -> int:
     config = load_config(program_repo_root()).face_recognition
     require_face_enabled(config.enabled)
-    stats = scan_faces(target, config, limit=limit)
+    stats = scan_faces(target, config, limit=limit, progress=print_face_scan_progress)
     print(
         "Oppsummering: "
         f"sjekket={stats.checked}, hoppet_over={stats.skipped}, "
@@ -1038,6 +1038,41 @@ def run_face_scan(target: Path, *, limit: int | None) -> int:
     )
     print(f"Face-database: {face_db_path(target)}")
     return 0 if stats.errors == 0 else 2
+
+
+def print_face_scan_progress(
+    stage: str,
+    current: int,
+    total: int,
+    stats,
+    path: Path | None,
+) -> None:
+    if stage == "start":
+        print(f"Face-scan: {total} bildefiler skal kontrolleres.")
+        return
+    if stage == "check":
+        if should_print_progress(current, total):
+            print(
+                "Face-scan: "
+                f"kontrollert={current}/{total}, "
+                f"hoppet_over={stats.skipped}, skal_scannes={stats.checked - stats.skipped}"
+            )
+        return
+    if stage == "load_model":
+        print(f"Face-scan: {total} nye eller endrede bilder skal scannes. Laster ansiktsmodell.")
+        return
+    if stage == "scan":
+        if should_print_progress(current, total):
+            print(
+                "Face-scan: "
+                f"scannet={current}/{total}, "
+                f"ansikter={stats.faces}, feil={stats.errors}"
+            )
+        return
+
+
+def should_print_progress(current: int, total: int) -> bool:
+    return total <= 20 or current == total or current % 25 == 0
 
 
 def run_face_report(target: Path, *, limit: int) -> int:
