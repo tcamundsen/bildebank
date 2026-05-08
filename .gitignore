@@ -9,3 +9,5 @@ __pycache__/
 *.bdbtmp-*
 .*.swp
 Installasjon.html
+bildebank-config.toml
+.bildebank-insightface/

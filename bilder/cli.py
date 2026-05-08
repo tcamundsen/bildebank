@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import shutil
 import subprocess
 import sys
@@ -8,6 +9,7 @@ import webbrowser
 from pathlib import Path
 
 from . import __version__, db
+from .config import CONFIG_FILENAME, load_config
 from .exiftool_probe import exiftool_metadata_gaps
 from .importer import (
     import_source,
@@ -71,6 +73,7 @@ HELP_COMMAND_GROUPS = (
         "programmet",
         (
             ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
+            ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
             ("update", "Oppdater programinstallasjonen"),
         ),
@@ -308,6 +311,12 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank where-is [valg]",
         help="Vis hvor Bildebank og kjente bildesamlinger ligger",
     )
+    add_command(
+        subparsers,
+        "face-status",
+        usage="bildebank face-status [valg]",
+        help="Vis status for valgfri ansiktsgjenkjenning",
+    )
     migrate = add_command(
         subparsers,
         "migrate",
@@ -425,6 +434,9 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "where-is":
         return run_where_is()
+
+    if args.command == "face-status":
+        return run_face_status()
 
     target = resolve_target(args.target)
     record_target_best_effort(program_repo_root(), target)
@@ -771,6 +783,25 @@ def run_where_is() -> int:
         print("For å jobbe med en bildesamling kan du skrive:")
         print(f'  cd "{first_existing.path}"')
     return 0
+
+
+def run_face_status() -> int:
+    repo_root = program_repo_root()
+    config = load_config(repo_root)
+    face = config.face_recognition
+    print("Ansiktsgjenkjenning:")
+    print(f"  konfigurert: {'på' if face.enabled else 'av'}")
+    print(f"  config-fil: {repo_root / CONFIG_FILENAME}")
+    print(f"  modellmappe: {face.model_root}")
+    print(f"  modellnavn: {face.model_name}")
+    print(f"  provider: {face.provider}")
+    print(f"  insightface installert: {module_available('insightface')}")
+    print(f"  onnxruntime installert: {module_available('onnxruntime')}")
+    return 0
+
+
+def module_available(module_name: str) -> str:
+    return "ja" if importlib.util.find_spec(module_name) is not None else "nei"
 
 
 def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:

@@ -9,4 +9,5 @@ Dette er en kort referanse over de viktigste kommandoene:
  - [`make-browser`](make-browser.md)
  - [`open-browser`](open-browser.md)
  - [`where-is`](where-is.md)
+ - [`InsightFace`](insightface.md)
  - [`migrate`](migrate.md)

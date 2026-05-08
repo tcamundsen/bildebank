@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bilder.cli import build_parser, main
+from bilder.config import load_config
 from bilder.db import DB_FILENAME
 from bilder.importer import safe_copy
 from bilder.media import sha256_file
@@ -307,6 +308,36 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertIn("Bildebank-program:", stdout)
         self.assertIn("Ingen registrert ennå.", stdout)
+
+    def test_face_status_is_disabled_by_default(self) -> None:
+        code, stdout, stderr = capture_cli(["face-status"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Ansiktsgjenkjenning:", stdout)
+        self.assertIn("konfigurert: av", stdout)
+        self.assertIn("insightface installert:", stdout)
+        self.assertEqual(stderr, "")
+
+    def test_load_config_reads_local_face_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "bildebank-config.toml").write_text(
+                """
+[face_recognition]
+enabled = true
+provider = "cpu"
+model_root = "models/insightface"
+model_name = "buffalo_s"
+""",
+                encoding="utf-8",
+            )
+
+            config = load_config(root)
+
+            self.assertTrue(config.face_recognition.enabled)
+            self.assertEqual(config.face_recognition.provider, "cpu")
+            self.assertEqual(config.face_recognition.model_root, root / "models" / "insightface")
+            self.assertEqual(config.face_recognition.model_name, "buffalo_s")
 
     def test_rejects_target_inside_program_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

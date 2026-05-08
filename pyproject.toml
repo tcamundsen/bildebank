@@ -9,6 +9,12 @@ description = "Konservativt bildesorteringsprogram for å samle bilder og videoe
 requires-python = ">=3.13"
 dependencies = []
 
+[project.optional-dependencies]
+face = [
+    "insightface==0.7.3",
+    "onnxruntime",
+]
+
 [project.scripts]
 bildebank = "bilder.cli:main"
 
