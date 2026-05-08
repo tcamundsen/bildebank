@@ -57,16 +57,9 @@ def validate_source_target(source: Path, target: Path) -> None:
 def validate_new_directory_source(conn, source: Path) -> None:
     source_resolved = source.resolve()
     for registered in db.get_sources(conn):
-        if registered.kind != "directory":
-            continue
         registered_path = registered.path.resolve()
         if _same_path(source_resolved, registered_path):
             raise ValueError(f"Kildemappen er allerede registrert: {registered.path}")
-        if _is_same_or_under(source_resolved, registered_path):
-            raise ValueError(
-                "Kildemappen ligger under en allerede registrert kildemappe: "
-                f"{registered.path}"
-            )
 
 
 def _same_path(left: Path, right: Path) -> bool:
@@ -268,21 +261,7 @@ def iter_media_files(root: Path):
 
 
 def covered_imported_subsources(conn, source: db.Source) -> list[db.Source]:
-    if source.kind != "directory":
-        return []
-    source_root = source.path.resolve()
-    covered: list[db.Source] = []
-    for candidate in db.get_sources(conn):
-        if candidate.id == source.id or candidate.kind != "directory":
-            continue
-        if candidate.status == "superseded" or candidate.imported_at is None:
-            continue
-        candidate_path = candidate.path.resolve()
-        if candidate_path == source_root:
-            continue
-        if _is_relative_to(candidate_path, source_root):
-            covered.append(candidate)
-    return covered
+    return []
 
 
 def is_under_any(path: Path, roots: list[Path]) -> bool:
@@ -331,7 +310,6 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
             taken_date=_date_string(date),
             date_source=date.source,
             name_conflict=name_conflict,
-            source_kind="already-present",
         )
         stats.skipped_existing += 1
         if name_conflict:

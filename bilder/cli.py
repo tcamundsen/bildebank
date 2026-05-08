@@ -56,7 +56,6 @@ HELP_COMMAND_GROUPS = (
         (
             ("remove", "Flytt en importert fil til deleted/"),
             ("unimport", "Reverser en tidligere importert kilde"),
-            ("remove-source", "Fjern en kilde uten aktiv import"),
             ("list-removed", "List filer som er flyttet til deleted/"),
         ),
     ),
@@ -220,19 +219,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Vis hva som ville blitt gjort uten å slette filer eller endre databasen",
     )
     unimport.add_argument("path", metavar="mappe", nargs="?", type=Path, help="Vanlig kildemappe som skal reverseres")
-    remove_source = add_command(
-        subparsers,
-        "remove-source",
-        usage="bildebank remove-source [valg] [mappe]",
-        help="Fjern en registrert kilde som ikke har aktiv import",
-    )
-    remove_source.add_argument("--name", help="Navn på flyttbart medium som skal fjernes")
-    remove_source.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Vis hva som ville blitt gjort uten å endre databasen",
-    )
-    remove_source.add_argument("path", metavar="mappe", nargs="?", type=Path, help="Vanlig kildemappe som skal fjernes")
     remove = add_command(
         subparsers,
         "remove",
@@ -496,7 +482,6 @@ def run(args: argparse.Namespace) -> int:
         if not (
             (args.command == "import-removable" and args.dry_run)
             or (args.command == "unimport" and args.dry_run)
-            or (args.command == "remove-source" and args.dry_run)
         ):
             db.log_command(conn, args.command, vars_for_log(args))
         if args.command == "add":
@@ -524,7 +509,7 @@ def run(args: argparse.Namespace) -> int:
                 raise ValueError(f"Kilden finnes ikke som mappe: {source}")
             validate_source_target(source, target)
             with TargetLock(target, command="import"):
-                source_id = db.add_removable_source(conn, source, args.name)
+                source_id = db.add_named_source(conn, source, args.name)
                 conn.commit()
                 print(f"Registrert kilde #{source_id}: {args.name} ({source})")
                 source_row = db.get_source(conn, source_id)
@@ -542,12 +527,11 @@ def run(args: argparse.Namespace) -> int:
 
         if args.command == "list-sources":
             for source in db.get_sources(conn):
-                label = source.name if source.name else source.path
                 imported = source.imported_at or "-"
                 superseded_by = source.superseded_by_source_id or "-"
                 print(
-                    f"{source.id}\t{source.kind}\t{source.status}\t"
-                    f"{imported}\t{superseded_by}\t{label}"
+                    f"{source.id}\t{source.status}\t"
+                    f"{imported}\t{superseded_by}\t{source.name}\t{source.path}"
                 )
             return 0
 
@@ -588,7 +572,7 @@ def run(args: argparse.Namespace) -> int:
             if source.status == "superseded":
                 raise ValueError(
                     "Kan ikke unimportere en superseded kilde. "
-                    f"Bruk remove-source for å fjerne kilden fra kildelisten: {source.path}"
+                    f"Kilden er dekket av en annen import: {source.path}"
                 )
             with TargetLock(target, command="unimport"):
                 plan = db.build_unimport_plan(conn, source)
@@ -610,37 +594,6 @@ def run(args: argparse.Namespace) -> int:
                 conn.commit()
             print("Unimport gjennomført.")
             print("Kilden er fjernet fra kildelisten.")
-            return 0
-
-        if args.command == "remove-source":
-            source = resolve_source_for_unimport_or_remove(conn, args.path, args.name, command="remove-source")
-            if source.status == "superseded":
-                plan = db.build_remove_superseded_source_plan(conn, source)
-                validate_remove_superseded_source_files(conn, plan)
-                print_remove_superseded_source_plan(plan)
-                if args.dry_run:
-                    print("Dry-run: ingen endringer er gjort.")
-                    return 0
-                with TargetLock(target, command="remove-source"):
-                    db.apply_remove_superseded_source(conn, plan)
-                    conn.commit()
-                print(f"Fjernet superseded kilde #{source.id}: {source.path}")
-                return 0
-            active_count = db.active_file_source_count(conn, source.id)
-            if active_count:
-                raise ValueError(
-                    "Kilden har fortsatt aktive importerte filer. "
-                    f"Kjør først: {unimport_command_for_source(source)}"
-                )
-            if args.dry_run:
-                print(f"Kilde: {source.name or source.path}")
-                print("Kilden kan fjernes fra kildelisten.")
-                print("Dry-run: ingen endringer er gjort.")
-                return 0
-            with TargetLock(target, command="remove-source"):
-                db.remove_source(conn, source.id)
-                conn.commit()
-            print(f"Fjernet kilde #{source.id}: {source.name or source.path}")
             return 0
 
         if args.command == "remove":
@@ -800,7 +753,7 @@ def resolve_source_arg(conn, path: Path) -> db.Source:
     if not sources:
         raise ValueError(f"Fant ikke registrert kilde: {path}")
     if len(sources) > 1:
-        labels = ", ".join(f"#{source.id} {source.name or source.path}" for source in sources)
+        labels = ", ".join(f"#{source.id} {source.name}" for source in sources)
         raise ValueError(f"Kilden matcher flere registrerte kilder: {labels}")
     return sources[0]
 
@@ -811,43 +764,28 @@ def resolve_source_for_unimport_or_remove(
     if name and path is not None:
         raise ValueError("Bruk enten --name eller mappe, ikke begge deler.")
     if name:
-        source = db.find_removable_source_by_name(conn, name)
+        source = db.find_source_by_name(conn, name)
         if source is None:
-            raise ValueError(f"Fant ikke flyttbart medium med navn: {name}")
+            raise ValueError(f"Fant ikke kilde med navn: {name}")
         return source
     if path is None:
-        raise ValueError(f"Du må angi mappe, eller --name for flyttbart medium: bildebank {command} --name NAVN")
+        raise ValueError(f"Du må angi --name NAVN eller mappe: bildebank {command} --name NAVN")
 
     source_path = existing_path_arg(path).resolve()
     if not source_path.exists() or not source_path.is_dir():
         raise ValueError(f"Kilden finnes ikke som mappe: {source_path}")
-    source = resolve_source_arg(conn, source_path)
-    if source.kind == "removable":
-        raise ValueError(
-            "Kilden er et flyttbart medium og må angis med --name:\n"
-            f'  bildebank {command} --name "{source.name}"'
-        )
-    return source
-
-
-def unimport_command_for_source(source: db.Source) -> str:
-    if source.kind == "removable":
-        return f'bildebank unimport --name "{source.name}"'
-    return f"bildebank unimport {source.path}"
+    return resolve_source_arg(conn, source_path)
 
 
 def validate_unimport_source_files(conn, source: db.Source) -> None:
     for row in db.source_file_sources(conn, source.id):
         source_path = Path(str(row["source_path"]))
         if not source_path.exists():
-            if source.kind == "removable":
-                raise ValueError(
-                    f"Kildefil mangler: {source_path}\n"
-                    "Dette er et flyttbart medium. Sjekk at riktig USB-disk, CD "
-                    "eller minnekort er satt inn, og at det har samme stasjon/path "
-                    "som da importen ble kjørt."
-                )
-            raise ValueError(f"Kildefil mangler: {source_path}")
+            raise ValueError(
+                f"Kildefil mangler: {source_path}\n"
+                "Sjekk at riktig mappe, USB-disk, CD eller minnekort er tilgjengelig, "
+                "og at det har samme stasjon/path som da importen ble kjørt."
+            )
         if not source_path.is_file():
             raise ValueError(f"Kildefil er ikke en fil: {source_path}")
         size_bytes = source_path.stat().st_size
@@ -881,48 +819,6 @@ def print_unimport_plan(plan: db.UnimportPlan) -> None:
 
 def print_unimport_dry_run_note(source: db.Source) -> None:
     print("Kilden ville blitt fjernet fra kildelisten.")
-
-
-def validate_remove_superseded_source_files(
-    conn, plan: db.RemoveSupersededSourcePlan
-) -> None:
-    parent = plan.superseding_source.path.resolve()
-    for row in db.source_file_sources(conn, plan.source.id):
-        source_path = Path(str(row["source_path"])).resolve()
-        try:
-            source_path.relative_to(parent)
-        except ValueError as exc:
-            raise ValueError(
-                "Kildefil fra superseded kilde ligger ikke under overordnet kilde: "
-                f"{source_path}"
-            ) from exc
-        if not source_path.exists():
-            raise ValueError(f"Kildefil mangler under overordnet kilde: {source_path}")
-        if not source_path.is_file():
-            raise ValueError(f"Kildefil er ikke en fil: {source_path}")
-        size_bytes = source_path.stat().st_size
-        if size_bytes != int(row["size_bytes"]):
-            raise ValueError(
-                f"Kildefil har endret størrelse under overordnet kilde: {source_path} "
-                f"(nå {size_bytes}, forventet {row['size_bytes']})"
-            )
-        file_hash = sha256_file(source_path)
-        if file_hash != row["sha256"]:
-            raise ValueError(
-                f"Kildefil har endret innhold under overordnet kilde: {source_path}"
-            )
-
-
-def print_remove_superseded_source_plan(plan: db.RemoveSupersededSourcePlan) -> None:
-    print(f"Kilde: {plan.source.path}")
-    print(f"Erstattet av: {plan.superseding_source.path}")
-    print(f"Registrerte kildefiler kontrollert: {plan.source_file_count}")
-    print(
-        "Rader som allerede finnes på overordnet kilde: "
-        f"{plan.already_represented_count}"
-    )
-    print(f"Rader som omregistreres til overordnet kilde: {plan.reassign_count}")
-    print("Målfiler som slettes: 0")
 
 
 def validate_target_not_in_program_repo(target: Path) -> None:
@@ -989,7 +885,7 @@ def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
     output_path = args.log_file.resolve() if args.log_file else None
     conn = db.connect(target)
     try:
-        existing = db.find_removable_source_by_name(conn, args.name)
+        existing = db.find_source_by_name(conn, args.name)
         if existing is not None and existing.imported_at is not None:
             raise ValueError(
                 f"Kilde med navn {args.name!r} er allerede importert som "
@@ -997,7 +893,6 @@ def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
             )
         source_row = db.Source(
             id=0,
-            kind="removable",
             path=source,
             path_key=None,
             name=args.name,
@@ -1045,6 +940,10 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  fjerne legacy-tabellen duplicate_findings")
     if plan.rebuilds_errors_without_source_fk:
         print("  bygge om errors slik at source-historikk ikke blokkerer sletting")
+    if plan.rebuilds_sources_without_kind:
+        print("  bygge om sources uten kind og gi alle kilder navn")
+    if plan.rebuilds_file_sources_without_kind:
+        print("  bygge om file_sources uten kind")
     print("Vil lage backup før endring.")
     if check:
         print("Ingen endringer er gjort (--check).")
@@ -1076,6 +975,10 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Fjerner legacy-tabellen duplicate_findings.")
     if result.rebuilds_errors_without_source_fk:
         print("Bygger om errors uten foreign key til sources.")
+    if result.rebuilds_sources_without_kind:
+        print("Bygger om sources uten kind og med name NOT NULL.")
+    if result.rebuilds_file_sources_without_kind:
+        print("Bygger om file_sources uten kind.")
     print(f"Setter schema_version={result.target_version}.")
     print("Ferdig. Databasen er migrert.")
     return 0
@@ -1208,7 +1111,6 @@ def print_source_item(row) -> None:
     print(f"Kildefil: {source_path}")
     print(f"Kildefil finnes: {'ja' if source_path.exists() else 'nei'}")
     print(f"Kilde-id: {row['source_id']}")
-    print(f"Kildetype: {row['source_kind']}")
     print(f"Kilde: {source_label}")
     print(f"Kildestatus: {row['source_status']}")
     print(f"Originalt filnavn: {row['original_filename']}")
@@ -1235,11 +1137,10 @@ def print_source_items(rows: list) -> None:
     print("Kildefiler:")
     for row in rows:
         source_path = Path(str(row["source_path"]))
-        source_label = row["source_name"] or row["source_root"]
-        print(f"- {row['source_kind_label']}: {source_path}")
+        source_label = row["source_name"]
+        print(f"- {source_path}")
         print(f"  finnes: {'ja' if source_path.exists() else 'nei'}")
         print(f"  kilde-id: {row['source_id']}")
-        print(f"  kildetype: {row['source_kind']}")
         print(f"  kilde: {source_label}")
         print(f"  kildestatus: {row['source_status']}")
 

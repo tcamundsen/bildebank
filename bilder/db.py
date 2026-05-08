@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from pathlib import PureWindowsPath
 from typing import Any, Iterable
 
 
 DB_FILENAME = ".bilder.sqlite3"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
 
 
@@ -49,6 +51,8 @@ class MigrationPlan:
     rebuilds_files_without_legacy_source_columns: bool = False
     drops_duplicate_findings: bool = False
     rebuilds_errors_without_source_fk: bool = False
+    rebuilds_sources_without_kind: bool = False
+    rebuilds_file_sources_without_kind: bool = False
 
 
 def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection:
@@ -77,11 +81,14 @@ def schema_version(conn: sqlite3.Connection) -> int:
 def require_current_schema(conn: sqlite3.Connection) -> None:
     version = schema_version(conn)
     if version == SCHEMA_VERSION:
-        if not table_exists(conn, "file_sources"):
+        try:
+            validate_current_schema(conn)
+        except ValueError as exc:
             raise SchemaMigrationRequired(
-                f"Databasen mangler tabellen file_sources selv om schema_version er {SCHEMA_VERSION}. "
+                f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v4-struktur.\n"
+                f"{exc}\n"
                 "Kjør bildebank migrate før du gjør endringer."
-            )
+            ) from exc
         return
     if version < SCHEMA_VERSION:
         raise SchemaMigrationRequired(
@@ -162,16 +169,13 @@ def apply_schema(conn: sqlite3.Connection) -> None:
 
         CREATE TABLE IF NOT EXISTS sources (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            kind TEXT NOT NULL CHECK (kind IN ('directory', 'removable')),
             path TEXT NOT NULL,
             path_key TEXT,
-            name TEXT,
+            name TEXT NOT NULL UNIQUE,
             added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             imported_at TEXT,
             status TEXT NOT NULL DEFAULT 'pending',
-            superseded_by_source_id INTEGER REFERENCES sources(id),
-            UNIQUE(kind, path_key),
-            UNIQUE(kind, name)
+            superseded_by_source_id INTEGER REFERENCES sources(id)
         );
 
         CREATE TABLE IF NOT EXISTS files (
@@ -200,7 +204,6 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             source_path_key TEXT NOT NULL,
             sha256 TEXT NOT NULL,
             size_bytes INTEGER NOT NULL,
-            kind TEXT NOT NULL CHECK (kind IN ('imported', 'duplicate', 'already-present')),
             recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(source_id, source_path_key)
         );
@@ -233,7 +236,6 @@ def create_file_sources_schema(conn: sqlite3.Connection) -> None:
             source_path_key TEXT NOT NULL,
             sha256 TEXT NOT NULL,
             size_bytes INTEGER NOT NULL,
-            kind TEXT NOT NULL CHECK (kind IN ('imported', 'duplicate', 'already-present')),
             recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(source_id, source_path_key)
         );
@@ -253,7 +255,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 f"Databasen bruker et nyere format (schema_version={version}) enn programmet støtter."
             )
         if version == SCHEMA_VERSION:
-            validate_file_sources_schema(conn)
+            validate_current_schema(conn)
             return MigrationPlan(
                 current_version=version,
                 target_version=SCHEMA_VERSION,
@@ -264,6 +266,8 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
         if validate:
             validate_pre_migration(conn, version)
         file_columns = table_columns(conn, "files") if table_exists(conn, "files") else set()
+        source_columns = table_columns(conn, "sources") if table_exists(conn, "sources") else set()
+        file_source_columns = table_columns(conn, "file_sources") if table_exists(conn, "file_sources") else set()
         return MigrationPlan(
             current_version=version,
             target_version=SCHEMA_VERSION,
@@ -276,6 +280,9 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             drops_duplicate_findings=table_exists(conn, "duplicate_findings"),
             rebuilds_errors_without_source_fk=table_exists(conn, "errors")
             and bool(conn.execute("PRAGMA foreign_key_list(errors)").fetchall()),
+            rebuilds_sources_without_kind=bool("kind" in source_columns)
+            or not source_name_is_not_null(conn),
+            rebuilds_file_sources_without_kind=bool("kind" in file_source_columns),
         )
     finally:
         conn.close()
@@ -294,7 +301,7 @@ def migrate_database(target: Path) -> MigrationPlan:
     try:
         version = schema_version(conn)
         if version == SCHEMA_VERSION:
-            validate_file_sources_schema(conn)
+            validate_current_schema(conn)
             return MigrationPlan(
                 current_version=version,
                 target_version=SCHEMA_VERSION,
@@ -307,26 +314,35 @@ def migrate_database(target: Path) -> MigrationPlan:
         duplicate_findings = count_rows(conn, "duplicate_findings")
         creates_file_sources = not table_exists(conn, "file_sources")
         file_columns = table_columns(conn, "files")
+        source_columns = table_columns(conn, "sources")
+        file_source_columns = table_columns(conn, "file_sources") if table_exists(conn, "file_sources") else set()
         rebuilds_files = bool({"source_id", "source_path", "source_path_key"} & file_columns)
         drops_duplicate_findings = table_exists(conn, "duplicate_findings")
         rebuilds_errors = table_exists(conn, "errors") and bool(
             conn.execute("PRAGMA foreign_key_list(errors)").fetchall()
         )
+        rebuilds_sources = bool("kind" in source_columns) or not source_name_is_not_null(conn)
+        rebuilds_file_sources = bool("kind" in file_source_columns)
         try:
             conn.execute("PRAGMA foreign_keys = OFF")
             conn.execute("BEGIN IMMEDIATE")
             ensure_compatible_columns(conn)
             create_file_sources_schema(conn)
-            validate_file_sources_schema(conn)
+            if "kind" in table_columns(conn, "file_sources"):
+                validate_legacy_file_sources_schema(conn)
+            else:
+                validate_file_sources_schema(conn)
             if {"source_id", "source_path", "source_path_key"} <= table_columns(conn, "files"):
                 backfill_file_sources(conn)
             rebuild_files_without_legacy_source_columns(conn)
             rebuild_errors_without_source_fk(conn)
+            rebuild_sources_without_kind(conn)
+            rebuild_file_sources_without_kind(conn)
             if table_exists(conn, "duplicate_findings"):
                 conn.execute("DROP TABLE duplicate_findings")
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
-            validate_file_sources_schema(conn)
+            validate_current_schema(conn)
             foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
             if foreign_key_errors:
                 raise ValueError(f"foreign_key_check feilet: {foreign_key_errors[0]}")
@@ -348,13 +364,15 @@ def migrate_database(target: Path) -> MigrationPlan:
             rebuilds_files_without_legacy_source_columns=rebuilds_files,
             drops_duplicate_findings=drops_duplicate_findings,
             rebuilds_errors_without_source_fk=rebuilds_errors,
+            rebuilds_sources_without_kind=rebuilds_sources,
+            rebuilds_file_sources_without_kind=rebuilds_file_sources,
         )
     finally:
         conn.close()
 
 
 def validate_pre_migration(conn: sqlite3.Connection, version: int) -> None:
-    if version not in {1, 2}:
+    if version not in {1, 2, 3}:
         raise ValueError(f"Kan ikke migrere database med schema_version={version}.")
     required_tables = {"meta", "sources", "files", "errors"}
     if version == 1:
@@ -365,7 +383,7 @@ def validate_pre_migration(conn: sqlite3.Connection, version: int) -> None:
     if version == 1:
         validate_existing_file_source_references(conn)
     if table_exists(conn, "file_sources"):
-        validate_file_sources_schema(conn)
+        validate_legacy_file_sources_schema(conn)
 
 
 def validate_existing_file_source_references(conn: sqlite3.Connection) -> None:
@@ -433,7 +451,27 @@ def validate_existing_file_source_references(conn: sqlite3.Connection) -> None:
         )
 
 
-def validate_file_sources_schema(conn: sqlite3.Connection) -> None:
+def source_name_is_not_null(conn: sqlite3.Connection) -> bool:
+    if not table_exists(conn, "sources"):
+        return False
+    for row in conn.execute("PRAGMA table_info(sources)"):
+        if row["name"] == "name":
+            return bool(row["notnull"])
+    return False
+
+
+def validate_current_schema(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "sources"):
+        raise ValueError("Databasen mangler tabellen sources.")
+    source_columns = table_columns(conn, "sources")
+    if "kind" in source_columns:
+        raise ValueError("sources inneholder gammel kind-kolonne. Kjør bildebank migrate.")
+    if "name" not in source_columns or not source_name_is_not_null(conn):
+        raise ValueError("sources.name er ikke påkrevd. Kjør bildebank migrate.")
+    validate_file_sources_schema(conn)
+
+
+def validate_legacy_file_sources_schema(conn: sqlite3.Connection) -> None:
     if not table_exists(conn, "file_sources"):
         raise ValueError("Databasen mangler tabellen file_sources.")
     required_columns = {
@@ -453,6 +491,27 @@ def validate_file_sources_schema(conn: sqlite3.Connection) -> None:
         raise ValueError(f"file_sources mangler forventede kolonner: {', '.join(missing)}")
 
 
+def validate_file_sources_schema(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "file_sources"):
+        raise ValueError("Databasen mangler tabellen file_sources.")
+    required_columns = {
+        "id",
+        "file_id",
+        "source_id",
+        "source_path",
+        "source_path_key",
+        "sha256",
+        "size_bytes",
+        "recorded_at",
+    }
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(file_sources)")}
+    missing = sorted(required_columns - columns)
+    if missing:
+        raise ValueError(f"file_sources mangler forventede kolonner: {', '.join(missing)}")
+    if "kind" in columns:
+        raise ValueError("file_sources inneholder gammel kind-kolonne. Kjør bildebank migrate.")
+
+
 def backfill_file_sources(conn: sqlite3.Connection) -> None:
     for row in conn.execute(
         """
@@ -469,7 +528,6 @@ def backfill_file_sources(conn: sqlite3.Connection) -> None:
             source_path_key=str(row["source_path_key"]),
             sha256=str(row["sha256"]),
             size_bytes=int(row["size_bytes"]),
-            kind="imported",
         )
 
     if table_exists(conn, "duplicate_findings"):
@@ -495,7 +553,6 @@ def backfill_file_sources(conn: sqlite3.Connection) -> None:
                 source_path_key=str(row["source_path_key"]),
                 sha256=str(row["sha256"]),
                 size_bytes=int(row["size_bytes"]),
-                kind="duplicate",
             )
 
 
@@ -582,6 +639,119 @@ def rebuild_errors_without_source_fk(conn: sqlite3.Connection) -> None:
     )
 
 
+def default_source_name(path_value: str) -> str:
+    raw = path_value.strip()
+    drive = re.match(r"^([A-Za-z]):[\\/]*$", raw)
+    if drive:
+        return drive.group(1).upper()
+    if "\\" in raw or re.match(r"^[A-Za-z]:", raw):
+        candidate = PureWindowsPath(raw).name
+        if candidate:
+            return candidate
+        if PureWindowsPath(raw).drive:
+            return PureWindowsPath(raw).drive.rstrip(":\\/")
+    candidate = Path(raw).name
+    if candidate:
+        return candidate
+    stripped = raw.strip("\\/")
+    return stripped or "kilde"
+
+
+def unique_source_name(base: str, used: set[str]) -> str:
+    name = base
+    index = 1
+    while name in used:
+        name = f"{base}-{index}"
+        index += 1
+    used.add(name)
+    return name
+
+
+def rebuild_sources_without_kind(conn: sqlite3.Connection) -> None:
+    columns = table_columns(conn, "sources")
+    needs_rebuild = "kind" in columns or not source_name_is_not_null(conn)
+    if not needs_rebuild:
+        return
+    rows = conn.execute("SELECT * FROM sources ORDER BY id").fetchall()
+    used: set[str] = set()
+    named_rows: list[tuple[int, str, str | None, str, str | None, str, int | None]] = []
+    for row in rows:
+        existing_name = row["name"] if "name" in row.keys() else None
+        base = str(existing_name).strip() if existing_name else default_source_name(str(row["path"]))
+        name = unique_source_name(base, used)
+        named_rows.append(
+            (
+                int(row["id"]),
+                str(row["path"]),
+                row["path_key"] if "path_key" in row.keys() else path_key(Path(str(row["path"]))),
+                name,
+                str(row["added_at"]),
+                row["imported_at"],
+                str(row["status"]),
+                row["superseded_by_source_id"] if "superseded_by_source_id" in row.keys() else None,
+            )
+        )
+    conn.executescript(
+        """
+        CREATE TABLE sources_v4 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL,
+            path_key TEXT,
+            name TEXT NOT NULL UNIQUE,
+            added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            imported_at TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            superseded_by_source_id INTEGER REFERENCES sources(id)
+        );
+        """
+    )
+    conn.executemany(
+        """
+        INSERT INTO sources_v4(
+            id, path, path_key, name, added_at, imported_at, status, superseded_by_source_id
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        named_rows,
+    )
+    conn.executescript(
+        """
+        DROP TABLE sources;
+        ALTER TABLE sources_v4 RENAME TO sources;
+        """
+    )
+
+
+def rebuild_file_sources_without_kind(conn: sqlite3.Connection) -> None:
+    if "kind" not in table_columns(conn, "file_sources"):
+        return
+    conn.executescript(
+        """
+        CREATE TABLE file_sources_v4 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL REFERENCES files(id),
+            source_id INTEGER NOT NULL REFERENCES sources(id),
+            source_path TEXT NOT NULL,
+            source_path_key TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(source_id, source_path_key)
+        );
+
+        INSERT INTO file_sources_v4(
+            id, file_id, source_id, source_path, source_path_key, sha256, size_bytes, recorded_at
+        )
+        SELECT id, file_id, source_id, source_path, source_path_key, sha256, size_bytes, recorded_at
+        FROM file_sources;
+
+        DROP TABLE file_sources;
+        ALTER TABLE file_sources_v4 RENAME TO file_sources;
+        CREATE INDEX IF NOT EXISTS idx_file_sources_file_id ON file_sources(file_id);
+        CREATE INDEX IF NOT EXISTS idx_file_sources_sha256 ON file_sources(sha256);
+        """
+    )
+
+
 def ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
     columns = table_columns(conn, table)
     if column not in columns:
@@ -606,10 +776,9 @@ def log_command(conn: sqlite3.Connection, command: str, args: dict[str, Any]) ->
 @dataclass(frozen=True)
 class Source:
     id: int
-    kind: str
     path: Path
     path_key: str | None
-    name: str | None
+    name: str
     imported_at: str | None
     status: str
     superseded_by_source_id: int | None
@@ -624,24 +793,12 @@ class UnimportPlan:
     target_paths_to_delete: tuple[Path, ...]
 
 
-@dataclass(frozen=True)
-class RemoveSupersededSourcePlan:
-    source: Source
-    superseding_source: Source
-    source_file_count: int
-    already_represented_count: int
-    reassign_count: int
-    file_source_ids_to_delete: tuple[int, ...]
-    file_source_ids_to_reassign: tuple[int, ...]
-
-
 def row_to_source(row: sqlite3.Row) -> Source:
     return Source(
         id=int(row["id"]),
-        kind=str(row["kind"]),
         path=Path(str(row["path"])),
         path_key=row["path_key"],
-        name=row["name"],
+        name=str(row["name"]),
         imported_at=row["imported_at"],
         status=row["status"],
         superseded_by_source_id=row["superseded_by_source_id"],
@@ -679,9 +836,9 @@ def find_sources_by_path(conn: sqlite3.Connection, path: Path) -> list[Source]:
     return [row_to_source(row) for row in rows]
 
 
-def find_removable_source_by_name(conn: sqlite3.Connection, name: str) -> Source | None:
+def find_source_by_name(conn: sqlite3.Connection, name: str) -> Source | None:
     row = conn.execute(
-        "SELECT * FROM sources WHERE kind = 'removable' AND name = ?",
+        "SELECT * FROM sources WHERE name = ?",
         (name,),
     ).fetchone()
     return row_to_source(row) if row is not None else None
@@ -698,7 +855,6 @@ def source_file_sources(conn: sqlite3.Connection, source_id: int) -> list[sqlite
                 file_sources.source_path_key,
                 file_sources.sha256,
                 file_sources.size_bytes,
-                file_sources.kind,
                 files.target_path,
                 files.deleted_at
             FROM file_sources
@@ -724,23 +880,9 @@ def active_file_source_count(conn: sqlite3.Connection, source_id: int) -> int:
     )
 
 
-def add_directory_source(conn: sqlite3.Connection, path: Path) -> int:
-    key = path_key(path)
-    cur = conn.execute(
-        """
-        INSERT INTO sources(kind, path, path_key)
-        VALUES('directory', ?, ?)
-        ON CONFLICT(kind, path_key) DO UPDATE SET path = excluded.path
-        RETURNING id
-        """,
-        (str(path.resolve()), key),
-    )
-    return int(cur.fetchone()["id"])
-
-
-def add_removable_source(conn: sqlite3.Connection, path: Path, name: str) -> int:
+def add_named_source(conn: sqlite3.Connection, path: Path, name: str) -> int:
     existing = conn.execute(
-        "SELECT id, path, imported_at FROM sources WHERE kind = 'removable' AND name = ?",
+        "SELECT id, path, imported_at FROM sources WHERE name = ?",
         (name,),
     ).fetchone()
     if existing is not None and existing["imported_at"] is not None:
@@ -750,12 +892,26 @@ def add_removable_source(conn: sqlite3.Connection, path: Path, name: str) -> int
         )
     cur = conn.execute(
         """
-        INSERT INTO sources(kind, path, name)
-        VALUES('removable', ?, ?)
-        ON CONFLICT(kind, name) DO UPDATE SET path = excluded.path
+        INSERT INTO sources(path, path_key, name)
+        VALUES(?, ?, ?)
+        ON CONFLICT(name) DO UPDATE SET path = excluded.path, path_key = excluded.path_key
         RETURNING id
         """,
-        (str(path.resolve()), name),
+        (str(path.resolve()), path_key(path), name),
+    )
+    return int(cur.fetchone()["id"])
+
+
+def add_directory_source(conn: sqlite3.Connection, path: Path) -> int:
+    used = {str(row["name"]) for row in conn.execute("SELECT name FROM sources")}
+    name = unique_source_name(default_source_name(str(path.resolve())), used)
+    cur = conn.execute(
+        """
+        INSERT INTO sources(path, path_key, name)
+        VALUES(?, ?, ?)
+        RETURNING id
+        """,
+        (str(path.resolve()), path_key(path), name),
     )
     return int(cur.fetchone()["id"])
 
@@ -789,7 +945,6 @@ def insert_imported_file(
     taken_date: str | None,
     date_source: str,
     name_conflict: bool,
-    source_kind: str = "imported",
 ) -> int:
     try:
         if "source_id" in table_columns(conn, "files"):
@@ -847,7 +1002,6 @@ def insert_imported_file(
             source_path_key=path_key(source_path),
             sha256=sha256,
             size_bytes=size_bytes,
-            kind=source_kind,
         )
         return file_id
     except sqlite3.IntegrityError as exc:
@@ -873,7 +1027,6 @@ def insert_duplicate(
         source_path_key=path_key(source_path),
         sha256=sha256,
         size_bytes=size_bytes,
-        kind="duplicate",
     )
 
 
@@ -886,11 +1039,10 @@ def insert_or_validate_file_source(
     source_path_key: str,
     sha256: str,
     size_bytes: int,
-    kind: str,
 ) -> None:
     existing = conn.execute(
         """
-        SELECT file_id, source_path, sha256, size_bytes, kind
+        SELECT file_id, source_path, sha256, size_bytes
         FROM file_sources
         WHERE source_id = ? AND source_path_key = ?
         """,
@@ -903,7 +1055,6 @@ def insert_or_validate_file_source(
             "source_path": source_path,
             "sha256": sha256,
             "size_bytes": size_bytes,
-            "kind": kind,
         }
         for key, value in expected.items():
             if existing[key] != value:
@@ -919,10 +1070,10 @@ def insert_or_validate_file_source(
     conn.execute(
         """
         INSERT INTO file_sources(
-            file_id, source_id, source_path, source_path_key, sha256, size_bytes, kind
-        ) VALUES(?, ?, ?, ?, ?, ?, ?)
+            file_id, source_id, source_path, source_path_key, sha256, size_bytes
+        ) VALUES(?, ?, ?, ?, ?, ?)
         """,
-        (file_id, source_id, source_path, source_path_key, sha256, size_bytes, kind),
+        (file_id, source_id, source_path, source_path_key, sha256, size_bytes),
     )
 
 
@@ -1063,94 +1214,6 @@ def apply_unimport(conn: sqlite3.Connection, plan: UnimportPlan) -> None:
     conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
 
 
-def build_remove_superseded_source_plan(
-    conn: sqlite3.Connection, source: Source
-) -> RemoveSupersededSourcePlan:
-    if source.status != "superseded" or source.superseded_by_source_id is None:
-        raise ValueError(f"Kilden er ikke superseded: {source.path}")
-    superseding_source = get_source(conn, int(source.superseded_by_source_id))
-    delete_ids: list[int] = []
-    reassign_ids: list[int] = []
-    rows = source_file_sources(conn, source.id)
-    for row in rows:
-        existing = conn.execute(
-            """
-            SELECT file_id, source_path, sha256, size_bytes
-            FROM file_sources
-            WHERE source_id = ?
-              AND source_path_key = ?
-            """,
-            (superseding_source.id, row["source_path_key"]),
-        ).fetchone()
-        if existing is None:
-            reassign_ids.append(int(row["id"]))
-            continue
-        mismatches = []
-        for key in ("file_id", "source_path", "sha256", "size_bytes"):
-            if existing[key] != row[key]:
-                mismatches.append(f"{key}: eksisterende={existing[key]!r}, forventet={row[key]!r}")
-        if mismatches:
-            raise ValueError(
-                "Konflikt i file_sources ved fjerning av superseded kilde "
-                f"#{source.id}: " + "; ".join(mismatches)
-            )
-        delete_ids.append(int(row["id"]))
-
-    return RemoveSupersededSourcePlan(
-        source=source,
-        superseding_source=superseding_source,
-        source_file_count=len(rows),
-        already_represented_count=len(delete_ids),
-        reassign_count=len(reassign_ids),
-        file_source_ids_to_delete=tuple(delete_ids),
-        file_source_ids_to_reassign=tuple(reassign_ids),
-    )
-
-
-def apply_remove_superseded_source(
-    conn: sqlite3.Connection, plan: RemoveSupersededSourcePlan
-) -> None:
-    if plan.file_source_ids_to_delete:
-        placeholders = ",".join("?" for _ in plan.file_source_ids_to_delete)
-        conn.execute(
-            f"DELETE FROM file_sources WHERE id IN ({placeholders})",
-            list(plan.file_source_ids_to_delete),
-        )
-    if plan.file_source_ids_to_reassign:
-        placeholders = ",".join("?" for _ in plan.file_source_ids_to_reassign)
-        conn.execute(
-            f"""
-            UPDATE file_sources
-            SET source_id = ?
-            WHERE id IN ({placeholders})
-            """,
-            [plan.superseding_source.id, *plan.file_source_ids_to_reassign],
-        )
-    conn.execute(
-        """
-        UPDATE sources
-        SET superseded_by_source_id = ?
-        WHERE superseded_by_source_id = ?
-        """,
-        (plan.superseding_source.id, plan.source.id),
-    )
-    conn.execute("DELETE FROM sources WHERE id = ?", (plan.source.id,))
-
-
-def remove_source(conn: sqlite3.Connection, source_id: int) -> None:
-    conn.execute(
-        """
-        UPDATE sources
-        SET status = 'imported',
-            superseded_by_source_id = NULL
-        WHERE superseded_by_source_id = ?
-          AND imported_at IS NOT NULL
-        """,
-        (source_id,),
-    )
-    conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
-
-
 def count_rows(conn: sqlite3.Connection, table: str) -> int:
     if table not in {"sources", "files", "duplicate_findings", "file_sources", "errors"}:
         raise ValueError(f"Unsupported table: {table}")
@@ -1161,7 +1224,17 @@ def count_rows(conn: sqlite3.Connection, table: str) -> int:
 
 def duplicate_source_count(conn: sqlite3.Connection) -> int:
     return int(
-        conn.execute("SELECT COUNT(*) FROM file_sources WHERE kind = 'duplicate'").fetchone()[0]
+        conn.execute(
+            """
+            SELECT COALESCE(SUM(source_count - 1), 0)
+            FROM (
+                SELECT COUNT(*) AS source_count
+                FROM file_sources
+                GROUP BY file_id
+                HAVING COUNT(*) > 1
+            )
+            """
+        ).fetchone()[0]
     )
 
 
@@ -1204,13 +1277,7 @@ def name_conflicts(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
                 file_sources.*,
                 ROW_NUMBER() OVER (
                     PARTITION BY file_id
-                    ORDER BY
-                        CASE kind
-                            WHEN 'imported' THEN 0
-                            WHEN 'already-present' THEN 1
-                            ELSE 2
-                        END,
-                        id
+                    ORDER BY id
                 ) AS source_rank
             FROM file_sources
         )
@@ -1244,7 +1311,6 @@ def file_sources_by_target_path(conn: sqlite3.Connection, target_path: Path) -> 
             files.id AS file_id,
             file_sources.source_id,
             file_sources.source_path,
-            file_sources.kind AS source_kind_label,
             files.target_path,
             files.original_filename,
             files.stored_filename,
@@ -1254,7 +1320,6 @@ def file_sources_by_target_path(conn: sqlite3.Connection, target_path: Path) -> 
             files.date_source,
             files.name_conflict,
             files.imported_at AS file_imported_at,
-            sources.kind AS source_kind,
             sources.path AS source_root,
             sources.name AS source_name,
             sources.status AS source_status,
@@ -1264,11 +1329,6 @@ def file_sources_by_target_path(conn: sqlite3.Connection, target_path: Path) -> 
         JOIN sources ON sources.id = file_sources.source_id
         WHERE files.target_path_key = ?
         ORDER BY
-            CASE file_sources.kind
-                WHEN 'imported' THEN 0
-                WHEN 'already-present' THEN 1
-                ELSE 2
-            END,
             file_sources.id
         """,
         (path_key(target_path),),
@@ -1291,13 +1351,7 @@ def files_by_original_filename(
                 file_sources.*,
                 ROW_NUMBER() OVER (
                     PARTITION BY file_id
-                    ORDER BY
-                        CASE kind
-                            WHEN 'imported' THEN 0
-                            WHEN 'already-present' THEN 1
-                            ELSE 2
-                        END,
-                        id
+                    ORDER BY id
                 ) AS source_rank
             FROM file_sources
         )
@@ -1333,13 +1387,7 @@ def conflict_candidate_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
                 file_sources.*,
                 ROW_NUMBER() OVER (
                     PARTITION BY file_id
-                    ORDER BY
-                        CASE kind
-                            WHEN 'imported' THEN 0
-                            WHEN 'already-present' THEN 1
-                            ELSE 2
-                        END,
-                        id
+                    ORDER BY id
                 ) AS source_rank
             FROM file_sources
         )
@@ -1373,13 +1421,7 @@ def non_metadata_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
                 file_sources.*,
                 ROW_NUMBER() OVER (
                     PARTITION BY file_id
-                    ORDER BY
-                        CASE kind
-                            WHEN 'imported' THEN 0
-                            WHEN 'already-present' THEN 1
-                            ELSE 2
-                        END,
-                        id
+                    ORDER BY id
                 ) AS source_rank
             FROM file_sources
         )
@@ -1409,13 +1451,7 @@ def deleted_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
                 file_sources.*,
                 ROW_NUMBER() OVER (
                     PARTITION BY file_id
-                    ORDER BY
-                        CASE kind
-                            WHEN 'imported' THEN 0
-                            WHEN 'already-present' THEN 1
-                            ELSE 2
-                        END,
-                        id
+                    ORDER BY id
                 ) AS source_rank
             FROM file_sources
         )

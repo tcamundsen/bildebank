@@ -55,7 +55,7 @@ andre skal feile hvis denne ikke er utført:
 Denne kommandoen oppretter målmappen og initierer en databasefil. Databasen
 skal blant annet inneholde kontroll med:
 
- - registrering av kildemapper
+- registrering av navngitte kilder
  - info om alle bildene i målmappen, for å kunne sjekke etter duplikater.
  - logg over alle kommandoer som har blitt kjørt.
 
@@ -64,19 +64,15 @@ at det kjøres fra målmappen, eller at målmappen angis med
 kommandolinjeparameteren `--target=/path/to/målmappe`
 Brukeren bør alltid kjøre `bildebank` fra målmappen for å gjøre et enkelt for seg.
 
-Legge en mappe til listen over kildemapper:
+Importere en kilde direkte:
 
-    $ bildebank add /path/to/directory
-
-Scanne alle registrerte kildemapper:
-
-    $ bildebank import
-    $ bildebank import --dry-run
-    $ bildebank import --dry-run --log-file=importliste.txt
+    $ bildebank import --name "sommer2024" /path/to/source
+    $ bildebank import --name "sommer2024" --dry-run /path/to/source
+    $ bildebank import --name "sommer2024" --dry-run --log-file=importliste.txt /path/to/source
 
 `bildebank import` skal vise progresjon underveis, for eksempel ved å vise hvor mange bilder
 som er scannet, og hvor mange som er importert. Scriptet skal tåle å bli avbrutt
-med ctrl-C. Dette gjøres ved at en kildemappe bare kan markeres som importert i databasen når
+med ctrl-C. Dette gjøres ved at en kilde bare kan markeres som importert i databasen når
 hele importen er gjennomført.
 
 Med `--dry-run` skal programmet bare liste filer som ville blitt importert.
@@ -124,21 +120,17 @@ konfliktgruppe med både målfil og opprinnelig kildefil. Kommandoen skal også
 fungere hvis brukeren peker på den første filen i gruppen, altså filen som ikke
 fikk `-1`, `-2` eller tilsvarende suffix.
 
-Legge til og scanne flyttbare medier, som CD-ROM eller usb-brikke. Siden
-det er flyttbare medier, så kan neste scan scanne et annet medium på
-samme path:
+Flyttbare medier, som CD-ROM eller usb-brikke, importeres med samme kommando.
+Siden samme path kan brukes av forskjellige medier på forskjellige tidspunkt,
+er `--name` identiteten til importen:
 
-    $ bildebank import-removable --name="cd-2005" /path/to/media
-    $ bildebank import-removable --name="cd-2005" --dry-run /path/to/media
+    $ bildebank import --name="cd-2005" /path/to/media
+    $ bildebank import --name="cd-2005" --dry-run /path/to/media
 
-`--name` er etiketten som er skrevet på CD-rom, eller en annen måte for
-brukeren å identifisere kilden på. `import-removable` brukes uten `add` først:
-kommandoen både registrerer og importerer det flyttbare mediet i samme steg.
 Med `--dry-run` vises filene som ville blitt importert, uten å registrere
-mediet, kopiere filer eller endre databasen.
+kilden, kopiere filer eller endre databasen.
 
-For å liste opp alle kildemapper, og id for alle flyttbare medier som er 
-lagt til:
+For å liste opp alle registrerte kilder:
 
     $ bildebank list-sources
 
@@ -190,54 +182,6 @@ Når `unimport` kjøres på et flyttbart medium med `--name`, skal source-raden
 fjernes helt etter vellykket reversering. Den skal ikke bli stående som
 `pending`, fordi flere pending flyttbare medier vil skape rot ved neste
 `bildebank import` hvis bare ett av mediene er satt inn.
-
-For å fjerne en kilde fra kildelisten når den ikke har en aktiv import:
-
-    $ bildebank remove-source /path/to/source
-    $ bildebank remove-source --name "cd-2005"
-    $ bildebank remove-source --dry-run /path/to/source
-
-`remove-source` skal fjerne en registrert kilde fra databasen uten å røre
-bildefilene i målmappen eller i kildemappen. Vanlige kildemapper angis med path,
-mens flyttbare medier alltid angis med `--name`. For en vanlig kilde skal
-kommandoen bare lykkes når kilden enten aldri har blitt importert, eller når
-importen allerede er reversert med `unimport`. Hvis en vanlig kilde fortsatt har
-aktive `file_sources`, skal programmet avvise kommandoen og forklare at brukeren
-først må kjøre:
-
-    $ bildebank unimport /path/to/source
-
-Dette skiller mellom to handlinger: `unimport` reverserer en import og kan
-fjerne bilder fra den aktive samlingen, mens `remove-source` bare rydder bort
-en kilde som ikke lenger peker på aktive filer.
-
-For en kilde med `status='superseded'` er regelen annerledes. En slik kilde er
-erstattet av en overordnet kilde i `superseded_by_source_id`, og `unimport` skal
-ikke være lov. `remove-source` skal derimot kunne brukes for å rydde bort den
-gamle underkilden, slik at databasen ser ut som om underkilden aldri ble
-importert separat.
-
-Før `remove-source` sletter en superseded kilde, skal programmet kontrollere
-hver eneste `file_sources`-rad for den kilden:
-
-- Hvis samme kildefil allerede har en tilsvarende `file_sources`-rad på den
-  overordnede kilden, kan raden for den superseded kilden slettes som
-  overflødig.
-- Ellers skal programmet kontrollere at kildefilen ligger under den overordnede
-  kilden, fortsatt finnes, har samme filstørrelse og samme SHA-256, og deretter
-  omregistrere `file_sources`-raden til den overordnede kilden.
-- Hvis filen ikke finnes under den overordnede kilden, eller innholdet ikke er
-  identisk, skal kommandoen avbrytes uten endringer.
-
-Når alle rader enten er slettet som overflødige eller omregistrert til
-overkilden, kan den superseded source-raden slettes. Ingen målfil skal slettes
-som del av `remove-source` på en superseded kilde.
-
-Med `--dry-run` skal programmet ikke endre databasen. Det skal vise hvilken
-kilde som fjernes, hvilken overordnet kilde den er erstattet av, hvor mange
-`file_sources`-rader som allerede finnes på overkilden, hvor mange rader som må
-omregistreres til overkilden, og eventuelle filer som mangler eller ikke matcher
-under overkilden.
 
 For å vise oppsummering av siste import eller hele databasen:
 
@@ -383,15 +327,10 @@ SHA-256 og om kildefilen fortsatt finnes.
 
 ## Om flyttbare medier
 
-Flyttbare medier, som CD-ROM, minnepinner og eksterne disker, må behandles
-annerledes enn vanlige kildemapper. Grunnen er at samme mount path kan brukes
-for forskjellige medier på forskjellige tidspunkt.
-
-Kommandoen `import-removable` scanner derfor en konkret kilde én gang og
-registrerer den med en brukerdefinert etikett i samme operasjon. Den skal
-brukes direkte, uten at brukeren først kjører `add`. Etiketten bør være noe
-brukeren kan kjenne igjen senere, for eksempel teksten som står skrevet på en
-CD-ROM.
+Flyttbare medier, som CD-ROM, minnepinner og eksterne disker, kan få samme
+mount path som et annet medium senere. Derfor skal alle importer ha `--name`.
+Navnet er brukerens stabile identitet for kilden, uansett om kilden er en
+vanlig mappe eller et flyttbart medium.
 
 Etter at scanningen er ferdig, antar ikke programmet at samme medium vil være
 tilgjengelig igjen på samme path.
@@ -410,38 +349,35 @@ målmappen.
 Databasen bør være SQLite. SQLite gir transaksjoner, indekser og trygg lokal
 lagring uten å kreve en separat databaseserver.
 
-## Database v3
+## Database v4
 
 Databasen ligger i målmappen som `.bilder.sqlite3`. Fra schema v2 er
 proveniens normalisert slik at én målfil kan ha flere kildefilforekomster.
 Dette er nødvendig for å kunne vite forskjell på "denne filen finnes bare i én
 kilde" og "denne målfilen er bevist av flere kilder med samme innhold".
 
-Nye databaser som opprettes med schema v3 skal bruke disse tabellene:
+Nye databaser som opprettes med schema v4 skal bruke disse tabellene:
 
 - `meta`: nøkkel/verdi-tabell for database-metadata. Den viktigste verdien er
-  `schema_version`, som skal være `3` for v3-databaser.
+  `schema_version`, som skal være `4` for v4-databaser.
 - `command_log`: logg over kommandoer som har endret eller forsøkt å endre
   databasen.
-- `sources`: registrerte kilder. En kilde kan være en vanlig kildemappe eller
-  et flyttbart medium. Tabellen inneholder blant annet kildetype, path,
-  brukerdefinert navn for flyttbare medier, importstatus og eventuell
-  superseding av underkilder.
+- `sources`: registrerte kilder. Alle kilder har `name TEXT NOT NULL UNIQUE`,
+  path, importstatus og eventuell superseding av eldre underkilder. Det finnes
+  ikke lenger en egen `kind`-kolonne for vanlig mappe kontra flyttbart medium.
 - `files`: målfilene i samlingen. Hver rad beskriver én fil som finnes eller
   har funnet sted i målmappen: målsti, lagret filnavn, originalt filnavn,
   SHA-256, filstørrelse, valgt dato, datokilde, navnekollisjon og eventuell
   slettemarkering.
 - `file_sources`: kildefilforekomstene som beviser målfilene. Hver rad peker
   på én `files`-rad og én `sources`-rad, og inneholder kildefilens path,
-  normalisert path-nøkkel, SHA-256, filstørrelse og type forekomst.
-  `kind='imported'` betyr kildefilen som førte til en ny målfil,
-  `kind='duplicate'` betyr en senere kildefil med samme innhold som en
-  eksisterende målfil, og `kind='already-present'` betyr at riktig målfil
-  allerede lå fysisk i målmappen da importen ble registrert.
+  normalisert path-nøkkel, SHA-256 og filstørrelse. Det finnes ikke lenger en
+  `kind`-kolonne; duplikater/proveniens følger av at én `files`-rad kan ha
+  flere `file_sources`-rader.
 - `errors`: feil som er oppdaget under scanning, import eller senere
   vedlikehold. Feil kan senere markeres som løst med `resolved_at`.
 
-Viktige v3-regler:
+Viktige v4-regler:
 
 - `files` er sannheten om målfilene i samlingen.
 - `file_sources` er sannheten om hvilke kilder som peker på hver målfil.
@@ -449,25 +385,29 @@ Viktige v3-regler:
 - En kildefilforekomst identifiseres unikt med `(source_id, source_path_key)`.
 - Runtime-kode skal lese proveniens fra `file_sources`, ikke fra gamle
   provenienskolonner på `files`.
-- Nye duplikater skal registreres som `file_sources.kind='duplicate'`.
+- Nye duplikater skal registreres som flere `file_sources`-rader som peker på
+  samme `files`-rad.
 
 Schema v1 hadde en enklere proveniensmodell som nå er obsolete:
 
 - `duplicate_findings`: registrerte kildefiler som var eksakte duplikater av
-  en eksisterende målfil. I v2 og v3 erstattes dette av rader i `file_sources`
-  med `kind='duplicate'`. Tabellen skal ikke finnes i v3-databaser.
+  en eksisterende målfil. I v2 og nyere erstattes dette av rader i
+  `file_sources`. Tabellen skal ikke finnes i v4-databaser.
 - `files.source_id`, `files.source_path` og `files.source_path_key`: pekte på
   én "hovedkilde" for målfilen. I v2 ligger alle kildefilforekomster i
-  `file_sources`, også den første/importerte kilden. I v3 er de gamle
+  `file_sources`, også den første/importerte kilden. I v3 og v4 er de gamle
   kolonnene fysisk fjernet fra `files`.
 
-Migrering til v3 skal ta en backup, ta målmappelås og kjøre i én transaksjon.
+Migrering til v4 skal ta en backup, ta målmappelås og kjøre i én transaksjon.
 En gammel v1-database skal først få `file_sources` bygget fra `files` og
-`duplicate_findings`, og deretter ryddes helt opp til v3 i samme migrering.
-En v2-database som fortsatt har fysisk v1-struktur skal også ryddes opp til v3.
+`duplicate_findings`, og deretter ryddes helt opp til v4 i samme migrering.
+En v2- eller v3-database som fortsatt har eldre struktur skal også ryddes opp
+til v4.
 Migreringen skal fjerne `duplicate_findings`, bygge om `files` uten
 `source_id`, `source_path` og `source_path_key`, og bygge om `errors` slik at
-gamle source-referanser ikke blokkerer sletting av kilder. Migreringen skal
+gamle source-referanser ikke blokkerer sletting av kilder. Migreringen skal gi
+navn til gamle navnløse kilder, bygge om `sources` uten `kind`, bygge om
+`file_sources` uten `kind`, og
 først committe etter at `PRAGMA foreign_key_check` og `PRAGMA integrity_check`
 er OK. Hvis en kontroll feiler, skal migreringen rulles tilbake og backupen
 beholdes.
@@ -550,30 +490,22 @@ kildemappe behandles flere ganger når programmet kjøres på nytt.
 Typisk arbeidsflyt:
 
 ```bash
-$ bildebank target /path/to/target/bilder
-$ bildebank add /path/folder/with/images
-$ bildebank import
-$ bildebank add /path/to/more/images
-$ bildebank import
+$ bildebank create /path/to/target/bilder
+$ bildebank import --name "bilder-1" /path/folder/with/images
+$ bildebank import --name "bilder-2" /path/to/more/images
 ```
 
-Etter den andre `bildebank add` i eksempelet over, så skal programmet se i databasen
-at den mappen som ble lagt til først allerede er importert, og bare importere
-bilder fra den andre mappen.
+Hver import har et unikt navn. Programmet bruker navnet til senere kommandoer
+som `unimport`.
 
-Hvis en overmappe legges til etter at en undermappe allerede er importert, skal
-programmet ikke behandle filene fra undermappen som duplikater. Eksempel:
-Hvis `C:\Bilder\2006` er importert først, og `C:\Bilder` legges til senere,
-skal importen av `C:\Bilder` hoppe over filer under `C:\Bilder\2006`. Når
-`C:\Bilder` er ferdig importert uten feil, markeres `C:\Bilder\2006` som
-`superseded` i databasen. Hvis importen av overmappen avbrytes eller feiler,
-skal undermappen fortsatt stå som egen importert kilde.
+Hvis en overmappe importeres etter at en undermappe allerede er importert, skal
+programmet behandle dette som overlappende kilder. Identiske filer skal ikke
+kopieres på nytt, men den nye importen får egne `file_sources`-rader for filene
+den også inneholder. Da kan brukeren senere kjøre `unimport` på den første
+underimporten uten at bildene forsvinner, så lenge de også finnes i overmappen.
 
 En vanlig kildemappe behandles som en avsluttet importjobb, ikke som en mappe
-som senere synkroniseres automatisk. `bildebank add` skal derfor avvise en
-kildemappe som allerede er registrert, og også avvise en kildemappe som ligger
-under en allerede registrert vanlig kildemappe. Det gir ikke mening å registrere
-en undermappe som egen kilde når en overmappe allerede er lagt til.
+som senere synkroniseres automatisk.
 
 Det er fortsatt lov å registrere en overmappe etter at en undermappe allerede er
 importert, slik at man kan gå fra en liten testimport til en større import. Når

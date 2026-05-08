@@ -244,8 +244,8 @@ Kjør:
 bildebank list-sources
 ```
 
-Listen viser kildene Bildebank kjenner til. Vanlige mapper vises som
-`directory`, og flyttbare medier vises som `removable`.
+Listen viser kildene Bildebank kjenner til. Hver kilde har et navn, status,
+importtidspunkt og pathen den ble importert fra.
 
 Dette er nyttig når du vil kontrollere hva som allerede er registrert og om en
 kilde er importert.
@@ -342,26 +342,7 @@ Da blir `index.html` oppdatert slik at den viser samlingen etter at importen er
 angret.
 
 Når du angrer en navngitt import, fjerner Bildebank også denne kilden fra
-kildelisten. Du trenger derfor ikke kjøre `remove-source` etterpå.
-
-## Fjerne en kilde fra kildelisten
-
-Ved vanlig bruk trenger du sjelden `remove-source`. Hvis en import har aktive
-filer i bildesamlingen, må du bruke `unimport`:
-
-```powershell
-bildebank unimport --name "TestBilder"
-```
-
-`remove-source` kan brukes hvis en kilde finnes i kildelisten uten aktive
-importerte filer:
-
-```powershell
-bildebank remove-source --name "TestBilder"
-```
-
-`remove-source` sletter ikke bilder. Den fjerner bare kilden fra listen over
-kilder Bildebank kjenner til.
+kildelisten.
 
 ## Finn navnekollisjoner
 
@@ -473,10 +454,10 @@ cd $HOME\BildeSamling
 bildebank migrate
 ```
 
-Migrering til databaseformat v3 gjelder bare brukere som har opprettet
-bildesamlingsdatabasen med en versjon av Bildebank fra før 7. mai 2026. Nye
-databaser opprettet med Bildebank fra og med 7. mai 2026 bruker v3-formatet
-allerede og trenger ikke denne migreringen.
+Migrering til databaseformat v4 gjelder bare brukere som har opprettet
+bildesamlingsdatabasen med en eldre versjon av Bildebank. Nye databaser
+opprettet med Bildebank fra og med denne versjonen bruker v4-formatet allerede
+og trenger ikke denne migreringen.
 
 Du kan kontrollere hva migreringen vil gjøre uten å endre databasen:
 

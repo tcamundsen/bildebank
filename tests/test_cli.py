@@ -214,7 +214,7 @@ class CliTests(unittest.TestCase):
             build_parser().parse_args(["target", "."])
 
     def test_old_conflict_and_remove_commands_are_not_available(self) -> None:
-        for command in ("list-name-conflicts", "show-name-conflict", "delete", "list-deleted"):
+        for command in ("list-name-conflicts", "show-name-conflict", "delete", "list-deleted", "remove-source"):
             with self.subTest(command=command):
                 with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
                     build_parser().parse_args([command])
@@ -242,15 +242,17 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "3",
+                    "4",
                 )
                 file_columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 self.assertNotIn("source_id", file_columns)
                 self.assertNotIn("source_path", file_columns)
                 self.assertNotIn("source_path_key", file_columns)
-                self.assertEqual(
-                    conn.execute("SELECT COUNT(*) FROM file_sources WHERE kind = 'duplicate'").fetchone()[0], 0
-                )
+                source_columns = {row[1] for row in conn.execute("PRAGMA table_info(sources)")}
+                file_source_columns = {row[1] for row in conn.execute("PRAGMA table_info(file_sources)")}
+                self.assertNotIn("kind", source_columns)
+                self.assertNotIn("kind", file_source_columns)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources WHERE name IS NULL").fetchone()[0], 0)
             finally:
                 conn.close()
 
@@ -453,8 +455,7 @@ class CliTests(unittest.TestCase):
             self.assertIn(f"Kildefil: {source_file.resolve()}", stdout)
             self.assertIn("Kildefil finnes: ja", stdout)
             self.assertIn("Kilde-id: 1", stdout)
-            self.assertIn("Kildetype: directory", stdout)
-            self.assertIn(f"Kilde: {source.resolve()}", stdout)
+            self.assertIn("Kilde: source", stdout)
             self.assertIn("Originalt filnavn: IMG_20240102.jpg", stdout)
             self.assertIn("Lagret filnavn: IMG_20240102.jpg", stdout)
             self.assertIn("Dato: 2024-01-02 (filename)", stdout)
@@ -622,9 +623,7 @@ class CliTests(unittest.TestCase):
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 2)
-                self.assertEqual(
-                    conn.execute("SELECT COUNT(*) FROM file_sources WHERE kind = 'duplicate'").fetchone()[0], 1
-                )
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 2)
                 self.assertFalse(
                     conn.execute(
                         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'duplicate_findings'"
@@ -632,48 +631,6 @@ class CliTests(unittest.TestCase):
                 )
             finally:
                 conn.close()
-
-    def test_remove_source_removes_pending_source(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            source.mkdir()
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "remove-source", str(source)]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Fjernet kilde", stdout)
-            conn = sqlite3.connect(target / DB_FILENAME)
-            try:
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 0)
-            finally:
-                conn.close()
-
-    def test_remove_source_rejects_active_import(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            source.mkdir()
-            (source / "IMG_20240102.jpg").write_bytes(b"image")
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "add", str(source)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "remove-source", str(source)]
-            )
-
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("bildebank unimport", stderr)
 
     def test_unimport_duplicate_source_keeps_shared_target_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -855,92 +812,11 @@ class CliTests(unittest.TestCase):
                     ["--target", str(target), "unimport", str(child)]
                 )
 
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("Kan ikke unimportere en superseded kilde", stderr)
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Unimport gjennomført.", stdout)
             self.assertTrue((target / "2006" / "10" / "IMG_20061003.jpg").exists())
 
-    def test_remove_source_dry_run_reports_superseded_reassignment_without_changes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            parent = root / "Bilder"
-            child = parent / "2006"
-            child.mkdir(parents=True)
-            (child / "IMG_20061003.jpg").write_bytes(b"child")
-            (parent / "IMG_20070104.jpg").write_bytes(b"parent")
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "add", str(child)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "add", str(parent)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "remove-source", "--dry-run", str(child)]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Rader som omregistreres til overordnet kilde: 1", stdout)
-            self.assertIn("Dry-run: ingen endringer er gjort.", stdout)
-
-            conn = sqlite3.connect(target / DB_FILENAME)
-            try:
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 2)
-                self.assertEqual(
-                    conn.execute(
-                        "SELECT status FROM sources WHERE path = ?",
-                        (str(child.resolve()),),
-                    ).fetchone()[0],
-                    "superseded",
-                )
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0], 5)
-            finally:
-                conn.close()
-
-    def test_remove_source_reassigns_superseded_source_to_parent(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            parent = root / "Bilder"
-            child = parent / "2006"
-            child.mkdir(parents=True)
-            child_file = child / "IMG_20061003.jpg"
-            parent_file = parent / "IMG_20070104.jpg"
-            child_file.write_bytes(b"child")
-            parent_file.write_bytes(b"parent")
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "add", str(child)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "add", str(parent)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--quiet"]), 0)
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "remove-source", str(child)]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Fjernet superseded kilde", stdout)
-            self.assertTrue((target / "2006" / "10" / "IMG_20061003.jpg").exists())
-            self.assertTrue((target / "2007" / "01" / "IMG_20070104.jpg").exists())
-
-            conn = sqlite3.connect(target / DB_FILENAME)
-            try:
-                sources = conn.execute("SELECT id, path FROM sources").fetchall()
-                self.assertEqual(len(sources), 1)
-                self.assertEqual(sources[0][1], str(parent.resolve()))
-                file_sources = conn.execute(
-                    "SELECT source_id, source_path FROM file_sources ORDER BY source_path"
-                ).fetchall()
-                self.assertEqual(len(file_sources), 2)
-                self.assertEqual({row[0] for row in file_sources}, {sources[0][0]})
-                self.assertIn(str(child_file.resolve()), {row[1] for row in file_sources})
-                self.assertIn(str(parent_file.resolve()), {row[1] for row in file_sources})
-            finally:
-                conn.close()
-
-    def test_migrate_v2_removes_legacy_source_fk_before_remove_superseded_source(self) -> None:
+    def test_migrate_v2_removes_legacy_source_fk_and_kind_columns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -1124,36 +1000,21 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 2", stdout)
-            self.assertIn("Ny schema_version: 3", stdout)
+            self.assertIn("Ny schema_version: 4", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "3",
+                    "4",
                 )
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
+                source_columns = {row[1] for row in conn.execute("pragma table_info(sources)")}
+                file_source_columns = {row[1] for row in conn.execute("pragma table_info(file_sources)")}
                 self.assertFalse({"source_id", "source_path", "source_path_key"} & file_columns)
+                self.assertNotIn("kind", source_columns)
+                self.assertNotIn("kind", file_source_columns)
+                self.assertEqual(conn.execute("select count(*) from sources where name is null").fetchone()[0], 0)
                 self.assertEqual(conn.execute("pragma foreign_key_list(errors)").fetchall(), [])
-            finally:
-                conn.close()
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "remove-source", str(child)]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Fjernet superseded kilde", stdout)
-            self.assertTrue(child_target_file.exists())
-            conn = sqlite3.connect(target / DB_FILENAME)
-            try:
-                self.assertEqual(conn.execute("select count(*) from sources").fetchone()[0], 1)
-                self.assertEqual(
-                    conn.execute(
-                        "select count(*) from file_sources where source_id = ?",
-                        (parent_id,),
-                    ).fetchone()[0],
-                    2,
-                )
             finally:
                 conn.close()
 
@@ -1181,8 +1042,8 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Kildefiler:", stdout)
-            self.assertIn(f"- imported: {first.resolve()}", stdout)
-            self.assertIn(f"- duplicate: {duplicate.resolve()}", stdout)
+            self.assertIn(f"- {first.resolve()}", stdout)
+            self.assertIn(f"- {duplicate.resolve()}", stdout)
 
     def test_status_counts_media_types_and_date_sources(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1225,19 +1086,17 @@ class CliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(["--target", str(target), "import", "--quiet"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("dekket=1", stdout)
+            self.assertIn("duplikater=1", stdout)
 
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 2)
-                self.assertEqual(
-                    conn.execute("SELECT COUNT(*) FROM file_sources WHERE kind = 'duplicate'").fetchone()[0], 0
-                )
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 3)
                 statuses = conn.execute(
                     "SELECT path, status, superseded_by_source_id FROM sources ORDER BY id"
                 ).fetchall()
-                self.assertEqual(statuses[0][1], "superseded")
-                self.assertEqual(statuses[0][2], 2)
+                self.assertEqual(statuses[0][1], "imported")
+                self.assertIsNone(statuses[0][2])
                 self.assertEqual(statuses[1][1], "imported")
             finally:
                 conn.close()
@@ -1255,9 +1114,8 @@ class CliTests(unittest.TestCase):
 
             code, stdout, stderr = capture_cli(["--target", str(target), "add", str(child)])
 
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("allerede registrert kildemappe", stderr)
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Registrert kildemappe", stdout)
 
     def test_rejects_superseded_child_source_added_again(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1277,7 +1135,6 @@ class CliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(["--target", str(target), "add", str(child)])
 
             self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
             self.assertIn("Kildemappen er allerede registrert", stderr)
 
     def test_name_conflict_gets_suffix(self) -> None:
@@ -1576,14 +1433,13 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 0,
             )
 
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "unimport", str(removable)]
-            )
+            with patch("builtins.input", return_value="nei"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", str(removable)]
+                )
 
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("må angis med --name", stderr)
-            self.assertIn('bildebank unimport --name "usb-test"', stderr)
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Avbrutt. Ingen endringer er gjort.", stdout)
             self.assertTrue((target / "2024" / "02" / "REM_20240203.jpg").exists())
 
             with patch("builtins.input", return_value="ja, det vil jeg"):
@@ -1664,53 +1520,8 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
             self.assertIn("Kildefil mangler", stderr)
-            self.assertIn("Dette er et flyttbart medium", stderr)
-            self.assertIn("Sjekk at riktig USB-disk", stderr)
+            self.assertIn("Sjekk at riktig mappe, USB-disk", stderr)
             self.assertTrue((target / "2024" / "02" / "REM_20240203.jpg").exists())
-
-    def test_remove_source_removable_requires_name_and_rejects_path(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            removable = root / "removable"
-            removable.mkdir()
-            (removable / "REM_20240203.jpg").write_bytes(b"removable")
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(
-                run_cli(["--target", str(target), "import", "--name", "usb-test", str(removable)]),
-                0,
-            )
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "remove-source", str(removable)]
-            )
-
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("må angis med --name", stderr)
-            self.assertIn('bildebank remove-source --name "usb-test"', stderr)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "remove-source", "--name", "usb-test"])
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn('bildebank unimport --name "usb-test"', stderr)
-
-            with patch("builtins.input", return_value="ja, det vil jeg"):
-                self.assertEqual(
-                    run_cli(["--target", str(target), "unimport", "--name", "usb-test"]),
-                    0,
-                )
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "remove-source", "--name", "usb-test"])
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("Fant ikke flyttbart medium med navn", stderr)
-            conn = sqlite3.connect(target / DB_FILENAME)
-            try:
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 0)
-            finally:
-                conn.close()
 
     def test_import_removable_dry_run_does_not_register_or_copy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1946,7 +1757,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 source_id = conn.execute(
-                    "insert into sources(kind, path, path_key) values('directory', ?, ?) returning id",
+                    "insert into sources(path, path_key, name) values(?, ?, 'source') returning id",
                     (str(root / "source"), str(root / "source")),
                 ).fetchone()[0]
                 file_id = conn.execute(
@@ -1972,8 +1783,8 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 conn.execute(
                     """
                     insert into file_sources(
-                        file_id, source_id, source_path, source_path_key, sha256, size_bytes, kind
-                    ) values(?, ?, ?, ?, ?, ?, 'imported')
+                        file_id, source_id, source_path, source_path_key, sha256, size_bytes
+                    ) values(?, ?, ?, ?, ?, ?)
                     """,
                     (
                         file_id,
@@ -2219,14 +2030,14 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 1", stdout)
-            self.assertIn("Ny schema_version: 3", stdout)
+            self.assertIn("Ny schema_version: 4", stdout)
             self.assertIn("Vil opprette tabellen file_sources.", stdout)
             self.assertIn("  importerte filer: 1", stdout)
             self.assertIn("  duplikatfunn: 1", stdout)
             self.assertIn("  bygge om files uten gamle v1-kildekolonner", stdout)
             self.assertIn("  fjerne legacy-tabellen duplicate_findings", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
-            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-3-*")))
+            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-4-*")))
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertFalse(
@@ -2249,22 +2060,22 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(code, 0, stderr)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Ferdig. Databasen er migrert.", stdout)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-3-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-4-*"))), 1)
 
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "3",
+                    "4",
                 )
                 self.assertEqual(conn.execute("select count(*) from file_sources").fetchone()[0], 2)
-                kinds = [
-                    row[0]
-                    for row in conn.execute("select kind from file_sources order by id").fetchall()
-                ]
-                self.assertEqual(kinds, ["imported", "duplicate"])
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
+                source_columns = {row[1] for row in conn.execute("pragma table_info(sources)")}
+                file_source_columns = {row[1] for row in conn.execute("pragma table_info(file_sources)")}
                 self.assertFalse({"source_id", "source_path", "source_path_key"} & file_columns)
+                self.assertNotIn("kind", source_columns)
+                self.assertNotIn("kind", file_source_columns)
+                self.assertEqual(conn.execute("select name from sources").fetchone()[0], "source")
                 self.assertFalse(
                     conn.execute(
                         "select 1 from sqlite_master where type = 'table' and name = 'duplicate_findings'"
@@ -2282,6 +2093,109 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("Kildefilforekomster: 2", stdout)
             self.assertIn("Duplikatkilder: 1", stdout)
 
+    def test_migrate_v3_names_unnamed_sources_and_removes_kind_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+            db_path = target / DB_FILENAME
+            conn = sqlite3.connect(db_path)
+            try:
+                conn.executescript(
+                    """
+                    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                    CREATE TABLE command_log (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        command TEXT NOT NULL,
+                        args_json TEXT NOT NULL,
+                        started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE TABLE sources (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        kind TEXT NOT NULL,
+                        path TEXT NOT NULL,
+                        path_key TEXT,
+                        name TEXT,
+                        added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        imported_at TEXT,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        superseded_by_source_id INTEGER REFERENCES sources(id)
+                    );
+                    CREATE TABLE files (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        target_path TEXT NOT NULL,
+                        target_path_key TEXT NOT NULL UNIQUE,
+                        original_filename TEXT NOT NULL,
+                        stored_filename TEXT NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        size_bytes INTEGER NOT NULL,
+                        taken_date TEXT,
+                        date_source TEXT NOT NULL,
+                        name_conflict INTEGER NOT NULL DEFAULT 0,
+                        imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        deleted_at TEXT,
+                        deleted_original_target_path TEXT
+                    );
+                    CREATE TABLE file_sources (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        file_id INTEGER NOT NULL REFERENCES files(id),
+                        source_id INTEGER NOT NULL REFERENCES sources(id),
+                        source_path TEXT NOT NULL,
+                        source_path_key TEXT NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        size_bytes INTEGER NOT NULL,
+                        kind TEXT NOT NULL,
+                        recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(source_id, source_path_key)
+                    );
+                    CREATE TABLE errors (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        source_id INTEGER,
+                        source_path TEXT,
+                        stage TEXT NOT NULL,
+                        message TEXT NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        resolved_at TEXT
+                    );
+                    INSERT INTO meta(key, value) VALUES('schema_version', '3');
+                    """
+                )
+                for source_id, path_value, name in (
+                    (1, r"C:\A\sommer", None),
+                    (2, r"D:\B\sommer", None),
+                    (3, r"F:\\", None),
+                    (4, r"E:\bilder", "eksisterende"),
+                ):
+                    conn.execute(
+                        """
+                        INSERT INTO sources(id, kind, path, path_key, name, imported_at, status)
+                        VALUES(?, 'directory', ?, ?, ?, CURRENT_TIMESTAMP, 'imported')
+                        """,
+                        (source_id, path_value, path_value, name),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Ny schema_version: 4", stdout)
+            conn = sqlite3.connect(db_path)
+            try:
+                names = [row[0] for row in conn.execute("SELECT name FROM sources ORDER BY id")]
+                self.assertEqual(names, ["sommer", "sommer-1", "F", "eksisterende"])
+                source_columns = {row[1] for row in conn.execute("PRAGMA table_info(sources)")}
+                file_source_columns = {row[1] for row in conn.execute("PRAGMA table_info(file_sources)")}
+                self.assertNotIn("kind", source_columns)
+                self.assertNotIn("kind", file_source_columns)
+                name_column = [
+                    row for row in conn.execute("PRAGMA table_info(sources)") if row[1] == "name"
+                ][0]
+                self.assertEqual(name_column[3], 1)
+            finally:
+                conn.close()
+
     def test_migrate_keeps_backup_and_rolls_back_when_validation_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2294,7 +2208,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(code, 1)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Databasen ble ikke migrert", stderr)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-3-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-4-*"))), 1)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(

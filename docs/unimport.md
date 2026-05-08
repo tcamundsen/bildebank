@@ -88,11 +88,10 @@ kjørt.
 ## Etter unimport
 
 Når `unimport --name` er ferdig, fjernes importen også fra kildelisten. Du
-trenger ikke kjøre `remove-source` etterpå.
+trenger ikke kjøre noen egen kommando for å fjerne kilden.
 
 Etterpå kan du lage HTML-visningen på nytt:
 
 ```powershell
 bildebank make-browser
 ```
-

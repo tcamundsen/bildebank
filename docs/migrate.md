@@ -51,11 +51,21 @@ databasen først.
 
 Hvis migreringen feiler, skal databasen ikke oppgraderes, og backupen beholdes.
 
-## Migrering til v3
+## Migrering til v4
 
-Migrering til databaseformat v3 gjelder bare brukere som har opprettet
+Migrering til databaseformat v4 gjelder bare brukere som har opprettet
 bildesamlingsdatabasen med en eldre versjon av Bildebank.
 
 Nye bildesamlinger som er opprettet med en nyere versjon av Bildebank bruker
 nytt databaseformat allerede, og trenger ikke denne migreringen.
 
+I v4 får alle kilder et navn. Gamle kilder som mangler navn får navn fra
+mappenavnet, for eksempel `sommer2024`. Hvis flere kilder ville fått samme
+navn, legger Bildebank til `-1`, `-2` og så videre.
+
+V4 fjerner også gamle interne kilde-typer fra databasen. For brukeren betyr det
+at alle importer behandles likt:
+
+```powershell
+bildebank import --name "Navn" "path\til\kilde"
+```
