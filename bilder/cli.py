@@ -609,10 +609,7 @@ def run(args: argparse.Namespace) -> int:
                     target_path.unlink()
                 conn.commit()
             print("Unimport gjennomført.")
-            if source.kind == "directory":
-                print("Kilden er satt tilbake til pending.")
-                print("Hvis du ikke vil importere den igjen, kjør:")
-                print(f'  bildebank remove-source "{source.path}"')
+            print("Kilden er fjernet fra kildelisten.")
             return 0
 
         if args.command == "remove-source":
@@ -883,10 +880,7 @@ def print_unimport_plan(plan: db.UnimportPlan) -> None:
 
 
 def print_unimport_dry_run_note(source: db.Source) -> None:
-    if source.kind == "removable":
-        print("Flyttbar kilde ville blitt fjernet fra kildelisten.")
-    else:
-        print("Kilden ville blitt satt tilbake til pending.")
+    print("Kilden ville blitt fjernet fra kildelisten.")
 
 
 def validate_remove_superseded_source_files(

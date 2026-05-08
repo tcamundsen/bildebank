@@ -1046,23 +1046,6 @@ def apply_unimport(conn: sqlite3.Connection, plan: UnimportPlan) -> None:
         )
     ]
 
-    conn.execute("DELETE FROM file_sources WHERE source_id = ?", (source_id,))
-    if file_ids_to_delete:
-        placeholders = ",".join("?" for _ in file_ids_to_delete)
-        conn.execute(f"DELETE FROM files WHERE id IN ({placeholders})", file_ids_to_delete)
-    if plan.source.kind == "removable":
-        conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
-    else:
-        conn.execute(
-            """
-            UPDATE sources
-            SET imported_at = NULL,
-                status = 'pending',
-                superseded_by_source_id = NULL
-            WHERE id = ?
-            """,
-            (source_id,),
-        )
     conn.execute(
         """
         UPDATE sources
@@ -1073,6 +1056,11 @@ def apply_unimport(conn: sqlite3.Connection, plan: UnimportPlan) -> None:
         """,
         (source_id,),
     )
+    conn.execute("DELETE FROM file_sources WHERE source_id = ?", (source_id,))
+    if file_ids_to_delete:
+        placeholders = ",".join("?" for _ in file_ids_to_delete)
+        conn.execute(f"DELETE FROM files WHERE id IN ({placeholders})", file_ids_to_delete)
+    conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
 
 
 def build_remove_superseded_source_plan(
