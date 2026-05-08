@@ -13,6 +13,7 @@ from unittest.mock import patch
 from bilder.cli import build_parser, main
 from bilder.config import load_config
 from bilder.db import DB_FILENAME
+from bilder.face import FACE_DB_FILENAME
 from bilder.importer import safe_copy
 from bilder.media import sha256_file
 from bilder.program_state import PROGRAM_DB_FILENAME
@@ -317,6 +318,19 @@ class CliTests(unittest.TestCase):
         self.assertIn("konfigurert: av", stdout)
         self.assertIn("insightface installert:", stdout)
         self.assertEqual(stderr, "")
+
+    def test_face_status_uses_explicit_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-status"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Aktiv bildesamling:", stdout)
+            self.assertIn(str(target.resolve()), stdout)
 
     def test_load_config_reads_local_face_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1353,6 +1367,95 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 self.assertEqual(status, "error")
             finally:
                 conn.close()
+
+    def test_face_scan_requires_enabled_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Ansiktsgjenkjenning er av", stderr)
+            self.assertFalse((target / FACE_DB_FILENAME).exists())
+
+    def test_face_scan_writes_faces_to_separate_database(self) -> None:
+        class FakeFace:
+            bbox = [1.0, 2.0, 11.0, 22.0]
+            det_score = 0.9
+            embedding = [0.1, 0.2, 0.3]
+
+        class FakeApp:
+            def get(self, image):
+                return [FakeFace()]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            (self.program_root / "bildebank-config.toml").write_text(
+                """
+[face_recognition]
+enabled = true
+provider = "cpu"
+model_root = ".bildebank-insightface"
+model_name = "test-model"
+""",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+
+            with (
+                patch("bilder.face.load_face_app", return_value=FakeApp()),
+                patch("bilder.face.read_image", return_value=object()),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("ansikter=1", stdout)
+            face_db = target / FACE_DB_FILENAME
+            self.assertTrue(face_db.exists())
+            conn = sqlite3.connect(face_db)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
+                face = conn.execute(
+                    "SELECT bbox_x, bbox_y, bbox_width, bbox_height, detection_score, embedding_model FROM faces"
+                ).fetchone()
+                self.assertEqual(face, (1.0, 2.0, 10.0, 20.0, 0.9, "test-model"))
+            finally:
+                conn.close()
+
+    def test_face_reset_requires_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            face_db = target / FACE_DB_FILENAME
+            face_db.write_bytes(b"face-data")
+
+            with patch("builtins.input", return_value="nei"):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-reset"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Avbrutt", stdout)
+            self.assertTrue(face_db.exists())
+
+            with patch("builtins.input", return_value="ja, slett ansiktsdata"):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-reset"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Slettet face-database", stdout)
+            self.assertFalse(face_db.exists())
 
     def test_safe_copy_does_not_overwrite_existing_different_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

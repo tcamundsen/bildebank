@@ -11,6 +11,7 @@ from pathlib import Path
 from . import __version__, db
 from .config import CONFIG_FILENAME, load_config
 from .exiftool_probe import exiftool_metadata_gaps
+from .face import face_db_path, face_db_summary, scan_faces
 from .importer import (
     import_source,
     import_source_dry_run,
@@ -74,6 +75,8 @@ HELP_COMMAND_GROUPS = (
         (
             ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
             ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
+            ("face-scan", "Eksperimentell scanning etter ansikter"),
+            ("face-reset", "Slett eksperimentelle ansiktsdata"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
             ("update", "Oppdater programinstallasjonen"),
         ),
@@ -317,6 +320,19 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank face-status [valg]",
         help="Vis status for valgfri ansiktsgjenkjenning",
     )
+    face_scan = add_command(
+        subparsers,
+        "face-scan",
+        usage="bildebank face-scan [valg]",
+        help="Eksperimentell scanning etter ansikter",
+    )
+    face_scan.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
+    add_command(
+        subparsers,
+        "face-reset",
+        usage="bildebank face-reset [valg]",
+        help="Slett eksperimentelle ansiktsdata",
+    )
     migrate = add_command(
         subparsers,
         "migrate",
@@ -436,12 +452,18 @@ def run(args: argparse.Namespace) -> int:
         return run_where_is()
 
     if args.command == "face-status":
-        return run_face_status()
+        return run_face_status(args.target)
 
     target = resolve_target(args.target)
     record_target_best_effort(program_repo_root(), target)
     if args.command == "migrate":
         return run_migrate(target, check=args.check)
+
+    if args.command == "face-scan":
+        return run_face_scan(target, limit=args.limit)
+
+    if args.command == "face-reset":
+        return run_face_reset(target)
 
     if args.command == "import" and args.dry_run:
         return run_named_import_dry_run(target, args)
@@ -785,7 +807,7 @@ def run_where_is() -> int:
     return 0
 
 
-def run_face_status() -> int:
+def run_face_status(target_arg: Path | None = None) -> int:
     repo_root = program_repo_root()
     config = load_config(repo_root)
     face = config.face_recognition
@@ -797,11 +819,56 @@ def run_face_status() -> int:
     print(f"  provider: {face.provider}")
     print(f"  insightface installert: {module_available('insightface')}")
     print(f"  onnxruntime installert: {module_available('onnxruntime')}")
+    target = db.find_target(target_arg)
+    if target is not None:
+        exists, scanned, faces = face_db_summary(target)
+        print()
+        print("Aktiv bildesamling:")
+        print(f"  {target}")
+        print(f"  face-database: {face_db_path(target)}")
+        print(f"  face-database finnes: {'ja' if exists else 'nei'}")
+        print(f"  scannede filer: {scanned}")
+        print(f"  ansikter funnet: {faces}")
     return 0
 
 
 def module_available(module_name: str) -> str:
     return "ja" if importlib.util.find_spec(module_name) is not None else "nei"
+
+
+def run_face_scan(target: Path, *, limit: int | None) -> int:
+    config = load_config(program_repo_root()).face_recognition
+    require_face_enabled(config.enabled)
+    stats = scan_faces(target, config, limit=limit)
+    print(
+        "Oppsummering: "
+        f"sjekket={stats.checked}, hoppet_over={stats.skipped}, "
+        f"scannet={stats.scanned}, ansikter={stats.faces}, feil={stats.errors}"
+    )
+    print(f"Face-database: {face_db_path(target)}")
+    return 0 if stats.errors == 0 else 2
+
+
+def run_face_reset(target: Path) -> int:
+    path = face_db_path(target)
+    if not path.exists():
+        print(f"Fant ingen face-database: {path}")
+        return 0
+    answer = input('Skriv "ja, slett ansiktsdata" for å slette face-databasen: ')
+    if answer != "ja, slett ansiktsdata":
+        print("Avbrutt. Ingen endringer er gjort.")
+        return 0
+    path.unlink()
+    print(f"Slettet face-database: {path}")
+    return 0
+
+
+def require_face_enabled(enabled: bool) -> None:
+    if not enabled:
+        raise ValueError(
+            f"Ansiktsgjenkjenning er av. Sett enabled = true i {CONFIG_FILENAME} "
+            "hvis du vil teste."
+        )
 
 
 def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:

@@ -57,9 +57,42 @@ bildebank face-status
 Kommandoen viser om config er av eller på, hvor modellene skal ligge, og om
 `insightface` og `onnxruntime` er installert.
 
+Hvis kommandoen kjøres fra en bildesamling, viser den også status for
+ansiktsdatabasen i bildesamlingen.
+
+## Scanne ansikter
+
+Når InsightFace er installert og config er slått på, kan du teste scanning:
+
+```powershell
+bildebank face-scan --limit 10
+```
+
+`face-scan` scanner bare importerte bildefiler, ikke videoer. Bilder som
+allerede er scannet med samme innhold hoppes over.
+
+Ansiktsdata lagres i bildesamlingen:
+
+```text
+.bilder-faces.sqlite3
+```
+
+Dette er en egen database. Den vanlige Bildebank-databasen endres ikke.
+
+## Slette ansiktsdata
+
+Hvis du vil fjerne alle eksperimentelle ansiktsdata fra bildesamlingen:
+
+```powershell
+bildebank face-reset
+```
+
+Kommandoen sletter `.bilder-faces.sqlite3`. Den sletter ingen bilder og endrer
+ikke den vanlige Bildebank-databasen.
+
 ## Modeller
 
-InsightFace kan laste ned modeller første gang det brukes. Bildebank skal bruke
+InsightFace kan laste ned modeller første gang det brukes. Bildebank bruker
 modellmappen fra config, slik at modellene havner i programmappen og ikke
 spres andre steder.
 
