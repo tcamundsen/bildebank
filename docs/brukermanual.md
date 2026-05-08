@@ -432,7 +432,7 @@ List navnekollisjoner:
 bildebank conflicts
 ```
 
-Se detaljer for en bestemt importert målfil:
+Se detaljer for en bestemt importert fil i bildesamlingen:
 
 ```powershell
 bildebank show-conflict "2024\01\IMG_0001.jpg"
@@ -450,7 +450,8 @@ bildebank non-metadata --with-source
 ```
 
 Denne listen viser filer der datoen ikke kom fra metadata. Med `--with-source`
-viser Bildebank også hvilken original kildefil den importerte målfilen kom fra.
+viser Bildebank også hvilken original kildefil den importerte filen i
+bildesamlingen kom fra.
 
 Dette er nyttig når du vil kontrollere filer som er plassert etter filnavn,
 filens endringstidspunkt eller ukjent dato.
