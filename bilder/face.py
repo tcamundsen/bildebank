@@ -79,6 +79,13 @@ class RemoveFaceFromPersonResult:
 
 
 @dataclass(frozen=True)
+class DeletePersonResult:
+    person_name: str
+    removed_faces: int
+    removed_suggestions: int
+
+
+@dataclass(frozen=True)
 class FaceSuggestStats:
     persons: int
     unknown_faces: int
@@ -300,6 +307,32 @@ def remove_face_from_person(target: Path, person_name: str, face_id: int) -> Rem
         conn.execute("UPDATE persons SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (person_id,))
         conn.commit()
         return RemoveFaceFromPersonResult(clean_name, face_id, bool(cur.rowcount))
+    finally:
+        conn.close()
+
+
+def delete_person(target: Path, person_name: str) -> DeletePersonResult:
+    clean_name = normalize_person_name(person_name)
+    conn = connect_face_db(target)
+    try:
+        person_id = require_person(conn, clean_name)
+        removed_faces = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM person_faces WHERE person_id = ?",
+                (person_id,),
+            ).fetchone()[0]
+        )
+        removed_suggestions = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM face_suggestions WHERE person_id = ?",
+                (person_id,),
+            ).fetchone()[0]
+        )
+        conn.execute("DELETE FROM person_faces WHERE person_id = ?", (person_id,))
+        conn.execute("DELETE FROM face_suggestions WHERE person_id = ?", (person_id,))
+        conn.execute("DELETE FROM persons WHERE id = ?", (person_id,))
+        conn.commit()
+        return DeletePersonResult(clean_name, removed_faces, removed_suggestions)
     finally:
         conn.close()
 

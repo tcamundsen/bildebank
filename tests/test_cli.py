@@ -1606,6 +1606,14 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Kari\tansikter=2", stdout)
 
+            with patch("builtins.input", return_value="nei"):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-person-delete", "Kari"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Avbrutt", stdout)
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
+            self.assertIn("Kari\tansikter=2", stdout)
+
             self.assertEqual(run_cli(["--target", str(target), "make-face-groups-browser"]), 0)
             html = (target / "face-groups.html").read_text(encoding="utf-8")
             self.assertIn('"personName": "Kari"', html)
@@ -1693,6 +1701,24 @@ model_name = "test-model"
             self.assertIn("forslag=1", stdout)
             self.assertIn("Forslag:", stdout)
             self.assertIn("Kari\tface-id=2", stdout)
+
+            with patch("builtins.input", return_value="slett Kari"):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-person-delete", "Kari"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Slettet person: Kari", stdout)
+            self.assertIn("Fjernet bekreftede ansiktskoblinger: 1", stdout)
+            self.assertIn("Fjernet ansiktsforslag: 1", stdout)
+            self.assertIn("Ingen bilder eller scannede ansikter er slettet.", stdout)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Ingen personer registrert.", stdout)
+
+            self.assertEqual(run_cli(["--target", str(target), "face-person-create", "Kari"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "face-person-add-face", "Kari", "1"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "face-suggest", "--threshold", "0.9"]), 0)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "make-person-browser", "Kari"])
 

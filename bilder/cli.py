@@ -14,12 +14,14 @@ from .exiftool_probe import exiftool_metadata_gaps
 from .face import (
     AddFaceToPersonResult,
     AddGroupToPersonResult,
+    DeletePersonResult,
     FaceReport,
     FaceSuggestStats,
     RemoveFaceFromPersonResult,
     add_face_to_person,
     add_group_to_person,
     create_person,
+    delete_person,
     export_face_browser,
     export_face_groups_browser,
     export_person_browser,
@@ -103,6 +105,7 @@ HELP_COMMAND_GROUPS = (
             ("face-person-add-group", "Koble ansiktsgruppe til person"),
             ("face-person-add-face", "Koble ett ansikt til person"),
             ("face-person-remove-face", "Fjern ett ansikt fra person"),
+            ("face-person-delete", "Slett person fra ansiktsdatabasen"),
             ("face-person-list", "List personer i ansiktsdatabasen"),
             ("face-suggest", "Foreslå personer for ukjente ansikter"),
             ("make-face-browser", "Lag HTML-side for scannede ansikter"),
@@ -414,6 +417,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     face_person_remove_face.add_argument("name", metavar="navn", help="Personnavn")
     face_person_remove_face.add_argument("face_id", metavar="ansikt_id", type=positive_int_arg, help="Ansikt-id fra HTML-visningen")
+    face_person_delete = add_command(
+        subparsers,
+        "face-person-delete",
+        usage="bildebank face-person-delete [valg] navn",
+        help="Slett person fra ansiktsdatabasen",
+    )
+    face_person_delete.add_argument("name", metavar="navn", help="Personnavn")
     add_command(
         subparsers,
         "face-person-list",
@@ -637,6 +647,9 @@ def run(args: argparse.Namespace) -> int:
         result = remove_face_from_person(target, args.name, args.face_id)
         print_remove_face_from_person_result(result)
         return 0
+
+    if args.command == "face-person-delete":
+        return run_face_person_delete(target, args.name)
 
     if args.command == "face-person-list":
         print_persons(target)
@@ -1168,6 +1181,26 @@ def print_remove_face_from_person_result(result: RemoveFaceFromPersonResult) -> 
         print("Ansiktet er fjernet fra personen.")
     else:
         print("Ansiktet var ikke koblet til personen.")
+
+
+def run_face_person_delete(target: Path, name: str) -> int:
+    clean_name = name.strip()
+    if not clean_name:
+        raise ValueError("Personnavn kan ikke være tomt.")
+    answer = input(f'Skriv "slett {clean_name}" for å slette personen fra ansiktsdatabasen: ')
+    if answer != f"slett {clean_name}":
+        print("Avbrutt. Ingen endringer er gjort.")
+        return 0
+    result = delete_person(target, clean_name)
+    print_delete_person_result(result)
+    return 0
+
+
+def print_delete_person_result(result: DeletePersonResult) -> None:
+    print(f"Slettet person: {result.person_name}")
+    print(f"Fjernet bekreftede ansiktskoblinger: {result.removed_faces}")
+    print(f"Fjernet ansiktsforslag: {result.removed_suggestions}")
+    print("Ingen bilder eller scannede ansikter er slettet.")
 
 
 def print_face_suggest_stats(stats: FaceSuggestStats) -> None:

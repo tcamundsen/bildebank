@@ -192,6 +192,16 @@ Du kan se registrerte personer:
 bildebank face-person-list
 ```
 
+Hvis en person er opprettet ved en feil, kan den slettes fra ansiktsdatabasen:
+
+```powershell
+bildebank face-person-delete "Krai"
+```
+
+Kommandoen ber om bekreftelse. Den sletter bare personen, bekreftede
+ansiktskoblinger og forslag for personen. Den sletter ingen bilder og ingen
+scannede ansikter.
+
 Dette er brukerbekreftet informasjon. Det er fortsatt bare ansiktene i gruppen
 som kobles til personen.
 
