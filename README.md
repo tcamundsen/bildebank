@@ -1,7 +1,9 @@
-# Lisens
+# Hva er dette?
 
-Bildebank er fri programvare lisensiert under GNU General Public License,
-versjon 3 eller senere. Se `LICENSE` for full lisens.
+Bildebank er et program som kopierer bilder og videoer fra gamle mapper,
+minnekort, USB-disker og CD-er inn i én ryddig bildesamling sortert etter dato.
+Programmet endrer ikke originalmappene.
+
 
 # Installasjon
 
@@ -16,16 +18,9 @@ Hvis du bruker Linux eller WSL, se [README.linux.md](README.linux.md).
 
 ## Anbefalt installasjon
 
-Høyreklikk 
-[setup-windows.ps1](https://github.com/tcamundsen/bildebank/blob/main/setup-windows.ps1)
-gjerne og velg "Åpne linken i en ny fane", så beholder du veiledningen her.
-
-Klikk på nedlastingsknappen på GitHub-siden, eller klikk `Raw` og lagre siden
-som `setup-windows.ps1`. Disse knappene ligger på høyre side av skjermen, noen
-linjer ned.
-
-Windows kan blokkere PowerShell-script som er lastet ned fra nettleseren. Kjør
-derfor setup-scriptet slik:
+Høyreklikk [setup-windows.ps1]
+(https://raw.githubusercontent.com/tcamundsen/bildebank/refs/heads/main/setup-windows.ps1)
+og velg "Lagre linken som..."
 
 1. Åpne PowerShell. Det gjør du ved å åpne startmenyen og begynne å skrive "PowerShell". Klikk på
    PowerShell-logoen som dukker opp. Du skal ikke velge "Run as Administrator" eller
@@ -42,18 +37,6 @@ cd $HOME\Downloads
 powershell.exe -ExecutionPolicy Bypass -File .\setup-windows.ps1
 ```
 
-Hvis du høyreklikker og velger `Run with PowerShell` på en blokkert fil, kan
-vinduet bare blinke og forsvinne før du rekker å lese feilen.
-
-Scriptet forsøker å:
-
-- installere Git for Windows hvis Git mangler
-- installere Python 3.13 hvis Python 3.13 mangler
-- laste ned programmet fra GitHub
-- lage Python-miljøet `.venv`
-- installere programmet i Python-miljøet
-- legge `bin`-mappen i brukerens `PATH`
-
 Når scriptet er ferdig, **lukk PowerShell og åpne PowerShell på nytt**. Da skal du
 kunne skrive:
 
@@ -61,24 +44,13 @@ kunne skrive:
 bildebank
 ```
 
-Hvis `bildebank` ikke virker etter at du har åpnet PowerShell på nytt,
-gå til programmappen og prøv den fulle kommandoen:
-
-```powershell
-cd $HOME\kode\bildebank
-.\bin\bildebank.cmd
-```
-
-Hvis dette virker, kan PATH repareres med:
-```powershell
-powershell.exe -ExecutionPolicy Bypass -File .\fix-path.ps1
-```
-
 Hvis dette ikke virker, ble ikke installasjonen ferdig.
 
 Da er det på tide å ta kontakt med Tom Cato.
 
 Hvis dette fungerer kan du fortsette med å lese [brukermanualen](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
+
+# Komplisert forklaring du ikke trenger å se på :-)
 
 Hvis scriptet ikke får installert Git eller Python automatisk, kan du følge den
 manuelle oppskriften under. Men jeg foreslår egentlig at du ringer Tom Cato som
@@ -252,3 +224,10 @@ grundig til mer enn ett sted.
 
 Ikke slett gamle kilder før du er trygg på at importen ble riktig og at den nye
 samlingen er sikkerhetskopiert.
+
+# Lisens
+
+Bildebank er fri programvare lisensiert under GNU General Public License,
+versjon 3 eller senere. Se `LICENSE` for full lisens.
+
+
