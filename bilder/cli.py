@@ -359,6 +359,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Eksperimentell scanning etter ansikter",
     )
     face_scan.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
+    face_scan.add_argument(
+        "--show-model-output",
+        action="store_true",
+        help="Vis intern output fra InsightFace/ONNX ved feilsøking",
+    )
     face_report_parser = add_command(
         subparsers,
         "face-report",
@@ -605,7 +610,7 @@ def run(args: argparse.Namespace) -> int:
         return run_migrate(target, check=args.check)
 
     if args.command == "face-scan":
-        return run_face_scan(target, limit=args.limit)
+        return run_face_scan(target, limit=args.limit, show_model_output=args.show_model_output)
 
     if args.command == "face-report":
         return run_face_report(target, limit=args.limit)
@@ -1037,10 +1042,16 @@ def module_available(module_name: str) -> str:
     return "ja" if importlib.util.find_spec(module_name) is not None else "nei"
 
 
-def run_face_scan(target: Path, *, limit: int | None) -> int:
+def run_face_scan(target: Path, *, limit: int | None, show_model_output: bool = False) -> int:
     config = load_config(program_repo_root()).face_recognition
     require_face_enabled(config.enabled)
-    stats = scan_faces(target, config, limit=limit, progress=print_face_scan_progress)
+    stats = scan_faces(
+        target,
+        config,
+        limit=limit,
+        progress=print_face_scan_progress,
+        show_model_output=show_model_output,
+    )
     print(
         "Oppsummering: "
         f"sjekket={stats.checked}, hoppet_over={stats.skipped}, "

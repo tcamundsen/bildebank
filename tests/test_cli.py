@@ -5,6 +5,8 @@ import tempfile
 import unittest
 import datetime as dt
 import os
+import sys
+import warnings
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -1390,7 +1392,14 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
         class FakeApp:
             def get(self, image):
+                print("internal model get stdout")
+                warnings.warn("internal model warning", FutureWarning, stacklevel=1)
                 return [FakeFace()]
+
+        def fake_load_face_app(config):
+            print("internal model load stdout")
+            print("internal model load stderr", file=sys.stderr)
+            return FakeApp()
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1416,7 +1425,7 @@ model_name = "test-model"
             )
 
             with (
-                patch("bilder.face.load_face_app", return_value=FakeApp()),
+                patch("bilder.face.load_face_app", side_effect=fake_load_face_app),
                 patch("bilder.face.read_image", return_value=object()),
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
@@ -1425,6 +1434,8 @@ model_name = "test-model"
             self.assertIn("Face-scan: 1 bildefiler skal kontrolleres.", stdout)
             self.assertIn("Face-scan: 1 nye eller endrede bilder skal scannes.", stdout)
             self.assertIn("Face-scan: scannet=1/1", stdout)
+            self.assertNotIn("internal model", stdout)
+            self.assertNotIn("internal model", stderr)
             self.assertIn("ansikter=1", stdout)
             face_db = target / FACE_DB_FILENAME
             self.assertTrue(face_db.exists())

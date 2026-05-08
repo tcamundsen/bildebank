@@ -80,9 +80,17 @@ Kommandoen viser progresjon mens den jobber. Først kontrollerer den hvilke
 bilder som allerede er scannet, og deretter scanner den nye eller endrede
 bilder.
 
+Bildebank skjuler vanligvis intern output fra InsightFace og ONNX Runtime. Hvis
+du feilsøker selve ansiktsmodellen, kan den vises med:
+
+```powershell
+bildebank face-scan --show-model-output
+```
+
 Det er trygt å avbryte med `Ctrl-C`. Bildebank lagrer resultatet etter hvert
 bilde. Neste gang du kjører `face-scan`, fortsetter den ved å hoppe over bilder
-som allerede er ferdig scannet.
+som allerede er ferdig scannet. For å finne ansikter i alle bildene må denne
+kjøres på alle bildene i samlingen.
 
 Ansiktsdata lagres i bildesamlingen:
 

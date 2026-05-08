@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import math
+import os
+import sqlite3
+import warnings
 from collections.abc import Callable
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -1684,6 +1687,7 @@ def scan_faces(
     *,
     limit: int | None = None,
     progress: FaceScanProgress | None = None,
+    show_model_output: bool = False,
 ) -> FaceScanStats:
     stats = FaceScanStats()
     main_conn = db.connect(target)
@@ -1715,7 +1719,8 @@ def scan_faces(
 
         if progress is not None:
             progress("load_model", 0, len(rows_to_scan), stats, None)
-        app = load_face_app(config)
+        with suppress_model_output(enabled=not show_model_output):
+            app = load_face_app(config)
         for scan_index, row in enumerate(rows_to_scan, start=1):
             file_id = int(row["id"])
             target_path = Path(str(row["target_path"]))
@@ -1725,7 +1730,8 @@ def scan_faces(
                 image = read_image(target_path)
                 if image is None:
                     raise ValueError(f"Kunne ikke lese bildefil: {target_path}")
-                faces = app.get(image)
+                with suppress_model_output(enabled=not show_model_output):
+                    faces = app.get(image)
                 replace_file_faces(
                     face_conn,
                     file_id=file_id,
@@ -1756,6 +1762,17 @@ def scan_faces(
         main_conn.close()
         face_conn.close()
     return stats
+
+
+@contextmanager
+def suppress_model_output(*, enabled: bool):
+    if not enabled:
+        yield
+        return
+    with open(os.devnull, "w", encoding="utf-8") as devnull:
+        with redirect_stdout(devnull), redirect_stderr(devnull), warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            yield
 
 
 def active_image_files(conn: sqlite3.Connection, *, limit: int | None = None) -> list[sqlite3.Row]:
