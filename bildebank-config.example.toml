@@ -1,0 +1,11 @@
+[face_recognition]
+# InsightFace er valgfritt og er av som standard.
+# Kopier denne filen til bildebank-config.toml hvis du vil teste.
+enabled = false
+
+# Forelopig tester vi bare CPU. GPU krever egen onnxruntime-gpu/CUDA-installasjon.
+provider = "cpu"
+
+# Modellene skal ligge lokalt i programmappen, ikke i brukerens hjemmemappe.
+model_root = ".bildebank-insightface"
+model_name = "buffalo_l"
