@@ -1462,6 +1462,7 @@ model_name = "test-model"
             html = (target / "faces.html").read_text(encoding="utf-8")
             self.assertIn("Ansikter (1 bilder)", html)
             self.assertIn("IMG_20240102.jpg", html)
+            self.assertIn("Ansikt-id: 1", html)
             self.assertIn("class=\"box\"", html)
             self.assertIn("left: ", html)
 
@@ -1533,6 +1534,7 @@ model_name = "test-model"
             self.assertIn("Ansiktsgrupper (1 grupper)", html)
             self.assertIn("Gruppe 1 (2 ansikter)", html)
             self.assertIn("likhet", html)
+            self.assertIn("face-id 1", html)
             self.assertIn('face-person-add-group "Navn" 1', html)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-create", "Kari"])
@@ -1557,6 +1559,94 @@ model_name = "test-model"
             self.assertEqual(run_cli(["--target", str(target), "make-face-groups-browser"]), 0)
             html = (target / "face-groups.html").read_text(encoding="utf-8")
             self.assertIn("Koblet til: Kari", html)
+
+    def test_face_person_add_remove_face_and_suggest(self) -> None:
+        class FakeFace:
+            def __init__(self, bbox, embedding):
+                self.bbox = bbox
+                self.det_score = 0.9
+                self.embedding = embedding
+
+        class FakeApp:
+            def get(self, image):
+                return [
+                    FakeFace([1.0, 2.0, 11.0, 22.0], [1.0, 0.0, 0.0]),
+                    FakeFace([30.0, 4.0, 42.0, 24.0], [0.99, 0.01, 0.0]),
+                    FakeFace([50.0, 6.0, 64.0, 30.0], [0.0, 1.0, 0.0]),
+                ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            (self.program_root / "bildebank-config.toml").write_text(
+                """
+[face_recognition]
+enabled = true
+provider = "cpu"
+model_root = ".bildebank-insightface"
+model_name = "test-model"
+""",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            with (
+                patch("bilder.face.load_face_app", return_value=FakeApp()),
+                patch("bilder.face.read_image", return_value=object()),
+            ):
+                self.assertEqual(run_cli(["--target", str(target), "face-scan", "--limit", "1"]), 0)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "face-person-add-face", "Kari", "1"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Person: Kari", stdout)
+            self.assertIn("Ansikt-id: 1", stdout)
+            self.assertIn("Ansiktet er koblet til personen.", stdout)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "face-person-remove-face", "Kari", "1"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Ansiktet er fjernet fra personen.", stdout)
+
+            self.assertEqual(
+                run_cli(["--target", str(target), "face-person-add-face", "Kari", "1"]),
+                0,
+            )
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "face-suggest", "--threshold", "0.9"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("personer=1", stdout)
+            self.assertIn("ukjente_ansikter=2", stdout)
+            self.assertIn("forslag=1", stdout)
+            self.assertIn("Forslag:", stdout)
+            self.assertIn("Kari\tface-id=2", stdout)
+
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            try:
+                suggestion = conn.execute(
+                    """
+                    SELECT persons.name, face_suggestions.face_id
+                    FROM face_suggestions
+                    JOIN persons ON persons.id = face_suggestions.person_id
+                    """
+                ).fetchone()
+                self.assertEqual(suggestion, ("Kari", 2))
+            finally:
+                conn.close()
 
     def test_face_reset_requires_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

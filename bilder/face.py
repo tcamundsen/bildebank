@@ -13,7 +13,7 @@ from .media import IMAGE_EXTENSIONS, image_dimensions
 
 
 FACE_DB_FILENAME = ".bilder-faces.sqlite3"
-FACE_SCHEMA_VERSION = 1
+FACE_SCHEMA_VERSION = 2
 
 
 @dataclass
@@ -52,6 +52,28 @@ class AddGroupToPersonResult:
     group_index: int
     added_faces: int
     already_linked_faces: int
+
+
+@dataclass(frozen=True)
+class AddFaceToPersonResult:
+    person_name: str
+    face_id: int
+    added: bool
+
+
+@dataclass(frozen=True)
+class RemoveFaceFromPersonResult:
+    person_name: str
+    face_id: int
+    removed: bool
+
+
+@dataclass(frozen=True)
+class FaceSuggestStats:
+    persons: int
+    unknown_faces: int
+    suggestions: int
+    threshold: float
 
 
 def face_db_path(target: Path) -> Path:
@@ -141,6 +163,17 @@ def apply_face_schema(conn: sqlite3.Connection) -> None:
         );
 
         CREATE INDEX IF NOT EXISTS idx_person_faces_face_id ON person_faces(face_id);
+
+        CREATE TABLE IF NOT EXISTS face_suggestions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+            face_id INTEGER NOT NULL,
+            similarity REAL NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(person_id, face_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_face_suggestions_face_id ON face_suggestions(face_id);
         """
     )
     conn.execute(
@@ -199,6 +232,10 @@ def add_group_to_person(target: Path, person_name: str, group_index: int) -> Add
         added = 0
         already = 0
         for face_id in face_ids:
+            conn.execute(
+                "DELETE FROM person_faces WHERE face_id = ? AND person_id != ?",
+                (face_id, person_id),
+            )
             cur = conn.execute(
                 "INSERT OR IGNORE INTO person_faces(person_id, face_id) VALUES(?, ?)",
                 (person_id, face_id),
@@ -207,9 +244,145 @@ def add_group_to_person(target: Path, person_name: str, group_index: int) -> Add
                 added += 1
             else:
                 already += 1
+            conn.execute("DELETE FROM face_suggestions WHERE face_id = ?", (face_id,))
         conn.execute("UPDATE persons SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (person_id,))
         conn.commit()
         return AddGroupToPersonResult(clean_name, group_index, added, already)
+    finally:
+        conn.close()
+
+
+def add_face_to_person(target: Path, person_name: str, face_id: int) -> AddFaceToPersonResult:
+    clean_name = normalize_person_name(person_name)
+    conn = connect_face_db(target)
+    try:
+        require_face(conn, face_id)
+        person_id = ensure_person(conn, clean_name)
+        conn.execute(
+            "DELETE FROM person_faces WHERE face_id = ? AND person_id != ?",
+            (face_id, person_id),
+        )
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO person_faces(person_id, face_id) VALUES(?, ?)",
+            (person_id, face_id),
+        )
+        conn.execute("DELETE FROM face_suggestions WHERE face_id = ?", (face_id,))
+        conn.execute("UPDATE persons SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (person_id,))
+        conn.commit()
+        return AddFaceToPersonResult(clean_name, face_id, bool(cur.rowcount))
+    finally:
+        conn.close()
+
+
+def remove_face_from_person(target: Path, person_name: str, face_id: int) -> RemoveFaceFromPersonResult:
+    clean_name = normalize_person_name(person_name)
+    conn = connect_face_db(target)
+    try:
+        require_face(conn, face_id)
+        row = conn.execute("SELECT id FROM persons WHERE name = ?", (clean_name,)).fetchone()
+        if row is None:
+            raise ValueError(f"Fant ikke person: {clean_name}")
+        person_id = int(row["id"])
+        cur = conn.execute(
+            "DELETE FROM person_faces WHERE person_id = ? AND face_id = ?",
+            (person_id, face_id),
+        )
+        conn.execute("UPDATE persons SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (person_id,))
+        conn.commit()
+        return RemoveFaceFromPersonResult(clean_name, face_id, bool(cur.rowcount))
+    finally:
+        conn.close()
+
+
+def suggest_faces(target: Path, *, threshold: float = 0.6) -> FaceSuggestStats:
+    path = face_db_path(target)
+    if not path.exists():
+        raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
+    conn = connect_face_db(target)
+    try:
+        person_vectors: dict[int, list[list[float]]] = {}
+        for row in conn.execute(
+            """
+            SELECT persons.id AS person_id, faces.embedding
+            FROM persons
+            JOIN person_faces ON person_faces.person_id = persons.id
+            JOIN faces ON faces.id = person_faces.face_id
+            ORDER BY persons.id, faces.id
+            """
+        ):
+            person_vectors.setdefault(int(row["person_id"]), []).append(
+                embedding_from_blob(bytes(row["embedding"]))
+            )
+        centroids = {
+            person_id: average_embedding(vectors)
+            for person_id, vectors in person_vectors.items()
+            if vectors
+        }
+        unknown_faces = list(
+            conn.execute(
+                """
+                SELECT id, embedding
+                FROM faces
+                WHERE id NOT IN (SELECT face_id FROM person_faces)
+                ORDER BY id
+                """
+            )
+        )
+
+        conn.execute("DELETE FROM face_suggestions")
+        suggestions = 0
+        for face in unknown_faces:
+            face_id = int(face["id"])
+            vector = embedding_from_blob(bytes(face["embedding"]))
+            best_person_id = None
+            best_score = 0.0
+            for person_id, centroid in centroids.items():
+                score = cosine_similarity(vector, centroid)
+                if score > best_score:
+                    best_person_id = person_id
+                    best_score = score
+            if best_person_id is not None and best_score >= threshold:
+                conn.execute(
+                    """
+                    INSERT INTO face_suggestions(person_id, face_id, similarity)
+                    VALUES(?, ?, ?)
+                    """,
+                    (best_person_id, face_id, best_score),
+                )
+                suggestions += 1
+        conn.commit()
+        return FaceSuggestStats(
+            persons=len(centroids),
+            unknown_faces=len(unknown_faces),
+            suggestions=suggestions,
+            threshold=threshold,
+        )
+    finally:
+        conn.close()
+
+
+def list_face_suggestions(target: Path) -> list[sqlite3.Row]:
+    path = face_db_path(target)
+    if not path.exists():
+        return []
+    conn = connect_face_db(target)
+    try:
+        return list(
+            conn.execute(
+                """
+                SELECT
+                    persons.name,
+                    face_suggestions.face_id,
+                    face_suggestions.similarity,
+                    scanned_files.target_path
+                FROM face_suggestions
+                JOIN persons ON persons.id = face_suggestions.person_id
+                JOIN faces ON faces.id = face_suggestions.face_id
+                JOIN scanned_files ON scanned_files.file_id = faces.file_id
+                ORDER BY persons.name, face_suggestions.similarity DESC, face_suggestions.face_id
+                """
+            )
+        )
     finally:
         conn.close()
 
@@ -251,6 +424,12 @@ def ensure_person(conn: sqlite3.Connection, name: str) -> int:
     if row is not None:
         return int(row["id"])
     return int(conn.execute("INSERT INTO persons(name) VALUES(?) RETURNING id", (name,)).fetchone()["id"])
+
+
+def require_face(conn: sqlite3.Connection, face_id: int) -> None:
+    row = conn.execute("SELECT id FROM faces WHERE id = ?", (face_id,)).fetchone()
+    if row is None:
+        raise ValueError(f"Fant ikke ansikt-id {face_id}. Kjør make-face-browser eller make-face-groups-browser for å se id-er.")
 
 
 def latest_group_by_index(conn: sqlite3.Connection, group_index: int) -> sqlite3.Row | None:
@@ -417,6 +596,7 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
         SELECT
             face_groups.group_index,
             face_groups.member_count,
+            faces.id AS face_id,
             face_group_members.similarity,
             scanned_files.target_path,
             faces.bbox_x,
@@ -439,6 +619,7 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
         target_path = Path(str(row["target_path"]))
         dimensions = image_dimensions(target_path)
         face = {
+            "faceId": int(row["face_id"]),
             "path": display_relative_path(target, target_path),
             "url": path_to_url(relative_to_target(target, target_path)),
             "x": float(row["bbox_x"]),
@@ -488,6 +669,7 @@ def face_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str,
             scanned_files.file_id,
             scanned_files.target_path,
             scanned_files.face_count,
+            faces.id AS face_id,
             faces.bbox_x,
             faces.bbox_y,
             faces.bbox_width,
@@ -516,6 +698,7 @@ def face_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str,
         )
         item["faces"].append(
             {
+                "faceId": int(row["face_id"]),
                 "x": float(row["bbox_x"]),
                 "y": float(row["bbox_y"]),
                 "width": float(row["bbox_width"]),
@@ -762,7 +945,7 @@ def render_group_face(face: dict[str, Any]) -> str:
     style = crop_image_style(face)
     return f"""<div class="face">
   <div class="crop"><img src="{html_escape(face['url'])}" alt="" style="{style}"></div>
-  <div class="meta">likhet {float(face['similarity']):.3f}<br>{html_escape(face['path'])}</div>
+  <div class="meta">face-id {face['faceId']}<br>likhet {float(face['similarity']):.3f}<br>{html_escape(face['path'])}</div>
 </div>"""
 
 
@@ -781,6 +964,7 @@ def crop_image_style(face: dict[str, Any]) -> str:
 def render_face_card(item: dict[str, Any]) -> str:
     boxes = "\n".join(render_face_box(face, item["dimensions"]) for face in item["faces"])
     face_count = int(item["faceCount"])
+    face_ids = ", ".join(str(face["faceId"]) for face in item["faces"])
     return f"""<article class="card">
   <div class="media">
     <img src="{html_escape(item['url'])}" alt="">
@@ -789,6 +973,7 @@ def render_face_card(item: dict[str, Any]) -> str:
   <div class="meta">
     <div class="path">{html_escape(item['path'])}</div>
     <div>{face_count} ansikt{'er' if face_count != 1 else ''}</div>
+    <div class="muted">Ansikt-id: {html_escape(face_ids)}</div>
     <div class="muted">Beste score: {max(float(face['score']) for face in item['faces']):.3f}</div>
   </div>
 </article>"""
@@ -1078,6 +1263,19 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     if left_norm == 0.0 or right_norm == 0.0:
         return 0.0
     return dot / (left_norm * right_norm)
+
+
+def average_embedding(vectors: list[list[float]]) -> list[float]:
+    if not vectors:
+        return []
+    length = len(vectors[0])
+    same_length_vectors = [vector for vector in vectors if len(vector) == length]
+    if not same_length_vectors:
+        return []
+    return [
+        sum(vector[index] for vector in same_length_vectors) / len(same_length_vectors)
+        for index in range(length)
+    ]
 
 
 def find(parent: dict[int, int], value: int) -> int:

@@ -12,8 +12,12 @@ from . import __version__, db
 from .config import CONFIG_FILENAME, load_config
 from .exiftool_probe import exiftool_metadata_gaps
 from .face import (
+    AddFaceToPersonResult,
     AddGroupToPersonResult,
     FaceReport,
+    FaceSuggestStats,
+    RemoveFaceFromPersonResult,
+    add_face_to_person,
     add_group_to_person,
     create_person,
     export_face_browser,
@@ -22,8 +26,11 @@ from .face import (
     face_db_summary,
     face_report,
     group_faces,
+    list_face_suggestions,
     list_persons,
+    remove_face_from_person,
     scan_faces,
+    suggest_faces,
 )
 from .importer import (
     import_source,
@@ -93,7 +100,10 @@ HELP_COMMAND_GROUPS = (
             ("face-group", "Beregn mulige ansiktsgrupper"),
             ("face-person-create", "Opprett person i ansiktsdatabasen"),
             ("face-person-add-group", "Koble ansiktsgruppe til person"),
+            ("face-person-add-face", "Koble ett ansikt til person"),
+            ("face-person-remove-face", "Fjern ett ansikt fra person"),
             ("face-person-list", "List personer i ansiktsdatabasen"),
+            ("face-suggest", "Foreslå personer for ukjente ansikter"),
             ("make-face-browser", "Lag HTML-side for scannede ansikter"),
             ("make-face-groups-browser", "Lag HTML-side for ansiktsgrupper"),
             ("face-reset", "Slett eksperimentelle ansiktsdata"),
@@ -381,11 +391,39 @@ def build_parser() -> argparse.ArgumentParser:
     )
     face_person_add_group.add_argument("name", metavar="navn", help="Personnavn")
     face_person_add_group.add_argument("group", metavar="gruppe", type=positive_int_arg, help="Gruppe-id fra face-groups.html")
+    face_person_add_face = add_command(
+        subparsers,
+        "face-person-add-face",
+        usage="bildebank face-person-add-face [valg] navn ansikt_id",
+        help="Koble ett ansikt til person",
+    )
+    face_person_add_face.add_argument("name", metavar="navn", help="Personnavn")
+    face_person_add_face.add_argument("face_id", metavar="ansikt_id", type=positive_int_arg, help="Ansikt-id fra HTML-visningen")
+    face_person_remove_face = add_command(
+        subparsers,
+        "face-person-remove-face",
+        usage="bildebank face-person-remove-face [valg] navn ansikt_id",
+        help="Fjern ett ansikt fra person",
+    )
+    face_person_remove_face.add_argument("name", metavar="navn", help="Personnavn")
+    face_person_remove_face.add_argument("face_id", metavar="ansikt_id", type=positive_int_arg, help="Ansikt-id fra HTML-visningen")
     add_command(
         subparsers,
         "face-person-list",
         usage="bildebank face-person-list [valg]",
         help="List personer i ansiktsdatabasen",
+    )
+    face_suggest = add_command(
+        subparsers,
+        "face-suggest",
+        usage="bildebank face-suggest [valg]",
+        help="Foreslå personer for ukjente ansikter",
+    )
+    face_suggest.add_argument(
+        "--threshold",
+        type=similarity_threshold_arg,
+        default=0.6,
+        help="Likhetsterskel fra 0.0 til 1.0. Standard: 0.6",
     )
     face_browser = add_command(
         subparsers,
@@ -564,9 +602,22 @@ def run(args: argparse.Namespace) -> int:
         print_add_group_to_person_result(result)
         return 0
 
+    if args.command == "face-person-add-face":
+        result = add_face_to_person(target, args.name, args.face_id)
+        print_add_face_to_person_result(result)
+        return 0
+
+    if args.command == "face-person-remove-face":
+        result = remove_face_from_person(target, args.name, args.face_id)
+        print_remove_face_from_person_result(result)
+        return 0
+
     if args.command == "face-person-list":
         print_persons(target)
         return 0
+
+    if args.command == "face-suggest":
+        return run_face_suggest(target, threshold=args.threshold)
 
     if args.command == "make-face-browser":
         output = args.output.resolve() if args.output else None
@@ -984,11 +1035,58 @@ def run_face_group(target: Path, *, threshold: float) -> int:
     return 0
 
 
+def run_face_suggest(target: Path, *, threshold: float) -> int:
+    stats = suggest_faces(target, threshold=threshold)
+    print_face_suggest_stats(stats)
+    print_face_suggestions(target)
+    print("Dette er forslag basert på personer du allerede har bekreftet.")
+    return 0
+
+
 def print_add_group_to_person_result(result: AddGroupToPersonResult) -> None:
     print(f"Person: {result.person_name}")
     print(f"Gruppe: {result.group_index}")
     print(f"Nye ansikter koblet til person: {result.added_faces}")
     print(f"Ansikter som allerede var koblet: {result.already_linked_faces}")
+
+
+def print_add_face_to_person_result(result: AddFaceToPersonResult) -> None:
+    print(f"Person: {result.person_name}")
+    print(f"Ansikt-id: {result.face_id}")
+    if result.added:
+        print("Ansiktet er koblet til personen.")
+    else:
+        print("Ansiktet var allerede koblet til personen.")
+
+
+def print_remove_face_from_person_result(result: RemoveFaceFromPersonResult) -> None:
+    print(f"Person: {result.person_name}")
+    print(f"Ansikt-id: {result.face_id}")
+    if result.removed:
+        print("Ansiktet er fjernet fra personen.")
+    else:
+        print("Ansiktet var ikke koblet til personen.")
+
+
+def print_face_suggest_stats(stats: FaceSuggestStats) -> None:
+    print(
+        "Ansiktsforslag: "
+        f"personer={stats.persons}, ukjente_ansikter={stats.unknown_faces}, "
+        f"forslag={stats.suggestions}, threshold={stats.threshold:.3f}"
+    )
+
+
+def print_face_suggestions(target: Path) -> None:
+    rows = list_face_suggestions(target)
+    if not rows:
+        print("Ingen forslag.")
+        return
+    print("Forslag:")
+    for row in rows:
+        print(
+            f"  {row['name']}\tface-id={row['face_id']}\t"
+            f"score={float(row['similarity']):.3f}\t{row['target_path']}"
+        )
 
 
 def print_persons(target: Path) -> None:

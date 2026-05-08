@@ -168,7 +168,37 @@ bildebank face-person-list
 ```
 
 Dette er brukerbekreftet informasjon. Det er fortsatt bare ansiktene i gruppen
-som kobles til personen; Bildebank foreslår ikke nye ansikter automatisk ennå.
+som kobles til personen.
+
+Du kan også koble ett enkelt ansikt til en person. Ansikt-id står i
+`faces.html` og `face-groups.html`.
+
+```powershell
+bildebank face-person-add-face "Kari" 17
+```
+
+Hvis et ansikt er koblet feil, kan koblingen fjernes igjen:
+
+```powershell
+bildebank face-person-remove-face "Kari" 17
+```
+
+Når noen ansikter er koblet til personer, kan Bildebank lage forslag for
+ukjente ansikter:
+
+```powershell
+bildebank face-suggest
+```
+
+Forslagene er ikke bekreftede personer. De bygger bare på ansikter du allerede
+har koblet manuelt. Kommandoen skriver ut personnavn, ansikt-id, score og fil.
+Strengheten kan justeres:
+
+```powershell
+bildebank face-suggest --threshold 0.70
+```
+
+Høyere tall gir færre og strengere forslag.
 
 ## Slette ansiktsdata
 
