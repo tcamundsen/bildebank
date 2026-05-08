@@ -306,7 +306,7 @@ class CliTests(unittest.TestCase):
                 code, stdout, stderr = capture_cli(["create", str(target)])
 
             self.assertEqual(code, 1)
-            self.assertIn("Målmappen kan ikke ligge inni programmappen", stderr)
+            self.assertIn("Bildesamlingen kan ikke ligge inni programmappen", stderr)
             self.assertFalse((target / DB_FILENAME).exists())
 
     def test_update_runs_update_script_without_target(self) -> None:
@@ -597,7 +597,7 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
-            self.assertIn("Målmappen er låst", stderr)
+            self.assertIn("Bildesamlingen er låst", stderr)
             self.assertIn(str(lock_path), stderr)
             self.assertTrue(lock_path.exists())
             self.assertFalse((target / "2024").exists())

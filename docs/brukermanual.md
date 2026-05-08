@@ -165,9 +165,10 @@ den fulle adressen til mappen, og gått dit:
 cd $HOME\BildeSamling
 ```
 
-## Opprett målmappe
+## Opprett bildesamlingsmappe
 
-Kommandoen `create` gjør den mappen du står i til en Bildebank-målmappe. Punktum
+Kommandoen `create` gjør den mappen du står i til en bildesamling.  Som du
+kanskje legger merke til, så bruker vi en tom mappe som utgangspunkt. Punktum
 betyr "denne mappen".
 
 Kjør dette fra bildesamlingsmappen:
@@ -342,9 +343,9 @@ Kommandoen viser:
 
 Når du oppretter en ny bildesamling med `create`, lagres den automatisk i denne
 oversikten. Hvis du allerede hadde en bildesamling fra før, blir den også lagt
-til automatisk neste gang du bruker Bildebank med den målmappen.
+til automatisk neste gang du bruker Bildebank med den bildesamlingen.
 
-Hvis `where-is` viser en bildesamlingsmappe, kan du kopiere `cd`-linjen som
+Hvis `where-is` viser en bildesamlings, kan du kopiere `cd`-linjen som
 kommandoen foreslår, for eksempel:
 
 ```powershell
@@ -421,10 +422,10 @@ kildelisten.
 ## Finn navnekollisjoner
 
 En navnekollisjon betyr at flere importerte filer ville hatt samme filnavn i
-samme målmappe. Bildebank beholder filene, men lagrer noen av dem med justert
-navn. Dette er egentlig ikke et problem, men hvis du feilsøker, eller hvis du
-tror at du har for eksempel samme bilde i forskjellig oppløsning fra to kilder,
-med samme filnavn, så kan dette være nyttig å se på.
+samme mappe for en bestemt måned og år. Bildebank beholder filene, men lagrer
+noen av dem med justert navn. Dette er egentlig ikke et problem, men hvis du
+feilsøker, eller hvis du tror at du har for eksempel samme bilde i forskjellig
+oppløsning fra to kilder, med samme filnavn, så kan dette være nyttig å se på.
 
 List navnekollisjoner:
 

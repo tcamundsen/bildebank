@@ -47,11 +47,11 @@ def validate_source_target(source: Path, target: Path) -> None:
     source_resolved = source.resolve()
     target_resolved = target.resolve()
     if source_resolved == target_resolved:
-        raise ValueError("Kildemappe og målmappe kan ikke være samme mappe.")
+        raise ValueError("Kildemappe og bildesamling kan ikke være samme mappe.")
     if _is_relative_to(source_resolved, target_resolved):
-        raise ValueError("Kildemappen kan ikke ligge inni målmappen.")
+        raise ValueError("Kildemappen kan ikke ligge inni bildesamlingen.")
     if _is_relative_to(target_resolved, source_resolved):
-        raise ValueError("Målmappen kan ikke ligge inni kildemappen.")
+        raise ValueError("Bildesamlingen kan ikke ligge inni kildemappen.")
 
 
 def validate_new_directory_source(conn, source: Path) -> None:

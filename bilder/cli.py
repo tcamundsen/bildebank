@@ -124,7 +124,7 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "create",
         usage="bildebank create [valg] mappe",
-        help="Opprett målmappe og database",
+        help="Opprett bildesamling og database",
     )
     create.add_argument("path", metavar="mappe", type=Path, help="Mappen som skal bli bildesamling")
 
@@ -247,7 +247,7 @@ def build_parser() -> argparse.ArgumentParser:
     exiftool_gaps.add_argument(
         "--exiftool",
         type=Path,
-        help="Path til exiftool.exe. Standard er exiftool.exe i målmappen.",
+        help="Path til exiftool.exe. Standard er exiftool.exe i bildesamlingsmappen.",
     )
     explain = add_command(
         subparsers,
@@ -298,7 +298,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         dest="output",
         type=Path,
-        help="Skriv HTML-filen hit. Standard: index.html i målmappen.",
+        help="Skriv HTML-filen hit. Standard: index.html i bildesamlingsmappen.",
     )
     add_browser_filter_arguments(browser)
 
@@ -309,7 +309,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Åpne HTML-browseren i standard nettleser",
         description=(
             "Åpner en eksisterende HTML-browser i standard nettleser. "
-            "Standard er index.html i målmappen."
+            "Standard er index.html i bildesamlingsmappen."
         ),
     )
     open_browser.add_argument(
@@ -317,7 +317,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--file",
         dest="file",
         type=Path,
-        help="HTML-filen som skal åpnes. Standard: index.html i målmappen.",
+        help="HTML-filen som skal åpnes. Standard: index.html i bildesamlingsmappen.",
     )
 
     export_conflicts = add_command(
@@ -331,7 +331,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         dest="output",
         type=Path,
-        help="Skriv HTML-filen hit. Standard: name-conflicts.html i målmappen.",
+        help="Skriv HTML-filen hit. Standard: name-conflicts.html i bildesamlingsmappen.",
     )
     add_command(subparsers, "report", usage="bildebank report [valg]", help="Vis importoppsummering")
     add_command(
@@ -424,7 +424,7 @@ def run(args: argparse.Namespace) -> int:
         finally:
             conn.close()
         record_target_best_effort(program_repo_root(), target, created=True)
-        print(f"Målmappe opprettet: {target}")
+        print(f"Bildesamling opprettet: {target}")
         return 0
 
     if args.command == "explain-date":
@@ -554,7 +554,7 @@ def run(args: argparse.Namespace) -> int:
                 print(f"Filen er ikke del av en navnekollisjon: {path}")
                 return 0
             print(f"Navnekollisjon: {row['original_filename']}")
-            print(f"Målmappe: {Path(str(row['target_path'])).parent}")
+            print(f"Mappe i bildesamlingen: {Path(str(row['target_path'])).parent}")
             for item in rows:
                 print_name_conflict_item(item)
             return 0
@@ -740,11 +740,11 @@ def resolve_target(target_arg: Path | None) -> Path:
     if target_arg is not None:
         target = target_arg.resolve()
         if not db.db_path_for_target(target).exists():
-            raise ValueError(f"Målmappen er ikke initialisert: {target}")
+            raise ValueError(f"Bildesamlingen er ikke initialisert: {target}")
         return target
     target = db.find_target()
     if target is None:
-        raise ValueError("Fant ingen målmappe. Kjør kommandoen fra bildesamlingsmappen.")
+        raise ValueError("Fant ingen bildesamling. Kjør kommandoen fra bildesamlingsmappen.")
     return target
 
 
@@ -828,7 +828,7 @@ def validate_target_not_in_program_repo(target: Path) -> None:
     except ValueError:
         return
     raise ValueError(
-        "Målmappen kan ikke ligge inni programmappen. "
+        "Bildesamlingen kan ikke ligge inni programmappen. "
         "Velg en egen bildesamlingsmappe utenfor repoet."
     )
 
@@ -919,7 +919,7 @@ def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
 
 def run_migrate(target: Path, *, check: bool) -> int:
     plan = db.migration_plan(target, validate=check)
-    print(f"Målmappe: {target}")
+    print(f"Bildesamling: {target}")
     print(f"Database: {db.db_path_for_target(target)}")
     print(f"Nåværende schema_version: {plan.current_version}")
     print(f"Ny schema_version: {plan.target_version}")
@@ -950,7 +950,7 @@ def run_migrate(target: Path, *, check: bool) -> int:
         return 0
 
     with TargetLock(target, command="migrate"):
-        print("Låser målmappe.")
+        print("Låser bildesamling.")
         backup_path = db.backup_database(target)
         print(f"Lager backup: {backup_path}")
         print("Validerer eksisterende database.")
@@ -1071,7 +1071,7 @@ def relative_path_under_target(target: Path, path: Path) -> Path:
     try:
         relative_path = path.resolve().relative_to(target.resolve())
     except ValueError as exc:
-        raise ValueError(f"Filen ligger ikke i målmappen: {path}") from exc
+        raise ValueError(f"Filen ligger ikke i bildesamlingen: {path}") from exc
     if not relative_path.parts or relative_path.parts[0] == "deleted":
         raise ValueError(f"Kan ikke slette filer fra deleted/: {path}")
     return relative_path

@@ -22,7 +22,7 @@ class TargetLock:
         except FileExistsError as exc:
             details = lock_details(self.path)
             message = (
-                "Målmappen er låst av en annen bildebank-kommando. "
+                "Bildesamlingen er låst av en annen bildebank-kommando. "
                 "Vent til den er ferdig før du kjører import på nytt."
             )
             if details:
