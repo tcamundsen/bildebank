@@ -10,12 +10,9 @@ from pathlib import Path
 from . import __version__, db
 from .exiftool_probe import exiftool_metadata_gaps
 from .importer import (
-    import_pending_sources,
-    import_pending_sources_dry_run,
     import_source,
     import_source_dry_run,
     refresh_non_metadata_files,
-    validate_new_directory_source,
     validate_source_target,
 )
 from .html_export import export_html, export_html_conflicts
@@ -128,14 +125,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     create.add_argument("path", metavar="mappe", type=Path, help="Mappen som skal bli bildesamling")
 
-    add = add_command(
-        subparsers,
-        "add",
-        usage="bildebank add [valg] mappe",
-        help="Registrer kildemappe",
-    )
-    add.add_argument("path", metavar="mappe", type=Path, help="Kildemappe med bilder og videoer")
-
     imp = add_command(
         subparsers,
         "import",
@@ -150,6 +139,7 @@ def build_parser() -> argparse.ArgumentParser:
     imp.add_argument("--quiet", action="store_true")
     imp.add_argument(
         "--name",
+        required=True,
         help="Unikt navn på importen, for eksempel Sommer2023 eller Familie-CD-2004",
     )
     imp.add_argument(
@@ -162,28 +152,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Skriv dry-run-listen til fil i stedet for stdout",
     )
-    imp.add_argument("path", metavar="mappe", nargs="?", type=Path, help="Kilden som skal importeres")
-
-    removable = add_command(
-        subparsers,
-        "import-removable",
-        usage="bildebank import-removable [valg] --name navn mappe",
-        help=argparse.SUPPRESS,
-        description=(
-            "Denne kommandoen er erstattet av: bildebank import --name navn mappe"
-        ),
-    )
-    removable.add_argument(
-        "--name",
-        required=True,
-        help="Stabil etikett for mediet, for eksempel teksten på en CD eller USB-disk",
-    )
-    removable.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="List filer som ville blitt importert uten å registrere mediet eller endre databasen",
-    )
-    removable.add_argument("path", metavar="mappe", type=Path, help="Path til mediet slik det er montert nå")
+    imp.add_argument("path", metavar="mappe", type=Path, help="Kilden som skal importeres")
 
     add_command(subparsers, "list-sources", usage="bildebank list-sources [valg]", help="List registrerte kilder")
     add_command(subparsers, "status", usage="bildebank status [valg]", help="Vis antall filer fordelt på type og datokilde")
@@ -205,20 +174,19 @@ def build_parser() -> argparse.ArgumentParser:
     unimport = add_command(
         subparsers,
         "unimport",
-        usage="bildebank unimport [valg] [mappe]",
+        usage="bildebank unimport [valg] --name navn",
         help="Reverser en tidligere importert kilde",
         description=(
             "Kontrollerer først at alle registrerte kildefiler fortsatt finnes "
             "med samme innhold. Krever nøyaktig bekreftelse før noe endres."
         ),
     )
-    unimport.add_argument("--name", help="Navn på flyttbart medium som skal reverseres")
+    unimport.add_argument("--name", required=True, help="Navn på importen som skal reverseres")
     unimport.add_argument(
         "--dry-run",
         action="store_true",
         help="Vis hva som ville blitt gjort uten å slette filer eller endre databasen",
     )
-    unimport.add_argument("path", metavar="mappe", nargs="?", type=Path, help="Vanlig kildemappe som skal reverseres")
     remove = add_command(
         subparsers,
         "remove",
@@ -464,44 +432,13 @@ def run(args: argparse.Namespace) -> int:
         return run_migrate(target, check=args.check)
 
     if args.command == "import" and args.dry_run:
-        if args.name or args.path is not None:
-            return run_named_import_dry_run(target, args)
-        output_path = args.log_file.resolve() if args.log_file else None
-        if output_path is None:
-            stats = import_pending_sources_dry_run(target, output=sys.stdout, verbose=not args.quiet)
-        else:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with output_path.open("w", encoding="utf-8", newline="\n") as output:
-                stats = import_pending_sources_dry_run(target, output=output, verbose=not args.quiet)
-            print(f"Skrev dry-run importliste: {output_path}")
-        print_summary(stats)
-        return 0 if stats.errors == 0 else 2
+        return run_named_import_dry_run(target, args)
 
     conn = db.connect(target)
     try:
-        if not (
-            (args.command == "import-removable" and args.dry_run)
-            or (args.command == "unimport" and args.dry_run)
-        ):
+        if not (args.command == "unimport" and args.dry_run):
             db.log_command(conn, args.command, vars_for_log(args))
-        if args.command == "add":
-            print(
-                "'add' er faset ut. Vi bruker nå bare import direkte. Se bruksanvisningen",
-                file=sys.stderr,
-            )
-            source = existing_path_arg(args.path).resolve()
-            if not source.is_dir():
-                raise ValueError(f"Kildemappen finnes ikke: {source}")
-            validate_source_target(source, target)
-            validate_new_directory_source(conn, source)
-            source_id = db.add_directory_source(conn, source)
-            conn.commit()
-            print(f"Registrert kildemappe #{source_id}: {source}")
-            return 0
-
-        if args.command == "import" and (args.name or args.path is not None):
-            if not args.name or args.path is None:
-                raise ValueError('Bruk både --name og mappe: bildebank import --name "Navn" "path\\til\\kilde"')
+        if args.command == "import":
             if args.log_file:
                 raise ValueError("--log-file kan bare brukes sammen med --dry-run.")
             source = existing_path_arg(args.path).resolve()
@@ -519,11 +456,6 @@ def run(args: argparse.Namespace) -> int:
                 stats = import_source(conn, target, source_row, verbose=not args.quiet)
             print_summary(stats)
             return 0 if stats.errors == 0 else 2
-
-        if args.command == "import-removable":
-            raise ValueError(
-                "import-removable er erstattet med kun import. Se bruksanvisningen"
-            )
 
         if args.command == "list-sources":
             for source in db.get_sources(conn):
@@ -568,7 +500,7 @@ def run(args: argparse.Namespace) -> int:
             return 0
 
         if args.command == "unimport":
-            source = resolve_source_for_unimport_or_remove(conn, args.path, args.name, command="unimport")
+            source = resolve_source_by_name(conn, args.name)
             if source.status == "superseded":
                 raise ValueError(
                     "Kan ikke unimportere en superseded kilde. "
@@ -716,18 +648,6 @@ def run(args: argparse.Namespace) -> int:
             print_report(conn)
             return 0
 
-        if args.command == "import":
-            if args.name or args.path is not None:
-                raise ValueError('Bruk både --name og mappe: bildebank import --name "Navn" "path\\til\\kilde"')
-            if args.log_file:
-                raise ValueError("--log-file kan bare brukes sammen med --dry-run.")
-            conn.commit()
-            conn.close()
-            with TargetLock(target, command="import"):
-                stats = import_pending_sources(target, verbose=not args.quiet)
-            print_summary(stats)
-            return 0 if stats.errors == 0 else 2
-
         raise ValueError(f"Ukjent kommando: {args.command}")
     finally:
         try:
@@ -748,33 +668,11 @@ def resolve_target(target_arg: Path | None) -> Path:
     return target
 
 
-def resolve_source_arg(conn, path: Path) -> db.Source:
-    sources = db.find_sources_by_path(conn, path)
-    if not sources:
-        raise ValueError(f"Fant ikke registrert kilde: {path}")
-    if len(sources) > 1:
-        labels = ", ".join(f"#{source.id} {source.name}" for source in sources)
-        raise ValueError(f"Kilden matcher flere registrerte kilder: {labels}")
-    return sources[0]
-
-
-def resolve_source_for_unimport_or_remove(
-    conn, path: Path | None, name: str | None, *, command: str
-) -> db.Source:
-    if name and path is not None:
-        raise ValueError("Bruk enten --name eller mappe, ikke begge deler.")
-    if name:
-        source = db.find_source_by_name(conn, name)
-        if source is None:
-            raise ValueError(f"Fant ikke kilde med navn: {name}")
-        return source
-    if path is None:
-        raise ValueError(f"Du må angi --name NAVN eller mappe: bildebank {command} --name NAVN")
-
-    source_path = existing_path_arg(path).resolve()
-    if not source_path.exists() or not source_path.is_dir():
-        raise ValueError(f"Kilden finnes ikke som mappe: {source_path}")
-    return resolve_source_arg(conn, source_path)
+def resolve_source_by_name(conn, name: str) -> db.Source:
+    source = db.find_source_by_name(conn, name)
+    if source is None:
+        raise ValueError(f"Fant ikke kilde med navn: {name}")
+    return source
 
 
 def validate_unimport_source_files(conn, source: db.Source) -> None:

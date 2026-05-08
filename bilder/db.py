@@ -902,20 +902,6 @@ def add_named_source(conn: sqlite3.Connection, path: Path, name: str) -> int:
     return int(cur.fetchone()["id"])
 
 
-def add_directory_source(conn: sqlite3.Connection, path: Path) -> int:
-    used = {str(row["name"]) for row in conn.execute("SELECT name FROM sources")}
-    name = unique_source_name(default_source_name(str(path.resolve())), used)
-    cur = conn.execute(
-        """
-        INSERT INTO sources(path, path_key, name)
-        VALUES(?, ?, ?)
-        RETURNING id
-        """,
-        (str(path.resolve()), path_key(path), name),
-    )
-    return int(cur.fetchone()["id"])
-
-
 def find_file_by_hash(conn: sqlite3.Connection, sha256: str) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT * FROM files WHERE sha256 = ? ORDER BY id LIMIT 1",

@@ -54,68 +54,12 @@ def validate_source_target(source: Path, target: Path) -> None:
         raise ValueError("Bildesamlingen kan ikke ligge inni kildemappen.")
 
 
-def validate_new_directory_source(conn, source: Path) -> None:
-    source_resolved = source.resolve()
-    for registered in db.get_sources(conn):
-        registered_path = registered.path.resolve()
-        if _same_path(source_resolved, registered_path):
-            raise ValueError(f"Kildemappen er allerede registrert: {registered.path}")
-
-
-def _same_path(left: Path, right: Path) -> bool:
-    return db.path_key(left) == db.path_key(right)
-
-
-def _is_same_or_under(child: Path, parent: Path) -> bool:
-    child_key = db.path_key(child)
-    parent_key = db.path_key(parent)
-    try:
-        return os.path.commonpath([child_key, parent_key]) == parent_key
-    except ValueError:
-        return False
-
-
 def _is_relative_to(child: Path, parent: Path) -> bool:
     try:
         child.relative_to(parent)
         return True
     except ValueError:
         return False
-
-
-def import_pending_sources(target: Path, *, verbose: bool = True) -> ImportStats:
-    stats = ImportStats()
-    conn = db.connect(target)
-    try:
-        sources = db.get_sources(conn, pending_only=True)
-        for source in sources:
-            source_stats = import_source(conn, target, source, verbose=verbose)
-            _merge_stats(stats, source_stats)
-            if source_stats.stopped:
-                break
-        conn.commit()
-    finally:
-        conn.close()
-    return stats
-
-
-def import_pending_sources_dry_run(
-    target: Path, *, output: TextIO, verbose: bool = True
-) -> ImportStats:
-    stats = ImportStats()
-    conn = db.connect(target)
-    try:
-        sources = db.get_sources(conn, pending_only=True)
-        for source in sources:
-            source_stats = import_source_dry_run(
-                conn, target, source, output=output, verbose=verbose
-            )
-            _merge_stats(stats, source_stats)
-            if source_stats.stopped:
-                break
-    finally:
-        conn.close()
-    return stats
 
 
 def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True) -> ImportStats:

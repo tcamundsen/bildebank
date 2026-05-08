@@ -136,19 +136,16 @@ For å liste opp alle registrerte kilder:
 
 For å reversere en tidligere import:
 
-    $ bildebank unimport /path/to/source
-    $ bildebank unimport --dry-run /path/to/source
     $ bildebank unimport --name "cd-2005"
     $ bildebank unimport --dry-run --name "cd-2005"
 
 `unimport` skal gjøre samlingen slik den ville vært hvis denne importen aldri
 hadde skjedd. Dette er en destruktiv kommando og må derfor være ekstra
 konservativ. Programmet skal først finne den registrerte kilden som matcher
-pathen eller navnet, og kontrollere at alle kildefilene som ble registrert for
-denne kilden fortsatt finnes i kilden, har samme filstørrelse og samme SHA-256
-som da de ble importert eller registrert som duplikat. Vanlige kildemapper
-angis med path. Flyttbare medier skal alltid angis med `--name`, fordi pathen
-bare er stedet mediet var montert da importen ble kjørt. Hvis én eneste fil
+navnet, og kontrollere at alle kildefilene som ble registrert for denne kilden
+fortsatt finnes i kilden, har samme filstørrelse og samme SHA-256 som da de ble
+importert eller registrert som duplikat. `unimport` skal alltid kjøres med
+`--name`, både for vanlige mapper og flyttbare medier. Hvis én eneste fil
 mangler eller har endret innhold, skal kommandoen avbrytes uten å endre
 databasen eller målmappen. Kravet finnes fordi en ny import av samme kilde må
 være mulig etter en unimport, slik at ingen bilder går tapt.
@@ -178,10 +175,8 @@ Med `--dry-run` skal programmet gjøre alle kontroller og vise samme oppsummerin
 men ikke spørre om bekreftelse, ikke slette filer, ikke endre databasen og ikke
 skrive kommandologg.
 
-Når `unimport` kjøres på et flyttbart medium med `--name`, skal source-raden
-fjernes helt etter vellykket reversering. Den skal ikke bli stående som
-`pending`, fordi flere pending flyttbare medier vil skape rot ved neste
-`bildebank import` hvis bare ett av mediene er satt inn.
+Når `unimport` kjøres, skal source-raden fjernes helt etter vellykket
+reversering. Den skal ikke bli stående som `pending`.
 
 For å vise oppsummering av siste import eller hele databasen:
 

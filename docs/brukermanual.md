@@ -494,6 +494,8 @@ Se filer som er markert som slettet:
 bildebank list-removed
 ```
 
+Se også [`remove`](remove.md).
+
 ## Hente oppdateringer
 
 For å sikre at du har siste versjon av programmet, kjør:
