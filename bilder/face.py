@@ -228,7 +228,7 @@ def add_group_to_person(target: Path, person_name: str, group_index: int) -> Add
     clean_name = normalize_person_name(person_name)
     conn = connect_face_db(target)
     try:
-        person_id = ensure_person(conn, clean_name)
+        person_id = require_person(conn, clean_name)
         group = latest_group_by_index(conn, group_index)
         if group is None:
             raise ValueError(f"Fant ikke ansiktsgruppe {group_index}. Kjør bildebank face-group først.")
@@ -267,7 +267,7 @@ def add_face_to_person(target: Path, person_name: str, face_id: int) -> AddFaceT
     conn = connect_face_db(target)
     try:
         require_face(conn, face_id)
-        person_id = ensure_person(conn, clean_name)
+        person_id = require_person(conn, clean_name)
         conn.execute(
             "DELETE FROM person_faces WHERE face_id = ? AND person_id != ?",
             (face_id, person_id),
@@ -429,11 +429,13 @@ def normalize_person_name(name: str) -> str:
     return clean_name
 
 
-def ensure_person(conn: sqlite3.Connection, name: str) -> int:
+def require_person(conn: sqlite3.Connection, name: str) -> int:
     row = conn.execute("SELECT id FROM persons WHERE name = ?", (name,)).fetchone()
-    if row is not None:
-        return int(row["id"])
-    return int(conn.execute("INSERT INTO persons(name) VALUES(?) RETURNING id", (name,)).fetchone()["id"])
+    if row is None:
+        raise ValueError(
+            f"Fant ikke person: {name}. Opprett personen først med bildebank face-person-create \"{name}\"."
+        )
+    return int(row["id"])
 
 
 def require_face(conn: sqlite3.Connection, face_id: int) -> None:

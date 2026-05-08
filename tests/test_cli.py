@@ -1654,6 +1654,15 @@ model_name = "test-model"
                 self.assertEqual(run_cli(["--target", str(target), "face-scan", "--limit", "1"]), 0)
 
             code, stdout, stderr = capture_cli(
+                ["--target", str(target), "face-person-add-face", "Krai", "1"]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertIn("Fant ikke person: Krai", stderr)
+
+            self.assertEqual(run_cli(["--target", str(target), "face-person-create", "Kari"]), 0)
+
+            code, stdout, stderr = capture_cli(
                 ["--target", str(target), "face-person-add-face", "Kari", "1"]
             )
 

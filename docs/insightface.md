@@ -183,6 +183,9 @@ bildebank face-person-add-group "Kari" 3
 
 Tallet er gruppe-id fra `face-groups.html`.
 
+Personen må være opprettet før du kobler grupper eller enkeltansikter til den.
+Dette hindrer at en skrivefeil i navnet lager en ny person ved et uhell.
+
 Du kan se registrerte personer:
 
 ```powershell
@@ -193,7 +196,7 @@ Dette er brukerbekreftet informasjon. Det er fortsatt bare ansiktene i gruppen
 som kobles til personen.
 
 Du kan også koble ett enkelt ansikt til en person. Ansikt-id står i
-`faces.html` og `face-groups.html`.
+`faces.html` og `face-groups.html`. Personen må være opprettet først.
 
 ```powershell
 bildebank face-person-add-face "Kari" 17

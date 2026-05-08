@@ -45,9 +45,10 @@ bildebank face-scan
 ```
 
 Deretter må personen finnes i ansiktsdatabasen. Det kan gjøres ved å bekrefte
-et ansikt:
+et ansikt. Personen må opprettes først:
 
 ```powershell
+bildebank face-person-create "Kari"
 bildebank face-person-add-face "Kari" 798
 ```
 
@@ -102,4 +103,3 @@ bildebank make-person-browser "Kari" -o "kari.html"
 
 Hvis du scanner flere bilder, kjører `face-suggest`, eller bekrefter flere
 ansikter, må du kjøre `make-person-browser` på nytt for å oppdatere HTML-filen.
-
