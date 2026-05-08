@@ -10,6 +10,142 @@ InsightFace er en valgfri testkomponent for ansiktsgjenkjenning.
 Vanlig Bildebank-installasjon installerer ikke InsightFace, og
 ansiktsgjenkjenning er av som standard.
 
+## Kom i gang
+
+Dette er den korte oppskriften for å ta ansiktsgjenkjenning i bruk i en
+bildesamling.
+
+### 1. Installer og slå på
+
+Kjør dette fra programmappen:
+
+```powershell
+.\install-insightface.ps1
+```
+
+Åpne `bildebank-config.toml` og sett:
+
+```toml
+[face_recognition]
+enabled = true
+```
+
+Sjekk at det er klart:
+
+```powershell
+bildebank face-status
+```
+
+### 2. Gå til bildesamlingen
+
+Kjør resten fra bildesamlingen:
+
+```powershell
+cd "C:\Users\deg\Pictures\Min bildesamling"
+```
+
+Hvis du er usikker på hvor bildesamlingen ligger:
+
+```powershell
+bildebank where-is
+```
+
+### 3. Scan bildene
+
+Test gjerne med noen få bilder først:
+
+```powershell
+bildebank face-scan --limit 100
+```
+
+Når testen ser grei ut, scan hele bildesamlingen:
+
+```powershell
+bildebank face-scan
+```
+
+Det er trygt å avbryte med `Ctrl-C`. Neste gang fortsetter Bildebank ved å
+hoppe over bilder som allerede er scannet.
+
+### 4. Lag grupper
+
+```powershell
+bildebank face-group
+bildebank make-face-groups-browser
+```
+
+Åpne `face-groups.html` i nettleseren. Bla mellom gruppene med pil venstre og
+pil høyre.
+
+### 5. Opprett personer
+
+Når du finner en gruppe som helt tydelig er samme person:
+
+```powershell
+bildebank face-person-create "Kari"
+bildebank face-person-add-group "Kari" 12
+```
+
+Tallet `12` er gruppe-id fra `face-groups.html`.
+
+Du trenger ikke å koble alle grupper manuelt. Det er normalt at Bildebank lager
+mange grupper. Bruk gruppene til å finne noen sikre eksempler for personen.
+
+Hvis bare ett enkelt ansikt skal kobles til personen:
+
+```powershell
+bildebank face-person-add-face "Kari" 798
+```
+
+Ikke koble usikre ansikter. Noen få sikre ansikter er bedre enn mange
+tvilsomme.
+
+### 6. La Bildebank foreslå flere bilder
+
+Når du har bekreftet noen ansikter for en person:
+
+```powershell
+bildebank face-suggest
+bildebank make-person-browser "Kari"
+```
+
+Åpne `person-Kari.html`. Den viser både bekreftede treff og forslag.
+
+Hvis forslagene ser riktige ut, kan du bekrefte flere ansikter:
+
+```powershell
+bildebank face-person-add-face "Kari" 912
+```
+
+Kjør deretter på nytt:
+
+```powershell
+bildebank face-suggest
+bildebank make-person-browser "Kari"
+```
+
+### 7. Vedlikehold
+
+List personer:
+
+```powershell
+bildebank face-person-list
+```
+
+Fjern ett feil ansikt fra en person:
+
+```powershell
+bildebank face-person-remove-face "Kari" 912
+```
+
+Slett en person som ble opprettet ved en feil:
+
+```powershell
+bildebank face-person-delete "Krai"
+```
+
+## Detaljer
+
 ## Installere testkomponenten
 
 Kjør dette fra programmappen:
@@ -144,6 +280,12 @@ bildebank face-group
 Dette lager mulige grupper av ansikter som ligner hverandre. Gruppene er bare
 forslag, ikke bekreftede personer.
 
+Det er normalt at `face-group` lager mange grupper. Det betyr ikke at du skal
+gå gjennom og koble hver eneste gruppe til riktig person. Gruppene er først og
+fremst en måte å finne gode, sikre eksempler på. Når noen grupper eller
+enkeltansikter er bekreftet for en person, kan `face-suggest` bruke dette til å
+foreslå flere ansikter.
+
 Kommandoen viser progresjon mens den sammenligner ansikter. Dette kan ta tid,
 fordi hvert ansikt sammenlignes med mange andre ansikter.
 
@@ -167,7 +309,11 @@ Du kan justere hvor strengt ansikter skal sammenlignes:
 bildebank face-group --threshold 0.65
 ```
 
-Høyere tall gir strengere grupper. Standard er `0.60`.
+Høyere tall gir strengere grupper. Det betyr vanligvis færre og mindre grupper,
+men mindre risiko for at ulike personer blandes sammen. Lavere tall gir
+vanligvis flere og større grupper, men større risiko for feilblanding.
+
+Standard er `0.60`.
 
 Lag HTML-side for gruppene:
 
