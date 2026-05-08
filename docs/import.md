@@ -81,6 +81,44 @@ Bildebank prøver å unngå å lagre samme bildefil flere ganger. Hvis samme fil
 finnes i flere kilder, skal bildet bare ligge ett sted i bildesamlingen, mens
 Bildebank husker hvilke kilder bildet kom fra.
 
+## Overlappende mapper
+
+Det er trygt å importere mapper som overlapper hverandre, så lenge hver import
+får sitt eget unike navn.
+
+Eksempel:
+
+```powershell
+bildebank import --name "BrikkeA-2023" "F:\Bilder\2023"
+bildebank import --name "BrikkeA-hele" F:\
+```
+
+I dette eksempelet ligger `F:\Bilder\2023` også inni `F:\`. Når du senere
+importerer hele `F:\`, vil Bildebank kjenne igjen bildefilene som allerede er
+importert.
+
+De samme bildefilene blir ikke lagret på nytt i bildesamlingen. Bildebank
+registrerer bare at de også finnes i importen som heter `BrikkeA-hele`.
+
+Dette gjør det mulig å importere litt og litt først, og eventuelt hele disken
+eller USB-brikken senere. Bruk navn som gjør det lett å forstå hva du har gjort:
+
+```powershell
+bildebank import --name "BrikkeA-mappe1" "F:\mappe1"
+bildebank import --name "BrikkeA-mappe2" "F:\mappe2"
+bildebank import --name "BrikkeA-hele" F:\
+```
+
+Hvis du etterpå vil rydde bort de første kildehenvisningene, kan du bruke
+`unimport` på navnene:
+
+```powershell
+bildebank unimport --name "BrikkeA-mappe1"
+bildebank unimport --name "BrikkeA-mappe2"
+```
+
+Bildene blir liggende hvis de også finnes i `BrikkeA-hele`.
+
 ## Etter import
 
 Etter import kan du lage HTML-visningen:
@@ -90,4 +128,3 @@ bildebank make-browser
 ```
 
 Da får du en `index.html` i bildesamlingen som kan åpnes i nettleseren.
-
