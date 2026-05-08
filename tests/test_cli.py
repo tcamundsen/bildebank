@@ -1617,6 +1617,8 @@ model_name = "test-model"
             html = (target / "face-groups.html").read_text(encoding="utf-8")
             self.assertIn("<h1>Ansiktsgrupper</h1>", html)
             self.assertIn("Forrige gruppe", html)
+            self.assertIn("align-items: start", html)
+            self.assertIn("align-self: start", html)
             self.assertIn('"index": 1', html)
             self.assertIn('"memberCount": 2', html)
             self.assertIn("likhet", html)

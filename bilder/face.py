@@ -1144,11 +1144,13 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
       gap: 14px;
       align-content: start;
+      align-items: start;
     }}
     .face {{
       display: grid;
       gap: 6px;
       min-width: 0;
+      align-self: start;
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -1157,6 +1159,9 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
     .media {{
       position: relative;
       background: #eee;
+    }}
+    .media a {{
+      display: block;
     }}
     .media img {{
       display: block;
