@@ -1,5 +1,8 @@
 # InsightFace
 
+NB: Denne funksjonen er ikke ferdig ennå, så det er foreløpig bortkastet
+for andre enn Tom Cato å teste dette.
+
 InsightFace er en valgfri testkomponent for ansiktsgjenkjenning.
 
 Vanlig Bildebank-installasjon installerer ikke InsightFace, og
