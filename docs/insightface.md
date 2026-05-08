@@ -82,6 +82,22 @@ Ansiktsdata lagres i bildesamlingen:
 
 Dette er en egen database. Den vanlige Bildebank-databasen endres ikke.
 
+## Rapport
+
+Etter scanning kan du se en enkel rapport:
+
+```powershell
+bildebank face-report
+```
+
+Rapporten viser blant annet:
+
+- antall scannede filer
+- antall ansikter
+- hvor mange filer som har 0, 1 eller flere ansikter
+- bilder med flest ansikter
+- eventuelle scan-feil
+
 ## Slette ansiktsdata
 
 Hvis du vil fjerne alle eksperimentelle ansiktsdata fra bildesamlingen:

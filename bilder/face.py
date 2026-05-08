@@ -23,6 +23,19 @@ class FaceScanStats:
     errors: int = 0
 
 
+@dataclass(frozen=True)
+class FaceReport:
+    database_exists: bool
+    scanned_files: int = 0
+    total_faces: int = 0
+    files_with_zero_faces: int = 0
+    files_with_one_face: int = 0
+    files_with_multiple_faces: int = 0
+    scan_errors: int = 0
+    top_files: tuple[sqlite3.Row, ...] = ()
+    errors: tuple[sqlite3.Row, ...] = ()
+
+
 def face_db_path(target: Path) -> Path:
     return target / FACE_DB_FILENAME
 
@@ -89,6 +102,54 @@ def face_db_summary(target: Path) -> tuple[bool, int, int]:
         return True, scanned, faces
     finally:
         conn.close()
+
+
+def face_report(target: Path, *, limit: int = 20) -> FaceReport:
+    path = face_db_path(target)
+    if not path.exists():
+        return FaceReport(database_exists=False)
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return FaceReport(
+            database_exists=True,
+            scanned_files=count_rows(conn, "scanned_files"),
+            total_faces=count_rows(conn, "faces"),
+            files_with_zero_faces=count_scanned_files(conn, "status = 'ok' AND face_count = 0"),
+            files_with_one_face=count_scanned_files(conn, "status = 'ok' AND face_count = 1"),
+            files_with_multiple_faces=count_scanned_files(conn, "status = 'ok' AND face_count > 1"),
+            scan_errors=count_scanned_files(conn, "status = 'error'"),
+            top_files=tuple(
+                conn.execute(
+                    """
+                    SELECT target_path, face_count
+                    FROM scanned_files
+                    WHERE status = 'ok' AND face_count > 0
+                    ORDER BY face_count DESC, target_path
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+            ),
+            errors=tuple(
+                conn.execute(
+                    """
+                    SELECT target_path, error_message
+                    FROM scanned_files
+                    WHERE status = 'error'
+                    ORDER BY scanned_at DESC, target_path
+                    LIMIT ?
+                    """,
+                    (limit,),
+                )
+            ),
+        )
+    finally:
+        conn.close()
+
+
+def count_scanned_files(conn: sqlite3.Connection, where_sql: str) -> int:
+    return int(conn.execute(f"SELECT COUNT(*) FROM scanned_files WHERE {where_sql}").fetchone()[0])
 
 
 def count_rows(conn: sqlite3.Connection, table: str) -> int:

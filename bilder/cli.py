@@ -11,7 +11,7 @@ from pathlib import Path
 from . import __version__, db
 from .config import CONFIG_FILENAME, load_config
 from .exiftool_probe import exiftool_metadata_gaps
-from .face import face_db_path, face_db_summary, scan_faces
+from .face import FaceReport, face_db_path, face_db_summary, face_report, scan_faces
 from .importer import (
     import_source,
     import_source_dry_run,
@@ -76,6 +76,7 @@ HELP_COMMAND_GROUPS = (
             ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
             ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
             ("face-scan", "Eksperimentell scanning etter ansikter"),
+            ("face-report", "Vis rapport for scannede ansikter"),
             ("face-reset", "Slett eksperimentelle ansiktsdata"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
             ("update", "Oppdater programinstallasjonen"),
@@ -327,6 +328,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Eksperimentell scanning etter ansikter",
     )
     face_scan.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
+    face_report_parser = add_command(
+        subparsers,
+        "face-report",
+        usage="bildebank face-report [valg]",
+        help="Vis rapport for scannede ansikter",
+    )
+    face_report_parser.add_argument("--limit", type=positive_int_arg, default=20, help="Maks antall linjer per liste")
     add_command(
         subparsers,
         "face-reset",
@@ -461,6 +469,9 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "face-scan":
         return run_face_scan(target, limit=args.limit)
+
+    if args.command == "face-report":
+        return run_face_report(target, limit=args.limit)
 
     if args.command == "face-reset":
         return run_face_reset(target)
@@ -847,6 +858,38 @@ def run_face_scan(target: Path, *, limit: int | None) -> int:
     )
     print(f"Face-database: {face_db_path(target)}")
     return 0 if stats.errors == 0 else 2
+
+
+def run_face_report(target: Path, *, limit: int) -> int:
+    report = face_report(target, limit=limit)
+    print_face_report(target, report)
+    return 0
+
+
+def print_face_report(target: Path, report: FaceReport) -> None:
+    print("Ansiktsrapport")
+    print(f"Bildesamling: {target}")
+    print(f"Face-database: {face_db_path(target)}")
+    if not report.database_exists:
+        print("Face-database finnes ikke.")
+        print("Kjør bildebank face-scan først.")
+        return
+    print(f"Scannede filer: {report.scanned_files}")
+    print(f"Ansikter funnet: {report.total_faces}")
+    print(f"Filer uten ansikter: {report.files_with_zero_faces}")
+    print(f"Filer med ett ansikt: {report.files_with_one_face}")
+    print(f"Filer med flere ansikter: {report.files_with_multiple_faces}")
+    print(f"Scan-feil: {report.scan_errors}")
+    if report.top_files:
+        print()
+        print("Flest ansikter:")
+        for row in report.top_files:
+            print(f"  {row['face_count']}\t{row['target_path']}")
+    if report.errors:
+        print()
+        print("Siste scan-feil:")
+        for row in report.errors:
+            print(f"  {row['target_path']}\t{row['error_message']}")
 
 
 def run_face_reset(target: Path) -> int:

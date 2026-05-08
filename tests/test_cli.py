@@ -1445,6 +1445,28 @@ model_name = "test-model"
             self.assertIn("hoppet_over=1", stdout)
             self.assertIn("scannet=0", stdout)
 
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-report"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Ansiktsrapport", stdout)
+            self.assertIn("Scannede filer: 1", stdout)
+            self.assertIn("Ansikter funnet: 1", stdout)
+            self.assertIn("Filer med ett ansikt: 1", stdout)
+            self.assertIn("Flest ansikter:", stdout)
+            self.assertIn("IMG_20240102.jpg", stdout)
+
+    def test_face_report_handles_missing_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-report"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Face-database finnes ikke.", stdout)
+            self.assertIn("Kjør bildebank face-scan først.", stdout)
+
     def test_face_reset_requires_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
