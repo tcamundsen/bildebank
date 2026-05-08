@@ -147,6 +147,20 @@ forslag, ikke bekreftede personer.
 Kommandoen viser progresjon mens den sammenligner ansikter. Dette kan ta tid,
 fordi hvert ansikt sammenlignes med mange andre ansikter.
 
+Det er trygt å kjøre `face-group` på nytt, også med en annen `--threshold`,
+etter at du har koblet grupper eller ansikter til personer. Bekreftede personer
+lagres på ansikt-id, ikke på gruppe-id. Det som bygges på nytt er bare
+gruppeforslagene.
+
+Etter ny gruppering må du lage `face-groups.html` på nytt:
+
+```powershell
+bildebank make-face-groups-browser
+```
+
+Ikke bruk gruppe-id-er fra en gammel `face-groups.html` etter at du har kjørt
+`face-group` på nytt. Gruppe-id-ene kan da bety noe annet.
+
 Du kan justere hvor strengt ansikter skal sammenlignes:
 
 ```powershell
