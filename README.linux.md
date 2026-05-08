@@ -65,9 +65,8 @@ Opprett en bildesamling og importer en mappe:
 mkdir -p ~/bilder/samling
 cd ~/bilder/samling
 bildebank create .
-bildebank add ~/Pictures
-bildebank import --dry-run
-bildebank import
+bildebank import --name "Pictures" --dry-run ~/Pictures
+bildebank import --name "Pictures" ~/Pictures
 ```
 
 ## Oppdater

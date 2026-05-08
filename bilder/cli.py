@@ -29,9 +29,7 @@ HELP_COMMAND_GROUPS = (
         "kom i gang",
         (
             ("create", "Opprett en ny bildesamlingsmappe"),
-            ("add", "Registrer en vanlig kildemappe"),
-            ("import", "Importer registrerte kilder"),
-            ("import-removable", "Importer CD, USB og andre flyttbare medier"),
+            ("import", "Importer en mappe, CD, USB eller annen kilde"),
         ),
     ),
     (
@@ -142,11 +140,19 @@ def build_parser() -> argparse.ArgumentParser:
     imp = add_command(
         subparsers,
         "import",
-        usage="bildebank import [valg]",
-        help="Importer registrerte kilder",
-        description="Importer registrerte kilder som ikke er importert før. Hvis ingen nye kilder er lagt til siden sist import ble kjørt, blir resultatet 0 scannet.",
+        usage="bildebank import [valg] --name navn mappe",
+        help="Importer en navngitt kilde direkte",
+        description=(
+            "Registrerer og importerer én kilde direkte. Bruk et unikt navn "
+            "med --name, uansett om kilden er en vanlig mappe, USB-brikke, CD "
+            "eller minnekort."
+        ),
         )
     imp.add_argument("--quiet", action="store_true")
+    imp.add_argument(
+        "--name",
+        help="Unikt navn på importen, for eksempel Sommer2023 eller Familie-CD-2004",
+    )
     imp.add_argument(
         "--dry-run",
         action="store_true",
@@ -157,16 +163,15 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Skriv dry-run-listen til fil i stedet for stdout",
     )
+    imp.add_argument("path", metavar="mappe", nargs="?", type=Path, help="Kilden som skal importeres")
 
     removable = add_command(
         subparsers,
         "import-removable",
         usage="bildebank import-removable [valg] --name navn mappe",
-        help="Registrer og importer ett flyttbart medium direkte; ikke bruk add først",
+        help=argparse.SUPPRESS,
         description=(
-            "Registrerer og importerer ett flyttbart medium i samme kommando. "
-            "Bruk denne uten å kjøre add først. --name er en stabil etikett for "
-            "mediet, siden samme drive letter/path kan brukes av ulike medier."
+            "Denne kommandoen er erstattet av: bildebank import --name navn mappe"
         ),
     )
     removable.add_argument(
@@ -416,8 +421,8 @@ def main_help_epilog() -> str:
     lines.append("   bildebank <kommando> -h")
     lines.append("")
     lines.append("Eksempel:")
-    lines.append("   bildebank import --dry-run")
-    lines.append("   bildebank import-removable --name \"USB-2024\" --dry-run E:\\")
+    lines.append("   bildebank import --name \"USB-2024\" --dry-run E:\\")
+    lines.append("   bildebank import --name \"Sommer2023\" \"C:\\Bilder\\Sommer2023\"")
     return "\n".join(lines)
 
 
@@ -473,6 +478,8 @@ def run(args: argparse.Namespace) -> int:
         return run_migrate(target, check=args.check)
 
     if args.command == "import" and args.dry_run:
+        if args.name or args.path is not None:
+            return run_named_import_dry_run(target, args)
         output_path = args.log_file.resolve() if args.log_file else None
         if output_path is None:
             stats = import_pending_sources_dry_run(target, output=sys.stdout, verbose=not args.quiet)
@@ -493,6 +500,10 @@ def run(args: argparse.Namespace) -> int:
         ):
             db.log_command(conn, args.command, vars_for_log(args))
         if args.command == "add":
+            print(
+                "'add' er faset ut. Vi bruker nå bare import direkte. Se bruksanvisningen",
+                file=sys.stderr,
+            )
             source = existing_path_arg(args.path).resolve()
             if not source.is_dir():
                 raise ValueError(f"Kildemappen finnes ikke: {source}")
@@ -503,38 +514,31 @@ def run(args: argparse.Namespace) -> int:
             print(f"Registrert kildemappe #{source_id}: {source}")
             return 0
 
-        if args.command == "import-removable":
+        if args.command == "import" and (args.name or args.path is not None):
+            if not args.name or args.path is None:
+                raise ValueError('Bruk både --name og mappe: bildebank import --name "Navn" "path\\til\\kilde"')
+            if args.log_file:
+                raise ValueError("--log-file kan bare brukes sammen med --dry-run.")
             source = existing_path_arg(args.path).resolve()
             if not source.is_dir():
-                raise ValueError(f"Mediet finnes ikke som mappe: {source}")
+                raise ValueError(f"Kilden finnes ikke som mappe: {source}")
             validate_source_target(source, target)
-            if args.dry_run:
-                source_row = db.Source(
-                    id=0,
-                    kind="removable",
-                    path=source,
-                    path_key=None,
-                    name=args.name,
-                    imported_at=None,
-                    status="dry-run",
-                    superseded_by_source_id=None,
-                )
-                stats = import_source_dry_run(
-                    conn, target, source_row, output=sys.stdout, verbose=True
-                )
-                print_summary(stats)
-                return 0 if stats.errors == 0 else 2
-            with TargetLock(target, command="import-removable"):
+            with TargetLock(target, command="import"):
                 source_id = db.add_removable_source(conn, source, args.name)
                 conn.commit()
-                print(f"Registrert flyttbart medium #{source_id}: {args.name} ({source})")
+                print(f"Registrert kilde #{source_id}: {args.name} ({source})")
                 source_row = db.get_source(conn, source_id)
                 if source_row.imported_at is not None:
-                    print(f"Flyttbart medium er allerede importert: {args.name}")
+                    print(f"Kilden er allerede importert: {args.name}")
                     return 0
-                stats = import_source(conn, target, source_row, verbose=True)
+                stats = import_source(conn, target, source_row, verbose=not args.quiet)
             print_summary(stats)
             return 0 if stats.errors == 0 else 2
+
+        if args.command == "import-removable":
+            raise ValueError(
+                "import-removable er erstattet med kun import. Se bruksanvisningen"
+            )
 
         if args.command == "list-sources":
             for source in db.get_sources(conn):
@@ -763,6 +767,8 @@ def run(args: argparse.Namespace) -> int:
             return 0
 
         if args.command == "import":
+            if args.name or args.path is not None:
+                raise ValueError('Bruk både --name og mappe: bildebank import --name "Navn" "path\\til\\kilde"')
             if args.log_file:
                 raise ValueError("--log-file kan bare brukes sammen med --dry-run.")
             conn.commit()
@@ -977,6 +983,49 @@ def run_where_is() -> int:
         print("For å jobbe med en bildesamling kan du skrive:")
         print(f'  cd "{first_existing.path}"')
     return 0
+
+
+def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
+    if not args.name or args.path is None:
+        raise ValueError('Bruk både --name og mappe: bildebank import --name "Navn" "path\\til\\kilde"')
+    source = existing_path_arg(args.path).resolve()
+    if not source.is_dir():
+        raise ValueError(f"Kilden finnes ikke som mappe: {source}")
+    validate_source_target(source, target)
+    output_path = args.log_file.resolve() if args.log_file else None
+    conn = db.connect(target)
+    try:
+        existing = db.find_removable_source_by_name(conn, args.name)
+        if existing is not None and existing.imported_at is not None:
+            raise ValueError(
+                f"Kilde med navn {args.name!r} er allerede importert som "
+                f"{existing.path}. Bruk et nytt --name hvis dette er en annen mappe/import."
+            )
+        source_row = db.Source(
+            id=0,
+            kind="removable",
+            path=source,
+            path_key=None,
+            name=args.name,
+            imported_at=None,
+            status="dry-run",
+            superseded_by_source_id=None,
+        )
+        if output_path is None:
+            stats = import_source_dry_run(
+                conn, target, source_row, output=sys.stdout, verbose=not args.quiet
+            )
+        else:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with output_path.open("w", encoding="utf-8", newline="\n") as output:
+                stats = import_source_dry_run(
+                    conn, target, source_row, output=output, verbose=not args.quiet
+                )
+            print(f"Skrev dry-run importliste: {output_path}")
+        print_summary(stats)
+        return 0 if stats.errors == 0 else 2
+    finally:
+        conn.close()
 
 
 def run_migrate(target: Path, *, check: bool) -> int:

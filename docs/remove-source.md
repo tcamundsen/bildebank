@@ -4,23 +4,15 @@
 
 ## Referanse
 
-For en vanlig kildemappe:
-
 ```powershell
-bildebank remove-source [valg] mappe
-```
-
-For en flyttbar kilde:
-
-```powershell
-bildebank remove-source [valg] --name navn
+bildebank remove-source --name navn
 ```
 
 Vanlige valg:
 
 ```powershell
-bildebank remove-source --dry-run "$HOME\Pictures\TestBilder"
-bildebank remove-source --dry-run --name "Familie-CD-2004"
+bildebank remove-source --dry-run --name "Sommer2023"
+bildebank remove-source --name "Sommer2023"
 ```
 
 ## Hva kommandoen gjør
@@ -31,52 +23,23 @@ Den skal ikke slette bilder fra bildesamlingen.
 
 ## Når brukes remove-source?
 
-Bruk `remove-source` når en kilde er registrert, men ikke har aktive importerte
-filer i samlingen.
+Ved vanlig bruk trenger du sjelden `remove-source`.
 
-Typiske tilfeller:
-
-- du kjørte `add` på feil mappe, men har ikke importert den ennå
-- du har kjørt `unimport` på en vanlig kildemappe
-- en vanlig kildemappe er erstattet av en overordnet kilde
-
-## Eksempel: feil mappe ble lagt til
+Hvis en import har aktive filer i bildesamlingen, må du bruke `unimport`:
 
 ```powershell
-bildebank add "$HOME\Pictures\FeilMappe"
-bildebank remove-source "$HOME\Pictures\FeilMappe"
+bildebank unimport --name "Sommer2023"
 ```
 
-## Eksempel: etter unimport
+`unimport --name` både angrer importen og fjerner kilden fra kildelisten.
 
-```powershell
-bildebank unimport "$HOME\Pictures\TestBilder"
-bildebank remove-source "$HOME\Pictures\TestBilder"
-```
-
-For vanlige mapper setter `unimport` kilden tilbake til `pending`. Hvis du ikke
-vil importere den igjen, bruker du `remove-source`.
-
-## Flyttbare medier
-
-For kilder importert med `import-removable`, bruker du vanligvis ikke
-`remove-source` etterpå.
-
-Bruk heller:
-
-```powershell
-bildebank unimport --name "Familie-CD-2004"
-```
-
-Den kommandoen både angrer importen og fjerner kilden fra kildelisten.
-
-`remove-source --name` kan brukes hvis en flyttbar kilde står i kildelisten uten
+`remove-source --name` er bare aktuelt hvis en kilde finnes i kildelisten uten
 aktive importerte filer.
 
 ## Superseded kilder
 
-En vanlig kildemappe kan bli `superseded` hvis den er dekket av en annen kilde
-på et høyere nivå.
+En eldre vanlig kildemappe kan være `superseded` hvis den er dekket av en annen
+kilde på et høyere nivå.
 
 Eksempel:
 
@@ -85,7 +48,8 @@ C:\bilder\mappe1
 C:\bilder
 ```
 
-Hvis begge er registrert, kan `C:\bilder\mappe1` være dekket av `C:\bilder`.
+Hvis begge er registrert fra en eldre arbeidsflyt, kan `C:\bilder\mappe1` være
+dekket av `C:\bilder`.
 
 Da kan `remove-source` fjerne den nederste kilden fra kildelisten, men bare
 hvis Bildebank kan kontrollere at filene også finnes gjennom den overordnede

@@ -34,8 +34,11 @@ Etter `create` kan du bruke mappen som arbeidsmappe for Bildebank:
 cd "$HOME\BildeSamling"
 ```
 
-Deretter kan du legge til kilder med `add`, eller importere flyttbare medier
-med `import-removable`.
+Deretter kan du importere kilder med `import`:
+
+```powershell
+bildebank import --name "TestBilder" "$HOME\Pictures\TestBilder"
+```
 
 ## Viktig
 
@@ -59,4 +62,3 @@ Når dette er gjort, kan du kontrollere at Bildebank finner målmappen:
 ```powershell
 bildebank status
 ```
-

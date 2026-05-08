@@ -1,6 +1,6 @@
 # Brukermanual for Bildebank
 
-['Detalj-referanse'](reference.md)
+[Detalj-referanse](reference.md)
 
 Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
 har fulgt `README.md` og installert Bildebank.
@@ -120,52 +120,38 @@ bildebank create .
 Bildebank oppretter databasen sin i bildesamlingsmappen. Etterpå er dette
 mappen du vanligvis står i når du bruker Bildebank.
 
-## Legg til en kildemappe
+## Importer en kilde
 
 En kildemappe er en mappe der du allerede har bilder eller videoer som skal
-importeres.
+importeres. Det kan være en vanlig mappe på PC-en, en USB-brikke, en CD, et
+minnekort eller en ekstern disk.
 
-Legg til testmappen:
+Hver import skal ha et navn. Navnet bruker du senere hvis du vil se hvor bildene
+kom fra eller angre importen.
 
-```powershell
-bildebank add "$HOME\Pictures\TestBilder"
-```
-
-For en annen mappe bruker du samme mønster:
+Tørrtest testmappen først:
 
 ```powershell
-bildebank add "sti\til\bilder"
-```
-
-eller
-
-```powershell
-bildebank add "\Users\Tom\Julen2022"
-```
-
-Bruk hermetegn rundt stier. Det er spesielt viktig hvis mappenavnet inneholder
-mellomrom.
-
-## Tørrtest importen
-
-Før du importerer på ordentlig, kan du kjøre en tørrtest:
-
-```powershell
-bildebank import --dry-run
+bildebank import --name "TestBilder" --dry-run "$HOME\Pictures\TestBilder"
 ```
 
 Da viser Bildebank hva programmet ville importert, uten å kopiere filer og uten
 å endre databasen.
 
-Se gjennom listen. Hvis den ser riktig ut, kan du importere på ordentlig.
-
-## Importer
-
-Kjør import slik:
+Se gjennom listen. Hvis den ser riktig ut, kan du importere på ordentlig:
 
 ```powershell
-bildebank import
+bildebank import --name "TestBilder" "$HOME\Pictures\TestBilder"
 ```
+
+For en annen mappe bruker du samme mønster:
+
+```powershell
+bildebank import --name "Julen2022" "\Users\Tom\Julen2022"
+```
+
+Bruk hermetegn rundt stier. Det er spesielt viktig hvis mappenavnet inneholder
+mellomrom.
 
 Bildebank kopierer støttede bilder og videoer inn i bildesamlingsmappen og
 plasserer dem etter dato, for eksempel i mapper som `2024\01`.
@@ -176,12 +162,32 @@ På slutten skriver programmet en oppsummering, for eksempel:
 Oppsummering: scannet=10, importert=10, duplikater=0, eksisterende=0, dekket=0, navnekollisjoner=0, feil=0
 ```
 
-`import` importerer bare kilder som er nye eller ikke ferdig importert. Hvis du
-kjører `import` en gang til uten å ha lagt til noe nytt, er det normalt å få
-`scannet=0`. Det betyr vanligvis bare at det ikke var noe nytt å gjøre.
+Hvis du prøver å bruke samme navn på nytt, stopper Bildebank. Velg et nytt navn
+for en ny import.
 
-Hvis du vil importere en ny vanlig mappe senere, kjør først `add` på den nye
-mappen og deretter `import` igjen.
+## Import fra CD, USB og flyttbare medier
+
+For CD-er, USB-disker, minnekort og andre flyttbare medier bruker du også
+`import`.
+
+Gi mediet et stabilt navn med `--name`. Bruk for eksempel teksten som står på
+CD-en, navnet på USB-disken, eller et annet navn du vil kjenne igjen senere.
+
+Tørrtest først:
+
+```powershell
+bildebank import --name "Familie-CD-2004" --dry-run E:\
+```
+
+Importer på ordentlig:
+
+```powershell
+bildebank import --name "Familie-CD-2004" E:\
+```
+
+Bytt ut `E:\` med stasjonen eller mappen der mediet finnes hos deg. Grunnen til
+at `--name` er viktig, er at samme stasjonsbokstav kan brukes av forskjellige
+CD-er og USB-disker på forskjellige tidspunkt.
 
 ## Se status
 
@@ -228,30 +234,6 @@ i Windows, eller med `open-browser`:
 ```powershell
 bildebank open-browser
 ```
-
-## Import fra CD, USB og flyttbare medier
-
-For CD-er, USB-disker, minnekort og andre flyttbare medier bruker du
-`import-removable`. Ikke kjør `add` først for slike medier.
-
-Gi mediet et stabilt navn med `--name`. Bruk for eksempel teksten som står på
-CD-en, navnet på USB-disken, eller et annet navn du vil kjenne igjen senere.
-
-Tørrtest først:
-
-```powershell
-bildebank import-removable --name "Familie-CD-2004" --dry-run E:\
-```
-
-Importer på ordentlig:
-
-```powershell
-bildebank import-removable --name "Familie-CD-2004" E:\
-```
-
-Bytt ut `E:\` med stasjonen eller mappen der mediet finnes hos deg. Grunnen til
-at `--name` er viktig, er at samme stasjonsbokstav kan brukes av forskjellige
-CD-er og USB-disker på forskjellige tidspunkt.
 
 ## Se registrerte kilder
 
@@ -302,29 +284,17 @@ for å angre akkurat den importen.
 Tørrtest først:
 
 ```powershell
-bildebank unimport --dry-run "$HOME\Pictures\TestBilder"
+bildebank unimport --dry-run --name "TestBilder"
 ```
 
 Eksempel:
 
 ```powershell
-bildebank unimport "$HOME\Pictures\TestBilder"
+bildebank unimport --name "TestBilder"
 ```
 
-Bytt ut stien med kilden du vil angre. Hvis importen ble gjort med
-`import-removable`, skal du bruke navnet du ga med `--name`, ikke stien til
-USB-disken eller CD-en:
-
-```powershell
-bildebank unimport --name "Familie-CD-2004"
-```
-
-For en import som ble gjort med `import-removable`, kan du også tørrteste med
-navnet:
-
-```powershell
-bildebank unimport --dry-run --name "Familie-CD-2004"
-```
+Bruk samme navn som du brukte da du importerte. Ikke bruk stien til mappen,
+USB-disken eller CD-en.
 
 Med `--dry-run` kontrollerer Bildebank filene og viser hva som ville blitt
 fjernet, men endrer ikke databasen og sletter ingen filer.
@@ -345,7 +315,7 @@ bare kom fra denne ene kilden, fjernes det fra den aktive bildesamlingen.
 Før kommandoen gjennomføres, viser Bildebank en oppsummering, for eksempel:
 
 ```text
-Kilde: C:\Users\Tom\Pictures\TestBilder
+Kilde: TestBilder
 Registrerte kildefiler kontrollert: 179
 Filer som fjernes fra aktiv samling: 142
 Filer som blir liggende fordi de også finnes i andre kilder: 37
@@ -370,50 +340,27 @@ bildebank make-browser
 Da blir `index.html` oppdatert slik at den viser samlingen etter at importen er
 angret.
 
-Når du angrer en import som ble gjort med `import-removable`, fjerner Bildebank
-også denne kilden fra kildelisten. Du trenger derfor ikke kjøre `remove-source`
-etterpå for CD-er, USB-disker og andre flyttbare medier.
-
-Når du angrer en vanlig kildemappe, blir kilden satt tilbake til `pending`.
-Hvis du ikke vil importere den mappen igjen senere, kjør `remove-source` etterpå.
-Bildebank skriver ut riktig kommando når `unimport` er ferdig.
+Når du angrer en navngitt import, fjerner Bildebank også denne kilden fra
+kildelisten. Du trenger derfor ikke kjøre `remove-source` etterpå.
 
 ## Fjerne en kilde fra kildelisten
 
-Hvis du har lagt til feil kilde med `add`, men ikke importert den ennå, kan du
-fjerne den fra kildelisten:
+Ved vanlig bruk trenger du sjelden `remove-source`. Hvis en import har aktive
+filer i bildesamlingen, må du bruke `unimport`:
 
 ```powershell
-bildebank remove-source "$HOME\Pictures\TestBilder"
+bildebank unimport --name "TestBilder"
 ```
 
-Den samme kommandoen kan også brukes etter at du først har kjørt `unimport` på
-en kilde.
-
-For en kilde som ble importert med `import-removable`, bruk navnet:
+`remove-source` kan brukes hvis en kilde finnes i kildelisten uten aktive
+importerte filer:
 
 ```powershell
-bildebank remove-source --name "Familie-CD-2004"
+bildebank remove-source --name "TestBilder"
 ```
 
 `remove-source` sletter ikke bilder. Den fjerner bare kilden fra listen over
 kilder Bildebank kjenner til.
-
-Hvis en vanlig kildemappe fortsatt har importerte filer i samlingen, nekter
-Bildebank å fjerne den. Da må du først angre importen:
-
-```powershell
-bildebank unimport "$HOME\Pictures\TestBilder"
-```
-
-og deretter fjerne kilden fra listen:
-
-```powershell
-bildebank remove-source "$HOME\Pictures\TestBilder"
-```
-
-For flyttbare medier gjør `unimport --name` begge deler: den angrer importen og
-fjerner kilden fra kildelisten.
 
 ## Finn navnekollisjoner
 

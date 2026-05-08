@@ -173,7 +173,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("Bildebank 0.2.0", stdout)
         self.assertIn("Vanlige kommandoer:", stdout)
         self.assertIn("bildebank <kommando> -h", stdout)
-        self.assertIn('bildebank import-removable --name "USB-2024" --dry-run', stdout)
+        self.assertIn('bildebank import --name "USB-2024" --dry-run', stdout)
         self.assertEqual(stderr, "")
 
     def test_main_help_groups_commands_by_user_task(self) -> None:
@@ -1528,16 +1528,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "add", str(normal)]), 0)
             self.assertEqual(
-                run_cli(
-                    [
-                        "--target",
-                        str(target),
-                        "import-removable",
-                        "--name",
-                        "usb-test",
-                        str(removable),
-                    ]
-                ),
+                run_cli(["--target", str(target), "import", "--name", "usb-test", str(removable)]),
                 0,
             )
 
@@ -1557,28 +1548,12 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
-                run_cli(
-                    [
-                        "--target",
-                        str(target),
-                        "import-removable",
-                        "--name",
-                        "usb-test",
-                        str(first),
-                    ]
-                ),
+                run_cli(["--target", str(target), "import", "--name", "usb-test", str(first)]),
                 0,
             )
 
             code, stdout, stderr = capture_cli(
-                [
-                    "--target",
-                    str(target),
-                    "import-removable",
-                    "--name",
-                    "usb-test",
-                    str(second),
-                ]
+                ["--target", str(target), "import", "--name", "usb-test", str(second)]
             )
 
             self.assertEqual(code, 1)
@@ -1603,16 +1578,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
-                run_cli(
-                    [
-                        "--target",
-                        str(target),
-                        "import-removable",
-                        "--name",
-                        "usb-test",
-                        str(removable),
-                    ]
-                ),
+                run_cli(["--target", str(target), "import", "--name", "usb-test", str(removable)]),
                 0,
             )
 
@@ -1651,16 +1617,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
-                run_cli(
-                    [
-                        "--target",
-                        str(target),
-                        "import-removable",
-                        "--name",
-                        "usb-test",
-                        str(removable),
-                    ]
-                ),
+                run_cli(["--target", str(target), "import", "--name", "usb-test", str(removable)]),
                 0,
             )
             imported = target / "2024" / "02" / "REM_20240203.jpg"
@@ -1684,7 +1641,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                     row[0]
                     for row in conn.execute("SELECT command FROM command_log ORDER BY id").fetchall()
                 ]
-                self.assertEqual(commands, ["create", "import-removable"])
+                self.assertEqual(commands, ["create", "import"])
             finally:
                 conn.close()
 
@@ -1699,16 +1656,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
-                run_cli(
-                    [
-                        "--target",
-                        str(target),
-                        "import-removable",
-                        "--name",
-                        "usb-test",
-                        str(removable),
-                    ]
-                ),
+                run_cli(["--target", str(target), "import", "--name", "usb-test", str(removable)]),
                 0,
             )
             source_file.unlink()
@@ -1735,16 +1683,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
-                run_cli(
-                    [
-                        "--target",
-                        str(target),
-                        "import-removable",
-                        "--name",
-                        "usb-test",
-                        str(removable),
-                    ]
-                ),
+                run_cli(["--target", str(target), "import", "--name", "usb-test", str(removable)]),
                 0,
             )
 
@@ -1798,7 +1737,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 [
                     "--target",
                     str(target),
-                    "import-removable",
+                    "import",
                     "--name",
                     "usb-test",
                     "--dry-run",

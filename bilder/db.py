@@ -745,7 +745,7 @@ def add_removable_source(conn: sqlite3.Connection, path: Path, name: str) -> int
     ).fetchone()
     if existing is not None and existing["imported_at"] is not None:
         raise ValueError(
-            f"Flyttbart medium med navn {name!r} er allerede importert som "
+            f"Kilde med navn {name!r} er allerede importert som "
             f"{existing['path']}. Bruk et nytt --name hvis dette er en annen mappe/import."
         )
     cur = conn.execute(
