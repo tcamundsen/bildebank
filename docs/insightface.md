@@ -98,6 +98,23 @@ Rapporten viser blant annet:
 - bilder med flest ansikter
 - eventuelle scan-feil
 
+## HTML-visning
+
+Du kan lage en enkel HTML-side for å se ansiktene som er funnet:
+
+```powershell
+bildebank make-face-browser
+```
+
+Da lages:
+
+```text
+faces.html
+```
+
+Første versjon viser bildene der ansikter er funnet, og tegner en boks rundt
+hvert ansikt. Den grupperer ikke personer ennå.
+
 ## Slette ansiktsdata
 
 Hvis du vil fjerne alle eksperimentelle ansiktsdata fra bildesamlingen:

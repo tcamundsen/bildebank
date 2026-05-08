@@ -59,9 +59,13 @@ def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection
     conn = sqlite3.connect(db_path_for_target(target))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    if require_current:
-        require_current_schema(conn)
-    return conn
+    try:
+        if require_current:
+            require_current_schema(conn)
+        return conn
+    except Exception:
+        conn.close()
+        raise
 
 
 def schema_version(conn: sqlite3.Connection) -> int:

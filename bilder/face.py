@@ -4,10 +4,11 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from . import db
 from .config import FaceRecognitionConfig
-from .media import IMAGE_EXTENSIONS
+from .media import IMAGE_EXTENSIONS, image_dimensions
 
 
 FACE_DB_FILENAME = ".bilder-faces.sqlite3"
@@ -146,6 +147,237 @@ def face_report(target: Path, *, limit: int = 20) -> FaceReport:
         )
     finally:
         conn.close()
+
+
+def export_face_browser(target: Path, output: Path | None = None) -> Path:
+    output_path = output or (target / "faces.html")
+    path = face_db_path(target)
+    if not path.exists():
+        raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        items = face_browser_items(target, conn)
+    finally:
+        conn.close()
+    output_path.write_text(render_face_browser_html(items), encoding="utf-8", newline="\n")
+    return output_path
+
+
+def face_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT
+            scanned_files.file_id,
+            scanned_files.target_path,
+            scanned_files.face_count,
+            faces.bbox_x,
+            faces.bbox_y,
+            faces.bbox_width,
+            faces.bbox_height,
+            faces.detection_score,
+            faces.embedding_model
+        FROM scanned_files
+        JOIN faces ON faces.file_id = scanned_files.file_id
+        WHERE scanned_files.status = 'ok'
+        ORDER BY scanned_files.target_path, faces.id
+        """
+    ).fetchall()
+    grouped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        target_path = Path(str(row["target_path"]))
+        key = str(target_path)
+        item = grouped.setdefault(
+            key,
+            {
+                "path": display_relative_path(target, target_path),
+                "url": path_to_url(relative_to_target(target, target_path)),
+                "faceCount": int(row["face_count"]),
+                "dimensions": image_dimensions(target_path),
+                "faces": [],
+            },
+        )
+        item["faces"].append(
+            {
+                "x": float(row["bbox_x"]),
+                "y": float(row["bbox_y"]),
+                "width": float(row["bbox_width"]),
+                "height": float(row["bbox_height"]),
+                "score": float(row["detection_score"]),
+                "model": str(row["embedding_model"]),
+            }
+        )
+    return list(grouped.values())
+
+
+def relative_to_target(target: Path, path: Path) -> Path:
+    try:
+        return path.resolve().relative_to(target.resolve())
+    except ValueError:
+        import os
+
+        return Path(os.path.relpath(path, target))
+
+
+def display_relative_path(target: Path, path: Path) -> str:
+    return relative_to_target(target, path).as_posix()
+
+
+def path_to_url(path: Path) -> str:
+    return "/".join(quote(part) for part in path.parts)
+
+
+def render_face_browser_html(items: list[dict[str, Any]]) -> str:
+    cards = "\n".join(render_face_card(item) for item in items)
+    if not cards:
+        cards = '<p class="empty">Ingen ansikter funnet ennå.</p>'
+    return f"""<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ansikter</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #f7f7f5;
+      --text: #202020;
+      --muted: #666;
+      --border: #d8d8d2;
+      --panel: #fff;
+      --accent: #d62f2f;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    header {{
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }}
+    h1 {{
+      margin: 0;
+      font-size: 20px;
+    }}
+    main {{
+      padding: 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }}
+    .card {{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }}
+    .media {{
+      position: relative;
+      background: #eee;
+    }}
+    .media img {{
+      display: block;
+      width: 100%;
+      height: auto;
+    }}
+    .box {{
+      position: absolute;
+      border: 2px solid var(--accent);
+      background: rgb(214 47 47 / 12%);
+      pointer-events: none;
+    }}
+    .meta {{
+      padding: 10px;
+      display: grid;
+      gap: 4px;
+      font-size: 13px;
+    }}
+    .path {{
+      overflow-wrap: anywhere;
+      font-weight: 600;
+    }}
+    .muted {{
+      color: var(--muted);
+    }}
+    .empty {{
+      grid-column: 1 / -1;
+      margin: 0;
+      color: var(--muted);
+    }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Ansikter ({len(items)} bilder)</h1>
+  </header>
+  <main>
+    {cards}
+  </main>
+</body>
+</html>
+"""
+
+
+def render_face_card(item: dict[str, Any]) -> str:
+    boxes = "\n".join(render_face_box(face, item["dimensions"]) for face in item["faces"])
+    face_count = int(item["faceCount"])
+    return f"""<article class="card">
+  <div class="media">
+    <img src="{html_escape(item['url'])}" alt="">
+    {boxes}
+  </div>
+  <div class="meta">
+    <div class="path">{html_escape(item['path'])}</div>
+    <div>{face_count} ansikt{'er' if face_count != 1 else ''}</div>
+    <div class="muted">Beste score: {max(float(face['score']) for face in item['faces']):.3f}</div>
+  </div>
+</article>"""
+
+
+def render_face_box(face: dict[str, Any], dimensions) -> str:
+    percent = face_box_percent(face, dimensions)
+    if percent is None:
+        left = top = width = height = 0.0
+    else:
+        left, top, width, height = percent
+    return (
+        '<div class="box" '
+        f'title="score {float(face["score"]):.3f}" '
+        'style="'
+        f'left: {left:.4f}%; '
+        f'top: {top:.4f}%; '
+        f'width: {width:.4f}%; '
+        f'height: {height:.4f}%;'
+        '"></div>'
+    )
+
+
+def face_box_percent(face: dict[str, Any], dimensions) -> tuple[float, float, float, float] | None:
+    if dimensions is None or dimensions.width <= 0 or dimensions.height <= 0:
+        return None
+    return (
+        100.0 * float(face["x"]) / dimensions.width,
+        100.0 * float(face["y"]) / dimensions.height,
+        100.0 * float(face["width"]) / dimensions.width,
+        100.0 * float(face["height"]) / dimensions.height,
+    )
+
+
+def html_escape(value: object) -> str:
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
 
 
 def count_scanned_files(conn: sqlite3.Connection, where_sql: str) -> int:

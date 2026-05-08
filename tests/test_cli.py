@@ -1455,6 +1455,16 @@ model_name = "test-model"
             self.assertIn("Flest ansikter:", stdout)
             self.assertIn("IMG_20240102.jpg", stdout)
 
+            code, stdout, stderr = capture_cli(["--target", str(target), "make-face-browser"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser for ansikter", stdout)
+            html = (target / "faces.html").read_text(encoding="utf-8")
+            self.assertIn("Ansikter (1 bilder)", html)
+            self.assertIn("IMG_20240102.jpg", html)
+            self.assertIn("class=\"box\"", html)
+            self.assertIn("left: ", html)
+
     def test_face_report_handles_missing_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

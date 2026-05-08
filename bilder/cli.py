@@ -11,7 +11,7 @@ from pathlib import Path
 from . import __version__, db
 from .config import CONFIG_FILENAME, load_config
 from .exiftool_probe import exiftool_metadata_gaps
-from .face import FaceReport, face_db_path, face_db_summary, face_report, scan_faces
+from .face import FaceReport, export_face_browser, face_db_path, face_db_summary, face_report, scan_faces
 from .importer import (
     import_source,
     import_source_dry_run,
@@ -77,6 +77,7 @@ HELP_COMMAND_GROUPS = (
             ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
             ("face-scan", "Eksperimentell scanning etter ansikter"),
             ("face-report", "Vis rapport for scannede ansikter"),
+            ("make-face-browser", "Lag HTML-side for scannede ansikter"),
             ("face-reset", "Slett eksperimentelle ansiktsdata"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
             ("update", "Oppdater programinstallasjonen"),
@@ -335,6 +336,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Vis rapport for scannede ansikter",
     )
     face_report_parser.add_argument("--limit", type=positive_int_arg, default=20, help="Maks antall linjer per liste")
+    face_browser = add_command(
+        subparsers,
+        "make-face-browser",
+        usage="bildebank make-face-browser [valg]",
+        help="Lag HTML-side for scannede ansikter",
+    )
+    face_browser.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        type=Path,
+        help="Skriv HTML-filen hit. Standard: faces.html i bildesamlingen.",
+    )
     add_command(
         subparsers,
         "face-reset",
@@ -472,6 +486,12 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "face-report":
         return run_face_report(target, limit=args.limit)
+
+    if args.command == "make-face-browser":
+        output = args.output.resolve() if args.output else None
+        output_path = export_face_browser(target, output)
+        print(f"Skrev HTML-browser for ansikter: {output_path}")
+        return 0
 
     if args.command == "face-reset":
         return run_face_reset(target)
