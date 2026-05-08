@@ -15,7 +15,7 @@ from unittest.mock import patch
 from bilder.cli import build_parser, main
 from bilder.config import load_config
 from bilder.db import DB_FILENAME
-from bilder.face import FACE_DB_FILENAME
+from bilder.face import FACE_DB_FILENAME, read_image
 from bilder.importer import safe_copy
 from bilder.media import sha256_file
 from bilder.program_state import PROGRAM_DB_FILENAME
@@ -1480,6 +1480,36 @@ model_name = "test-model"
             self.assertIn("Ansikt-id: 1", html)
             self.assertIn("class=\"box\"", html)
             self.assertIn("left: ", html)
+
+    def test_read_image_uses_unicode_safe_file_reading(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "utenrødeøyne.jpg"
+            path.write_bytes(b"image-bytes")
+
+            class FakeData:
+                size = 11
+
+            class FakeNp:
+                uint8 = object()
+
+                @staticmethod
+                def fromfile(filename, dtype):
+                    self.assertEqual(filename, str(path))
+                    self.assertIs(dtype, FakeNp.uint8)
+                    return FakeData()
+
+            class FakeCv2:
+                IMREAD_COLOR = 1
+
+                @staticmethod
+                def imdecode(data, flags):
+                    self.assertIsInstance(data, FakeData)
+                    self.assertEqual(flags, FakeCv2.IMREAD_COLOR)
+                    return {"decoded": True}
+
+            modules = {"cv2": FakeCv2, "numpy": FakeNp}
+            with patch.dict(sys.modules, modules):
+                self.assertEqual(read_image(path), {"decoded": True})
 
     def test_face_report_handles_missing_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

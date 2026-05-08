@@ -2049,9 +2049,16 @@ def load_face_app(config: FaceRecognitionConfig):
 def read_image(path: Path):
     try:
         import cv2
+        import numpy as np
     except ImportError as exc:
         raise ValueError("OpenCV mangler. Installer InsightFace-komponenten på nytt.") from exc
-    return cv2.imread(str(path))
+    try:
+        data = np.fromfile(str(path), dtype=np.uint8)
+    except OSError as exc:
+        raise ValueError(f"Kunne ikke lese bildefil: {path}") from exc
+    if data.size == 0:
+        return None
+    return cv2.imdecode(data, cv2.IMREAD_COLOR)
 
 
 def face_bbox(face: Any) -> tuple[float, float, float, float]:
