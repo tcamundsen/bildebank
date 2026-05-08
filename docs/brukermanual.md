@@ -53,8 +53,8 @@ Eksempel:
 $HOME\BildeSamling
 ```
 
-Bildesamlingsmappen skal ikke ligge inni programmappen. Hold programmet og
-bildesamlingen adskilt.
+Bildesamlingsmappen kan ikke ligge inni programmappen. Bildebank-programmet
+vil forhindre det fra å opprette en bildesamling i programmappen
 
 Bildesamlingsmappen er en mappe Bildebank styrer. Ikke flytt, gi nytt navn til
 eller slett filer inne i denne mappen manuelt, med mindre manualen sier det.
@@ -63,20 +63,22 @@ Bruk Bildebank-kommandoer som `remove` når du vil fjerne noe fra samlingen.
 Du kan åpne og se på filene i bildesamlingsmappen, men ikke rydd manuelt i
 årsmappene og månedsmappene. Da kan databasen og filene komme ut av sync.
 
+Nedenfor viser jeg trinn for trinn hvordan du kan lage en samling med
+bilder og vise dem i nettleser. Når du er klar for å gå igang for alvor,
+så finner du lenke til detaljer om alle kommandoene øverst i dette dokumentet.
+
 ## Opprett en testmappe med noen få bilder
 
-Ikke start med hele hovedsamlingen første gang. Lag heller en mappe du gir
-navnet TestBilder i Bilder-mappen som du finner med Filutforsker i Windows.
-Kopier inn noen få bilder dit.
-Da kan du kontrollere at importen fungerer før du
-bruker Bildebank på større mengder.
-
-Trykk Windows-tast+E for å åpne Filutforsker. Du kan enten bla deg frem til
-Bilder-mappen, eller klikke i adressefeltet øverst i vinduet, skrive `Bilder`
-og trykke Enter.
+Lag en mappe som heter TestBilder i Bilder-mappen din.
+Kopier noen få bilder inn i denne mappen. Bruk gjerne 5–10 bilder første gang.
+Dette gjør du på vanlig måte med mus og Filutforsker.
 
 
-## Åpne PowerShell og gå til riktig mappe
+### Først et lite lynkurs
+
+Dette programmet er basert på at det kjøres i et terminalvindu
+og at vi utfører kommandoer ved å skrive tekst. Derfor bruker vi
+PowerShell.
 
 Åpne PowerShell slik:
 
@@ -84,8 +86,48 @@ og trykke Enter.
 2. Skriv `PowerShell`.
 3. Åpne `Windows PowerShell`.
 
-Når du skriver kommandoer, er det viktig hvilken mappe PowerShell står i. Du
-ser ofte gjeldende mappe helt til venstre på linjen.
+På samme måte som Filutforsker viser viser filene eller bildene i en mappe,
+så har PowerShell tilgang til en mappe. Når du starter PowerShell, så ser kanskje
+de siste linjene i vinduet slik ut:
+
+```powershell
+Install the latest PowerShell
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+Install the latest PowerShell for new features and improvements! https://aka.ms/PSWindows
+
+PS C:\Users\Tom>
+```
+
+`Tom` vil være erstattet av ditt brukernavn, og det kan hende at det er en annen mappe.
+`PS` er nok bare en påminnelse om at du kjører Powershell, og `C:\Users\Tom>` forteller
+meg at PowerShell ser på mappen `C:\Users\Tom`.
+
+Hvis det i denne mappen finnes en mappe som heter kode, så bruker vi kommandoen `cd`
+(som er forkortelse for Change Direcory) til å gå inn i den mappen:
+
+```powershell
+PS C:\Users\Tom> cd kode
+PS C:\Users\Tom\kode>
+```
+
+Vi kan da jobbe med filene i denne mappa, bare ved å skrive navnet deres, istedet
+for å også ta me navnet på mappen de ligger i.
+Du ser at at det som står til venstre for markøren har endret seg og viser at du nå er
+mappen kode. For å gå ut av mappen, dvs opp et nivå skriver du `cd ..`:
+
+```powershell
+PS C:\Users\Tom> cd kode
+PS C:\Users\Tom\kode> cd ..
+PS C:\Users\Tom>
+```
+
+Men i alle eksemplene i denne manualen, så tar jeg ikke med alt som viser
+hvilken mappe, dvs `PS C:\Users\Tom\kode` i dette eksempelet, for du har jo
+sansynligvis noe annet som står der.
+
+## Tilbake til Bildebank
 
 Sjekk at Bildebank starter:
 
@@ -95,13 +137,29 @@ bildebank
 
 Programmet vil da skrive ut en liste over kommandoer som kan kjøres.
 
+`$HOME` er en varabel som vet hvor hjemmemappen for din bruker er på PCen.
+For meg så betyr de to linjene her det samme:
+
+```powershell
+$HOME
+C:\Users\Tom\kode
+```
 Hvis bildesamlingsmappen ikke finnes ennå, kan du lage den først:
 
 ```powershell
-mkdir $HOME\BildeSamling
+cd $HOME
+mkdir BildeSamling
 ```
 
 Når du skal jobbe med bildesamlingen, går du til bildesamlingsmappen:
+
+```powershell
+cd BildeSamling
+```
+
+Eksempelet over fungerer fordi vi nettopp har gått til `$HOME` i PowerShell i
+eksempelet overfor der. Hvis vi ikke hadde gjort det, ville vi skrevet
+den fulle adressen til mappen, og gått dit:
 
 ```powershell
 cd $HOME\BildeSamling
