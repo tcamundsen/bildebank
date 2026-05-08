@@ -167,8 +167,9 @@ Da lages:
 face-groups.html
 ```
 
-Første versjon viser ansiktsutsnitt gruppert etter beregnet likhet. Den lar deg
-ikke sette personnavn ennå.
+Siden viser én gruppe om gangen. Bruk pil venstre og pil høyre for å bla mellom
+gruppene. Bildene vises med ansiktsboks, ikke som et lite crop-utsnitt, slik at
+det er lettere å se om riktig ansikt er markert.
 
 ## Personer
 

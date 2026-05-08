@@ -1548,11 +1548,14 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser for ansiktsgrupper", stdout)
             html = (target / "face-groups.html").read_text(encoding="utf-8")
-            self.assertIn("Ansiktsgrupper (1 grupper)", html)
-            self.assertIn("Gruppe 1 (2 ansikter)", html)
+            self.assertIn("<h1>Ansiktsgrupper</h1>", html)
+            self.assertIn("Forrige gruppe", html)
+            self.assertIn('"index": 1', html)
+            self.assertIn('"memberCount": 2', html)
             self.assertIn("likhet", html)
-            self.assertIn("face-id 1", html)
-            self.assertIn('face-person-add-group "Navn" 1', html)
+            self.assertIn('"faceId": 1', html)
+            self.assertIn("className = \"box\"", html)
+            self.assertIn('face-person-add-group "Navn"', html)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-create", "Kari"])
 
@@ -1575,7 +1578,7 @@ model_name = "test-model"
 
             self.assertEqual(run_cli(["--target", str(target), "make-face-groups-browser"]), 0)
             html = (target / "face-groups.html").read_text(encoding="utf-8")
-            self.assertIn("Koblet til: Kari", html)
+            self.assertIn('"personName": "Kari"', html)
 
     def test_face_person_add_remove_face_and_suggest(self) -> None:
         class FakeFace:

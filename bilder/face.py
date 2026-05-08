@@ -688,6 +688,13 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
             "similarity": float(row["similarity"]),
             "dimensions": dimensions,
         }
+        percent = face_box_percent(face, dimensions)
+        if percent is not None:
+            left, top, width, height = percent
+            face["left"] = left
+            face["top"] = top
+            face["boxWidth"] = width
+            face["boxHeight"] = height
         groups.setdefault(
             group_index,
             {
@@ -964,9 +971,7 @@ def render_face_browser_html(items: list[dict[str, Any]]) -> str:
 
 
 def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
-    sections = "\n".join(render_face_group_section(group) for group in groups)
-    if not sections:
-        sections = '<p class="empty">Ingen grupper beregnet ennå. Kjør bildebank face-group først.</p>'
+    groups_json = json.dumps(face_groups_json_items(groups), ensure_ascii=False)
     return f"""<!doctype html>
 <html lang="no">
 <head>
@@ -981,64 +986,51 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       --muted: #666;
       --border: #d8d8d2;
       --panel: #fff;
+      --accent: #d62f2f;
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
+      min-height: 100vh;
       background: var(--bg);
       color: var(--text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }}
+    .app {{
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }}
     header {{
-      padding: 16px;
+      padding: 12px;
       border-bottom: 1px solid var(--border);
       background: var(--panel);
       position: sticky;
       top: 0;
       z-index: 2;
-    }}
-    h1 {{ margin: 0; font-size: 20px; }}
-    main {{ padding: 16px; display: grid; gap: 18px; }}
-    section {{
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px;
-    }}
-    h2 {{ margin: 0 0 10px; font-size: 16px; }}
-    .faces {{
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
       gap: 10px;
     }}
-    .face {{
-      display: grid;
-      gap: 5px;
-      min-width: 0;
+    h1 {{ margin: 0; font-size: 20px; }}
+    .topline, .controls {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
     }}
-    .crop {{
-      position: relative;
-      aspect-ratio: 1;
-      overflow: hidden;
-      background: #eee;
+    button {{
       border: 1px solid var(--border);
+      background: #f0f0eb;
+      color: var(--text);
       border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      cursor: pointer;
+      min-height: 38px;
     }}
-    .crop img {{
-      position: absolute;
-      height: auto;
-      max-width: none;
-    }}
-    .meta {{
-      color: var(--muted);
-      font-size: 12px;
-      overflow-wrap: anywhere;
-    }}
-    .person, .command {{
-      margin: 0 0 10px;
-      color: var(--muted);
-      font-size: 13px;
-    }}
+    button:hover {{ background: #e6e6df; }}
+    button:disabled {{ opacity: 0.45; cursor: default; }}
+    .status {{ color: var(--muted); font-size: 14px; }}
     .command {{
       font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
       background: #f0f0eb;
@@ -1046,17 +1038,141 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       border-radius: 6px;
       padding: 7px;
       overflow-wrap: anywhere;
+      font-size: 13px;
+    }}
+    main {{
+      min-height: 0;
+      padding: 16px;
+      overflow: auto;
+    }}
+    .faces {{
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 14px;
+      align-content: start;
+    }}
+    .face {{
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }}
+    .media {{
+      position: relative;
+      background: #eee;
+    }}
+    .media img {{
+      display: block;
+      width: 100%;
+      height: auto;
+    }}
+    .box {{
+      position: absolute;
+      border: 2px solid var(--accent);
+      background: rgb(214 47 47 / 12%);
+      pointer-events: none;
+    }}
+    .meta {{
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+      padding: 0 8px 8px;
     }}
     .empty {{ margin: 0; color: var(--muted); }}
   </style>
 </head>
 <body>
-  <header>
-    <h1>Ansiktsgrupper ({len(groups)} grupper)</h1>
-  </header>
-  <main>
-    {sections}
-  </main>
+  <div class="app">
+    <header>
+      <div class="topline">
+        <h1>Ansiktsgrupper</h1>
+        <span id="status" class="status"></span>
+      </div>
+      <div class="controls">
+        <button id="prevGroup" type="button">Forrige gruppe</button>
+        <button id="nextGroup" type="button">Neste gruppe</button>
+        <span id="groupTitle" class="status"></span>
+      </div>
+      <div id="person" class="status"></div>
+      <div id="command" class="command"></div>
+    </header>
+    <main id="main">
+      <p class="empty">Ingen grupper beregnet ennå. Kjør bildebank face-group først.</p>
+    </main>
+  </div>
+  <script>
+    const groups = {groups_json};
+    let groupIndex = 0;
+    const statusEl = document.getElementById("status");
+    const groupTitleEl = document.getElementById("groupTitle");
+    const personEl = document.getElementById("person");
+    const commandEl = document.getElementById("command");
+    const mainEl = document.getElementById("main");
+    const prevButton = document.getElementById("prevGroup");
+    const nextButton = document.getElementById("nextGroup");
+    prevButton.addEventListener("click", () => moveGroup(-1));
+    nextButton.addEventListener("click", () => moveGroup(1));
+    document.addEventListener("keydown", event => {{
+      if (event.key === "ArrowLeft") {{ event.preventDefault(); moveGroup(-1); }}
+      if (event.key === "ArrowRight") {{ event.preventDefault(); moveGroup(1); }}
+    }});
+    init();
+    function init() {{
+      statusEl.textContent = `${{groups.length}} grupper`;
+      if (groups.length === 0) {{
+        prevButton.disabled = true;
+        nextButton.disabled = true;
+        commandEl.textContent = "";
+        return;
+      }}
+      renderGroup();
+    }}
+    function moveGroup(delta) {{
+      const next = groupIndex + delta;
+      if (next < 0 || next >= groups.length) return;
+      groupIndex = next;
+      renderGroup();
+    }}
+    function renderGroup() {{
+      const group = groups[groupIndex];
+      groupTitleEl.textContent = `Gruppe ${{group.index}} (${{group.memberCount}} ansikter), ${{groupIndex + 1}}/${{groups.length}}`;
+      personEl.textContent = group.personName ? `Koblet til: ${{group.personName}}` : "Forslag. Ikke bekreftet person.";
+      commandEl.textContent = `bildebank face-person-add-group "Navn" ${{group.index}}`;
+      prevButton.disabled = groupIndex === 0;
+      nextButton.disabled = groupIndex === groups.length - 1;
+      const facesEl = document.createElement("div");
+      facesEl.className = "faces";
+      for (const face of group.faces) facesEl.append(renderFace(face));
+      mainEl.replaceChildren(facesEl);
+    }}
+    function renderFace(face) {{
+      const card = document.createElement("div");
+      card.className = "face";
+      const media = document.createElement("div");
+      media.className = "media";
+      const img = document.createElement("img");
+      img.src = face.url;
+      img.alt = "";
+      media.append(img);
+      if (face.left !== undefined) {{
+        const box = document.createElement("div");
+        box.className = "box";
+        box.style.left = `${{face.left.toFixed(4)}}%`;
+        box.style.top = `${{face.top.toFixed(4)}}%`;
+        box.style.width = `${{face.boxWidth.toFixed(4)}}%`;
+        box.style.height = `${{face.boxHeight.toFixed(4)}}%`;
+        media.append(box);
+      }}
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = `face-id ${{face.faceId}}, likhet ${{face.similarity.toFixed(3)}} - ${{face.path}}`;
+      card.append(media, meta);
+      return card;
+    }}
+  </script>
 </body>
 </html>
 """
@@ -1652,6 +1768,25 @@ def person_browser_json_items(items: list[dict[str, Any]]) -> list[dict[str, Any
             "faces": item["faces"],
         }
         for item in items
+    ]
+
+
+def face_groups_json_items(groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "index": group["index"],
+            "memberCount": group["memberCount"],
+            "personName": group["personName"],
+            "faces": [
+                {
+                    key: value
+                    for key, value in face.items()
+                    if key != "dimensions"
+                }
+                for face in group["faces"]
+            ],
+        }
+        for group in groups
     ]
 
 
