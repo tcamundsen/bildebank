@@ -1,6 +1,6 @@
 # Brukermanual for Bildebank
 
-[Detalj-referanse](reference.md)
+[Kommando-referanse](reference.md)
 [Siste nytt: import-endringer](import-endringer.md)
 
 Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
@@ -61,7 +61,7 @@ eller slett filer inne i denne mappen manuelt, med mindre manualen sier det.
 Bruk Bildebank-kommandoer som `remove` når du vil fjerne noe fra samlingen.
 
 Du kan åpne og se på filene i bildesamlingsmappen, men ikke rydd manuelt i
-årsmappene og månedsmappene. Da kan databasen og filene komme ut av sync.
+årsmappene og månedsmappene. Da kan databasen og filene komme ut av synk.
 
 Nedenfor viser jeg trinn for trinn hvordan du kan lage en samling med
 bilder og vise dem i nettleser. Når du er klar for å gå i gang for alvor,
@@ -74,7 +74,7 @@ Kopier noen få bilder inn i denne mappen. Bruk gjerne 5–10 bilder første gan
 Dette gjør du på vanlig måte med mus og Filutforsker.
 
 
-### Først et lite lynkurs
+## Først et lite lynkurs i PowerShell
 
 Dette programmet er basert på at det kjøres i et terminalvindu
 og at vi utfører kommandoer ved å skrive tekst. Derfor bruker vi
@@ -112,7 +112,7 @@ PS C:\Users\Tom> cd kode
 PS C:\Users\Tom\kode>
 ```
 
-Vi kan da jobbe med filene i denne mappa, bare ved å skrive navnet deres, istedet
+Vi kan da jobbe med filene i denne mappa, bare ved å skrive navnet deres, i stedet
 for å også ta med navnet på mappen de ligger i.
 Du ser at at det som står til venstre for markøren har endret seg og viser at du nå er
 mappen kode. For å gå ut av mappen, dvs opp et nivå skriver du `cd ..`:
@@ -137,7 +137,7 @@ bildebank
 
 Programmet vil da skrive ut en liste over kommandoer som kan kjøres.
 
-`$HOME` er en varabel som vet hvor hjemmemappen for din bruker er på PC-en.
+`$HOME` er en variabel som vet hvor hjemmemappen for din bruker er på PC-en.
 For meg så betyr de to linjene her det samme:
 
 ```powershell
@@ -200,7 +200,7 @@ bildebank import --name "TestBilder" --dry-run "$HOME\Pictures\TestBilder"
 
 Hvis du får feilmelding eller noe som tyder på at vi ikke finner mappen
 høyreklikk mappen i Filutforsker og velg Kopier som bane. Lim inn banen i
-kommandoen i stedet for "$HOME\Pictures\TestBilder".
+kommandoen i stedet for `$HOME\Pictures\TestBilder`.
 
 Da viser Bildebank hva programmet ville importert, uten å kopiere filer og uten
 å endre databasen.

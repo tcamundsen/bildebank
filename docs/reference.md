@@ -1,6 +1,6 @@
 # Liste over alle kommandoer
 
-Ikke komplett ennå. Men her er noen av de viktigste:
+Dette er en kort referanse over de viktigste kommandoene:
 
  - [`create`](create.md)
  - [`import`](import.md)

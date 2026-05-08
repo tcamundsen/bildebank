@@ -61,7 +61,7 @@ bildebank import --name "Sommer2023" "$HOME\Pictures\Sommer2023"
 
 Navnet etter `--name` er identiteten til importen.
 
-Det er viktig fordi pathen ikke alltid er en trygg identitet. I dag kan `E:\`
+Det er viktig fordi filstien ikke alltid er en trygg identitet. I dag kan `E:\`
 være en CD, og i morgen kan `E:\` være en USB-brikke.
 
 Bruk derfor navn som er lette å kjenne igjen:
