@@ -302,6 +302,14 @@ i Windows, eller med `open-browser`:
 bildebank open-browser
 ```
 
+Når HTML-visningen er åpen, kan du bla med tastaturet:
+
+- Pil venstre/høyre: forrige eller neste bilde/video
+- Pil opp/ned: forrige eller neste måned
+- Page Up/Page Down: forrige eller neste år
+
+Se også [`make-browser`](make-browser.md) og [`open-browser`](open-browser.md).
+
 ## Se registrerte kilder
 
 Kjør:
