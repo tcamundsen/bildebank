@@ -105,19 +105,27 @@ def count_rows(conn: sqlite3.Connection, table: str) -> int:
 
 def scan_faces(target: Path, config: FaceRecognitionConfig, *, limit: int | None = None) -> FaceScanStats:
     stats = FaceScanStats()
-    app = load_face_app(config)
     main_conn = db.connect(target)
     face_conn = connect_face_db(target)
     try:
+        rows_to_scan = []
         for row in active_image_files(main_conn, limit=limit):
             stats.checked += 1
             file_id = int(row["id"])
-            target_path = Path(str(row["target_path"]))
-            target_path_key = str(row["target_path_key"])
             sha256 = str(row["sha256"])
             if is_file_scanned(face_conn, file_id, sha256):
                 stats.skipped += 1
                 continue
+            rows_to_scan.append(row)
+        if not rows_to_scan:
+            return stats
+
+        app = load_face_app(config)
+        for row in rows_to_scan:
+            file_id = int(row["id"])
+            target_path = Path(str(row["target_path"]))
+            target_path_key = str(row["target_path_key"])
+            sha256 = str(row["sha256"])
             try:
                 image = read_image(target_path)
                 if image is None:

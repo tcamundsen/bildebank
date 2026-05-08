@@ -1435,6 +1435,16 @@ model_name = "test-model"
             finally:
                 conn.close()
 
+            with (
+                patch("bilder.face.load_face_app", side_effect=AssertionError("should not load model")),
+                patch("bilder.face.read_image", side_effect=AssertionError("should not read image")),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("hoppet_over=1", stdout)
+            self.assertIn("scannet=0", stdout)
+
     def test_face_reset_requires_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
