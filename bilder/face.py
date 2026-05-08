@@ -14,7 +14,7 @@ from urllib.parse import quote
 
 from . import db
 from .config import FaceRecognitionConfig
-from .media import IMAGE_EXTENSIONS, image_dimensions
+from .media import IMAGE_EXTENSIONS, image_dimensions, image_orientation
 
 
 FACE_DB_FILENAME = ".bilder-faces.sqlite3"
@@ -54,6 +54,8 @@ class FaceGroupStats:
     groups: int
     grouped_faces: int
     threshold: float
+    skipped_large_groups: int = 0
+    skipped_large_faces: int = 0
 
 
 @dataclass(frozen=True)
@@ -596,6 +598,7 @@ def group_faces(
     target: Path,
     *,
     threshold: float = 0.6,
+    max_size: int | None = None,
     progress: FaceGroupProgress | None = None,
 ) -> FaceGroupStats:
     path = face_db_path(target)
@@ -623,7 +626,19 @@ def group_faces(
         grouped: dict[int, list[int]] = {}
         for face_id, _vector in vectors:
             grouped.setdefault(find(parent, face_id), []).append(face_id)
-        groups = [sorted(members) for members in grouped.values() if len(members) >= 2]
+        candidate_groups = [sorted(members) for members in grouped.values() if len(members) >= 2]
+        skipped_large_groups = 0
+        skipped_large_faces = 0
+        if max_size is None:
+            groups = candidate_groups
+        else:
+            groups = []
+            for members in candidate_groups:
+                if len(members) > max_size:
+                    skipped_large_groups += 1
+                    skipped_large_faces += len(members)
+                else:
+                    groups.append(members)
         groups.sort(key=lambda members: (-len(members), members[0]))
 
         if progress is not None:
@@ -668,6 +683,8 @@ def group_faces(
             groups=len(groups),
             grouped_faces=grouped_faces,
             threshold=threshold,
+            skipped_large_groups=skipped_large_groups,
+            skipped_large_faces=skipped_large_faces,
         )
     finally:
         conn.close()
@@ -746,6 +763,7 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
         group_index = int(row["group_index"])
         target_path = Path(str(row["target_path"]))
         dimensions = image_dimensions(target_path)
+        orientation = image_orientation(target_path)
         face = {
             "faceId": int(row["face_id"]),
             "path": display_relative_path(target, target_path),
@@ -757,8 +775,9 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
             "score": float(row["detection_score"]),
             "similarity": float(row["similarity"]),
             "dimensions": dimensions,
+            "orientation": orientation,
         }
-        percent = face_box_percent(face, dimensions)
+        percent = face_box_percent(face, dimensions, orientation)
         if percent is not None:
             left, top, width, height = percent
             face["left"] = left
@@ -823,6 +842,7 @@ def person_browser_items(target: Path, conn: sqlite3.Connection, *, person_id: i
         target_path = Path(str(row["target_path"]))
         key = str(target_path)
         dimensions = image_dimensions(target_path)
+        orientation = image_orientation(target_path)
         item = grouped.setdefault(
             key,
             {
@@ -833,6 +853,7 @@ def person_browser_items(target: Path, conn: sqlite3.Connection, *, person_id: i
                 "sizeText": format_person_file_size(target_path),
                 "faceCount": int(row["face_count"]),
                 "dimensions": dimensions,
+                "orientation": orientation,
                 "faces": [],
             },
         )
@@ -846,7 +867,7 @@ def person_browser_items(target: Path, conn: sqlite3.Connection, *, person_id: i
             "height": float(row["bbox_height"]),
             "score": float(row["detection_score"]),
         }
-        percent = face_box_percent(face, dimensions)
+        percent = face_box_percent(face, dimensions, orientation)
         if percent is not None:
             left, top, width, height = percent
             face["left"] = left
@@ -901,13 +922,16 @@ def face_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str,
     for row in rows:
         target_path = Path(str(row["target_path"]))
         key = str(target_path)
+        dimensions = image_dimensions(target_path)
+        orientation = image_orientation(target_path)
         item = grouped.setdefault(
             key,
             {
                 "path": display_relative_path(target, target_path),
                 "url": path_to_url(relative_to_target(target, target_path)),
                 "faceCount": int(row["face_count"]),
-                "dimensions": image_dimensions(target_path),
+                "dimensions": dimensions,
+                "orientation": orientation,
                 "faces": [],
             },
         )
@@ -1715,7 +1739,7 @@ def render_group_face(face: dict[str, Any]) -> str:
 
 
 def crop_image_style(face: dict[str, Any]) -> str:
-    crop = face_crop_percent(face, face["dimensions"])
+    crop = face_crop_percent(face, face["dimensions"], int(face.get("orientation", 1)))
     if crop is None:
         return "left: 0; top: 0; width: 100%;"
     left, top, width, _height = crop
@@ -1727,7 +1751,8 @@ def crop_image_style(face: dict[str, Any]) -> str:
 
 
 def render_face_card(item: dict[str, Any]) -> str:
-    boxes = "\n".join(render_face_box(face, item["dimensions"]) for face in item["faces"])
+    orientation = int(item.get("orientation", 1))
+    boxes = "\n".join(render_face_box(face, item["dimensions"], orientation) for face in item["faces"])
     face_count = int(item["faceCount"])
     face_ids = ", ".join(str(face["faceId"]) for face in item["faces"])
     return f"""<article class="card">
@@ -1745,7 +1770,8 @@ def render_face_card(item: dict[str, Any]) -> str:
 
 
 def render_person_card(item: dict[str, Any]) -> str:
-    boxes = "\n".join(render_person_box(face, item["dimensions"]) for face in item["faces"])
+    orientation = int(item.get("orientation", 1))
+    boxes = "\n".join(render_person_box(face, item["dimensions"], orientation) for face in item["faces"])
     confirmed = sum(1 for face in item["faces"] if face["status"] == "bekreftet")
     suggested = sum(1 for face in item["faces"] if face["status"] == "forslag")
     details = "<br>".join(
@@ -1765,8 +1791,8 @@ def render_person_card(item: dict[str, Any]) -> str:
 </article>"""
 
 
-def render_face_box(face: dict[str, Any], dimensions) -> str:
-    percent = face_box_percent(face, dimensions)
+def render_face_box(face: dict[str, Any], dimensions, orientation: int = 1) -> str:
+    percent = face_box_percent(face, dimensions, orientation)
     if percent is None:
         left = top = width = height = 0.0
     else:
@@ -1783,8 +1809,8 @@ def render_face_box(face: dict[str, Any], dimensions) -> str:
     )
 
 
-def render_person_box(face: dict[str, Any], dimensions) -> str:
-    percent = face_box_percent(face, dimensions)
+def render_person_box(face: dict[str, Any], dimensions, orientation: int = 1) -> str:
+    percent = face_box_percent(face, dimensions, orientation)
     if percent is None:
         left = top = width = height = 0.0
     else:
@@ -1802,19 +1828,76 @@ def render_person_box(face: dict[str, Any], dimensions) -> str:
     )
 
 
-def face_box_percent(face: dict[str, Any], dimensions) -> tuple[float, float, float, float] | None:
+def face_box_percent(
+    face: dict[str, Any],
+    dimensions,
+    orientation: int = 1,
+) -> tuple[float, float, float, float] | None:
     if dimensions is None or dimensions.width <= 0 or dimensions.height <= 0:
         return None
+    x, y, width, height, box_width, box_height = orient_face_box(
+        float(face["x"]),
+        float(face["y"]),
+        float(face["width"]),
+        float(face["height"]),
+        float(dimensions.width),
+        float(dimensions.height),
+        orientation,
+    )
     return (
-        100.0 * float(face["x"]) / dimensions.width,
-        100.0 * float(face["y"]) / dimensions.height,
-        100.0 * float(face["width"]) / dimensions.width,
-        100.0 * float(face["height"]) / dimensions.height,
+        100.0 * x / box_width,
+        100.0 * y / box_height,
+        100.0 * width / box_width,
+        100.0 * height / box_height,
     )
 
 
-def face_crop_percent(face: dict[str, Any], dimensions) -> tuple[float, float, float, float] | None:
-    box = face_box_percent(face, dimensions)
+def orient_face_box(
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    image_width: float,
+    image_height: float,
+    orientation: int = 1,
+) -> tuple[float, float, float, float, float, float]:
+    if orientation == 2:
+        return image_width - x - width, y, width, height, image_width, image_height
+    if orientation == 3:
+        return (
+            image_width - x - width,
+            image_height - y - height,
+            width,
+            height,
+            image_width,
+            image_height,
+        )
+    if orientation == 4:
+        return x, image_height - y - height, width, height, image_width, image_height
+    if orientation == 5:
+        return y, x, height, width, image_height, image_width
+    if orientation == 6:
+        return image_height - y - height, x, height, width, image_height, image_width
+    if orientation == 7:
+        return (
+            image_height - y - height,
+            image_width - x - width,
+            height,
+            width,
+            image_height,
+            image_width,
+        )
+    if orientation == 8:
+        return y, image_width - x - width, height, width, image_height, image_width
+    return x, y, width, height, image_width, image_height
+
+
+def face_crop_percent(
+    face: dict[str, Any],
+    dimensions,
+    orientation: int = 1,
+) -> tuple[float, float, float, float] | None:
+    box = face_box_percent(face, dimensions, orientation)
     if box is None:
         return None
     left, top, width, height = box

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bilder.media import image_dimensions, media_date
+from bilder.media import image_dimensions, image_orientation, media_date
 
 
 def atom(atom_type: bytes, payload: bytes) -> bytes:
@@ -100,6 +100,22 @@ def jpeg_with_exif_datetime(date: str) -> bytes:
     return b"\xff\xd8" + segment + b"\xff\xd9"
 
 
+def jpeg_with_exif_orientation(orientation: int) -> bytes:
+    tiff_header = b"MM\x00*\x00\x00\x00\x08"
+    ifd0 = (
+        (1).to_bytes(2, "big")
+        + (0x0112).to_bytes(2, "big")
+        + (3).to_bytes(2, "big")
+        + (1).to_bytes(4, "big")
+        + orientation.to_bytes(2, "big")
+        + b"\x00\x00"
+        + (0).to_bytes(4, "big")
+    )
+    payload = b"Exif\x00\x00" + tiff_header + ifd0
+    segment = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
+    return b"\xff\xd8" + segment + b"\xff\xd9"
+
+
 def minimal_png(width: int, height: int) -> bytes:
     signature = b"\x89PNG\r\n\x1a\n"
     ihdr_payload = (
@@ -180,6 +196,13 @@ class MediaDateTests(unittest.TestCase):
 
             self.assertEqual(result.date, dt.date(2016, 1, 29))
             self.assertEqual(result.source, "metadata")
+
+    def test_jpeg_exif_orientation_is_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rotated.jpg"
+            path.write_bytes(jpeg_with_exif_orientation(6))
+
+            self.assertEqual(image_orientation(path), 6)
 
     def test_png_dimensions_are_read_without_external_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -171,6 +171,17 @@ def jpeg_dimensions(path: Path) -> ImageDimensions | None:
     return None
 
 
+def image_orientation(path: Path) -> int:
+    if not is_jpeg_file(path):
+        return 1
+    for segment in _jpeg_app1_segments(path):
+        if segment.startswith(b"Exif\x00\x00"):
+            orientation = _orientation_from_tiff(segment[6:])
+            if orientation is not None:
+                return orientation
+    return 1
+
+
 def inspect_metadata(path: Path) -> MetadataInspection:
     lines: list[str] = []
     lines.append(f"Fil: {path}")
@@ -449,6 +460,27 @@ def _date_from_tiff(tiff: bytes) -> dt.date | None:
     return None
 
 
+def _orientation_from_tiff(tiff: bytes) -> int | None:
+    if len(tiff) < 8:
+        return None
+    endian_marker = tiff[:2]
+    if endian_marker == b"II":
+        endian = "<"
+    elif endian_marker == b"MM":
+        endian = ">"
+    else:
+        return None
+    if struct.unpack(endian + "H", tiff[2:4])[0] != 42:
+        return None
+
+    first_ifd = struct.unpack(endian + "I", tiff[4:8])[0]
+    values = _read_ifd_values(tiff, first_ifd, endian)
+    value = _parse_exif_short(values.get(0x0112), endian)
+    if value is None or value < 1 or value > 8:
+        return None
+    return value
+
+
 def _read_ifd_values(tiff: bytes, offset: int, endian: str) -> dict[int, bytes | int]:
     values: dict[int, bytes | int] = {}
     if offset < 0 or offset + 2 > len(tiff):
@@ -489,6 +521,14 @@ def _parse_exif_date(value: bytes | int | None) -> dt.date | None:
         return dt.date(int(match.group("y")), int(match.group("m")), int(match.group("d")))
     except ValueError:
         return None
+
+
+def _parse_exif_short(value: bytes | int | None, endian: str) -> int | None:
+    if isinstance(value, int):
+        return value
+    if not isinstance(value, bytes) or len(value) < 2:
+        return None
+    return struct.unpack(endian + "H", value[:2])[0]
 
 
 def video_metadata_date(path: Path) -> dt.date | None:

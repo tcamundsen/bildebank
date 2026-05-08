@@ -287,6 +287,17 @@ fremst en måte å finne gode, sikre eksempler på. Når noen grupper eller
 enkeltansikter er bekreftet for en person, kan `face-suggest` bruke dette til å
 foreslå flere ansikter.
 
+Noen ganger kan `face-group` lage en veldig stor gruppe. Da er den ofte for
+stor til å kontrollere manuelt. Bruk `--max-size` hvis du vil hoppe over slike
+grupper i gruppebrowseren:
+
+```powershell
+bildebank face-group --max-size 200
+```
+
+Store grupper slettes ikke fra scanningen. De blir bare ikke skrevet som
+gruppeforslag i denne kjøringen.
+
 Kommandoen viser progresjon og estimert tid igjen mens den sammenligner
 ansikter. Dette kan ta tid, fordi hvert ansikt sammenlignes med mange andre
 ansikter.
@@ -309,6 +320,7 @@ Du kan justere hvor strengt ansikter skal sammenlignes:
 
 ```powershell
 bildebank face-group --threshold 0.65
+bildebank face-group --threshold 0.70 --max-size 200
 ```
 
 Høyere tall gir strengere grupper. Det betyr vanligvis færre og mindre grupper,

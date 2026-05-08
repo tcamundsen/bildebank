@@ -15,9 +15,9 @@ from unittest.mock import patch
 from bilder.cli import build_parser, main
 from bilder.config import load_config
 from bilder.db import DB_FILENAME
-from bilder.face import FACE_DB_FILENAME, connect_face_db, read_image
+from bilder.face import FACE_DB_FILENAME, connect_face_db, face_box_percent, read_image
 from bilder.importer import safe_copy
-from bilder.media import sha256_file
+from bilder.media import ImageDimensions, sha256_file
 from bilder.program_state import PROGRAM_DB_FILENAME
 from bilder.target_lock import LOCK_FILENAME
 from tests.test_media import (
@@ -1526,6 +1526,15 @@ model_name = "test-model"
             with patch.dict(sys.modules, modules):
                 self.assertEqual(read_image(path), {"decoded": True})
 
+    def test_face_box_percent_accounts_for_exif_rotation(self) -> None:
+        face = {"x": 10.0, "y": 20.0, "width": 30.0, "height": 40.0}
+        dimensions = ImageDimensions(width=100, height=200)
+
+        self.assertEqual(
+            face_box_percent(face, dimensions, orientation=6),
+            (70.0, 10.0, 20.0, 30.0),
+        )
+
     def test_face_report_handles_missing_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1588,6 +1597,17 @@ model_name = "test-model"
             self.assertIn("Face-group: bygger grupper fra 2 ansikter.", stdout)
             self.assertIn("grupper=1", stdout)
             self.assertIn("grupperte_ansikter=2", stdout)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "face-group", "--threshold", "0.9", "--max-size", "1"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("grupper=0", stdout)
+            self.assertIn("Max gruppestørrelse: 1", stdout)
+            self.assertIn("Hoppet over store grupper: grupper=1, ansikter=2", stdout)
+
+            self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9"]), 0)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "make-face-groups-browser"])
 

@@ -393,6 +393,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.6,
         help="Likhetsterskel fra 0.0 til 1.0. Standard: 0.6",
     )
+    face_group.add_argument(
+        "--max-size",
+        type=positive_int_arg,
+        help="Ikke skriv grupper med flere enn dette antallet ansikter",
+    )
     face_person_create = add_command(
         subparsers,
         "face-person-create",
@@ -653,7 +658,7 @@ def run(args: argparse.Namespace) -> int:
         return run_face_report(target, limit=args.limit)
 
     if args.command == "face-group":
-        return run_face_group(target, threshold=args.threshold)
+        return run_face_group(target, threshold=args.threshold, max_size=args.max_size)
 
     if args.command == "face-person-create":
         person_id = create_person(target, args.name)
@@ -1177,13 +1182,20 @@ def run_face_report(target: Path, *, limit: int) -> int:
     return 0
 
 
-def run_face_group(target: Path, *, threshold: float) -> int:
-    stats = group_faces(target, threshold=threshold, progress=print_face_group_progress)
+def run_face_group(target: Path, *, threshold: float, max_size: int | None = None) -> int:
+    stats = group_faces(target, threshold=threshold, max_size=max_size, progress=print_face_group_progress)
     print(
         "Ansiktsgrupper: "
         f"ansikter={stats.faces}, grupper={stats.groups}, "
         f"grupperte_ansikter={stats.grouped_faces}, threshold={stats.threshold:.3f}"
     )
+    if max_size is not None:
+        print(f"Max gruppestørrelse: {max_size}")
+    if stats.skipped_large_groups:
+        print(
+            "Hoppet over store grupper: "
+            f"grupper={stats.skipped_large_groups}, ansikter={stats.skipped_large_faces}"
+        )
     print("Dette er beregnede forslag, ikke bekreftede personer.")
     return 0
 
