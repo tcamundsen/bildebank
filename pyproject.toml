@@ -12,6 +12,7 @@ dependencies = []
 [project.optional-dependencies]
 face = [
     "insightface==0.7.3",
+    "numpy",
     "onnxruntime",
 ]
 

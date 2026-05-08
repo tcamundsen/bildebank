@@ -613,21 +613,10 @@ def group_faces(
             )
         )
         vectors = [(int(row["id"]), embedding_from_blob(bytes(row["embedding"]))) for row in face_rows]
-        parent = {face_id: face_id for face_id, _vector in vectors}
-        similarities: dict[tuple[int, int], float] = {}
         total_pairs = len(vectors) * (len(vectors) - 1) // 2
-        compared_pairs = 0
         if progress is not None:
             progress("start", 0, total_pairs)
-        for index, (left_id, left_vector) in enumerate(vectors):
-            for right_id, right_vector in vectors[index + 1 :]:
-                compared_pairs += 1
-                score = cosine_similarity(left_vector, right_vector)
-                if score >= threshold:
-                    union(parent, left_id, right_id)
-                    similarities[(min(left_id, right_id), max(left_id, right_id))] = score
-                if progress is not None:
-                    progress("compare", compared_pairs, total_pairs)
+        parent, similarities = similar_face_pairs(vectors, threshold=threshold, progress=progress)
         if progress is not None:
             progress("build_groups", len(vectors), len(vectors))
 
@@ -2211,6 +2200,100 @@ def average_embedding(vectors: list[list[float]]) -> list[float]:
         sum(vector[index] for vector in same_length_vectors) / len(same_length_vectors)
         for index in range(length)
     ]
+
+
+def similar_face_pairs(
+    vectors: list[tuple[int, list[float]]],
+    *,
+    threshold: float,
+    progress: FaceGroupProgress | None = None,
+) -> tuple[dict[int, int], dict[tuple[int, int], float]]:
+    try:
+        return similar_face_pairs_numpy(vectors, threshold=threshold, progress=progress)
+    except (ImportError, ValueError):
+        return similar_face_pairs_python(vectors, threshold=threshold, progress=progress)
+
+
+def similar_face_pairs_python(
+    vectors: list[tuple[int, list[float]]],
+    *,
+    threshold: float,
+    progress: FaceGroupProgress | None = None,
+) -> tuple[dict[int, int], dict[tuple[int, int], float]]:
+    parent = {face_id: face_id for face_id, _vector in vectors}
+    similarities: dict[tuple[int, int], float] = {}
+    total_pairs = len(vectors) * (len(vectors) - 1) // 2
+    compared_pairs = 0
+    for index, (left_id, left_vector) in enumerate(vectors):
+        for right_id, right_vector in vectors[index + 1 :]:
+            compared_pairs += 1
+            score = cosine_similarity(left_vector, right_vector)
+            if score >= threshold:
+                union(parent, left_id, right_id)
+                similarities[(min(left_id, right_id), max(left_id, right_id))] = score
+            if progress is not None:
+                progress("compare", compared_pairs, total_pairs)
+    return parent, similarities
+
+
+def similar_face_pairs_numpy(
+    vectors: list[tuple[int, list[float]]],
+    *,
+    threshold: float,
+    progress: FaceGroupProgress | None = None,
+    block_size: int = 512,
+) -> tuple[dict[int, int], dict[tuple[int, int], float]]:
+    import numpy as np
+
+    parent = {face_id: face_id for face_id, _vector in vectors}
+    similarities: dict[tuple[int, int], float] = {}
+    if len(vectors) < 2:
+        if progress is not None:
+            progress("compare", 0, 0)
+        return parent, similarities
+
+    dimensions = {len(vector) for _face_id, vector in vectors}
+    if len(dimensions) != 1 or 0 in dimensions:
+        raise ValueError("Kan ikke gruppere embeddings med ulik dimensjon med NumPy.")
+
+    face_ids = [face_id for face_id, _vector in vectors]
+    matrix = np.asarray([vector for _face_id, vector in vectors], dtype=np.float32)
+    norms = np.linalg.norm(matrix, axis=1)
+    nonzero = norms > 0
+    matrix[nonzero] = matrix[nonzero] / norms[nonzero, None]
+    matrix[~nonzero] = 0.0
+
+    total_pairs = len(vectors) * (len(vectors) - 1) // 2
+    compared_pairs = 0
+    count = len(vectors)
+    for left_start in range(0, count, block_size):
+        left_end = min(left_start + block_size, count)
+        left = matrix[left_start:left_end]
+        for right_start in range(left_start, count, block_size):
+            right_end = min(right_start + block_size, count)
+            right = matrix[right_start:right_end]
+            scores = left @ right.T
+            if left_start == right_start:
+                row_indexes, col_indexes = np.where(np.triu(scores >= threshold, k=1))
+            else:
+                row_indexes, col_indexes = np.where(scores >= threshold)
+            for row_index, col_index in zip(row_indexes.tolist(), col_indexes.tolist()):
+                left_id = face_ids[left_start + row_index]
+                right_id = face_ids[right_start + col_index]
+                score = float(scores[row_index, col_index])
+                union(parent, left_id, right_id)
+                similarities[(min(left_id, right_id), max(left_id, right_id))] = score
+            compared_pairs += block_pair_count(left_start, left_end, right_start, right_end)
+            if progress is not None:
+                progress("compare", min(compared_pairs, total_pairs), total_pairs)
+    return parent, similarities
+
+
+def block_pair_count(left_start: int, left_end: int, right_start: int, right_end: int) -> int:
+    if left_start == right_start:
+        block_count = left_end - left_start
+        return block_count * (block_count - 1) // 2
+    return (left_end - left_start) * (right_end - right_start)
 
 
 def find(parent: dict[int, int], value: int) -> int:
