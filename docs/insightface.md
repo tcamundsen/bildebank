@@ -1,19 +1,13 @@
 # InsightFace
 
-NB: Denne funksjonen er ikke ferdig ennå, så det er foreløpig bortkastet
-for andre enn Tom Cato å teste dette. På samme måte som import av bilder
-i begynnelsen bestod av flere trinn, så regner jeg med at dette forenkles
-etterhvert som jeg ser at alle trinnene fungerer greit.
+Ansiktsgjenkjenning fungerer ganske greit nå, selv om dokumentasjon
+kanskje skal forbedres litt etter hvert. Spør etter det som er vanskelig.
 
-InsightFace er en valgfri testkomponent for ansiktsgjenkjenning.
-
-Vanlig Bildebank-installasjon installerer ikke InsightFace, og
-ansiktsgjenkjenning er av som standard.
+InsightFace brukes til ansikansiktsgjenkjenning, og funksjonen er slått
+av i vanlig Bildebank-installasjon. Denne siden viser hvordan dette kan
+lastes ned og slås på.
 
 ## Kom i gang
-
-Dette er den korte oppskriften for å ta ansiktsgjenkjenning i bruk i en
-bildesamling.
 
 ### 1. Installer og slå på
 
@@ -29,6 +23,9 @@ Kjør dette fra programmappen:
 [face_recognition]
 enabled = true
 ```
+
+Du kan bla det frem til programmappen til Bildebank, høyreklikke på filen og velg
+"Åpne i" og deretter "Notisblokk".
 
 Sjekk at det er klart:
 
