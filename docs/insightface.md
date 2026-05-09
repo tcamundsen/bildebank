@@ -262,12 +262,15 @@ Rapporten viser blant annet:
 - bilder med flest ansikter
 - eventuelle scan-feil
 
-## HTML-visning
+## Debug-visning
 
-Du kan lage en enkel HTML-side for å se ansiktene som er funnet:
+`make-face-browser` er et debug-verktøy. Det er ikke ment for vanlig bruk,
+fordi `faces.html` kan bli svært stor.
+
+Hvis du vil kontrollere noen av ansiktene som er funnet, kan du kjøre:
 
 ```powershell
-bildebank make-face-browser
+bildebank make-face-browser --limit 100
 ```
 
 Da lages:
@@ -276,8 +279,9 @@ Da lages:
 faces.html
 ```
 
-Første versjon viser bildene der ansikter er funnet, og tegner en boks rundt
-hvert ansikt. Den grupperer ikke personer ennå.
+Siden viser bilder der ansikter er funnet, og tegner en boks rundt hvert
+ansikt. Den grupperer ikke personer. For vanlig arbeid med personer bruker du
+`face-group` og `face-groups.html`.
 
 ## Ansiktsgrupper
 

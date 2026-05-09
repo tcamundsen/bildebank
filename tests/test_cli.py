@@ -241,6 +241,19 @@ class CliTests(unittest.TestCase):
         self.assertIn("--output", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
+    def test_make_face_browser_help_marks_command_as_debug(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["make-face-browser", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("Debug", stdout)
+        self.assertIn("--limit", stdout)
+        self.assertIn("ikke ment for vanlig bruk", stdout.lower())
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             build_parser().parse_args(["target", "."])
@@ -1510,6 +1523,46 @@ model_name = "test-model"
             self.assertIn("Ansikt-id: 1", html)
             self.assertIn("class=\"box\"", html)
             self.assertIn("left: ", html)
+
+    def test_make_face_browser_limit_restricts_number_of_images(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            first = target / "first.jpg"
+            second = target / "second.jpg"
+            first.write_bytes(b"first")
+            second.write_bytes(b"second")
+            conn = connect_face_db(target)
+            try:
+                for file_id, path in ((1, first), (2, second)):
+                    conn.execute(
+                        """
+                        INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                        VALUES(?, ?, ?, ?, 'ok', 1)
+                        """,
+                        (file_id, str(path), str(path), f"hash-{file_id}"),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO faces(
+                            file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                            detection_score, embedding_model, embedding
+                        ) VALUES(?, ?, 1, 2, 10, 20, 0.9, 'test-model', ?)
+                        """,
+                        (file_id, str(path), b"embedding"),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "make-face-browser", "--limit", "1"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser for ansikter", stdout)
+            html = (target / "faces.html").read_text(encoding="utf-8")
+            self.assertIn("first.jpg", html)
+            self.assertNotIn("second.jpg", html)
 
     def test_read_image_uses_unicode_safe_file_reading(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

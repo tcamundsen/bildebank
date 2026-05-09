@@ -579,7 +579,7 @@ def face_report(target: Path, *, limit: int = 20) -> FaceReport:
         conn.close()
 
 
-def export_face_browser(target: Path, output: Path | None = None) -> Path:
+def export_face_browser(target: Path, output: Path | None = None, *, limit: int | None = None) -> Path:
     output_path = output or (target / "faces.html")
     path = face_db_path(target)
     if not path.exists():
@@ -587,7 +587,7 @@ def export_face_browser(target: Path, output: Path | None = None) -> Path:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     try:
-        items = face_browser_items(target, conn)
+        items = face_browser_items(target, conn, limit=limit)
     finally:
         conn.close()
     output_path.write_text(render_face_browser_html(items), encoding="utf-8", newline="\n")
@@ -898,7 +898,12 @@ def person_name_for_group(conn: sqlite3.Connection, group_index: int) -> str | N
     return str(row["name"]) if row is not None else None
 
 
-def face_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def face_browser_items(
+    target: Path,
+    conn: sqlite3.Connection,
+    *,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT
@@ -917,7 +922,7 @@ def face_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str,
         WHERE scanned_files.status = 'ok'
         ORDER BY scanned_files.target_path, faces.id
         """
-    ).fetchall()
+    )
     grouped: dict[str, dict[str, Any]] = {}
     for row in rows:
         target_path = Path(str(row["target_path"]))
@@ -946,6 +951,8 @@ def face_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str,
                 "model": str(row["embedding_model"]),
             }
         )
+        if limit is not None and len(grouped) >= limit:
+            break
     return list(grouped.values())
 
 

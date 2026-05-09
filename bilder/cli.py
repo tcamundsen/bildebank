@@ -469,7 +469,16 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "make-face-browser",
         usage="bildebank make-face-browser [valg]",
-        help="Lag HTML-side for scannede ansikter",
+        help="Debug: lag HTML-side for scannede ansikter. Ikke ment for vanlig bruk.",
+        description=(
+            "Debug-verktøy. Denne kommandoen lager faces.html for kontroll av "
+            "scannede ansikter, men er ikke ment for vanlig bruk."
+        ),
+    )
+    face_browser.add_argument(
+        "--limit",
+        type=positive_int_arg,
+        help="Maks antall bilder som tas med. Anbefales fordi siden kan bli svært stor.",
     )
     face_browser.add_argument(
         "-o",
@@ -691,7 +700,7 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "make-face-browser":
         output = args.output.resolve() if args.output else None
-        output_path = export_face_browser(target, output)
+        output_path = export_face_browser(target, output, limit=args.limit)
         print(f"Skrev HTML-browser for ansikter: {output_path}")
         return 0
 

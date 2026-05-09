@@ -16,10 +16,11 @@ Du finner `face-id` i `face-groups.html`, under bildet:
 face-id 798, gruppelikhet 0.842, deteksjon 0.931
 ```
 
-Du kan også finne `face-id` i `faces.html`, som lages med:
+Du kan også finne `face-id` i `faces.html`, men den siden er først og fremst
+for debugging og kan bli stor. Lag den helst med en grense:
 
 ```powershell
-bildebank make-face-browser
+bildebank make-face-browser --limit 100
 ```
 
 Kommandoen fjerner bare koblingen mellom personen og ansiktet. Den sletter ikke
