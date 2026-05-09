@@ -2610,6 +2610,40 @@ model_name = "test-model"
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                file_id = int(conn.execute("SELECT id FROM files").fetchone()[0])
+            finally:
+                conn.close()
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(2, 'Ola Nordmann')")
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(1, ?, 'key', 1, 2, 10, 20, 0.9, 'test', ?)
+                    """,
+                    (file_id, b"embedding-1"),
+                )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(2, ?, 'key', 3, 4, 12, 22, 0.8, 'test', ?)
+                    """,
+                    (file_id, b"embedding-2"),
+                )
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(2, 2, 0.91)")
+                face_conn.commit()
+            finally:
+                face_conn.close()
 
             code, stdout, stderr = capture_cli(["--target", str(target), "make-browser"])
 
@@ -2624,6 +2658,10 @@ model_name = "test-model"
             self.assertIn('state.viewMode = "month";', html)
             self.assertIn("function representativeItems(items, limit)", html)
             self.assertIn('img.loading = "lazy";', html)
+            self.assertIn('"people": [{"name": "Kari", "status": "bekreftet", "url": "person-Kari.html"}', html)
+            self.assertIn('"name": "Ola Nordmann", "status": "forslag", "url": "person-Ola-Nordmann.html"', html)
+            self.assertIn("Personer:", html)
+            self.assertIn("(forslag)", html)
 
             limited_output = root / "limited.html"
             code, stdout, stderr = capture_cli(

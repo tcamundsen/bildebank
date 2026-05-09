@@ -1433,7 +1433,7 @@ def deleted_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
 def browser_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     return conn.execute(
         """
-        SELECT target_path, stored_filename, taken_date, date_source, size_bytes
+        SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
         FROM files
         WHERE deleted_at IS NULL
         ORDER BY taken_date, target_path

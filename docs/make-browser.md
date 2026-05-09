@@ -35,6 +35,14 @@ Du kan også dobbeltklikke på `index.html` i Filutforsker.
 Hvis du importerer flere filer senere, må du kjøre `make-browser` på nytt for å
 oppdatere HTML-filen.
 
+Hvis ansiktsgjenkjenning er tatt i bruk, viser browseren også personer som er
+koblet til bildet. Navnene vises nederst ved filnavnet. Du kan klikke på et
+navn for å åpne personsiden, for eksempel `person-Kari.html`.
+
+Forslag fra `face-suggest` vises med teksten `(forslag)`. Det betyr at
+Bildebank tror personen kan være i bildet, men at du ikke har bekreftet det
+selv.
+
 ## Valg
 
 `--month-preview-limit` begrenser hvor mange filer som vises i månedsoversikten.
@@ -78,4 +86,3 @@ Når HTML-filen er åpen i nettleseren, kan du bla med tastaturet:
 | Pil ned | Neste måned |
 | Page Up | Forrige år |
 | Page Down | Neste år |
-

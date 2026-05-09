@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from pathlib import Path
 from urllib.parse import quote
 
@@ -11,6 +12,7 @@ from .media import image_dimensions
 
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "webp", "tif", "tiff", "heic", "heif"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}
+FACE_DB_FILENAME = ".bilder-faces.sqlite3"
 
 
 def export_html(
@@ -24,9 +26,13 @@ def export_html(
     output_path = output or (target / "index.html")
     conn = db.connect(target)
     try:
+        people_by_file_id = face_people_by_file_id(target)
         items = [
             item
-            for item in (row_to_item(target, row) for row in db.browser_files(conn))
+            for item in (
+                row_to_item(target, row, people_by_file_id=people_by_file_id)
+                for row in db.browser_files(conn)
+            )
             if item_matches_filters(item, media_filter, date_source_filter)
         ]
     finally:
@@ -52,7 +58,12 @@ def export_html_conflicts(target: Path, output: Path | None = None) -> Path:
     return output_path
 
 
-def row_to_item(target: Path, row) -> dict[str, str]:
+def row_to_item(
+    target: Path,
+    row,
+    *,
+    people_by_file_id: dict[int, list[dict[str, str]]] | None = None,
+) -> dict[str, object]:
     target_path = Path(row["target_path"])
     try:
         relative_path = target_path.resolve().relative_to(target.resolve())
@@ -63,6 +74,7 @@ def row_to_item(target: Path, row) -> dict[str, str]:
     kind = "video" if ext in VIDEO_EXTENSIONS else "image"
     month_key = month_key_from_path(relative_path)
     return {
+        "fileId": int(row["id"]),
         "path": path,
         "url": path_to_url(relative_path),
         "kind": kind,
@@ -71,7 +83,82 @@ def row_to_item(target: Path, row) -> dict[str, str]:
         "dateSource": row["date_source"],
         "name": row["stored_filename"],
         "sizeText": format_bytes(int(row["size_bytes"])),
+        "people": (people_by_file_id or {}).get(int(row["id"]), []),
     }
+
+
+def face_people_by_file_id(target: Path) -> dict[int, list[dict[str, str]]]:
+    path = target / FACE_DB_FILENAME
+    if not path.exists():
+        return {}
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if not face_tables_exist(conn):
+            return {}
+        people: dict[int, dict[str, str]] = {}
+        for row in conn.execute(
+            """
+            SELECT faces.file_id, persons.name, 'bekreftet' AS status
+            FROM person_faces
+            JOIN persons ON persons.id = person_faces.person_id
+            JOIN faces ON faces.id = person_faces.face_id
+            UNION ALL
+            SELECT faces.file_id, persons.name, 'forslag' AS status
+            FROM face_suggestions
+            JOIN persons ON persons.id = face_suggestions.person_id
+            JOIN faces ON faces.id = face_suggestions.face_id
+            ORDER BY name, status
+            """
+        ):
+            file_id = int(row["file_id"])
+            name = str(row["name"])
+            key = f"{file_id}\0{name}"
+            existing = people.get(key)
+            status = str(row["status"])
+            if existing is None or existing["status"] != "bekreftet":
+                people[key] = {
+                    "fileId": str(file_id),
+                    "name": name,
+                    "status": status,
+                    "url": person_page_url(name),
+                }
+        grouped: dict[int, list[dict[str, str]]] = {}
+        for person in sorted(people.values(), key=lambda item: (item["name"], item["status"])):
+            file_id = int(person.pop("fileId"))
+            grouped.setdefault(file_id, []).append(person)
+        return grouped
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+
+
+def face_tables_exist(conn: sqlite3.Connection) -> bool:
+    rows = conn.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name IN ('faces', 'persons', 'person_faces', 'face_suggestions')
+        """
+    )
+    return {str(row["name"]) for row in rows} == {
+        "faces",
+        "persons",
+        "person_faces",
+        "face_suggestions",
+    }
+
+
+def person_page_url(name: str) -> str:
+    return path_to_url(Path(f"person-{safe_filename(name)}.html"))
+
+
+def safe_filename(value: str) -> str:
+    safe = "".join(char if char.isalnum() or char in ("-", "_") else "-" for char in value.strip())
+    safe = "-".join(part for part in safe.split("-") if part)
+    return safe or "person"
 
 
 def item_matches_filters(item: dict[str, str], media_filter: str, date_source_filter: str) -> bool:
@@ -327,9 +414,11 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
       border-top: 1px solid var(--border);
       padding: 8px 12px;
       font-size: 13px;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      align-items: center;
+      min-width: 0;
     }}
     footer a {{
       color: var(--muted);
@@ -338,6 +427,31 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
     footer a:hover {{
       color: var(--accent);
       text-decoration: underline;
+    }}
+    .filename {{
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }}
+    .people {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+      color: var(--muted);
+    }}
+    .people a.person-link {{
+      color: var(--accent);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px 7px;
+      background: #303030;
+      line-height: 1.5;
+    }}
+    .people a.person-link.suggested {{
+      color: #e7c16a;
     }}
   </style>
 </head>
@@ -363,7 +477,10 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
         <div class="empty">Ingen filer i indeksen.</div>
       </div>
     </main>
-    <footer><a id="filename" href="#">Ingen fil valgt</a></footer>
+    <footer>
+      <a id="filename" class="filename" href="#">Ingen fil valgt</a>
+      <div id="people" class="people"></div>
+    </footer>
   </div>
   <script>
     const embeddedItems = {items_json};
@@ -373,6 +490,7 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
     const positionEl = document.getElementById("position");
     const viewer = document.getElementById("viewer");
     const filenameEl = document.getElementById("filename");
+    const peopleEl = document.getElementById("people");
     const buttons = {{
       prevYear: document.getElementById("prevYear"),
       nextYear: document.getElementById("nextYear"),
@@ -517,6 +635,7 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
       filenameEl.textContent = `${{htmlDecode(item.path)}} (${{item.sizeText}})`;
       filenameEl.href = item.url;
       filenameEl.target = "_blank";
+      renderPeople(item.people || []);
       updateButtons();
     }}
     function renderMonth() {{
@@ -554,7 +673,22 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
       filenameEl.textContent = `Månedsoversikt: ${{month.key}}`;
       filenameEl.removeAttribute("href");
       filenameEl.removeAttribute("target");
+      peopleEl.replaceChildren();
       updateButtons();
+    }}
+    function renderPeople(people) {{
+      peopleEl.replaceChildren();
+      if (!people.length) return;
+      const label = document.createElement("span");
+      label.textContent = "Personer:";
+      peopleEl.append(label);
+      for (const person of people) {{
+        const link = document.createElement("a");
+        link.className = person.status === "forslag" ? "person-link suggested" : "person-link";
+        link.href = person.url;
+        link.textContent = person.status === "forslag" ? `${{person.name}} (forslag)` : person.name;
+        peopleEl.append(link);
+      }}
     }}
     function representativeItems(items, limit) {{
       if (limit === null) return items;

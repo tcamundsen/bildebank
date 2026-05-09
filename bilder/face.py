@@ -1219,7 +1219,7 @@ def render_face_browser_html(items: list[dict[str, Any]]) -> str:
       --muted: #666;
       --border: #d8d8d2;
       --panel: #fff;
-      --accent: #d62f2f;
+      --accent: #ff1f1f;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -1263,8 +1263,8 @@ def render_face_browser_html(items: list[dict[str, Any]]) -> str:
     }}
     .box {{
       position: absolute;
-      border: 2px solid var(--accent);
-      background: rgb(214 47 47 / 12%);
+      border: 3px solid var(--accent);
+      background: rgb(255 31 31 / 12%);
       pointer-events: none;
     }}
     .meta {{
@@ -1315,7 +1315,7 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       --muted: #666;
       --border: #d8d8d2;
       --panel: #fff;
-      --accent: #d62f2f;
+      --accent: #ff1f1f;
     }}
     * {{ box-sizing: border-box; }}
     body {{
@@ -1405,8 +1405,8 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
     }}
     .box {{
       position: absolute;
-      border: 2px solid var(--accent);
-      background: rgb(214 47 47 / 12%);
+      border: 3px solid var(--accent);
+      background: rgb(255 31 31 / 12%);
       pointer-events: none;
     }}
     .meta {{
