@@ -35,6 +35,7 @@ class FaceScanStats:
 
 FaceScanProgress = Callable[[str, int, int, FaceScanStats, Path | None], None]
 FaceGroupProgress = Callable[[str, int, int], None]
+FaceGroupHtmlProgress = Callable[[str, int, int], None]
 
 
 @dataclass(frozen=True)
@@ -697,17 +698,23 @@ def group_faces(
         conn.close()
 
 
-def export_face_groups_browser(target: Path, output: Path | None = None) -> Path:
+def export_face_groups_browser(
+    target: Path,
+    output: Path | None = None,
+    *,
+    progress: FaceGroupHtmlProgress | None = None,
+) -> Path:
     output_path = output or (target / "face-groups.html")
     path = face_db_path(target)
     if not path.exists():
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target)
     try:
-        items = face_group_browser_items(target, conn)
+        items = face_group_browser_items(target, conn, progress=progress)
     finally:
         conn.close()
-    output_path.write_text(render_face_groups_html(items), encoding="utf-8", newline="\n")
+    html = render_face_groups_html(items)
+    write_text_with_progress(output_path, html, progress=progress)
     return output_path
 
 
@@ -770,10 +777,58 @@ def export_people_browser(
     return PeopleBrowserResult(index_path=output_path, person_pages=tuple(person_pages))
 
 
-def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str, Any]]:
+def write_text_with_progress(
+    path: Path,
+    text: str,
+    *,
+    progress: FaceGroupHtmlProgress | None = None,
+) -> None:
+    data = text.encode("utf-8")
+    total = len(data)
+    if progress is not None:
+        progress("html_write", 0, total)
+    chunk_size = max(total // 100, 1024 * 1024)
+    written = 0
+    with path.open("wb") as fh:
+        for offset in range(0, total, chunk_size):
+            chunk = data[offset : offset + chunk_size]
+            fh.write(chunk)
+            written += len(chunk)
+            if progress is not None and should_report_percent_progress(written, total):
+                progress("html_write", written, total)
+    if progress is not None:
+        progress("html_write", total, total)
+
+
+def should_report_percent_progress(current: int, total: int) -> bool:
+    if total <= 0:
+        return True
+    step = max(total // 100, 1)
+    return current == total or current % step == 0
+
+
+def face_group_browser_items(
+    target: Path,
+    conn: sqlite3.Connection,
+    *,
+    progress: FaceGroupHtmlProgress | None = None,
+) -> list[dict[str, Any]]:
     run = conn.execute("SELECT * FROM face_group_runs ORDER BY id DESC LIMIT 1").fetchone()
     if run is None:
         return []
+    total_faces = int(
+        conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM face_groups
+            JOIN face_group_members ON face_group_members.group_id = face_groups.id
+            WHERE face_groups.run_id = ?
+            """,
+            (run["id"],),
+        ).fetchone()[0]
+    )
+    if progress is not None:
+        progress("html_data", 0, total_faces)
     rows = conn.execute(
         """
         SELECT
@@ -801,7 +856,9 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
     groups: dict[int, dict[str, Any]] = {}
     all_faces: list[dict[str, Any]] = []
     faces_by_file_id: dict[int, list[dict[str, Any]]] = {}
+    current = 0
     for row in rows:
+        current += 1
         group_index = int(row["group_index"])
         file_id = int(row["file_id"])
         target_path = Path(str(row["target_path"]))
@@ -841,6 +898,11 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
         )["faces"].append(face)
         all_faces.append(face)
         faces_by_file_id.setdefault(file_id, []).append(face)
+        if progress is not None and should_report_percent_progress(current, total_faces):
+            progress("html_data", current, total_faces)
+    all_faces_by_file_id = all_faces_for_file_ids(target, conn, set(faces_by_file_id))
+    for face in all_faces:
+        face["allFacesInImage"] = all_faces_by_file_id.get(int(face["_fileId"]), [])
     for face in all_faces:
         other_groups: dict[int, dict[str, Any]] = {}
         for other in faces_by_file_id.get(int(face["_fileId"]), []):
@@ -855,6 +917,59 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
         if other_groups:
             face["otherGroupsInImage"] = sorted(other_groups.values(), key=lambda item: item["groupIndex"])
     return list(groups.values())
+
+
+def all_faces_for_file_ids(
+    target: Path,
+    conn: sqlite3.Connection,
+    file_ids: set[int],
+) -> dict[int, list[dict[str, Any]]]:
+    if not file_ids:
+        return {}
+    placeholders = ",".join("?" for _ in sorted(file_ids))
+    rows = conn.execute(
+        f"""
+        SELECT
+            faces.id AS face_id,
+            faces.file_id,
+            scanned_files.target_path,
+            faces.bbox_x,
+            faces.bbox_y,
+            faces.bbox_width,
+            faces.bbox_height,
+            faces.detection_score
+        FROM faces
+        JOIN scanned_files ON scanned_files.file_id = faces.file_id
+        WHERE faces.file_id IN ({placeholders})
+        ORDER BY faces.file_id, faces.id
+        """,
+        tuple(sorted(file_ids)),
+    )
+    result: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        file_id = int(row["file_id"])
+        target_path = Path(str(row["target_path"]))
+        dimensions = image_dimensions(target_path)
+        orientation = image_orientation(target_path)
+        face = {
+            "faceId": int(row["face_id"]),
+            "path": display_relative_path(target, target_path),
+            "url": path_to_url(relative_to_target(target, target_path)),
+            "x": float(row["bbox_x"]),
+            "y": float(row["bbox_y"]),
+            "width": float(row["bbox_width"]),
+            "height": float(row["bbox_height"]),
+            "score": float(row["detection_score"]),
+        }
+        percent = face_box_percent(face, dimensions, orientation)
+        if percent is not None:
+            left, top, width, height = percent
+            face["left"] = left
+            face["top"] = top
+            face["boxWidth"] = width
+            face["boxHeight"] = height
+        result.setdefault(file_id, []).append(face)
+    return result
 
 
 def person_browser_items(target: Path, conn: sqlite3.Connection, *, person_id: int) -> list[dict[str, Any]]:
@@ -1313,6 +1428,25 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       width: auto;
       height: auto;
     }}
+    .face-list {{
+      width: min(1200px, 100%);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 14px;
+      align-items: start;
+    }}
+    .face-detail {{
+      display: grid;
+      gap: 6px;
+      color: #fff;
+    }}
+    .face-detail-title {{
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }}
+    .face-detail .lightbox-media img {{
+      max-height: 56vh;
+    }}
   </style>
 </head>
 <body>
@@ -1441,22 +1575,53 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
     function renderRelatedGroups(face) {{
       const related = document.createElement("div");
       related.className = "related";
-      if (!face.otherGroupsInImage || face.otherGroupsInImage.length === 0) return related;
-      const label = document.createElement("span");
-      label.textContent = "Andre ansikter i bildet:";
-      related.append(label);
-      for (const item of face.otherGroupsInImage) {{
-        const button = document.createElement("button");
-        button.type = "button";
-        button.textContent = item.count === 1 ? `gruppe ${{item.groupIndex}}` : `gruppe ${{item.groupIndex}} (${{item.count}})`;
-        button.title = `Gå til gruppe ${{item.groupIndex}}`;
-        button.addEventListener("click", () => goToGroup(item.groupIndex));
-        related.append(button);
+      if (face.allFacesInImage && face.allFacesInImage.length > 1) {{
+        const allButton = document.createElement("button");
+        allButton.type = "button";
+        allButton.textContent = `Alle ansikter i bildet (${{face.allFacesInImage.length}})`;
+        allButton.title = "Vis bildet med markering og face-id for hvert ansikt";
+        allButton.addEventListener("click", () => openAllFaces(face));
+        related.append(allButton);
+      }}
+      if (face.otherGroupsInImage && face.otherGroupsInImage.length > 0) {{
+        const label = document.createElement("span");
+        label.textContent = "Andre grupper:";
+        related.append(label);
+        for (const item of face.otherGroupsInImage) {{
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = item.count === 1 ? `gruppe ${{item.groupIndex}}` : `gruppe ${{item.groupIndex}} (${{item.count}})`;
+          button.title = `Gå til gruppe ${{item.groupIndex}}`;
+          button.addEventListener("click", () => goToGroup(item.groupIndex));
+          related.append(button);
+        }}
       }}
       return related;
     }}
     function openLightbox(face) {{
       lightboxTitleEl.textContent = `face-id ${{face.faceId}} - ${{face.path}}`;
+      lightboxStageEl.replaceChildren(renderMarkedImage(face));
+      lightboxEl.hidden = false;
+      lightboxCloseButton.focus();
+    }}
+    function openAllFaces(face) {{
+      lightboxTitleEl.textContent = `Alle ansikter - ${{face.path}}`;
+      const list = document.createElement("div");
+      list.className = "face-list";
+      for (const item of face.allFacesInImage || []) {{
+        const detail = document.createElement("div");
+        detail.className = "face-detail";
+        const title = document.createElement("div");
+        title.className = "face-detail-title";
+        title.textContent = `face-id ${{item.faceId}}, deteksjon ${{item.score.toFixed(3)}}`;
+        detail.append(title, renderMarkedImage(item));
+        list.append(detail);
+      }}
+      lightboxStageEl.replaceChildren(list);
+      lightboxEl.hidden = false;
+      lightboxCloseButton.focus();
+    }}
+    function renderMarkedImage(face) {{
       const media = document.createElement("div");
       media.className = "lightbox-media";
       const img = document.createElement("img");
@@ -1472,9 +1637,7 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
         box.style.height = `${{face.boxHeight.toFixed(4)}}%`;
         media.append(box);
       }}
-      lightboxStageEl.replaceChildren(media);
-      lightboxEl.hidden = false;
-      lightboxCloseButton.focus();
+      return media;
     }}
     function closeLightbox() {{
       lightboxEl.hidden = true;

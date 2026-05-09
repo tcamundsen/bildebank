@@ -1245,8 +1245,8 @@ def run_face_group(
             "Store grupper er forkortet i HTML: "
             f"grupper={stats.truncated_groups}, skjulte_ansikter={stats.hidden_faces}"
         )
-    print("Skriver HTML-fil ...")
-    output_path = export_face_groups_browser(target, output)
+    output_path = export_face_groups_browser(target, output, progress=print_face_group_html_progress)
+    finish_face_group_progress_line()
     print(f"Skrev HTML-browser for ansiktsgrupper: {output_path}")
     print("Dette er beregnede forslag, ikke bekreftede personer.")
     return 0
@@ -1278,6 +1278,19 @@ def print_face_group_progress(stage: str, current: int, total: int) -> None:
         return
     if stage == "done":
         finish_face_group_progress_line()
+
+
+def print_face_group_html_progress(stage: str, current: int, total: int) -> None:
+    if stage == "html_data":
+        print_face_group_progress_line(f"Face-group: lager HTML-data={current}/{total}")
+        if current >= total:
+            finish_face_group_progress_line()
+        return
+    if stage == "html_write":
+        percent = (100.0 * current / total) if total else 100.0
+        print_face_group_progress_line(f"Face-group: skriver HTML-fil={percent:.0f}%")
+        if current >= total:
+            finish_face_group_progress_line()
 
 
 def print_face_group_progress_line(text: str) -> None:

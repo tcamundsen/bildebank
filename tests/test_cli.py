@@ -1742,6 +1742,8 @@ model_name = "test-model"
             self.assertIn("grupper=2", stdout)
             self.assertIn("grupperte_ansikter=4", stdout)
             self.assertIn("Max gruppestørrelse: 50", stdout)
+            self.assertIn("Face-group: lager HTML-data=", stdout)
+            self.assertIn("Face-group: skriver HTML-fil=100%", stdout)
             self.assertIn("Skrev HTML-browser for ansiktsgrupper", stdout)
 
             code, stdout, stderr = capture_cli(
@@ -1776,7 +1778,10 @@ model_name = "test-model"
             self.assertIn("deteksjon", html)
             self.assertIn('"faceId": 1', html)
             self.assertIn('"otherGroupsInImage": [{"groupIndex": 2', html)
-            self.assertIn("Andre ansikter i bildet:", html)
+            self.assertIn('"allFacesInImage": [{"faceId": 1', html)
+            self.assertIn("Alle ansikter i bildet", html)
+            self.assertIn("openAllFaces(face)", html)
+            self.assertIn("face-detail-title", html)
             self.assertIn("goToGroup(item.groupIndex)", html)
             self.assertIn("className = \"box\"", html)
             self.assertIn("id=\"lightbox\"", html)
