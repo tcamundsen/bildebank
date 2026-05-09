@@ -1240,7 +1240,7 @@ def run_face_group(
             "Hoppet over store grupper: "
             f"grupper={stats.skipped_large_groups}, ansikter={stats.skipped_large_faces}"
         )
-    print(f"Skriver {output_path} ...")
+    print("Skriver HTML-fil ...")
     output_path = export_face_groups_browser(target, output)
     print(f"Skrev HTML-browser for ansiktsgrupper: {output_path}")
     print("Dette er beregnede forslag, ikke bekreftede personer.")
