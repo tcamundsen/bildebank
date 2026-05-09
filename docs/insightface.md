@@ -108,12 +108,11 @@ Når du har bekreftet noen ansikter for en person:
 
 ```powershell
 bildebank face-suggest
-bildebank make-people-browser
 ```
 
-`face-suggests` bruker da bildene du har identifisert manuelt til å
+`face-suggest` bruker da bildene du har identifisert manuelt til å
 finne identifiserte personer i alle bildene som har blitt scannet med
-`face-scan`
+`face-scan`. Kommandoen oppdaterer også `personer.html` og personsidene.
 
 Åpne `personer.html`, og klikk på personen du vil se. Personsiden viser både
 bekreftede treff og forslag.
@@ -128,7 +127,6 @@ Kjør deretter på nytt:
 
 ```powershell
 bildebank face-suggest
-bildebank make-people-browser
 ```
 
 ### 7. Vedlikehold
@@ -404,6 +402,7 @@ bildebank face-suggest
 
 Forslagene er ikke bekreftede personer. De bygger bare på ansikter du allerede
 har koblet manuelt. Kommandoen skriver ut personnavn, ansikt-id, score og fil.
+Den oppdaterer også `personer.html` og personsidene automatisk.
 Strengheten kan justeres:
 
 ```powershell
@@ -411,6 +410,12 @@ bildebank face-suggest --threshold 0.70
 ```
 
 Høyere tall gir færre og strengere forslag.
+
+Hvis du bare vil beregne forslag uten å skrive HTML, kan du bruke:
+
+```powershell
+bildebank face-suggest --no-browser
+```
 
 For å se bildene der Bildebank mener at registrerte personer finnes:
 

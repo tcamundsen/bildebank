@@ -469,6 +469,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.6,
         help="Likhetsterskel fra 0.0 til 1.0. Standard: 0.6",
     )
+    face_suggest.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Ikke oppdater personer.html og personsidene etter at forslag er beregnet.",
+    )
     face_browser = add_command(
         subparsers,
         "make-face-browser",
@@ -711,7 +716,7 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "face-suggest":
-        return run_face_suggest(target, threshold=args.threshold)
+        return run_face_suggest(target, threshold=args.threshold, browser=not args.no_browser)
 
     if args.command == "make-face-browser":
         output = args.output.resolve() if args.output else None
@@ -1298,10 +1303,14 @@ def should_print_group_progress(current: int, total: int) -> bool:
     return current == total or current % step == 0
 
 
-def run_face_suggest(target: Path, *, threshold: float) -> int:
+def run_face_suggest(target: Path, *, threshold: float, browser: bool = True) -> int:
     stats = suggest_faces(target, threshold=threshold)
     print_face_suggest_stats(stats)
     print_face_suggestions(target)
+    if browser:
+        result = export_people_browser(target)
+        print(f"Skrev person-index: {result.index_path}")
+        print(f"Skrev personsider: {len(result.person_pages)}")
     print("Dette er forslag basert på personer du allerede har bekreftet.")
     return 0
 

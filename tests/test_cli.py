@@ -268,6 +268,17 @@ class CliTests(unittest.TestCase):
         self.assertIn("--month-preview-limit", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
+    def test_face_suggest_help_documents_no_browser(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["face-suggest", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("--no-browser", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             build_parser().parse_args(["target", "."])
@@ -1897,6 +1908,10 @@ model_name = "test-model"
             self.assertIn("forslag=1", stdout)
             self.assertIn("Forslag:", stdout)
             self.assertIn("Kari\tface-id=2", stdout)
+            self.assertIn("Skrev person-index", stdout)
+            self.assertIn("Skrev personsider: 1", stdout)
+            self.assertTrue((target / "personer.html").exists())
+            self.assertTrue((target / "person-Kari.html").exists())
 
             with patch("builtins.input", return_value="slett Kari"):
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-person-delete", "Kari"])
@@ -1914,7 +1929,12 @@ model_name = "test-model"
 
             self.assertEqual(run_cli(["--target", str(target), "face-person-create", "Kari"]), 0)
             self.assertEqual(run_cli(["--target", str(target), "face-person-add-face", "Kari", "1"]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "face-suggest", "--threshold", "0.9"]), 0)
+            (target / "personer.html").unlink()
+            self.assertEqual(
+                run_cli(["--target", str(target), "face-suggest", "--threshold", "0.9", "--no-browser"]),
+                0,
+            )
+            self.assertFalse((target / "personer.html").exists())
 
             code, stdout, stderr = capture_cli(["--target", str(target), "make-person-browser", "Kari"])
 
