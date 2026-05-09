@@ -69,6 +69,8 @@ hoppe over bilder som allerede er scannet. Hvis du er utålmodig med å teste
 systemet, så kan la `face-scan` scanne et par hundre bilder før du avbryter
 og gjør resten av oppskriften, og så begynner du på nytt her etterpå.
 
+Det er denne kommandoen som tar lang tid. Alle de andre går mye raskere.
+
 ### 4. Lag grupper
 
 ```powershell
