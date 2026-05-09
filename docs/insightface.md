@@ -144,8 +144,8 @@ Fjern ett feil ansikt fra en person:
 bildebank face-person-remove-face "Kari" 912
 ```
 
-Tallet `912` er `face-id`. Du finner det under bildet i `face-groups.html`
-eller i `faces.html`, ikke i overskriften for gruppen.
+Tallet `912` er `face-id`. Du finner det under bildet i `face-groups.html`,
+ikke i overskriften for gruppen.
 
 Slett en person som ble opprettet ved en feil:
 
@@ -262,27 +262,6 @@ Rapporten viser blant annet:
 - bilder med flest ansikter
 - eventuelle scan-feil
 
-## Debug-visning
-
-`make-face-browser` er et debug-verktøy. Det er ikke ment for vanlig bruk,
-fordi `faces.html` kan bli svært stor.
-
-Hvis du vil kontrollere noen av ansiktene som er funnet, kan du kjøre:
-
-```powershell
-bildebank make-face-browser --limit 100
-```
-
-Da lages:
-
-```text
-faces.html
-```
-
-Siden viser bilder der ansikter er funnet, og tegner en boks rundt hvert
-ansikt. Den grupperer ikke personer. For vanlig arbeid med personer bruker du
-`face-group` og `face-groups.html`.
-
 ## Ansiktsgrupper
 
 Du kan beregne foreløpige grupper basert på embeddingene fra InsightFace:
@@ -391,7 +370,7 @@ Dette er brukerbekreftet informasjon. Det er fortsatt bare ansiktene i gruppen
 som kobles til personen.
 
 Du kan også koble ett enkelt ansikt til en person. Ansikt-id står i
-`faces.html` og `face-groups.html`. Personen må være opprettet først.
+`face-groups.html`. Personen må være opprettet først.
 
 ```powershell
 bildebank face-person-add-face "Kari" 17
@@ -404,7 +383,7 @@ bildebank face-person-remove-face "Kari" 17
 ```
 
 Tallet `17` er `face-id`. Du finner det under bildet i `face-groups.html`
-eller i `faces.html`, ikke i overskriften for gruppen.
+(eller i `faces.html` laget av `make-face-browser`), ikke i overskriften for gruppen.
 
 Når noen ansikter er koblet til personer, kan Bildebank lage forslag for
 ukjente ansikter:
