@@ -227,6 +227,19 @@ class CliTests(unittest.TestCase):
         self.assertIn("krever alltid", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
+    def test_face_group_help_documents_default_max_size(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["face-group", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("--max-size", stdout)
+        self.assertIn("Standard: 50", stdout)
+        self.assertIn("Bruk 0 for ingen maksgrense", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             build_parser().parse_args(["target", "."])
@@ -1598,6 +1611,15 @@ model_name = "test-model"
             self.assertIn("Face-group: bygger grupper fra 2 ansikter.", stdout)
             self.assertIn("grupper=1", stdout)
             self.assertIn("grupperte_ansikter=2", stdout)
+            self.assertIn("Max gruppestørrelse: 50", stdout)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "face-group", "--threshold", "0.9", "--max-size", "0"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("grupper=1", stdout)
+            self.assertIn("Max gruppestørrelse: ingen maksgrense", stdout)
 
             code, stdout, stderr = capture_cli(
                 ["--target", str(target), "face-group", "--threshold", "0.9", "--max-size", "1"]

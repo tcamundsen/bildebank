@@ -629,7 +629,7 @@ def group_faces(
         candidate_groups = [sorted(members) for members in grouped.values() if len(members) >= 2]
         skipped_large_groups = 0
         skipped_large_faces = 0
-        if max_size is None:
+        if max_size is None or max_size <= 0:
             groups = candidate_groups
         else:
             groups = []

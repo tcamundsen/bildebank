@@ -52,6 +52,7 @@ from .target_lock import TargetLock
 
 FACE_SCAN_PROGRESS_STARTED_AT: float | None = None
 FACE_GROUP_PROGRESS_STARTED_AT: float | None = None
+DEFAULT_FACE_GROUP_MAX_SIZE = 50
 
 
 HELP_COMMAND_GROUPS = (
@@ -395,8 +396,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     face_group.add_argument(
         "--max-size",
-        type=positive_int_arg,
-        help="Ikke skriv grupper med flere enn dette antallet ansikter",
+        type=non_negative_int_arg,
+        default=DEFAULT_FACE_GROUP_MAX_SIZE,
+        help=(
+            "Ikke skriv grupper med flere enn dette antallet ansikter. "
+            f"Standard: {DEFAULT_FACE_GROUP_MAX_SIZE}. Bruk 0 for ingen maksgrense."
+        ),
     )
     face_person_create = add_command(
         subparsers,
@@ -1184,13 +1189,21 @@ def run_face_report(target: Path, *, limit: int) -> int:
 
 
 def run_face_group(target: Path, *, threshold: float, max_size: int | None = None) -> int:
-    stats = group_faces(target, threshold=threshold, max_size=max_size, progress=print_face_group_progress)
+    effective_max_size = None if max_size == 0 else max_size
+    stats = group_faces(
+        target,
+        threshold=threshold,
+        max_size=effective_max_size,
+        progress=print_face_group_progress,
+    )
     print(
         "Ansiktsgrupper: "
         f"ansikter={stats.faces}, grupper={stats.groups}, "
         f"grupperte_ansikter={stats.grouped_faces}, threshold={stats.threshold:.3f}"
     )
-    if max_size is not None:
+    if max_size == 0:
+        print("Max gruppestørrelse: ingen maksgrense")
+    elif max_size is not None:
         print(f"Max gruppestørrelse: {max_size}")
     if stats.skipped_large_groups:
         print(
@@ -1731,6 +1744,16 @@ def positive_int_arg(value: str) -> int:
         raise argparse.ArgumentTypeError("må være et heltall") from exc
     if number < 1:
         raise argparse.ArgumentTypeError("må være minst 1")
+    return number
+
+
+def non_negative_int_arg(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("må være et heltall") from exc
+    if number < 0:
+        raise argparse.ArgumentTypeError("må være minst 0")
     return number
 
 
