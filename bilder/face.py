@@ -1382,6 +1382,15 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       overflow-wrap: anywhere;
       font-size: 13px;
     }}
+    .command-row {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: stretch;
+    }}
+    .copy-command {{
+      white-space: nowrap;
+    }}
     main {{
       min-height: 0;
       padding: 16px;
@@ -1519,6 +1528,12 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       padding: 7px;
       overflow-wrap: anywhere;
     }}
+    .face-detail .copy-command {{
+      border-color: rgb(255 255 255 / 35%);
+      background: rgb(255 255 255 / 10%);
+      color: #fff;
+      min-width: 70px;
+    }}
     .face-detail .lightbox-media img {{
       max-height: none;
     }}
@@ -1537,7 +1552,10 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
         <span id="groupTitle" class="status"></span>
       </div>
       <div id="person" class="status"></div>
-      <div id="command" class="command"></div>
+      <div class="command-row">
+        <div id="command" class="command"></div>
+        <button id="copyGroupCommand" class="copy-command" type="button">Kopier</button>
+      </div>
     </header>
     <main id="main">
       <p class="empty">Ingen grupper beregnet ennå. Kjør bildebank face-group først.</p>
@@ -1557,6 +1575,7 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
     const groupTitleEl = document.getElementById("groupTitle");
     const personEl = document.getElementById("person");
     const commandEl = document.getElementById("command");
+    const copyGroupCommandButton = document.getElementById("copyGroupCommand");
     const mainEl = document.getElementById("main");
     const prevButton = document.getElementById("prevGroup");
     const nextButton = document.getElementById("nextGroup");
@@ -1566,6 +1585,7 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
     const lightboxCloseButton = document.getElementById("lightboxClose");
     prevButton.addEventListener("click", () => moveGroup(-1));
     nextButton.addEventListener("click", () => moveGroup(1));
+    copyGroupCommandButton.addEventListener("click", () => copyCommand(commandEl.textContent, copyGroupCommandButton));
     lightboxCloseButton.addEventListener("click", closeLightbox);
     lightboxEl.addEventListener("click", event => {{
       if (event.target === lightboxEl || event.target === lightboxStageEl) closeLightbox();
@@ -1582,6 +1602,7 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       if (groups.length === 0) {{
         prevButton.disabled = true;
         nextButton.disabled = true;
+        copyGroupCommandButton.disabled = true;
         commandEl.textContent = "";
         return;
       }}
@@ -1608,6 +1629,7 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       groupTitleEl.textContent = `Gruppe ${{group.index}} (${{countText}}), ${{groupIndex + 1}}/${{groups.length}}`;
       personEl.textContent = groupStatusText(group);
       commandEl.textContent = `bildebank face-person-add-group "Navn" ${{group.index}}`;
+      copyGroupCommandButton.disabled = false;
       prevButton.disabled = groupIndex === 0;
       nextButton.disabled = groupIndex === groups.length - 1;
       const facesEl = document.createElement("div");
@@ -1699,10 +1721,11 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
         const title = document.createElement("div");
         title.className = "face-detail-title";
         title.textContent = `face-id ${{item.faceId}}, deteksjon ${{item.score.toFixed(3)}}`;
-        const command = document.createElement("div");
-        command.className = "face-command";
-        command.textContent = `bildebank face-person-add-face "Navn" ${{item.faceId}}`;
-        detail.append(title, renderMarkedImage(item), command);
+        detail.append(
+          title,
+          renderMarkedImage(item),
+          renderCommand(`bildebank face-person-add-face "Navn" ${{item.faceId}}`, "face-command")
+        );
         list.append(detail);
       }}
       lightboxStageEl.replaceChildren(list);
@@ -1726,6 +1749,48 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
         media.append(box);
       }}
       return media;
+    }}
+    function renderCommand(commandText, commandClass) {{
+      const row = document.createElement("div");
+      row.className = "command-row";
+      const command = document.createElement("div");
+      command.className = commandClass;
+      command.textContent = commandText;
+      const button = document.createElement("button");
+      button.className = "copy-command";
+      button.type = "button";
+      button.textContent = "Kopier";
+      button.addEventListener("click", () => copyCommand(commandText, button));
+      row.append(command, button);
+      return row;
+    }}
+    async function copyCommand(text, button) {{
+      if (!text) return;
+      const originalText = button.textContent;
+      try {{
+        if (navigator.clipboard && window.isSecureContext) {{
+          await navigator.clipboard.writeText(text);
+        }} else {{
+          fallbackCopyCommand(text);
+        }}
+        button.textContent = "Kopiert";
+      }} catch (_error) {{
+        button.textContent = "Kunne ikke kopiere";
+      }}
+      window.setTimeout(() => {{
+        button.textContent = originalText;
+      }}, 1600);
+    }}
+    function fallbackCopyCommand(text) {{
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.append(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
     }}
     function closeLightbox() {{
       lightboxEl.hidden = true;

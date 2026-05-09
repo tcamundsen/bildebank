@@ -67,6 +67,10 @@ ansikter i bildet. Den åpner en detaljvisning der samme bilde vises én gang pe
 ansikt, med rektangel og `face-id`. Det gjør det lettere å finne riktig
 `face-id` hvis du vil legge til ett enkelt ansikt med `face-person-add-face`.
 
+Ved kommandoene som vises i `face-groups.html` finnes det en `Kopier`-knapp.
+Den kopierer kommandoen til utklippstavlen, slik at du kan lime den inn i
+terminalen og bytte ut `Navn` med riktig person.
+
 Hvis andre ansikter i bildet også finnes i synlige grupper, viser siden lenker
 til disse gruppene.
 
