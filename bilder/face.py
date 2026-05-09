@@ -522,7 +522,7 @@ def require_person(conn: sqlite3.Connection, name: str) -> int:
 def require_face(conn: sqlite3.Connection, face_id: int) -> None:
     row = conn.execute("SELECT id FROM faces WHERE id = ?", (face_id,)).fetchone()
     if row is None:
-        raise ValueError(f"Fant ikke ansikt-id {face_id}. Kjør make-face-browser eller make-face-groups-browser for å se id-er.")
+        raise ValueError(f"Fant ikke ansikt-id {face_id}. Kjør make-face-browser eller face-group for å se id-er.")
 
 
 def latest_group_by_index(conn: sqlite3.Connection, group_index: int) -> sqlite3.Row | None:

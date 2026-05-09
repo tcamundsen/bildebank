@@ -117,7 +117,6 @@ HELP_COMMAND_GROUPS = (
             ("face-person-list", "List personer i ansiktsdatabasen"),
             ("face-suggest", "Foreslå personer for ukjente ansikter"),
             ("make-face-browser", "Lag HTML-side for scannede ansikter"),
-            ("make-face-groups-browser", "Lag HTML-side for ansiktsgrupper"),
             ("make-person-browser", "Lag HTML-side for en person"),
             ("face-reset", "Slett eksperimentelle ansiktsdata"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
@@ -403,6 +402,13 @@ def build_parser() -> argparse.ArgumentParser:
             f"Standard: {DEFAULT_FACE_GROUP_MAX_SIZE}. Bruk 0 for ingen maksgrense."
         ),
     )
+    face_group.add_argument(
+        "-o",
+        "--output",
+        dest="output",
+        type=Path,
+        help="Skriv HTML-filen hit. Standard: face-groups.html i bildesamlingen.",
+    )
     face_person_create = add_command(
         subparsers,
         "face-person-create",
@@ -471,19 +477,6 @@ def build_parser() -> argparse.ArgumentParser:
         dest="output",
         type=Path,
         help="Skriv HTML-filen hit. Standard: faces.html i bildesamlingen.",
-    )
-    face_groups_browser = add_command(
-        subparsers,
-        "make-face-groups-browser",
-        usage="bildebank make-face-groups-browser [valg]",
-        help="Lag HTML-side for ansiktsgrupper",
-    )
-    face_groups_browser.add_argument(
-        "-o",
-        "--output",
-        dest="output",
-        type=Path,
-        help="Skriv HTML-filen hit. Standard: face-groups.html i bildesamlingen.",
     )
     person_browser = add_command(
         subparsers,
@@ -663,7 +656,8 @@ def run(args: argparse.Namespace) -> int:
         return run_face_report(target, limit=args.limit)
 
     if args.command == "face-group":
-        return run_face_group(target, threshold=args.threshold, max_size=args.max_size)
+        output = args.output.resolve() if args.output else None
+        return run_face_group(target, threshold=args.threshold, max_size=args.max_size, output=output)
 
     if args.command == "face-person-create":
         person_id = create_person(target, args.name)
@@ -699,12 +693,6 @@ def run(args: argparse.Namespace) -> int:
         output = args.output.resolve() if args.output else None
         output_path = export_face_browser(target, output)
         print(f"Skrev HTML-browser for ansikter: {output_path}")
-        return 0
-
-    if args.command == "make-face-groups-browser":
-        output = args.output.resolve() if args.output else None
-        output_path = export_face_groups_browser(target, output)
-        print(f"Skrev HTML-browser for ansiktsgrupper: {output_path}")
         return 0
 
     if args.command == "make-person-browser":
@@ -1188,7 +1176,13 @@ def run_face_report(target: Path, *, limit: int) -> int:
     return 0
 
 
-def run_face_group(target: Path, *, threshold: float, max_size: int | None = None) -> int:
+def run_face_group(
+    target: Path,
+    *,
+    threshold: float,
+    max_size: int | None = None,
+    output: Path | None = None,
+) -> int:
     effective_max_size = None if max_size == 0 else max_size
     stats = group_faces(
         target,
@@ -1210,6 +1204,8 @@ def run_face_group(target: Path, *, threshold: float, max_size: int | None = Non
             "Hoppet over store grupper: "
             f"grupper={stats.skipped_large_groups}, ansikter={stats.skipped_large_faces}"
         )
+    output_path = export_face_groups_browser(target, output)
+    print(f"Skrev HTML-browser for ansiktsgrupper: {output_path}")
     print("Dette er beregnede forslag, ikke bekreftede personer.")
     return 0
 

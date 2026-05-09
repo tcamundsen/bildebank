@@ -9,8 +9,10 @@ bildebank face-group
 bildebank face-group --threshold 0.65
 bildebank face-group --max-size 200
 bildebank face-group --max-size 0
+bildebank face-group -o "mine-grupper.html"
 ```
 
+`face-group` beregner gruppene og lager `face-groups.html` i samme kjøring.
 Gruppene er forslag, ikke bekreftede personer.
 
 Høyere `--threshold` betyr strengere likhet. Det gir vanligvis færre og mindre
@@ -39,10 +41,9 @@ bildebank face-group --max-size 0
 Hvis du får store grupper, kan du også prøve høyere `--threshold`.
 
 Det er trygt å kjøre `face-group` på nytt. Bekreftede personer lagres på
-ansikt-id, ikke gruppe-id. Lag `face-groups.html` på nytt etterpå:
+ansikt-id, ikke gruppe-id. `face-groups.html` lages på nytt hver gang, slik at
+gruppe-id-ene på siden hører sammen med den siste grupperingen.
 
-```powershell
-bildebank make-face-groups-browser
-```
+Hvis du vil skrive HTML-filen et annet sted, bruker du `-o`.
 
 Se også [`insightface`](insightface.md).

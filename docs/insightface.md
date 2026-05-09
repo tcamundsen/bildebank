@@ -71,11 +71,10 @@ hoppe over bilder som allerede er scannet.
 
 ```powershell
 bildebank face-group
-bildebank make-face-groups-browser
 ```
 
-Åpne `face-groups.html` i nettleseren. Bla mellom gruppene med pil venstre og
-pil høyre.
+Dette lager `face-groups.html`. Åpne filen i nettleseren. Bla mellom gruppene
+med pil venstre og pil høyre.
 
 ### 5. Opprett personer
 
@@ -314,13 +313,7 @@ ansikter.
 Det er trygt å kjøre `face-group` på nytt, også med en annen `--threshold`,
 etter at du har koblet grupper eller ansikter til personer. Bekreftede personer
 lagres på ansikt-id, ikke på gruppe-id. Det som bygges på nytt er bare
-gruppeforslagene.
-
-Etter ny gruppering må du lage `face-groups.html` på nytt:
-
-```powershell
-bildebank make-face-groups-browser
-```
+gruppeforslagene og `face-groups.html`.
 
 Ikke bruk gruppe-id-er fra en gammel `face-groups.html` etter at du har kjørt
 `face-group` på nytt. Gruppe-id-ene kan da bety noe annet.
@@ -338,13 +331,7 @@ vanligvis flere og større grupper, men større risiko for feilblanding.
 
 Standard er `0.60`.
 
-Lag HTML-side for gruppene:
-
-```powershell
-bildebank make-face-groups-browser
-```
-
-Da lages:
+Kommandoen lager:
 
 ```text
 face-groups.html
@@ -475,7 +462,6 @@ Etterpå kan du kjøre:
 
 ```powershell
 bildebank face-group
-bildebank make-face-groups-browser
 ```
 
 ### Beholde face-scan og grupper

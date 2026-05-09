@@ -238,6 +238,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--max-size", stdout)
         self.assertIn("Standard: 50", stdout)
         self.assertIn("Bruk 0 for ingen maksgrense", stdout)
+        self.assertIn("--output", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_target_command_is_not_available(self) -> None:
@@ -258,6 +259,7 @@ class CliTests(unittest.TestCase):
             "show-name-conflict",
             "delete",
             "list-deleted",
+            "make-face-groups-browser",
             "remove-source",
         ):
             with self.subTest(command=command):
@@ -1612,6 +1614,7 @@ model_name = "test-model"
             self.assertIn("grupper=1", stdout)
             self.assertIn("grupperte_ansikter=2", stdout)
             self.assertIn("Max gruppestørrelse: 50", stdout)
+            self.assertIn("Skrev HTML-browser for ansiktsgrupper", stdout)
 
             code, stdout, stderr = capture_cli(
                 ["--target", str(target), "face-group", "--threshold", "0.9", "--max-size", "0"]
@@ -1631,11 +1634,6 @@ model_name = "test-model"
             self.assertIn("Hoppet over store grupper: grupper=1, ansikter=2", stdout)
 
             self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9"]), 0)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "make-face-groups-browser"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Skrev HTML-browser for ansiktsgrupper", stdout)
             html = (target / "face-groups.html").read_text(encoding="utf-8")
             self.assertIn("<h1>Ansiktsgrupper</h1>", html)
             self.assertIn("Forrige gruppe", html)
@@ -1678,7 +1676,7 @@ model_name = "test-model"
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
             self.assertIn("Kari\tansikter=2", stdout)
 
-            self.assertEqual(run_cli(["--target", str(target), "make-face-groups-browser"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9"]), 0)
             html = (target / "face-groups.html").read_text(encoding="utf-8")
             self.assertIn('"personName": "Kari"', html)
 
