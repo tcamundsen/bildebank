@@ -506,10 +506,23 @@ def list_persons(target: Path) -> list[sqlite3.Row]:
                     persons.name,
                     persons.created_at,
                     persons.updated_at,
-                    COUNT(person_faces.face_id) AS face_count
+                    (
+                        SELECT COUNT(*)
+                        FROM person_faces
+                        WHERE person_faces.person_id = persons.id
+                    ) AS face_count,
+                    (
+                        SELECT COUNT(DISTINCT faces.file_id)
+                        FROM person_faces
+                        JOIN faces ON faces.id = person_faces.face_id
+                        WHERE person_faces.person_id = persons.id
+                    ) AS confirmed_file_count,
+                    (
+                        SELECT COUNT(*)
+                        FROM face_suggestions
+                        WHERE face_suggestions.person_id = persons.id
+                    ) AS suggestion_count
                 FROM persons
-                LEFT JOIN person_faces ON person_faces.person_id = persons.id
-                GROUP BY persons.id
                 ORDER BY persons.name
                 """
             )

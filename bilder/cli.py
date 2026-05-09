@@ -1418,7 +1418,13 @@ def print_persons(target: Path) -> None:
         print("Ingen personer registrert.")
         return
     for row in rows:
-        print(f"{row['name']}\tansikter={row['face_count']}\toppdatert={row['updated_at']}")
+        print(
+            f"{row['name']}"
+            f"\tbekreftede_bilder={row['confirmed_file_count']}"
+            f"\tbekreftede_ansikter={row['face_count']}"
+            f"\tforslag={row['suggestion_count']}"
+            f"\toppdatert={row['updated_at']}"
+        )
 
 
 def print_face_report(target: Path, report: FaceReport) -> None:

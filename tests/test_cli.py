@@ -1822,7 +1822,10 @@ model_name = "test-model"
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Kari\tansikter=2", stdout)
+            self.assertIn(
+                "Kari\tbekreftede_bilder=1\tbekreftede_ansikter=2\tforslag=0",
+                stdout,
+            )
 
             with patch("builtins.input", return_value="nei"):
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-person-delete", "Kari"])
@@ -1830,7 +1833,10 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Avbrutt", stdout)
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
-            self.assertIn("Kari\tansikter=2", stdout)
+            self.assertIn(
+                "Kari\tbekreftede_bilder=1\tbekreftede_ansikter=2\tforslag=0",
+                stdout,
+            )
 
             self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9"]), 0)
             html = (target / "face-groups.html").read_text(encoding="utf-8")
@@ -1941,6 +1947,14 @@ model_name = "test-model"
             self.assertIn("Bilder med minst én bekreftet person: 1", stdout)
             self.assertIn("Bilder med ansikter, men ingen bekreftet person: 0", stdout)
             self.assertIn("Bilder med både bekreftede og ukjente ansikter: 1", stdout)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn(
+                "Kari\tbekreftede_bilder=1\tbekreftede_ansikter=1\tforslag=1",
+                stdout,
+            )
 
             with patch("builtins.input", return_value="slett Kari"):
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-person-delete", "Kari"])
