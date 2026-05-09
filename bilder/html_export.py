@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from . import db
-from .media import image_dimensions
+from .media import image_dimensions, image_orientation
 
 
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "webp", "tif", "tiff", "heic", "heif"}
@@ -26,11 +26,11 @@ def export_html(
     output_path = output or (target / "index.html")
     conn = db.connect(target)
     try:
-        people_by_file_id = face_people_by_file_id(target)
+        face_data_by_file_id = face_browser_data_by_file_id(target)
         items = [
             item
             for item in (
-                row_to_item(target, row, people_by_file_id=people_by_file_id)
+                row_to_item(target, row, face_data_by_file_id=face_data_by_file_id)
                 for row in db.browser_files(conn)
             )
             if item_matches_filters(item, media_filter, date_source_filter)
@@ -62,7 +62,7 @@ def row_to_item(
     target: Path,
     row,
     *,
-    people_by_file_id: dict[int, list[dict[str, str]]] | None = None,
+    face_data_by_file_id: dict[int, dict[str, object]] | None = None,
 ) -> dict[str, object]:
     target_path = Path(row["target_path"])
     try:
@@ -73,8 +73,10 @@ def row_to_item(
     ext = target_path.suffix.lower().lstrip(".")
     kind = "video" if ext in VIDEO_EXTENSIONS else "image"
     month_key = month_key_from_path(relative_path)
+    file_id = int(row["id"])
+    face_data = (face_data_by_file_id or {}).get(file_id, {})
     return {
-        "fileId": int(row["id"]),
+        "fileId": file_id,
         "path": path,
         "url": path_to_url(relative_path),
         "kind": kind,
@@ -83,11 +85,77 @@ def row_to_item(
         "dateSource": row["date_source"],
         "name": row["stored_filename"],
         "sizeText": format_bytes(int(row["size_bytes"])),
-        "people": (people_by_file_id or {}).get(int(row["id"]), []),
+        "people": face_data.get("people", []),
+        "faces": browser_face_items(target_path, face_data.get("faces", [])),
     }
 
 
-def face_people_by_file_id(target: Path) -> dict[int, list[dict[str, str]]]:
+def browser_face_items(target_path: Path, faces: object) -> list[dict[str, object]]:
+    if not isinstance(faces, list) or not faces:
+        return []
+    dimensions = image_dimensions(target_path)
+    orientation = image_orientation(target_path)
+    items: list[dict[str, object]] = []
+    for face in faces:
+        if not isinstance(face, dict):
+            continue
+        item = {
+            "faceId": face["faceId"],
+            "score": face["score"],
+        }
+        if dimensions is not None:
+            percent = face_box_percent(face, dimensions, orientation)
+            if percent is not None:
+                left, top, width, height = percent
+                item["left"] = left
+                item["top"] = top
+                item["boxWidth"] = width
+                item["boxHeight"] = height
+        items.append(item)
+    return items
+
+
+def face_box_percent(face: dict[str, object], dimensions, orientation: int = 1) -> tuple[float, float, float, float] | None:
+    if dimensions.width <= 0 or dimensions.height <= 0:
+        return None
+    x, y, width, height, box_width, box_height = orient_face_box(
+        float(face["x"]),
+        float(face["y"]),
+        float(face["width"]),
+        float(face["height"]),
+        dimensions.width,
+        dimensions.height,
+        orientation,
+    )
+    if box_width <= 0 or box_height <= 0:
+        return None
+    return (
+        100.0 * x / box_width,
+        100.0 * y / box_height,
+        100.0 * width / box_width,
+        100.0 * height / box_height,
+    )
+
+
+def orient_face_box(
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    image_width: int,
+    image_height: int,
+    orientation: int,
+) -> tuple[float, float, float, float, int, int]:
+    if orientation == 3:
+        return image_width - x - width, image_height - y - height, width, height, image_width, image_height
+    if orientation == 6:
+        return image_height - y - height, x, height, width, image_height, image_width
+    if orientation == 8:
+        return y, image_width - x - width, height, width, image_height, image_width
+    return x, y, width, height, image_width, image_height
+
+
+def face_browser_data_by_file_id(target: Path) -> dict[int, dict[str, object]]:
     path = target / FACE_DB_FILENAME
     if not path.exists():
         return {}
@@ -125,9 +193,47 @@ def face_people_by_file_id(target: Path) -> dict[int, list[dict[str, str]]]:
                 }
         grouped: dict[int, list[dict[str, str]]] = {}
         for person in sorted(people.values(), key=lambda item: (item["name"], item["status"])):
-            file_id = int(person.pop("fileId"))
-            grouped.setdefault(file_id, []).append(person)
-        return grouped
+            file_id = int(person["fileId"])
+            grouped.setdefault(file_id, []).append(
+                {
+                    "name": person["name"],
+                    "status": person["status"],
+                    "url": person["url"],
+                }
+            )
+        data: dict[int, dict[str, object]] = {
+            file_id: {"people": items, "faces": []}
+            for file_id, items in grouped.items()
+        }
+        for row in conn.execute(
+            """
+            SELECT
+                id,
+                file_id,
+                bbox_x,
+                bbox_y,
+                bbox_width,
+                bbox_height,
+                detection_score
+            FROM faces
+            ORDER BY file_id, id
+            """
+        ):
+            file_id = int(row["file_id"])
+            data.setdefault(file_id, {"people": [], "faces": []})
+            faces = data[file_id]["faces"]
+            if isinstance(faces, list):
+                faces.append(
+                    {
+                        "faceId": int(row["id"]),
+                        "x": float(row["bbox_x"]),
+                        "y": float(row["bbox_y"]),
+                        "width": float(row["bbox_width"]),
+                        "height": float(row["bbox_height"]),
+                        "score": float(row["detection_score"]),
+                    }
+                )
+        return data
     except sqlite3.Error:
         return {}
     finally:
@@ -453,6 +559,105 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
     .people a.person-link.suggested {{
       color: #e7c16a;
     }}
+    .faces-button {{
+      min-height: 28px;
+      padding: 3px 8px;
+      font-size: 13px;
+    }}
+    .lightbox {{
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: rgb(0 0 0 / 86%);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 8px;
+      padding: 12px;
+    }}
+    .lightbox[hidden] {{ display: none; }}
+    .lightbox-bar {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: #fff;
+      font-size: 14px;
+      min-width: 0;
+    }}
+    .lightbox-title {{
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+    .lightbox-close {{
+      border-color: rgb(255 255 255 / 35%);
+      background: rgb(255 255 255 / 10%);
+      color: #fff;
+      min-width: 42px;
+    }}
+    .lightbox-stage {{
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      overflow: auto;
+    }}
+    .face-list {{
+      width: min(1200px, 100%);
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+      align-items: start;
+    }}
+    .face-detail {{
+      display: grid;
+      gap: 6px;
+      color: #fff;
+    }}
+    .face-detail-title {{
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }}
+    .lightbox-media {{
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+    }}
+    .lightbox-media img {{
+      display: block;
+      max-width: calc(100vw - 24px);
+      width: auto;
+      height: auto;
+    }}
+    .face-box {{
+      position: absolute;
+      border: 3px solid #ff1f1f;
+      background: rgb(255 31 31 / 12%);
+      pointer-events: none;
+    }}
+    .command-row {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: stretch;
+    }}
+    .face-command {{
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      color: #fff;
+      background: rgb(255 255 255 / 10%);
+      border: 1px solid rgb(255 255 255 / 22%);
+      border-radius: 6px;
+      padding: 7px;
+      overflow-wrap: anywhere;
+    }}
+    .copy-command {{
+      border-color: rgb(255 255 255 / 35%);
+      background: rgb(255 255 255 / 10%);
+      color: #fff;
+      min-width: 70px;
+      white-space: nowrap;
+    }}
   </style>
 </head>
 <body>
@@ -482,6 +687,13 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
       <div id="people" class="people"></div>
     </footer>
   </div>
+  <div id="lightbox" class="lightbox" hidden>
+    <div class="lightbox-bar">
+      <div id="lightboxTitle" class="lightbox-title"></div>
+      <button id="lightboxClose" class="lightbox-close" type="button">Lukk</button>
+    </div>
+    <div id="lightboxStage" class="lightbox-stage"></div>
+  </div>
   <script>
     const embeddedItems = {items_json};
     const MONTH_PREVIEW_LIMIT = {month_preview_limit_json};
@@ -491,6 +703,10 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
     const viewer = document.getElementById("viewer");
     const filenameEl = document.getElementById("filename");
     const peopleEl = document.getElementById("people");
+    const lightboxEl = document.getElementById("lightbox");
+    const lightboxTitleEl = document.getElementById("lightboxTitle");
+    const lightboxStageEl = document.getElementById("lightboxStage");
+    const lightboxCloseButton = document.getElementById("lightboxClose");
     const buttons = {{
       prevYear: document.getElementById("prevYear"),
       nextYear: document.getElementById("nextYear"),
@@ -505,7 +721,13 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
     buttons.nextMonth.addEventListener("click", () => moveMonth(1));
     buttons.prevItem.addEventListener("click", () => moveItem(-1));
     buttons.nextItem.addEventListener("click", () => moveItem(1));
+    lightboxCloseButton.addEventListener("click", closeLightbox);
+    lightboxEl.addEventListener("click", event => {{
+      if (event.target === lightboxEl || event.target === lightboxStageEl) closeLightbox();
+    }});
     document.addEventListener("keydown", event => {{
+      if (!lightboxEl.hidden && event.key === "Escape") {{ event.preventDefault(); closeLightbox(); return; }}
+      if (!lightboxEl.hidden) return;
       if (event.key === "ArrowLeft") {{
         event.preventDefault();
         moveItem(-1);
@@ -635,7 +857,7 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
       filenameEl.textContent = `${{htmlDecode(item.path)}} (${{item.sizeText}})`;
       filenameEl.href = item.url;
       filenameEl.target = "_blank";
-      renderPeople(item.people || []);
+      renderPeopleAndFaces(item);
       updateButtons();
     }}
     function renderMonth() {{
@@ -676,12 +898,15 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
       peopleEl.replaceChildren();
       updateButtons();
     }}
-    function renderPeople(people) {{
+    function renderPeopleAndFaces(item) {{
       peopleEl.replaceChildren();
-      if (!people.length) return;
-      const label = document.createElement("span");
-      label.textContent = "Personer:";
-      peopleEl.append(label);
+      const people = item.people || [];
+      const faces = item.faces || [];
+      if (people.length) {{
+        const label = document.createElement("span");
+        label.textContent = "Personer:";
+        peopleEl.append(label);
+      }}
       for (const person of people) {{
         const link = document.createElement("a");
         link.className = person.status === "forslag" ? "person-link suggested" : "person-link";
@@ -689,6 +914,100 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
         link.textContent = person.status === "forslag" ? `${{person.name}} (forslag)` : person.name;
         peopleEl.append(link);
       }}
+      if (faces.length) {{
+        const button = document.createElement("button");
+        button.className = "faces-button";
+        button.type = "button";
+        button.textContent = `Ansikter i bildet (${{faces.length}})`;
+        button.title = "Vis face-id og kopier kommando for hvert ansikt";
+        button.addEventListener("click", () => openAllFaces(item));
+        peopleEl.append(button);
+      }}
+    }}
+    function openAllFaces(item) {{
+      lightboxTitleEl.textContent = `Ansikter - ${{item.path}}`;
+      const list = document.createElement("div");
+      list.className = "face-list";
+      for (const face of item.faces || []) {{
+        const detail = document.createElement("div");
+        detail.className = "face-detail";
+        const title = document.createElement("div");
+        title.className = "face-detail-title";
+        title.textContent = `face-id ${{face.faceId}}, deteksjon ${{face.score.toFixed(3)}}`;
+        detail.append(
+          title,
+          renderMarkedImage(item, face),
+          renderCommand(`bildebank face-person-add-face "Navn" ${{face.faceId}}`)
+        );
+        list.append(detail);
+      }}
+      lightboxStageEl.replaceChildren(list);
+      lightboxEl.hidden = false;
+      lightboxCloseButton.focus();
+    }}
+    function renderMarkedImage(item, face) {{
+      const media = document.createElement("div");
+      media.className = "lightbox-media";
+      const img = document.createElement("img");
+      img.src = item.url;
+      img.alt = "";
+      media.append(img);
+      if (face.left !== undefined) {{
+        const box = document.createElement("div");
+        box.className = "face-box";
+        box.style.left = `${{face.left.toFixed(4)}}%`;
+        box.style.top = `${{face.top.toFixed(4)}}%`;
+        box.style.width = `${{face.boxWidth.toFixed(4)}}%`;
+        box.style.height = `${{face.boxHeight.toFixed(4)}}%`;
+        media.append(box);
+      }}
+      return media;
+    }}
+    function renderCommand(commandText) {{
+      const row = document.createElement("div");
+      row.className = "command-row";
+      const command = document.createElement("div");
+      command.className = "face-command";
+      command.textContent = commandText;
+      const button = document.createElement("button");
+      button.className = "copy-command";
+      button.type = "button";
+      button.textContent = "Kopier";
+      button.addEventListener("click", () => copyCommand(commandText, button));
+      row.append(command, button);
+      return row;
+    }}
+    async function copyCommand(text, button) {{
+      if (!text) return;
+      const originalText = button.textContent;
+      try {{
+        if (navigator.clipboard && window.isSecureContext) {{
+          await navigator.clipboard.writeText(text);
+        }} else {{
+          fallbackCopyCommand(text);
+        }}
+        button.textContent = "Kopiert";
+      }} catch (_error) {{
+        button.textContent = "Kunne ikke kopiere";
+      }}
+      window.setTimeout(() => {{
+        button.textContent = originalText;
+      }}, 1600);
+    }}
+    function fallbackCopyCommand(text) {{
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.append(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
+    }}
+    function closeLightbox() {{
+      lightboxEl.hidden = true;
+      lightboxStageEl.replaceChildren();
     }}
     function representativeItems(items, limit) {{
       if (limit === null) return items;

@@ -2678,8 +2678,14 @@ model_name = "test-model"
             self.assertIn('img.loading = "lazy";', html)
             self.assertIn('"people": [{"name": "Kari", "status": "bekreftet", "url": "person-Kari.html"}', html)
             self.assertIn('"name": "Ola Nordmann", "status": "forslag", "url": "person-Ola-Nordmann.html"', html)
+            self.assertIn('"faces": [{"faceId": 1, "score": 0.9}', html)
+            self.assertIn('"faceId": 2, "score": 0.8', html)
             self.assertIn("Personer:", html)
             self.assertIn("(forslag)", html)
+            self.assertIn("Ansikter i bildet", html)
+            self.assertIn('face-person-add-face "Navn"', html)
+            self.assertIn("navigator.clipboard.writeText", html)
+            self.assertIn("fallbackCopyCommand", html)
 
             limited_output = root / "limited.html"
             code, stdout, stderr = capture_cli(

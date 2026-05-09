@@ -43,6 +43,19 @@ Forslag fra `face-suggest` vises med teksten `(forslag)`. Det betyr at
 Bildebank tror personen kan være i bildet, men at du ikke har bekreftet det
 selv.
 
+Hvis bildet er scannet for ansikter, viser browseren også knappen `Ansikter i
+bildet`. Den åpner en detaljvisning med ett markert ansikt om gangen, `face-id`
+og en kommando du kan kopiere. Dette er nyttig hvis du ser et bilde der du vet
+hvem personen er, men Bildebank ikke har gjenkjent personen ennå.
+
+Eksempel på kommandoen som kan kopieres:
+
+```powershell
+bildebank face-person-add-face "Navn" 1234
+```
+
+Bytt ut `Navn` med riktig personnavn før du kjører kommandoen.
+
 ## Valg
 
 `--month-preview-limit` begrenser hvor mange filer som vises i månedsoversikten.
