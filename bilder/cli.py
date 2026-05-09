@@ -53,6 +53,8 @@ from .target_lock import TargetLock
 
 FACE_SCAN_PROGRESS_STARTED_AT: float | None = None
 FACE_GROUP_PROGRESS_STARTED_AT: float | None = None
+FACE_GROUP_PROGRESS_INLINE_ACTIVE = False
+FACE_GROUP_PROGRESS_INLINE_LENGTH = 0
 DEFAULT_FACE_GROUP_MAX_SIZE = 50
 
 
@@ -1223,6 +1225,7 @@ def run_face_group(
         max_size=effective_max_size,
         progress=print_face_group_progress,
     )
+    finish_face_group_progress_line()
     print(
         "Ansiktsgrupper: "
         f"ansikter={stats.faces}, grupper={stats.groups}, "
@@ -1255,14 +1258,36 @@ def print_face_group_progress(stage: str, current: int, total: int) -> None:
         if should_print_group_progress(current, total):
             percent = (100.0 * current / total) if total else 100.0
             eta = face_scan_eta_text(current, total, FACE_GROUP_PROGRESS_STARTED_AT)
-            print(f"Face-group: sammenlignet={current}/{total} ({percent:.0f}%), gjenstår={eta}")
+            print_face_group_progress_line(
+                f"Face-group: sammenlignet={current}/{total} ({percent:.0f}%), gjenstår={eta}"
+            )
         return
     if stage == "build_groups":
+        finish_face_group_progress_line()
         print(f"Face-group: bygger grupper fra {total} ansikter.")
         return
     if stage == "write":
         if should_print_progress(current, total):
-            print(f"Face-group: skriver grupper={current}/{total}")
+            print_face_group_progress_line(f"Face-group: skriver grupper={current}/{total}")
+        return
+    if stage == "done":
+        finish_face_group_progress_line()
+
+
+def print_face_group_progress_line(text: str) -> None:
+    global FACE_GROUP_PROGRESS_INLINE_ACTIVE, FACE_GROUP_PROGRESS_INLINE_LENGTH
+    padding = " " * max(FACE_GROUP_PROGRESS_INLINE_LENGTH - len(text), 0)
+    print(f"\r{text}{padding}", end="", flush=True)
+    FACE_GROUP_PROGRESS_INLINE_ACTIVE = True
+    FACE_GROUP_PROGRESS_INLINE_LENGTH = len(text)
+
+
+def finish_face_group_progress_line() -> None:
+    global FACE_GROUP_PROGRESS_INLINE_ACTIVE, FACE_GROUP_PROGRESS_INLINE_LENGTH
+    if FACE_GROUP_PROGRESS_INLINE_ACTIVE:
+        print()
+    FACE_GROUP_PROGRESS_INLINE_ACTIVE = False
+    FACE_GROUP_PROGRESS_INLINE_LENGTH = 0
 
 
 def should_print_group_progress(current: int, total: int) -> bool:
@@ -1285,6 +1310,7 @@ def print_add_group_to_person_result(result: AddGroupToPersonResult) -> None:
     print(f"Gruppe: {result.group_index}")
     print(f"Nye ansikter koblet til person: {result.added_faces}")
     print(f"Ansikter som allerede var koblet: {result.already_linked_faces}")
+    print(f"Husk å kjøre face-suggest og make-people-browser får å søke i se resultat")
 
 
 def print_add_face_to_person_result(result: AddFaceToPersonResult) -> None:
