@@ -3,7 +3,7 @@
 `make-person-browser` lager en HTML-fil for å bla i bilder der Bildebank tror en
 bestemt person finnes.
 
-Dette er en del av den eksperimentelle ansiktsgjenkjenningen.
+Dette er en del av ansiktsgjenkjenningen.
 
 ## Referanse
 

@@ -1,6 +1,6 @@
 # face-reset
 
-`face-reset` sletter eksperimentelle ansiktsdata.
+`face-reset` sletter ansiktsdata.
 
 Kommandoen krever alltid bekreftelse.
 

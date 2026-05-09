@@ -453,7 +453,7 @@ Det finnes tre nivåer.
 
 ### Slette alt
 
-Hvis du vil fjerne alle eksperimentelle ansiktsdata fra bildesamlingen:
+Hvis du vil fjerne alle ansiktsdata fra bildesamlingen:
 
 ```powershell
 bildebank face-reset --all

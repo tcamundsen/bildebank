@@ -109,7 +109,7 @@ HELP_COMMAND_GROUPS = (
         (
             ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
             ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
-            ("face-scan", "Eksperimentell scanning etter ansikter"),
+            ("face-scan", "Scanning etter ansikter"),
             ("face-report", "Vis rapport for scannede ansikter"),
             ("face-group", "Beregn mulige ansiktsgrupper"),
             ("face-person-create", "Opprett person i ansiktsdatabasen"),
@@ -122,7 +122,7 @@ HELP_COMMAND_GROUPS = (
             ("make-face-browser", "Lag HTML-side for scannede ansikter"),
             ("make-people-browser", "Lag HTML-sider for alle personer"),
             ("make-person-browser", "Lag HTML-side for en person"),
-            ("face-reset", "Slett eksperimentelle ansiktsdata"),
+            ("face-reset", "Slett ansiktsdata"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
             ("update", "Oppdater programinstallasjonen"),
         ),
@@ -370,7 +370,7 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "face-scan",
         usage="bildebank face-scan [valg]",
-        help="Eksperimentell scanning etter ansikter",
+        help="Scanning etter ansikter",
     )
     face_scan.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
     face_scan.add_argument(
@@ -535,7 +535,7 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "face-reset",
         usage="bildebank face-reset [valg]",
-        help="Slett eksperimentelle ansiktsdata",
+        help="Slett ansiktsdata",
         description=(
             "Sletter ansiktsdata på valgt nivå. Kommandoen krever alltid "
             "nøyaktig bekreftelse før noe slettes."
@@ -1472,7 +1472,7 @@ def run_face_reset(
     if mode == "all":
         path.unlink()
         print(f"Slettet face-database: {path}")
-        print("Alle eksperimentelle ansiktsdata er slettet.")
+        print("Alle ansiktsdata er slettet.")
         return 0
     result = reset_face_database(target, mode=mode)
     print_face_reset_result(result)
