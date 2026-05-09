@@ -1235,10 +1235,10 @@ def run_face_group(
         print("Max gruppestørrelse: ingen maksgrense")
     elif max_size is not None:
         print(f"Max gruppestørrelse: {max_size}")
-    if stats.skipped_large_groups:
+    if stats.truncated_groups:
         print(
-            "Hoppet over store grupper: "
-            f"grupper={stats.skipped_large_groups}, ansikter={stats.skipped_large_faces}"
+            "Store grupper er forkortet i HTML: "
+            f"grupper={stats.truncated_groups}, skjulte_ansikter={stats.hidden_faces}"
         )
     print("Skriver HTML-fil ...")
     output_path = export_face_groups_browser(target, output)

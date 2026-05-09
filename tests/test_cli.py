@@ -1746,9 +1746,10 @@ model_name = "test-model"
             )
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("grupper=0", stdout)
+            self.assertIn("grupper=2", stdout)
+            self.assertIn("grupperte_ansikter=2", stdout)
             self.assertIn("Max gruppestørrelse: 1", stdout)
-            self.assertIn("Hoppet over store grupper: grupper=2, ansikter=4", stdout)
+            self.assertIn("Store grupper er forkortet i HTML: grupper=2, skjulte_ansikter=2", stdout)
 
             self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9"]), 0)
             html = (target / "face-groups.html").read_text(encoding="utf-8")
@@ -1758,6 +1759,7 @@ model_name = "test-model"
             self.assertIn("align-self: start", html)
             self.assertIn('"index": 1', html)
             self.assertIn('"memberCount": 2', html)
+            self.assertIn('"visibleMemberCount": 2', html)
             self.assertIn('"index": 2', html)
             self.assertIn("likhet", html)
             self.assertIn("deteksjon", html)
@@ -1785,6 +1787,15 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Person: Kari", stdout)
             self.assertIn("Nye ansikter koblet til person: 2", stdout)
+
+            self.assertEqual(run_cli(["--target", str(target), "face-person-create", "Ola"]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9", "--max-size", "1"]), 0)
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "face-person-add-group", "Ola", "2"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Nye ansikter koblet til person: 1", stdout)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
 

@@ -289,8 +289,8 @@ foreslå flere ansikter.
 
 Noen ganger kan `face-group` lage en veldig stor gruppe. Da er den ofte for
 stor til å kontrollere manuelt. Derfor bruker `face-group` som standard
-`--max-size 50`. Grupper med mer enn 50 ansikter blir ikke skrevet som
-gruppeforslag i denne kjøringen.
+`--max-size 50`. Grupper med mer enn 50 ansikter blir forkortet i
+`face-groups.html`.
 
 Du kan velge en annen grense:
 
@@ -298,8 +298,10 @@ Du kan velge en annen grense:
 bildebank face-group --max-size 200
 ```
 
-Store grupper slettes ikke fra scanningen. De blir bare ikke skrevet som
-gruppeforslag i denne kjøringen.
+Store grupper slettes ikke fra scanningen. `face-person-add-group` legger bare
+til ansiktene som faktisk vises i `face-groups.html`. Ansiktene som ikke vises
+kan senere komme tilbake som forslag med `face-suggest`, eller vises hvis du
+kjører `face-group` på nytt med høyere `--max-size`.
 
 Hvis du vil skru av maksgrensen helt, bruker du:
 

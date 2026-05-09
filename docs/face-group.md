@@ -19,9 +19,10 @@ Høyere `--threshold` betyr strengere likhet. Det gir vanligvis færre og mindre
 grupper, men mindre risiko for feilblanding. Lavere verdi gir vanligvis flere
 og større grupper, men større risiko for at ulike personer blandes.
 
-Som standard skriver `face-group` bare grupper med 50 ansikter eller færre.
-Dette gjør `face-groups.html` raskere å åpne, og gjør det mer realistisk å
-kontrollere gruppen før den kobles til en person.
+Som standard viser `face-group` høyst 50 ansikter fra hver gruppe. Hvis en
+gruppe egentlig har flere ansikter, blir den forkortet i `face-groups.html`.
+Dette gjør siden raskere å åpne, og gjør det mer realistisk å kontrollere
+gruppen før den kobles til en person.
 
 `--max-size` kan brukes hvis du vil velge en annen grense:
 
@@ -29,8 +30,15 @@ kontrollere gruppen før den kobles til en person.
 bildebank face-group --max-size 200
 ```
 
-Da skrives bare grupper med 200 ansikter eller færre. Store grupper slettes
-ikke fra scanningen; de blir bare ikke med i denne grupperingen.
+Da vises høyst 200 ansikter fra hver gruppe.
+
+Viktig: `face-person-add-group` legger bare til ansiktene som vises i
+`face-groups.html`. Hvis en stor gruppe er forkortet til 50 ansikter, er det
+bare de 50 synlige ansiktene som blir koblet til personen.
+
+Store grupper slettes ikke fra scanningen. Ansiktene som ikke vises kan senere
+komme tilbake som forslag med `face-suggest`, eller vises hvis du kjører
+`face-group` på nytt med høyere `--max-size`.
 
 Hvis du vil skru av maksgrensen helt, bruker du:
 

@@ -56,8 +56,8 @@ class FaceGroupStats:
     groups: int
     grouped_faces: int
     threshold: float
-    skipped_large_groups: int = 0
-    skipped_large_faces: int = 0
+    truncated_groups: int = 0
+    hidden_faces: int = 0
 
 
 @dataclass(frozen=True)
@@ -635,19 +635,18 @@ def group_faces(
         for face_id, _vector in vectors:
             grouped.setdefault(find(parent, face_id), []).append(face_id)
         candidate_groups = [sorted(members) for members in grouped.values() if len(members) >= 2]
-        skipped_large_groups = 0
-        skipped_large_faces = 0
+        truncated_groups = 0
+        hidden_faces = 0
         if max_size is None or max_size <= 0:
-            groups = candidate_groups
+            groups = [(members, members) for members in candidate_groups]
         else:
             groups = []
             for members in candidate_groups:
                 if len(members) > max_size:
-                    skipped_large_groups += 1
-                    skipped_large_faces += len(members)
-                else:
-                    groups.append(members)
-        groups.sort(key=lambda members: (-len(members), members[0]))
+                    truncated_groups += 1
+                    hidden_faces += len(members) - max_size
+                groups.append((members, members[:max_size]))
+        groups.sort(key=lambda item: (-len(item[0]), item[0][0]))
 
         if progress is not None:
             progress("write", 0, len(groups))
@@ -661,8 +660,8 @@ def group_faces(
             ).fetchone()["id"]
         )
         grouped_faces = 0
-        for group_index, members in enumerate(groups, start=1):
-            grouped_faces += len(members)
+        for group_index, (members, visible_members) in enumerate(groups, start=1):
+            grouped_faces += len(visible_members)
             group_id = int(
                 conn.execute(
                     """
@@ -673,7 +672,7 @@ def group_faces(
                     (run_id, group_index, len(members)),
                 ).fetchone()["id"]
             )
-            for face_id in members:
+            for face_id in visible_members:
                 conn.execute(
                     """
                     INSERT INTO face_group_members(group_id, face_id, similarity)
@@ -691,8 +690,8 @@ def group_faces(
             groups=len(groups),
             grouped_faces=grouped_faces,
             threshold=threshold,
-            skipped_large_groups=skipped_large_groups,
-            skipped_large_faces=skipped_large_faces,
+            truncated_groups=truncated_groups,
+            hidden_faces=hidden_faces,
         )
     finally:
         conn.close()
@@ -780,6 +779,7 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
         SELECT
             face_groups.group_index,
             face_groups.member_count,
+            COUNT(face_group_members.face_id) OVER (PARTITION BY face_groups.id) AS visible_member_count,
             faces.id AS face_id,
             faces.file_id,
             face_group_members.similarity,
@@ -834,6 +834,7 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
             {
                 "index": group_index,
                 "memberCount": int(row["member_count"]),
+                "visibleMemberCount": int(row["visible_member_count"]),
                 "personName": person_name_for_group(conn, group_index),
                 "faces": [],
             },
@@ -1392,7 +1393,10 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
     }}
     function renderGroup() {{
       const group = groups[groupIndex];
-      groupTitleEl.textContent = `Gruppe ${{group.index}} (${{group.memberCount}} ansikter), ${{groupIndex + 1}}/${{groups.length}}`;
+      const countText = group.visibleMemberCount < group.memberCount
+        ? `viser ${{group.visibleMemberCount}} av ${{group.memberCount}} ansikter`
+        : `${{group.memberCount}} ansikter`;
+      groupTitleEl.textContent = `Gruppe ${{group.index}} (${{countText}}), ${{groupIndex + 1}}/${{groups.length}}`;
       personEl.textContent = group.personName ? `Koblet til: ${{group.personName}}` : "Forslag. Ikke bekreftet person.";
       commandEl.textContent = `bildebank face-person-add-group "Navn" ${{group.index}}`;
       prevButton.disabled = groupIndex === 0;
@@ -2289,6 +2293,7 @@ def face_groups_json_items(groups: list[dict[str, Any]]) -> list[dict[str, Any]]
         {
             "index": group["index"],
             "memberCount": group["memberCount"],
+            "visibleMemberCount": group["visibleMemberCount"],
             "personName": group["personName"],
             "faces": [
                 {
