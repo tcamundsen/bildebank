@@ -1690,6 +1690,8 @@ model_name = "test-model"
                 return [
                     FakeFace([1.0, 2.0, 11.0, 22.0], [1.0, 0.0, 0.0]),
                     FakeFace([30.0, 4.0, 42.0, 24.0], [0.99, 0.01, 0.0]),
+                    FakeFace([50.0, 6.0, 64.0, 30.0], [0.0, 1.0, 0.0]),
+                    FakeFace([70.0, 8.0, 86.0, 34.0], [0.0, 0.99, 0.01]),
                 ]
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -1723,11 +1725,11 @@ model_name = "test-model"
             code, stdout, stderr = capture_cli(["--target", str(target), "face-group", "--threshold", "0.9"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Face-group: sammenligner 1 ansiktspar.", stdout)
-            self.assertIn("Face-group: sammenlignet=1/1 (100%), gjenstår=0s", stdout)
-            self.assertIn("Face-group: bygger grupper fra 2 ansikter.", stdout)
-            self.assertIn("grupper=1", stdout)
-            self.assertIn("grupperte_ansikter=2", stdout)
+            self.assertIn("Face-group: sammenligner 6 ansiktspar.", stdout)
+            self.assertIn("Face-group: sammenlignet=6/6 (100%), gjenstår=0s", stdout)
+            self.assertIn("Face-group: bygger grupper fra 4 ansikter.", stdout)
+            self.assertIn("grupper=2", stdout)
+            self.assertIn("grupperte_ansikter=4", stdout)
             self.assertIn("Max gruppestørrelse: 50", stdout)
             self.assertIn("Skrev HTML-browser for ansiktsgrupper", stdout)
 
@@ -1736,7 +1738,7 @@ model_name = "test-model"
             )
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("grupper=1", stdout)
+            self.assertIn("grupper=2", stdout)
             self.assertIn("Max gruppestørrelse: ingen maksgrense", stdout)
 
             code, stdout, stderr = capture_cli(
@@ -1746,7 +1748,7 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("grupper=0", stdout)
             self.assertIn("Max gruppestørrelse: 1", stdout)
-            self.assertIn("Hoppet over store grupper: grupper=1, ansikter=2", stdout)
+            self.assertIn("Hoppet over store grupper: grupper=2, ansikter=4", stdout)
 
             self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9"]), 0)
             html = (target / "face-groups.html").read_text(encoding="utf-8")
@@ -1756,9 +1758,13 @@ model_name = "test-model"
             self.assertIn("align-self: start", html)
             self.assertIn('"index": 1', html)
             self.assertIn('"memberCount": 2', html)
+            self.assertIn('"index": 2', html)
             self.assertIn("likhet", html)
             self.assertIn("deteksjon", html)
             self.assertIn('"faceId": 1', html)
+            self.assertIn('"otherGroupsInImage": [{"groupIndex": 2', html)
+            self.assertIn("Andre ansikter i bildet:", html)
+            self.assertIn("goToGroup(item.groupIndex)", html)
             self.assertIn("className = \"box\"", html)
             self.assertIn("id=\"lightbox\"", html)
             self.assertIn("openLightbox(face)", html)

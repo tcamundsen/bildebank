@@ -781,6 +781,7 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
             face_groups.group_index,
             face_groups.member_count,
             faces.id AS face_id,
+            faces.file_id,
             face_group_members.similarity,
             scanned_files.target_path,
             faces.bbox_x,
@@ -798,13 +799,18 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
         (run["id"],),
     )
     groups: dict[int, dict[str, Any]] = {}
+    all_faces: list[dict[str, Any]] = []
+    faces_by_file_id: dict[int, list[dict[str, Any]]] = {}
     for row in rows:
         group_index = int(row["group_index"])
+        file_id = int(row["file_id"])
         target_path = Path(str(row["target_path"]))
         dimensions = image_dimensions(target_path)
         orientation = image_orientation(target_path)
         face = {
             "faceId": int(row["face_id"]),
+            "groupIndex": group_index,
+            "_fileId": file_id,
             "path": display_relative_path(target, target_path),
             "url": path_to_url(relative_to_target(target, target_path)),
             "x": float(row["bbox_x"]),
@@ -832,6 +838,21 @@ def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dic
                 "faces": [],
             },
         )["faces"].append(face)
+        all_faces.append(face)
+        faces_by_file_id.setdefault(file_id, []).append(face)
+    for face in all_faces:
+        other_groups: dict[int, dict[str, Any]] = {}
+        for other in faces_by_file_id.get(int(face["_fileId"]), []):
+            if other["faceId"] == face["faceId"] or other["groupIndex"] == face["groupIndex"]:
+                continue
+            related = other_groups.setdefault(
+                int(other["groupIndex"]),
+                {"groupIndex": int(other["groupIndex"]), "count": 0, "faceIds": []},
+            )
+            related["count"] += 1
+            related["faceIds"].append(int(other["faceId"]))
+        if other_groups:
+            face["otherGroupsInImage"] = sorted(other_groups.values(), key=lambda item: item["groupIndex"])
     return list(groups.values())
 
 
@@ -1226,6 +1247,20 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       overflow-wrap: anywhere;
       padding: 0 8px 8px;
     }}
+    .related {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      padding: 0 8px 8px;
+    }}
+    .related button {{
+      min-height: 28px;
+      padding: 4px 7px;
+      font-size: 12px;
+    }}
     .empty {{ margin: 0; color: var(--muted); }}
     .lightbox {{
       position: fixed;
@@ -1348,6 +1383,13 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       groupIndex = next;
       renderGroup();
     }}
+    function goToGroup(index) {{
+      const next = groups.findIndex(group => group.index === index);
+      if (next < 0) return;
+      groupIndex = next;
+      renderGroup();
+      mainEl.scrollTo({{ top: 0, behavior: "smooth" }});
+    }}
     function renderGroup() {{
       const group = groups[groupIndex];
       groupTitleEl.textContent = `Gruppe ${{group.index}} (${{group.memberCount}} ansikter), ${{groupIndex + 1}}/${{groups.length}}`;
@@ -1389,8 +1431,25 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       const meta = document.createElement("div");
       meta.className = "meta";
       meta.textContent = `face-id ${{face.faceId}}, gruppelikhet ${{face.similarity.toFixed(3)}}, deteksjon ${{face.score.toFixed(3)}} - ${{face.path}}`;
-      card.append(media, meta);
+      card.append(media, meta, renderRelatedGroups(face));
       return card;
+    }}
+    function renderRelatedGroups(face) {{
+      const related = document.createElement("div");
+      related.className = "related";
+      if (!face.otherGroupsInImage || face.otherGroupsInImage.length === 0) return related;
+      const label = document.createElement("span");
+      label.textContent = "Andre ansikter i bildet:";
+      related.append(label);
+      for (const item of face.otherGroupsInImage) {{
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = item.count === 1 ? `gruppe ${{item.groupIndex}}` : `gruppe ${{item.groupIndex}} (${{item.count}})`;
+        button.title = `Gå til gruppe ${{item.groupIndex}}`;
+        button.addEventListener("click", () => goToGroup(item.groupIndex));
+        related.append(button);
+      }}
+      return related;
     }}
     function openLightbox(face) {{
       lightboxTitleEl.textContent = `face-id ${{face.faceId}} - ${{face.path}}`;
@@ -2235,7 +2294,7 @@ def face_groups_json_items(groups: list[dict[str, Any]]) -> list[dict[str, Any]]
                 {
                     key: value
                     for key, value in face.items()
-                    if key != "dimensions"
+                    if key not in {"dimensions", "_fileId"}
                 }
                 for face in group["faces"]
             ],

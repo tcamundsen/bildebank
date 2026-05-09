@@ -46,4 +46,8 @@ gruppe-id-ene på siden hører sammen med den siste grupperingen.
 
 Hvis du vil skrive HTML-filen et annet sted, bruker du `-o`.
 
+Hvis et bilde har flere ansikter, viser `face-groups.html` lenker til andre
+grupper som har ansikter fra samme bilde. Det gjør det lettere å kontrollere
+hvilke andre personer som finnes i bildet.
+
 Se også [`insightface`](insightface.md).
