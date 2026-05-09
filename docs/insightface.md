@@ -67,6 +67,8 @@ systemet, så kan la `face-scan` scanne et par hundre bilder før du avbryter
 og gjør resten av oppskriften, og så begynner du på nytt her etterpå.
 
 Det er denne kommandoen som tar lang tid. Alle de andre går mye raskere.
+Det mulig å nullstille alle ansiktene du knytter til personer
+uten å måtte kjøre `face-scan` på nytt.
 
 ### 4. Lag grupper
 
