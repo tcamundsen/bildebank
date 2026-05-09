@@ -1537,6 +1537,9 @@ model_name = "test-model"
             self.assertIn("Ansikter funnet: 1", stdout)
             self.assertIn("Filer med ett ansikt: 1", stdout)
             self.assertIn("Flest ansikter:", stdout)
+            self.assertIn("Personstatus:", stdout)
+            self.assertIn("Personer registrert: 0", stdout)
+            self.assertIn("Bilder med ansikter, men ingen bekreftet person: 1", stdout)
             self.assertIn("IMG_20240102.jpg", stdout)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "make-face-browser"])
@@ -1927,6 +1930,17 @@ model_name = "test-model"
             self.assertIn("Skrev personsider: 1", stdout)
             self.assertTrue((target / "personer.html").exists())
             self.assertTrue((target / "person-Kari.html").exists())
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-report"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Personstatus:", stdout)
+            self.assertIn("Personer registrert: 1", stdout)
+            self.assertIn("Bekreftede ansiktskoblinger: 1", stdout)
+            self.assertIn("Forslag: 1", stdout)
+            self.assertIn("Bilder med minst én bekreftet person: 1", stdout)
+            self.assertIn("Bilder med ansikter, men ingen bekreftet person: 0", stdout)
+            self.assertIn("Bilder med både bekreftede og ukjente ansikter: 1", stdout)
 
             with patch("builtins.input", return_value="slett Kari"):
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-person-delete", "Kari"])

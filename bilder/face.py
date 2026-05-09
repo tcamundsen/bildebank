@@ -47,6 +47,12 @@ class FaceReport:
     files_with_one_face: int = 0
     files_with_multiple_faces: int = 0
     scan_errors: int = 0
+    persons: int = 0
+    confirmed_face_links: int = 0
+    suggestions: int = 0
+    files_with_confirmed_person: int = 0
+    files_with_faces_no_confirmed_person: int = 0
+    files_with_confirmed_and_unknown_faces: int = 0
     top_files: tuple[sqlite3.Row, ...] = ()
     errors: tuple[sqlite3.Row, ...] = ()
 
@@ -559,6 +565,12 @@ def face_report(target: Path, *, limit: int = 20) -> FaceReport:
             files_with_one_face=count_scanned_files(conn, "status = 'ok' AND face_count = 1"),
             files_with_multiple_faces=count_scanned_files(conn, "status = 'ok' AND face_count > 1"),
             scan_errors=count_scanned_files(conn, "status = 'error'"),
+            persons=count_rows_if_table_exists(conn, "persons"),
+            confirmed_face_links=count_rows_if_table_exists(conn, "person_faces"),
+            suggestions=count_rows_if_table_exists(conn, "face_suggestions"),
+            files_with_confirmed_person=count_files_with_confirmed_person(conn),
+            files_with_faces_no_confirmed_person=count_files_with_faces_no_confirmed_person(conn),
+            files_with_confirmed_and_unknown_faces=count_files_with_confirmed_and_unknown_faces(conn),
             top_files=tuple(
                 conn.execute(
                     """
@@ -2568,6 +2580,56 @@ def safe_filename(value: str) -> str:
 
 def count_scanned_files(conn: sqlite3.Connection, where_sql: str) -> int:
     return int(conn.execute(f"SELECT COUNT(*) FROM scanned_files WHERE {where_sql}").fetchone()[0])
+
+
+def count_files_with_confirmed_person(conn: sqlite3.Connection) -> int:
+    return int(
+        conn.execute(
+            """
+            SELECT COUNT(DISTINCT faces.file_id)
+            FROM faces
+            JOIN person_faces ON person_faces.face_id = faces.id
+            """
+        ).fetchone()[0]
+    )
+
+
+def count_files_with_faces_no_confirmed_person(conn: sqlite3.Connection) -> int:
+    return int(
+        conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM scanned_files
+            WHERE status = 'ok'
+              AND face_count > 0
+              AND file_id NOT IN (
+                  SELECT DISTINCT faces.file_id
+                  FROM faces
+                  JOIN person_faces ON person_faces.face_id = faces.id
+              )
+            """
+        ).fetchone()[0]
+    )
+
+
+def count_files_with_confirmed_and_unknown_faces(conn: sqlite3.Connection) -> int:
+    return int(
+        conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT
+                    faces.file_id,
+                    SUM(CASE WHEN person_faces.face_id IS NOT NULL THEN 1 ELSE 0 END) AS confirmed_count,
+                    SUM(CASE WHEN person_faces.face_id IS NULL THEN 1 ELSE 0 END) AS unknown_count
+                FROM faces
+                LEFT JOIN person_faces ON person_faces.face_id = faces.id
+                GROUP BY faces.file_id
+                HAVING confirmed_count > 0 AND unknown_count > 0
+            )
+            """
+        ).fetchone()[0]
+    )
 
 
 def count_rows(conn: sqlite3.Connection, table: str) -> int:
