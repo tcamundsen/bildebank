@@ -7,12 +7,15 @@ Kommandoen krever alltid bekreftelse.
 ## Referanse
 
 ```powershell
+bildebank face-reset
 bildebank face-reset --all
 bildebank face-reset --keep-scan
 bildebank face-reset --keep-scan-and-groups
 ```
 
-`--all` sletter hele face-databasen.
+Uten nivåvalg er standard det samme som `--keep-scan`.
+Det er dette som er befalt hvis du vil starte på nytt med å 
+finne personer, for da slipper du å kjøre `face-scan` på nytt.
 
 `--keep-scan` beholder resultatene fra `face-scan`, men sletter grupper,
 personer, bekreftelser og forslag.
@@ -20,5 +23,7 @@ personer, bekreftelser og forslag.
 `--keep-scan-and-groups` beholder resultatene fra `face-scan` og `face-group`,
 men sletter personer, bekreftelser og forslag.
 
-Kommandoen sletter ingen bilder og endrer ikke den vanlige Bildebank-databasen.
+`--all` sletter hele face-databasen. Bruk dette bare hvis du også vil slette
+resultatene fra `face-scan`.
 
+Kommandoen sletter ingen bilder og endrer ikke den vanlige Bildebank-databasen.

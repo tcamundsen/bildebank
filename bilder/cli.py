@@ -520,12 +520,12 @@ def build_parser() -> argparse.ArgumentParser:
     reset_mode.add_argument(
         "--all",
         action="store_true",
-        help="Slett hele face-databasen, inkludert face-scan, grupper, personer og forslag. Standard hvis ingen nivåvalg er brukt.",
+        help="Slett hele face-databasen, inkludert face-scan, grupper, personer og forslag.",
     )
     reset_mode.add_argument(
         "--keep-scan",
         action="store_true",
-        help="Behold face-scan-resultater, men slett grupper, personer, bekreftelser og forslag.",
+        help="Behold face-scan-resultater, men slett grupper, personer, bekreftelser og forslag. Standard hvis ingen nivåvalg er brukt.",
     )
     reset_mode.add_argument(
         "--keep-scan-and-groups",
@@ -718,6 +718,7 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "face-reset":
         return run_face_reset(
             target,
+            all_data=args.all,
             keep_scan=args.keep_scan,
             keep_scan_and_groups=args.keep_scan_and_groups,
         )
@@ -1357,12 +1358,22 @@ def print_face_report(target: Path, report: FaceReport) -> None:
             print(f"  {row['target_path']}\t{row['error_message']}")
 
 
-def run_face_reset(target: Path, *, keep_scan: bool = False, keep_scan_and_groups: bool = False) -> int:
+def run_face_reset(
+    target: Path,
+    *,
+    all_data: bool = False,
+    keep_scan: bool = False,
+    keep_scan_and_groups: bool = False,
+) -> int:
     path = face_db_path(target)
     if not path.exists():
         print(f"Fant ingen face-database: {path}")
         return 0
-    mode = face_reset_mode(keep_scan=keep_scan, keep_scan_and_groups=keep_scan_and_groups)
+    mode = face_reset_mode(
+        all_data=all_data,
+        keep_scan=keep_scan,
+        keep_scan_and_groups=keep_scan_and_groups,
+    )
     phrase = face_reset_confirmation_phrase(mode)
     print(face_reset_description(mode))
     answer = input(f'Skriv "{phrase}" for å gjennomføre face-reset: ')
@@ -1379,12 +1390,12 @@ def run_face_reset(target: Path, *, keep_scan: bool = False, keep_scan_and_group
     return 0
 
 
-def face_reset_mode(*, keep_scan: bool, keep_scan_and_groups: bool) -> str:
-    if keep_scan:
-        return "keep-scan"
+def face_reset_mode(*, all_data: bool, keep_scan: bool, keep_scan_and_groups: bool) -> str:
+    if all_data:
+        return "all"
     if keep_scan_and_groups:
         return "keep-scan-and-groups"
-    return "all"
+    return "keep-scan"
 
 
 def face_reset_confirmation_phrase(mode: str) -> str:

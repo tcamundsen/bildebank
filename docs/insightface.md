@@ -438,8 +438,6 @@ bildebank face-reset --all
 Dette sletter `.bilder-faces.sqlite3`. Det fjerner resultatene fra `face-scan`,
 grupper fra `face-group`, personer, bekreftede ansiktskoblinger og forslag.
 
-Hvis du kjører `face-reset` uten nivåvalg, er dette standardnivået.
-
 Kommandoen sletter ingen bilder og endrer ikke den vanlige Bildebank-databasen.
 
 ### Beholde face-scan
@@ -453,6 +451,12 @@ bildebank face-reset --keep-scan
 
 Dette beholder resultatene fra `face-scan`, men sletter grupper, personer,
 bekreftede ansiktskoblinger og forslag.
+
+Hvis du kjører `face-reset` uten nivåvalg, er dette standardnivået:
+
+```powershell
+bildebank face-reset
+```
 
 Etterpå kan du kjøre:
 

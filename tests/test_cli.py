@@ -224,6 +224,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("--all", stdout)
         self.assertIn("--keep-scan", stdout)
         self.assertIn("--keep-scan-and-groups", stdout)
+        self.assertIn("Standard hvis ingen", stdout)
+        self.assertIn("nivåvalg er brukt", stdout)
         self.assertIn("krever alltid", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
@@ -1874,14 +1876,14 @@ model_name = "test-model"
             face_db.write_bytes(b"face-data")
 
             with patch("builtins.input", return_value="nei"):
-                code, stdout, stderr = capture_cli(["--target", str(target), "face-reset"])
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-reset", "--all"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Avbrutt", stdout)
             self.assertTrue(face_db.exists())
 
             with patch("builtins.input", return_value="ja, slett ansiktsdata"):
-                code, stdout, stderr = capture_cli(["--target", str(target), "face-reset"])
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-reset", "--all"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Slettet face-database", stdout)
@@ -1945,7 +1947,7 @@ model_name = "test-model"
                 conn.close()
 
             with patch("builtins.input", return_value="ja, slett grupper og personer"):
-                code, stdout, stderr = capture_cli(["--target", str(target), "face-reset", "--keep-scan"])
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-reset"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-scan-resultater er beholdt", stdout)
