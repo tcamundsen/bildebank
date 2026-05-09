@@ -101,6 +101,12 @@ class FaceResetResult:
 
 
 @dataclass(frozen=True)
+class PeopleBrowserResult:
+    index_path: Path
+    person_pages: tuple[Path, ...]
+
+
+@dataclass(frozen=True)
 class FaceSuggestStats:
     persons: int
     unknown_faces: int
@@ -732,6 +738,37 @@ def export_person_browser(
         newline="\n",
     )
     return output_path
+
+
+def export_people_browser(
+    target: Path,
+    *,
+    month_preview_limit: int | None = None,
+) -> PeopleBrowserResult:
+    output_path = target / "personer.html"
+    path = face_db_path(target)
+    if not path.exists():
+        raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
+    conn = connect_face_db(target)
+    try:
+        people = list(conn.execute("SELECT id, name FROM persons ORDER BY name"))
+        index_people: list[dict[str, Any]] = []
+        person_pages: list[Path] = []
+        for person in people:
+            name = str(person["name"])
+            page_path = target / f"person-{safe_filename(name)}.html"
+            items = person_browser_items(target, conn, person_id=int(person["id"]))
+            page_path.write_text(
+                render_person_browser_html(name, items, month_preview_limit=month_preview_limit),
+                encoding="utf-8",
+                newline="\n",
+            )
+            person_pages.append(page_path)
+            index_people.append(people_index_item(target, name, page_path, items))
+    finally:
+        conn.close()
+    output_path.write_text(render_people_index_html(index_people), encoding="utf-8", newline="\n")
+    return PeopleBrowserResult(index_path=output_path, person_pages=tuple(person_pages))
 
 
 def face_group_browser_items(target: Path, conn: sqlite3.Connection) -> list[dict[str, Any]]:
@@ -1725,6 +1762,151 @@ def render_person_browser_html(
 </body>
 </html>
 """
+
+
+def people_index_item(
+    target: Path,
+    name: str,
+    page_path: Path,
+    items: list[dict[str, Any]],
+) -> dict[str, Any]:
+    confirmed = 0
+    suggested = 0
+    for item in items:
+        for face in item["faces"]:
+            if face["status"] == "forslag":
+                suggested += 1
+            else:
+                confirmed += 1
+    thumbnail_url = items[0]["url"] if items else None
+    return {
+        "name": name,
+        "pageUrl": path_to_url(relative_to_target(target, page_path)),
+        "thumbnailUrl": thumbnail_url,
+        "imageCount": len(items),
+        "confirmed": confirmed,
+        "suggested": suggested,
+    }
+
+
+def render_people_index_html(people: list[dict[str, Any]]) -> str:
+    cards = "\n".join(render_people_index_card(person) for person in people)
+    if not cards:
+        cards = '<p class="empty">Ingen personer registrert ennå.</p>'
+    return f"""<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Personer</title>
+  <style>
+    :root {{
+      color-scheme: light;
+      --bg: #f7f7f5;
+      --text: #202020;
+      --muted: #666;
+      --border: #d8d8d2;
+      --panel: #fff;
+      --accent: #2f6fbf;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    header {{
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }}
+    h1 {{ margin: 0; font-size: 22px; }}
+    main {{
+      padding: 16px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+      align-items: start;
+    }}
+    .person {{
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+      color: inherit;
+      text-decoration: none;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }}
+    .person:hover {{ border-color: var(--accent); }}
+    .thumb {{
+      aspect-ratio: 4 / 3;
+      background: #e8e8e2;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+      font-size: 42px;
+      font-weight: 700;
+      overflow: hidden;
+    }}
+    .thumb img {{
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }}
+    .meta {{
+      padding: 0 10px 10px;
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }}
+    .name {{
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }}
+    .detail {{
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .empty {{
+      grid-column: 1 / -1;
+      margin: 0;
+      color: var(--muted);
+    }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Personer ({len(people)})</h1>
+  </header>
+  <main>
+    {cards}
+  </main>
+</body>
+</html>
+"""
+
+
+def render_people_index_card(person: dict[str, Any]) -> str:
+    thumbnail_url = person.get("thumbnailUrl")
+    if thumbnail_url:
+        thumbnail = f'<img src="{html_escape(thumbnail_url)}" alt="">'
+    else:
+        thumbnail = html_escape(str(person["name"])[:1].upper() or "?")
+    return f"""<a class="person" href="{html_escape(person['pageUrl'])}">
+  <div class="thumb">{thumbnail}</div>
+  <div class="meta">
+    <div class="name">{html_escape(person['name'])}</div>
+    <div class="detail">{int(person['imageCount'])} bilder</div>
+    <div class="detail">{int(person['confirmed'])} bekreftet, {int(person['suggested'])} forslag</div>
+  </div>
+</a>"""
 
 
 def render_face_group_section(group: dict[str, Any]) -> str:

@@ -53,6 +53,7 @@ Se også den samlede innføringen: [`insightface`](insightface.md).
 - [`face-person-list`](face-person-list.md)
 - [`face-suggest`](face-suggest.md)
 - [`make-face-browser`](make-face-browser.md)
+- [`make-people-browser`](make-people-browser.md)
 - [`make-person-browser`](make-person-browser.md)
 - [`face-reset`](face-reset.md)
 

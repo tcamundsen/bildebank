@@ -256,6 +256,18 @@ class CliTests(unittest.TestCase):
         self.assertIn("ikke ment for vanlig bruk", stdout.lower())
         self.assertEqual(stderr_buffer.getvalue(), "")
 
+    def test_make_people_browser_help(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["make-people-browser", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("make-people-browser", stdout)
+        self.assertIn("--month-preview-limit", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             build_parser().parse_args(["target", "."])
@@ -1901,6 +1913,18 @@ model_name = "test-model"
             self.assertIn('"faceId": 2', html)
             self.assertIn('"status": "forslag"', html)
             self.assertIn('"box suggested"', html)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "make-people-browser"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev person-index", stdout)
+            self.assertIn("Skrev personsider: 1", stdout)
+            index_html = (target / "personer.html").read_text(encoding="utf-8")
+            self.assertIn("<h1>Personer (1)</h1>", index_html)
+            self.assertIn("person-Kari.html", index_html)
+            self.assertIn("Kari", index_html)
+            self.assertIn("1 bilder", index_html)
+            self.assertIn("1 bekreftet, 1 forslag", index_html)
 
             conn = sqlite3.connect(target / FACE_DB_FILENAME)
             try:

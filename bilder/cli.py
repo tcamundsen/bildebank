@@ -26,6 +26,7 @@ from .face import (
     delete_person,
     export_face_browser,
     export_face_groups_browser,
+    export_people_browser,
     export_person_browser,
     face_db_path,
     face_db_summary,
@@ -117,6 +118,7 @@ HELP_COMMAND_GROUPS = (
             ("face-person-list", "List personer i ansiktsdatabasen"),
             ("face-suggest", "Foreslå personer for ukjente ansikter"),
             ("make-face-browser", "Lag HTML-side for scannede ansikter"),
+            ("make-people-browser", "Lag HTML-sider for alle personer"),
             ("make-person-browser", "Lag HTML-side for en person"),
             ("face-reset", "Slett eksperimentelle ansiktsdata"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
@@ -506,6 +508,17 @@ def build_parser() -> argparse.ArgumentParser:
         type=positive_int_arg,
         help="Maks antall bilder i månedsoversikten. Standard: vis alle.",
     )
+    people_browser = add_command(
+        subparsers,
+        "make-people-browser",
+        usage="bildebank make-people-browser [valg]",
+        help="Lag HTML-index og personside for alle registrerte personer",
+    )
+    people_browser.add_argument(
+        "--month-preview-limit",
+        type=positive_int_arg,
+        help="Maks antall bilder i månedsoversikten på hver personside. Standard: vis alle.",
+    )
     face_reset = add_command(
         subparsers,
         "face-reset",
@@ -713,6 +726,12 @@ def run(args: argparse.Namespace) -> int:
             month_preview_limit=args.month_preview_limit,
         )
         print(f"Skrev HTML-browser for person: {output_path}")
+        return 0
+
+    if args.command == "make-people-browser":
+        result = export_people_browser(target, month_preview_limit=args.month_preview_limit)
+        print(f"Skrev person-index: {result.index_path}")
+        print(f"Skrev personsider: {len(result.person_pages)}")
         return 0
 
     if args.command == "face-reset":

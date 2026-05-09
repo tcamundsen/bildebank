@@ -108,14 +108,15 @@ Når du har bekreftet noen ansikter for en person:
 
 ```powershell
 bildebank face-suggest
-bildebank make-person-browser "Kari"
+bildebank make-people-browser
 ```
 
 `face-suggests` bruker da bildene du har identifisert manuelt til å
 finne identifiserte personer i alle bildene som har blitt scannet med
 `face-scan`
 
-Åpne `person-Kari.html`. Den viser både bekreftede treff og forslag.
+Åpne `personer.html`, og klikk på personen du vil se. Personsiden viser både
+bekreftede treff og forslag.
 
 Hvis forslagene ser riktige ut, kan du bekrefte flere ansikter:
 
@@ -127,7 +128,7 @@ Kjør deretter på nytt:
 
 ```powershell
 bildebank face-suggest
-bildebank make-person-browser "Kari"
+bildebank make-people-browser
 ```
 
 ### 7. Vedlikehold
@@ -409,21 +410,22 @@ bildebank face-suggest --threshold 0.70
 
 Høyere tall gir færre og strengere forslag.
 
-For å se bildene der Bildebank mener at en person finnes:
+For å se bildene der Bildebank mener at registrerte personer finnes:
 
 ```powershell
-bildebank make-person-browser "Kari"
+bildebank make-people-browser
 ```
 
-Da lages for eksempel:
+Da lages en index og én side per person:
 
 ```text
+personer.html
 person-Kari.html
 ```
 
-Siden viser ett bilde om gangen, slik at den også kan brukes når personen finnes
-i mange bilder. Du kan bla til forrige/neste bilde, forrige/neste måned og
-forrige/neste år. Når du hopper måned eller år, vises en månedsoversikt med
+Personsiden viser ett bilde om gangen, slik at den også kan brukes når personen
+finnes i mange bilder. Du kan bla til forrige/neste bilde, forrige/neste måned
+og forrige/neste år. Når du hopper måned eller år, vises en månedsoversikt med
 bilder fra den måneden.
 
 Bekreftede ansikter og forslag har ulik farge på boksen rundt ansiktet.
