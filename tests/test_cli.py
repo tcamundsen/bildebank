@@ -1782,6 +1782,8 @@ model_name = "test-model"
             self.assertIn("Alle ansikter i bildet", html)
             self.assertIn("openAllFaces(face)", html)
             self.assertIn("face-detail-title", html)
+            self.assertIn("face-command", html)
+            self.assertIn('face-person-add-face "Navn"', html)
             self.assertIn("goToGroup(item.groupIndex)", html)
             self.assertIn("className = \"box\"", html)
             self.assertIn("id=\"lightbox\"", html)

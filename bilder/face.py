@@ -1431,8 +1431,8 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
     .face-list {{
       width: min(1200px, 100%);
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 14px;
+      grid-template-columns: 1fr;
+      gap: 18px;
       align-items: start;
     }}
     .face-detail {{
@@ -1444,8 +1444,18 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       font-size: 13px;
       overflow-wrap: anywhere;
     }}
+    .face-command {{
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 13px;
+      color: #fff;
+      background: rgb(255 255 255 / 10%);
+      border: 1px solid rgb(255 255 255 / 22%);
+      border-radius: 6px;
+      padding: 7px;
+      overflow-wrap: anywhere;
+    }}
     .face-detail .lightbox-media img {{
-      max-height: 56vh;
+      max-height: none;
     }}
   </style>
 </head>
@@ -1614,7 +1624,10 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
         const title = document.createElement("div");
         title.className = "face-detail-title";
         title.textContent = `face-id ${{item.faceId}}, deteksjon ${{item.score.toFixed(3)}}`;
-        detail.append(title, renderMarkedImage(item));
+        const command = document.createElement("div");
+        command.className = "face-command";
+        command.textContent = `bildebank face-person-add-face "Navn" ${{item.faceId}}`;
+        detail.append(title, renderMarkedImage(item), command);
         list.append(detail);
       }}
       lightboxStageEl.replaceChildren(list);
