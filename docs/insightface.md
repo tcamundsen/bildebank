@@ -65,7 +65,9 @@ bildebank face-scan
 ```
 
 Det er trygt å avbryte med `Ctrl-C`. Neste gang fortsetter Bildebank ved å
-hoppe over bilder som allerede er scannet.
+hoppe over bilder som allerede er scannet. Hvis du er utålmodig med å teste
+systemet, så kan la `face-scan` scanne et par hundre bilder før du avbryter
+og gjør resten av oppskriften, og så begynner du på nytt her etterpå.
 
 ### 4. Lag grupper
 
@@ -88,7 +90,8 @@ bildebank face-person-add-group "Kari" 12
 Tallet `12` er gruppe-id fra `face-groups.html`.
 
 Du trenger ikke å koble alle grupper manuelt. Det er normalt at Bildebank lager
-mange grupper. Bruk gruppene til å finne noen sikre eksempler for personen.
+mange grupper. Bruk gruppene til å finne noen sikre eksempler for personen. Du
+får ganske bra resultater med bare 2-3 grupper per person.
 
 Hvis bare ett enkelt ansikt skal kobles til personen:
 
@@ -107,6 +110,10 @@ Når du har bekreftet noen ansikter for en person:
 bildebank face-suggest
 bildebank make-person-browser "Kari"
 ```
+
+`face-suggests` bruker da bildene du har identifisert manuelt til å
+finne identifiserte personer i alle bildene som har blitt scannet med
+`face-scan`
 
 Åpne `person-Kari.html`. Den viser både bekreftede treff og forslag.
 
@@ -136,6 +143,9 @@ Fjern ett feil ansikt fra en person:
 ```powershell
 bildebank face-person-remove-face "Kari" 912
 ```
+
+Tallet `912` er `face-id`. Du finner det under bildet i `face-groups.html`
+eller i `faces.html`, ikke i overskriften for gruppen.
 
 Slett en person som ble opprettet ved en feil:
 
@@ -388,6 +398,9 @@ Hvis et ansikt er koblet feil, kan koblingen fjernes igjen:
 ```powershell
 bildebank face-person-remove-face "Kari" 17
 ```
+
+Tallet `17` er `face-id`. Du finner det under bildet i `face-groups.html`
+eller i `faces.html`, ikke i overskriften for gruppen.
 
 Når noen ansikter er koblet til personer, kan Bildebank lage forslag for
 ukjente ansikter:
