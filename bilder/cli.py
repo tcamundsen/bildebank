@@ -1132,7 +1132,8 @@ def print_face_scan_progress(
         return
     if stage == "load_model":
         FACE_SCAN_PROGRESS_STARTED_AT = None
-        print(f"Face-scan: {total} nye eller endrede bilder skal scannes. Laster ansiktsmodell.")
+        print(f"Face-scan: {total} nye eller endrede bilder skal scannes.")
+        print("           Laster ansiktsmodell. Det kan ta 20 sekunder eller mer.")
         return
     if stage == "scan":
         if FACE_SCAN_PROGRESS_STARTED_AT is None:
