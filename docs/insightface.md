@@ -233,6 +233,13 @@ du feilsøker selve ansiktsmodellen, kan den vises med:
 bildebank face-scan --show-model-output
 ```
 
+Hvis en bildefil feiler under scanning, skriver `face-scan` filstien og
+feilmeldingen. Du kan også se scan-feil senere med:
+
+```powershell
+bildebank face-report
+```
+
 Det er trygt å avbryte med `Ctrl-C`. Bildebank lagrer resultatet etter hvert
 bilde. Neste gang du kjører `face-scan`, fortsetter den ved å hoppe over bilder
 som allerede er ferdig scannet. For å finne ansikter i alle bildene må denne

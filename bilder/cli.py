@@ -1138,6 +1138,10 @@ def print_face_scan_progress(
         print(f"Face-scan: {total} nye eller endrede bilder skal scannes.")
         print("           Laster ansiktsmodell. Det kan ta 20 sekunder eller mer.")
         return
+    if stage == "error":
+        message = getattr(stats, "last_error_message", None) or "ukjent feil"
+        print(f"Face-scan-feil: {path}\t{message}")
+        return
     if stage == "scan":
         if FACE_SCAN_PROGRESS_STARTED_AT is None:
             FACE_SCAN_PROGRESS_STARTED_AT = time.monotonic()

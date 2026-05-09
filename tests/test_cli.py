@@ -1526,6 +1526,54 @@ model_name = "test-model"
             self.assertIn("class=\"box\"", html)
             self.assertIn("left: ", html)
 
+    def test_face_scan_prints_file_path_when_image_fails(self) -> None:
+        class FakeApp:
+            def get(self, image):
+                return []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            bad_image = source / "bad.jpg"
+            bad_image.write_bytes(b"image")
+            (self.program_root / "bildebank-config.toml").write_text(
+                """
+[face_recognition]
+enabled = true
+provider = "cpu"
+model_root = ".bildebank-insightface"
+model_name = "test-model"
+""",
+                encoding="utf-8",
+            )
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+
+            with (
+                patch("bilder.face.load_face_app", return_value=FakeApp()),
+                patch("bilder.face.read_image", side_effect=ValueError("Kunne ikke lese testbildet")),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
+
+            self.assertEqual(code, 2)
+            self.assertIn("Face-scan-feil:", stdout)
+            self.assertIn("bad.jpg", stdout)
+            self.assertIn("Kunne ikke lese testbildet", stdout)
+            self.assertIn("feil=1", stdout)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-report"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Siste scan-feil:", stdout)
+            self.assertIn("bad.jpg", stdout)
+            self.assertIn("Kunne ikke lese testbildet", stdout)
+
     def test_make_face_browser_limit_restricts_number_of_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -29,6 +29,8 @@ class FaceScanStats:
     scanned: int = 0
     faces: int = 0
     errors: int = 0
+    last_error_path: Path | None = None
+    last_error_message: str | None = None
 
 
 FaceScanProgress = Callable[[str, int, int, FaceScanStats, Path | None], None]
@@ -2085,6 +2087,9 @@ def scan_faces(
                 stats.scanned += 1
                 stats.faces += len(faces)
             except Exception as exc:  # noqa: BLE001 - scan should continue and record failures
+                stats.errors += 1
+                stats.last_error_path = target_path
+                stats.last_error_message = str(exc)
                 mark_file_scan_error(
                     face_conn,
                     file_id=file_id,
@@ -2093,7 +2098,8 @@ def scan_faces(
                     sha256=sha256,
                     message=str(exc),
                 )
-                stats.errors += 1
+                if progress is not None:
+                    progress("error", scan_index, len(rows_to_scan), stats, target_path)
             face_conn.commit()
             if progress is not None:
                 progress("scan", scan_index, len(rows_to_scan), stats, target_path)

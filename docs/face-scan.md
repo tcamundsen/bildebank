@@ -20,5 +20,11 @@ ferdig.
 
 `--show-model-output` viser intern output fra InsightFace/ONNX ved feilsøking.
 
-Se også [`insightface`](insightface.md).
+Hvis en fil feiler under scanning, skriver `face-scan` filstien og
+feilmeldingen. Feilen kan også ses senere med:
 
+```powershell
+bildebank face-report
+```
+
+Se også [`insightface`](insightface.md).
