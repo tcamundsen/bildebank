@@ -241,6 +241,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("Standard: 50", stdout)
         self.assertIn("Bruk 0 for ingen maksgrense", stdout)
         self.assertIn("--output", stdout)
+        self.assertIn("--include-known", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_make_face_browser_help_marks_command_as_debug(self) -> None:
@@ -1830,7 +1831,14 @@ model_name = "test-model"
 
             self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9"]), 0)
             html = (target / "face-groups.html").read_text(encoding="utf-8")
-            self.assertIn('"personName": "Kari"', html)
+            self.assertNotIn('"index": 1', html)
+            self.assertNotIn('"personName": "Kari"', html)
+
+            self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9", "--include-known"]), 0)
+            html = (target / "face-groups.html").read_text(encoding="utf-8")
+            self.assertIn('"index": 1', html)
+            self.assertIn("Ferdig: alle", html)
+            self.assertIn('"complete": true', html)
 
     def test_face_person_add_remove_face_and_suggest(self) -> None:
         class FakeFace:

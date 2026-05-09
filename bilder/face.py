@@ -702,6 +702,7 @@ def export_face_groups_browser(
     target: Path,
     output: Path | None = None,
     *,
+    include_known: bool = False,
     progress: FaceGroupHtmlProgress | None = None,
 ) -> Path:
     output_path = output or (target / "face-groups.html")
@@ -710,7 +711,7 @@ def export_face_groups_browser(
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target)
     try:
-        items = face_group_browser_items(target, conn, progress=progress)
+        items = face_group_browser_items(target, conn, include_known=include_known, progress=progress)
     finally:
         conn.close()
     html = render_face_groups_html(items)
@@ -811,6 +812,7 @@ def face_group_browser_items(
     target: Path,
     conn: sqlite3.Connection,
     *,
+    include_known: bool = False,
     progress: FaceGroupHtmlProgress | None = None,
 ) -> list[dict[str, Any]]:
     run = conn.execute("SELECT * FROM face_group_runs ORDER BY id DESC LIMIT 1").fetchone()
@@ -892,7 +894,8 @@ def face_group_browser_items(
                 "index": group_index,
                 "memberCount": int(row["member_count"]),
                 "visibleMemberCount": int(row["visible_member_count"]),
-                "personName": person_name_for_group(conn, group_index),
+                "personName": None,
+                "confirmation": None,
                 "faces": [],
             },
         )["faces"].append(face)
@@ -916,7 +919,15 @@ def face_group_browser_items(
             related["faceIds"].append(int(other["faceId"]))
         if other_groups:
             face["otherGroupsInImage"] = sorted(other_groups.values(), key=lambda item: item["groupIndex"])
-    return list(groups.values())
+    visible_groups = []
+    for group in groups.values():
+        confirmation = group_confirmation(conn, [int(face["faceId"]) for face in group["faces"]])
+        group["confirmation"] = confirmation
+        group["personName"] = confirmation.get("personName")
+        if not include_known and confirmation.get("complete"):
+            continue
+        visible_groups.append(group)
+    return visible_groups
 
 
 def all_faces_for_file_ids(
@@ -1072,6 +1083,35 @@ def person_name_for_group(conn: sqlite3.Connection, group_index: int) -> str | N
         (int(group["id"]),),
     ).fetchone()
     return str(row["name"]) if row is not None else None
+
+
+def group_confirmation(conn: sqlite3.Connection, face_ids: list[int]) -> dict[str, Any]:
+    total = len(face_ids)
+    if total == 0:
+        return {"confirmed": 0, "total": 0, "complete": False, "personName": None}
+    placeholders = ",".join("?" for _ in face_ids)
+    rows = list(
+        conn.execute(
+            f"""
+            SELECT persons.name, COUNT(*) AS count
+            FROM person_faces
+            JOIN persons ON persons.id = person_faces.person_id
+            WHERE person_faces.face_id IN ({placeholders})
+            GROUP BY persons.id
+            ORDER BY count DESC, persons.name
+            """,
+            tuple(face_ids),
+        )
+    )
+    confirmed = sum(int(row["count"]) for row in rows)
+    person_name = str(rows[0]["name"]) if rows else None
+    complete = len(rows) == 1 and confirmed == total
+    return {
+        "confirmed": confirmed,
+        "total": total,
+        "complete": complete,
+        "personName": person_name,
+    }
 
 
 def face_browser_items(
@@ -1541,7 +1581,7 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
         ? `viser ${{group.visibleMemberCount}} av ${{group.memberCount}} ansikter`
         : `${{group.memberCount}} ansikter`;
       groupTitleEl.textContent = `Gruppe ${{group.index}} (${{countText}}), ${{groupIndex + 1}}/${{groups.length}}`;
-      personEl.textContent = group.personName ? `Koblet til: ${{group.personName}}` : "Forslag. Ikke bekreftet person.";
+      personEl.textContent = groupStatusText(group);
       commandEl.textContent = `bildebank face-person-add-group "Navn" ${{group.index}}`;
       prevButton.disabled = groupIndex === 0;
       nextButton.disabled = groupIndex === groups.length - 1;
@@ -1549,6 +1589,16 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       facesEl.className = "faces";
       for (const face of group.faces) facesEl.append(renderFace(face));
       mainEl.replaceChildren(facesEl);
+    }}
+    function groupStatusText(group) {{
+      const confirmation = group.confirmation || {{}};
+      if (confirmation.complete && confirmation.personName) {{
+        return `Ferdig: alle ${{confirmation.total}} synlige ansikter er bekreftet som ${{confirmation.personName}}.`;
+      }}
+      if (confirmation.confirmed > 0 && confirmation.personName) {{
+        return `Delvis bekreftet: ${{confirmation.confirmed}} av ${{confirmation.total}} synlige ansikter. Flest bekreftet som ${{confirmation.personName}}.`;
+      }}
+      return "Forslag. Ikke bekreftet person.";
     }}
     function renderFace(face) {{
       const card = document.createElement("div");
@@ -2471,6 +2521,7 @@ def face_groups_json_items(groups: list[dict[str, Any]]) -> list[dict[str, Any]]
             "memberCount": group["memberCount"],
             "visibleMemberCount": group["visibleMemberCount"],
             "personName": group["personName"],
+            "confirmation": group["confirmation"],
             "faces": [
                 {
                     key: value

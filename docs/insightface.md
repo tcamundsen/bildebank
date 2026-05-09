@@ -316,6 +316,14 @@ etter at du har koblet grupper eller ansikter til personer. Bekreftede personer
 lagres på ansikt-id, ikke på gruppe-id. Det som bygges på nytt er bare
 gruppeforslagene og `face-groups.html`.
 
+Som standard skjuler `face-groups.html` grupper der alle synlige ansikter
+allerede er bekreftet som samme person. Hvis du vil se slike ferdige grupper,
+kan du kjøre:
+
+```powershell
+bildebank face-group --include-known
+```
+
 Ikke bruk gruppe-id-er fra en gammel `face-groups.html` etter at du har kjørt
 `face-group` på nytt. Gruppe-id-ene kan da bety noe annet.
 

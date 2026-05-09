@@ -413,6 +413,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Skriv HTML-filen hit. Standard: face-groups.html i bildesamlingen.",
     )
+    face_group.add_argument(
+        "--include-known",
+        action="store_true",
+        help="Vis også grupper der alle synlige ansikter allerede er bekreftet som samme person.",
+    )
     face_person_create = add_command(
         subparsers,
         "face-person-create",
@@ -686,7 +691,13 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "face-group":
         output = args.output.resolve() if args.output else None
-        return run_face_group(target, threshold=args.threshold, max_size=args.max_size, output=output)
+        return run_face_group(
+            target,
+            threshold=args.threshold,
+            max_size=args.max_size,
+            output=output,
+            include_known=args.include_known,
+        )
 
     if args.command == "face-person-create":
         person_id = create_person(target, args.name)
@@ -1222,6 +1233,7 @@ def run_face_group(
     threshold: float,
     max_size: int | None = None,
     output: Path | None = None,
+    include_known: bool = False,
 ) -> int:
     effective_max_size = None if max_size == 0 else max_size
     stats = group_faces(
@@ -1245,7 +1257,12 @@ def run_face_group(
             "Store grupper er forkortet i HTML: "
             f"grupper={stats.truncated_groups}, skjulte_ansikter={stats.hidden_faces}"
         )
-    output_path = export_face_groups_browser(target, output, progress=print_face_group_html_progress)
+    output_path = export_face_groups_browser(
+        target,
+        output,
+        include_known=include_known,
+        progress=print_face_group_html_progress,
+    )
     finish_face_group_progress_line()
     print(f"Skrev HTML-browser for ansiktsgrupper: {output_path}")
     print("Dette er beregnede forslag, ikke bekreftede personer.")

@@ -9,6 +9,7 @@ bildebank face-group
 bildebank face-group --threshold 0.65
 bildebank face-group --max-size 200
 bildebank face-group --max-size 0
+bildebank face-group --include-known
 bildebank face-group -o "mine-grupper.html"
 ```
 
@@ -51,6 +52,13 @@ Hvis du får store grupper, kan du også prøve høyere `--threshold`.
 Det er trygt å kjøre `face-group` på nytt. Bekreftede personer lagres på
 ansikt-id, ikke gruppe-id. `face-groups.html` lages på nytt hver gang, slik at
 gruppe-id-ene på siden hører sammen med den siste grupperingen.
+
+Som standard skjules grupper der alle synlige ansikter allerede er bekreftet
+som samme person. Hvis du vil se disse ferdige gruppene likevel, bruker du:
+
+```powershell
+bildebank face-group --include-known
+```
 
 Hvis du vil skrive HTML-filen et annet sted, bruker du `-o`.
 
