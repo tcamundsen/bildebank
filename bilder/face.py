@@ -1227,6 +1227,56 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       padding: 0 8px 8px;
     }}
     .empty {{ margin: 0; color: var(--muted); }}
+    .lightbox {{
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: rgb(0 0 0 / 86%);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 8px;
+      padding: 12px;
+    }}
+    .lightbox[hidden] {{ display: none; }}
+    .lightbox-bar {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: #fff;
+      font-size: 14px;
+      min-width: 0;
+    }}
+    .lightbox-title {{
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+    .lightbox-close {{
+      border-color: rgb(255 255 255 / 35%);
+      background: rgb(255 255 255 / 10%);
+      color: #fff;
+      min-width: 42px;
+    }}
+    .lightbox-stage {{
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      overflow: auto;
+    }}
+    .lightbox-media {{
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+    }}
+    .lightbox-media img {{
+      display: block;
+      max-width: calc(100vw - 24px);
+      max-height: calc(100vh - 76px);
+      width: auto;
+      height: auto;
+    }}
   </style>
 </head>
 <body>
@@ -1248,6 +1298,13 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       <p class="empty">Ingen grupper beregnet ennå. Kjør bildebank face-group først.</p>
     </main>
   </div>
+  <div id="lightbox" class="lightbox" hidden>
+    <div class="lightbox-bar">
+      <div id="lightboxTitle" class="lightbox-title"></div>
+      <button id="lightboxClose" class="lightbox-close" type="button">Lukk</button>
+    </div>
+    <div id="lightboxStage" class="lightbox-stage"></div>
+  </div>
   <script>
     const groups = {groups_json};
     let groupIndex = 0;
@@ -1258,9 +1315,19 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
     const mainEl = document.getElementById("main");
     const prevButton = document.getElementById("prevGroup");
     const nextButton = document.getElementById("nextGroup");
+    const lightboxEl = document.getElementById("lightbox");
+    const lightboxTitleEl = document.getElementById("lightboxTitle");
+    const lightboxStageEl = document.getElementById("lightboxStage");
+    const lightboxCloseButton = document.getElementById("lightboxClose");
     prevButton.addEventListener("click", () => moveGroup(-1));
     nextButton.addEventListener("click", () => moveGroup(1));
+    lightboxCloseButton.addEventListener("click", closeLightbox);
+    lightboxEl.addEventListener("click", event => {{
+      if (event.target === lightboxEl || event.target === lightboxStageEl) closeLightbox();
+    }});
     document.addEventListener("keydown", event => {{
+      if (!lightboxEl.hidden && event.key === "Escape") {{ event.preventDefault(); closeLightbox(); return; }}
+      if (!lightboxEl.hidden) return;
       if (event.key === "ArrowLeft") {{ event.preventDefault(); moveGroup(-1); }}
       if (event.key === "ArrowRight") {{ event.preventDefault(); moveGroup(1); }}
     }});
@@ -1300,8 +1367,11 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       media.className = "media";
       const link = document.createElement("a");
       link.href = face.url;
-      link.target = "_blank";
-      link.title = "Åpne bildet";
+      link.title = "Vis stort bilde med ansiktsmarkering";
+      link.addEventListener("click", event => {{
+        event.preventDefault();
+        openLightbox(face);
+      }});
       const img = document.createElement("img");
       img.src = face.url;
       img.alt = "";
@@ -1321,6 +1391,31 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       meta.textContent = `face-id ${{face.faceId}}, gruppelikhet ${{face.similarity.toFixed(3)}}, deteksjon ${{face.score.toFixed(3)}} - ${{face.path}}`;
       card.append(media, meta);
       return card;
+    }}
+    function openLightbox(face) {{
+      lightboxTitleEl.textContent = `face-id ${{face.faceId}} - ${{face.path}}`;
+      const media = document.createElement("div");
+      media.className = "lightbox-media";
+      const img = document.createElement("img");
+      img.src = face.url;
+      img.alt = "";
+      media.append(img);
+      if (face.left !== undefined) {{
+        const box = document.createElement("div");
+        box.className = "box";
+        box.style.left = `${{face.left.toFixed(4)}}%`;
+        box.style.top = `${{face.top.toFixed(4)}}%`;
+        box.style.width = `${{face.boxWidth.toFixed(4)}}%`;
+        box.style.height = `${{face.boxHeight.toFixed(4)}}%`;
+        media.append(box);
+      }}
+      lightboxStageEl.replaceChildren(media);
+      lightboxEl.hidden = false;
+      lightboxCloseButton.focus();
+    }}
+    function closeLightbox() {{
+      lightboxEl.hidden = true;
+      lightboxStageEl.replaceChildren();
     }}
   </script>
 </body>
