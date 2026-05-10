@@ -1222,7 +1222,7 @@ def print_image_scan_progress(
 
 def run_image_search(target: Path, *, query: str, limit: int, browser: bool = True) -> int:
     config = load_config(program_repo_root()).openclip
-    stats = search_images(target, config, query=query, limit=limit)
+    stats = search_images(target, config, query=query, limit=limit, progress=print_image_search_progress)
     print(f"Søk: {stats.query}")
     print(f"Treff: {len(stats.results)}")
     for result in stats.results[:20]:
@@ -1234,6 +1234,27 @@ def run_image_search(target: Path, *, query: str, limit: int, browser: bool = Tr
         open_file_in_browser(stats.output_path)
         print(f"Åpnet bildesøk: {stats.output_path}")
     return 0
+
+
+def print_image_search_progress(
+    stage: str,
+    current: int,
+    total: int,
+    stats,
+) -> None:
+    if stage == "load_model":
+        print(f"Image-search: fant {total} bilde-embeddings. Laster OpenCLIP-modell.")
+        return
+    if stage == "compare_start":
+        print(f'Image-search: søker etter "{stats.query}" i {total} bilder.')
+        return
+    if stage == "compare":
+        if should_print_progress(current, total):
+            print(f"Image-search: søkt={current}/{total}")
+        return
+    if stage == "write":
+        print(f"Image-search: skriver {current} treff til image-search.html.")
+        return
 
 
 def run_face_scan(target: Path, *, limit: int | None, show_model_output: bool = False) -> int:

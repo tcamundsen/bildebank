@@ -52,6 +52,13 @@ class ImageSearchStats:
     output_path: Path
 
 
+@dataclass(frozen=True)
+class ImageSearchProgressStats:
+    query: str
+    compared: int = 0
+    total: int = 0
+
+
 def openclip_db_path(target: Path) -> Path:
     return target / OPENCLIP_DB_FILENAME
 
@@ -131,6 +138,7 @@ def active_image_files(target: Path, *, limit: int | None = None) -> list[sqlite
 
 
 ImageScanProgress = Callable[[str, int, int, ImageScanStats, Path | None], None]
+ImageSearchProgress = Callable[[str, int, int, ImageSearchProgressStats], None]
 
 
 def scan_images(
@@ -220,6 +228,7 @@ def search_images(
     *,
     query: str,
     limit: int = 100,
+    progress: ImageSearchProgress | None = None,
 ) -> ImageSearchStats:
     clean_query = query.strip()
     if not clean_query:
@@ -241,21 +250,29 @@ def search_images(
         )
         if not rows:
             raise ValueError("Fant ingen bilde-embeddings. Kjør bildebank image-scan først.")
+        search_progress = ImageSearchProgressStats(clean_query, compared=0, total=len(rows))
+        if progress is not None:
+            progress("load_model", 0, len(rows), search_progress)
         model, tokenizer = load_text_model(config)
         text_vector = text_embedding(model, tokenizer, clean_query)
-        scored = sorted(
-            (
+        if progress is not None:
+            progress("compare_start", 0, len(rows), search_progress)
+        scored_items = []
+        for index, row in enumerate(rows, start=1):
+            scored_items.append(
                 (
                     cosine_similarity(text_vector, embedding_from_blob(bytes(row["embedding"]))),
                     int(row["file_id"]),
                     Path(str(row["target_path"])),
                     str(row["target_path_key"]),
                 )
-                for row in rows
-            ),
-            reverse=True,
-            key=lambda item: item[0],
-        )[:limit]
+            )
+            search_progress = ImageSearchProgressStats(clean_query, compared=index, total=len(rows))
+            if progress is not None:
+                progress("compare", index, len(rows), search_progress)
+        scored = sorted(scored_items, reverse=True, key=lambda item: item[0])[:limit]
+        if progress is not None:
+            progress("write", len(scored), len(scored), search_progress)
         run_id = create_search_run(conn, clean_query, config, limit)
         results: list[ImageSearchResult] = []
         for index, (score, file_id, target_path, target_path_key) in enumerate(scored, start=1):
@@ -272,6 +289,8 @@ def search_images(
         conn.close()
 
     output_path = export_image_search_html(target, clean_query, config, results)
+    if progress is not None:
+        progress("done", len(results), len(results), search_progress)
     return ImageSearchStats(clean_query, run_id, tuple(results), output_path)
 
 

@@ -45,6 +45,15 @@ Modellfiler lagres lokalt i programmappen:
 .bildebank-openclip
 ```
 
+OpenCLIP kan bruke nettet når modellen lastes ned første gang. Etter at
+modellfilene er lastet ned, skal selve scanning og søk kjøre lokalt på maskinen.
+Bildene sendes ikke til en nettjeneste for å søkes i.
+
+Hvis du ser en melding om `HF Hub` eller `HF_TOKEN`, betyr det vanligvis at
+OpenCLIP henter modellfiler fra Hugging Face uten innlogging. Det er ikke
+nødvendig med `HF_TOKEN` for vanlig bruk, men Hugging Face kan gi høyere
+nedlastingsgrenser hvis man bruker en token.
+
 ## Sjekk status
 
 Du kan se om OpenCLIP er installert med:
@@ -119,6 +128,9 @@ Du kan også endre antall treff:
 ```powershell
 bildebank image-search "strand" --limit 50
 ```
+
+Mens søket kjører, viser `image-search` hvor mange bilde-embeddings som er
+funnet, og hvor mange bilder søket er sammenlignet med.
 
 ## Eksempler på søk
 
