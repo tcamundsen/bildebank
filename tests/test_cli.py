@@ -10,16 +10,18 @@ import warnings
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from bilder.cli import build_parser, main
-from bilder.config import load_config
+from bilder.config import OpenClipConfig, load_config
 from bilder.db import DB_FILENAME
 from bilder.face import FACE_DB_FILENAME, connect_face_db, face_box_percent, read_image
 from bilder.importer import safe_copy
 from bilder.media import ImageDimensions, sha256_file
 from bilder.openclip import connect_openclip_db, openclip_db_path, resolve_torch_device
 from bilder.program_state import PROGRAM_DB_FILENAME
+from bilder.server import index_html
 from bilder.target_lock import LOCK_FILENAME
 from tests.test_media import (
     jpeg_with_xmp_date,
@@ -294,6 +296,20 @@ class CliTests(unittest.TestCase):
         self.assertIn("--no-browser", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
+    def test_run_server_help_documents_local_options(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["run-server", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("usage: bildebank run-server [valg]", stdout)
+        self.assertIn("--host", stdout)
+        self.assertIn("--port", stdout)
+        self.assertIn("--no-browser", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
     def test_openclip_database_schema_is_separate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
@@ -317,6 +333,13 @@ class CliTests(unittest.TestCase):
         self.assertEqual(resolve_torch_device("cpu"), "cpu")
         with self.assertRaises(ValueError):
             resolve_torch_device("gpu")
+
+    def test_run_server_renders_index_page(self) -> None:
+        server = SimpleNamespace(config=OpenClipConfig())
+        body = index_html(server)
+
+        self.assertIn("Bildesøk", body)
+        self.assertIn("OpenCLIP", body)
 
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

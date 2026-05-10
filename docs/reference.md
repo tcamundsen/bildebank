@@ -62,6 +62,10 @@ Se også den samlede innføringen: [`insightface`](insightface.md).
 
 Se også den samlede innføringen: [`openclip`](openclip.md).
 
+## Lokal server
+
+- [`run-server`](run-server.md)
+
 ## Programmet
 
 - [`where-is`](where-is.md)

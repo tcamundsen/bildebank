@@ -55,6 +55,7 @@ from .openclip import (
     torch_gpu_status,
 )
 from .program_state import known_targets, program_db_path, record_target_best_effort
+from .server import DEFAULT_HOST, DEFAULT_PORT, run_server as run_local_server
 from .target_lock import TargetLock
 
 
@@ -119,6 +120,7 @@ HELP_COMMAND_GROUPS = (
             ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
             ("image-scan", "Scan bilder for tekstbasert bildesøk"),
             ("image-search", "Søk etter bilder med tekst"),
+            ("run-server", "Start lokal Bildebank-server"),
             ("face-scan", "Scanning etter ansikter"),
             ("face-report", "Vis rapport for scannede ansikter"),
             ("face-group", "Beregn mulige ansiktsgrupper"),
@@ -400,6 +402,28 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-browser",
         action="store_true",
         help="Ikke åpne image-search.html automatisk etter søket.",
+    )
+    run_server_parser = add_command(
+        subparsers,
+        "run-server",
+        usage="bildebank run-server [valg]",
+        help="Start lokal Bildebank-server",
+    )
+    run_server_parser.add_argument(
+        "--host",
+        default=DEFAULT_HOST,
+        help=f"Adresse serveren lytter på. Standard: {DEFAULT_HOST}",
+    )
+    run_server_parser.add_argument(
+        "--port",
+        type=positive_int_arg,
+        default=DEFAULT_PORT,
+        help=f"Port serveren lytter på. Standard: {DEFAULT_PORT}",
+    )
+    run_server_parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Ikke åpne serveren automatisk i nettleser.",
     )
     face_scan = add_command(
         subparsers,
@@ -723,6 +747,9 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "image-search":
         return run_image_search(target, query=args.query, limit=args.limit, browser=not args.no_browser)
+
+    if args.command == "run-server":
+        return run_server_command(target, host=args.host, port=args.port, browser=not args.no_browser)
 
     if args.command == "face-scan":
         return run_face_scan(target, limit=args.limit, show_model_output=args.show_model_output)
@@ -1256,6 +1283,18 @@ def run_image_search(target: Path, *, query: str, limit: int, browser: bool = Tr
     if browser:
         open_file_in_browser(stats.output_path)
         print(f"Åpnet bildesøk: {stats.output_path}")
+    return 0
+
+
+def run_server_command(target: Path, *, host: str, port: int, browser: bool = True) -> int:
+    config = load_config(program_repo_root()).openclip
+    url = f"http://{host}:{port}/"
+    print(f"Starter Bildebank-server: {url}")
+    print(f"Bildesamling: {target}")
+    print("Trykk Ctrl-C for å stoppe serveren.")
+    if browser:
+        webbrowser.open(url)
+    run_local_server(target, config, host=host, port=port)
     return 0
 
 

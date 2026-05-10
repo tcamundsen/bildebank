@@ -17,7 +17,7 @@ model_root = ".bildebank-openclip"
 
 # Bruk "auto" for GPU hvis PyTorch finner CUDA, ellers CPU.
 # Andre valg: "cpu" eller "cuda".
-device = "auto"
+device = "cpu"
 
 # Standardmodellen er raskere og lettere.
 model_name = "ViT-B-32"
