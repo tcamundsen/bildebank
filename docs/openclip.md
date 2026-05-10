@@ -63,6 +63,7 @@ OpenCLIP-modellen velges i `bildebank-config.toml`:
 ```toml
 [openclip]
 model_root = ".bildebank-openclip"
+device = "auto"
 model_name = "ViT-B-32"
 pretrained = "laion2b_s34b_b79k"
 ```
@@ -72,6 +73,7 @@ For å teste den større L/14-modellen, bytt til:
 ```toml
 [openclip]
 model_root = ".bildebank-openclip"
+device = "auto"
 model_name = "ViT-L-14"
 pretrained = "laion2b_s32b_b82k"
 ```
@@ -83,6 +85,30 @@ Modellen omtales ofte som `ViT-L/14`, men i OpenCLIP-config bruker vi navnet
 Når du bytter modell, må `image-scan` kjøres på nytt for den modellen. Bildebank
 lagrer embeddings separat per modell, så du kan bytte tilbake uten å slette de
 gamle embeddingene.
+
+## CPU eller GPU
+
+Som standard bruker OpenCLIP:
+
+```toml
+device = "auto"
+```
+
+Da bruker Bildebank GPU hvis PyTorch finner CUDA. Hvis ikke brukes CPU. Du kan
+tvinge CPU slik:
+
+```toml
+device = "cpu"
+```
+
+Du kan se hva systemet finner med:
+
+```powershell
+bildebank face-status
+```
+
+Under `Tekstbasert bildesøk` viser kommandoen blant annet `device-valg`,
+om PyTorch er installert, om CUDA/GPU er funnet, og eventuelt GPU-navn.
 
 ## Sjekk status
 

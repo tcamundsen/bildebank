@@ -22,6 +22,7 @@ class OpenClipConfig:
     model_root: Path = Path(".bildebank-openclip")
     model_name: str = "ViT-B-32"
     pretrained: str = "laion2b_s34b_b79k"
+    device: str = "auto"
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,7 @@ def load_config(repo_root: Path) -> AppConfig:
             model_root=openclip_model_root,
             model_name=str(openclip_data.get("model_name", "ViT-B-32")),
             pretrained=str(openclip_data.get("pretrained", "laion2b_s34b_b79k")),
+            device=str(openclip_data.get("device", "auto")),
         ),
     )
 

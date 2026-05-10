@@ -18,7 +18,7 @@ from bilder.db import DB_FILENAME
 from bilder.face import FACE_DB_FILENAME, connect_face_db, face_box_percent, read_image
 from bilder.importer import safe_copy
 from bilder.media import ImageDimensions, sha256_file
-from bilder.openclip import connect_openclip_db, openclip_db_path
+from bilder.openclip import connect_openclip_db, openclip_db_path, resolve_torch_device
 from bilder.program_state import PROGRAM_DB_FILENAME
 from bilder.target_lock import LOCK_FILENAME
 from tests.test_media import (
@@ -312,6 +312,11 @@ class CliTests(unittest.TestCase):
             self.assertIn("image_embeddings", tables)
             self.assertIn("image_search_runs", tables)
             self.assertIn("image_search_results", tables)
+
+    def test_openclip_device_validation(self) -> None:
+        self.assertEqual(resolve_torch_device("cpu"), "cpu")
+        with self.assertRaises(ValueError):
+            resolve_torch_device("gpu")
 
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

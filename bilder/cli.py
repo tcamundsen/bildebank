@@ -52,6 +52,7 @@ from .openclip import (
     openclip_db_summary,
     scan_images,
     search_images,
+    torch_gpu_status,
 )
 from .program_state import known_targets, program_db_path, record_target_best_effort
 from .target_lock import TargetLock
@@ -1159,7 +1160,12 @@ def run_face_status(target_arg: Path | None = None) -> int:
     print(f"  modellmappe: {config.openclip.model_root}")
     print(f"  modellnavn: {config.openclip.model_name}")
     print(f"  pretrained: {config.openclip.pretrained}")
+    print(f"  device-valg: {config.openclip.device}")
     print(f"  open_clip installert: {module_available('open_clip')}")
+    gpu_status = torch_gpu_status()
+    print(f"  torch installert: {gpu_status['torch']}")
+    print(f"  cuda/gpu funnet: {gpu_status['cuda']}")
+    print(f"  gpu-navn: {gpu_status['device']}")
     target = db.find_target(target_arg)
     if target is not None:
         exists, scanned, faces = face_db_summary(target)

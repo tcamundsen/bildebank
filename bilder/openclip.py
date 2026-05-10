@@ -403,10 +403,11 @@ def create_search_run(
 
 def load_image_model(config: OpenClipConfig) -> tuple[Any, Any]:
     open_clip = import_open_clip()
+    device = resolve_torch_device(config.device)
     model, _, preprocess = open_clip.create_model_and_transforms(
         config.model_name,
         pretrained=config.pretrained,
-        device="cpu",
+        device=device,
         cache_dir=str(config.model_root),
     )
     model.eval()
@@ -415,10 +416,11 @@ def load_image_model(config: OpenClipConfig) -> tuple[Any, Any]:
 
 def load_text_model(config: OpenClipConfig) -> tuple[Any, Any]:
     open_clip = import_open_clip()
+    device = resolve_torch_device(config.device)
     model, _, _ = open_clip.create_model_and_transforms(
         config.model_name,
         pretrained=config.pretrained,
-        device="cpu",
+        device=device,
         cache_dir=str(config.model_root),
     )
     model.eval()
@@ -441,7 +443,7 @@ def image_embedding(model: Any, preprocess: Any, path: Path) -> list[float]:
         raise ValueError("OpenCLIP/Pillow mangler. Kjør install-openclip.ps1 fra programmappen.") from exc
     with Image.open(path) as image:
         image = ImageOps.exif_transpose(image).convert("RGB")
-        tensor = preprocess(image).unsqueeze(0)
+        tensor = preprocess(image).unsqueeze(0).to(model_device(model))
     with torch.no_grad():
         embedding = model.encode_image(tensor)
     return normalized_tensor_values(embedding)
@@ -452,10 +454,49 @@ def text_embedding(model: Any, tokenizer: Any, query: str) -> list[float]:
         import torch
     except ImportError as exc:
         raise ValueError("PyTorch mangler. Kjør install-openclip.ps1 fra programmappen.") from exc
-    tokens = tokenizer([query])
+    tokens = tokenizer([query]).to(model_device(model))
     with torch.no_grad():
         embedding = model.encode_text(tokens)
     return normalized_tensor_values(embedding)
+
+
+def resolve_torch_device(configured_device: str = "auto") -> str:
+    device = configured_device.strip().lower()
+    if device == "auto":
+        try:
+            import torch
+        except ImportError:
+            return "cpu"
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    if device in {"cpu", "cuda"}:
+        return device
+    raise ValueError("OpenCLIP device må være 'auto', 'cpu' eller 'cuda'.")
+
+
+def model_device(model: Any) -> str:
+    try:
+        return str(next(model.parameters()).device)
+    except StopIteration:
+        return "cpu"
+
+
+def torch_gpu_status() -> dict[str, str]:
+    try:
+        import torch
+    except ImportError:
+        return {"torch": "nei", "cuda": "nei", "device": "-"}
+    cuda_available = torch.cuda.is_available()
+    device_name = "-"
+    if cuda_available:
+        try:
+            device_name = torch.cuda.get_device_name(0)
+        except Exception:
+            device_name = "cuda"
+    return {
+        "torch": "ja",
+        "cuda": "ja" if cuda_available else "nei",
+        "device": device_name,
+    }
 
 
 def normalized_tensor_values(tensor: Any) -> list[float]:

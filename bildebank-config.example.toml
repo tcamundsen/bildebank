@@ -15,6 +15,10 @@ model_name = "buffalo_l"
 # Dette er separat fra ansiktsgjenkjenning.
 model_root = ".bildebank-openclip"
 
+# Bruk "auto" for GPU hvis PyTorch finner CUDA, ellers CPU.
+# Andre valg: "cpu" eller "cuda".
+device = "auto"
+
 # Standardmodellen er raskere og lettere.
 model_name = "ViT-B-32"
 pretrained = "laion2b_s34b_b79k"
