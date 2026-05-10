@@ -423,6 +423,41 @@ class CliTests(unittest.TestCase):
         self.assertIn('data-key-nav="previous-month"', body)
         self.assertIn('data-key-nav="next-month"', body)
 
+    def test_run_server_month_navigation_tolerates_foreign_path_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20231201.jpg").write_bytes(b"image-one")
+            (source / "IMG_20240102.jpg").write_bytes(b"image-two")
+            (source / "IMG_20240203.jpg").write_bytes(b"image-three")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                rows = conn.execute("SELECT id, target_path FROM files ORDER BY id").fetchall()
+                for file_id, target_path in rows:
+                    path = Path(str(target_path))
+                    foreign_path = f"C:\\bilder\\{path.parent.parent.name}\\{path.parent.name}\\{path.name}"
+                    conn.execute(
+                        "UPDATE files SET target_path = ?, target_path_key = ? WHERE id = ?",
+                        (foreign_path, f"c:\\annen-base\\{file_id}", file_id),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+            item = browser_item_by_id(target, 2)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            month_body = month_page_html(target, "2024-01", browser_month_items(target, "2024-01"))
+
+        self.assertIn("/month/2023-12", body)
+        self.assertIn("/month/2024-02", body)
+        self.assertIn("/month/2023-12", month_body)
+        self.assertIn("/month/2024-02", month_body)
+
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             build_parser().parse_args(["target", "."])

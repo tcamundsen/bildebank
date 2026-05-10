@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import mimetypes
+import re
 import threading
 import urllib.parse
 from dataclasses import dataclass
@@ -196,6 +197,7 @@ def parse_file_id(value: str) -> int:
 
 
 FILE_COLUMNS = "id, target_path, target_path_key, stored_filename, taken_date, date_source, size_bytes"
+MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 
 
 def first_browser_item(target: Path) -> Any | None:
@@ -270,46 +272,48 @@ def browser_month_keys(target: Path) -> list[str]:
         mtime_ns = db_path.stat().st_mtime_ns
     except OSError:
         mtime_ns = 0
-    return list(cached_browser_month_keys(db.path_key(target), mtime_ns))
+    return list(cached_browser_month_keys(str(target.resolve()), mtime_ns))
 
 
 @lru_cache(maxsize=8)
-def cached_browser_month_keys(target_key: str, db_mtime_ns: int) -> tuple[str, ...]:
-    target = Path(target_key)
-    prefix = target_key + "/"
+def cached_browser_month_keys(target_path: str, db_mtime_ns: int) -> tuple[str, ...]:
+    target = Path(target_path)
     conn = db.connect(target)
     try:
         rows = conn.execute(
             """
-            SELECT DISTINCT
-              substr(target_path_key, ?, 4) || '-' || substr(target_path_key, ?, 2) AS month_key
+            SELECT target_path
             FROM files
             WHERE deleted_at IS NULL
-              AND target_path_key LIKE ?
-              AND substr(target_path_key, ?, 4) GLOB '[0-9][0-9][0-9][0-9]'
-              AND substr(target_path_key, ?, 1) = '/'
-              AND substr(target_path_key, ?, 2) GLOB '[0-9][0-9]'
-            ORDER BY month_key
-            """,
-            (
-                len(prefix) + 1,
-                len(prefix) + 6,
-                prefix + "%",
-                len(prefix) + 1,
-                len(prefix) + 5,
-                len(prefix) + 6,
-            ),
+            ORDER BY target_path
+            """
         )
-        return tuple(str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"])))
+        keys = {month_key_from_stored_path(str(row["target_path"])) for row in rows}
+        return tuple(sorted(key for key in keys if key is not None))
     finally:
         conn.close()
 
 
 def browser_month_navigation(target: Path, item: Any) -> dict[str, str | None]:
-    current_key = month_key_from_path(
+    current_key = month_key_for_item(target, item)
+    return browser_month_navigation_for_key(target, current_key)
+
+
+def month_key_for_item(target: Path, item: Any) -> str:
+    stored_key = month_key_from_stored_path(str(item["target_path"]))
+    if stored_key is not None:
+        return stored_key
+    return month_key_from_path(
         Path(display_relative_path(target, Path(str(item["target_path"]))))
     )
-    return browser_month_navigation_for_key(target, current_key)
+
+
+def month_key_from_stored_path(path: str) -> str | None:
+    match = MONTH_PATH_RE.search(path.replace("\\\\", "\\"))
+    if match is None:
+        return None
+    month_key = f"{match.group('year')}-{match.group('month')}"
+    return month_key if valid_month_key(month_key) else None
 
 
 def browser_month_navigation_for_key(target: Path, current_key: str) -> dict[str, str | None]:
@@ -354,7 +358,7 @@ def browser_month_items(target: Path, month_key: str) -> list[Any]:
     prefix = db.path_key(target / year / month) + "/"
     conn = db.connect(target)
     try:
-        return list(
+        rows = list(
             conn.execute(
                 f"""
                 SELECT {FILE_COLUMNS}
@@ -366,6 +370,20 @@ def browser_month_items(target: Path, month_key: str) -> list[Any]:
                 (prefix + "%",),
             )
         )
+        if rows:
+            return rows
+        return [
+            row
+            for row in conn.execute(
+                f"""
+                SELECT {FILE_COLUMNS}
+                FROM files
+                WHERE deleted_at IS NULL
+                ORDER BY target_path_key
+                """
+            )
+            if month_key_from_stored_path(str(row["target_path"])) == month_key
+        ]
     finally:
         conn.close()
 
