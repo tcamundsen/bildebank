@@ -18,6 +18,7 @@ from bilder.db import DB_FILENAME
 from bilder.face import FACE_DB_FILENAME, connect_face_db, face_box_percent, read_image
 from bilder.importer import safe_copy
 from bilder.media import ImageDimensions, sha256_file
+from bilder.openclip import connect_openclip_db, openclip_db_path
 from bilder.program_state import PROGRAM_DB_FILENAME
 from bilder.target_lock import LOCK_FILENAME
 from tests.test_media import (
@@ -279,6 +280,38 @@ class CliTests(unittest.TestCase):
         stdout = stdout_buffer.getvalue()
         self.assertIn("--no-browser", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_image_search_help_documents_limit_and_no_browser(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["image-search", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("usage: bildebank image-search [valg] søk", stdout)
+        self.assertIn("--limit", stdout)
+        self.assertIn("--no-browser", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_openclip_database_schema_is_separate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            conn = connect_openclip_db(target)
+            try:
+                tables = {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    )
+                }
+            finally:
+                conn.close()
+
+            self.assertEqual(openclip_db_path(target), target / ".bilder-openclip.sqlite3")
+            self.assertIn("image_embeddings", tables)
+            self.assertIn("image_search_runs", tables)
+            self.assertIn("image_search_results", tables)
 
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

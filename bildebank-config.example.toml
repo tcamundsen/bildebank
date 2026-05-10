@@ -9,3 +9,10 @@ provider = "cpu"
 # Modellene skal ligge lokalt i programmappen, ikke i brukerens hjemmemappe.
 model_root = ".bildebank-insightface"
 model_name = "buffalo_l"
+
+[openclip]
+# OpenCLIP brukes til tekstbasert bildesøk, for eksempel "strand".
+# Dette er separat fra ansiktsgjenkjenning.
+model_root = ".bildebank-openclip"
+model_name = "ViT-B-32"
+pretrained = "laion2b_s34b_b79k"

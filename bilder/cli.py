@@ -47,6 +47,12 @@ from .importer import (
 )
 from .html_export import export_html, export_html_conflicts
 from .media import explain_date, image_dimensions, inspect_metadata, sha256_file
+from .openclip import (
+    openclip_db_path,
+    openclip_db_summary,
+    scan_images,
+    search_images,
+)
 from .program_state import known_targets, program_db_path, record_target_best_effort
 from .target_lock import TargetLock
 
@@ -109,6 +115,8 @@ HELP_COMMAND_GROUPS = (
         (
             ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
             ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
+            ("image-scan", "Scan bilder for tekstbasert bildesøk"),
+            ("image-search", "Søk etter bilder med tekst"),
             ("face-scan", "Scanning etter ansikter"),
             ("face-report", "Vis rapport for scannede ansikter"),
             ("face-group", "Beregn mulige ansiktsgrupper"),
@@ -365,6 +373,31 @@ def build_parser() -> argparse.ArgumentParser:
         "face-status",
         usage="bildebank face-status [valg]",
         help="Vis status for valgfri ansiktsgjenkjenning",
+    )
+    image_scan = add_command(
+        subparsers,
+        "image-scan",
+        usage="bildebank image-scan [valg]",
+        help="Scan bilder for tekstbasert bildesøk",
+    )
+    image_scan.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal scannes")
+    image_search = add_command(
+        subparsers,
+        "image-search",
+        usage="bildebank image-search [valg] søk",
+        help="Søk etter bilder med tekst",
+    )
+    image_search.add_argument("query", metavar="søk", help="Søketekst, for eksempel strand")
+    image_search.add_argument(
+        "--limit",
+        type=positive_int_arg,
+        default=100,
+        help="Maks antall treff. Standard: 100",
+    )
+    image_search.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Ikke åpne image-search.html automatisk etter søket.",
     )
     face_scan = add_command(
         subparsers,
@@ -682,6 +715,12 @@ def run(args: argparse.Namespace) -> int:
     record_target_best_effort(program_repo_root(), target)
     if args.command == "migrate":
         return run_migrate(target, check=args.check)
+
+    if args.command == "image-scan":
+        return run_image_scan(target, limit=args.limit)
+
+    if args.command == "image-search":
+        return run_image_search(target, query=args.query, limit=args.limit, browser=not args.no_browser)
 
     if args.command == "face-scan":
         return run_face_scan(target, limit=args.limit, show_model_output=args.show_model_output)
@@ -1114,9 +1153,16 @@ def run_face_status(target_arg: Path | None = None) -> int:
     print(f"  provider: {face.provider}")
     print(f"  insightface installert: {module_available('insightface')}")
     print(f"  onnxruntime installert: {module_available('onnxruntime')}")
+    print()
+    print("Tekstbasert bildesøk:")
+    print(f"  modellmappe: {config.openclip.model_root}")
+    print(f"  modellnavn: {config.openclip.model_name}")
+    print(f"  pretrained: {config.openclip.pretrained}")
+    print(f"  open_clip installert: {module_available('open_clip')}")
     target = db.find_target(target_arg)
     if target is not None:
         exists, scanned, faces = face_db_summary(target)
+        openclip_summary = openclip_db_summary(target)
         print()
         print("Aktiv bildesamling:")
         print(f"  {target}")
@@ -1124,11 +1170,43 @@ def run_face_status(target_arg: Path | None = None) -> int:
         print(f"  face-database finnes: {'ja' if exists else 'nei'}")
         print(f"  scannede filer: {scanned}")
         print(f"  ansikter funnet: {faces}")
+        print(f"  openclip-database: {openclip_db_path(target)}")
+        print(f"  openclip-database finnes: {'ja' if openclip_summary.exists else 'nei'}")
+        print(f"  bilde-embeddings: {openclip_summary.embeddings}")
+        print(f"  bildesøk: {openclip_summary.search_runs}")
     return 0
 
 
 def module_available(module_name: str) -> str:
     return "ja" if importlib.util.find_spec(module_name) is not None else "nei"
+
+
+def run_image_scan(target: Path, *, limit: int | None) -> int:
+    config = load_config(program_repo_root()).openclip
+    stats = scan_images(target, config, limit=limit)
+    print(
+        "Bildesøk-scan: "
+        f"bilder={stats.total}, hoppet_over={stats.skipped}, "
+        f"scannet={stats.scanned}, feil={stats.errors}"
+    )
+    print(f"OpenCLIP-database: {openclip_db_path(target)}")
+    return 0 if stats.errors == 0 else 2
+
+
+def run_image_search(target: Path, *, query: str, limit: int, browser: bool = True) -> int:
+    config = load_config(program_repo_root()).openclip
+    stats = search_images(target, config, query=query, limit=limit)
+    print(f"Søk: {stats.query}")
+    print(f"Treff: {len(stats.results)}")
+    for result in stats.results[:20]:
+        print(f"{result.rank}\tscore={result.similarity:.3f}\t{result.target_path}")
+    if len(stats.results) > 20:
+        print(f"... {len(stats.results) - 20} flere treff i HTML-filen")
+    print(f"Skrev bildesøk: {stats.output_path}")
+    if browser:
+        open_file_in_browser(stats.output_path)
+        print(f"Åpnet bildesøk: {stats.output_path}")
+    return 0
 
 
 def run_face_scan(target: Path, *, limit: int | None, show_model_output: bool = False) -> int:
