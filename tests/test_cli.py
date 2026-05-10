@@ -343,8 +343,24 @@ class CliTests(unittest.TestCase):
 
         self.assertIn("Bildebrowser", body)
         self.assertIn("Bildesøk", body)
-        self.assertIn("embeddedItems", body)
-        self.assertIn("server-search-link", body)
+        self.assertIn("Ingen filer i bildesamlingen", body)
+
+    def test_run_server_renders_bookmarkable_item_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            server = SimpleNamespace(target=target, config=OpenClipConfig())
+            body = index_html(server)
+
+        self.assertIn("Bildebrowser", body)
+        self.assertIn("/file/1", body)
+        self.assertIn("/month/2024-01", body)
+        self.assertIn("/search", body)
 
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

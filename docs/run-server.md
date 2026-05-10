@@ -65,8 +65,9 @@ bildebank run-server --no-browser
 Første versjon er enkel:
 
 - start serveren fra bildesamlingen
-- vis samme bildebrowser som `bildebank make-browser` lager
-- les browserdata fra databasen hver gang `/` lastes
+- åpne første bilde/video i samlingen
+- gi hvert bilde/video en stabil URL basert på `file_id`
+- la månedsoversikten laste bare filene i den måneden
 - vis lenke til OpenCLIP-søk fra browseren
 - last OpenCLIP-modellen første gang den trengs
 - behold modellen i minnet etter første søk
@@ -90,13 +91,19 @@ Første søk kan fortsatt ta noen sekunder, fordi OpenCLIP-modellen lastes førs
 gang den trengs. Senere søk i samme serverprosess bruker modellen som allerede
 ligger i minnet.
 
+Serverbrowseren skal ikke generere én stor HTML-side med hele samlingen. Den
+viser ett bilde/video om gangen, og månedsoversikten henter bare filene for den
+aktuelle måneden.
+
 ## Mulige sider
 
 - `/` bildebrowser
+- `/item/123` viser ett bestemt bilde eller video
+- `/month/2024-01` viser bilder/videoer fra én måned
 - `/search` skjema for tekstsøk
 - `/search?q=beach` søkeresultat
 - `/file/...` viser bildefiler fra søket
-- vanlige relative bildestier, for eksempel `/2010/07/bilde.jpg`, brukes av browseren
+- `/file/123` viser selve bildefilen for ett `file_id`
 
 ## Viktige valg
 
@@ -126,8 +133,9 @@ OpenCLIP-modellen ligger i serverprosessen, slik at den kan brukes om igjen
 mellom søk. Serveren tåler at modellen ikke er lastet ennå, og gir en lesbar
 feil hvis OpenCLIP ikke er installert eller `image-scan` ikke er kjørt.
 
-Bildebrowseren på `/` bruker samme HTML-rendering som `make-browser`, men med en
-server-only lenke til `/search`.
+Bildebrowseren bruker samme underliggende database som `make-browser`, men har
+egen serverflyt med stabile `file_id`-URL-er. Det gjør at et bilde kan bokmerkes
+og åpnes igjen senere.
 
 ## Stoppe serveren
 

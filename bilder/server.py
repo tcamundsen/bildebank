@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import mimetypes
+import os
 import threading
 import urllib.parse
 from dataclasses import dataclass
@@ -10,8 +11,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
+from . import db
 from .config import OpenClipConfig
-from .html_export import browser_items, render_html
+from .html_export import display_relative_path, format_bytes, month_key_from_path
 from .openclip import (
     ImageSearchResult,
     connect_openclip_db,
@@ -19,7 +21,6 @@ from .openclip import (
     create_search_run,
     embedding_from_blob,
     load_text_model,
-    path_to_url,
     relative_to_target,
     text_embedding,
 )
@@ -69,7 +70,13 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         try:
             if parsed.path == "/":
-                self.respond_html(index_html(self.server))
+                self.respond_browser_root()
+                return
+            if parsed.path.startswith("/item/"):
+                self.respond_item(parsed.path.removeprefix("/item/"))
+                return
+            if parsed.path.startswith("/month/"):
+                self.respond_month(parsed.path.removeprefix("/month/"))
                 return
             if parsed.path == "/search":
                 params = urllib.parse.parse_qs(parsed.query)
@@ -104,14 +111,51 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def respond_file(self, encoded_relative_path: str) -> None:
-        relative = Path(urllib.parse.unquote(encoded_relative_path))
-        path = (self.server.target / relative).resolve()
-        try:
-            path.relative_to(self.server.target.resolve())
-        except ValueError:
-            self.respond_text("Ugyldig filsti.", status=HTTPStatus.FORBIDDEN)
+    def redirect(self, location: str) -> None:
+        self.send_response(HTTPStatus.FOUND)
+        self.send_header("Location", location)
+        self.end_headers()
+
+    def respond_browser_root(self) -> None:
+        item = first_browser_item(self.server.target)
+        if item is None:
+            self.respond_html(empty_browser_html())
             return
+        self.redirect(f"/item/{item['id']}")
+
+    def respond_item(self, raw_file_id: str) -> None:
+        file_id = parse_file_id(raw_file_id)
+        item = browser_item_by_id(self.server.target, file_id)
+        if item is None:
+            self.respond_text("Filen finnes ikke i bildesamlingen.", status=HTTPStatus.NOT_FOUND)
+            return
+        previous_item, next_item = adjacent_browser_items(self.server.target, item)
+        self.respond_html(item_page_html(self.server.target, item, previous_item, next_item))
+
+    def respond_month(self, raw_month: str) -> None:
+        month_key = urllib.parse.unquote(raw_month).strip()
+        if not valid_month_key(month_key):
+            self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
+            return
+        items = browser_month_items(self.server.target, month_key)
+        self.respond_html(month_page_html(self.server.target, month_key, items))
+
+    def respond_file(self, encoded_relative_path: str) -> None:
+        raw_path = urllib.parse.unquote(encoded_relative_path).strip("/")
+        if raw_path.isdigit():
+            row = browser_item_by_id(self.server.target, int(raw_path))
+            if row is None:
+                self.respond_text("Filen finnes ikke.", status=HTTPStatus.NOT_FOUND)
+                return
+            path = Path(str(row["target_path"]))
+        else:
+            relative = Path(raw_path)
+            path = (self.server.target / relative).resolve()
+            try:
+                path.relative_to(self.server.target.resolve())
+            except ValueError:
+                self.respond_text("Ugyldig filsti.", status=HTTPStatus.FORBIDDEN)
+                return
         if not path.is_file():
             self.respond_text("Filen finnes ikke.", status=HTTPStatus.NOT_FOUND)
             return
@@ -138,6 +182,116 @@ def positive_int_param(params: dict[str, list[str]], name: str, default: int) ->
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+def parse_file_id(value: str) -> int:
+    try:
+        file_id = int(value)
+    except ValueError as exc:
+        raise ValueError("Ugyldig file_id.") from exc
+    if file_id < 1:
+        raise ValueError("Ugyldig file_id.")
+    return file_id
+
+
+def first_browser_item(target: Path) -> Any | None:
+    conn = db.connect(target)
+    try:
+        return conn.execute(
+            """
+            SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
+            FROM files
+            WHERE deleted_at IS NULL
+            ORDER BY COALESCE(taken_date, ''), target_path
+            LIMIT 1
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+def browser_item_by_id(target: Path, file_id: int) -> Any | None:
+    conn = db.connect(target)
+    try:
+        return conn.execute(
+            """
+            SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
+            FROM files
+            WHERE deleted_at IS NULL AND id = ?
+            """,
+            (file_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+def adjacent_browser_items(target: Path, item: Any) -> tuple[Any | None, Any | None]:
+    key = item_order_key(item)
+    conn = db.connect(target)
+    try:
+        previous_item = conn.execute(
+            """
+            SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
+            FROM files
+            WHERE deleted_at IS NULL
+              AND (
+                COALESCE(taken_date, '') < ?
+                OR (COALESCE(taken_date, '') = ? AND target_path < ?)
+              )
+            ORDER BY COALESCE(taken_date, '') DESC, target_path DESC
+            LIMIT 1
+            """,
+            (key[0], key[0], key[1]),
+        ).fetchone()
+        next_item = conn.execute(
+            """
+            SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
+            FROM files
+            WHERE deleted_at IS NULL
+              AND (
+                COALESCE(taken_date, '') > ?
+                OR (COALESCE(taken_date, '') = ? AND target_path > ?)
+              )
+            ORDER BY COALESCE(taken_date, ''), target_path
+            LIMIT 1
+            """,
+            (key[0], key[0], key[1]),
+        ).fetchone()
+        return previous_item, next_item
+    finally:
+        conn.close()
+
+
+def item_order_key(item: Any) -> tuple[str, str]:
+    return str(item["taken_date"] or ""), str(item["target_path"])
+
+
+def browser_month_items(target: Path, month_key: str) -> list[Any]:
+    year, month = month_key.split("-", 1)
+    prefix = str((target / year / month).resolve())
+    conn = db.connect(target)
+    try:
+        return list(
+            conn.execute(
+                """
+                SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
+                FROM files
+                WHERE deleted_at IS NULL
+                  AND target_path LIKE ?
+                ORDER BY COALESCE(taken_date, ''), target_path
+                """,
+                (prefix + os.sep + "%",),
+            )
+        )
+    finally:
+        conn.close()
+
+
+def valid_month_key(value: str) -> bool:
+    if len(value) != 7 or value[4] != "-":
+        return False
+    year, month = value.split("-", 1)
+    return year.isdigit() and month.isdigit() and 1 <= int(month) <= 12
 
 
 def search_server_images(server: BildebankServer, *, query: str, limit: int) -> ServerSearchStats:
@@ -192,7 +346,10 @@ def search_server_images(server: BildebankServer, *, query: str, limit: int) -> 
 def index_html(server: BildebankServer, *, message: str = "") -> str:
     if message:
         return search_start_html(server, message=message)
-    return render_html(browser_items(server.target), search_url="/search")
+    item = first_browser_item(server.target)
+    if item is None:
+        return empty_browser_html()
+    return item_page_html(server.target, item, *adjacent_browser_items(server.target, item))
 
 
 def search_start_html(server: BildebankServer, *, message: str = "") -> str:
@@ -259,7 +416,7 @@ def message_html(message: str) -> str:
 
 def result_html(target: Path, result: ImageSearchResult) -> str:
     relative = relative_to_target(target, result.target_path)
-    url = "/file/" + path_to_url(relative)
+    url = f"/file/{result.file_id}"
     path_text = str(relative).replace("\\", "/")
     return f"""
     <article class="item">
@@ -272,6 +429,112 @@ def result_html(target: Path, result: ImageSearchResult) -> str:
     """
 
 
+def empty_browser_html() -> str:
+    return page_html(
+        "Bildebrowser",
+        """
+        <main class="shell">
+          <h1>Bildebrowser</h1>
+          <p class="meta">Ingen filer i bildesamlingen.</p>
+          <p><a href="/search">Bildesøk</a></p>
+        </main>
+        """,
+    )
+
+
+def item_page_html(target: Path, item: Any, previous_item: Any | None, next_item: Any | None) -> str:
+    target_path = Path(str(item["target_path"]))
+    relative = display_relative_path(target, target_path)
+    month_key = month_key_from_path(Path(relative))
+    media = item_media_html(item)
+    previous_link = nav_link(previous_item, "Forrige bilde")
+    next_link = nav_link(next_item, "Neste bilde")
+    month_link = f'<a href="/month/{html.escape(month_key)}">Månedsoversikt</a>' if valid_month_key(month_key) else ""
+    return page_html(
+        f"Bildebrowser: {target_path.name}",
+        f"""
+        <main class="browser-shell">
+          <header class="browser-header">
+            <div>
+              <h1>Bildebrowser</h1>
+              <p class="meta">{html.escape(relative)} · {html.escape(format_bytes(int(item["size_bytes"])))} · {html.escape(str(item["date_source"]))}</p>
+            </div>
+            <nav class="browser-nav">
+              {previous_link}
+              {month_link}
+              {next_link}
+              <a href="/search">Bildesøk</a>
+            </nav>
+          </header>
+          <section class="stage">{media}</section>
+        </main>
+        """,
+    )
+
+
+def item_media_html(item: Any) -> str:
+    file_id = int(item["id"])
+    target_path = Path(str(item["target_path"]))
+    url = f"/file/{file_id}"
+    name = html.escape(str(item["stored_filename"]))
+    if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
+        return f'<video src="{url}" controls></video>'
+    return f'<a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>'
+
+
+def nav_link(item: Any | None, label: str) -> str:
+    if item is None:
+        return f'<span class="disabled">{html.escape(label)}</span>'
+    return f'<a href="/item/{int(item["id"])}">{html.escape(label)}</a>'
+
+
+def month_page_html(target: Path, month_key: str, items: list[Any]) -> str:
+    cards = "\n".join(month_item_html(target, item) for item in items)
+    return page_html(
+        f"Månedsoversikt: {month_key}",
+        f"""
+        <main class="browser-shell">
+          <header class="browser-header">
+            <div>
+              <h1>{html.escape(month_key)}</h1>
+              <p class="meta">{len(items)} filer i måneden.</p>
+            </div>
+            <nav class="browser-nav">
+              <a href="/">Første bilde</a>
+              <a href="/search">Bildesøk</a>
+            </nav>
+          </header>
+          <section class="month-grid-server">{cards}</section>
+        </main>
+        """,
+    )
+
+
+def month_item_html(target: Path, item: Any) -> str:
+    target_path = Path(str(item["target_path"]))
+    label = html.escape(display_relative_path(target, target_path))
+    media = thumbnail_media_html(item)
+    return f"""
+    <article class="item">
+      <a class="thumb-link" href="/item/{int(item["id"])}">{media}</a>
+      <div class="text">
+        <div class="path">{label}</div>
+        <div class="score">{html.escape(format_bytes(int(item["size_bytes"])))}</div>
+      </div>
+    </article>
+    """
+
+
+def thumbnail_media_html(item: Any) -> str:
+    file_id = int(item["id"])
+    target_path = Path(str(item["target_path"]))
+    url = f"/file/{file_id}"
+    name = html.escape(str(item["stored_filename"]))
+    if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
+        return f'<div class="video-thumb">Video<br>{name}</div>'
+    return f'<img src="{url}" alt="{name}" loading="lazy">'
+
+
 def page_html(title: str, body: str) -> str:
     return f"""<!doctype html>
 <html lang="no">
@@ -280,24 +543,108 @@ def page_html(title: str, body: str) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{html.escape(title)}</title>
   <style>
-    body {{ margin: 0; font-family: system-ui, sans-serif; background: #f6f6f4; color: #202124; }}
+    :root {{
+      color-scheme: dark;
+      --bg: #171717;
+      --panel: #242424;
+      --stage: #0e0e0e;
+      --border: #3a3a3a;
+      --text: #f2f2f2;
+      --muted: #b8b8b8;
+      --accent: #7db7ff;
+      --danger: #ff8a80;
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }}
     .shell {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
     h1 {{ margin: 0 0 8px; font-size: 28px; }}
-    .meta {{ color: #62615d; margin: 0 0 18px; }}
+    .meta {{ color: var(--muted); margin: 0 0 18px; }}
     .search {{ display: grid; grid-template-columns: minmax(0, 1fr) 90px auto; gap: 8px; margin: 18px 0; }}
-    input, button {{ font: inherit; padding: 10px 12px; border: 1px solid #b8b8b2; border-radius: 6px; background: white; }}
-    button {{ background: #1f6feb; color: white; border-color: #1f6feb; cursor: pointer; }}
+    input, button {{
+      font: inherit;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #303030;
+      color: var(--text);
+    }}
+    button {{ cursor: pointer; }}
+    button:hover {{ background: #3a3a3a; }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }}
-    .item {{ background: white; border: 1px solid #d9d9d4; border-radius: 6px; overflow: hidden; }}
-    .item img {{ width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #e8e8e3; }}
+    .browser-shell {{ min-height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }}
+    .browser-header {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px 16px;
+      flex-wrap: wrap;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 12px;
+    }}
+    .browser-nav {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
+    a, .disabled {{ color: var(--accent); }}
+    a {{ text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+    .browser-nav a, .browser-nav .disabled {{
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      background: #303030;
+    }}
+    .browser-nav a:hover {{ background: #3a3a3a; text-decoration: none; }}
+    .disabled {{ color: #777; }}
+    .stage {{
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      background: var(--stage);
+      border-top: 1px solid var(--border);
+      overflow: hidden;
+      padding: 10px;
+    }}
+    .stage img, .stage video {{
+      max-width: 100%;
+      max-height: calc(100vh - 98px);
+      object-fit: contain;
+      display: block;
+    }}
+    .month-grid-server {{
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 14px;
+      align-content: start;
+      padding: 12px;
+      overflow: auto;
+    }}
+    .thumb-link {{ display: block; color: inherit; text-decoration: none; }}
+    .thumb-link img, .video-thumb {{
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+      display: grid;
+      place-items: center;
+      background: #181818;
+      text-align: center;
+    }}
+    .item {{ background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }}
+    .item img {{ width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #181818; }}
     .text {{ padding: 10px; font-size: 14px; }}
     .path {{ overflow-wrap: anywhere; }}
-    .score {{ color: #62615d; margin-top: 4px; }}
-    .error {{ color: #b42318; }}
-    .message {{ color: #62615d; }}
+    .score {{ color: var(--muted); margin-top: 4px; }}
+    .error {{ color: var(--danger); }}
+    .message {{ color: var(--muted); }}
     @media (max-width: 640px) {{
       .shell {{ padding: 16px; }}
       .search {{ grid-template-columns: 1fr; }}
+      .browser-header {{ align-items: stretch; }}
+      .browser-nav a, .browser-nav .disabled {{ flex: 1 1 auto; text-align: center; }}
     }}
   </style>
 </head>
