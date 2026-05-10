@@ -15,6 +15,9 @@ face = [
     "numpy",
     "onnxruntime",
 ]
+openclip = [
+    "open_clip_torch",
+]
 
 [project.scripts]
 bildebank = "bilder.cli:main"
