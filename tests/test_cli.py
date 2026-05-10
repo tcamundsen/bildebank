@@ -23,6 +23,7 @@ from bilder.openclip import connect_openclip_db, openclip_db_path, resolve_torch
 from bilder.program_state import PROGRAM_DB_FILENAME
 from bilder.server import (
     adjacent_browser_items,
+    adjacent_person_items,
     BildebankRequestHandler,
     browser_item_by_id,
     browser_month_items,
@@ -30,6 +31,11 @@ from bilder.server import (
     index_html,
     item_page_html,
     month_page_html,
+    person_item_by_id,
+    person_item_page_html,
+    person_month_items,
+    person_month_navigation,
+    person_month_page_html,
 )
 from bilder.target_lock import LOCK_FILENAME
 from tests.test_media import (
@@ -503,8 +509,8 @@ class CliTests(unittest.TestCase):
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
 
         self.assertNotIn("1 filer, 1 måneder", body)
-        self.assertIn('class="person-link" href="/person-Kari.html">Kari</a>', body)
-        self.assertIn('class="person-link" href="/person-Ola-Nordmann.html">Ola Nordmann</a>', body)
+        self.assertIn('class="person-link" href="/person/Kari">Kari</a>', body)
+        self.assertIn('class="person-link" href="/person/Ola%20Nordmann">Ola Nordmann</a>', body)
         self.assertIn("Ansikter i bildet (1)", body)
         self.assertIn('data-face-id="2"', body)
         self.assertIn('data-person-name="Kari"', body)
@@ -556,7 +562,7 @@ class CliTests(unittest.TestCase):
             BildebankRequestHandler.respond_add_face_to_person(handler)  # type: ignore[arg-type]
 
             self.assertEqual(
-                {"ok": True, "person_name": "Kari", "person_url": "/person-Kari.html", "face_id": 1, "added": True},
+                {"ok": True, "person_name": "Kari", "person_url": "/person/Kari", "face_id": 1, "added": True},
                 handler.body,
             )
             face_conn = connect_face_db(target)
@@ -568,6 +574,71 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(face_conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 0)
             finally:
                 face_conn.close()
+
+    def test_run_server_person_browser_filters_and_marks_faces(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+            (source / "IMG_20240203.png").write_bytes(minimal_png(101, 80))
+            (source / "IMG_20250104.png").write_bytes(minimal_png(102, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(2, 'Ola')")
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(1, 1, 'key-1', 1, 2, 10, 20, 0.9, 'test', ?)
+                    """,
+                    (b"embedding-1",),
+                )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(2, 2, 'key-2', 3, 4, 12, 22, 0.8, 'test', ?)
+                    """,
+                    (b"embedding-2",),
+                )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(3, 3, 'key-3', 5, 6, 14, 24, 0.7, 'test', ?)
+                    """,
+                    (b"embedding-3",),
+                )
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)")
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(2, 3)")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            item = person_item_by_id(target, "Kari", 1)
+            self.assertIsNotNone(item)
+            body = person_item_page_html(target, "Kari", item, *adjacent_person_items(target, "Kari", item), person_month_navigation(target, "Kari", item))
+            month_body = person_month_page_html(target, "Kari", "2024-02", person_month_items(target, "Kari", "2024-02"))
+
+        self.assertIn(">Kari<", body)
+        self.assertIn("/person/Kari/month/2024-02", body)
+        self.assertIn("person-face-box", body)
+        self.assertIn("bekreftet face-id 1", body)
+        self.assertNotIn("IMG_20250104", body)
+        self.assertIn("/person/Kari/item/2", month_body)
+        self.assertNotIn("/person/Kari/item/3", month_body)
 
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from . import db
 from .config import OpenClipConfig
-from .face import add_face_to_person
+from .face import add_face_to_person, normalize_person_name
 from .html_export import (
     FACE_DB_FILENAME,
     browser_face_items,
@@ -24,7 +24,6 @@ from .html_export import (
     face_tables_exist,
     format_bytes,
     month_key_from_path,
-    person_page_url,
 )
 from .openclip import (
     ImageSearchResult,
@@ -89,6 +88,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path.startswith("/month/"):
                 self.respond_month(parsed.path.removeprefix("/month/"))
+                return
+            if parsed.path.startswith("/person/"):
+                self.respond_person(parsed.path.removeprefix("/person/"))
                 return
             if parsed.path == "/search":
                 params = urllib.parse.parse_qs(parsed.query)
@@ -166,6 +168,44 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         items = browser_month_items(self.server.target, month_key)
         self.respond_html(month_page_html(self.server.target, month_key, items))
 
+    def respond_person(self, raw_path: str) -> None:
+        raw_name, mode, raw_value = parse_person_path(raw_path)
+        person_name = urllib.parse.unquote(raw_name).strip()
+        if not person_name:
+            self.respond_text("Personnavn mangler.", status=HTTPStatus.BAD_REQUEST)
+            return
+        person = person_by_name(self.server.target, person_name)
+        if person is None:
+            self.respond_html(person_not_found_html(person_name), status=HTTPStatus.NOT_FOUND)
+            return
+        canonical_name = str(person["name"])
+        if mode is None:
+            item = first_person_item(self.server.target, canonical_name)
+            if item is None:
+                self.respond_html(empty_person_browser_html(canonical_name))
+                return
+            self.redirect(person_item_url(canonical_name, int(item["id"])))
+            return
+        if mode == "item":
+            file_id = parse_file_id(raw_value)
+            item = person_item_by_id(self.server.target, canonical_name, file_id)
+            if item is None:
+                self.respond_text("Filen finnes ikke for denne personen.", status=HTTPStatus.NOT_FOUND)
+                return
+            previous_item, next_item = adjacent_person_items(self.server.target, canonical_name, item)
+            month_nav = person_month_navigation(self.server.target, canonical_name, item)
+            self.respond_html(person_item_page_html(self.server.target, canonical_name, item, previous_item, next_item, month_nav))
+            return
+        if mode == "month":
+            month_key = urllib.parse.unquote(raw_value).strip()
+            if not valid_month_key(month_key):
+                self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
+                return
+            items = person_month_items(self.server.target, canonical_name, month_key)
+            self.respond_html(person_month_page_html(self.server.target, canonical_name, month_key, items))
+            return
+        self.respond_text("Ugyldig personside.", status=HTTPStatus.NOT_FOUND)
+
     def respond_file(self, encoded_relative_path: str) -> None:
         raw_path = urllib.parse.unquote(encoded_relative_path).strip("/")
         if raw_path.isdigit():
@@ -223,7 +263,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             {
                 "ok": True,
                 "person_name": result.person_name,
-                "person_url": "/" + person_page_url(result.person_name),
+                "person_url": person_url(result.person_name),
                 "face_id": result.face_id,
                 "added": result.added,
             }
@@ -254,6 +294,16 @@ def parse_file_id(value: str) -> int:
     if file_id < 1:
         raise ValueError("Ugyldig file_id.")
     return file_id
+
+
+def parse_person_path(raw_path: str) -> tuple[str, str | None, str]:
+    if "/item/" in raw_path:
+        raw_name, raw_value = raw_path.split("/item/", 1)
+        return raw_name, "item", raw_value
+    if "/month/" in raw_path:
+        raw_name, raw_value = raw_path.split("/month/", 1)
+        return raw_name, "month", raw_value
+    return raw_path.strip("/"), None, ""
 
 
 FILE_COLUMNS = "id, target_path, target_path_key, stored_filename, taken_date, date_source, size_bytes"
@@ -361,7 +411,7 @@ def confirmed_people_for_file(target: Path, file_id: int) -> list[dict[str, str]
     except OSError:
         return []
     return [
-        {"name": name, "url": person_page_url(name)}
+        {"name": name, "url": person_url(name)}
         for name in cached_confirmed_people_for_file(str(target.resolve()), mtime_ns, file_id)
     ]
 
@@ -415,7 +465,7 @@ def registered_people(target: Path) -> list[dict[str, str]]:
     except OSError:
         return []
     return [
-        {"name": name, "url": person_page_url(name)}
+        {"name": name, "url": person_url(name)}
         for name in cached_registered_people(str(target.resolve()), mtime_ns)
     ]
 
@@ -502,6 +552,199 @@ def month_key_from_stored_path(path: str) -> str | None:
         return None
     month_key = f"{match.group('year')}-{match.group('month')}"
     return month_key if valid_month_key(month_key) else None
+
+
+def person_by_name(target: Path, person_name: str) -> sqlite3.Row | None:
+    face_db_path = target / FACE_DB_FILENAME
+    if not face_db_path.exists():
+        return None
+    clean_name = normalize_person_name(person_name)
+    conn = sqlite3.connect(face_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if not face_tables_exist(conn):
+            return None
+        return conn.execute("SELECT id, name FROM persons WHERE name = ?", (clean_name,)).fetchone()
+    finally:
+        conn.close()
+
+
+def person_file_ids(target: Path, person_name: str) -> list[int]:
+    person = person_by_name(target, person_name)
+    if person is None:
+        return []
+    conn = sqlite3.connect(target / FACE_DB_FILENAME)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT faces.file_id
+            FROM person_faces
+            JOIN faces ON faces.id = person_faces.face_id
+            WHERE person_faces.person_id = ?
+            UNION
+            SELECT DISTINCT faces.file_id
+            FROM face_suggestions
+            JOIN faces ON faces.id = face_suggestions.face_id
+            WHERE face_suggestions.person_id = ?
+            ORDER BY file_id
+            """,
+            (int(person["id"]), int(person["id"])),
+        )
+        return [int(row["file_id"]) for row in rows]
+    finally:
+        conn.close()
+
+
+def person_items(target: Path, person_name: str) -> list[Any]:
+    file_ids = person_file_ids(target, person_name)
+    if not file_ids:
+        return []
+    placeholders = ",".join("?" for _ in file_ids)
+    conn = db.connect(target)
+    try:
+        return list(
+            conn.execute(
+                f"""
+                SELECT {FILE_COLUMNS}
+                FROM files
+                WHERE deleted_at IS NULL
+                  AND id IN ({placeholders})
+                ORDER BY target_path_key
+                """,
+                tuple(file_ids),
+            )
+        )
+    finally:
+        conn.close()
+
+
+def first_person_item(target: Path, person_name: str) -> Any | None:
+    items = person_items(target, person_name)
+    return items[0] if items else None
+
+
+def person_item_by_id(target: Path, person_name: str, file_id: int) -> Any | None:
+    return next((item for item in person_items(target, person_name) if int(item["id"]) == file_id), None)
+
+
+def adjacent_person_items(target: Path, person_name: str, item: Any) -> tuple[Any | None, Any | None]:
+    items = person_items(target, person_name)
+    index = next((idx for idx, candidate in enumerate(items) if int(candidate["id"]) == int(item["id"])), -1)
+    if index < 0:
+        return None, None
+    previous_item = items[index - 1] if index > 0 else None
+    next_item = items[index + 1] if index < len(items) - 1 else None
+    return previous_item, next_item
+
+
+def person_month_keys(target: Path, person_name: str) -> list[str]:
+    keys = {month_key_for_item(target, item) for item in person_items(target, person_name)}
+    return sorted(key for key in keys if valid_month_key(key))
+
+
+def person_month_navigation(target: Path, person_name: str, item: Any) -> dict[str, str | None]:
+    return person_month_navigation_for_key(target, person_name, month_key_for_item(target, item))
+
+
+def person_month_navigation_for_key(target: Path, person_name: str, current_key: str) -> dict[str, str | None]:
+    if not valid_month_key(current_key):
+        return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
+    keys = person_month_keys(target, person_name)
+    if not keys:
+        return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
+    years = sorted({key[:4] for key in keys})
+    current_year = current_key[:4]
+    current_year_index = years.index(current_year) if current_year in years else -1
+    previous_year = years[current_year_index - 1] if current_year_index > 0 else None
+    next_year = years[current_year_index + 1] if current_year_index < len(years) - 1 else None
+    return {
+        "previous_year": first_month_in_year(keys, previous_year),
+        "next_year": first_month_in_year(keys, next_year),
+        "previous_month": next((key for key in reversed(keys) if key < current_key), None),
+        "next_month": next((key for key in keys if key > current_key), None),
+    }
+
+
+def person_month_items(target: Path, person_name: str, month_key: str) -> list[Any]:
+    return [item for item in person_items(target, person_name) if month_key_for_item(target, item) == month_key]
+
+
+def person_faces_for_item(target: Path, person_name: str, item: Any) -> list[dict[str, object]]:
+    person = person_by_name(target, person_name)
+    if person is None:
+        return []
+    conn = sqlite3.connect(target / FACE_DB_FILENAME)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                'bekreftet' AS status,
+                faces.id,
+                1.0 AS similarity,
+                faces.bbox_x,
+                faces.bbox_y,
+                faces.bbox_width,
+                faces.bbox_height,
+                faces.detection_score
+            FROM person_faces
+            JOIN faces ON faces.id = person_faces.face_id
+            WHERE person_faces.person_id = ?
+              AND faces.file_id = ?
+            UNION ALL
+            SELECT
+                'forslag' AS status,
+                faces.id,
+                face_suggestions.similarity,
+                faces.bbox_x,
+                faces.bbox_y,
+                faces.bbox_width,
+                faces.bbox_height,
+                faces.detection_score
+            FROM face_suggestions
+            JOIN faces ON faces.id = face_suggestions.face_id
+            WHERE face_suggestions.person_id = ?
+              AND faces.file_id = ?
+            ORDER BY status, id
+            """,
+            (int(person["id"]), int(item["id"]), int(person["id"]), int(item["id"])),
+        )
+        faces = [
+            {
+                "faceId": int(row["id"]),
+                "status": str(row["status"]),
+                "similarity": float(row["similarity"]),
+                "score": float(row["detection_score"]),
+                "x": float(row["bbox_x"]),
+                "y": float(row["bbox_y"]),
+                "width": float(row["bbox_width"]),
+                "height": float(row["bbox_height"]),
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
+    face_meta = {int(face["faceId"]): face for face in faces}
+    rendered = browser_face_items(Path(str(item["target_path"])), faces)
+    for face in rendered:
+        meta = face_meta.get(int(face["faceId"]))
+        if meta is not None:
+            face["status"] = meta["status"]
+            face["similarity"] = meta["similarity"]
+    return rendered
+
+
+def person_url(person_name: str) -> str:
+    return "/person/" + urllib.parse.quote(person_name, safe="")
+
+
+def person_item_url(person_name: str, file_id: int) -> str:
+    return f"{person_url(person_name)}/item/{file_id}"
+
+
+def person_month_url(person_name: str, month_key: str) -> str:
+    return f"{person_url(person_name)}/month/{urllib.parse.quote(month_key)}"
 
 
 def browser_month_navigation_for_key(target: Path, current_key: str) -> dict[str, str | None]:
@@ -782,6 +1025,70 @@ def item_media_html(item: Any) -> str:
     return f'<a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>'
 
 
+def person_item_page_html(
+    target: Path,
+    person_name: str,
+    item: Any,
+    previous_item: Any | None,
+    next_item: Any | None,
+    month_nav: dict[str, str | None],
+) -> str:
+    target_path = Path(str(item["target_path"]))
+    relative = display_relative_path(target, target_path)
+    media = person_item_media_html(item, person_faces_for_item(target, person_name, item))
+    controls = person_controls_html(person_name, month_nav, previous_item, next_item)
+    return page_html(
+        f"{person_name}: {target_path.name}",
+        f"""
+        <main class="server-browser">
+          <header class="browser-header">
+            <div class="topline">
+              <div class="title">{html.escape(person_name)}</div>
+              <a class="server-search-link" href="/">Alle bilder</a>
+              <a class="server-search-link" href="/search">Bildesøk</a>
+            </div>
+            {controls}
+          </header>
+          <section class="stage">{media}</section>
+          <footer class="browser-footer">
+            <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
+          </footer>
+        </main>
+        """,
+    )
+
+
+def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
+    file_id = int(item["id"])
+    target_path = Path(str(item["target_path"]))
+    url = f"/file/{file_id}"
+    name = html.escape(str(item["stored_filename"]))
+    if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
+        return f'<video src="{url}" controls></video>'
+    boxes = "\n".join(person_face_box_html(face) for face in faces)
+    return f"""
+    <div class="person-media">
+      <a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>
+      {boxes}
+    </div>
+    """
+
+
+def person_face_box_html(face: dict[str, object]) -> str:
+    if not {"left", "top", "boxWidth", "boxHeight"} <= face.keys():
+        return ""
+    css_class = "person-face-box suggested" if face.get("status") == "forslag" else "person-face-box"
+    title = f'{face.get("status", "")} face-id {face["faceId"]} score {float(face.get("similarity", 0.0)):.3f}'
+    return (
+        f'<div class="{css_class}" title="{html.escape(title)}" style="'
+        f'left: {float(face["left"]):.4f}%; '
+        f'top: {float(face["top"]):.4f}%; '
+        f'width: {float(face["boxWidth"]):.4f}%; '
+        f'height: {float(face["boxHeight"]):.4f}%;'
+        '"></div>'
+    )
+
+
 def nav_link(item: Any | None, label: str, key_nav: str) -> str:
     if item is None:
         return nav_disabled(label)
@@ -819,11 +1126,41 @@ def browser_controls_html(
     """
 
 
+def person_controls_html(
+    person_name: str,
+    month_nav: dict[str, str | None],
+    previous_item: Any | None,
+    next_item: Any | None,
+) -> str:
+    return f"""
+    <nav class="controls" aria-label="Navigering">
+      {person_month_nav_link(person_name, month_nav["previous_year"], "Forrige år", "previous-year")}
+      {person_month_nav_link(person_name, month_nav["next_year"], "Neste år", "next-year")}
+      {person_month_nav_link(person_name, month_nav["previous_month"], "Forrige måned", "previous-month")}
+      {person_month_nav_link(person_name, month_nav["next_month"], "Neste måned", "next-month")}
+      {person_nav_link(person_name, previous_item, "Forrige bilde", "previous")}
+      {person_nav_link(person_name, next_item, "Neste bilde", "next")}
+    </nav>
+    """
+
+
+def person_nav_link(person_name: str, item: Any | None, label: str, key_nav: str) -> str:
+    if item is None:
+        return nav_disabled(label)
+    return nav_button(person_item_url(person_name, int(item["id"])), label, key_nav)
+
+
+def person_month_nav_link(person_name: str, month_key: str | None, label: str, key_nav: str) -> str:
+    if month_key is None:
+        return nav_disabled(label)
+    return nav_button(person_month_url(person_name, month_key), label, key_nav)
+
+
 def people_links_html(people: list[dict[str, str]]) -> str:
     if not people:
         return ""
     links = "\n".join(
-        f'<a class="person-link" href="/{html.escape(person["url"])}">{html.escape(person["name"])}</a>'
+        f'<a class="person-link" href="{html.escape(person["url"])}">{html.escape(person["name"])}</a>'
         for person in people
     )
     return f'<div class="people">{links}</div>'
@@ -918,6 +1255,79 @@ def month_page_html(target: Path, month_key: str, items: list[Any]) -> str:
         </main>
         """,
     )
+
+
+def empty_person_browser_html(person_name: str) -> str:
+    return page_html(
+        person_name,
+        f"""
+        <main class="shell">
+          <p><a href="/">Til bildebrowser</a></p>
+          <h1>{html.escape(person_name)}</h1>
+          <p class="meta">Ingen bekreftede ansikter eller forslag for denne personen ennå.</p>
+        </main>
+        """,
+    )
+
+
+def person_not_found_html(person_name: str) -> str:
+    return page_html(
+        "Fant ikke person",
+        f"""
+        <main class="shell">
+          <p><a href="/">Til bildebrowser</a></p>
+          <h1>Fant ikke person</h1>
+          <p class="error">{html.escape(person_name)}</p>
+        </main>
+        """,
+    )
+
+
+def person_month_page_html(target: Path, person_name: str, month_key: str, items: list[Any]) -> str:
+    cards = "\n".join(person_month_item_html(target, person_name, item) for item in items)
+    previous_item = items[-1] if items else None
+    next_item = items[0] if items else None
+    controls = person_controls_html(
+        person_name,
+        person_month_navigation_for_key(target, person_name, month_key),
+        previous_item,
+        next_item,
+    )
+    return page_html(
+        f"{person_name}: {month_key}",
+        f"""
+        <main class="server-browser">
+          <header class="browser-header">
+            <div class="topline">
+              <div class="title">{html.escape(person_name)}</div>
+              <span class="status">Månedsoversikt: {html.escape(month_key)}</span>
+              <a class="server-search-link" href="/">Alle bilder</a>
+              <a class="server-search-link" href="/search">Bildesøk</a>
+            </div>
+            {controls}
+          </header>
+          <section class="month-grid-server">{cards}</section>
+          <footer class="browser-footer">
+            <span class="filename">Månedsoversikt: {html.escape(month_key)}</span>
+          </footer>
+        </main>
+        """,
+    )
+
+
+def person_month_item_html(target: Path, person_name: str, item: Any) -> str:
+    target_path = Path(str(item["target_path"]))
+    label = html.escape(display_relative_path(target, target_path))
+    media = thumbnail_media_html(item)
+    return f"""
+    <article class="item">
+      <a class="thumb-link" href="{person_item_url(person_name, int(item["id"]))}">{media}</a>
+      <div class="text">
+        <div class="path">{label}</div>
+        <div class="score">{html.escape(format_bytes(int(item["size_bytes"])))}</div>
+      </div>
+    </article>
+    """
 
 
 def month_item_html(target: Path, item: Any) -> str:
@@ -1030,6 +1440,28 @@ def page_html(title: str, body: str) -> str:
       max-height: calc(100vh - 10rem);
       object-fit: contain;
       display: block;
+    }}
+    .person-media {{
+      position: relative;
+      display: inline-block;
+      max-width: min(100%, 92vw);
+      max-height: calc(100vh - 10rem);
+    }}
+    .person-media img {{
+      max-width: 100%;
+      max-height: calc(100vh - 10rem);
+      object-fit: contain;
+      display: block;
+    }}
+    .person-face-box {{
+      position: absolute;
+      border: 2px solid #2fbf71;
+      background: rgb(47 191 113 / 13%);
+      pointer-events: none;
+    }}
+    .person-face-box.suggested {{
+      border-color: #e19b2d;
+      background: rgb(225 155 45 / 14%);
     }}
     .month-grid-server {{
       display: grid;
