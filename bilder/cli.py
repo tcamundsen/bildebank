@@ -1183,7 +1183,7 @@ def module_available(module_name: str) -> str:
 
 def run_image_scan(target: Path, *, limit: int | None) -> int:
     config = load_config(program_repo_root()).openclip
-    stats = scan_images(target, config, limit=limit)
+    stats = scan_images(target, config, limit=limit, progress=print_image_scan_progress)
     print(
         "Bildesøk-scan: "
         f"bilder={stats.total}, hoppet_over={stats.skipped}, "
@@ -1191,6 +1191,33 @@ def run_image_scan(target: Path, *, limit: int | None) -> int:
     )
     print(f"OpenCLIP-database: {openclip_db_path(target)}")
     return 0 if stats.errors == 0 else 2
+
+
+def print_image_scan_progress(
+    stage: str,
+    current: int,
+    total: int,
+    stats,
+    path: Path | None,
+) -> None:
+    if stage == "start":
+        print(f"Image-scan: {total} bildefiler skal kontrolleres.")
+        return
+    if stage == "load_model":
+        print("Image-scan: laster OpenCLIP-modell. Det kan ta litt tid.")
+        return
+    if stage == "error":
+        message = getattr(stats, "last_error_message", None) or "ukjent feil"
+        print(f"Image-scan-feil: {path}\t{message}")
+        return
+    if stage in {"scan", "skip"}:
+        if should_print_progress(current, total):
+            print(
+                "Image-scan: "
+                f"behandlet={current}/{total}, "
+                f"scannet={stats.scanned}, hoppet_over={stats.skipped}, feil={stats.errors}"
+            )
+        return
 
 
 def run_image_search(target: Path, *, query: str, limit: int, browser: bool = True) -> int:

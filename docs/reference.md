@@ -58,6 +58,10 @@ Se også den samlede innføringen: [`insightface`](insightface.md).
 - [`make-person-browser`](make-person-browser.md)
 - [`face-reset`](face-reset.md)
 
+## Tekstbasert bildesøk
+
+Se også den samlede innføringen: [`openclip`](openclip.md).
+
 ## Programmet
 
 - [`where-is`](where-is.md)
