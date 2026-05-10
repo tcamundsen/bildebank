@@ -116,6 +116,9 @@ Som standard viser søket de 100 beste treffene og skriver:
 image-search.html
 ```
 
+Treffene i `image-search.html` er sortert med beste match først. Treff nummer
+1 er bildet som fikk høyest score fra OpenCLIP.
+
 Kommandoen åpner HTML-filen automatisk. Hvis du bare vil skrive filen uten å
 åpne nettleseren:
 
@@ -132,14 +135,61 @@ bildebank image-search "strand" --limit 50
 Mens søket kjører, viser `image-search` hvor mange bilde-embeddings som er
 funnet, og hvor mange bilder søket er sammenlignet med.
 
+## Hvordan skrive søk
+
+OpenCLIP fungerer best med engelsk tekst. Norske ord kan virke, men forvent
+bedre treff med engelsk.
+
+Skriv gjerne søket som en kort beskrivelse av et bilde, ikke bare som et
+stikkord:
+
+```powershell
+bildebank image-search "a photo of a beach"
+bildebank image-search "a child holding a cat"
+bildebank image-search "a bride wearing a white wedding dress"
+```
+
+Hvis treffene blir for brede, prøv flere varianter:
+
+```powershell
+bildebank image-search "wedding dress"
+bildebank image-search "a bride in a white dress"
+bildebank image-search "a woman wearing a wedding dress"
+bildebank image-search "a close-up photo of a white wedding dress"
+```
+
+Det kan også hjelpe å søke etter det viktigste eller sjeldneste først. Hvis
+`child with a cat` gir mange bilder av bare barn, prøv `cat` eller
+`a child holding a cat`.
+
+## Begrensninger i treffsikkerhet
+
+OpenCLIP-søk er ikke et vanlig nøkkelordsøk og ikke en sikker fasit. Bildebank
+spør modellen hvilke bilder som ligner mest på søketeksten, og viser de beste
+treffene sortert etter score.
+
+Det betyr:
+
+- Søket er ikke et strengt filter.
+- `child with a cat` betyr ikke at bildet må inneholde både barn og katt.
+- Bilder som bare matcher deler av søket kan komme høyt opp.
+- Søk etter klær, detaljer og små objekter kan gi svake treff.
+- Hvis samlingen ikke har gode treff, viser Bildebank likevel de beste bildene
+  den finner.
+
+Hvis `wedding dress` gir mange tilfeldige bilder, betyr det ikke nødvendigvis at
+kommandoen er ødelagt. Det kan bety at modellen ikke skiller godt nok mellom
+bildene i samlingen for akkurat det søket, eller at søketeksten bør formuleres
+annerledes.
+
 ## Eksempler på søk
 
 ```powershell
-bildebank image-search "strand"
-bildebank image-search "fjell"
-bildebank image-search "dyr"
-bildebank image-search "bil"
-bildebank image-search "snø"
+bildebank image-search "a photo of a beach"
+bildebank image-search "mountains"
+bildebank image-search "animals"
+bildebank image-search "a car"
+bildebank image-search "snow"
 ```
 
 OpenCLIP forstår ikke bildene på samme måte som et menneske. Resultatene er

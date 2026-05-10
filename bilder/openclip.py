@@ -494,7 +494,7 @@ def export_image_search_html(
 </head>
 <body>
   <h1>Bildesøk: {html.escape(query)}</h1>
-  <div class="meta">{len(results)} treff med {html.escape(config.model_name)} ({html.escape(config.pretrained)})</div>
+  <div class="meta">{len(results)} treff med {html.escape(config.model_name)} ({html.escape(config.pretrained)}). Sortert med beste match først.</div>
   <div class="grid">
 {items}
   </div>
