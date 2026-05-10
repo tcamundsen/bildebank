@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import mimetypes
 import re
+import sqlite3
 import threading
 import urllib.parse
 from dataclasses import dataclass
@@ -14,7 +15,7 @@ from typing import Any, Callable
 
 from . import db
 from .config import OpenClipConfig
-from .html_export import display_relative_path, format_bytes, month_key_from_path
+from .html_export import FACE_DB_FILENAME, display_relative_path, face_tables_exist, format_bytes, month_key_from_path, person_page_url
 from .openclip import (
     ImageSearchResult,
     connect_openclip_db,
@@ -294,6 +295,43 @@ def cached_browser_month_keys(target_path: str, db_mtime_ns: int) -> tuple[str, 
         conn.close()
 
 
+def confirmed_people_for_file(target: Path, file_id: int) -> list[dict[str, str]]:
+    face_db_path = target / FACE_DB_FILENAME
+    try:
+        mtime_ns = face_db_path.stat().st_mtime_ns
+    except OSError:
+        return []
+    return [
+        {"name": name, "url": person_page_url(name)}
+        for name in cached_confirmed_people_for_file(str(target.resolve()), mtime_ns, file_id)
+    ]
+
+
+@lru_cache(maxsize=512)
+def cached_confirmed_people_for_file(target_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[str, ...]:
+    conn = sqlite3.connect(Path(target_path) / FACE_DB_FILENAME)
+    conn.row_factory = sqlite3.Row
+    try:
+        if not face_tables_exist(conn):
+            return ()
+        rows = conn.execute(
+            """
+            SELECT DISTINCT persons.name
+            FROM person_faces
+            JOIN persons ON persons.id = person_faces.person_id
+            JOIN faces ON faces.id = person_faces.face_id
+            WHERE faces.file_id = ?
+            ORDER BY persons.name
+            """,
+            (file_id,),
+        )
+        return tuple(str(row["name"]) for row in rows)
+    except sqlite3.Error:
+        return ()
+    finally:
+        conn.close()
+
+
 def browser_month_navigation(target: Path, item: Any) -> dict[str, str | None]:
     current_key = month_key_for_item(target, item)
     return browser_month_navigation_for_key(target, current_key)
@@ -556,6 +594,7 @@ def item_page_html(
     relative = display_relative_path(target, target_path)
     media = item_media_html(item)
     controls = browser_controls_html(month_nav, previous_item, next_item)
+    people = people_links_html(confirmed_people_for_file(target, int(item["id"])))
     return page_html(
         f"Bildebrowser: {target_path.name}",
         f"""
@@ -563,7 +602,7 @@ def item_page_html(
           <header class="browser-header">
             <div class="topline">
               <div class="title">Bildebrowser</div>
-              <span class="status">{html.escape(relative)} · {html.escape(format_bytes(int(item["size_bytes"])))} · {html.escape(str(item["date_source"]))}</span>
+              {people}
               <a class="server-search-link" href="/search">Bildesøk</a>
             </div>
             {controls}
@@ -624,6 +663,16 @@ def browser_controls_html(
     """
 
 
+def people_links_html(people: list[dict[str, str]]) -> str:
+    if not people:
+        return ""
+    links = "\n".join(
+        f'<a class="person-link" href="/{html.escape(person["url"])}">{html.escape(person["name"])}</a>'
+        for person in people
+    )
+    return f'<div class="people">{links}</div>'
+
+
 def month_page_html(target: Path, month_key: str, items: list[Any]) -> str:
     cards = "\n".join(month_item_html(target, item) for item in items)
     previous_item = items[-1] if items else None
@@ -636,7 +685,7 @@ def month_page_html(target: Path, month_key: str, items: list[Any]) -> str:
           <header class="browser-header">
             <div class="topline">
               <div class="title">Bildebrowser</div>
-              <span class="status">{html.escape(month_key)} oversikt ({len(items)} filer)</span>
+              <span class="status">Månedsoversikt: {html.escape(month_key)}</span>
               <a class="server-search-link" href="/search">Bildesøk</a>
             </div>
             {controls}
@@ -728,10 +777,11 @@ def page_html(title: str, body: str) -> str:
     .topline, .controls {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
     .title {{ font-weight: 700; margin-right: 8px; line-height: 1.2; }}
     .status {{ color: var(--muted); font-size: 13px; line-height: 1.2; }}
+    .people {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
     a, .disabled {{ color: var(--accent); }}
     a {{ text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
-    .nav-button, .server-search-link {{
+    .nav-button, .server-search-link, .person-link {{
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 6px 9px;
@@ -741,7 +791,8 @@ def page_html(title: str, body: str) -> str:
       display: inline-flex;
       align-items: center;
     }}
-    .nav-button:hover, .server-search-link:hover {{ background: #3a3a3a; text-decoration: none; }}
+    .person-link {{ color: var(--accent); }}
+    .nav-button:hover, .server-search-link:hover, .person-link:hover {{ background: #3a3a3a; text-decoration: none; }}
     .disabled {{ color: #777; cursor: default; }}
     .stage {{
       min-height: 0;
@@ -805,7 +856,7 @@ def page_html(title: str, body: str) -> str:
       .shell {{ padding: 16px; }}
       .search {{ grid-template-columns: 1fr; }}
       .browser-header {{ align-items: stretch; }}
-      .nav-button, .server-search-link {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
+      .nav-button, .server-search-link, .person-link {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
     }}
   </style>
 </head>
