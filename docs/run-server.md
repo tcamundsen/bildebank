@@ -8,7 +8,7 @@ søke med OpenCLIP uten å vente på at modellen lastes på nytt for hvert søk.
 ## Mål
 
 - Kjøre en lokal server fra en bildesamling.
-- Åpne Bildebank i nettleseren.
+- Browse hele bildesamlingen i nettleseren.
 - Holde OpenCLIP-modellen lastet i minnet mens serveren kjører.
 - Søke etter bilder fra nettleseren.
 - Vise søkeresultater uten å skrive ny statisk HTML-fil for hvert søk.
@@ -65,8 +65,9 @@ bildebank run-server --no-browser
 Første versjon er enkel:
 
 - start serveren fra bildesamlingen
-- last config og finn `.bilder-openclip.sqlite3`
-- vis en enkel søkeside i nettleseren
+- vis samme bildebrowser som `bildebank make-browser` lager
+- les browserdata fra databasen hver gang `/` lastes
+- vis lenke til OpenCLIP-søk fra browseren
 - last OpenCLIP-modellen første gang den trengs
 - behold modellen i minnet etter første søk
 - kjør søk uten å starte programmet på nytt
@@ -91,10 +92,11 @@ ligger i minnet.
 
 ## Mulige sider
 
-- `/` enkel startside med søkeskjema
+- `/` bildebrowser
 - `/search` skjema for tekstsøk
 - `/search?q=beach` søkeresultat
-- `/file/...` viser bildefiler fra samlingen
+- `/file/...` viser bildefiler fra søket
+- vanlige relative bildestier, for eksempel `/2010/07/bilde.jpg`, brukes av browseren
 
 ## Viktige valg
 
@@ -102,6 +104,7 @@ ligger i minnet.
 - Den skal ikke kreve internett etter at modeller er lastet ned.
 - Den skal bruke samme config som resten av Bildebank.
 - Den skal ikke erstatte statiske HTML-filer i første omgang.
+- Den statiske browseren fra `make-browser` skal beholdes.
 - Den skal ikke åpne for redigering eller sletting i første versjon.
 
 ## Ikke i første versjon
@@ -122,6 +125,9 @@ behovet vokser kan vi vurdere FastAPI eller lignende senere.
 OpenCLIP-modellen ligger i serverprosessen, slik at den kan brukes om igjen
 mellom søk. Serveren tåler at modellen ikke er lastet ennå, og gir en lesbar
 feil hvis OpenCLIP ikke er installert eller `image-scan` ikke er kjørt.
+
+Bildebrowseren på `/` bruker samme HTML-rendering som `make-browser`, men med en
+server-only lenke til `/search`.
 
 ## Stoppe serveren
 

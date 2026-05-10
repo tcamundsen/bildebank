@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 from bilder.cli import build_parser, main
 from bilder.config import OpenClipConfig, load_config
-from bilder.db import DB_FILENAME
+from bilder.db import DB_FILENAME, init_database
 from bilder.face import FACE_DB_FILENAME, connect_face_db, face_box_percent, read_image
 from bilder.importer import safe_copy
 from bilder.media import ImageDimensions, sha256_file
@@ -335,11 +335,16 @@ class CliTests(unittest.TestCase):
             resolve_torch_device("gpu")
 
     def test_run_server_renders_index_page(self) -> None:
-        server = SimpleNamespace(config=OpenClipConfig())
-        body = index_html(server)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            init_database(target)
+            server = SimpleNamespace(target=target, config=OpenClipConfig())
+            body = index_html(server)
 
+        self.assertIn("Bildebrowser", body)
         self.assertIn("Bildesøk", body)
-        self.assertIn("OpenCLIP", body)
+        self.assertIn("embeddedItems", body)
+        self.assertIn("server-search-link", body)
 
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
@@ -2736,6 +2741,7 @@ model_name = "test-model"
             self.assertIn("const MONTH_PREVIEW_LIMIT = null;", html)
             self.assertIn('state.viewMode = "month";', html)
             self.assertIn("function representativeItems(items, limit)", html)
+            self.assertNotIn("server-search-link", html)
             self.assertIn('img.loading = "lazy";', html)
             self.assertIn('"people": [{"name": "Kari", "status": "bekreftet", "url": "person-Kari.html"}', html)
             self.assertIn('"name": "Ola Nordmann", "status": "forslag", "url": "person-Ola-Nordmann.html"', html)

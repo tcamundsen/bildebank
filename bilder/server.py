@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .config import OpenClipConfig
+from .html_export import browser_items, render_html
 from .openclip import (
     ImageSearchResult,
     connect_openclip_db,
@@ -83,7 +84,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             if parsed.path.startswith("/file/"):
                 self.respond_file(parsed.path.removeprefix("/file/"))
                 return
-            self.respond_text("Ikke funnet.", status=HTTPStatus.NOT_FOUND)
+            self.respond_file(parsed.path.lstrip("/"))
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
             self.respond_html(error_html(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
@@ -189,10 +190,17 @@ def search_server_images(server: BildebankServer, *, query: str, limit: int) -> 
 
 
 def index_html(server: BildebankServer, *, message: str = "") -> str:
+    if message:
+        return search_start_html(server, message=message)
+    return render_html(browser_items(server.target), search_url="/search")
+
+
+def search_start_html(server: BildebankServer, *, message: str = "") -> str:
     return page_html(
-        "Bildebank",
+        "Bildesøk",
         f"""
         <main class="shell">
+          <p><a href="/">Til bildebrowser</a></p>
           <h1>Bildesøk</h1>
           <p class="meta">OpenCLIP {html.escape(server.config.model_name)} ({html.escape(server.config.pretrained)})</p>
           {message_html(message)}
@@ -208,6 +216,7 @@ def search_html(server: BildebankServer, stats: ServerSearchStats, limit: int) -
         f"Bildesøk: {stats.query}",
         f"""
         <main class="shell">
+          <p><a href="/">Til bildebrowser</a></p>
           <h1>Bildesøk</h1>
           {search_form(stats.query, limit)}
           <p class="meta">{len(stats.results)} treff. Sortert med beste match først. Modell lastet: {'ja' if server.search_cache.loaded else 'nei'}.</p>

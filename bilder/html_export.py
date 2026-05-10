@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import os
 import sqlite3
@@ -24,6 +25,25 @@ def export_html(
     month_preview_limit: int | None = None,
 ) -> Path:
     output_path = output or (target / "index.html")
+    items = browser_items(
+        target,
+        media_filter=media_filter,
+        date_source_filter=date_source_filter,
+    )
+    output_path.write_text(
+        render_html(items, month_preview_limit=month_preview_limit),
+        encoding="utf-8",
+        newline="\n",
+    )
+    return output_path
+
+
+def browser_items(
+    target: Path,
+    *,
+    media_filter: str = "all",
+    date_source_filter: str = "all",
+) -> list[dict[str, object]]:
     conn = db.connect(target)
     try:
         face_data_by_file_id = face_browser_data_by_file_id(target)
@@ -37,13 +57,7 @@ def export_html(
         ]
     finally:
         conn.close()
-
-    output_path.write_text(
-        render_html(items, month_preview_limit=month_preview_limit),
-        encoding="utf-8",
-        newline="\n",
-    )
-    return output_path
+    return items
 
 
 def export_html_conflicts(target: Path, output: Path | None = None) -> Path:
@@ -356,9 +370,33 @@ def month_key_from_path(path: Path) -> str:
     return "ukjent"
 
 
-def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None = None) -> str:
+def render_html(
+    items: list[dict[str, object]],
+    *,
+    month_preview_limit: int | None = None,
+    search_url: str | None = None,
+) -> str:
     items_json = json.dumps(items, ensure_ascii=False)
     month_preview_limit_json = json.dumps(month_preview_limit)
+    search_link = (
+        f'<a class="server-search-link" href="{html.escape(search_url)}">Bildesøk</a>'
+        if search_url
+        else ""
+    )
+    search_link_css = """
+    .server-search-link {
+      color: var(--accent);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      text-decoration: none;
+      background: #303030;
+    }
+    .server-search-link:hover {
+      background: #3a3a3a;
+      text-decoration: none;
+    }
+""" if search_url else ""
     return f"""<!doctype html>
 <html lang="no">
 <head>
@@ -427,6 +465,7 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
       color: var(--muted);
       font-size: 14px;
     }}
+{search_link_css}
     .position {{
       color: var(--accent);
       font-weight: 650;
@@ -666,6 +705,7 @@ def render_html(items: list[dict[str, str]], *, month_preview_limit: int | None 
       <div class="topline">
         <div class="title">Bildebrowser</div>
         <span id="status" class="status"></span>
+        {search_link}
       </div>
       <div class="controls">
         <button id="prevYear" type="button">Forrige år</button>
