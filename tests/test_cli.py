@@ -8,7 +8,7 @@ import os
 import sys
 import warnings
 from contextlib import redirect_stderr, redirect_stdout
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -23,6 +23,7 @@ from bilder.openclip import connect_openclip_db, openclip_db_path, resolve_torch
 from bilder.program_state import PROGRAM_DB_FILENAME
 from bilder.server import (
     adjacent_browser_items,
+    BildebankRequestHandler,
     browser_item_by_id,
     browser_month_items,
     browser_month_navigation,
@@ -504,6 +505,69 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("1 filer, 1 måneder", body)
         self.assertIn('class="person-link" href="/person-Kari.html">Kari</a>', body)
         self.assertIn('class="person-link" href="/person-Ola-Nordmann.html">Ola Nordmann</a>', body)
+        self.assertIn("Ansikter i bildet (1)", body)
+        self.assertIn('data-face-id="2"', body)
+        self.assertIn('data-person-name="Kari"', body)
+        self.assertIn('data-person-name="Ola Nordmann"', body)
+        self.assertNotIn('data-face-id="1"', body)
+
+    def test_run_server_api_adds_face_to_person(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(1, 1, 'key-1', 1, 2, 10, 20, 0.9, 'test', ?)
+                    """,
+                    (b"embedding-1",),
+                )
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 1, 0.91)")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            data = b"face_id=1&person_name=Kari"
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/x-www-form-urlencoded",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_add_face_to_person(handler)  # type: ignore[arg-type]
+
+            self.assertEqual(
+                {"ok": True, "person_name": "Kari", "person_url": "/person-Kari.html", "face_id": 1, "added": True},
+                handler.body,
+            )
+            face_conn = connect_face_db(target)
+            try:
+                self.assertEqual(
+                    face_conn.execute("SELECT COUNT(*) FROM person_faces WHERE person_id = 1 AND face_id = 1").fetchone()[0],
+                    1,
+                )
+                self.assertEqual(face_conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 0)
+            finally:
+                face_conn.close()
 
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

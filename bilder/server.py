@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 import mimetypes
 import re
 import sqlite3
@@ -15,7 +16,16 @@ from typing import Any, Callable
 
 from . import db
 from .config import OpenClipConfig
-from .html_export import FACE_DB_FILENAME, display_relative_path, face_tables_exist, format_bytes, month_key_from_path, person_page_url
+from .face import add_face_to_person
+from .html_export import (
+    FACE_DB_FILENAME,
+    browser_face_items,
+    display_relative_path,
+    face_tables_exist,
+    format_bytes,
+    month_key_from_path,
+    person_page_url,
+)
 from .openclip import (
     ImageSearchResult,
     connect_openclip_db,
@@ -97,6 +107,16 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
             self.respond_html(error_html(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
 
+    def do_POST(self) -> None:
+        parsed = urllib.parse.urlparse(self.path)
+        try:
+            if parsed.path == "/api/face-person-add-face":
+                self.respond_add_face_to_person()
+                return
+            self.respond_json({"ok": False, "error": "Ukjent endepunkt."}, status=HTTPStatus.NOT_FOUND)
+        except Exception as exc:  # noqa: BLE001 - local server should show readable errors
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
     def log_message(self, format: str, *args: Any) -> None:
         return
 
@@ -105,6 +125,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
 
     def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
         self.respond_bytes(content.encode("utf-8"), "text/plain; charset=utf-8", status=status)
+
+    def respond_json(self, content: dict[str, Any], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+        self.respond_bytes(json.dumps(content).encode("utf-8"), "application/json; charset=utf-8", status=status)
 
     def respond_bytes(self, content: bytes, content_type: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
         self.send_response(status)
@@ -169,6 +192,42 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         self.respond_bytes(content, content_type)
+
+    def respond_add_face_to_person(self) -> None:
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
+        content_type = self.headers.get("Content-Type", "")
+        if "application/json" in content_type:
+            payload = json.loads(raw or "{}")
+            person_name = str(payload.get("person_name") or "").strip()
+            face_id_raw = payload.get("face_id")
+        else:
+            params = urllib.parse.parse_qs(raw)
+            person_name = first_param(params, "person_name").strip()
+            face_id_raw = first_param(params, "face_id")
+        try:
+            face_id = int(face_id_raw)
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig face_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if not person_name:
+            self.respond_json({"ok": False, "error": "Personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            result = add_face_to_person(self.server.target, person_name, face_id)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        clear_face_caches()
+        self.respond_json(
+            {
+                "ok": True,
+                "person_name": result.person_name,
+                "person_url": "/" + person_page_url(result.person_name),
+                "face_id": result.face_id,
+                "added": result.added,
+            }
+        )
 
 
 def first_param(params: dict[str, list[str]], name: str) -> str:
@@ -342,6 +401,85 @@ def cached_confirmed_people_for_file(target_path: str, face_db_mtime_ns: int, fi
         return ()
     finally:
         conn.close()
+
+
+def clear_face_caches() -> None:
+    cached_confirmed_people_for_file.cache_clear()
+    cached_registered_people.cache_clear()
+
+
+def registered_people(target: Path) -> list[dict[str, str]]:
+    face_db_path = target / FACE_DB_FILENAME
+    try:
+        mtime_ns = face_db_path.stat().st_mtime_ns
+    except OSError:
+        return []
+    return [
+        {"name": name, "url": person_page_url(name)}
+        for name in cached_registered_people(str(target.resolve()), mtime_ns)
+    ]
+
+
+@lru_cache(maxsize=8)
+def cached_registered_people(target_path: str, face_db_mtime_ns: int) -> tuple[str, ...]:
+    conn = sqlite3.connect(Path(target_path) / FACE_DB_FILENAME)
+    conn.row_factory = sqlite3.Row
+    try:
+        if not face_tables_exist(conn):
+            return ()
+        rows = conn.execute("SELECT name FROM persons ORDER BY name")
+        return tuple(str(row["name"]) for row in rows)
+    except sqlite3.Error:
+        return ()
+    finally:
+        conn.close()
+
+
+def unconfirmed_faces_for_item(target: Path, item: Any) -> list[dict[str, object]]:
+    face_db_path = target / FACE_DB_FILENAME
+    if not face_db_path.exists():
+        return []
+    conn = sqlite3.connect(face_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if not face_tables_exist(conn):
+            return []
+        rows = conn.execute(
+            """
+            SELECT
+                faces.id,
+                faces.bbox_x,
+                faces.bbox_y,
+                faces.bbox_width,
+                faces.bbox_height,
+                faces.detection_score
+            FROM faces
+            WHERE faces.file_id = ?
+              AND NOT EXISTS (
+                SELECT 1
+                FROM person_faces
+                WHERE person_faces.face_id = faces.id
+              )
+            ORDER BY faces.id
+            """,
+            (int(item["id"]),),
+        )
+        faces = [
+            {
+                "faceId": int(row["id"]),
+                "score": float(row["detection_score"]),
+                "x": float(row["bbox_x"]),
+                "y": float(row["bbox_y"]),
+                "width": float(row["bbox_width"]),
+                "height": float(row["bbox_height"]),
+            }
+            for row in rows
+        ]
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return browser_face_items(Path(str(item["target_path"])), faces)
 
 
 def browser_month_navigation(target: Path, item: Any) -> dict[str, str | None]:
@@ -607,6 +745,10 @@ def item_page_html(
     media = item_media_html(item)
     controls = browser_controls_html(month_nav, previous_item, next_item)
     people = people_links_html(confirmed_people_for_file(target, int(item["id"])))
+    unconfirmed_faces = unconfirmed_faces_for_item(target, item)
+    all_people = registered_people(target)
+    faces_button = faces_button_html(unconfirmed_faces)
+    faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people)
     return page_html(
         f"Bildebrowser: {target_path.name}",
         f"""
@@ -615,6 +757,7 @@ def item_page_html(
             <div class="topline">
               <div class="title">Bildebrowser</div>
               {people}
+              {faces_button}
               <a class="server-search-link" href="/search">Bildesøk</a>
             </div>
             {controls}
@@ -624,6 +767,7 @@ def item_page_html(
             <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
           </footer>
         </main>
+        {faces_overlay}
         """,
     )
 
@@ -683,6 +827,71 @@ def people_links_html(people: list[dict[str, str]]) -> str:
         for person in people
     )
     return f'<div class="people">{links}</div>'
+
+
+def faces_button_html(faces: list[dict[str, object]]) -> str:
+    if not faces:
+        return ""
+    return f'<button class="faces-button" type="button" data-open-faces>Ansikter i bildet ({len(faces)})</button>'
+
+
+def faces_overlay_html(item: Any, faces: list[dict[str, object]], people: list[dict[str, str]]) -> str:
+    if not faces:
+        return ""
+    target_path = Path(str(item["target_path"]))
+    file_id = int(item["id"])
+    image_url = f"/file/{file_id}"
+    face_items = "\n".join(face_overlay_item_html(image_url, face, people) for face in faces)
+    return f"""
+    <div id="faceOverlay" class="face-overlay" hidden>
+      <div class="lightbox-bar">
+        <div class="lightbox-title">Ansikter - {html.escape(target_path.name)}</div>
+        <button class="lightbox-close" type="button" data-close-faces>Lukk</button>
+      </div>
+      <div class="lightbox-stage">
+        <div class="face-list">{face_items}</div>
+      </div>
+    </div>
+    """
+
+
+def face_overlay_item_html(image_url: str, face: dict[str, object], people: list[dict[str, str]]) -> str:
+    face_id = int(face["faceId"])
+    people_buttons = person_assignment_buttons_html(face_id, people)
+    box = ""
+    if {"left", "top", "boxWidth", "boxHeight"} <= face.keys():
+        box = (
+            '<div class="face-box" style="'
+            f'left: {float(face["left"]):.4f}%; '
+            f'top: {float(face["top"]):.4f}%; '
+            f'width: {float(face["boxWidth"]):.4f}%; '
+            f'height: {float(face["boxHeight"]):.4f}%;'
+            '"></div>'
+        )
+    return f"""
+    <section class="face-detail" data-face-detail="{face_id}">
+      <div class="face-detail-title">face-id {face_id}, deteksjon {float(face["score"]):.3f}</div>
+      <div class="lightbox-media">
+        <img src="{html.escape(image_url)}" alt="">
+        {box}
+      </div>
+      <div class="assign-row">{people_buttons}</div>
+      <div class="assign-status" aria-live="polite"></div>
+    </section>
+    """
+
+
+def person_assignment_buttons_html(face_id: int, people: list[dict[str, str]]) -> str:
+    if not people:
+        return '<p class="empty">Ingen personer registrert.</p>'
+    return "\n".join(
+        (
+            f'<button class="assign-person-button" type="button" '
+            f'data-face-id="{face_id}" data-person-name="{html.escape(person["name"])}">'
+            f'{html.escape(person["name"])}</button>'
+        )
+        for person in people
+    )
 
 
 def month_page_html(target: Path, month_key: str, items: list[Any]) -> str:
@@ -793,7 +1002,7 @@ def page_html(title: str, body: str) -> str:
     a, .disabled {{ color: var(--accent); }}
     a {{ text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
-    .nav-button, .server-search-link, .person-link {{
+    .nav-button, .server-search-link, .person-link, .faces-button {{
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 6px 9px;
@@ -804,7 +1013,8 @@ def page_html(title: str, body: str) -> str:
       align-items: center;
     }}
     .person-link {{ color: var(--accent); }}
-    .nav-button:hover, .server-search-link:hover, .person-link:hover {{ background: #3a3a3a; text-decoration: none; }}
+    .faces-button {{ color: var(--accent); }}
+    .nav-button:hover, .server-search-link:hover, .person-link:hover, .faces-button:hover {{ background: #3a3a3a; text-decoration: none; }}
     .disabled {{ color: #777; cursor: default; }}
     .stage {{
       min-height: 0;
@@ -864,18 +1074,175 @@ def page_html(title: str, body: str) -> str:
       text-overflow: ellipsis;
       color: var(--muted);
     }}
+    .face-overlay {{
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: rgb(0 0 0 / 86%);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 8px;
+      padding: 12px;
+    }}
+    .face-overlay[hidden] {{ display: none; }}
+    .lightbox-bar {{
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: #fff;
+      font-size: 14px;
+      min-width: 0;
+    }}
+    .lightbox-title {{
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }}
+    .lightbox-close {{
+      border-color: rgb(255 255 255 / 35%);
+      background: rgb(255 255 255 / 10%);
+      color: #fff;
+      min-width: 42px;
+    }}
+    .lightbox-stage {{
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      overflow: auto;
+    }}
+    .face-list {{
+      width: min(1200px, 100%);
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+      align-items: start;
+    }}
+    .face-detail {{
+      display: grid;
+      gap: 8px;
+      color: #fff;
+    }}
+    .face-detail-title {{
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }}
+    .lightbox-media {{
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+    }}
+    .lightbox-media img {{
+      display: block;
+      max-width: calc(100vw - 24px);
+      width: auto;
+      height: auto;
+    }}
+    .face-box {{
+      position: absolute;
+      border: 3px solid #ff1f1f;
+      background: rgb(255 31 31 / 12%);
+      pointer-events: none;
+    }}
+    .assign-row {{
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }}
+    .assign-person-button {{
+      border-color: rgb(255 255 255 / 22%);
+      background: rgb(255 255 255 / 10%);
+      color: #fff;
+      min-height: 34px;
+      padding: 6px 10px;
+    }}
+    .assign-person-button:hover {{ background: rgb(255 255 255 / 18%); }}
+    .assign-person-button:disabled {{ opacity: 0.55; cursor: default; }}
+    .assign-status {{ color: var(--muted); font-size: 13px; min-height: 1.3em; }}
     @media (max-width: 640px) {{
       .shell {{ padding: 16px; }}
       .search {{ grid-template-columns: 1fr; }}
       .browser-header {{ align-items: stretch; }}
-      .nav-button, .server-search-link, .person-link {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
+      .nav-button, .server-search-link, .person-link, .faces-button {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
     }}
   </style>
 </head>
 <body>
 {body}
 <script>
+  const faceOverlay = document.getElementById("faceOverlay");
+  const openFacesButton = document.querySelector("[data-open-faces]");
+  const closeFacesButton = document.querySelector("[data-close-faces]");
+  function openFacesOverlay() {{
+    if (!faceOverlay) return;
+    faceOverlay.hidden = false;
+    closeFacesButton?.focus();
+  }}
+  function closeFacesOverlay() {{
+    if (!faceOverlay) return;
+    faceOverlay.hidden = true;
+  }}
+  function ensureTopPersonLink(name, url) {{
+    if (!name || !url) return;
+    let people = document.querySelector(".topline .people");
+    if (!people) {{
+      people = document.createElement("div");
+      people.className = "people";
+      document.querySelector(".topline .title")?.after(people);
+    }}
+    const exists = Array.from(people.querySelectorAll(".person-link")).some(link => link.textContent === name);
+    if (exists) return;
+    const link = document.createElement("a");
+    link.className = "person-link";
+    link.href = url;
+    link.textContent = name;
+    people.append(link);
+  }}
+  openFacesButton?.addEventListener("click", openFacesOverlay);
+  closeFacesButton?.addEventListener("click", closeFacesOverlay);
+  faceOverlay?.addEventListener("click", event => {{
+    if (event.target === faceOverlay || event.target.classList?.contains("lightbox-stage")) closeFacesOverlay();
+  }});
+  document.querySelectorAll(".assign-person-button").forEach(button => {{
+    button.addEventListener("click", async () => {{
+      const faceId = button.dataset.faceId;
+      const personName = button.dataset.personName;
+      const detail = button.closest(".face-detail");
+      const status = detail?.querySelector(".assign-status");
+      if (!faceId || !personName || !status) return;
+      status.textContent = "Lagrer...";
+      detail.querySelectorAll(".assign-person-button").forEach(item => item.disabled = true);
+      try {{
+        const response = await fetch("/api/face-person-add-face", {{
+          method: "POST",
+          headers: {{"Content-Type": "application/json"}},
+          body: JSON.stringify({{face_id: Number(faceId), person_name: personName}}),
+        }});
+        const payload = await response.json();
+        if (!payload.ok) throw new Error(payload.error || "Kunne ikke lagre.");
+        status.textContent = `Koblet til ${{payload.person_name}}.`;
+        ensureTopPersonLink(payload.person_name, payload.person_url);
+        detail.remove();
+        if (!document.querySelector(".face-detail")) {{
+          closeFacesOverlay();
+          window.location.reload();
+        }}
+      }} catch (error) {{
+        status.textContent = error.message || "Kunne ikke lagre.";
+        detail.querySelectorAll(".assign-person-button").forEach(item => item.disabled = false);
+      }}
+    }});
+  }});
   document.addEventListener("keydown", event => {{
+    if (faceOverlay && !faceOverlay.hidden) {{
+      if (event.key === "Escape") {{
+        event.preventDefault();
+        closeFacesOverlay();
+      }}
+      return;
+    }}
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const target = event.target;
     if (
