@@ -21,7 +21,15 @@ from bilder.importer import safe_copy
 from bilder.media import ImageDimensions, sha256_file
 from bilder.openclip import connect_openclip_db, openclip_db_path, resolve_torch_device
 from bilder.program_state import PROGRAM_DB_FILENAME
-from bilder.server import adjacent_browser_items, browser_item_by_id, browser_month_navigation, index_html, item_page_html
+from bilder.server import (
+    adjacent_browser_items,
+    browser_item_by_id,
+    browser_month_items,
+    browser_month_navigation,
+    index_html,
+    item_page_html,
+    month_page_html,
+)
 from bilder.target_lock import LOCK_FILENAME
 from tests.test_media import (
     jpeg_with_xmp_date,
@@ -365,6 +373,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("Bildebrowser", body)
         self.assertIn("/file/2", body)
         self.assertIn("/month/2024-01", body)
+        self.assertIn("/month/2023-01", body)
         self.assertIn("/month/2023-12", body)
         self.assertIn("/month/2024-02", body)
         self.assertIn("/month/2025-01", body)
@@ -381,6 +390,40 @@ class CliTests(unittest.TestCase):
         self.assertIn("ArrowDown", body)
         self.assertIn("PageUp", body)
         self.assertIn("PageDown", body)
+
+    def test_run_server_month_page_uses_browser_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20231201.jpg").write_bytes(b"image-one")
+            (source / "IMG_20240102.jpg").write_bytes(b"image-two")
+            (source / "IMG_20240203.jpg").write_bytes(b"image-three")
+            (source / "IMG_20250104.jpg").write_bytes(b"image-four")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            body = month_page_html(target, "2024-01", browser_month_items(target, "2024-01"))
+
+        for label in (
+            "Forrige år",
+            "Neste år",
+            "Forrige måned",
+            "Neste måned",
+            "Forrige bilde",
+            "Neste bilde",
+        ):
+            self.assertIn(label, body)
+        self.assertIn("/month/2023-01", body)
+        self.assertIn("/month/2023-12", body)
+        self.assertIn("/month/2024-02", body)
+        self.assertIn("/month/2025-01", body)
+        self.assertIn('data-key-nav="previous"', body)
+        self.assertIn('data-key-nav="next"', body)
+        self.assertIn('data-key-nav="previous-year"', body)
+        self.assertIn('data-key-nav="next-year"', body)
+        self.assertIn('data-key-nav="previous-month"', body)
+        self.assertIn('data-key-nav="next-month"', body)
 
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

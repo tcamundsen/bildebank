@@ -291,32 +291,48 @@ def browser_month_navigation(target: Path, item: Any) -> dict[str, str | None]:
     current_key = month_key_from_path(
         Path(display_relative_path(target, Path(str(item["target_path"]))))
     )
-    keys = browser_month_keys(target)
-    if current_key not in keys:
+    return browser_month_navigation_for_key(target, current_key)
+
+
+def browser_month_navigation_for_key(target: Path, current_key: str) -> dict[str, str | None]:
+    if not valid_month_key(current_key):
         return {
             "previous_year": None,
             "next_year": None,
             "previous_month": None,
             "next_month": None,
         }
-    index = keys.index(current_key)
+    keys = browser_month_keys(target)
     years = sorted({key[:4] for key in keys})
     current_year = current_key[:4]
-    current_year_index = years.index(current_year)
+    current_year_index = years.index(current_year) if current_year in years else -1
     previous_year = years[current_year_index - 1] if current_year_index > 0 else None
     next_year = years[current_year_index + 1] if current_year_index < len(years) - 1 else None
     return {
-        "previous_year": first_month_in_year(keys, previous_year),
-        "next_year": first_month_in_year(keys, next_year),
-        "previous_month": keys[index - 1] if index > 0 else None,
-        "next_month": keys[index + 1] if index < len(keys) - 1 else None,
+        "previous_year": january_in_year(previous_year),
+        "next_year": january_in_year(next_year),
+        "previous_month": adjacent_calendar_month(current_key, -1),
+        "next_month": adjacent_calendar_month(current_key, 1),
     }
 
 
-def first_month_in_year(keys: list[str], year: str | None) -> str | None:
+def january_in_year(year: str | None) -> str | None:
     if year is None:
         return None
-    return next((key for key in keys if key.startswith(year)), None)
+    return f"{year}-01"
+
+
+def adjacent_calendar_month(month_key: str, delta: int) -> str:
+    year_text, month_text = month_key.split("-", 1)
+    year = int(year_text)
+    month = int(month_text) + delta
+    if month < 1:
+        year -= 1
+        month = 12
+    elif month > 12:
+        year += 1
+        month = 1
+    return f"{year:04d}-{month:02d}"
 
 
 def browser_month_items(target: Path, month_key: str) -> list[Any]:
@@ -508,34 +524,24 @@ def item_page_html(
     relative = display_relative_path(target, target_path)
     month_key = month_key_from_path(Path(relative))
     media = item_media_html(item)
-    previous_link = nav_link(previous_item, "Forrige bilde", "previous")
-    next_link = nav_link(next_item, "Neste bilde", "next")
-    previous_year_link = month_nav_link(month_nav["previous_year"], "Forrige år", "previous-year")
-    next_year_link = month_nav_link(month_nav["next_year"], "Neste år", "next-year")
-    previous_month_link = month_nav_link(month_nav["previous_month"], "Forrige måned", "previous-month")
-    next_month_link = month_nav_link(month_nav["next_month"], "Neste måned", "next-month")
-    month_link = f'<a href="/month/{html.escape(month_key)}">Månedsoversikt</a>' if valid_month_key(month_key) else ""
+    controls = browser_controls_html(month_nav, previous_item, next_item)
     return page_html(
         f"Bildebrowser: {target_path.name}",
         f"""
-        <main class="browser-shell">
+        <main class="server-browser">
           <header class="browser-header">
-            <div>
-              <h1>Bildebrowser</h1>
-              <p class="meta">{html.escape(relative)} · {html.escape(format_bytes(int(item["size_bytes"])))} · {html.escape(str(item["date_source"]))}</p>
+            <div class="topline">
+              <div class="title">Bildebrowser</div>
+              <span class="status">{html.escape(relative)} · {html.escape(format_bytes(int(item["size_bytes"])))} · {html.escape(str(item["date_source"]))}</span>
+              <a class="server-search-link" href="/search">Bildesøk</a>
             </div>
-            <nav class="browser-nav">
-              {previous_year_link}
-              {next_year_link}
-              {previous_month_link}
-              {next_month_link}
-              {previous_link}
-              {month_link}
-              {next_link}
-              <a href="/search">Bildesøk</a>
-            </nav>
+            {controls}
           </header>
           <section class="stage">{media}</section>
+          <footer class="browser-footer">
+            <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
+            {month_overview_link(month_key)}
+          </footer>
         </main>
         """,
     )
@@ -553,33 +559,68 @@ def item_media_html(item: Any) -> str:
 
 def nav_link(item: Any | None, label: str, key_nav: str) -> str:
     if item is None:
-        return f'<span class="disabled">{html.escape(label)}</span>'
-    return f'<a href="/item/{int(item["id"])}" data-key-nav="{html.escape(key_nav)}">{html.escape(label)}</a>'
+        return nav_disabled(label)
+    return nav_button(f"/item/{int(item['id'])}", label, key_nav)
 
 
 def month_nav_link(month_key: str | None, label: str, key_nav: str) -> str:
     if month_key is None:
-        return f'<span class="disabled">{html.escape(label)}</span>'
-    return f'<a href="/month/{html.escape(month_key)}" data-key-nav="{html.escape(key_nav)}">{html.escape(label)}</a>'
+        return nav_disabled(label)
+    return nav_button(f"/month/{html.escape(month_key)}", label, key_nav)
+
+
+def nav_button(href: str, label: str, key_nav: str) -> str:
+    return f'<a class="nav-button" href="{href}" data-key-nav="{html.escape(key_nav)}">{html.escape(label)}</a>'
+
+
+def nav_disabled(label: str) -> str:
+    return f'<span class="nav-button disabled">{html.escape(label)}</span>'
+
+
+def browser_controls_html(
+    month_nav: dict[str, str | None],
+    previous_item: Any | None,
+    next_item: Any | None,
+) -> str:
+    return f"""
+    <nav class="controls" aria-label="Navigering">
+      {month_nav_link(month_nav["previous_year"], "Forrige år", "previous-year")}
+      {month_nav_link(month_nav["next_year"], "Neste år", "next-year")}
+      {month_nav_link(month_nav["previous_month"], "Forrige måned", "previous-month")}
+      {month_nav_link(month_nav["next_month"], "Neste måned", "next-month")}
+      {nav_link(previous_item, "Forrige bilde", "previous")}
+      {nav_link(next_item, "Neste bilde", "next")}
+    </nav>
+    """
+
+
+def month_overview_link(month_key: str) -> str:
+    if not valid_month_key(month_key):
+        return ""
+    return f'<a class="month-overview-link" href="/month/{html.escape(month_key)}">Månedsoversikt</a>'
 
 
 def month_page_html(target: Path, month_key: str, items: list[Any]) -> str:
     cards = "\n".join(month_item_html(target, item) for item in items)
+    previous_item = items[-1] if items else None
+    next_item = items[0] if items else None
+    controls = browser_controls_html(browser_month_navigation_for_key(target, month_key), previous_item, next_item)
     return page_html(
         f"Månedsoversikt: {month_key}",
         f"""
-        <main class="browser-shell">
+        <main class="server-browser">
           <header class="browser-header">
-            <div>
-              <h1>{html.escape(month_key)}</h1>
-              <p class="meta">{len(items)} filer i måneden.</p>
+            <div class="topline">
+              <div class="title">Bildebrowser</div>
+              <span class="status">{html.escape(month_key)} oversikt ({len(items)} filer)</span>
+              <a class="server-search-link" href="/search">Bildesøk</a>
             </div>
-            <nav class="browser-nav">
-              <a href="/">Første bilde</a>
-              <a href="/search">Bildesøk</a>
-            </nav>
+            {controls}
           </header>
           <section class="month-grid-server">{cards}</section>
+          <footer class="browser-footer">
+            <span class="filename">Månedsoversikt: {html.escape(month_key)}</span>
+          </footer>
         </main>
         """,
     )
@@ -652,29 +693,32 @@ def page_html(title: str, body: str) -> str:
     button {{ cursor: pointer; }}
     button:hover {{ background: #3a3a3a; }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }}
-    .browser-shell {{ min-height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }}
+    .server-browser {{ min-height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }}
     .browser-header {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px 16px;
-      flex-wrap: wrap;
       background: var(--panel);
       border-bottom: 1px solid var(--border);
       padding: 12px;
+      display: grid;
+      gap: 10px;
     }}
-    .browser-nav {{ display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }}
+    .topline, .controls {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
+    .title {{ font-weight: 700; margin-right: 12px; }}
+    .status {{ color: var(--muted); font-size: 14px; }}
     a, .disabled {{ color: var(--accent); }}
     a {{ text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
-    .browser-nav a, .browser-nav .disabled {{
+    .nav-button, .server-search-link, .month-overview-link {{
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 7px 10px;
+      padding: 8px 10px;
       background: #303030;
+      color: var(--text);
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
     }}
-    .browser-nav a:hover {{ background: #3a3a3a; text-decoration: none; }}
-    .disabled {{ color: #777; }}
+    .nav-button:hover, .server-search-link:hover, .month-overview-link:hover {{ background: #3a3a3a; text-decoration: none; }}
+    .disabled {{ color: #777; cursor: default; }}
     .stage {{
       min-height: 0;
       display: grid;
@@ -715,11 +759,29 @@ def page_html(title: str, body: str) -> str:
     .score {{ color: var(--muted); margin-top: 4px; }}
     .error {{ color: var(--danger); }}
     .message {{ color: var(--muted); }}
+    .browser-footer {{
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      padding: 8px 12px;
+      font-size: 13px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      align-items: center;
+      min-width: 0;
+    }}
+    .filename {{
+      min-width: 0;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      color: var(--muted);
+    }}
     @media (max-width: 640px) {{
       .shell {{ padding: 16px; }}
       .search {{ grid-template-columns: 1fr; }}
       .browser-header {{ align-items: stretch; }}
-      .browser-nav a, .browser-nav .disabled {{ flex: 1 1 auto; text-align: center; }}
+      .nav-button, .server-search-link, .month-overview-link {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
     }}
   </style>
 </head>
