@@ -14,5 +14,11 @@ model_name = "buffalo_l"
 # OpenCLIP brukes til tekstbasert bildesøk, for eksempel "strand".
 # Dette er separat fra ansiktsgjenkjenning.
 model_root = ".bildebank-openclip"
+
+# Standardmodellen er raskere og lettere.
 model_name = "ViT-B-32"
 pretrained = "laion2b_s34b_b79k"
+
+# Hvis du vil teste større og tregere modell, bruk:
+# model_name = "ViT-L-14"
+# pretrained = "laion2b_s32b_b82k"

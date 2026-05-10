@@ -29,6 +29,8 @@ class OpenClipDbSummary:
 @dataclass(frozen=True)
 class ImageScanStats:
     total: int
+    checked: int = 0
+    to_scan: int = 0
     skipped: int = 0
     scanned: int = 0
     errors: int = 0
@@ -158,24 +160,38 @@ def scan_images(
 
     conn = connect_openclip_db(target)
     try:
-        if progress is not None:
-            progress("load_model", 0, total, stats, None)
-        model, preprocess = load_image_model(config)
-        scanned = 0
+        rows_to_scan = []
         skipped = 0
-        errors = 0
-        last_error_path = None
-        last_error_message = None
         for index, row in enumerate(image_rows, start=1):
             file_id = int(row["id"])
             sha256 = str(row["sha256"])
-            target_path = Path(str(row["target_path"]))
             if has_current_embedding(conn, file_id, sha256, config):
                 skipped += 1
-                stats = ImageScanStats(total=total, skipped=skipped, scanned=scanned, errors=errors)
-                if progress is not None:
-                    progress("skip", index, total, stats, target_path)
-                continue
+            else:
+                rows_to_scan.append(row)
+            stats = ImageScanStats(
+                total=total,
+                checked=index,
+                to_scan=len(rows_to_scan),
+                skipped=skipped,
+            )
+            if progress is not None:
+                progress("check", index, total, stats, Path(str(row["target_path"])))
+        if not rows_to_scan:
+            if progress is not None:
+                progress("done", total, total, stats, None)
+            return stats
+        if progress is not None:
+            progress("load_model", 0, len(rows_to_scan), stats, None)
+        model, preprocess = load_image_model(config)
+        scanned = 0
+        errors = 0
+        last_error_path = None
+        last_error_message = None
+        for index, row in enumerate(rows_to_scan, start=1):
+            file_id = int(row["id"])
+            sha256 = str(row["sha256"])
+            target_path = Path(str(row["target_path"]))
             try:
                 vector = image_embedding(model, preprocess, target_path)
                 store_embedding(
@@ -194,6 +210,8 @@ def scan_images(
                 last_error_message = str(exc)
                 stats = ImageScanStats(
                     total=total,
+                    checked=total,
+                    to_scan=len(rows_to_scan),
                     skipped=skipped,
                     scanned=scanned,
                     errors=errors,
@@ -201,11 +219,13 @@ def scan_images(
                     last_error_message=last_error_message,
                 )
                 if progress is not None:
-                    progress("error", index, total, stats, target_path)
+                    progress("error", index, len(rows_to_scan), stats, target_path)
                 conn.commit()
                 continue
             stats = ImageScanStats(
                 total=total,
+                checked=total,
+                to_scan=len(rows_to_scan),
                 skipped=skipped,
                 scanned=scanned,
                 errors=errors,
@@ -213,10 +233,10 @@ def scan_images(
                 last_error_message=last_error_message,
             )
             if progress is not None:
-                progress("scan", index, total, stats, target_path)
+                progress("scan", index, len(rows_to_scan), stats, target_path)
             conn.commit()
         if progress is not None:
-            progress("done", total, total, stats, None)
+            progress("done", len(rows_to_scan), len(rows_to_scan), stats, None)
         return stats
     finally:
         conn.close()

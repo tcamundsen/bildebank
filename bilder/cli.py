@@ -1208,21 +1208,30 @@ def print_image_scan_progress(
         return
     if stage == "load_model":
         IMAGE_SCAN_PROGRESS_STARTED_AT = None
+        print(f"Image-scan: {stats.to_scan} nye eller endrede bilder skal scannes.")
         print("Image-scan: laster OpenCLIP-modell. Det kan ta litt tid.")
         return
     if stage == "error":
         message = getattr(stats, "last_error_message", None) or "ukjent feil"
         print(f"Image-scan-feil: {path}\t{message}")
         return
-    if stage in {"scan", "skip"}:
+    if stage == "check":
+        if should_print_progress(current, total):
+            print(
+                "Image-scan: "
+                f"kontrollert={current}/{total}, "
+                f"hoppet_over={stats.skipped}, skal_scannes={stats.to_scan}"
+            )
+        return
+    if stage == "scan":
         if IMAGE_SCAN_PROGRESS_STARTED_AT is None and current > 0:
             IMAGE_SCAN_PROGRESS_STARTED_AT = time.monotonic()
         if should_print_progress(current, total):
             eta = face_scan_eta_text(current, total, IMAGE_SCAN_PROGRESS_STARTED_AT)
             print(
                 "Image-scan: "
-                f"behandlet={current}/{total}, "
-                f"scannet={stats.scanned}, hoppet_over={stats.skipped}, "
+                f"behandlet={stats.skipped + current}/{stats.total}, "
+                f"scannet={current}/{total}, hoppet_over={stats.skipped}, "
                 f"feil={stats.errors}, gjenstår={eta}"
             )
         return

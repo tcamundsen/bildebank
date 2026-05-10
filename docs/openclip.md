@@ -19,7 +19,7 @@ Første versjon er avgrenset til:
 - bilder, ikke video
 - søk på hele bildet
 - tekstsøk, ikke objektdeteksjon
-- modellen `ViT-B-32`
+- modell valgt i config, som standard `ViT-B-32`
 - de 100 beste treffene som standard
 - resultatfilen `image-search.html`
 
@@ -33,10 +33,12 @@ Kjør dette fra programmappen:
 .\install-openclip.ps1
 ```
 
-Scriptet installerer OpenCLIP i Bildebanks lokale Python-miljø og tester modellen:
+Scriptet installerer OpenCLIP i Bildebanks lokale Python-miljø og tester
+modellene:
 
 ```text
 ViT-B-32 (laion2b_s34b_b79k)
+ViT-L-14 (laion2b_s32b_b82k)
 ```
 
 Modellfiler lagres lokalt i programmappen:
@@ -53,6 +55,34 @@ Hvis du ser en melding om `HF Hub` eller `HF_TOKEN`, betyr det vanligvis at
 OpenCLIP henter modellfiler fra Hugging Face uten innlogging. Det er ikke
 nødvendig med `HF_TOKEN` for vanlig bruk, men Hugging Face kan gi høyere
 nedlastingsgrenser hvis man bruker en token.
+
+## Velg modell
+
+OpenCLIP-modellen velges i `bildebank-config.toml`:
+
+```toml
+[openclip]
+model_root = ".bildebank-openclip"
+model_name = "ViT-B-32"
+pretrained = "laion2b_s34b_b79k"
+```
+
+For å teste den større L/14-modellen, bytt til:
+
+```toml
+[openclip]
+model_root = ".bildebank-openclip"
+model_name = "ViT-L-14"
+pretrained = "laion2b_s32b_b82k"
+```
+
+Modellen omtales ofte som `ViT-L/14`, men i OpenCLIP-config bruker vi navnet
+`ViT-L-14`.
+
+`ViT-L-14` kan gi bedre treff enn `ViT-B-32`, men den er større og tregere.
+Når du bytter modell, må `image-scan` kjøres på nytt for den modellen. Bildebank
+lagrer embeddings separat per modell, så du kan bytte tilbake uten å slette de
+gamle embeddingene.
 
 ## Sjekk status
 

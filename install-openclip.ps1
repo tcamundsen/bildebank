@@ -14,8 +14,10 @@ function Invoke-Native {
 $RepoDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $VenvPython = Join-Path $RepoDir ".venv\Scripts\python.exe"
 $ModelRoot = Join-Path $RepoDir ".bildebank-openclip"
-$ModelName = "ViT-B-32"
-$Pretrained = "laion2b_s34b_b79k"
+$Models = @(
+    @{ ModelName = "ViT-B-32"; Pretrained = "laion2b_s34b_b79k" },
+    @{ ModelName = "ViT-L-14"; Pretrained = "laion2b_s32b_b82k" }
+)
 
 if (-not (Test-Path -LiteralPath $VenvPython)) {
     throw "Fant ikke Python i .venv. Installer Bildebank forst."
@@ -51,17 +53,26 @@ print(f"OpenCLIP klar: {model_name} ({pretrained})")
 '@
 
     try {
-        Write-Host "Laster ned og tester OpenCLIP-modell:"
-        Write-Host "  $ModelName ($Pretrained)"
         Write-Host "Modellmappe:"
         Write-Host "  $ModelRoot"
-        Invoke-Native -FilePath $VenvPython -ArgumentList @($SmokeTest.FullName, $ModelRoot, $ModelName, $Pretrained)
+        foreach ($Model in $Models) {
+            Write-Host "Laster ned og tester OpenCLIP-modell:"
+            Write-Host "  $($Model.ModelName) ($($Model.Pretrained))"
+            Invoke-Native -FilePath $VenvPython -ArgumentList @(
+                $SmokeTest.FullName,
+                $ModelRoot,
+                $Model.ModelName,
+                $Model.Pretrained
+            )
+        }
     } finally {
         Remove-Item -LiteralPath $SmokeTest -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Host "Ferdig. OpenCLIP er installert med modell:"
-    Write-Host "  $ModelName ($Pretrained)"
+    Write-Host "Ferdig. OpenCLIP er installert med modeller:"
+    foreach ($Model in $Models) {
+        Write-Host "  $($Model.ModelName) ($($Model.Pretrained))"
+    }
 } finally {
     Pop-Location
 }
