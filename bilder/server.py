@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import html
 import mimetypes
-import os
 import threading
 import urllib.parse
 from dataclasses import dataclass
+from functools import lru_cache
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -195,15 +195,18 @@ def parse_file_id(value: str) -> int:
     return file_id
 
 
+FILE_COLUMNS = "id, target_path, target_path_key, stored_filename, taken_date, date_source, size_bytes"
+
+
 def first_browser_item(target: Path) -> Any | None:
     conn = db.connect(target)
     try:
         return conn.execute(
-            """
-            SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
+            f"""
+            SELECT {FILE_COLUMNS}
             FROM files
             WHERE deleted_at IS NULL
-            ORDER BY COALESCE(taken_date, ''), target_path
+            ORDER BY target_path_key
             LIMIT 1
             """
         ).fetchone()
@@ -215,8 +218,8 @@ def browser_item_by_id(target: Path, file_id: int) -> Any | None:
     conn = db.connect(target)
     try:
         return conn.execute(
-            """
-            SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
+            f"""
+            SELECT {FILE_COLUMNS}
             FROM files
             WHERE deleted_at IS NULL AND id = ?
             """,
@@ -231,58 +234,73 @@ def adjacent_browser_items(target: Path, item: Any) -> tuple[Any | None, Any | N
     conn = db.connect(target)
     try:
         previous_item = conn.execute(
-            """
-            SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
+            f"""
+            SELECT {FILE_COLUMNS}
             FROM files
             WHERE deleted_at IS NULL
-              AND (
-                COALESCE(taken_date, '') < ?
-                OR (COALESCE(taken_date, '') = ? AND target_path < ?)
-              )
-            ORDER BY COALESCE(taken_date, '') DESC, target_path DESC
+              AND target_path_key < ?
+            ORDER BY target_path_key DESC
             LIMIT 1
             """,
-            (key[0], key[0], key[1]),
+            (key,),
         ).fetchone()
         next_item = conn.execute(
-            """
-            SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
+            f"""
+            SELECT {FILE_COLUMNS}
             FROM files
             WHERE deleted_at IS NULL
-              AND (
-                COALESCE(taken_date, '') > ?
-                OR (COALESCE(taken_date, '') = ? AND target_path > ?)
-              )
-            ORDER BY COALESCE(taken_date, ''), target_path
+              AND target_path_key > ?
+            ORDER BY target_path_key
             LIMIT 1
             """,
-            (key[0], key[0], key[1]),
+            (key,),
         ).fetchone()
         return previous_item, next_item
     finally:
         conn.close()
 
 
-def item_order_key(item: Any) -> tuple[str, str]:
-    return str(item["taken_date"] or ""), str(item["target_path"])
+def item_order_key(item: Any) -> str:
+    return str(item["target_path_key"])
 
 
 def browser_month_keys(target: Path) -> list[str]:
+    db_path = db.db_path_for_target(target)
+    try:
+        mtime_ns = db_path.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = 0
+    return list(cached_browser_month_keys(db.path_key(target), mtime_ns))
+
+
+@lru_cache(maxsize=8)
+def cached_browser_month_keys(target_key: str, db_mtime_ns: int) -> tuple[str, ...]:
+    target = Path(target_key)
+    prefix = target_key + "/"
     conn = db.connect(target)
     try:
         rows = conn.execute(
             """
-            SELECT target_path
+            SELECT DISTINCT
+              substr(target_path_key, ?, 4) || '-' || substr(target_path_key, ?, 2) AS month_key
             FROM files
             WHERE deleted_at IS NULL
-            ORDER BY target_path
-            """
+              AND target_path_key LIKE ?
+              AND substr(target_path_key, ?, 4) GLOB '[0-9][0-9][0-9][0-9]'
+              AND substr(target_path_key, ?, 1) = '/'
+              AND substr(target_path_key, ?, 2) GLOB '[0-9][0-9]'
+            ORDER BY month_key
+            """,
+            (
+                len(prefix) + 1,
+                len(prefix) + 6,
+                prefix + "%",
+                len(prefix) + 1,
+                len(prefix) + 5,
+                len(prefix) + 6,
+            ),
         )
-        keys = {
-            month_key_from_path(Path(display_relative_path(target, Path(str(row["target_path"])))))
-            for row in rows
-        }
-        return sorted(key for key in keys if valid_month_key(key))
+        return tuple(str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"])))
     finally:
         conn.close()
 
@@ -303,53 +321,49 @@ def browser_month_navigation_for_key(target: Path, current_key: str) -> dict[str
             "next_month": None,
         }
     keys = browser_month_keys(target)
+    if not keys:
+        return {
+            "previous_year": None,
+            "next_year": None,
+            "previous_month": None,
+            "next_month": None,
+        }
     years = sorted({key[:4] for key in keys})
     current_year = current_key[:4]
     current_year_index = years.index(current_year) if current_year in years else -1
     previous_year = years[current_year_index - 1] if current_year_index > 0 else None
     next_year = years[current_year_index + 1] if current_year_index < len(years) - 1 else None
+    previous_month = next((key for key in reversed(keys) if key < current_key), None)
+    next_month = next((key for key in keys if key > current_key), None)
     return {
-        "previous_year": january_in_year(previous_year),
-        "next_year": january_in_year(next_year),
-        "previous_month": adjacent_calendar_month(current_key, -1),
-        "next_month": adjacent_calendar_month(current_key, 1),
+        "previous_year": first_month_in_year(keys, previous_year),
+        "next_year": first_month_in_year(keys, next_year),
+        "previous_month": previous_month,
+        "next_month": next_month,
     }
 
 
-def january_in_year(year: str | None) -> str | None:
+def first_month_in_year(keys: list[str], year: str | None) -> str | None:
     if year is None:
         return None
-    return f"{year}-01"
-
-
-def adjacent_calendar_month(month_key: str, delta: int) -> str:
-    year_text, month_text = month_key.split("-", 1)
-    year = int(year_text)
-    month = int(month_text) + delta
-    if month < 1:
-        year -= 1
-        month = 12
-    elif month > 12:
-        year += 1
-        month = 1
-    return f"{year:04d}-{month:02d}"
+    return next((key for key in keys if key.startswith(year)), None)
 
 
 def browser_month_items(target: Path, month_key: str) -> list[Any]:
     year, month = month_key.split("-", 1)
-    prefix = str((target / year / month).resolve())
+    prefix = db.path_key(target / year / month) + "/"
     conn = db.connect(target)
     try:
         return list(
             conn.execute(
-                """
-                SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
+                f"""
+                SELECT {FILE_COLUMNS}
                 FROM files
                 WHERE deleted_at IS NULL
-                  AND target_path LIKE ?
-                ORDER BY COALESCE(taken_date, ''), target_path
+                  AND target_path_key LIKE ?
+                ORDER BY target_path_key
                 """,
-                (prefix + os.sep + "%",),
+                (prefix + "%",),
             )
         )
     finally:

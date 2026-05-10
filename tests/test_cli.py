@@ -373,7 +373,6 @@ class CliTests(unittest.TestCase):
         self.assertIn("Bildebrowser", body)
         self.assertIn("/file/2", body)
         self.assertIn("/month/2024-01", body)
-        self.assertIn("/month/2023-01", body)
         self.assertIn("/month/2023-12", body)
         self.assertIn("/month/2024-02", body)
         self.assertIn("/month/2025-01", body)
@@ -414,7 +413,6 @@ class CliTests(unittest.TestCase):
             "Neste bilde",
         ):
             self.assertIn(label, body)
-        self.assertIn("/month/2023-01", body)
         self.assertIn("/month/2023-12", body)
         self.assertIn("/month/2024-02", body)
         self.assertIn("/month/2025-01", body)
