@@ -554,7 +554,6 @@ def item_page_html(
 ) -> str:
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
-    month_key = month_key_from_path(Path(relative))
     media = item_media_html(item)
     controls = browser_controls_html(month_nav, previous_item, next_item)
     return page_html(
@@ -572,7 +571,6 @@ def item_page_html(
           <section class="stage">{media}</section>
           <footer class="browser-footer">
             <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
-            {month_overview_link(month_key)}
           </footer>
         </main>
         """,
@@ -624,12 +622,6 @@ def browser_controls_html(
       {nav_link(next_item, "Neste bilde", "next")}
     </nav>
     """
-
-
-def month_overview_link(month_key: str) -> str:
-    if not valid_month_key(month_key):
-        return ""
-    return f'<a class="month-overview-link" href="/month/{html.escape(month_key)}">Månedsoversikt</a>'
 
 
 def month_page_html(target: Path, month_key: str, items: list[Any]) -> str:
@@ -729,27 +721,27 @@ def page_html(title: str, body: str) -> str:
     .browser-header {{
       background: var(--panel);
       border-bottom: 1px solid var(--border);
-      padding: 12px;
+      padding: 8px 10px;
       display: grid;
-      gap: 10px;
+      gap: 7px;
     }}
     .topline, .controls {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
-    .title {{ font-weight: 700; margin-right: 12px; }}
-    .status {{ color: var(--muted); font-size: 14px; }}
+    .title {{ font-weight: 700; margin-right: 8px; line-height: 1.2; }}
+    .status {{ color: var(--muted); font-size: 13px; line-height: 1.2; }}
     a, .disabled {{ color: var(--accent); }}
     a {{ text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}
-    .nav-button, .server-search-link, .month-overview-link {{
+    .nav-button, .server-search-link {{
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 8px 10px;
+      padding: 6px 9px;
       background: #303030;
       color: var(--text);
-      min-height: 38px;
+      min-height: 32px;
       display: inline-flex;
       align-items: center;
     }}
-    .nav-button:hover, .server-search-link:hover, .month-overview-link:hover {{ background: #3a3a3a; text-decoration: none; }}
+    .nav-button:hover, .server-search-link:hover {{ background: #3a3a3a; text-decoration: none; }}
     .disabled {{ color: #777; cursor: default; }}
     .stage {{
       min-height: 0;
@@ -758,11 +750,11 @@ def page_html(title: str, body: str) -> str:
       background: var(--stage);
       border-top: 1px solid var(--border);
       overflow: hidden;
-      padding: 10px;
+      padding: 14px;
     }}
     .stage img, .stage video {{
-      max-width: 100%;
-      max-height: calc(100vh - 98px);
+      max-width: min(100%, 92vw);
+      max-height: calc(100vh - 10rem);
       object-fit: contain;
       display: block;
     }}
@@ -813,7 +805,7 @@ def page_html(title: str, body: str) -> str:
       .shell {{ padding: 16px; }}
       .search {{ grid-template-columns: 1fr; }}
       .browser-header {{ align-items: stretch; }}
-      .nav-button, .server-search-link, .month-overview-link {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
+      .nav-button, .server-search-link {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
     }}
   </style>
 </head>

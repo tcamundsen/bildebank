@@ -372,11 +372,11 @@ class CliTests(unittest.TestCase):
 
         self.assertIn("Bildebrowser", body)
         self.assertIn("/file/2", body)
-        self.assertIn("/month/2024-01", body)
         self.assertIn("/month/2023-12", body)
         self.assertIn("/month/2024-02", body)
         self.assertIn("/month/2025-01", body)
         self.assertIn("/search", body)
+        self.assertNotIn("Månedsoversikt</a>", body)
         self.assertIn('data-key-nav="previous"', body)
         self.assertIn('data-key-nav="next"', body)
         self.assertIn('data-key-nav="previous-year"', body)
