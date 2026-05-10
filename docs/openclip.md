@@ -41,6 +41,10 @@ ViT-B-32 (laion2b_s34b_b79k)
 ViT-L-14 (laion2b_s32b_b82k)
 ```
 
+NB: dette betyr at foreløpig, så lastes to modeller, selv om vi bare trenger en.
+Dette fikses etter hvert når jeg vet hvilken som fungerer best. Også er mye bedre
+søk via nettleser under arbeid.
+
 Modellfiler lagres lokalt i programmappen:
 
 ```text
