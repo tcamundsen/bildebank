@@ -316,16 +316,28 @@ def cached_confirmed_people_for_file(target_path: str, face_db_mtime_ns: int, fi
             return ()
         rows = conn.execute(
             """
-            SELECT DISTINCT persons.name
+            SELECT persons.name, 0 AS priority
             FROM person_faces
             JOIN persons ON persons.id = person_faces.person_id
             JOIN faces ON faces.id = person_faces.face_id
             WHERE faces.file_id = ?
-            ORDER BY persons.name
+            UNION ALL
+            SELECT persons.name, 1 AS priority
+            FROM face_suggestions
+            JOIN persons ON persons.id = face_suggestions.person_id
+            JOIN faces ON faces.id = face_suggestions.face_id
+            WHERE faces.file_id = ?
+            ORDER BY name, priority
             """,
-            (file_id,),
+            (file_id, file_id),
         )
-        return tuple(str(row["name"]) for row in rows)
+        people: dict[str, int] = {}
+        for row in rows:
+            name = str(row["name"])
+            priority = int(row["priority"])
+            if name not in people or priority < people[name]:
+                people[name] = priority
+        return tuple(sorted(people))
     except sqlite3.Error:
         return ()
     finally:

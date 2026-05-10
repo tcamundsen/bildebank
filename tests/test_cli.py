@@ -458,7 +458,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("/month/2023-12", month_body)
         self.assertIn("/month/2024-02", month_body)
 
-    def test_run_server_item_page_links_confirmed_people(self) -> None:
+    def test_run_server_item_page_links_known_and_suggested_people(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -503,7 +503,7 @@ class CliTests(unittest.TestCase):
 
         self.assertNotIn("1 filer, 1 måneder", body)
         self.assertIn('class="person-link" href="/person-Kari.html">Kari</a>', body)
-        self.assertNotIn("Ola Nordmann", body)
+        self.assertIn('class="person-link" href="/person-Ola-Nordmann.html">Ola Nordmann</a>', body)
 
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
