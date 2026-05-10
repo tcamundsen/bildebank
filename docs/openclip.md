@@ -96,7 +96,7 @@ embedding for samme modell og samme filinnhold.
 
 Mens kommandoen kjører, viser den fremdrift i terminalen. Den skriver blant
 annet hvor mange bilder som er behandlet, hvor mange som er scannet, hvor mange
-som er hoppet over, og om noen bilder feilet.
+som er hoppet over, om noen bilder feilet, og omtrent hvor lang tid som gjenstår.
 
 Det er trygt å avbryte med `Ctrl-C`. `image-scan` lagrer underveis, og neste
 gang kommandoen kjøres, hopper Bildebank over bilder som allerede har embedding

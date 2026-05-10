@@ -58,6 +58,7 @@ from .target_lock import TargetLock
 
 
 FACE_SCAN_PROGRESS_STARTED_AT: float | None = None
+IMAGE_SCAN_PROGRESS_STARTED_AT: float | None = None
 FACE_GROUP_PROGRESS_STARTED_AT: float | None = None
 FACE_GROUP_PROGRESS_INLINE_ACTIVE = False
 FACE_GROUP_PROGRESS_INLINE_LENGTH = 0
@@ -1200,10 +1201,13 @@ def print_image_scan_progress(
     stats,
     path: Path | None,
 ) -> None:
+    global IMAGE_SCAN_PROGRESS_STARTED_AT
     if stage == "start":
+        IMAGE_SCAN_PROGRESS_STARTED_AT = None
         print(f"Image-scan: {total} bildefiler skal kontrolleres.")
         return
     if stage == "load_model":
+        IMAGE_SCAN_PROGRESS_STARTED_AT = None
         print("Image-scan: laster OpenCLIP-modell. Det kan ta litt tid.")
         return
     if stage == "error":
@@ -1211,11 +1215,15 @@ def print_image_scan_progress(
         print(f"Image-scan-feil: {path}\t{message}")
         return
     if stage in {"scan", "skip"}:
+        if IMAGE_SCAN_PROGRESS_STARTED_AT is None and current > 0:
+            IMAGE_SCAN_PROGRESS_STARTED_AT = time.monotonic()
         if should_print_progress(current, total):
+            eta = face_scan_eta_text(current, total, IMAGE_SCAN_PROGRESS_STARTED_AT)
             print(
                 "Image-scan: "
                 f"behandlet={current}/{total}, "
-                f"scannet={stats.scanned}, hoppet_over={stats.skipped}, feil={stats.errors}"
+                f"scannet={stats.scanned}, hoppet_over={stats.skipped}, "
+                f"feil={stats.errors}, gjenstår={eta}"
             )
         return
 
