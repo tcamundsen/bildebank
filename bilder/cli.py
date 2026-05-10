@@ -1288,13 +1288,17 @@ def run_image_search(target: Path, *, query: str, limit: int, browser: bool = Tr
 
 def run_server_command(target: Path, *, host: str, port: int, browser: bool = True) -> int:
     config = load_config(program_repo_root()).openclip
-    url = f"http://{host}:{port}/"
-    print(f"Starter Bildebank-server: {url}")
+    print("Starter Bildebank-server. Dette kan ta noen sekunder.")
     print(f"Bildesamling: {target}")
-    print("Trykk Ctrl-C for å stoppe serveren.")
-    if browser:
-        webbrowser.open(url)
-    run_local_server(target, config, host=host, port=port)
+
+    def on_ready(url: str) -> None:
+        print(f"Bildebank-serveren er klar: {url}")
+        print("Trykk Ctrl-C for å stoppe serveren.")
+        if browser:
+            print("Åpner nettleser.")
+            webbrowser.open(url)
+
+    run_local_server(target, config, host=host, port=port, ready=on_ready)
     return 0
 
 

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .config import OpenClipConfig
 from .openclip import (
@@ -299,8 +299,19 @@ def page_html(title: str, body: str) -> str:
 """
 
 
-def run_server(target: Path, config: OpenClipConfig, *, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> None:
+def run_server(
+    target: Path,
+    config: OpenClipConfig,
+    *,
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    ready: Callable[[str], None] | None = None,
+) -> None:
     server = BildebankServer((host, port), target, config)
+    actual_host, actual_port = server.server_address
+    url = f"http://{actual_host}:{actual_port}/"
+    if ready is not None:
+        ready(url)
     try:
         server.serve_forever()
     finally:

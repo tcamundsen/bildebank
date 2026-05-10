@@ -40,6 +40,14 @@ Når serveren kjører, åpne:
 http://127.0.0.1:8765/
 ```
 
+Terminalen skriver først at serveren starter, og deretter:
+
+```text
+Bildebank-serveren er klar: http://127.0.0.1:8765/
+```
+
+Nettleseren åpnes først når serveren er klar til å svare.
+
 Hvis du vil velge port:
 
 ```powershell
@@ -76,6 +84,10 @@ Med en server kan denne kostnaden betales én gang:
 3. Senere søk bruker samme modell i minnet.
 
 Dette bør gjøre flere søk etter hverandre merkbart raskere.
+
+Første søk kan fortsatt ta noen sekunder, fordi OpenCLIP-modellen lastes første
+gang den trengs. Senere søk i samme serverprosess bruker modellen som allerede
+ligger i minnet.
 
 ## Mulige sider
 
