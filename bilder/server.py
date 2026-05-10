@@ -130,7 +130,8 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             self.respond_text("Filen finnes ikke i bildesamlingen.", status=HTTPStatus.NOT_FOUND)
             return
         previous_item, next_item = adjacent_browser_items(self.server.target, item)
-        self.respond_html(item_page_html(self.server.target, item, previous_item, next_item))
+        month_nav = browser_month_navigation(self.server.target, item)
+        self.respond_html(item_page_html(self.server.target, item, previous_item, next_item, month_nav))
 
     def respond_month(self, raw_month: str) -> None:
         month_key = urllib.parse.unquote(raw_month).strip()
@@ -266,6 +267,58 @@ def item_order_key(item: Any) -> tuple[str, str]:
     return str(item["taken_date"] or ""), str(item["target_path"])
 
 
+def browser_month_keys(target: Path) -> list[str]:
+    conn = db.connect(target)
+    try:
+        rows = conn.execute(
+            """
+            SELECT target_path
+            FROM files
+            WHERE deleted_at IS NULL
+            ORDER BY target_path
+            """
+        )
+        keys = {
+            month_key_from_path(Path(display_relative_path(target, Path(str(row["target_path"])))))
+            for row in rows
+        }
+        return sorted(key for key in keys if valid_month_key(key))
+    finally:
+        conn.close()
+
+
+def browser_month_navigation(target: Path, item: Any) -> dict[str, str | None]:
+    current_key = month_key_from_path(
+        Path(display_relative_path(target, Path(str(item["target_path"]))))
+    )
+    keys = browser_month_keys(target)
+    if current_key not in keys:
+        return {
+            "previous_year": None,
+            "next_year": None,
+            "previous_month": None,
+            "next_month": None,
+        }
+    index = keys.index(current_key)
+    years = sorted({key[:4] for key in keys})
+    current_year = current_key[:4]
+    current_year_index = years.index(current_year)
+    previous_year = years[current_year_index - 1] if current_year_index > 0 else None
+    next_year = years[current_year_index + 1] if current_year_index < len(years) - 1 else None
+    return {
+        "previous_year": first_month_in_year(keys, previous_year),
+        "next_year": first_month_in_year(keys, next_year),
+        "previous_month": keys[index - 1] if index > 0 else None,
+        "next_month": keys[index + 1] if index < len(keys) - 1 else None,
+    }
+
+
+def first_month_in_year(keys: list[str], year: str | None) -> str | None:
+    if year is None:
+        return None
+    return next((key for key in keys if key.startswith(year)), None)
+
+
 def browser_month_items(target: Path, month_key: str) -> list[Any]:
     year, month = month_key.split("-", 1)
     prefix = str((target / year / month).resolve())
@@ -349,7 +402,9 @@ def index_html(server: BildebankServer, *, message: str = "") -> str:
     item = first_browser_item(server.target)
     if item is None:
         return empty_browser_html()
-    return item_page_html(server.target, item, *adjacent_browser_items(server.target, item))
+    previous_item, next_item = adjacent_browser_items(server.target, item)
+    month_nav = browser_month_navigation(server.target, item)
+    return item_page_html(server.target, item, previous_item, next_item, month_nav)
 
 
 def search_start_html(server: BildebankServer, *, message: str = "") -> str:
@@ -442,13 +497,23 @@ def empty_browser_html() -> str:
     )
 
 
-def item_page_html(target: Path, item: Any, previous_item: Any | None, next_item: Any | None) -> str:
+def item_page_html(
+    target: Path,
+    item: Any,
+    previous_item: Any | None,
+    next_item: Any | None,
+    month_nav: dict[str, str | None],
+) -> str:
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
     month_key = month_key_from_path(Path(relative))
     media = item_media_html(item)
-    previous_link = nav_link(previous_item, "Forrige bilde")
-    next_link = nav_link(next_item, "Neste bilde")
+    previous_link = nav_link(previous_item, "Forrige bilde", "previous")
+    next_link = nav_link(next_item, "Neste bilde", "next")
+    previous_year_link = month_nav_link(month_nav["previous_year"], "Forrige år", "previous-year")
+    next_year_link = month_nav_link(month_nav["next_year"], "Neste år", "next-year")
+    previous_month_link = month_nav_link(month_nav["previous_month"], "Forrige måned", "previous-month")
+    next_month_link = month_nav_link(month_nav["next_month"], "Neste måned", "next-month")
     month_link = f'<a href="/month/{html.escape(month_key)}">Månedsoversikt</a>' if valid_month_key(month_key) else ""
     return page_html(
         f"Bildebrowser: {target_path.name}",
@@ -460,6 +525,10 @@ def item_page_html(target: Path, item: Any, previous_item: Any | None, next_item
               <p class="meta">{html.escape(relative)} · {html.escape(format_bytes(int(item["size_bytes"])))} · {html.escape(str(item["date_source"]))}</p>
             </div>
             <nav class="browser-nav">
+              {previous_year_link}
+              {next_year_link}
+              {previous_month_link}
+              {next_month_link}
               {previous_link}
               {month_link}
               {next_link}
@@ -482,10 +551,16 @@ def item_media_html(item: Any) -> str:
     return f'<a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>'
 
 
-def nav_link(item: Any | None, label: str) -> str:
+def nav_link(item: Any | None, label: str, key_nav: str) -> str:
     if item is None:
         return f'<span class="disabled">{html.escape(label)}</span>'
-    return f'<a href="/item/{int(item["id"])}">{html.escape(label)}</a>'
+    return f'<a href="/item/{int(item["id"])}" data-key-nav="{html.escape(key_nav)}">{html.escape(label)}</a>'
+
+
+def month_nav_link(month_key: str | None, label: str, key_nav: str) -> str:
+    if month_key is None:
+        return f'<span class="disabled">{html.escape(label)}</span>'
+    return f'<a href="/month/{html.escape(month_key)}" data-key-nav="{html.escape(key_nav)}">{html.escape(label)}</a>'
 
 
 def month_page_html(target: Path, month_key: str, items: list[Any]) -> str:
@@ -650,6 +725,32 @@ def page_html(title: str, body: str) -> str:
 </head>
 <body>
 {body}
+<script>
+  document.addEventListener("keydown", event => {{
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const target = event.target;
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target instanceof HTMLSelectElement ||
+      target instanceof HTMLButtonElement ||
+      target?.isContentEditable
+    ) return;
+    const selector = {{
+      ArrowLeft: '[data-key-nav="previous"]',
+      ArrowRight: '[data-key-nav="next"]',
+      ArrowUp: '[data-key-nav="previous-month"]',
+      ArrowDown: '[data-key-nav="next-month"]',
+      PageUp: '[data-key-nav="previous-year"]',
+      PageDown: '[data-key-nav="next-year"]',
+    }}[event.key] || "";
+    if (!selector) return;
+    const link = document.querySelector(selector);
+    if (!(link instanceof HTMLAnchorElement)) return;
+    event.preventDefault();
+    window.location.href = link.href;
+  }});
+</script>
 </body>
 </html>
 """
