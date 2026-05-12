@@ -136,8 +136,8 @@ For å liste opp alle registrerte kilder:
 
 For å reversere en tidligere import:
 
-    $ bildebank unimport --name "cd-2005"
     $ bildebank unimport --dry-run --name "cd-2005"
+    $ bildebank unimport --name "cd-2005"
 
 `unimport` skal gjøre samlingen slik den ville vært hvis denne importen aldri
 hadde skjedd. Dette er en destruktiv kommando og må derfor være ekstra
@@ -346,10 +346,10 @@ lagring uten å kreve en separat databaseserver.
 
 ## Database v4
 
-Databasen ligger i målmappen som `.bilder.sqlite3`. Fra schema v2 er
-proveniens normalisert slik at én målfil kan ha flere kildefilforekomster.
-Dette er nødvendig for å kunne vite forskjell på "denne filen finnes bare i én
-kilde" og "denne målfilen er bevist av flere kilder med samme innhold".
+Databasen ligger i målmappen som `.bilder.sqlite3`. I schema v4 er proveniens
+normalisert slik at én målfil kan ha flere kildefilforekomster. Dette er
+nødvendig for å kunne vite forskjell på "denne filen finnes bare i én kilde"
+og "denne målfilen er bevist av flere kilder med samme innhold".
 
 Nye databaser som opprettes med schema v4 skal bruke disse tabellene:
 
@@ -383,29 +383,8 @@ Viktige v4-regler:
 - Nye duplikater skal registreres som flere `file_sources`-rader som peker på
   samme `files`-rad.
 
-Schema v1 hadde en enklere proveniensmodell som nå er obsolete:
-
-- `duplicate_findings`: registrerte kildefiler som var eksakte duplikater av
-  en eksisterende målfil. I v2 og nyere erstattes dette av rader i
-  `file_sources`. Tabellen skal ikke finnes i v4-databaser.
-- `files.source_id`, `files.source_path` og `files.source_path_key`: pekte på
-  én "hovedkilde" for målfilen. I v2 ligger alle kildefilforekomster i
-  `file_sources`, også den første/importerte kilden. I v3 og v4 er de gamle
-  kolonnene fysisk fjernet fra `files`.
-
-Migrering til v4 skal ta en backup, ta målmappelås og kjøre i én transaksjon.
-En gammel v1-database skal først få `file_sources` bygget fra `files` og
-`duplicate_findings`, og deretter ryddes helt opp til v4 i samme migrering.
-En v2- eller v3-database som fortsatt har eldre struktur skal også ryddes opp
-til v4.
-Migreringen skal fjerne `duplicate_findings`, bygge om `files` uten
-`source_id`, `source_path` og `source_path_key`, og bygge om `errors` slik at
-gamle source-referanser ikke blokkerer sletting av kilder. Migreringen skal gi
-navn til gamle navnløse kilder, bygge om `sources` uten `kind`, bygge om
-`file_sources` uten `kind`, og
-først committe etter at `PRAGMA foreign_key_check` og `PRAGMA integrity_check`
-er OK. Hvis en kontroll feiler, skal migreringen rulles tilbake og backupen
-beholdes.
+Eldre skjemavarianter håndteres av `bildebank migrate`. Den historiske
+migreringen til v4 beskrives i `devel-docs/database-v4-migration.md`.
 
 ## Plattform
 
@@ -447,7 +426,7 @@ kildemappene.
 
 Målmappen skal ikke ligge inni programrepoet, for eksempel under
 `$HOME/kode/bildebank`. Programmet skal avvise dette når brukeren kjører
-`bildebank target`, slik at testbilder, importerte bilder, database og generert
+`bildebank create target-dir`, slik at testbilder, importerte bilder, database og generert
 HTML ikke blandes med programkode og Git-status.
 
 Målmappen skal ikke ligge inni en kildemappe, og en kildemappe skal ikke ligge
