@@ -7,6 +7,7 @@ import datetime as dt
 import os
 import sys
 import warnings
+import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from io import BytesIO, StringIO
 from pathlib import Path
@@ -732,6 +733,59 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn(str(target.resolve()), stdout)
+
+    def test_create_stores_collection_id_and_keeps_it_stable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                first_collection_id = conn.execute(
+                    "SELECT value FROM meta WHERE key = 'collection_id'"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+
+            self.assertEqual(str(uuid.UUID(first_collection_id)), first_collection_id)
+
+            self.assertEqual(run_cli(["--target", str(target), "status"]), 0)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                second_collection_id = conn.execute(
+                    "SELECT value FROM meta WHERE key = 'collection_id'"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+
+            self.assertEqual(second_collection_id, first_collection_id)
+
+    def test_opening_current_database_without_collection_id_repairs_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute("DELETE FROM meta WHERE key = 'collection_id'")
+                conn.commit()
+            finally:
+                conn.close()
+
+            self.assertEqual(run_cli(["--target", str(target), "status"]), 0)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                repaired_collection_id = conn.execute(
+                    "SELECT value FROM meta WHERE key = 'collection_id'"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+
+            self.assertEqual(str(uuid.UUID(repaired_collection_id)), repaired_collection_id)
 
     def test_where_is_works_without_target(self) -> None:
         code, stdout, stderr = capture_cli(["where-is"])

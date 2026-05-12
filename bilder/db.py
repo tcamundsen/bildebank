@@ -5,6 +5,7 @@ import os
 import re
 import sqlite3
 import shutil
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from typing import Any, Iterable
 DB_FILENAME = ".bilder.sqlite3"
 SCHEMA_VERSION = 4
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
+COLLECTION_ID_META_KEY = "collection_id"
 
 
 def path_key(path: Path) -> str:
@@ -62,6 +64,8 @@ def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection
     try:
         if require_current:
             require_current_schema(conn)
+            set_collection_id(conn)
+            conn.commit()
         return conn
     except Exception:
         conn.close()
@@ -150,6 +154,7 @@ def init_database(target: Path) -> None:
     try:
         apply_schema(conn)
         set_meta(conn, "target_path", str(target.resolve()))
+        set_collection_id(conn)
         set_meta(conn, "schema_version", str(SCHEMA_VERSION))
         conn.commit()
     finally:
@@ -306,6 +311,8 @@ def migrate_database(target: Path) -> MigrationPlan:
         version = schema_version(conn)
         if version == SCHEMA_VERSION:
             validate_current_schema(conn)
+            set_collection_id(conn)
+            conn.commit()
             return MigrationPlan(
                 current_version=version,
                 target_version=SCHEMA_VERSION,
@@ -353,6 +360,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
             if integrity != "ok":
                 raise ValueError(f"integrity_check feilet: {integrity}")
+            set_collection_id(conn)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -779,6 +787,26 @@ def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (key, value),
     )
+
+
+def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return None if row is None else str(row["value"])
+
+
+def set_collection_id(conn: sqlite3.Connection) -> str:
+    value = get_meta(conn, COLLECTION_ID_META_KEY)
+    if value is None:
+        value = str(uuid.uuid4())
+        set_meta(conn, COLLECTION_ID_META_KEY, value)
+        return value
+    try:
+        normalized = str(uuid.UUID(value))
+    except ValueError as exc:
+        raise ValueError(f"Ugyldig collection_id i databasen: {value}") from exc
+    if normalized != value:
+        set_meta(conn, COLLECTION_ID_META_KEY, normalized)
+    return normalized
 
 
 def log_command(conn: sqlite3.Connection, command: str, args: dict[str, Any]) -> None:
