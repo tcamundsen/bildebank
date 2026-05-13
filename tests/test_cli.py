@@ -893,6 +893,7 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("ADVARSEL: robocopy/rsync mangler", stdout)
+            self.assertIn("files_copied=", stdout)
             backup_dir = backup_parent / target.name
             self.assertIn(str(backup_dir), stdout)
             self.assertEqual((backup_dir / "2024" / "01" / "IMG_20240102.jpg").read_bytes(), b"image")
@@ -981,6 +982,8 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("motor=rsync", stdout)
+            self.assertNotIn("files_copied=", stdout)
+            self.assertNotIn("files_deleted=", stdout)
             command = subprocess_run.call_args.args[0]
             self.assertIn("--exclude", command)
             self.assertIn(".bildebank-backup.json", command)
@@ -1033,6 +1036,8 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("motor=robocopy", stdout)
+            self.assertNotIn("files_copied=", stdout)
+            self.assertNotIn("files_deleted=", stdout)
             command = subprocess_run.call_args.args[0]
             self.assertIn("/MIR", command)
             self.assertIn("/XF", command)

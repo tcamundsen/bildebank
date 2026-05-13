@@ -1218,11 +1218,12 @@ def run_backup_command(target: Path, destination: Path, *, dry_run: bool = False
     print(f"  motor={stats.engine}")
     if stats.warning:
         print(f"  ADVARSEL: {stats.warning}")
-    print(
-        "  "
-        f"files_copied={stats.files_copied}, files_deleted={stats.files_deleted}, "
-        f"dirs_created={stats.dirs_created}, dirs_deleted={stats.dirs_deleted}"
-    )
+    if stats.stats_available:
+        print(
+            "  "
+            f"files_copied={stats.files_copied}, files_deleted={stats.files_deleted}, "
+            f"dirs_created={stats.dirs_created}, dirs_deleted={stats.dirs_deleted}"
+        )
     return 0
 
 

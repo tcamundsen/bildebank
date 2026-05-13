@@ -30,6 +30,7 @@ class BackupStats:
     dry_run: bool
     engine: str = "none"
     warning: str | None = None
+    stats_available: bool = False
     files_copied: int = 0
     files_deleted: int = 0
     dirs_created: int = 0
@@ -92,15 +93,18 @@ def run_backup(source_dir: Path, backup_parent_arg: Path, *, dry_run: bool = Fal
         stats = mirror_directory(plan.source_dir, plan.backup_dir)
         engine_name = "python"
         warning = "robocopy/rsync mangler. Bruker tregere Python-kopiering."
+        stats_available = True
     else:
         stats = run_external_mirror(plan, engine)
         engine_name = engine.name
+        stats_available = False
     write_backup_metadata(plan, status="complete", engine=engine_name)
     return BackupStats(
         plan=plan,
         dry_run=False,
         engine=engine_name,
         warning=warning,
+        stats_available=stats_available,
         files_copied=stats.files_copied,
         files_deleted=stats.files_deleted,
         dirs_created=stats.dirs_created,
