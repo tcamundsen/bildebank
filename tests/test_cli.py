@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import struct
 import tempfile
 import unittest
 import datetime as dt
@@ -2714,6 +2715,60 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("1\t2024/01/IMG_20240102.jpg", stdout)
             self.assertNotIn(str(old_target), stdout)
+
+    def test_face_suggest_normalizes_absolute_face_paths_after_collection_rename_without_stored_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "new-name"
+            old_target = root / "old-name"
+            image_path = target / "2021" / "08" / "2019-1-6-1.jpg"
+            old_image_path = old_target / "2021" / "08" / "2019-1-6-1.jpg"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(minimal_png(640, 480))
+
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            try:
+                apply_face_schema(conn)
+                embedding = struct.pack("ff", 1.0, 0.0)
+                conn.execute(
+                    """
+                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                    VALUES(1, ?, ?, 'sha', 'ok', 2)
+                    """,
+                    (str(old_image_path), str(old_image_path)),
+                )
+                for face_id in (1, 2):
+                    conn.execute(
+                        """
+                        INSERT INTO faces(
+                            id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                            detection_score, embedding_model, embedding
+                        ) VALUES(?, 1, ?, 1, 2, 30, 40, 0.9, 'test', ?)
+                        """,
+                        (face_id, str(old_image_path), embedding),
+                    )
+                conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-suggest"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Kari\tface-id=2", stdout)
+            self.assertIn("2021/08/2019-1-6-1.jpg", stdout)
+            self.assertNotIn(str(old_target), stdout)
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT target_path FROM scanned_files WHERE file_id = 1").fetchone()[0],
+                    "2021/08/2019-1-6-1.jpg",
+                )
+            finally:
+                conn.close()
 
     def test_make_face_browser_normalizes_moved_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

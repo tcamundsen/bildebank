@@ -247,7 +247,7 @@ def normalize_face_paths(conn: sqlite3.Connection, target: Path) -> None:
         "SELECT file_id, target_path FROM scanned_files ORDER BY file_id"
     ).fetchall()
     for row in scanned_rows:
-        relative_path = db.target_relative_path(old_root, Path(str(row["target_path"])))
+        relative_path = normalize_face_target_path(current_root, old_root, Path(str(row["target_path"])))
         conn.execute(
             """
             UPDATE scanned_files
@@ -266,7 +266,7 @@ def normalize_face_paths(conn: sqlite3.Connection, target: Path) -> None:
         """
     ).fetchall()
     for row in face_rows:
-        relative_path = db.target_relative_path(old_root, Path(str(row["target_path"])))
+        relative_path = normalize_face_target_path(current_root, old_root, Path(str(row["target_path"])))
         conn.execute(
             "UPDATE faces SET target_path_key = ? WHERE id = ?",
             (db.relative_path_key(relative_path), int(row["face_id"])),
@@ -274,6 +274,29 @@ def normalize_face_paths(conn: sqlite3.Connection, target: Path) -> None:
 
     if stored_root_value is not None and stored_root_value != str(current_root):
         set_meta(conn, "target_path", str(current_root))
+
+
+def normalize_face_target_path(current_root: Path, old_root: Path, path: Path) -> Path:
+    if not path.is_absolute():
+        return db.relative_path(path)
+    try:
+        return db.target_relative_path(old_root, path)
+    except ValueError:
+        inferred = infer_relative_path_after_collection_rename(current_root, path)
+        if inferred is not None:
+            return inferred
+        raise
+
+
+def infer_relative_path_after_collection_rename(current_root: Path, old_path: Path) -> Path | None:
+    parts = old_path.parts
+    for index in range(1, len(parts)):
+        suffix = Path(*parts[index:])
+        if suffix.is_absolute():
+            continue
+        if (current_root / suffix).exists():
+            return db.relative_path(suffix)
+    return None
 
 
 def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
