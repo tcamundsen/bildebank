@@ -866,7 +866,14 @@ def search_server_images(server: BildebankServer, *, query: str, limit: int) -> 
                 INSERT INTO image_search_results(run_id, file_id, target_path, target_path_key, similarity, rank)
                 VALUES(?, ?, ?, ?, ?, ?)
                 """,
-                (run_id, file_id, str(target_path), target_path_key, score, index),
+                (
+                    run_id,
+                    file_id,
+                    db.target_relative_path(server.target, target_path).as_posix(),
+                    target_path_key,
+                    score,
+                    index,
+                ),
             )
             results.append(ImageSearchResult(index, file_id, target_path, score))
         conn.commit()

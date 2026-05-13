@@ -17,10 +17,10 @@ from unittest.mock import patch
 from bilder.cli import build_parser, main
 from bilder.config import OpenClipConfig, load_config
 from bilder.db import DB_FILENAME, init_database
-from bilder.face import FACE_DB_FILENAME, connect_face_db, face_box_percent, read_image
+from bilder.face import FACE_DB_FILENAME, apply_face_schema, connect_face_db, face_box_percent, read_image
 from bilder.importer import safe_copy
 from bilder.media import ImageDimensions, sha256_file
-from bilder.openclip import connect_openclip_db, openclip_db_path, resolve_torch_device
+from bilder.openclip import connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
 from bilder.program_state import PROGRAM_DB_FILENAME
 from bilder.server import (
     adjacent_browser_items,
@@ -37,6 +37,7 @@ from bilder.server import (
     person_month_items,
     person_month_navigation,
     person_month_page_html,
+    search_server_images,
 )
 from bilder.target_lock import LOCK_FILENAME
 from tests.test_media import (
@@ -484,6 +485,52 @@ class CliTests(unittest.TestCase):
         self.assertIn("Bildebrowser", body)
         self.assertIn("Bildesøk", body)
         self.assertIn("Ingen filer i bildesamlingen", body)
+
+    def test_run_server_image_search_stores_relative_result_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            config = OpenClipConfig()
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256, model_name, pretrained, embedding
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        1,
+                        "2024/01/IMG_20240102.jpg",
+                        "2024/01/img_20240102.jpg",
+                        "sha",
+                        config.model_name,
+                        config.pretrained,
+                        embedding_blob([1.0, 0.0]),
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            server = SimpleNamespace(
+                target=target,
+                config=config,
+                search_cache=SimpleNamespace(text_vector=lambda query: [1.0, 0.0]),
+            )
+
+            stats = search_server_images(server, query="test", limit=10)
+
+            self.assertEqual(len(stats.results), 1)
+            conn = sqlite3.connect(openclip_db_path(target))
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT target_path FROM image_search_results").fetchone()[0],
+                    "2024/01/IMG_20240102.jpg",
+                )
+            finally:
+                conn.close()
 
     def test_run_server_renders_bookmarkable_item_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1042,6 +1089,78 @@ class CliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIn("Aktiv bildesamling:", stdout)
             self.assertIn(str(target.resolve()), stdout)
+
+    def test_face_status_does_not_migrate_openclip_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            old_target = root / "old-target"
+            old_image = old_target / "2024" / "01" / "IMG_20240102.jpg"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(openclip_db_path(target))
+            try:
+                conn.executescript(
+                    """
+                    CREATE TABLE meta (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL
+                    );
+                    CREATE TABLE image_embeddings (
+                        file_id INTEGER NOT NULL,
+                        target_path TEXT NOT NULL,
+                        target_path_key TEXT NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        model_name TEXT NOT NULL,
+                        pretrained TEXT NOT NULL,
+                        embedding BLOB NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY(file_id, model_name, pretrained)
+                    );
+                    """
+                )
+                conn.execute(
+                    "INSERT INTO meta(key, value) VALUES('target_path', ?)",
+                    (str(old_target),),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256, model_name, pretrained, embedding
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        1,
+                        str(old_image),
+                        str(old_image),
+                        "sha",
+                        "ViT-B-32",
+                        "laion2b_s34b_b79k",
+                        b"embedding",
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-status"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("bilde-embeddings: 1", stdout)
+            conn = sqlite3.connect(openclip_db_path(target))
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT value FROM meta WHERE key = 'target_path'").fetchone()[0],
+                    str(old_target),
+                )
+                self.assertEqual(
+                    conn.execute("SELECT target_path FROM image_embeddings").fetchone()[0],
+                    str(old_image),
+                )
+            finally:
+                conn.close()
 
     def test_load_config_reads_local_face_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1916,6 +2035,10 @@ model_name = "buffalo_s"
             self.assertTrue((target / "2024" / "01" / "IMG_20240102.jpg").exists())
             self.assertTrue((target / "2024" / "01" / "IMG_20240102-1.jpg").exists())
 
+            code, stdout, stderr = capture_cli(["--target", str(target), "conflicts"])
+            self.assertEqual(code, 0, stderr)
+            self.assertIn(str(target / "2024" / "01" / "IMG_20240102-1.jpg"), stdout)
+
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
@@ -2241,6 +2364,91 @@ model_name = "test-model"
             self.assertIn("Siste scan-feil:", stdout)
             self.assertIn("bad.jpg", stdout)
             self.assertIn("Kunne ikke lese testbildet", stdout)
+
+    def test_face_report_prints_relative_paths_after_face_path_normalization(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            old_target = root / "old-target"
+            image_path = target / "2024" / "01" / "IMG_20240102.jpg"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"image")
+
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            try:
+                apply_face_schema(conn)
+                old_image_path = old_target / "2024" / "01" / "IMG_20240102.jpg"
+                conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('target_path', ?)", (str(old_target),))
+                conn.execute(
+                    """
+                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                    VALUES(1, ?, ?, 'sha', 'ok', 1)
+                    """,
+                    (str(old_image_path), str(old_image_path)),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO faces(
+                        file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    ) VALUES(1, ?, 1, 2, 3, 4, 0.9, 'test', ?)
+                    """,
+                    (str(old_image_path), b"embedding"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-report"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("1\t2024/01/IMG_20240102.jpg", stdout)
+            self.assertNotIn(str(old_target), stdout)
+
+    def test_make_face_browser_normalizes_moved_face_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            old_target = root / "old-target"
+            image_path = target / "2024" / "01" / "IMG_20240102.png"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(minimal_png(640, 480))
+
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            try:
+                apply_face_schema(conn)
+                old_image_path = old_target / "2024" / "01" / "IMG_20240102.png"
+                conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('target_path', ?)", (str(old_target),))
+                conn.execute(
+                    """
+                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                    VALUES(1, ?, ?, 'sha', 'ok', 1)
+                    """,
+                    (str(old_image_path), str(old_image_path)),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO faces(
+                        file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    ) VALUES(1, ?, 1, 2, 30, 40, 0.9, 'test', ?)
+                    """,
+                    (str(old_image_path), b"embedding"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "make-face-browser", "--limit", "1"])
+
+            self.assertEqual(code, 0, stderr)
+            html = (target / "faces.html").read_text(encoding="utf-8")
+            self.assertIn("2024/01/IMG_20240102.png", html)
+            self.assertNotIn(str(old_target), html)
 
     def test_make_face_browser_limit_restricts_number_of_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2577,6 +2785,7 @@ model_name = "test-model"
             self.assertIn("forslag=1", stdout)
             self.assertIn("Forslag:", stdout)
             self.assertIn("Kari\tface-id=2", stdout)
+            self.assertIn("2024/01/IMG_20240102.jpg", stdout)
             self.assertIn("Skrev person-index", stdout)
             self.assertIn("Skrev personsider: 1", stdout)
             self.assertTrue((target / "personer.html").exists())

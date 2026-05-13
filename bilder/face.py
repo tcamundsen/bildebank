@@ -620,8 +620,7 @@ def face_report(target: Path, *, limit: int = 20) -> FaceReport:
     path = face_db_path(target)
     if not path.exists():
         return FaceReport(database_exists=False)
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    conn = connect_face_db(target)
     try:
         return FaceReport(
             database_exists=True,
@@ -671,8 +670,7 @@ def export_face_browser(target: Path, output: Path | None = None, *, limit: int 
     path = face_db_path(target)
     if not path.exists():
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    conn = connect_face_db(target)
     try:
         items = face_browser_items(target, conn, limit=limit)
     finally:

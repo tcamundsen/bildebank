@@ -387,16 +387,26 @@ def openclip_db_summary(target: Path) -> OpenClipDbSummary:
     path = openclip_db_path(target)
     if not path.exists():
         return OpenClipDbSummary(False, 0, 0, 0)
-    conn = connect_openclip_db(target)
+    conn = sqlite3.connect(path)
     try:
         return OpenClipDbSummary(
             exists=True,
-            embeddings=count_rows(conn, "image_embeddings"),
-            search_runs=count_rows(conn, "image_search_runs"),
-            search_results=count_rows(conn, "image_search_results"),
+            embeddings=count_rows_if_table_exists(conn, "image_embeddings"),
+            search_runs=count_rows_if_table_exists(conn, "image_search_runs"),
+            search_results=count_rows_if_table_exists(conn, "image_search_results"),
         )
     finally:
         conn.close()
+
+
+def count_rows_if_table_exists(conn: sqlite3.Connection, table: str) -> int:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    if row is None:
+        return 0
+    return count_rows(conn, table)
 
 
 def count_rows(conn: sqlite3.Connection, table: str) -> int:

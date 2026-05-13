@@ -1440,9 +1440,9 @@ def name_conflicts(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
         FROM files
         JOIN primary_sources ON primary_sources.file_id = files.id
             AND primary_sources.source_rank = 1
-        WHERE name_conflict = 1
-          AND deleted_at IS NULL
-        ORDER BY imported_at, id
+        WHERE files.name_conflict = 1
+          AND files.deleted_at IS NULL
+        ORDER BY files.imported_at, files.id
         """
     )
 

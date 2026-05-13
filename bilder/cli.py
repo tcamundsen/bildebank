@@ -870,7 +870,8 @@ def run(args: argparse.Namespace) -> int:
 
         if args.command == "conflicts":
             for row in db.name_conflicts(conn):
-                print(f"{row['source_path']} -> {row['target_path']}")
+                target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+                print(f"{row['source_path']} -> {target_path}")
             return 0
 
         if args.command == "show-conflict":
@@ -1599,9 +1600,11 @@ def print_face_suggestions(target: Path) -> None:
         return
     print("Forslag:")
     for row in rows:
+        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+        relative_path = db.target_relative_path(target, target_path).as_posix()
         print(
             f"  {row['name']}\tface-id={row['face_id']}\t"
-            f"score={float(row['similarity']):.3f}\t{row['target_path']}"
+            f"score={float(row['similarity']):.3f}\t{relative_path}"
         )
 
 
@@ -1646,12 +1649,14 @@ def print_face_report(target: Path, report: FaceReport) -> None:
         print()
         print("Flest ansikter:")
         for row in report.top_files:
-            print(f"  {row['face_count']}\t{row['target_path']}")
+            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+            print(f"  {row['face_count']}\t{db.target_relative_path(target, target_path).as_posix()}")
     if report.errors:
         print()
         print("Siste scan-feil:")
         for row in report.errors:
-            print(f"  {row['target_path']}\t{row['error_message']}")
+            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+            print(f"  {db.target_relative_path(target, target_path).as_posix()}\t{row['error_message']}")
 
 
 def run_face_reset(
