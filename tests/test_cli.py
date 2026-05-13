@@ -606,6 +606,32 @@ class CliTests(unittest.TestCase):
         self.assertIn('data-key-nav="previous-month"', body)
         self.assertIn('data-key-nav="next-month"', body)
 
+    def test_run_server_item_page_has_image_info_overlay(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+
+        self.assertLess(body.index("Neste bilde"), body.index("Bildeinfo"))
+        self.assertIn('data-open-info', body)
+        self.assertIn('id="infoOverlay"', body)
+        self.assertIn("Filnavn", body)
+        self.assertIn("IMG_20240102.png", body)
+        self.assertIn("Filstørrelse", body)
+        self.assertIn("Oppløsning", body)
+        self.assertIn("100 x 80", body)
+        self.assertIn("Kamera", body)
+        self.assertIn("Kilder", body)
+        self.assertIn(source.name, body)
+        self.assertIn("closeInfoOverlay", body)
+
     def test_run_server_month_navigation_tolerates_foreign_path_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

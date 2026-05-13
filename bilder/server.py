@@ -25,6 +25,7 @@ from .html_export import (
     format_bytes,
     month_key_from_path,
 )
+from .media import camera_info, image_dimensions
 from .openclip import (
     ImageSearchResult,
     connect_openclip_db,
@@ -1215,13 +1216,14 @@ def source_item_page_html(
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
     media = source_item_media_html(target, source, item)
-    controls = source_controls_html(source, month_nav, previous_item, next_item)
+    controls = source_controls_html(source, month_nav, previous_item, next_item, include_info_button=True)
     people = people_links_html(confirmed_people_for_file(target, int(item["id"])))
     unconfirmed_faces = unconfirmed_faces_for_item(target, item)
     all_people = registered_people(target)
     faces_button = faces_button_html(unconfirmed_faces) if source.person_name is None else ""
     faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if source.person_name is None else ""
     action_links = source_action_links_html(source)
+    info_overlay = image_info_overlay_html(target, item)
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
@@ -1241,6 +1243,7 @@ def source_item_page_html(
           </footer>
         </main>
         {faces_overlay}
+        {info_overlay}
         """,
     )
 
@@ -1375,7 +1378,10 @@ def source_controls_html(
     month_nav: dict[str, str | None],
     previous_item: Any | None,
     next_item: Any | None,
+    *,
+    include_info_button: bool = False,
 ) -> str:
+    info_button = image_info_button_html() if include_info_button else ""
     return f"""
     <nav class="controls" aria-label="Navigering">
       {source_month_nav_link(source, month_nav["previous_year"], "Forrige år", "previous-year")}
@@ -1384,6 +1390,7 @@ def source_controls_html(
       {source_month_nav_link(source, month_nav["next_month"], "Neste måned", "next-month")}
       {source_nav_link(source, previous_item, "Forrige bilde", "previous")}
       {source_nav_link(source, next_item, "Neste bilde", "next")}
+      {info_button}
     </nav>
     """
 
@@ -1430,6 +1437,10 @@ def source_month_nav_link(source: BrowserSource, month_key: str | None, label: s
     return nav_button(source_month_url(source, month_key), label, key_nav)
 
 
+def image_info_button_html() -> str:
+    return '<button class="nav-button" type="button" data-open-info>Bildeinfo</button>'
+
+
 def people_links_html(people: list[dict[str, str]]) -> str:
     if not people:
         return ""
@@ -1462,6 +1473,76 @@ def faces_overlay_html(item: Any, faces: list[dict[str, object]], people: list[d
       <div class="lightbox-stage">
         <div class="face-list">{face_items}</div>
       </div>
+    </div>
+    """
+
+
+def image_info_overlay_html(target: Path, item: Any) -> str:
+    rows = "\n".join(image_info_rows(target, item))
+    return f"""
+    <div id="infoOverlay" class="info-overlay" hidden>
+      <div class="lightbox-bar">
+        <div class="lightbox-title">Bildeinfo</div>
+        <button class="lightbox-close" type="button" data-close-info>Lukk</button>
+      </div>
+      <div class="info-panel">
+        <h2>Bildeinfo</h2>
+        <dl class="info-list">
+          {rows}
+        </dl>
+      </div>
+    </div>
+    """
+
+
+def image_info_rows(target: Path, item: Any) -> list[str]:
+    target_path = Path(str(item["target_path"]))
+    absolute_path = db.absolute_target_path(target, target_path)
+    dimensions = image_dimensions(absolute_path)
+    camera = camera_info(absolute_path)
+    rows = [
+        info_row_html("Filnavn", str(item["stored_filename"])),
+        info_row_html("Filsti", display_relative_path(target, target_path)),
+        info_row_html("Filstørrelse", f"{format_bytes(int(item['size_bytes']))} ({int(item['size_bytes'])} bytes)"),
+        info_row_html("Oppløsning", f"{dimensions.width} x {dimensions.height}" if dimensions else "-"),
+        info_row_html("Kamera", camera_text(camera)),
+    ]
+    sources = image_source_rows(target, target_path)
+    if sources:
+        rows.append(info_row_html("Kilder", "\n".join(sources), multiline=True))
+    else:
+        rows.append(info_row_html("Kilder", "-"))
+    return rows
+
+
+def camera_text(camera: Any | None) -> str:
+    if camera is None:
+        return "-"
+    parts = [part for part in (camera.make, camera.model) if part]
+    return " ".join(parts) if parts else "-"
+
+
+def image_source_rows(target: Path, target_path: Path) -> list[str]:
+    conn = db.connect(target)
+    try:
+        rows = db.file_sources_by_target_path(conn, target, db.absolute_target_path(target, target_path))
+    finally:
+        conn.close()
+    result = []
+    for row in rows:
+        source_name = str(row["source_name"] or row["source_root"] or f"Kilde #{row['source_id']}")
+        result.append(f"{source_name}: {row['source_path']}")
+    return result
+
+
+def info_row_html(label: str, value: str, *, multiline: bool = False) -> str:
+    escaped_value = html.escape(value)
+    if multiline:
+        escaped_value = "<br>".join(escaped_value.splitlines())
+    return f"""
+    <div class="info-row">
+      <dt>{html.escape(label)}</dt>
+      <dd>{escaped_value}</dd>
     </div>
     """
 
@@ -1833,6 +1914,41 @@ def page_html(title: str, body: str) -> str:
       padding: 12px;
     }}
     .face-overlay[hidden] {{ display: none; }}
+    .info-overlay {{
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      background: rgb(0 0 0 / 86%);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 8px;
+      padding: 12px;
+    }}
+    .info-overlay[hidden] {{ display: none; }}
+    .info-panel {{
+      align-self: start;
+      justify-self: center;
+      width: min(760px, 100%);
+      max-height: 100%;
+      overflow: auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 18px;
+      color: var(--text);
+    }}
+    .info-panel h2 {{ margin: 0 0 14px; font-size: 20px; }}
+    .info-list {{ display: grid; gap: 0; margin: 0; }}
+    .info-row {{
+      display: grid;
+      grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+      gap: 12px;
+      padding: 9px 0;
+      border-top: 1px solid var(--border);
+    }}
+    .info-row:first-child {{ border-top: 0; }}
+    .info-row dt {{ color: var(--muted); }}
+    .info-row dd {{ margin: 0; overflow-wrap: anywhere; }}
     .lightbox-bar {{
       display: flex;
       align-items: center;
@@ -1928,6 +2044,7 @@ def page_html(title: str, body: str) -> str:
       .top-actions {{ margin-left: 0; width: 100%; justify-content: stretch; }}
       .people-row {{ grid-template-columns: 1fr; align-items: stretch; }}
       .new-person-form {{ grid-template-columns: 1fr; align-items: stretch; }}
+      .info-row {{ grid-template-columns: 1fr; gap: 4px; }}
     }}
   </style>
 </head>
@@ -1935,8 +2052,11 @@ def page_html(title: str, body: str) -> str:
 {body}
 <script>
   const faceOverlay = document.getElementById("faceOverlay");
+  const infoOverlay = document.getElementById("infoOverlay");
   const openFacesButton = document.querySelector("[data-open-faces]");
   const closeFacesButton = document.querySelector("[data-close-faces]");
+  const openInfoButton = document.querySelector("[data-open-info]");
+  const closeInfoButton = document.querySelector("[data-close-info]");
   function openFacesOverlay() {{
     if (!faceOverlay) return;
     faceOverlay.hidden = false;
@@ -1945,6 +2065,15 @@ def page_html(title: str, body: str) -> str:
   function closeFacesOverlay() {{
     if (!faceOverlay) return;
     faceOverlay.hidden = true;
+  }}
+  function openInfoOverlay() {{
+    if (!infoOverlay) return;
+    infoOverlay.hidden = false;
+    closeInfoButton?.focus();
+  }}
+  function closeInfoOverlay() {{
+    if (!infoOverlay) return;
+    infoOverlay.hidden = true;
   }}
   function ensureTopPersonLink(name, url) {{
     if (!name || !url) return;
@@ -1964,8 +2093,13 @@ def page_html(title: str, body: str) -> str:
   }}
   openFacesButton?.addEventListener("click", openFacesOverlay);
   closeFacesButton?.addEventListener("click", closeFacesOverlay);
+  openInfoButton?.addEventListener("click", openInfoOverlay);
+  closeInfoButton?.addEventListener("click", closeInfoOverlay);
   faceOverlay?.addEventListener("click", event => {{
     if (event.target === faceOverlay || event.target.classList?.contains("lightbox-stage")) closeFacesOverlay();
+  }});
+  infoOverlay?.addEventListener("click", event => {{
+    if (event.target === infoOverlay) closeInfoOverlay();
   }});
   async function assignFace(detail, status, endpoint, faceId, personName) {{
     if (!detail || !status || !faceId || !personName) return;
@@ -2015,6 +2149,13 @@ def page_html(title: str, body: str) -> str:
       if (event.key === "Escape") {{
         event.preventDefault();
         closeFacesOverlay();
+      }}
+      return;
+    }}
+    if (infoOverlay && !infoOverlay.hidden) {{
+      if (event.key === "Escape") {{
+        event.preventDefault();
+        closeInfoOverlay();
       }}
       return;
     }}

@@ -69,6 +69,12 @@ class ImageDimensions:
     height: int
 
 
+@dataclass(frozen=True)
+class CameraInfo:
+    make: str | None
+    model: str | None
+
+
 def is_supported_media(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
 
@@ -180,6 +186,18 @@ def image_orientation(path: Path) -> int:
             if orientation is not None:
                 return orientation
     return 1
+
+
+def camera_info(path: Path) -> CameraInfo | None:
+    if not is_jpeg_file(path):
+        return None
+    for segment in _jpeg_app1_segments(path):
+        if not segment.startswith(b"Exif\x00\x00"):
+            continue
+        info = _camera_info_from_tiff(segment[6:])
+        if info is not None:
+            return info
+    return None
 
 
 def inspect_metadata(path: Path) -> MetadataInspection:
@@ -481,6 +499,28 @@ def _orientation_from_tiff(tiff: bytes) -> int | None:
     return value
 
 
+def _camera_info_from_tiff(tiff: bytes) -> CameraInfo | None:
+    if len(tiff) < 8:
+        return None
+    endian_marker = tiff[:2]
+    if endian_marker == b"II":
+        endian = "<"
+    elif endian_marker == b"MM":
+        endian = ">"
+    else:
+        return None
+    if struct.unpack(endian + "H", tiff[2:4])[0] != 42:
+        return None
+
+    first_ifd = struct.unpack(endian + "I", tiff[4:8])[0]
+    values = _read_ifd_values(tiff, first_ifd, endian)
+    make = _parse_exif_ascii(values.get(0x010F))
+    model = _parse_exif_ascii(values.get(0x0110))
+    if make is None and model is None:
+        return None
+    return CameraInfo(make, model)
+
+
 def _read_ifd_values(tiff: bytes, offset: int, endian: str) -> dict[int, bytes | int]:
     values: dict[int, bytes | int] = {}
     if offset < 0 or offset + 2 > len(tiff):
@@ -529,6 +569,13 @@ def _parse_exif_short(value: bytes | int | None, endian: str) -> int | None:
     if not isinstance(value, bytes) or len(value) < 2:
         return None
     return struct.unpack(endian + "H", value[:2])[0]
+
+
+def _parse_exif_ascii(value: bytes | int | None) -> str | None:
+    if not isinstance(value, bytes):
+        return None
+    text = value.rstrip(b"\x00").decode("ascii", errors="ignore").strip()
+    return text or None
 
 
 def video_metadata_date(path: Path) -> dt.date | None:

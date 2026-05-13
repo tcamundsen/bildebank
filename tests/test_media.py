@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bilder.media import image_dimensions, image_orientation, media_date
+from bilder.media import camera_info, image_dimensions, image_orientation, media_date
 
 
 def atom(atom_type: bytes, payload: bytes) -> bytes:
@@ -116,6 +116,31 @@ def jpeg_with_exif_orientation(orientation: int) -> bytes:
     return b"\xff\xd8" + segment + b"\xff\xd9"
 
 
+def jpeg_with_exif_camera(make: str, model: str) -> bytes:
+    make_bytes = make.encode("ascii") + b"\x00"
+    model_bytes = model.encode("ascii") + b"\x00"
+    tiff_header = b"MM\x00*\x00\x00\x00\x08"
+    ifd0_offset = 8
+    ifd0_size = 2 + 2 * 12 + 4
+    make_offset = ifd0_offset + ifd0_size
+    model_offset = make_offset + len(make_bytes)
+    ifd0 = (
+        (2).to_bytes(2, "big")
+        + (0x010F).to_bytes(2, "big")
+        + (2).to_bytes(2, "big")
+        + len(make_bytes).to_bytes(4, "big")
+        + make_offset.to_bytes(4, "big")
+        + (0x0110).to_bytes(2, "big")
+        + (2).to_bytes(2, "big")
+        + len(model_bytes).to_bytes(4, "big")
+        + model_offset.to_bytes(4, "big")
+        + (0).to_bytes(4, "big")
+    )
+    payload = b"Exif\x00\x00" + tiff_header + ifd0 + make_bytes + model_bytes
+    segment = b"\xff\xe1" + (len(payload) + 2).to_bytes(2, "big") + payload
+    return b"\xff\xd8" + segment + b"\xff\xd9"
+
+
 def minimal_png(width: int, height: int) -> bytes:
     signature = b"\x89PNG\r\n\x1a\n"
     ihdr_payload = (
@@ -203,6 +228,18 @@ class MediaDateTests(unittest.TestCase):
             path.write_bytes(jpeg_with_exif_orientation(6))
 
             self.assertEqual(image_orientation(path), 6)
+
+    def test_jpeg_exif_camera_is_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "camera.jpg"
+            path.write_bytes(jpeg_with_exif_camera("Canon", "EOS 80D"))
+
+            result = camera_info(path)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.make, "Canon")
+        self.assertEqual(result.model, "EOS 80D")
 
     def test_png_dimensions_are_read_without_external_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

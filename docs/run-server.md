@@ -113,6 +113,10 @@ Når du åpner `Ansikter i bildet` i bildebrowseren, kan du enten velge en
 registrert person eller skrive inn et nytt navn under `Ny person` og trykke
 `Identifiser`. Da oppretter serveren personen og kobler ansiktet til personen.
 
+Knappen `Bildeinfo` i bildebrowseren viser filnavn, filstørrelse, oppløsning,
+kamera hvis dette finnes i metadata, og hvilke kilder som inkluderer bildet.
+Overlayet kan lukkes med `Lukk` eller Esc.
+
 ## Viktige valg
 
 - Serveren skal være lokal som standard.
