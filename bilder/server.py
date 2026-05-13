@@ -1585,7 +1585,7 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
     ]
     sources = image_source_rows(target, target_path)
     if sources:
-        rows.append(info_row_html("Kilder", "\n".join(sources), multiline=True))
+        rows.append(info_row_html("Kilder", "\n\n".join(sources), multiline=True))
     else:
         rows.append(info_row_html("Kilder", "-"))
     return rows
