@@ -112,16 +112,73 @@ def connect_face_db(target: Path) -> sqlite3.Connection:
 
 
 def apply_face_schema(conn: sqlite3.Connection) -> None:
+    version = face_schema_version(conn)
+    if version > FACE_SCHEMA_VERSION:
+        raise ValueError(
+            f"Face-databasen bruker et nyere format (schema_version={version}) "
+            f"enn programmet støtter (schema_version={FACE_SCHEMA_VERSION})."
+        )
+    if version == 0:
+        create_current_face_schema(conn)
+        set_meta(conn, "schema_version", str(FACE_SCHEMA_VERSION))
+        validate_current_face_schema(conn)
+        return
+    migrate_face_schema(conn, version)
+    create_current_face_schema(conn)
+    set_meta(conn, "schema_version", str(FACE_SCHEMA_VERSION))
+    validate_current_face_schema(conn)
+
+
+def face_schema_version(conn: sqlite3.Connection) -> int:
+    if not db.table_exists(conn, "meta"):
+        return 2 if db.table_exists(conn, "scanned_files") else 0
+    row = conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()
+    if row is None:
+        return 2 if db.table_exists(conn, "scanned_files") else 0
+    value = row[0]
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"Ugyldig schema_version i face-databasen: {value}") from exc
+
+
+def migrate_face_schema(conn: sqlite3.Connection, version: int) -> None:
+    if version < 2:
+        raise ValueError(f"Kan ikke migrere face-database med schema_version={version}.")
+    if version == 2:
+        migrate_face_schema_v2_to_v3(conn)
+        version = 3
+    if version != FACE_SCHEMA_VERSION:
+        raise ValueError(f"Kan ikke migrere face-database med schema_version={version}.")
+
+
+def migrate_face_schema_v2_to_v3(conn: sqlite3.Connection) -> None:
+    conn.execute("DROP TABLE IF EXISTS face_group_members")
+    conn.execute("DROP TABLE IF EXISTS face_groups")
+    conn.execute("DROP TABLE IF EXISTS face_group_runs")
+
+
+def validate_current_face_schema(conn: sqlite3.Connection) -> None:
+    legacy_tables = {
+        "face_group_members",
+        "face_groups",
+        "face_group_runs",
+    }
+    existing_legacy_tables = sorted(table for table in legacy_tables if db.table_exists(conn, table))
+    if existing_legacy_tables:
+        raise ValueError(
+            "Face-databasen har schema_version=3, men inneholder legacy-gruppetabeller "
+            f"({', '.join(existing_legacy_tables)})."
+        )
+
+
+def create_current_face_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS meta (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
-
-        DROP TABLE IF EXISTS face_group_members;
-        DROP TABLE IF EXISTS face_groups;
-        DROP TABLE IF EXISTS face_group_runs;
 
         CREATE TABLE IF NOT EXISTS scanned_files (
             file_id INTEGER PRIMARY KEY,
@@ -178,10 +235,6 @@ def apply_face_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_face_suggestions_face_id ON face_suggestions(face_id);
         """
-    )
-    conn.execute(
-        "INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)",
-        (str(FACE_SCHEMA_VERSION),),
     )
 
 

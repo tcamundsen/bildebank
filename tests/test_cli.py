@@ -3183,6 +3183,72 @@ model_name = "test-model"
             finally:
                 conn.close()
 
+    def test_face_schema_v2_migration_drops_legacy_group_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            try:
+                conn.executescript(
+                    """
+                    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                    CREATE TABLE scanned_files (
+                        file_id INTEGER PRIMARY KEY,
+                        target_path TEXT NOT NULL,
+                        target_path_key TEXT NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        status TEXT NOT NULL,
+                        error_message TEXT,
+                        face_count INTEGER NOT NULL DEFAULT 0
+                    );
+                    CREATE TABLE face_group_runs (id INTEGER PRIMARY KEY AUTOINCREMENT);
+                    CREATE TABLE face_groups (id INTEGER PRIMARY KEY AUTOINCREMENT);
+                    CREATE TABLE face_group_members (group_id INTEGER NOT NULL, face_id INTEGER NOT NULL);
+                    INSERT INTO meta(key, value) VALUES('schema_version', '2');
+                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                    VALUES(1, 'image.jpg', 'image.jpg', 'hash', 'ok', 0);
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            conn = connect_face_db(target)
+            try:
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "3")
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
+                legacy_tables = {
+                    row[0]
+                    for row in conn.execute(
+                        """
+                        SELECT name
+                        FROM sqlite_master
+                        WHERE type = 'table' AND name LIKE 'face_group_%'
+                        """
+                    )
+                }
+                self.assertEqual(legacy_tables, set())
+            finally:
+                conn.close()
+
+    def test_face_schema_current_version_rejects_legacy_group_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            try:
+                apply_face_schema(conn)
+                conn.execute("CREATE TABLE face_group_runs (id INTEGER PRIMARY KEY)")
+                conn.execute("INSERT INTO face_group_runs(id) VALUES(1)")
+                conn.commit()
+
+                with self.assertRaisesRegex(ValueError, "legacy-gruppetabeller"):
+                    apply_face_schema(conn)
+
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "3")
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_runs").fetchone()[0], 1)
+            finally:
+                conn.close()
+
     def test_safe_copy_does_not_overwrite_existing_different_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
