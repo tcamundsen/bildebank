@@ -981,6 +981,94 @@ class CliTests(unittest.TestCase):
             self.assertIn(".bildebank-backup.json", command)
             self.assertFalse(((backup_parent / target.name) / ".bildebank-backup.json").exists())
 
+    def test_backup_stops_when_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            lock_path = target / LOCK_FILENAME
+            lock_path.write_text("command=import\npid=123\n", encoding="utf-8")
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamlingen er låst", stderr)
+            self.assertIn(str(lock_path), stderr)
+            self.assertTrue(lock_path.exists())
+            self.assertFalse((backup_parent / target.name).exists())
+
+    def test_backup_dry_run_does_not_require_target_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            lock_path = target / LOCK_FILENAME
+            lock_path.write_text("command=import\npid=123\n", encoding="utf-8")
+
+            with patch("bilder.backup.select_backup_engine", return_value=None):
+                code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--dry-run", str(backup_parent)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Dry run", stdout)
+            self.assertTrue(lock_path.exists())
+            self.assertFalse((backup_parent / target.name).exists())
+
+    def test_backup_holds_target_lock_while_mirroring_and_removes_it_after_success(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            lock_path = target / LOCK_FILENAME
+            observed_lock = []
+
+            def mirror_with_lock_check(source, destination):  # noqa: ANN001
+                observed_lock.append(lock_path.exists())
+                return SimpleNamespace(files_copied=0, files_deleted=0, dirs_created=0, dirs_deleted=0)
+
+            with (
+                patch("bilder.backup.select_backup_engine", return_value=None),
+                patch("bilder.backup.mirror_directory", side_effect=mirror_with_lock_check),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(observed_lock, [True])
+            self.assertFalse(lock_path.exists())
+
+    def test_backup_removes_target_lock_but_leaves_in_progress_metadata_when_interrupted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            lock_path = target / LOCK_FILENAME
+
+            with (
+                patch("bilder.backup.select_backup_engine", return_value=None),
+                patch("bilder.backup.mirror_directory", side_effect=KeyboardInterrupt),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
+
+            self.assertEqual(code, 130)
+            self.assertIn("Avbrutt.", stderr)
+            self.assertFalse(lock_path.exists())
+            metadata = json.loads(
+                ((backup_parent / target.name) / ".bildebank-backup.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(metadata["status"], "in-progress")
+
     def test_backup_updates_existing_backup_and_removes_extra_backup_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

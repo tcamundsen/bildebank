@@ -23,7 +23,7 @@ class TargetLock:
             details = lock_details(self.path)
             message = (
                 "Bildesamlingen er låst av en annen bildebank-kommando. "
-                "Vent til den er ferdig før du kjører import på nytt."
+                "Vent til den er ferdig før du kjører kommandoen på nytt."
             )
             if details:
                 message = f"{message}\n{details}"

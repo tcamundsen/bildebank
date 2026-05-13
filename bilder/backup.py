@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__, db
+from .target_lock import TargetLock
 
 
 BACKUP_METADATA_FILENAME = ".bildebank-backup.json"
@@ -75,8 +76,8 @@ def plan_backup(source_dir: Path, backup_parent_arg: Path, *, ensure_collection_
 
 
 def run_backup(source_dir: Path, backup_parent_arg: Path, *, dry_run: bool = False) -> BackupStats:
-    plan = plan_backup(source_dir, backup_parent_arg, ensure_collection_id=not dry_run)
     if dry_run:
+        plan = plan_backup(source_dir, backup_parent_arg, ensure_collection_id=False)
         engine = select_backup_engine()
         if engine is None:
             return BackupStats(
@@ -88,38 +89,45 @@ def run_backup(source_dir: Path, backup_parent_arg: Path, *, dry_run: bool = Fal
         run_external_mirror(plan, engine, dry_run=True)
         return BackupStats(plan, dry_run=True, engine=engine.name)
 
-    conn = db.connect(plan.source_dir)
-    try:
-        db.log_command(conn, "backup", {"destination": str(plan.backup_parent)})
-        conn.commit()
-    finally:
-        conn.close()
+    source = source_dir.resolve()
+    if not source.is_dir() or not db.db_path_for_target(source).exists():
+        raise ValueError(f"Bildesamlingen er ikke initialisert: {source}")
 
-    plan.backup_dir.mkdir(exist_ok=True)
-    write_backup_metadata(plan, status="in-progress")
-    engine = select_backup_engine()
-    warning = None
-    if engine is None:
-        stats = mirror_directory(plan.source_dir, plan.backup_dir)
-        engine_name = "python"
-        warning = "robocopy/rsync mangler. Bruker tregere Python-kopiering."
-        stats_available = True
-    else:
-        stats = run_external_mirror(plan, engine)
-        engine_name = engine.name
-        stats_available = False
-    write_backup_metadata(plan, status="complete", engine=engine_name)
-    return BackupStats(
-        plan=plan,
-        dry_run=False,
-        engine=engine_name,
-        warning=warning,
-        stats_available=stats_available,
-        files_copied=stats.files_copied,
-        files_deleted=stats.files_deleted,
-        dirs_created=stats.dirs_created,
-        dirs_deleted=stats.dirs_deleted,
-    )
+    with TargetLock(source, command="backup"):
+        plan = plan_backup(source, backup_parent_arg, ensure_collection_id=True)
+
+        conn = db.connect(plan.source_dir)
+        try:
+            db.log_command(conn, "backup", {"destination": str(plan.backup_parent)})
+            conn.commit()
+        finally:
+            conn.close()
+
+        plan.backup_dir.mkdir(exist_ok=True)
+        write_backup_metadata(plan, status="in-progress")
+        engine = select_backup_engine()
+        warning = None
+        if engine is None:
+            stats = mirror_directory(plan.source_dir, plan.backup_dir)
+            engine_name = "python"
+            warning = "robocopy/rsync mangler. Bruker tregere Python-kopiering."
+            stats_available = True
+        else:
+            stats = run_external_mirror(plan, engine)
+            engine_name = engine.name
+            stats_available = False
+        write_backup_metadata(plan, status="complete", engine=engine_name)
+        return BackupStats(
+            plan=plan,
+            dry_run=False,
+            engine=engine_name,
+            warning=warning,
+            stats_available=stats_available,
+            files_copied=stats.files_copied,
+            files_deleted=stats.files_deleted,
+            dirs_created=stats.dirs_created,
+            dirs_deleted=stats.dirs_deleted,
+        )
 
 
 def validate_backup_location(source: Path, backup_dir: Path) -> None:

@@ -126,6 +126,23 @@ Hvis backupen avbrytes eller speilingsverktøyet feiler, blir metadata stående
 som `in-progress`. Neste kjøring kan fortsatt godta mappen hvis `backup_of`
 matcher aktiv samling, fordi ny speiling skal konvergere mot riktig tilstand.
 
+## Låsing
+
+Reell backup skal ta `TargetLock` på aktiv bildesamling. Låsen skal holdes fra
+før `collection_id` eventuelt opprettes og til speilingen er ferdig og metadata
+er oppdatert til `complete`.
+
+Dette hindrer andre Bildebank-kommandoer som respekterer target-lock fra å
+endre databaser eller bildefiler mens backupen kopierer samlingen.
+
+`--dry-run` skal ikke ta target-lock. Dry-run skal fortsatt ikke opprette
+backupmappe, metadata eller `collection_id`.
+
+Hvis prosessen avbrytes normalt, for eksempel med `Ctrl+C`, skal context
+manageren fjerne `.bildebank.lock`. Hvis PC-en krasjer eller prosessen drepes
+hardt, kan lockfilen bli liggende igjen. Den skal ikke fjernes automatisk av
+programmet.
+
 ## Speilingsmotor
 
 Sikkerhetssjekker og metadata håndteres i Python. Selve filspeilingen velger
