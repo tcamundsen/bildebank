@@ -1021,6 +1021,25 @@ class CliTests(unittest.TestCase):
             self.assertIn("ser ikke ut til å være en bildebank-backup", stderr)
             self.assertEqual((backup_dir / "unrelated.txt").read_text(encoding="utf-8"), "do not touch\n")
 
+    def test_backup_rejects_destination_inside_existing_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            nested_parent = backup_parent / target.name / "nybackup"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            with patch("bilder.backup.select_backup_engine", return_value=None):
+                self.assertEqual(run_cli(["--target", str(target), "backup", str(backup_parent)]), 0)
+            nested_parent.mkdir(parents=True)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(nested_parent)])
+
+            self.assertEqual(code, 1)
+            self.assertIn("Kan ikke lage backup inni en annen backup", stderr)
+            self.assertFalse((nested_parent / target.name).exists())
+
     def test_backup_uses_rsync_when_available_and_excludes_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

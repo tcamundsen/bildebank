@@ -44,6 +44,8 @@ du lar programmet skrive noe. Når `robocopy` eller `rsync` finnes, kjører
 Bildebank verktøyets egen dry-run-funksjon slik at du får se hva verktøyet ville
 gjort.
 
+Du kan ikke legge en ny backup inni en eksisterende Bildebank-backup.
+
 ## Sikkerhet
 
 Hvis backupmappen finnes fra før, må den allerede være merket som en Bildebank-

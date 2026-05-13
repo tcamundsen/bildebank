@@ -203,6 +203,7 @@ tørrkjøringsmodus:
 - Linux/macOS: `rsync` med `--dry-run`
 
 Hvis `robocopy` eller `rsync` mangler, viser Python-fallbacken bare planen.
+En ny backup kan ikke opprettes inni en eksisterende Bildebank-backup.
 
 Eksempel:
 

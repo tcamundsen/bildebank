@@ -53,6 +53,7 @@ def plan_backup(source_dir: Path, backup_parent_arg: Path, *, ensure_collection_
 
     backup_dir = (backup_parent / source.name).resolve()
     validate_backup_location(source, backup_dir)
+    validate_backup_not_nested_inside_existing_backup(backup_dir)
 
     conn = db.connect(source, require_current=False)
     try:
@@ -128,6 +129,19 @@ def validate_backup_location(source: Path, backup_dir: Path) -> None:
         raise ValueError(f"Backupmålet er en overmappe til bildesamlingen: {backup_dir}")
     if is_relative_to(backup_dir, source):
         raise ValueError(f"Backupmålet ligger inne i bildesamlingen: {backup_dir}")
+
+
+def validate_backup_not_nested_inside_existing_backup(backup_dir: Path) -> None:
+    for parent in backup_dir.resolve().parents:
+        if parent == backup_dir:
+            continue
+        metadata_path = parent / BACKUP_METADATA_FILENAME
+        if metadata_path.exists():
+            raise ValueError(
+                "Kan ikke lage backup inni en annen backup:\n"
+                f"\n  {backup_dir}\n"
+                "\nVelg en plassering utenfor denne backupen."
+            )
 
 
 def is_relative_to(path: Path, parent: Path) -> bool:
