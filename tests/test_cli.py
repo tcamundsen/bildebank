@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -871,6 +872,171 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources WHERE name IS NULL").fetchone()[0], 0)
             finally:
                 conn.close()
+
+    def test_backup_creates_named_backup_with_metadata_and_deleted_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "bilde-samling"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            image = target / "2024" / "01" / "IMG_20240102.jpg"
+            removed = target / "deleted" / "2024" / "01" / "IMG_20240103.jpg"
+            image.parent.mkdir(parents=True)
+            removed.parent.mkdir(parents=True)
+            image.write_bytes(b"image")
+            removed.write_bytes(b"removed")
+
+            with patch("bilder.backup.select_backup_engine", return_value=None):
+                code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("ADVARSEL: robocopy/rsync mangler", stdout)
+            backup_dir = backup_parent / target.name
+            self.assertIn(str(backup_dir), stdout)
+            self.assertEqual((backup_dir / "2024" / "01" / "IMG_20240102.jpg").read_bytes(), b"image")
+            self.assertEqual((backup_dir / "deleted" / "2024" / "01" / "IMG_20240103.jpg").read_bytes(), b"removed")
+            metadata = json.loads((backup_dir / ".bildebank-backup.json").read_text(encoding="utf-8"))
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                collection_id = conn.execute("SELECT value FROM meta WHERE key = 'collection_id'").fetchone()[0]
+            finally:
+                conn.close()
+            self.assertEqual(metadata["backup_of"], collection_id)
+            self.assertEqual(metadata["source_name"], target.name)
+
+    def test_backup_dry_run_does_not_create_backup_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--dry-run", str(backup_parent)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Dry run", stdout)
+            self.assertIn("Would create new backup.", stdout)
+            self.assertFalse((backup_parent / target.name).exists())
+
+    def test_backup_updates_existing_backup_and_removes_extra_backup_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / "first.txt").write_text("first\n", encoding="utf-8")
+            with patch("bilder.backup.select_backup_engine", return_value=None):
+                self.assertEqual(run_cli(["--target", str(target), "backup", str(backup_parent)]), 0)
+            backup_dir = backup_parent / target.name
+            extra = backup_dir / "extra.txt"
+            extra.write_text("extra\n", encoding="utf-8")
+            (target / "first.txt").write_text("changed\n", encoding="utf-8")
+
+            with patch("bilder.backup.select_backup_engine", return_value=None):
+                code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Updated backup.", stdout)
+            self.assertEqual((backup_dir / "first.txt").read_text(encoding="utf-8"), "changed\n")
+            self.assertFalse(extra.exists())
+
+    def test_backup_rejects_existing_directory_without_backup_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_dir = backup_parent / target.name
+            backup_dir.mkdir(parents=True)
+            (backup_dir / "unrelated.txt").write_text("do not touch\n", encoding="utf-8")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
+
+            self.assertEqual(code, 1)
+            self.assertIn("ser ikke ut til å være en bildebank-backup", stderr)
+            self.assertEqual((backup_dir / "unrelated.txt").read_text(encoding="utf-8"), "do not touch\n")
+
+    def test_backup_uses_rsync_when_available_and_excludes_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with (
+                patch("bilder.backup.sys.platform", "linux"),
+                patch("bilder.backup.shutil.which", return_value="/usr/bin/rsync"),
+                patch("bilder.backup.subprocess.run", return_value=SimpleNamespace(returncode=0)) as subprocess_run,
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("motor=rsync", stdout)
+            command = subprocess_run.call_args.args[0]
+            self.assertIn("--exclude", command)
+            self.assertIn(".bildebank-backup.json", command)
+            self.assertEqual(command[-2], str(target.resolve()) + "/")
+            self.assertEqual(command[-1], str((backup_parent / target.name).resolve()) + "/")
+            metadata = json.loads(
+                ((backup_parent / target.name) / ".bildebank-backup.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(metadata["status"], "complete")
+            self.assertEqual(metadata["engine"], "rsync")
+
+    def test_backup_leaves_in_progress_metadata_when_rsync_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with (
+                patch("bilder.backup.sys.platform", "linux"),
+                patch("bilder.backup.shutil.which", return_value="/usr/bin/rsync"),
+                patch("bilder.backup.subprocess.run", return_value=SimpleNamespace(returncode=23)),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
+
+            self.assertEqual(code, 1)
+            self.assertIn("rsync feilet", stderr)
+            metadata = json.loads(
+                ((backup_parent / target.name) / ".bildebank-backup.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(metadata["status"], "in-progress")
+
+    def test_backup_uses_robocopy_on_windows_and_accepts_success_exit_codes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with (
+                patch("bilder.backup.sys.platform", "win32"),
+                patch("bilder.backup.shutil.which", return_value="robocopy"),
+                patch("bilder.backup.subprocess.run", return_value=SimpleNamespace(returncode=3)) as subprocess_run,
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("motor=robocopy", stdout)
+            command = subprocess_run.call_args.args[0]
+            self.assertIn("/MIR", command)
+            self.assertIn("/XF", command)
+            self.assertIn(".bildebank-backup.json", command)
 
     def test_where_is_lists_program_and_registered_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

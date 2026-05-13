@@ -69,5 +69,6 @@ Se også den samlede innføringen: [`openclip`](openclip.md).
 ## Programmet
 
 - [`where-is`](where-is.md)
+- [`backup`](backup.md)
 - [`migrate`](migrate.md)
 - [`update`](update.md)

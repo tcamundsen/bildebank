@@ -10,6 +10,7 @@ import webbrowser
 from pathlib import Path
 
 from . import __version__, db
+from .backup import run_backup
 from .config import CONFIG_FILENAME, load_config
 from .exiftool_probe import exiftool_metadata_gaps
 from .face import (
@@ -117,6 +118,7 @@ HELP_COMMAND_GROUPS = (
         "programmet",
         (
             ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
+            ("backup", "Lag eller oppdater backup av bildesamlingen"),
             ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
             ("image-scan", "Scan bilder for tekstbasert bildesøk"),
             ("image-search", "Søk etter bilder med tekst"),
@@ -371,6 +373,22 @@ def build_parser() -> argparse.ArgumentParser:
         "where-is",
         usage="bildebank where-is [valg]",
         help="Vis hvor Bildebank og kjente bildesamlinger ligger",
+    )
+    backup = add_command(
+        subparsers,
+        "backup",
+        usage="bildebank backup [valg] plassering",
+        help="Lag eller oppdater backup av bildesamlingen",
+        description=(
+            "Tolker plassering som foreldremappen der backupen skal ligge. "
+            "Backupmappen får alltid samme navn som aktiv bildesamling."
+        ),
+    )
+    backup.add_argument("destination", metavar="plassering", type=Path, help="Eksisterende mappe der backupen skal ligge")
+    backup.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Vis hva som ville blitt gjort uten å kopiere eller endre filer",
     )
     add_command(
         subparsers,
@@ -741,6 +759,9 @@ def run(args: argparse.Namespace) -> int:
     record_target_best_effort(program_repo_root(), target)
     if args.command == "migrate":
         return run_migrate(target, check=args.check)
+
+    if args.command == "backup":
+        return run_backup_command(target, args.destination, dry_run=args.dry_run)
 
     if args.command == "image-scan":
         return run_image_scan(target, limit=args.limit)
@@ -1169,6 +1190,39 @@ def run_where_is() -> int:
         print()
         print("For å jobbe med en bildesamling kan du skrive:")
         print(f'  cd "{first_existing.path}"')
+    return 0
+
+
+def run_backup_command(target: Path, destination: Path, *, dry_run: bool = False) -> int:
+    stats = run_backup(target, destination, dry_run=dry_run)
+    plan = stats.plan
+    print("Source:")
+    print(f"  {plan.source_dir}")
+    print()
+    print("Backup parent:")
+    print(f"  {plan.backup_parent}")
+    print()
+    print("Backup directory:")
+    print(f"  {plan.backup_dir}")
+    print()
+    print("Mode:")
+    print("  Dry run" if dry_run else "  Backup")
+    print()
+    print("Result:")
+    if dry_run:
+        action = "Would update backup." if plan.existing_backup else "Would create new backup."
+        print(f"  {action}")
+        return 0
+    action = "Updated backup." if plan.existing_backup else "Created new backup."
+    print(f"  {action}")
+    print(f"  motor={stats.engine}")
+    if stats.warning:
+        print(f"  ADVARSEL: {stats.warning}")
+    print(
+        "  "
+        f"files_copied={stats.files_copied}, files_deleted={stats.files_deleted}, "
+        f"dirs_created={stats.dirs_created}, dirs_deleted={stats.dirs_deleted}"
+    )
     return 0
 
 

@@ -1,0 +1,71 @@
+# backup
+
+`backup` lager eller oppdaterer en kopi av hele bildesamlingen.
+
+```bash
+bildebank backup plassering
+```
+
+`plassering` er mappen der backupen skal ligge. Bildebank lager selve
+backupmappen med samme navn som bildesamlingen.
+
+Eksempel:
+
+```bash
+bildebank backup /media/tom/Backup
+```
+
+Hvis bildesamlingen heter `bilde-samling`, blir backupen lagt her:
+
+```text
+/media/tom/Backup/bilde-samling
+```
+
+Backupen tar med hele bildesamlingen, inkludert databaser, HTML-filer og
+`deleted/`.
+
+## Når du bør bruke den
+
+Bruk `backup` når du vil ha en kopi av hele samlingen til en annen disk eller
+en annen mappe. Kommandoen er laget for å speile samlingen, ikke for å lage en
+manuell zip-fil eller en enkelt eksport.
+
+## Dry-run
+
+Bruk `--dry-run` for å se hva kommandoen ville gjort uten å kopiere eller endre
+noe.
+
+```bash
+bildebank backup --dry-run /media/tom/Backup
+```
+
+Dette er nyttig hvis du vil kontrollere at du peker på riktig backup-mappe før
+du lar programmet skrive noe.
+
+## Sikkerhet
+
+Hvis backupmappen finnes fra før, må den allerede være merket som en Bildebank-
+backup av samme bildesamling. Hvis ikke avbryter kommandoen.
+
+Det gjør at Bildebank ikke speiler innhold inn i en vanlig mappe ved en feil.
+
+Backupen har også en liten metadatafil, `.bildebank-backup.json`, i selve
+backupmappen. Denne brukes til å kjenne igjen riktig backup. Filen er en del av
+backupen, men den ligger ikke i bildesamlingen.
+
+## Teknisk gjennomføring
+
+På Windows bruker Bildebank `robocopy` når det finnes. På Linux og macOS bruker
+programmet `rsync` når det finnes. Hvis verktøyet mangler, bruker Bildebank en
+tregere Python-kopiering og skriver en tydelig advarsel.
+
+Du trenger normalt ikke tenke på dette som bruker. Det viktigste er at backupen
+blir oppdatert uten at kildesamlingen endres.
+
+## Hvis du må ta i bruk en backup
+
+Bildebank har ikke funksjon for å gjenopprette en hel bildesamling eller enkeltbilder
+nå. Men for å gjenopprette en helt samling, så kopierer man backupen, for eksempel
+`F:\foto-samling` til `C:\Bruker\Tom\foto-samling`, sletter filen `.bildebank-backup.json`
+og så kan man ta i bruk bildesamlingen. **Ikke** kopier en backup over en eksisterende 
+bildesamling.
