@@ -71,6 +71,29 @@ def jpeg_with_photoshop_xmp_date(date: str) -> bytes:
     return b"\xff\xd8" + segment + b"\xff\xd9"
 
 
+def jpeg_with_photoshop_irb_xmp_date(date: str) -> bytes:
+    xmp = f"""<?xpacket begin=''?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:CreateDate="{date}" />
+  </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end='w'?>""".encode("utf-8")
+    # Photoshop Image Resource Block: 8BIM + id + name(Pascal) + size + data (+ padding)
+    name = b""
+    pascal = bytes([len(name)]) + name
+    if len(pascal) % 2 == 1:
+        pascal += b"\x00"
+    data = xmp
+    size = len(data).to_bytes(4, "big")
+    irb = b"8BIM" + (0x0424).to_bytes(2, "big") + pascal + size + data
+    if len(data) % 2 == 1:
+        irb += b"\x00"
+    payload = b"Photoshop 3.0\x00" + irb
+    segment = b"\xff\xed" + (len(payload) + 2).to_bytes(2, "big") + payload
+    return b"\xff\xd8" + segment + b"\xff\xd9"
+
+
 def jpeg_with_exif_datetime(date: str) -> bytes:
     date_bytes = date.encode("ascii") + b"\x00"
     tiff_header = b"MM\x00*\x00\x00\x00\x08"
@@ -196,6 +219,16 @@ class MediaDateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "photoshop.jpg"
             path.write_bytes(jpeg_with_photoshop_xmp_date("2009:01:29 12:09:44+01:00"))
+
+            result = media_date(path)
+
+            self.assertEqual(result.date, dt.date(2009, 1, 29))
+            self.assertEqual(result.source, "metadata")
+
+    def test_jpeg_photoshop_irb_xmp_date_is_used_as_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "photoshop-irb.jpg"
+            path.write_bytes(jpeg_with_photoshop_irb_xmp_date("2009:01:29 12:09:44+01:00"))
 
             result = media_date(path)
 

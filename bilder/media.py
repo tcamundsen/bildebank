@@ -341,11 +341,60 @@ def jpeg_xmp_date(path: Path) -> dt.date | None:
     for marker, segment in _jpeg_segments(path):
         if not 0xE0 <= marker <= 0xEF:
             continue
-        if b"xmp" not in segment.lower() and b"CreateDate" not in segment:
+        if segment.startswith(b"Photoshop 3.0\x00"):
+            xmp = _xmp_from_photoshop_app13(segment)
+            if xmp is not None:
+                parsed = _date_from_xmp(xmp)
+                if parsed is not None:
+                    return parsed
+        # Fast prefilter: avoid parsing every APP segment.
+        lower = segment.lower()
+        if (
+            b"xmp" not in lower
+            and b"createdate" not in lower
+            and b"metadata" not in lower
+            and b"rdf:rdf" not in lower
+            and b"<x:xmpmeta" not in lower
+        ):
             continue
         parsed = _date_from_xmp(segment)
         if parsed is not None:
             return parsed
+    return None
+
+
+def _xmp_from_photoshop_app13(segment: bytes) -> bytes | None:
+    # JPEG APP13 (0xFFED) can store Photoshop Image Resource Blocks.
+    # XMP is typically resource ID 0x0424.
+    prefix = b"Photoshop 3.0\x00"
+    if not segment.startswith(prefix):
+        return None
+    offset = len(prefix)
+    while offset + 12 <= len(segment):
+        if segment[offset : offset + 4] != b"8BIM":
+            break
+        offset += 4
+        resource_id = int.from_bytes(segment[offset : offset + 2], "big")
+        offset += 2
+        if offset >= len(segment):
+            break
+        name_len = segment[offset]
+        offset += 1
+        offset += name_len
+        if offset % 2 == 1:
+            offset += 1
+        if offset + 4 > len(segment):
+            break
+        size = int.from_bytes(segment[offset : offset + 4], "big")
+        offset += 4
+        if offset + size > len(segment):
+            break
+        data = segment[offset : offset + size]
+        offset += size
+        if offset % 2 == 1:
+            offset += 1
+        if resource_id == 0x0424 and data:
+            return data
     return None
 
 
