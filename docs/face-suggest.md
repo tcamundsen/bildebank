@@ -11,7 +11,7 @@ bildebank face-suggest --no-browser
 ```
 
 Forslagene bygger på ansikter du allerede har bekreftet med
-`face-person-add-face` eller `face-person-add-group`.
+`face-person-add-face`.
 
 Høyere `--threshold` gir strengere forslag. Forslagene er ikke bekreftede før
 du selv kobler ansiktet til personen.

@@ -70,29 +70,20 @@ Det er denne kommandoen som tar lang tid. Alle de andre går mye raskere.
 Det mulig å nullstille alle ansiktene du knytter til personer
 uten å måtte kjøre `face-scan` på nytt.
 
-### 4. Lag grupper
+### 4. Opprett personer
 
-```powershell
-bildebank face-group
-```
-
-Dette lager `face-groups.html`. Åpne filen i nettleseren. Bla mellom gruppene
-med pil venstre og pil høyre.
-
-### 5. Opprett personer
-
-Når du finner en gruppe som helt tydelig er samme person:
+Når du finner et tydelig ansikt som tilhører en person:
 
 ```powershell
 bildebank face-person-create "Kari"
-bildebank face-person-add-group "Kari" 12
+bildebank face-person-add-face "Kari" 798
 ```
 
-Tallet `12` er gruppe-id fra `face-groups.html`.
+Tallet `798` er `face-id`. Du finner det i `faces.html`, i personsidene eller
+i vanlig `index.html`.
 
-Du trenger ikke å koble alle grupper manuelt. Det er normalt at Bildebank lager
-mange grupper. Bruk gruppene til å finne noen sikre eksempler for personen. Du
-får ganske bra resultater med bare 2-3 grupper per person.
+Du trenger ikke å markere alle ansikter manuelt. Det er vanligvis nok å legge
+inn noen få sikre eksempler per person.
 
 Hvis bare ett enkelt ansikt skal kobles til personen:
 
@@ -144,8 +135,8 @@ Fjern ett feil ansikt fra en person:
 bildebank face-person-remove-face "Kari" 912
 ```
 
-Tallet `912` er `face-id`. Du finner det under bildet i `face-groups.html`,
-ikke i overskriften for gruppen.
+Tallet `912` er `face-id`. Du finner det under bildet i `faces.html` eller i
+personsiden.
 
 Slett en person som ble opprettet ved en feil:
 
@@ -269,103 +260,26 @@ Rapporten viser blant annet:
 - bilder med flest ansikter
 - eventuelle scan-feil
 
-## Ansiktsgrupper
+## Ansikter og personer
 
-Du kan beregne foreløpige grupper basert på embeddingene fra InsightFace:
+`make-face-browser` lager en oversikt over scannede ansikter. Den er nyttig når
+du vil finne et konkret ansikt du kjenner igjen og koble det til en person.
 
-```powershell
-bildebank face-group
-```
-
-Dette lager mulige grupper av ansikter som ligner hverandre. Gruppene er bare
-forslag, ikke bekreftede personer.
-
-Det er normalt at `face-group` lager mange grupper. Det betyr ikke at du skal
-gå gjennom og koble hver eneste gruppe til riktig person. Gruppene er først og
-fremst en måte å finne gode, sikre eksempler på. Når noen grupper eller
-enkeltansikter er bekreftet for en person, kan `face-suggest` bruke dette til å
-foreslå flere ansikter.
-
-Noen ganger kan `face-group` lage en veldig stor gruppe. Da er den ofte for
-stor til å kontrollere manuelt. Derfor bruker `face-group` som standard
-`--max-size 50`. Grupper med mer enn 50 ansikter blir forkortet i
-`face-groups.html`.
-
-Du kan velge en annen grense:
-
-```powershell
-bildebank face-group --max-size 200
-```
-
-Store grupper slettes ikke fra scanningen. `face-person-add-group` legger bare
-til ansiktene som faktisk vises i `face-groups.html`. Ansiktene som ikke vises
-kan senere komme tilbake som forslag med `face-suggest`, eller vises hvis du
-kjører `face-group` på nytt med høyere `--max-size`.
-
-Hvis du vil skru av maksgrensen helt, bruker du:
-
-```powershell
-bildebank face-group --max-size 0
-```
-
-Kommandoen viser progresjon og estimert tid igjen mens den sammenligner
-ansikter. Dette kan ta tid, fordi hvert ansikt sammenlignes med mange andre
-ansikter.
-
-Det er trygt å kjøre `face-group` på nytt, også med en annen `--threshold`,
-etter at du har koblet grupper eller ansikter til personer. Bekreftede personer
-lagres på ansikt-id, ikke på gruppe-id. Det som bygges på nytt er bare
-gruppeforslagene og `face-groups.html`.
-
-Som standard skjuler `face-groups.html` grupper der alle synlige ansikter
-allerede er bekreftet som samme person. Hvis du vil se slike ferdige grupper,
-kan du kjøre:
-
-```powershell
-bildebank face-group --include-known
-```
-
-Ikke bruk gruppe-id-er fra en gammel `face-groups.html` etter at du har kjørt
-`face-group` på nytt. Gruppe-id-ene kan da bety noe annet.
-
-Du kan justere hvor strengt ansikter skal sammenlignes:
-
-```powershell
-bildebank face-group --threshold 0.65
-bildebank face-group --threshold 0.70 --max-size 200
-```
-
-Høyere tall gir strengere grupper. Det betyr vanligvis færre og mindre grupper,
-men mindre risiko for at ulike personer blandes sammen. Lavere tall gir
-vanligvis flere og større grupper, men større risiko for feilblanding.
-
-Standard er `0.60`.
-
-Kommandoen lager:
-
-```text
-face-groups.html
-```
-
-Siden viser én gruppe om gangen. Bruk pil venstre og pil høyre for å bla mellom
-gruppene. Bildene vises med ansiktsboks, ikke som et lite crop-utsnitt, slik at
-det er lettere å se om riktig ansikt er markert. Klikk på et bilde for å åpne
-det i full størrelse.
-
-## Personer
-
-Når en gruppe ser riktig ut, kan du opprette en person og koble gruppen til
-personen:
+Når du har funnet et tydelig ansikt:
 
 ```powershell
 bildebank face-person-create "Kari"
-bildebank face-person-add-group "Kari" 3
+bildebank face-person-add-face "Kari" 798
 ```
 
-Tallet er gruppe-id fra `face-groups.html`.
+Tallet er `face-id`. Du finner det under bildet i `faces.html`, eller i vanlig
+`index.html` med knappen `Ansikter i bildet`.
 
-Personen må være opprettet før du kobler grupper eller enkeltansikter til den.
-Dette hindrer at en skrivefeil i navnet lager en ny person ved et uhell.
+Personen må være opprettet før du kobler ansikter til den. Dette hindrer at en
+skrivefeil i navnet lager en ny person ved et uhell.
+
+Du trenger ikke å bekrefte mange ansikter for hver person. Noen få sikre
+eksempler er som regel nok til at `face-suggest` kan gjøre resten.
 
 Du kan se registrerte personer:
 
@@ -383,24 +297,15 @@ Kommandoen ber om bekreftelse. Den sletter bare personen, bekreftede
 ansiktskoblinger og forslag for personen. Den sletter ingen bilder og ingen
 scannede ansikter.
 
-Dette er brukerbekreftet informasjon. Det er fortsatt bare ansiktene i gruppen
-som kobles til personen.
-
-Du kan også koble ett enkelt ansikt til en person. Ansikt-id står i
-`face-groups.html`. Personen må være opprettet først.
-
-```powershell
-bildebank face-person-add-face "Kari" 17
-```
-
-Hvis et ansikt er koblet feil, kan koblingen fjernes igjen:
+Dette er brukerbekreftet informasjon. Hvis et ansikt er koblet feil, kan
+koblingen fjernes igjen:
 
 ```powershell
 bildebank face-person-remove-face "Kari" 17
 ```
 
-Tallet `17` er `face-id`. Du finner det under bildet i `face-groups.html`
-(eller i `faces.html` laget av `make-face-browser`), ikke i overskriften for gruppen.
+Tallet er `face-id`. Du finner det under bildet i `faces.html` eller i
+personsiden.
 
 Når noen ansikter er koblet til personer, kan Bildebank lage forslag for
 ukjente ansikter:
@@ -461,20 +366,20 @@ bildebank face-reset --all
 ```
 
 Dette sletter `.bilder-faces.sqlite3`. Det fjerner resultatene fra `face-scan`,
-grupper fra `face-group`, personer, bekreftede ansiktskoblinger og forslag.
+personer, bekreftede ansiktskoblinger og forslag.
 
 Kommandoen sletter ingen bilder og endrer ikke den vanlige Bildebank-databasen.
 
 ### Beholde face-scan
 
-Hvis du vil slippe å scanne bildene på nytt, men vil starte på nytt med grupper
-og personer:
+Hvis du vil slippe å scanne bildene på nytt, men vil starte på nytt med
+personer:
 
 ```powershell
 bildebank face-reset --keep-scan
 ```
 
-Dette beholder resultatene fra `face-scan`, men sletter grupper, personer,
+Dette beholder resultatene fra `face-scan`, men sletter personer,
 bekreftede ansiktskoblinger og forslag.
 
 Hvis du kjører `face-reset` uten nivåvalg, er dette standardnivået:
@@ -483,23 +388,17 @@ Hvis du kjører `face-reset` uten nivåvalg, er dette standardnivået:
 bildebank face-reset
 ```
 
-Etterpå kan du kjøre:
+### Beholde face-scan og gruppedata
 
-```powershell
-bildebank face-group
-```
-
-### Beholde face-scan og grupper
-
-Hvis du bare vil fjerne personer, bekreftede ansiktskoblinger og forslag:
+Hvis du bare vil fjerne personer, bekreftede ansiktskoblinger og forslag, men
+beholde eldre gruppedata:
 
 ```powershell
 bildebank face-reset --keep-scan-and-groups
 ```
 
-Dette beholder både resultatene fra `face-scan` og gruppene fra `face-group`.
-Det kan brukes hvis personnavn og koblinger har blitt rotete, men gruppene
-fortsatt er nyttige.
+Dette beholder både resultatene fra `face-scan` og eldre gruppedata. Det er et
+legacy-valg, ikke del av vanlig arbeidsflyt.
 
 ## Modeller
 

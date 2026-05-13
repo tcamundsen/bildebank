@@ -20,38 +20,19 @@ Gode eksempler er bilder der:
 
 Bruk heller fem sikre ansikter enn femti ansikter der noen kan være feil.
 
-## Bruk grupper først
+## Bruk sikre enkeltansikter først
 
-Kjør:
-
-```powershell
-bildebank face-group
-```
-
-Åpne `face-groups.html`. Når en gruppe tydelig viser samme person i alle
-synlige bilder, kan du koble gruppen til personen:
-
-```powershell
-bildebank face-person-add-group "Kari" 12
-```
-
-Tallet er gruppe-id fra `face-groups.html`.
-
-Dette er den raskeste måten å gi Bildebank mange gode eksempler på.
-
-## Ikke godkjenn svake grupper
-
-Ikke bruk `face-person-add-group` hvis gruppen inneholder forskjellige
-personer. Da er det bedre å la gruppen være.
-
-Hvis bare noen få bilder i gruppen er riktige, bruk heller enkeltansikter:
+Bruk noen få tydelige ansikter du er helt sikker på:
 
 ```powershell
 bildebank face-person-add-face "Kari" 798
 ```
 
-`face-id` finner du i `face-groups.html`, i personsidene, eller i vanlig
-`index.html` med knappen `Ansikter i bildet`.
+`face-id` finner du i `faces.html`, i personsidene, eller i vanlig `index.html`
+med knappen `Ansikter i bildet`.
+
+Det er som regel bedre å legge til noen få sikre ansikter enn mange usikre.
+Da får `face-suggest` bedre grunnlag.
 
 ## Gi variasjon
 
@@ -115,13 +96,10 @@ bildebank face-person-add-face "Navn" 1234
 Bytt ut `Navn` med riktig personnavn før du kjører kommandoen. Kjør deretter
 `face-suggest` på nytt.
 
-## Ikke stress med alle grupper
+## Ikke stress med alt
 
-Det er normalt at `face-group` lager mange grupper. Du trenger ikke å koble
-hver gruppe til en person.
-
-Målet er å gi Bildebank nok gode eksempler til at `face-suggest` kan gjøre mye
-av resten av arbeidet.
+Du trenger ikke å bekrefte hvert eneste ansikt. Målet er å gi Bildebank nok
+gode eksempler til at `face-suggest` kan gjøre mye av arbeidet selv.
 
 ## Se status underveis
 
@@ -174,11 +152,11 @@ scanne alle bildene på nytt.
 
 For hver viktig person:
 
-1. Finn 2-3 gode grupper i `face-groups.html`.
-2. Legg til gruppene med `face-person-add-group`.
+1. Finn 2-3 sikre ansikter i `faces.html`, personsidene eller vanlig `index.html`.
+2. Legg dem til med `face-person-add-face`.
 3. Kjør `face-suggest`.
 4. Se gjennom personsiden i `personer.html`.
-5. Legg til noen sikre enkeltansikter som mangler.
+5. Legg til noen flere sikre enkeltansikter hvis det mangler gode eksempler.
 6. Kjør `face-suggest` på nytt.
 
 Når forslagene ser gode ut, trenger du ikke å gjøre mer med den personen før du

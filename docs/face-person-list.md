@@ -21,7 +21,7 @@ Tallene betyr:
 - `bekreftede_bilder` er antall bilder der du selv har bekreftet at personen
   finnes. Dette teller bilder, ikke ansikter.
 - `bekreftede_ansikter` er antall ansikter du selv har koblet til personen med
-  `face-person-add-group` eller `face-person-add-face`.
+  `face-person-add-face`.
 - `forslag` er antall ansikter `face-suggest` foreslår for personen. Dette er
   ikke bekreftet av deg.
 - `oppdatert` er tidspunktet personen sist ble oppdatert i ansiktsdatabasen.

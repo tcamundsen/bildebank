@@ -20,8 +20,8 @@ finne personer, for da slipper du å kjøre `face-scan` på nytt.
 `--keep-scan` beholder resultatene fra `face-scan`, men sletter grupper,
 personer, bekreftelser og forslag.
 
-`--keep-scan-and-groups` beholder resultatene fra `face-scan` og `face-group`,
-men sletter personer, bekreftelser og forslag.
+`--keep-scan-and-groups` er et eldre valg som også bevarer gruppedata. Det er
+ikke del av vanlig arbeidsflyt lenger.
 
 `--all` sletter hele face-databasen. Bruk dette bare hvis du også vil slette
 resultatene fra `face-scan`.

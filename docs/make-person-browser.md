@@ -30,7 +30,7 @@ person-Kari.html
 
 Siden viser bilder der personen enten er:
 
-- bekreftet med `face-person-add-face` eller `face-person-add-group`
+- bekreftet med `face-person-add-face`
 - foreslått med `face-suggest`
 
 Bekreftede ansikter og forslag markeres med ulik farge på boksen rundt

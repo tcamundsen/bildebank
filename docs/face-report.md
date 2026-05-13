@@ -32,8 +32,7 @@ og forslag Bildebank har laget etterpå:
 
 - `Personer` er antall personer som er opprettet med `face-person-create`.
 - `Bekreftede ansiktskoblinger` er antall ansikter du selv har koblet til en
-  person. Dette skjer med `face-person-add-group` eller
-  `face-person-add-face`.
+  person. Dette skjer med `face-person-add-face`.
 - `Forslag` er antall ukjente ansikter som `face-suggest` mener kan være en
   kjent person. Forslag er ikke bekreftet av deg.
 - `Bilder med minst én bekreftet person` er antall bildefiler der minst ett

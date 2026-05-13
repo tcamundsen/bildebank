@@ -44,9 +44,7 @@ Se også den samlede innføringen: [`insightface`](insightface.md).
 - [`face-status`](face-status.md)
 - [`face-scan`](face-scan.md)
 - [`face-report`](face-report.md)
-- `face-group` er fjernet
 - [`face-person-create`](face-person-create.md)
-- `face-person-add-group` er fjernet. Bruk face-person-add-face
 - [`face-person-add-face`](face-person-add-face.md)
 - [`face-person-remove-face`](face-person-remove-face.md)
 - [`face-person-delete`](face-person-delete.md)
