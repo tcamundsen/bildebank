@@ -12,13 +12,13 @@ backupmappen med samme navn som bildesamlingen.
 Eksempel:
 
 ```bash
-bildebank backup /media/tom/Backup
+bildebank backup D:\Backuper
 ```
 
 Hvis bildesamlingen heter `bilde-samling`, blir backupen lagt her:
 
 ```text
-/media/tom/Backup/bilde-samling
+D:\Backuper\bilde-samling
 ```
 
 Backupen tar med hele bildesamlingen, inkludert databaser, HTML-filer og
@@ -36,7 +36,7 @@ Bruk `--dry-run` for å se hva kommandoen ville gjort uten å kopiere eller endr
 noe.
 
 ```bash
-bildebank backup --dry-run /media/tom/Backup
+bildebank backup --dry-run D:\Backuper
 ```
 
 Dette er nyttig hvis du vil kontrollere at du peker på riktig backup-mappe før
