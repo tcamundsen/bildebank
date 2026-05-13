@@ -55,6 +55,7 @@ class BrowserSource:
     root_url: str
     person_name: str | None = None
     include_suggestions: bool = True
+    date_source: str | None = None
 
 
 class OpenClipSearchCache:
@@ -100,6 +101,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path.startswith("/month/"):
                 self.respond_month(parsed.path.removeprefix("/month/"))
+                return
+            if parsed.path.startswith("/date-source/"):
+                self.respond_date_source(parsed.path.removeprefix("/date-source/"))
                 return
             if parsed.path.startswith("/person/"):
                 self.respond_person(parsed.path.removeprefix("/person/"))
@@ -225,6 +229,40 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         self.respond_text("Ugyldig personside.", status=HTTPStatus.NOT_FOUND)
 
+    def respond_date_source(self, raw_path: str) -> None:
+        raw_date_source, page_mode, raw_value = parse_source_path(raw_path)
+        date_source = urllib.parse.unquote(raw_date_source).strip()
+        if not valid_browser_date_source(date_source):
+            self.respond_text("Ugyldig datokilde.", status=HTTPStatus.BAD_REQUEST)
+            return
+        source = date_source_browser_source(date_source)
+        if page_mode is None:
+            item = first_source_item(self.server.target, source)
+            if item is None:
+                self.respond_html(empty_source_html(source))
+                return
+            self.redirect(source_item_url(source, int(item["id"])))
+            return
+        if page_mode == "item":
+            file_id = parse_file_id(raw_value)
+            item = source_item_by_id(self.server.target, source, file_id)
+            if item is None:
+                self.respond_text("Filen finnes ikke for denne datokilden.", status=HTTPStatus.NOT_FOUND)
+                return
+            previous_item, next_item = adjacent_source_items(self.server.target, source, item)
+            month_nav = source_month_navigation(self.server.target, source, item)
+            self.respond_html(source_item_page_html(self.server.target, source, item, previous_item, next_item, month_nav))
+            return
+        if page_mode == "month":
+            month_key = urllib.parse.unquote(raw_value).strip()
+            if not valid_month_key(month_key):
+                self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
+                return
+            items = source_month_items(self.server.target, source, month_key)
+            self.respond_html(source_month_page_html(self.server.target, source, month_key, items))
+            return
+        self.respond_text("Ugyldig datokildeside.", status=HTTPStatus.NOT_FOUND)
+
     def respond_file(self, encoded_relative_path: str) -> None:
         raw_path = urllib.parse.unquote(encoded_relative_path).strip("/")
         if raw_path.isdigit():
@@ -345,16 +383,7 @@ def parse_file_id(value: str) -> int:
 
 
 def parse_person_path(raw_path: str) -> tuple[str, str, str | None, str]:
-    person_part = raw_path.strip("/")
-    page_mode = None
-    raw_value = ""
-    if "/item/" in person_part:
-        person_part, raw_value = person_part.split("/item/", 1)
-        page_mode = "item"
-    elif "/month/" in person_part:
-        person_part, raw_value = person_part.split("/month/", 1)
-        page_mode = "month"
-
+    person_part, page_mode, raw_value = parse_source_path(raw_path)
     person_mode = "all"
     if person_part.endswith("/confirmed"):
         person_part = person_part.removesuffix("/confirmed")
@@ -363,6 +392,19 @@ def parse_person_path(raw_path: str) -> tuple[str, str, str | None, str]:
         person_part = person_part.removesuffix("/all")
         person_mode = "all"
     return person_part.strip("/"), person_mode, page_mode, raw_value
+
+
+def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
+    source_part = raw_path.strip("/")
+    page_mode = None
+    raw_value = ""
+    if "/item/" in source_part:
+        source_part, raw_value = source_part.split("/item/", 1)
+        page_mode = "item"
+    elif "/month/" in source_part:
+        source_part, raw_value = source_part.split("/month/", 1)
+        page_mode = "month"
+    return source_part.strip("/"), page_mode, raw_value
 
 
 FILE_COLUMNS = "id, target_path, target_path_key, stored_filename, taken_date, date_source, size_bytes"
@@ -379,15 +421,27 @@ def person_browser_source(person_name: str, *, include_suggestions: bool) -> Bro
     return BrowserSource(title, root_url, person_name, include_suggestions)
 
 
+def date_source_browser_source(date_source: str) -> BrowserSource:
+    labels = {
+        "filename": "Dato fra filnavn",
+        "mtime": "Dato fra mtime",
+    }
+    return BrowserSource(labels[date_source], f"/date-source/{date_source}", date_source=date_source)
+
+
+def valid_browser_date_source(date_source: str) -> bool:
+    return date_source in {"filename", "mtime"}
+
+
 def source_item_url(source: BrowserSource, file_id: int) -> str:
-    if source.person_name is not None:
+    if source.person_name is not None or source.date_source is not None:
         return f"{source.root_url}/item/{file_id}"
     return f"/item/{file_id}"
 
 
 def source_month_url(source: BrowserSource, month_key: str) -> str:
     quoted = urllib.parse.quote(month_key)
-    if source.person_name is not None:
+    if source.person_name is not None or source.date_source is not None:
         return f"{source.root_url}/month/{quoted}"
     return f"/month/{quoted}"
 
@@ -406,7 +460,7 @@ def browser_item_by_id(target: Path, file_id: int) -> Any | None:
 
 
 def source_item_by_id(target: Path, source: BrowserSource, file_id: int) -> Any | None:
-    if source.person_name is not None:
+    if source.person_name is not None or source.date_source is not None:
         return next((item for item in source_items(target, source) if int(item["id"]) == file_id), None)
     conn = db.connect(target)
     try:
@@ -427,7 +481,7 @@ def adjacent_browser_items(target: Path, item: Any) -> tuple[Any | None, Any | N
 
 
 def adjacent_source_items(target: Path, source: BrowserSource, item: Any) -> tuple[Any | None, Any | None]:
-    if source.person_name is not None:
+    if source.person_name is not None or source.date_source is not None:
         items = source_items(target, source)
         index = next((idx for idx, candidate in enumerate(items) if int(candidate["id"]) == int(item["id"])), -1)
         if index < 0:
@@ -474,7 +528,7 @@ def browser_month_keys(target: Path) -> list[str]:
 
 
 def source_month_keys(target: Path, source: BrowserSource) -> list[str]:
-    if source.person_name is not None:
+    if source.person_name is not None or source.date_source is not None:
         keys = {month_key_for_item(target, item) for item in source_items(target, source)}
         return sorted(key for key in keys if valid_month_key(key))
     db_path = db.db_path_for_target(target)
@@ -771,6 +825,23 @@ def person_items(target: Path, person_name: str, *, include_suggestions: bool = 
 def source_items(target: Path, source: BrowserSource) -> list[Any]:
     if source.person_name is not None:
         return person_items(target, source.person_name, include_suggestions=source.include_suggestions)
+    if source.date_source is not None:
+        conn = db.connect(target)
+        try:
+            return list(
+                conn.execute(
+                    f"""
+                    SELECT {FILE_COLUMNS}
+                    FROM files
+                    WHERE deleted_at IS NULL
+                      AND date_source = ?
+                    ORDER BY target_path_key
+                    """,
+                    (source.date_source,),
+                )
+            )
+        finally:
+            conn.close()
     conn = db.connect(target)
     try:
         return list(
@@ -1250,6 +1321,11 @@ def source_item_page_html(
 
 def source_top_links_html(source: BrowserSource) -> str:
     links = ['<a class="server-search-link" href="/people">Personer</a>']
+    if source.person_name is None and source.date_source is None:
+        links.append('<a class="server-search-link" href="/date-source/filename">Dato fra filnavn</a>')
+        links.append('<a class="server-search-link" href="/date-source/mtime">Dato fra mtime</a>')
+    if source.date_source is not None:
+        links.insert(0, '<a class="server-search-link" href="/">Alle bilder</a>')
     if source.person_name is not None:
         links.insert(0, '<a class="server-search-link" href="/">Alle bilder</a>')
         if source.include_suggestions:
@@ -1625,6 +1701,10 @@ def source_month_page_html(target: Path, source: BrowserSource, month_key: str, 
 
 def empty_person_browser_html(person: str | BrowserSource) -> str:
     source = person if isinstance(person, BrowserSource) else person_browser_source(person, include_suggestions=True)
+    return empty_source_html(source)
+
+
+def empty_source_html(source: BrowserSource) -> str:
     return page_html(
         source.title,
         f"""
@@ -1639,6 +1719,10 @@ def empty_person_browser_html(person: str | BrowserSource) -> str:
 
 def empty_source_message(source: BrowserSource) -> str:
     if source.person_name is None:
+        if source.date_source == "filename":
+            return "Ingen bilder med dato fra filnavn."
+        if source.date_source == "mtime":
+            return "Ingen bilder med dato fra mtime."
         return "Ingen filer i bildesamlingen."
     if source.include_suggestions:
         return "Ingen bekreftede ansikter eller forslag for denne personen ennå."

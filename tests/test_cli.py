@@ -27,10 +27,12 @@ from bilder.program_state import PROGRAM_DB_FILENAME
 from bilder.server import (
     adjacent_browser_items,
     adjacent_person_items,
+    adjacent_source_items,
     BildebankRequestHandler,
     browser_item_by_id,
     browser_month_items,
     browser_month_navigation,
+    date_source_browser_source,
     index_html,
     item_page_html,
     month_page_html,
@@ -42,6 +44,11 @@ from bilder.server import (
     person_month_page_html,
     person_items,
     search_server_images,
+    source_item_by_id,
+    source_item_page_html,
+    source_month_items,
+    source_month_navigation,
+    source_month_page_html,
 )
 from bilder.target_lock import LOCK_FILENAME
 from tests.test_media import (
@@ -631,6 +638,55 @@ class CliTests(unittest.TestCase):
         self.assertIn("Kilder", body)
         self.assertIn(source.name, body)
         self.assertIn("closeInfoOverlay", body)
+
+    def test_run_server_date_source_browser_reuses_source_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20231201.jpg").write_bytes(b"image-one")
+            (source / "IMG_20240102.jpg").write_bytes(b"image-two")
+            (source / "IMG_20240203.jpg").write_bytes(b"image-three")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute("UPDATE files SET date_source = 'filename' WHERE id = 1")
+                conn.execute("UPDATE files SET date_source = 'mtime' WHERE id = 2")
+                conn.execute("UPDATE files SET date_source = 'filename' WHERE id = 3")
+                conn.commit()
+            finally:
+                conn.close()
+
+            filename_source = date_source_browser_source("filename")
+            mtime_source = date_source_browser_source("mtime")
+            filename_item = source_item_by_id(target, filename_source, 1)
+            mtime_item = source_item_by_id(target, mtime_source, 2)
+            self.assertIsNotNone(filename_item)
+            self.assertIsNotNone(mtime_item)
+            filename_body = source_item_page_html(
+                target,
+                filename_source,
+                filename_item,
+                *adjacent_source_items(target, filename_source, filename_item),
+                source_month_navigation(target, filename_source, filename_item),
+            )
+            mtime_month_body = source_month_page_html(
+                target,
+                mtime_source,
+                "2024-01",
+                source_month_items(target, mtime_source, "2024-01"),
+            )
+            filename_excludes_mtime_item = source_item_by_id(target, filename_source, 2) is None
+
+        self.assertIn("Dato fra filnavn", filename_body)
+        self.assertIn("/date-source/filename/item/3", filename_body)
+        self.assertIn('href="/">Alle bilder</a>', filename_body)
+        self.assertTrue(filename_excludes_mtime_item)
+        self.assertIn("Dato fra mtime", mtime_month_body)
+        self.assertIn("/date-source/mtime/item/2", mtime_month_body)
+        self.assertNotIn("/date-source/mtime/item/1", mtime_month_body)
 
     def test_run_server_month_navigation_tolerates_foreign_path_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

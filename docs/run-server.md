@@ -104,6 +104,8 @@ aktuelle måneden.
 - `/person/Kari/confirmed` viser bilder der Kari er bekreftet
 - `/person/Kari` viser både bekreftede bilder og bilder foreslått av
   `face-suggest`
+- `/date-source/filename` viser bilder der datoen kom fra filnavnet
+- `/date-source/mtime` viser bilder der datoen kom fra filens endringsdato
 - `/search` skjema for tekstsøk
 - `/search?q=beach` søkeresultat
 - `/file/...` viser bildefiler fra søket
