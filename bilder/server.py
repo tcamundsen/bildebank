@@ -1189,7 +1189,7 @@ def source_item_page_html(
     all_people = registered_people(target)
     faces_button = faces_button_html(unconfirmed_faces) if source.person_name is None else ""
     faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if source.person_name is None else ""
-    extra_links = source_top_links_html(source)
+    action_links = source_action_links_html(source)
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
@@ -1199,8 +1199,7 @@ def source_item_page_html(
               <div class="title">{html.escape(source.title)}</div>
               {people}
               {faces_button}
-              {extra_links}
-              <a class="server-search-link" href="/search">Bildesøk</a>
+              {action_links}
             </div>
             {controls}
           </header>
@@ -1229,6 +1228,15 @@ def source_top_links_html(source: BrowserSource) -> str:
                 f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=True).root_url)}">Med forslag</a>',
             )
     return "\n".join(links)
+
+
+def source_action_links_html(source: BrowserSource) -> str:
+    return f"""
+    <div class="top-actions">
+      {source_top_links_html(source)}
+      <a class="server-search-link" href="/search">Bildesøk</a>
+    </div>
+    """
 
 
 def source_item_media_html(target: Path, source: BrowserSource, item: Any) -> str:
@@ -1474,7 +1482,7 @@ def source_month_page_html(target: Path, source: BrowserSource, month_key: str, 
     previous_item = items[-1] if items else None
     next_item = items[0] if items else None
     controls = source_controls_html(source, source_month_navigation_for_key(target, source, month_key), previous_item, next_item)
-    extra_links = source_top_links_html(source)
+    action_links = source_action_links_html(source)
     return page_html(
         f"{source.title}: {month_key}",
         f"""
@@ -1483,8 +1491,7 @@ def source_month_page_html(target: Path, source: BrowserSource, month_key: str, 
             <div class="topline">
               <div class="title">{html.escape(source.title)}</div>
               <span class="status">Månedsoversikt: {html.escape(month_key)}</span>
-              {extra_links}
-              <a class="server-search-link" href="/search">Bildesøk</a>
+              {action_links}
             </div>
             {controls}
           </header>
@@ -1660,6 +1667,14 @@ def page_html(title: str, body: str) -> str:
     .title {{ font-weight: 700; margin-right: 8px; line-height: 1.2; }}
     .status {{ color: var(--muted); font-size: 13px; line-height: 1.2; }}
     .people {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
+    .top-actions {{
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }}
     .people-table {{ display: grid; gap: 8px; margin-top: 18px; }}
     .people-row {{
       display: grid;
@@ -1861,6 +1876,7 @@ def page_html(title: str, body: str) -> str:
       .search {{ grid-template-columns: 1fr; }}
       .browser-header {{ align-items: stretch; }}
       .nav-button, .server-search-link, .person-link, .faces-button {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
+      .top-actions {{ margin-left: 0; width: 100%; justify-content: stretch; }}
       .people-row {{ grid-template-columns: 1fr; align-items: stretch; }}
     }}
   </style>
