@@ -1,9 +1,10 @@
 Designet for appen er beskrevet i app-design.md
 
 Dokumentasjonsfilene som finnes er README.md, README.linux.md
-og docs/*.md. Disse filene er skrevet for brukere som
+og docs/. Disse filene er skrevet for brukere som
 ikke er programmerere, og som ikke er vant til å jobbe i et
-terminalvindu.
+terminalvindu. All brukerdokumentasjon skal bruke Windows-filnavn,
+dvs for eksempel `C:\Users\Tom` og ikke `/home/tom`.
 
 # AI-regler for bildebanksystemet
 
