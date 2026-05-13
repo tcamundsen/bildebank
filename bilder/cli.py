@@ -896,7 +896,7 @@ def run(args: argparse.Namespace) -> int:
             return 0
 
         if args.command == "show-conflict":
-            path = existing_path_arg(args.path).resolve()
+            path = resolve_collection_file_arg(target, args.path)
             row = db.file_by_target_path(conn, target, path)
             if row is None:
                 raise ValueError(f"Filen finnes ikke i importdatabasen: {path}")
@@ -911,7 +911,7 @@ def run(args: argparse.Namespace) -> int:
             return 0
 
         if args.command == "show-source":
-            path = existing_path_arg(args.path).resolve()
+            path = resolve_collection_file_arg(target, args.path)
             rows = db.file_sources_by_target_path(conn, target, path)
             if not rows:
                 raise ValueError(f"Filen finnes ikke i importdatabasen: {path}")
@@ -1989,21 +1989,32 @@ def resolve_browser_file_arg(target: Path, path: Path | None) -> Path:
     return (target / path).resolve()
 
 
-def resolve_target_file_arg(target: Path, path: Path) -> Path:
+def resolve_collection_file_arg(target: Path, path: Path) -> Path:
     candidate = existing_path_arg(path)
     if candidate.is_absolute():
         resolved = candidate.resolve()
     else:
         resolved = (target / candidate).resolve()
+    relative_collection_path(target, resolved)
+    return resolved
+
+
+def resolve_target_file_arg(target: Path, path: Path) -> Path:
+    resolved = resolve_collection_file_arg(target, path)
     relative_path_under_target(target, resolved)
     return resolved
 
 
-def relative_path_under_target(target: Path, path: Path) -> Path:
+def relative_collection_path(target: Path, path: Path) -> Path:
     try:
         relative_path = path.resolve().relative_to(target.resolve())
     except ValueError as exc:
         raise ValueError(f"Filen ligger ikke i bildesamlingen: {path}") from exc
+    return relative_path
+
+
+def relative_path_under_target(target: Path, path: Path) -> Path:
+    relative_path = relative_collection_path(target, path)
     if not relative_path.parts or relative_path.parts[0] == "deleted":
         raise ValueError(f"Kan ikke slette filer fra deleted/: {path}")
     return relative_path

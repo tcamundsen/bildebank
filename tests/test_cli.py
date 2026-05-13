@@ -1514,6 +1514,34 @@ model_name = "buffalo_s"
             self.assertIn("Dato: 2024-01-02 (filename)", stdout)
             self.assertIn("SHA-256:", stdout)
 
+    def test_show_source_resolves_relative_path_under_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            workdir = root / "workdir"
+            source.mkdir()
+            workdir.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            old_cwd = Path.cwd()
+            try:
+                os.chdir(workdir)
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "show-source", "2024/01/IMG_20240102.jpg"]
+                )
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn(f"Målfil: {imported.resolve()}", stdout)
+            self.assertIn(f"Kildefil: {source_file.resolve()}", stdout)
+
     def test_remove_moves_file_marks_database_and_hides_from_export(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2247,6 +2275,39 @@ model_name = "buffalo_s"
             self.assertIn("dato: 2024-01-02 (filename)", stdout)
             self.assertIn("sha256:", stdout)
             self.assertIn("kildefil finnes: ja", stdout)
+
+    def test_show_name_conflict_resolves_relative_path_under_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            workdir = root / "workdir"
+            (source / "a").mkdir(parents=True)
+            (source / "b").mkdir()
+            workdir.mkdir()
+            first_source = source / "a" / "IMG_20240102.png"
+            second_source = source / "b" / "IMG_20240102.png"
+            first_source.write_bytes(minimal_png(640, 480))
+            second_source.write_bytes(minimal_png(320, 240))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            first_target = target / "2024" / "01" / "IMG_20240102.png"
+            second_target = target / "2024" / "01" / "IMG_20240102-1.png"
+            old_cwd = Path.cwd()
+            try:
+                os.chdir(workdir)
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "show-conflict", "2024/01/IMG_20240102-1.png"]
+                )
+            finally:
+                os.chdir(old_cwd)
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Navnekollisjon: IMG_20240102.png", stdout)
+            self.assertIn(str(first_target.resolve()), stdout)
+            self.assertIn(str(second_target.resolve()), stdout)
 
     def test_show_name_conflict_sources_works_for_first_file_in_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
