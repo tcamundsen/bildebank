@@ -370,7 +370,6 @@ class CliTests(unittest.TestCase):
         stdout = stdout_buffer.getvalue()
         self.assertIn("--all", stdout)
         self.assertIn("--keep-scan", stdout)
-        self.assertIn("--keep-scan-and-groups", stdout)
         self.assertIn("Standard hvis ingen", stdout)
         self.assertIn("nivåvalg er brukt", stdout)
         self.assertIn("krever alltid", stdout)
@@ -3046,7 +3045,7 @@ model_name = "test-model"
             self.assertIn("Slettet face-database", stdout)
             self.assertFalse(face_db.exists())
 
-    def test_face_reset_can_keep_scan_or_groups(self) -> None:
+    def test_face_reset_can_keep_scan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -3077,17 +3076,15 @@ model_name = "test-model"
             finally:
                 conn.close()
 
-            with patch("builtins.input", return_value="ja, slett personer"):
-                code, stdout, stderr = capture_cli(
-                    ["--target", str(target), "face-reset", "--keep-scan-and-groups"]
-                )
+            with patch("builtins.input", return_value="ja, slett grupper og personer"):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-reset", "--keep-scan"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Face-scan-resultater og grupper er beholdt", stdout)
+            self.assertIn("Face-scan-resultater er beholdt", stdout)
             conn = sqlite3.connect(target / FACE_DB_FILENAME)
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_members").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_members").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 0)

@@ -582,11 +582,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Behold face-scan-resultater, men slett grupper, personer, bekreftelser og forslag. Standard hvis ingen nivåvalg er brukt.",
     )
-    reset_mode.add_argument(
-        "--keep-scan-and-groups",
-        action="store_true",
-        help="Behold face-scan-resultater og grupper, men slett personer, bekreftelser og forslag.",
-    )
     migrate = add_command(
         subparsers,
         "migrate",
@@ -783,8 +778,6 @@ def run(args: argparse.Namespace) -> int:
         return run_face_reset(
             target,
             all_data=args.all,
-            keep_scan=args.keep_scan,
-            keep_scan_and_groups=args.keep_scan_and_groups,
         )
 
     if args.command == "import" and args.dry_run:
@@ -1659,8 +1652,6 @@ def run_face_reset(
     target: Path,
     *,
     all_data: bool = False,
-    keep_scan: bool = False,
-    keep_scan_and_groups: bool = False,
 ) -> int:
     path = face_db_path(target)
     if not path.exists():
@@ -1668,8 +1659,6 @@ def run_face_reset(
         return 0
     mode = face_reset_mode(
         all_data=all_data,
-        keep_scan=keep_scan,
-        keep_scan_and_groups=keep_scan_and_groups,
     )
     phrase = face_reset_confirmation_phrase(mode)
     print(face_reset_description(mode))
@@ -1687,11 +1676,9 @@ def run_face_reset(
     return 0
 
 
-def face_reset_mode(*, all_data: bool, keep_scan: bool, keep_scan_and_groups: bool) -> str:
+def face_reset_mode(*, all_data: bool) -> str:
     if all_data:
         return "all"
-    if keep_scan_and_groups:
-        return "keep-scan-and-groups"
     return "keep-scan"
 
 
@@ -1700,8 +1687,6 @@ def face_reset_confirmation_phrase(mode: str) -> str:
         return "ja, slett ansiktsdata"
     if mode == "keep-scan":
         return "ja, slett grupper og personer"
-    if mode == "keep-scan-and-groups":
-        return "ja, slett personer"
     raise ValueError(f"Ukjent face-reset-nivå: {mode}")
 
 
@@ -1716,11 +1701,6 @@ def face_reset_description(mode: str) -> str:
             "Dette beholder face-scan-resultater, men sletter grupper, "
             "personer, bekreftelser og forslag."
         )
-    if mode == "keep-scan-and-groups":
-        return (
-            "Dette beholder face-scan-resultater og grupper, men sletter "
-            "personer, bekreftelser og forslag."
-        )
     raise ValueError(f"Ukjent face-reset-nivå: {mode}")
 
 
@@ -1731,7 +1711,7 @@ def print_face_reset_result(result: FaceResetResult) -> None:
         print(f"Slettet gruppekjøringer: {result.removed_group_runs}")
         print(f"Slettet gruppemedlemmer: {result.removed_group_members}")
     else:
-        print("Face-reset gjennomført. Face-scan-resultater og grupper er beholdt.")
+        print("Face-reset gjennomført.")
     print(f"Slettet personer: {result.removed_persons}")
     print(f"Slettet bekreftede ansiktskoblinger: {result.removed_person_faces}")
     print(f"Slettet ansiktsforslag: {result.removed_suggestions}")

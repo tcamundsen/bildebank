@@ -434,7 +434,7 @@ def reset_face_database(target: Path, *, mode: str) -> FaceResetResult:
             conn.execute("DELETE FROM face_group_members")
             conn.execute("DELETE FROM face_groups")
             conn.execute("DELETE FROM face_group_runs")
-        elif mode != "keep-scan-and-groups":
+        elif mode != "all":
             raise ValueError(f"Ukjent face-reset-nivå: {mode}")
         conn.execute("DELETE FROM face_suggestions")
         conn.execute("DELETE FROM person_faces")

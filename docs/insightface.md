@@ -388,18 +388,6 @@ Hvis du kjører `face-reset` uten nivåvalg, er dette standardnivået:
 bildebank face-reset
 ```
 
-### Beholde face-scan og gruppedata
-
-Hvis du bare vil fjerne personer, bekreftede ansiktskoblinger og forslag, men
-beholde eldre gruppedata:
-
-```powershell
-bildebank face-reset --keep-scan-and-groups
-```
-
-Dette beholder både resultatene fra `face-scan` og eldre gruppedata. Det er et
-legacy-valg, ikke del av vanlig arbeidsflyt.
-
 ## Modeller
 
 InsightFace kan laste ned modeller første gang det brukes. Bildebank bruker

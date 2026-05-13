@@ -10,18 +10,14 @@ Kommandoen krever alltid bekreftelse.
 bildebank face-reset
 bildebank face-reset --all
 bildebank face-reset --keep-scan
-bildebank face-reset --keep-scan-and-groups
 ```
 
 Uten nivåvalg er standard det samme som `--keep-scan`.
-Det er dette som er befalt hvis du vil starte på nytt med å 
+Det er dette som er befalt hvis du vil starte på nytt med å
 finne personer, for da slipper du å kjøre `face-scan` på nytt.
 
 `--keep-scan` beholder resultatene fra `face-scan`, men sletter grupper,
 personer, bekreftelser og forslag.
-
-`--keep-scan-and-groups` er et eldre valg som også bevarer gruppedata. Det er
-ikke del av vanlig arbeidsflyt lenger.
 
 `--all` sletter hele face-databasen. Bruk dette bare hvis du også vil slette
 resultatene fra `face-scan`.
