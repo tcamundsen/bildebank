@@ -613,6 +613,42 @@ class CliTests(unittest.TestCase):
         self.assertIn('data-key-nav="previous-month"', body)
         self.assertIn('data-key-nav="next-month"', body)
 
+    def test_run_server_month_items_use_taken_date_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                for name, taken_date in (
+                    ("z.jpg", "2024-01-01"),
+                    ("a.jpg", "2024-01-02"),
+                    ("m.jpg", "2024-01-03"),
+                ):
+                    relative_path = f"2024/01/{name}"
+                    conn.execute(
+                        """
+                        INSERT INTO files(
+                            target_path, target_path_key, original_filename, stored_filename,
+                            sha256, size_bytes, taken_date, date_source, name_conflict
+                        ) VALUES(?, ?, ?, ?, ?, ?, ?, 'filename', 0)
+                        """,
+                        (relative_path, relative_path, name, name, uuid.uuid4().hex, 1, taken_date),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+            items = browser_month_items(target, "2024-01")
+            middle = items[1]
+            previous_item, next_item = adjacent_browser_items(target, middle)
+
+        self.assertEqual([item["stored_filename"] for item in items], ["z.jpg", "a.jpg", "m.jpg"])
+        self.assertEqual(middle["stored_filename"], "a.jpg")
+        self.assertIsNotNone(previous_item)
+        self.assertIsNotNone(next_item)
+        self.assertEqual(previous_item["stored_filename"], "z.jpg")
+        self.assertEqual(next_item["stored_filename"], "m.jpg")
+
     def test_run_server_item_page_has_image_info_overlay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

@@ -17,6 +17,10 @@ DB_FILENAME = ".bilder.sqlite3"
 SCHEMA_VERSION = 5
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
 COLLECTION_ID_META_KEY = "collection_id"
+BROWSER_DATE_ORDER_SQL = (
+    "CASE WHEN taken_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' "
+    "THEN taken_date ELSE '9999-99-99' END"
+)
 
 
 def path_key(path: Path) -> str:
@@ -1629,11 +1633,11 @@ def deleted_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
 
 def browser_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     return conn.execute(
-        """
+        f"""
         SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
         FROM files
         WHERE deleted_at IS NULL
-        ORDER BY taken_date, target_path
+        ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path
         """
     )
 

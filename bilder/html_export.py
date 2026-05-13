@@ -811,7 +811,10 @@ def render_html(
       render();
     }}
     function compareItems(a, b) {{
+      const aDate = (a.takenDate && /^\\d{{4}}-\\d{{2}}-\\d{{2}}/.test(a.takenDate)) ? a.takenDate : "9999-99-99";
+      const bDate = (b.takenDate && /^\\d{{4}}-\\d{{2}}-\\d{{2}}/.test(b.takenDate)) ? b.takenDate : "9999-99-99";
       return a.monthKey.localeCompare(b.monthKey, "nb") ||
+        aDate.localeCompare(bDate, "nb") ||
         a.path.localeCompare(b.path, "nb", {{ numeric: true }});
     }}
     function buildMonths(items) {{
