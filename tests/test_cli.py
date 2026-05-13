@@ -36,9 +36,11 @@ from bilder.server import (
     month_page_html,
     person_item_by_id,
     person_item_page_html,
+    people_page_html,
     person_month_items,
     person_month_navigation,
     person_month_page_html,
+    person_items,
     search_server_images,
 )
 from bilder.target_lock import LOCK_FILENAME
@@ -812,6 +814,56 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("IMG_20250104", body)
         self.assertIn("/person/Kari/item/2", month_body)
         self.assertNotIn("/person/Kari/item/3", month_body)
+
+    def test_run_server_people_page_links_confirmed_and_suggested_person_browser(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+            (source / "IMG_20240203.png").write_bytes(minimal_png(101, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(1, 1, 'key-1', 1, 2, 10, 20, 0.9, 'test', ?)
+                    """,
+                    (b"embedding-1",),
+                )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(2, 2, 'key-2', 3, 4, 12, 22, 0.8, 'test', ?)
+                    """,
+                    (b"embedding-2",),
+                )
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            body = people_page_html(target)
+            confirmed_items = person_items(target, "Kari", include_suggestions=False)
+            all_items = person_items(target, "Kari", include_suggestions=True)
+
+        self.assertIn('href="/person/Kari/confirmed"', body)
+        self.assertIn('href="/person/Kari"', body)
+        self.assertIn("Bekreftede bilder (1)", body)
+        self.assertIn("Bekreftede og forslag (2)", body)
+        self.assertEqual([int(item["id"]) for item in confirmed_items], [1])
+        self.assertEqual([int(item["id"]) for item in all_items], [1, 2])
 
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

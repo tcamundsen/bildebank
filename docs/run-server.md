@@ -100,6 +100,10 @@ aktuelle måneden.
 - `/` bildebrowser
 - `/item/123` viser ett bestemt bilde eller video
 - `/month/2024-01` viser bilder/videoer fra én måned
+- `/people` viser registrerte personer
+- `/person/Kari/confirmed` viser bilder der Kari er bekreftet
+- `/person/Kari` viser både bekreftede bilder og bilder foreslått av
+  `face-suggest`
 - `/search` skjema for tekstsøk
 - `/search?q=beach` søkeresultat
 - `/file/...` viser bildefiler fra søket
