@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from . import db
 from .config import OpenClipConfig
-from .face import add_face_to_person, normalize_person_name
+from .face import add_face_to_person, create_person, normalize_person_name
 from .html_export import (
     FACE_DB_FILENAME,
     browser_face_items,
@@ -125,6 +125,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/api/face-person-add-face":
                 self.respond_add_face_to_person()
+                return
+            if parsed.path == "/api/face-person-create-and-add-face":
+                self.respond_create_person_and_add_face()
                 return
             self.respond_json({"ok": False, "error": "Ukjent endepunkt."}, status=HTTPStatus.NOT_FOUND)
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
@@ -249,25 +252,11 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         self.respond_bytes(content, content_type)
 
     def respond_add_face_to_person(self) -> None:
-        length = int(self.headers.get("Content-Length") or "0")
-        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
-        content_type = self.headers.get("Content-Type", "")
-        if "application/json" in content_type:
-            payload = json.loads(raw or "{}")
-            person_name = str(payload.get("person_name") or "").strip()
-            face_id_raw = payload.get("face_id")
-        else:
-            params = urllib.parse.parse_qs(raw)
-            person_name = first_param(params, "person_name").strip()
-            face_id_raw = first_param(params, "face_id")
-        try:
-            face_id = int(face_id_raw)
-        except (TypeError, ValueError):
-            self.respond_json({"ok": False, "error": "Ugyldig face_id."}, status=HTTPStatus.BAD_REQUEST)
+        payload = BildebankRequestHandler.read_face_person_payload(self)
+        if isinstance(payload[0], dict):
+            self.respond_json(payload[0], status=payload[1])
             return
-        if not person_name:
-            self.respond_json({"ok": False, "error": "Personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
-            return
+        person_name, face_id = payload
         try:
             result = add_face_to_person(self.server.target, person_name, face_id)
         except ValueError as exc:
@@ -283,6 +272,49 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 "added": result.added,
             }
         )
+
+    def respond_create_person_and_add_face(self) -> None:
+        payload = BildebankRequestHandler.read_face_person_payload(self)
+        if isinstance(payload[0], dict):
+            self.respond_json(payload[0], status=payload[1])
+            return
+        person_name, face_id = payload
+        try:
+            create_person(self.server.target, person_name)
+            result = add_face_to_person(self.server.target, person_name, face_id)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        clear_face_caches()
+        self.respond_json(
+            {
+                "ok": True,
+                "person_name": result.person_name,
+                "person_url": person_url(result.person_name),
+                "face_id": result.face_id,
+                "added": result.added,
+            }
+        )
+
+    def read_face_person_payload(self) -> tuple[str, int] | tuple[dict[str, object], HTTPStatus]:
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
+        content_type = self.headers.get("Content-Type", "")
+        if "application/json" in content_type:
+            payload = json.loads(raw or "{}")
+            person_name = str(payload.get("person_name") or "").strip()
+            face_id_raw = payload.get("face_id")
+        else:
+            params = urllib.parse.parse_qs(raw)
+            person_name = first_param(params, "person_name").strip()
+            face_id_raw = first_param(params, "face_id")
+        try:
+            face_id = int(face_id_raw)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Ugyldig face_id."}, HTTPStatus.BAD_REQUEST
+        if not person_name:
+            return {"ok": False, "error": "Personnavn mangler."}, HTTPStatus.BAD_REQUEST
+        return person_name, face_id
 
 
 def first_param(params: dict[str, list[str]], name: str) -> str:
@@ -1455,6 +1487,12 @@ def face_overlay_item_html(image_url: str, face: dict[str, object], people: list
         {box}
       </div>
       <div class="assign-row">{people_buttons}</div>
+      <form class="new-person-form" data-new-person-form>
+        <input type="hidden" name="face_id" value="{face_id}">
+        <label for="new-person-{face_id}">Ny person</label>
+        <input id="new-person-{face_id}" name="person_name" autocomplete="off">
+        <button type="submit">Identifiser</button>
+      </form>
       <div class="assign-status" aria-live="polite"></div>
     </section>
     """
@@ -1861,6 +1899,17 @@ def page_html(title: str, body: str) -> str:
       flex-wrap: wrap;
       align-items: center;
     }}
+    .new-person-form {{
+      display: grid;
+      grid-template-columns: auto minmax(160px, 280px) auto;
+      gap: 8px;
+      align-items: center;
+      justify-content: start;
+    }}
+    .new-person-form label {{
+      color: var(--muted);
+      font-size: 13px;
+    }}
     .assign-person-button {{
       border-color: rgb(255 255 255 / 22%);
       background: rgb(255 255 255 / 10%);
@@ -1878,6 +1927,7 @@ def page_html(title: str, body: str) -> str:
       .nav-button, .server-search-link, .person-link, .faces-button {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
       .top-actions {{ margin-left: 0; width: 100%; justify-content: stretch; }}
       .people-row {{ grid-template-columns: 1fr; align-items: stretch; }}
+      .new-person-form {{ grid-template-columns: 1fr; align-items: stretch; }}
     }}
   </style>
 </head>
@@ -1917,34 +1967,47 @@ def page_html(title: str, body: str) -> str:
   faceOverlay?.addEventListener("click", event => {{
     if (event.target === faceOverlay || event.target.classList?.contains("lightbox-stage")) closeFacesOverlay();
   }});
+  async function assignFace(detail, status, endpoint, faceId, personName) {{
+    if (!detail || !status || !faceId || !personName) return;
+    status.textContent = "Lagrer...";
+    detail.querySelectorAll("button, input").forEach(item => item.disabled = true);
+    try {{
+      const response = await fetch(endpoint, {{
+        method: "POST",
+        headers: {{"Content-Type": "application/json"}},
+        body: JSON.stringify({{face_id: Number(faceId), person_name: personName}}),
+      }});
+      const payload = await response.json();
+      if (!payload.ok) throw new Error(payload.error || "Kunne ikke lagre.");
+      status.textContent = `Koblet til ${{payload.person_name}}.`;
+      ensureTopPersonLink(payload.person_name, payload.person_url);
+      detail.remove();
+      if (!document.querySelector(".face-detail")) {{
+        closeFacesOverlay();
+        window.location.reload();
+      }}
+    }} catch (error) {{
+      status.textContent = error.message || "Kunne ikke lagre.";
+      detail.querySelectorAll("button, input").forEach(item => item.disabled = false);
+    }}
+  }}
   document.querySelectorAll(".assign-person-button").forEach(button => {{
     button.addEventListener("click", async () => {{
       const faceId = button.dataset.faceId;
       const personName = button.dataset.personName;
       const detail = button.closest(".face-detail");
       const status = detail?.querySelector(".assign-status");
-      if (!faceId || !personName || !status) return;
-      status.textContent = "Lagrer...";
-      detail.querySelectorAll(".assign-person-button").forEach(item => item.disabled = true);
-      try {{
-        const response = await fetch("/api/face-person-add-face", {{
-          method: "POST",
-          headers: {{"Content-Type": "application/json"}},
-          body: JSON.stringify({{face_id: Number(faceId), person_name: personName}}),
-        }});
-        const payload = await response.json();
-        if (!payload.ok) throw new Error(payload.error || "Kunne ikke lagre.");
-        status.textContent = `Koblet til ${{payload.person_name}}.`;
-        ensureTopPersonLink(payload.person_name, payload.person_url);
-        detail.remove();
-        if (!document.querySelector(".face-detail")) {{
-          closeFacesOverlay();
-          window.location.reload();
-        }}
-      }} catch (error) {{
-        status.textContent = error.message || "Kunne ikke lagre.";
-        detail.querySelectorAll(".assign-person-button").forEach(item => item.disabled = false);
-      }}
+      await assignFace(detail, status, "/api/face-person-add-face", faceId, personName);
+    }});
+  }});
+  document.querySelectorAll("[data-new-person-form]").forEach(form => {{
+    form.addEventListener("submit", async event => {{
+      event.preventDefault();
+      const detail = form.closest(".face-detail");
+      const status = detail?.querySelector(".assign-status");
+      const faceId = form.querySelector('input[name="face_id"]')?.value;
+      const personName = form.querySelector('input[name="person_name"]')?.value?.trim();
+      await assignFace(detail, status, "/api/face-person-create-and-add-face", faceId, personName);
     }});
   }});
   document.addEventListener("keydown", event => {{

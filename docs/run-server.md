@@ -109,6 +109,10 @@ aktuelle måneden.
 - `/file/...` viser bildefiler fra søket
 - `/file/123` viser selve bildefilen for ett `file_id`
 
+Når du åpner `Ansikter i bildet` i bildebrowseren, kan du enten velge en
+registrert person eller skrive inn et nytt navn under `Ny person` og trykke
+`Identifiser`. Da oppretter serveren personen og kobler ansiktet til personen.
+
 ## Viktige valg
 
 - Serveren skal være lokal som standard.

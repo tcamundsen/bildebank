@@ -687,6 +687,9 @@ class CliTests(unittest.TestCase):
         self.assertIn('class="person-link" href="/person/Kari">Kari</a>', body)
         self.assertIn('class="person-link" href="/person/Ola%20Nordmann">Ola Nordmann</a>', body)
         self.assertIn("Ansikter i bildet (1)", body)
+        self.assertIn("Ny person", body)
+        self.assertIn("/api/face-person-create-and-add-face", body)
+        self.assertIn("Identifiser", body)
         self.assertIn('data-face-id="2"', body)
         self.assertIn('data-person-name="Kari"', body)
         self.assertIn('data-person-name="Ola Nordmann"', body)
@@ -747,6 +750,62 @@ class CliTests(unittest.TestCase):
                     1,
                 )
                 self.assertEqual(face_conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 0)
+            finally:
+                face_conn.close()
+
+    def test_run_server_api_creates_person_and_adds_face(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(1, 1, 'key-1', 1, 2, 10, 20, 0.9, 'test', ?)
+                    """,
+                    (b"embedding-1",),
+                )
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            data = json.dumps({"face_id": 1, "person_name": "Kari"}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_create_person_and_add_face(handler)  # type: ignore[arg-type]
+
+            self.assertEqual(
+                {"ok": True, "person_name": "Kari", "person_url": "/person/Kari", "face_id": 1, "added": True},
+                handler.body,
+            )
+            face_conn = connect_face_db(target)
+            try:
+                self.assertEqual(face_conn.execute("SELECT COUNT(*) FROM persons WHERE name = 'Kari'").fetchone()[0], 1)
+                self.assertEqual(
+                    face_conn.execute("SELECT COUNT(*) FROM person_faces WHERE face_id = 1").fetchone()[0],
+                    1,
+                )
             finally:
                 face_conn.close()
 
