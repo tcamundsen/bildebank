@@ -660,7 +660,9 @@ def render_html(
     .lightbox-media {{
       position: relative;
       display: inline-block;
+      width: fit-content;
       max-width: 100%;
+      justify-self: start;
     }}
     .lightbox-media img {{
       display: block;

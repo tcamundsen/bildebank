@@ -769,6 +769,8 @@ class CliTests(unittest.TestCase):
         self.assertIn('class="person-link" href="/person/Kari">Kari</a>', body)
         self.assertIn('class="person-link" href="/person/Ola%20Nordmann">Ola Nordmann</a>', body)
         self.assertIn("Ansikter i bildet (1)", body)
+        self.assertIn("width: fit-content;", body)
+        self.assertIn("justify-self: start;", body)
         self.assertIn("Ny person", body)
         self.assertIn("/api/face-person-create-and-add-face", body)
         self.assertIn("Identifiser", body)
@@ -3333,6 +3335,8 @@ model_name = "test-model"
             self.assertIn('"faceId": 2', html)
             self.assertIn('"status": "forslag"', html)
             self.assertIn('"box suggested"', html)
+            self.assertIn("const imageRect = img.getBoundingClientRect();", html)
+            self.assertNotIn("const imageRatio = img.naturalWidth / img.naturalHeight;", html)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "make-people-browser"])
 
@@ -4150,6 +4154,8 @@ model_name = "test-model"
             self.assertIn("Personer:", html)
             self.assertIn("(forslag)", html)
             self.assertIn("Ansikter i bildet", html)
+            self.assertIn("width: fit-content;", html)
+            self.assertIn("justify-self: start;", html)
             self.assertIn('face-person-add-face "Navn"', html)
             self.assertIn("navigator.clipboard.writeText", html)
             self.assertIn("fallbackCopyCommand", html)

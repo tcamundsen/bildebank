@@ -1339,16 +1339,13 @@ def render_person_browser_html(
     }}
     function renderedImageRect(media, img) {{
       const mediaRect = media.getBoundingClientRect();
-      const mediaRatio = mediaRect.width / mediaRect.height;
-      const imageRatio = img.naturalWidth / img.naturalHeight;
-      if (imageRatio > mediaRatio) {{
-        const width = mediaRect.width;
-        const height = width / imageRatio;
-        return {{ left: 0, top: (mediaRect.height - height) / 2, width, height }};
-      }}
-      const height = mediaRect.height;
-      const width = height * imageRatio;
-      return {{ left: (mediaRect.width - width) / 2, top: 0, width, height }};
+      const imageRect = img.getBoundingClientRect();
+      return {{
+        left: imageRect.left - mediaRect.left,
+        top: imageRect.top - mediaRect.top,
+        width: imageRect.width,
+        height: imageRect.height,
+      }};
     }}
     function representativeItems(items, limit) {{
       if (limit === null) return items;
