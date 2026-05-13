@@ -53,7 +53,7 @@ def exiftool_metadata_gaps(
         for index, row in enumerate(rows, start=1):
             if progress and (index == 1 or index == total or index % 25 == 0):
                 progress_line.write(f"exiftool {index}/{total}: {row['target_path']}")
-            target_path = Path(str(row["target_path"]))
+            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
             found = exiftool_first_date(tool, target_path)
             if found is None:
                 continue

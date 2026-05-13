@@ -875,7 +875,7 @@ def run(args: argparse.Namespace) -> int:
 
         if args.command == "show-conflict":
             path = existing_path_arg(args.path).resolve()
-            row = db.file_by_target_path(conn, path)
+            row = db.file_by_target_path(conn, target, path)
             if row is None:
                 raise ValueError(f"Filen finnes ikke i importdatabasen: {path}")
             rows = name_conflict_group(conn, row)
@@ -883,17 +883,17 @@ def run(args: argparse.Namespace) -> int:
                 print(f"Filen er ikke del av en navnekollisjon: {path}")
                 return 0
             print(f"Navnekollisjon: {row['original_filename']}")
-            print(f"Mappe i bildesamlingen: {Path(str(row['target_path'])).parent}")
+            print(f"Mappe i bildesamlingen: {db.absolute_target_path(target, Path(str(row['target_path']))).parent}")
             for item in rows:
-                print_name_conflict_item(item)
+                print_name_conflict_item(target, item)
             return 0
 
         if args.command == "show-source":
             path = existing_path_arg(args.path).resolve()
-            rows = db.file_sources_by_target_path(conn, path)
+            rows = db.file_sources_by_target_path(conn, target, path)
             if not rows:
                 raise ValueError(f"Filen finnes ikke i importdatabasen: {path}")
-            print_source_items(rows)
+            print_source_items(target, rows)
             return 0
 
         if args.command == "unimport":
@@ -904,7 +904,7 @@ def run(args: argparse.Namespace) -> int:
                     f"Kilden er dekket av en annen import: {source.path}"
                 )
             with TargetLock(target, command="unimport"):
-                plan = db.build_unimport_plan(conn, source)
+                plan = db.build_unimport_plan(conn, target, source)
                 validate_unimport_source_files(conn, source)
                 validate_unimport_target_files(plan)
                 print_unimport_plan(plan)
@@ -927,7 +927,7 @@ def run(args: argparse.Namespace) -> int:
 
         if args.command == "remove":
             original_path = resolve_target_file_arg(target, args.path)
-            row = db.file_by_target_path(conn, original_path)
+            row = db.file_by_target_path(conn, target, original_path)
             if row is None:
                 raise ValueError(f"Filen finnes ikke i importdatabasen: {original_path}")
             if row["deleted_at"] is not None:
@@ -945,6 +945,7 @@ def run(args: argparse.Namespace) -> int:
             db.mark_file_deleted(
                 conn,
                 file_id=int(row["id"]),
+                target_root=target,
                 deleted_path=deleted_path,
                 original_target_path=original_path,
             )
@@ -954,7 +955,7 @@ def run(args: argparse.Namespace) -> int:
 
         if args.command == "list-removed":
             for row in db.deleted_files(conn):
-                print_deleted_item(row)
+                print_deleted_item(target, row)
             return 0
 
         if args.command == "non-metadata":
@@ -963,10 +964,10 @@ def run(args: argparse.Namespace) -> int:
                 if args.with_source:
                     print(
                         f"{row['date_source']}\t{taken_date}\t"
-                        f"{row['target_path']}\t{row['source_path']}"
+                        f"{db.absolute_target_path(target, Path(str(row['target_path'])))}\t{row['source_path']}"
                     )
                 else:
-                    print(f"{row['date_source']}\t{taken_date}\t{row['target_path']}")
+                    print(f"{row['date_source']}\t{taken_date}\t{db.absolute_target_path(target, Path(str(row['target_path'])))}")
             return 0
 
         if args.command == "exiftool-metadata-gaps":
@@ -1812,6 +1813,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  bygge om sources uten kind og gi alle kilder navn")
     if plan.rebuilds_file_sources_without_kind:
         print("  bygge om file_sources uten kind")
+    if plan.converts_relative_paths:
+        print("  konvertere samlingsinterne stier til relative")
     print("Vil lage backup før endring.")
     if check:
         print("Ingen endringer er gjort (--check).")
@@ -1847,6 +1850,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Bygger om sources uten kind og med name NOT NULL.")
     if result.rebuilds_file_sources_without_kind:
         print("Bygger om file_sources uten kind.")
+    if result.converts_relative_paths:
+        print("Konverterer samlingsinterne stier til relative.")
     print(f"Setter schema_version={result.target_version}.")
     print("Ferdig. Databasen er migrert.")
     return 0
@@ -1946,16 +1951,16 @@ def relative_path_under_target(target: Path, path: Path) -> Path:
 
 
 def name_conflict_group(conn, row) -> list:
-    parent_key = db.path_key(Path(str(row["target_path"])).parent)
+    parent_key = db.relative_path_key(Path(str(row["target_path"])).parent)
     rows = []
     for candidate in db.files_by_original_filename(conn, str(row["original_filename"])):
-        if db.path_key(Path(str(candidate["target_path"])).parent) == parent_key:
+        if db.relative_path_key(Path(str(candidate["target_path"])).parent) == parent_key:
             rows.append(candidate)
     return rows
 
 
-def print_name_conflict_item(row) -> None:
-    target_path = Path(str(row["target_path"]))
+def print_name_conflict_item(target: Path, row) -> None:
+    target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
     source_path = Path(str(row["source_path"]))
     dimensions = image_dimensions(target_path)
     dimensions_text = f"{dimensions.width}x{dimensions.height}" if dimensions else "-"
@@ -1972,10 +1977,10 @@ def print_name_conflict_item(row) -> None:
     print(f"  kildefil finnes: {'ja' if source_path.exists() else 'nei'}")
 
 
-def print_source_item(row) -> None:
+def print_source_item(target: Path, row) -> None:
     source_path = Path(str(row["source_path"]))
     source_label = row["source_name"] or row["source_root"]
-    print(f"Målfil: {row['target_path']}")
+    print(f"Målfil: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
     print(f"Kildefil: {source_path}")
     print(f"Kildefil finnes: {'ja' if source_path.exists() else 'nei'}")
     print(f"Kilde-id: {row['source_id']}")
@@ -1989,13 +1994,13 @@ def print_source_item(row) -> None:
     print(f"SHA-256: {row['sha256']}")
 
 
-def print_source_items(rows: list) -> None:
+def print_source_items(target: Path, rows: list) -> None:
     if len(rows) == 1:
-        print_source_item(rows[0])
+        print_source_item(target, rows[0])
         return
 
     first = rows[0]
-    print(f"Målfil: {first['target_path']}")
+    print(f"Målfil: {db.absolute_target_path(target, Path(str(first['target_path'])))}")
     print(f"Originalt filnavn: {first['original_filename']}")
     print(f"Lagret filnavn: {first['stored_filename']}")
     print(f"Importert: {first['file_imported_at']}")
@@ -2013,9 +2018,13 @@ def print_source_items(rows: list) -> None:
         print(f"  kildestatus: {row['source_status']}")
 
 
-def print_deleted_item(row) -> None:
-    deleted_path = Path(str(row["target_path"]))
-    original_path = row["deleted_original_target_path"] or "-"
+def print_deleted_item(target: Path, row) -> None:
+    deleted_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+    original_path = (
+        db.absolute_target_path(target, Path(str(row["deleted_original_target_path"])))
+        if row["deleted_original_target_path"] is not None
+        else "-"
+    )
     taken_date = row["taken_date"] or "-"
     exists = "ja" if deleted_path.exists() else "nei"
     print(f"{row['deleted_at']}\t{exists}\t{taken_date}\t{row['date_source']}\t{original_path}")

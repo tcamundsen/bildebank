@@ -177,6 +177,130 @@ def create_legacy_database(
         conn.close()
 
 
+def create_v4_database(
+    target: Path,
+    source: Path,
+    *,
+    imported: Path,
+) -> None:
+    target.mkdir()
+    source.mkdir(exist_ok=True)
+    imported.parent.mkdir(parents=True, exist_ok=True)
+
+    source_file = source / imported.name
+    source_file.write_bytes(b"v4-image")
+    imported.write_bytes(b"v4-image")
+    file_hash = sha256_file(imported)
+
+    conn = sqlite3.connect(target / DB_FILENAME)
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            CREATE TABLE command_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                command TEXT NOT NULL,
+                args_json TEXT NOT NULL,
+                started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT NOT NULL,
+                path_key TEXT,
+                name TEXT NOT NULL,
+                added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                imported_at TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                superseded_by_source_id INTEGER REFERENCES sources(id)
+            );
+            CREATE TABLE files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                target_path TEXT NOT NULL,
+                target_path_key TEXT NOT NULL UNIQUE,
+                original_filename TEXT NOT NULL,
+                stored_filename TEXT NOT NULL,
+                sha256 TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                taken_date TEXT,
+                date_source TEXT NOT NULL,
+                name_conflict INTEGER NOT NULL DEFAULT 0,
+                imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                deleted_at TEXT,
+                deleted_original_target_path TEXT
+            );
+            CREATE TABLE file_sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_id INTEGER NOT NULL,
+                source_id INTEGER NOT NULL,
+                source_path TEXT NOT NULL,
+                source_path_key TEXT NOT NULL,
+                sha256 TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(source_id, source_path_key)
+            );
+            CREATE TABLE errors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_id INTEGER,
+                source_path TEXT,
+                stage TEXT NOT NULL,
+                message TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                resolved_at TEXT
+            );
+            """
+        )
+        conn.execute("INSERT INTO meta(key, value) VALUES('schema_version', '4')")
+        source_id = conn.execute(
+            """
+            INSERT INTO sources(path, path_key, name, imported_at, status)
+            VALUES(?, ?, ?, CURRENT_TIMESTAMP, 'imported')
+            RETURNING id
+            """,
+            (str(source.resolve()), str(source.resolve()), source.name),
+        ).fetchone()[0]
+        file_id = conn.execute(
+            """
+            INSERT INTO files(
+                target_path, target_path_key, original_filename, stored_filename,
+                sha256, size_bytes, taken_date, date_source, name_conflict
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 0)
+            RETURNING id
+            """,
+            (
+                str(imported.resolve()),
+                str(imported.resolve()),
+                imported.name,
+                imported.name,
+                file_hash,
+                imported.stat().st_size,
+                "2024-01-02",
+                "filename",
+            ),
+        ).fetchone()[0]
+        conn.execute(
+            """
+            INSERT INTO file_sources(
+                file_id, source_id, source_path, source_path_key, sha256, size_bytes
+            ) VALUES(?, ?, ?, ?, ?, ?)
+            """,
+            (
+                file_id,
+                source_id,
+                str(source_file.resolve()),
+                str(source_file.resolve()),
+                file_hash,
+                source_file.stat().st_size,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 class CliTests(unittest.TestCase):
     def setUp(self) -> None:
         self.program_root_tempdir = tempfile.TemporaryDirectory()
@@ -447,10 +571,9 @@ class CliTests(unittest.TestCase):
                 rows = conn.execute("SELECT id, target_path FROM files ORDER BY id").fetchall()
                 for file_id, target_path in rows:
                     path = Path(str(target_path))
-                    foreign_path = f"C:\\bilder\\{path.parent.parent.name}\\{path.parent.name}\\{path.name}"
                     conn.execute(
                         "UPDATE files SET target_path = ?, target_path_key = ? WHERE id = ?",
-                        (foreign_path, f"c:\\annen-base\\{file_id}", file_id),
+                        (path.as_posix(), f"c:\\annen-base\\{file_id}", file_id),
                     )
                 conn.commit()
             finally:
@@ -688,7 +811,7 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "4",
+                    "5",
                 )
                 file_columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 self.assertNotIn("source_id", file_columns)
@@ -733,6 +856,110 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn(str(target.resolve()), stdout)
+
+    def test_program_state_records_collection_id_and_updates_moved_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            moved_target = root / "moved-target"
+            target.rename(moved_target)
+
+            self.assertEqual(run_cli(["--target", str(moved_target), "status"]), 0)
+
+            conn = sqlite3.connect(self.program_root / PROGRAM_DB_FILENAME)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute("SELECT * FROM targets ORDER BY id").fetchall()
+                self.assertEqual(len(rows), 1)
+                self.assertEqual(Path(rows[0]["path"]), moved_target.resolve())
+                self.assertIsNotNone(rows[0]["collection_id"])
+                self.assertEqual(str(uuid.UUID(rows[0]["collection_id"])), rows[0]["collection_id"])
+            finally:
+                conn.close()
+
+    def test_program_state_legacy_schema_gets_collection_id_column(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+
+            conn = sqlite3.connect(self.program_root / PROGRAM_DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE targets (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        path TEXT NOT NULL,
+                        path_key TEXT NOT NULL UNIQUE,
+                        created_at TEXT,
+                        last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            conn = sqlite3.connect(self.program_root / PROGRAM_DB_FILENAME)
+            conn.row_factory = sqlite3.Row
+            try:
+                columns = {row["name"] for row in conn.execute("PRAGMA table_info(targets)")}
+                self.assertIn("collection_id", columns)
+                row = conn.execute("SELECT collection_id FROM targets").fetchone()
+                self.assertIsNotNone(row["collection_id"])
+            finally:
+                conn.close()
+
+    def test_program_state_backfills_collection_id_for_existing_target_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                collection_id = conn.execute(
+                    "SELECT value FROM meta WHERE key = 'collection_id'"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+
+            (self.program_root / PROGRAM_DB_FILENAME).unlink()
+            conn = sqlite3.connect(self.program_root / PROGRAM_DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE targets (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        path TEXT NOT NULL,
+                        path_key TEXT NOT NULL UNIQUE,
+                        created_at TEXT,
+                        last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                conn.execute(
+                    "INSERT INTO targets(path, path_key) VALUES(?, ?)",
+                    (str(target.resolve()), str(target.resolve())),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["where-is"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn(str(target.resolve()), stdout)
+            conn = sqlite3.connect(self.program_root / PROGRAM_DB_FILENAME)
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute("SELECT collection_id FROM targets").fetchone()
+                self.assertEqual(row["collection_id"], collection_id)
+            finally:
+                conn.close()
 
     def test_create_stores_collection_id_and_keeps_it_stable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1030,8 +1257,8 @@ model_name = "buffalo_s"
             conn.row_factory = sqlite3.Row
             try:
                 row = conn.execute("SELECT * FROM files").fetchone()
-                self.assertEqual(Path(row["target_path"]), deleted.resolve())
-                self.assertEqual(Path(row["deleted_original_target_path"]), imported.resolve())
+                self.assertEqual(Path(row["target_path"]), deleted.relative_to(target))
+                self.assertEqual(Path(row["deleted_original_target_path"]), imported.relative_to(target))
                 self.assertIsNotNone(row["deleted_at"])
             finally:
                 conn.close()
@@ -1530,12 +1757,12 @@ model_name = "buffalo_s"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 2", stdout)
-            self.assertIn("Ny schema_version: 4", stdout)
+            self.assertIn("Ny schema_version: 5", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "4",
+                    "5",
                 )
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
                 source_columns = {row[1] for row in conn.execute("pragma table_info(sources)")}
@@ -2882,7 +3109,7 @@ model_name = "test-model"
                 row = conn.execute(
                     "SELECT target_path, taken_date, date_source FROM files"
                 ).fetchone()
-                self.assertEqual(row[0], str(new_target.resolve()))
+                self.assertEqual(row[0], str(new_target.relative_to(target)))
                 self.assertEqual(row[1], "2007-03-12")
                 self.assertEqual(row[2], "metadata")
             finally:
@@ -2976,8 +3203,8 @@ model_name = "test-model"
                     returning id
                     """,
                     (
-                        str(old_target),
-                        str(old_target),
+                        old_target.relative_to(target).as_posix(),
+                        old_target.relative_to(target).as_posix(),
                         "video.avi",
                         "video.avi",
                         file_hash,
@@ -3022,7 +3249,7 @@ model_name = "test-model"
                 row = conn.execute(
                     "select target_path, taken_date, date_source from files"
                 ).fetchone()
-                self.assertEqual(row[0], str(repaired_target.resolve()))
+                self.assertEqual(row[0], str(repaired_target.relative_to(target)))
                 self.assertEqual(row[1], "2007-03-12")
                 self.assertEqual(row[2], "metadata")
                 unresolved = conn.execute(
@@ -3280,14 +3507,14 @@ model_name = "test-model"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 1", stdout)
-            self.assertIn("Ny schema_version: 4", stdout)
+            self.assertIn("Ny schema_version: 5", stdout)
             self.assertIn("Vil opprette tabellen file_sources.", stdout)
             self.assertIn("  importerte filer: 1", stdout)
             self.assertIn("  duplikatfunn: 1", stdout)
             self.assertIn("  bygge om files uten gamle v1-kildekolonner", stdout)
             self.assertIn("  fjerne legacy-tabellen duplicate_findings", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
-            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-4-*")))
+            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-5-*")))
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertFalse(
@@ -3310,13 +3537,13 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Ferdig. Databasen er migrert.", stdout)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-4-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-5-*"))), 1)
 
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "4",
+                    "5",
                 )
                 self.assertEqual(conn.execute("select count(*) from file_sources").fetchone()[0], 2)
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
@@ -3342,6 +3569,125 @@ model_name = "test-model"
             self.assertIn("Importerte filer: 1", stdout)
             self.assertIn("Kildefilforekomster: 2", stdout)
             self.assertIn("Duplikatkilder: 1", stdout)
+
+    def test_migrate_v4_converts_paths_to_relative_and_works_after_move(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            create_v4_database(target, source, imported=imported)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Nåværende schema_version: 4", stdout)
+            self.assertIn("Ny schema_version: 5", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute("SELECT * FROM files").fetchone()
+                self.assertEqual(Path(row["target_path"]), imported.relative_to(target))
+                self.assertEqual(Path(row["target_path_key"]), imported.relative_to(target))
+                self.assertIsNone(row["deleted_original_target_path"])
+            finally:
+                conn.close()
+
+            moved_target = root / "moved-target"
+            target.rename(moved_target)
+            moved_imported = moved_target / "2024" / "01" / "IMG_20240102.jpg"
+
+            code, stdout, stderr = capture_cli(["--target", str(moved_target), "show-source", str(moved_imported)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Målfil:", stdout)
+            self.assertIn(str(moved_imported), stdout)
+            self.assertIn(str(source.resolve()), stdout)
+
+            code, stdout, stderr = capture_cli(["--target", str(moved_target), "remove", str(moved_imported)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Flyttet til slettet mappe:", stdout)
+            conn = sqlite3.connect(moved_target / DB_FILENAME)
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute("SELECT * FROM files").fetchone()
+                self.assertEqual(Path(row["target_path"]), Path("deleted/2024/01/IMG_20240102.jpg"))
+                self.assertEqual(
+                    Path(row["deleted_original_target_path"]),
+                    Path("2024/01/IMG_20240102.jpg"),
+                )
+            finally:
+                conn.close()
+
+    def test_migrate_check_v4_reports_relative_path_conversion_without_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            create_v4_database(target, source, imported=imported)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate", "--check"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Nåværende schema_version: 4", stdout)
+            self.assertIn("Ny schema_version: 5", stdout)
+            self.assertIn("konvertere samlingsinterne stier til relative", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
+                    "4",
+                )
+                self.assertEqual(
+                    conn.execute("SELECT target_path FROM files").fetchone()[0],
+                    str(imported.resolve()),
+                )
+            finally:
+                conn.close()
+
+    def test_migrate_v4_rejects_paths_outside_collection_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            imported = root / "elsewhere" / "IMG_20240102.jpg"
+            create_v4_database(target, source, imported=imported)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 1)
+            self.assertIn("Lager backup:", stdout)
+            self.assertIn("utenfor bildesamlingen", stderr)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
+                    "4",
+                )
+            finally:
+                conn.close()
+
+    def test_current_schema_rejects_v5_database_with_absolute_target_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            create_v4_database(target, source, imported=imported)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute("UPDATE meta SET value = '5' WHERE key = 'schema_version'")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "status"])
+
+            self.assertEqual(code, 1)
+            self.assertIn("absolutt target_path", stderr)
+            self.assertIn("bildebank migrate", stderr)
 
     def test_migrate_v3_names_unnamed_sources_and_removes_kind_columns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3430,7 +3776,7 @@ model_name = "test-model"
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Ny schema_version: 4", stdout)
+            self.assertIn("Ny schema_version: 5", stdout)
             conn = sqlite3.connect(db_path)
             try:
                 names = [row[0] for row in conn.execute("SELECT name FROM sources ORDER BY id")]
@@ -3458,7 +3804,7 @@ model_name = "test-model"
             self.assertEqual(code, 1)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Databasen ble ikke migrert", stderr)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-4-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-5-*"))), 1)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
@@ -3493,8 +3839,7 @@ model_name = "test-model"
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
-            self.assertIn("mangler forventet v4-struktur", stderr)
-            self.assertIn("duplicate_findings", stderr)
+            self.assertIn("schema_version=5", stderr)
             self.assertIn("bildebank migrate", stderr)
 
 

@@ -78,11 +78,8 @@ def row_to_item(
     *,
     face_data_by_file_id: dict[int, dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    target_path = Path(row["target_path"])
-    try:
-        relative_path = target_path.resolve().relative_to(target.resolve())
-    except ValueError:
-        relative_path = Path(os.path.relpath(target_path, target))
+    target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+    relative_path = relative_to_target(target, target_path)
     path = relative_path.as_posix()
     ext = target_path.suffix.lower().lstrip(".")
     kind = "video" if ext in VIDEO_EXTENSIONS else "image"
@@ -293,7 +290,7 @@ def conflict_groups(target: Path, rows: list) -> list[dict]:
     grouped: dict[tuple[str, str], list] = {}
     for row in rows:
         target_path = Path(str(row["target_path"]))
-        key = (db.path_key(target_path.parent), str(row["original_filename"]))
+        key = (db.relative_path_key(target_path.parent), str(row["original_filename"]))
         grouped.setdefault(key, []).append(row)
 
     conflicts = []
@@ -313,7 +310,7 @@ def conflict_groups(target: Path, rows: list) -> list[dict]:
 
 
 def conflict_row_to_item(target: Path, row) -> dict[str, object]:
-    target_path = Path(str(row["target_path"]))
+    target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
     relative_path = relative_to_target(target, target_path)
     ext = target_path.suffix.lower().lstrip(".")
     dimensions = image_dimensions(target_path)
@@ -336,10 +333,13 @@ def conflict_row_to_item(target: Path, row) -> dict[str, object]:
 
 
 def relative_to_target(target: Path, path: Path) -> Path:
-    try:
-        return path.resolve().relative_to(target.resolve())
-    except ValueError:
-        return Path(os.path.relpath(path, target))
+    candidate = Path(path)
+    if candidate.is_absolute():
+        try:
+            return candidate.resolve().relative_to(target.resolve())
+        except ValueError:
+            return Path(os.path.relpath(candidate, target))
+    return candidate
 
 
 def display_relative_path(target: Path, path: Path) -> str:

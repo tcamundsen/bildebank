@@ -246,6 +246,7 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
             conn,
             source_id=source.id,
             source_path=path,
+            target_root=target,
             target_path=destination_path,
             original_filename=path.name,
             stored_filename=destination_path.name,
@@ -265,6 +266,7 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
         conn,
         source_id=source.id,
         source_path=path,
+        target_root=target,
         target_path=destination_path,
         original_filename=path.name,
         stored_filename=destination_path.name,
@@ -386,7 +388,7 @@ def refresh_non_metadata_files(
                 db.insert_error(
                     conn,
                     source_id=None,
-                    source_path=Path(row["target_path"]),
+                    source_path=db.absolute_target_path(target, Path(str(row["target_path"]))),
                     stage="refresh-metadata",
                     message=str(exc),
                 )
@@ -406,7 +408,7 @@ def refresh_non_metadata_file(
     dry_run: bool,
     verbose: bool,
 ) -> None:
-    current_path = Path(row["target_path"])
+    current_path = db.absolute_target_path(target, Path(str(row["target_path"])))
     if not current_path.exists():
         repaired_path = find_file_in_target_by_hash(target, str(row["sha256"]))
         if repaired_path is None:
@@ -456,13 +458,14 @@ def refresh_non_metadata_file(
         db.update_file_placement(
             conn,
             file_id=int(row["id"]),
+            target_root=target,
             target_path=destination_path,
             stored_filename=destination_path.name,
             taken_date=_date_string(date) or "",
             date_source="metadata",
             name_conflict=name_conflict,
         )
-        db.resolve_errors_for_path(conn, stage="refresh-metadata", source_path=Path(row["target_path"]))
+        db.resolve_errors_for_path(conn, stage="refresh-metadata", source_path=current_path)
 
 
 def find_file_in_target_by_hash(target: Path, expected_hash: str) -> Path | None:

@@ -213,7 +213,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             if row is None:
                 self.respond_text("Filen finnes ikke.", status=HTTPStatus.NOT_FOUND)
                 return
-            path = Path(str(row["target_path"]))
+            path = db.absolute_target_path(self.server.target, Path(str(row["target_path"])))
         else:
             relative = Path(raw_path)
             path = (self.server.target / relative).resolve()
@@ -529,7 +529,7 @@ def unconfirmed_faces_for_item(target: Path, item: Any) -> list[dict[str, object
         return []
     finally:
         conn.close()
-    return browser_face_items(Path(str(item["target_path"])), faces)
+    return browser_face_items(db.absolute_target_path(target, Path(str(item["target_path"]))), faces)
 
 
 def browser_month_navigation(target: Path, item: Any) -> dict[str, str | None]:
@@ -542,7 +542,7 @@ def month_key_for_item(target: Path, item: Any) -> str:
     if stored_key is not None:
         return stored_key
     return month_key_from_path(
-        Path(display_relative_path(target, Path(str(item["target_path"]))))
+        Path(display_relative_path(target, db.absolute_target_path(target, Path(str(item["target_path"])))))
     )
 
 
@@ -726,7 +726,7 @@ def person_faces_for_item(target: Path, person_name: str, item: Any) -> list[dic
     finally:
         conn.close()
     face_meta = {int(face["faceId"]): face for face in faces}
-    rendered = browser_face_items(Path(str(item["target_path"])), faces)
+    rendered = browser_face_items(db.absolute_target_path(target, Path(str(item["target_path"]))), faces)
     for face in rendered:
         meta = face_meta.get(int(face["faceId"]))
         if meta is not None:
@@ -850,7 +850,7 @@ def search_server_images(server: BildebankServer, *, query: str, limit: int) -> 
                 (
                     cosine_similarity(text_vector, embedding_from_blob(bytes(row["embedding"]))),
                     int(row["file_id"]),
-                    Path(str(row["target_path"])),
+                    db.absolute_target_path(server.target, Path(str(row["target_path"]))),
                     str(row["target_path_key"]),
                 )
                 for row in rows

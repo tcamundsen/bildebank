@@ -14,7 +14,7 @@ from typing import Any, Iterable
 
 
 DB_FILENAME = ".bilder.sqlite3"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
 COLLECTION_ID_META_KEY = "collection_id"
 
@@ -25,6 +25,42 @@ def path_key(path: Path) -> str:
     if os.name == "nt":
         value = value.lower()
     return value
+
+
+def relative_path(path: Path) -> Path:
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return candidate
+    normalized = os.path.normpath(str(candidate))
+    return Path(normalized)
+
+
+def relative_path_key(path: Path) -> str:
+    value = os.path.normpath(str(relative_path(path))).replace("\\", "/")
+    if value in {".", ""}:
+        return ""
+    if os.name == "nt":
+        value = value.lower()
+    return value
+
+
+def target_relative_path(target: Path, path: Path) -> Path:
+    candidate = Path(path)
+    if candidate.is_absolute():
+        try:
+            return candidate.resolve().relative_to(target.resolve())
+        except ValueError as exc:
+            raise ValueError(f"Filen ligger utenfor bildesamlingen: {path}") from exc
+    return relative_path(candidate)
+
+
+def target_relative_path_key(target: Path, path: Path) -> str:
+    return relative_path_key(target_relative_path(target, path))
+
+
+def absolute_target_path(target: Path, path: Path | str) -> Path:
+    candidate = Path(path)
+    return candidate if candidate.is_absolute() else target / candidate
 
 
 def db_path_for_target(target: Path) -> Path:
@@ -51,6 +87,7 @@ class MigrationPlan:
     duplicate_findings: int
     creates_file_sources: bool
     rebuilds_files_without_legacy_source_columns: bool = False
+    converts_relative_paths: bool = False
     drops_duplicate_findings: bool = False
     rebuilds_errors_without_source_fk: bool = False
     rebuilds_sources_without_kind: bool = False
@@ -93,7 +130,7 @@ def require_current_schema(conn: sqlite3.Connection) -> None:
             validate_current_schema(conn)
         except ValueError as exc:
             raise SchemaMigrationRequired(
-                f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v4-struktur.\n"
+                f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v5-struktur.\n"
                 f"{exc}\n"
                 "Kjør bildebank migrate før du gjør endringer."
             ) from exc
@@ -272,6 +309,18 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
             )
+        if version == 4:
+            if validate:
+                validate_current_schema(conn)
+                validate_relative_path_migration_inputs(conn, target)
+            return MigrationPlan(
+                current_version=version,
+                target_version=SCHEMA_VERSION,
+                imported_files=count_rows(conn, "files"),
+                duplicate_findings=count_rows(conn, "duplicate_findings"),
+                creates_file_sources=False,
+                converts_relative_paths=True,
+            )
         if validate:
             validate_pre_migration(conn, version)
         file_columns = table_columns(conn, "files") if table_exists(conn, "files") else set()
@@ -307,6 +356,7 @@ def backup_database(target: Path) -> Path:
 
 def migrate_database(target: Path) -> MigrationPlan:
     conn = connect(target, require_current=False)
+    path_migrated = False
     try:
         version = schema_version(conn)
         if version == SCHEMA_VERSION:
@@ -319,6 +369,33 @@ def migrate_database(target: Path) -> MigrationPlan:
                 imported_files=count_rows(conn, "files"),
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
+            )
+        if version == 4:
+            validate_current_schema(conn)
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                path_migrated = migrate_relative_paths(conn, target)
+                set_meta(conn, "schema_version", str(SCHEMA_VERSION))
+                log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
+                validate_current_schema(conn)
+                foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+                if foreign_key_errors:
+                    raise ValueError(f"foreign_key_check feilet: {foreign_key_errors[0]}")
+                integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+                if integrity != "ok":
+                    raise ValueError(f"integrity_check feilet: {integrity}")
+                set_collection_id(conn)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            return MigrationPlan(
+                current_version=version,
+                target_version=SCHEMA_VERSION,
+                imported_files=count_rows(conn, "files"),
+                duplicate_findings=count_rows(conn, "duplicate_findings"),
+                creates_file_sources=False,
+                converts_relative_paths=path_migrated,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -351,6 +428,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             rebuild_file_sources_without_kind(conn)
             if table_exists(conn, "duplicate_findings"):
                 conn.execute("DROP TABLE duplicate_findings")
+            path_migrated = migrate_relative_paths(conn, target)
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
             validate_current_schema(conn)
@@ -378,6 +456,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             rebuilds_errors_without_source_fk=rebuilds_errors,
             rebuilds_sources_without_kind=rebuilds_sources,
             rebuilds_file_sources_without_kind=rebuilds_file_sources,
+            converts_relative_paths=path_migrated,
         )
     finally:
         conn.close()
@@ -492,6 +571,94 @@ def validate_current_schema(conn: sqlite3.Connection) -> None:
     if table_exists(conn, "errors") and conn.execute("PRAGMA foreign_key_list(errors)").fetchall():
         raise ValueError("errors har gammel foreign key til sources. Kjør bildebank migrate.")
     validate_file_sources_schema(conn)
+    if schema_version(conn) == SCHEMA_VERSION:
+        validate_relative_target_paths(conn)
+
+
+def validate_relative_target_paths(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "files"):
+        return
+    row = conn.execute(
+        """
+        SELECT id, target_path
+        FROM files
+        WHERE target_path LIKE '/%'
+           OR target_path GLOB '[A-Za-z]:*'
+        ORDER BY id
+        LIMIT 1
+        """
+    ).fetchone()
+    if row is not None:
+        raise ValueError(
+            f"files #{row['id']} har absolutt target_path i v5-database: {row['target_path']}. "
+            "Kjør bildebank migrate."
+        )
+    row = conn.execute(
+        """
+        SELECT id, deleted_original_target_path
+        FROM files
+        WHERE deleted_original_target_path IS NOT NULL
+          AND (
+              deleted_original_target_path LIKE '/%'
+              OR deleted_original_target_path GLOB '[A-Za-z]:*'
+          )
+        ORDER BY id
+        LIMIT 1
+        """
+    ).fetchone()
+    if row is not None:
+        raise ValueError(
+            "files #"
+            f"{row['id']} har absolutt deleted_original_target_path i v5-database: "
+            f"{row['deleted_original_target_path']}. Kjør bildebank migrate."
+        )
+
+
+def validate_relative_path_migration_inputs(conn: sqlite3.Connection, target: Path) -> None:
+    rows = conn.execute(
+        "SELECT id, target_path, deleted_original_target_path FROM files ORDER BY id"
+    ).fetchall()
+    for row in rows:
+        target_relative_path(target, Path(str(row["target_path"])))
+        if row["deleted_original_target_path"] is not None:
+            target_relative_path(target, Path(str(row["deleted_original_target_path"])))
+
+
+def migrate_relative_paths(conn: sqlite3.Connection, target: Path) -> bool:
+    rows = conn.execute(
+        """
+        SELECT id, target_path, deleted_original_target_path
+        FROM files
+        ORDER BY id
+        """
+    ).fetchall()
+    migrated = False
+    for row in rows:
+        target_path = target_relative_path(target, Path(str(row["target_path"])))
+        deleted_original = row["deleted_original_target_path"]
+        deleted_relative = (
+            target_relative_path(target, Path(str(deleted_original))).as_posix()
+            if deleted_original is not None
+            else None
+        )
+        if target_path.as_posix() != str(row["target_path"]) or deleted_relative != deleted_original:
+            migrated = True
+        conn.execute(
+            """
+            UPDATE files
+            SET target_path = ?,
+                target_path_key = ?,
+                deleted_original_target_path = ?
+            WHERE id = ?
+            """,
+            (
+                target_path.as_posix(),
+                relative_path_key(target_path),
+                deleted_relative,
+                int(row["id"]),
+            ),
+        )
+    return migrated
 
 
 def validate_legacy_file_sources_schema(conn: sqlite3.Connection) -> None:
@@ -946,6 +1113,7 @@ def insert_imported_file(
     *,
     source_id: int,
     source_path: Path,
+    target_root: Path,
     target_path: Path,
     original_filename: str,
     stored_filename: str,
@@ -965,8 +1133,8 @@ def insert_imported_file(
             RETURNING id
             """,
             (
-                str(target_path.resolve()),
-                path_key(target_path),
+                target_relative_path(target_root, target_path).as_posix(),
+                target_relative_path_key(target_root, target_path),
                 original_filename,
                 stored_filename,
                 sha256,
@@ -1116,7 +1284,7 @@ def mark_sources_superseded(
     )
 
 
-def build_unimport_plan(conn: sqlite3.Connection, source: Source) -> UnimportPlan:
+def build_unimport_plan(conn: sqlite3.Connection, target: Path, source: Source) -> UnimportPlan:
     rows = source_file_sources(conn, source.id)
     source_counts: dict[int, int] = {}
     for row in rows:
@@ -1141,7 +1309,7 @@ def build_unimport_plan(conn: sqlite3.Connection, source: Source) -> UnimportPla
         if total_sources == source_counts[file_id]:
             active_remove_file_ids.add(file_id)
             if file_id not in seen_delete_file_ids:
-                target_paths_to_delete.append(Path(str(row["target_path"])))
+                target_paths_to_delete.append(absolute_target_path(target, Path(str(row["target_path"]))))
                 seen_delete_file_ids.add(file_id)
         else:
             active_keep_file_ids.add(file_id)
@@ -1279,14 +1447,14 @@ def name_conflicts(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     )
 
 
-def file_by_target_path(conn: sqlite3.Connection, target_path: Path) -> sqlite3.Row | None:
+def file_by_target_path(conn: sqlite3.Connection, target: Path, target_path: Path) -> sqlite3.Row | None:
     return conn.execute(
         "SELECT * FROM files WHERE target_path_key = ?",
-        (path_key(target_path),),
+        (target_relative_path_key(target, target_path),),
     ).fetchone()
 
 
-def file_sources_by_target_path(conn: sqlite3.Connection, target_path: Path) -> list[sqlite3.Row]:
+def file_sources_by_target_path(conn: sqlite3.Connection, target: Path, target_path: Path) -> list[sqlite3.Row]:
     return list(
         conn.execute(
         """
@@ -1314,13 +1482,14 @@ def file_sources_by_target_path(conn: sqlite3.Connection, target_path: Path) -> 
         ORDER BY
             file_sources.id
         """,
-        (path_key(target_path),),
+        (target_relative_path_key(target, target_path),),
         )
     )
 
 
-def file_source_by_target_path(conn: sqlite3.Connection, target_path: Path) -> sqlite3.Row | None:
-    rows = file_sources_by_target_path(conn, target_path)
+def file_source_by_target_path(conn: sqlite3.Connection, target: Path, target_path: Path) -> sqlite3.Row | None:
+    rows = file_sources_by_target_path(conn, target, target_path)
+    return rows[0] if rows else None
     return rows[0] if rows else None
 
 
@@ -1473,6 +1642,7 @@ def mark_file_deleted(
     conn: sqlite3.Connection,
     *,
     file_id: int,
+    target_root: Path,
     deleted_path: Path,
     original_target_path: Path,
 ) -> None:
@@ -1487,9 +1657,9 @@ def mark_file_deleted(
           AND deleted_at IS NULL
         """,
         (
-            str(deleted_path.resolve()),
-            path_key(deleted_path),
-            str(original_target_path.resolve()),
+            target_relative_path(target_root, deleted_path).as_posix(),
+            target_relative_path_key(target_root, deleted_path),
+            target_relative_path(target_root, original_target_path).as_posix(),
             file_id,
         ),
     )
@@ -1499,6 +1669,7 @@ def update_file_placement(
     conn: sqlite3.Connection,
     *,
     file_id: int,
+    target_root: Path,
     target_path: Path,
     stored_filename: str,
     taken_date: str,
@@ -1517,8 +1688,8 @@ def update_file_placement(
         WHERE id = ?
         """,
         (
-            str(target_path.resolve()),
-            path_key(target_path),
+            target_relative_path(target_root, target_path).as_posix(),
+            target_relative_path_key(target_root, target_path),
             stored_filename,
             taken_date,
             date_source,

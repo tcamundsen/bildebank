@@ -129,6 +129,8 @@ def connect_face_db(target: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(face_db_path(target))
     conn.row_factory = sqlite3.Row
     apply_face_schema(conn)
+    normalize_face_paths(conn, target)
+    set_meta(conn, "target_path", str(target.resolve()))
     conn.commit()
     return conn
 
@@ -224,6 +226,57 @@ def apply_face_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO meta(key, value) VALUES('schema_version', ?)",
         (str(FACE_SCHEMA_VERSION),),
+    )
+
+
+def normalize_face_paths(conn: sqlite3.Connection, target: Path) -> None:
+    current_root = target.resolve()
+    stored_root_value = get_meta(conn, "target_path")
+    old_root = Path(stored_root_value) if stored_root_value else current_root
+
+    scanned_rows = conn.execute(
+        "SELECT file_id, target_path FROM scanned_files ORDER BY file_id"
+    ).fetchall()
+    for row in scanned_rows:
+        relative_path = db.target_relative_path(old_root, Path(str(row["target_path"])))
+        conn.execute(
+            """
+            UPDATE scanned_files
+            SET target_path = ?, target_path_key = ?
+            WHERE file_id = ?
+            """,
+            (relative_path.as_posix(), db.relative_path_key(relative_path), int(row["file_id"])),
+        )
+
+    face_rows = conn.execute(
+        """
+        SELECT faces.id AS face_id, scanned_files.target_path AS target_path
+        FROM faces
+        JOIN scanned_files ON scanned_files.file_id = faces.file_id
+        ORDER BY faces.id
+        """
+    ).fetchall()
+    for row in face_rows:
+        relative_path = db.target_relative_path(old_root, Path(str(row["target_path"])))
+        conn.execute(
+            "UPDATE faces SET target_path_key = ? WHERE id = ?",
+            (db.relative_path_key(relative_path), int(row["face_id"])),
+        )
+
+    if stored_root_value is not None and stored_root_value != str(current_root):
+        set_meta(conn, "target_path", str(current_root))
+
+
+def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return None if row is None else str(row["value"])
+
+
+def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
     )
 
 
@@ -888,7 +941,7 @@ def face_group_browser_items(
         current += 1
         group_index = int(row["group_index"])
         file_id = int(row["file_id"])
-        target_path = Path(str(row["target_path"]))
+        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
         dimensions = image_dimensions(target_path)
         orientation = image_orientation(target_path)
         face = {
@@ -984,7 +1037,7 @@ def all_faces_for_file_ids(
     result: dict[int, list[dict[str, Any]]] = {}
     for row in rows:
         file_id = int(row["file_id"])
-        target_path = Path(str(row["target_path"]))
+        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
         dimensions = image_dimensions(target_path)
         orientation = image_orientation(target_path)
         face = {
@@ -1051,7 +1104,7 @@ def person_browser_items(target: Path, conn: sqlite3.Connection, *, person_id: i
     ).fetchall()
     grouped: dict[str, dict[str, Any]] = {}
     for row in rows:
-        target_path = Path(str(row["target_path"]))
+        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
         key = str(target_path)
         dimensions = image_dimensions(target_path)
         orientation = image_orientation(target_path)
@@ -1166,7 +1219,7 @@ def face_browser_items(
     )
     grouped: dict[str, dict[str, Any]] = {}
     for row in rows:
-        target_path = Path(str(row["target_path"]))
+        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
         key = str(target_path)
         dimensions = image_dimensions(target_path)
         orientation = image_orientation(target_path)
@@ -1198,12 +1251,13 @@ def face_browser_items(
 
 
 def relative_to_target(target: Path, path: Path) -> Path:
+    candidate = db.absolute_target_path(target, Path(path))
     try:
-        return path.resolve().relative_to(target.resolve())
+        return candidate.resolve().relative_to(target.resolve())
     except ValueError:
         import os
 
-        return Path(os.path.relpath(path, target))
+        return Path(os.path.relpath(candidate, target))
 
 
 def display_relative_path(target: Path, path: Path) -> str:
@@ -2754,7 +2808,7 @@ def scan_faces(
             stats.checked += 1
             file_id = int(row["id"])
             sha256 = str(row["sha256"])
-            target_path = Path(str(row["target_path"]))
+            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
             if is_file_scanned(face_conn, file_id, sha256):
                 stats.skipped += 1
                 if progress is not None:
@@ -2774,7 +2828,7 @@ def scan_faces(
             app = load_face_app(config)
         for scan_index, row in enumerate(rows_to_scan, start=1):
             file_id = int(row["id"])
-            target_path = Path(str(row["target_path"]))
+            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
             target_path_key = str(row["target_path_key"])
             sha256 = str(row["sha256"])
             try:
@@ -2786,6 +2840,7 @@ def scan_faces(
                 replace_file_faces(
                     face_conn,
                     file_id=file_id,
+                    target_root=target,
                     target_path=target_path,
                     target_path_key=target_path_key,
                     sha256=sha256,
@@ -2801,6 +2856,7 @@ def scan_faces(
                 mark_file_scan_error(
                     face_conn,
                     file_id=file_id,
+                    target_root=target,
                     target_path=target_path,
                     target_path_key=target_path_key,
                     sha256=sha256,
@@ -2858,6 +2914,7 @@ def replace_file_faces(
     conn: sqlite3.Connection,
     *,
     file_id: int,
+    target_root: Path,
     target_path: Path,
     target_path_key: str,
     sha256: str,
@@ -2900,7 +2957,7 @@ def replace_file_faces(
             error_message = NULL,
             face_count = excluded.face_count
         """,
-        (file_id, str(target_path), target_path_key, sha256, len(faces)),
+        (file_id, db.target_relative_path(target_root, target_path).as_posix(), target_path_key, sha256, len(faces)),
     )
 
 
@@ -2908,6 +2965,7 @@ def mark_file_scan_error(
     conn: sqlite3.Connection,
     *,
     file_id: int,
+    target_root: Path,
     target_path: Path,
     target_path_key: str,
     sha256: str,
@@ -2928,7 +2986,7 @@ def mark_file_scan_error(
             error_message = excluded.error_message,
             face_count = 0
         """,
-        (file_id, str(target_path), target_path_key, sha256, message[:1000]),
+        (file_id, db.target_relative_path(target_root, target_path).as_posix(), target_path_key, sha256, message[:1000]),
     )
 
 

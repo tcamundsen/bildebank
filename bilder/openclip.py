@@ -70,6 +70,8 @@ def connect_openclip_db(target: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     apply_schema(conn)
+    normalize_openclip_paths(conn, target)
+    set_meta(conn, "target_path", str(target.resolve()))
     conn.commit()
     return conn
 
@@ -77,6 +79,11 @@ def connect_openclip_db(target: Path) -> sqlite3.Connection:
 def apply_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
+        CREATE TABLE IF NOT EXISTS meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS image_embeddings (
             file_id INTEGER NOT NULL,
             target_path TEXT NOT NULL,
@@ -115,6 +122,67 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_image_search_results_run_id
         ON image_search_results(run_id);
         """
+    )
+
+
+def normalize_openclip_paths(conn: sqlite3.Connection, target: Path) -> None:
+    current_root = target.resolve()
+    stored_root_value = get_meta(conn, "target_path")
+    old_root = Path(stored_root_value) if stored_root_value else current_root
+
+    embedding_rows = conn.execute(
+        "SELECT file_id, target_path FROM image_embeddings ORDER BY file_id, model_name, pretrained"
+    ).fetchall()
+    for row in embedding_rows:
+        relative_path = db.target_relative_path(old_root, Path(str(row["target_path"])))
+        conn.execute(
+            """
+            UPDATE image_embeddings
+            SET target_path = ?, target_path_key = ?
+            WHERE file_id = ? AND target_path = ?
+            """,
+            (
+                relative_path.as_posix(),
+                db.relative_path_key(relative_path),
+                int(row["file_id"]),
+                str(row["target_path"]),
+            ),
+        )
+
+    search_rows = conn.execute(
+        "SELECT run_id, file_id, target_path FROM image_search_results ORDER BY run_id, rank"
+    ).fetchall()
+    for row in search_rows:
+        relative_path = db.target_relative_path(old_root, Path(str(row["target_path"])))
+        conn.execute(
+            """
+            UPDATE image_search_results
+            SET target_path = ?, target_path_key = ?
+            WHERE run_id = ? AND file_id = ? AND target_path = ?
+            """,
+            (
+                relative_path.as_posix(),
+                db.relative_path_key(relative_path),
+                int(row["run_id"]),
+                int(row["file_id"]),
+                str(row["target_path"]),
+            ),
+        )
+
+    if stored_root_value is not None and stored_root_value != str(current_root):
+        set_meta(conn, "target_path", str(current_root))
+
+
+def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return None if row is None else str(row["value"])
+
+
+def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES(?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, value),
     )
 
 
@@ -176,7 +244,7 @@ def scan_images(
                 skipped=skipped,
             )
             if progress is not None:
-                progress("check", index, total, stats, Path(str(row["target_path"])))
+                progress("check", index, total, stats, db.absolute_target_path(target, Path(str(row["target_path"]))))
         if not rows_to_scan:
             if progress is not None:
                 progress("done", total, total, stats, None)
@@ -191,12 +259,13 @@ def scan_images(
         for index, row in enumerate(rows_to_scan, start=1):
             file_id = int(row["id"])
             sha256 = str(row["sha256"])
-            target_path = Path(str(row["target_path"]))
+            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
             try:
                 vector = image_embedding(model, preprocess, target_path)
                 store_embedding(
                     conn,
                     file_id=file_id,
+                    target_root=target,
                     target_path=target_path,
                     target_path_key=str(row["target_path_key"]),
                     sha256=sha256,
@@ -283,7 +352,7 @@ def search_images(
                 (
                     cosine_similarity(text_vector, embedding_from_blob(bytes(row["embedding"]))),
                     int(row["file_id"]),
-                    Path(str(row["target_path"])),
+                    db.absolute_target_path(target, Path(str(row["target_path"]))),
                     str(row["target_path_key"]),
                 )
             )
@@ -301,7 +370,7 @@ def search_images(
                 INSERT INTO image_search_results(run_id, file_id, target_path, target_path_key, similarity, rank)
                 VALUES(?, ?, ?, ?, ?, ?)
                 """,
-                (run_id, file_id, str(target_path), target_path_key, score, index),
+                (run_id, file_id, db.target_relative_path(target, target_path).as_posix(), target_path_key, score, index),
             )
             results.append(ImageSearchResult(index, file_id, target_path, score))
         conn.commit()
@@ -355,6 +424,7 @@ def store_embedding(
     conn: sqlite3.Connection,
     *,
     file_id: int,
+    target_root: Path,
     target_path: Path,
     target_path_key: str,
     sha256: str,
@@ -375,7 +445,7 @@ def store_embedding(
         """,
         (
             file_id,
-            str(target_path),
+            db.target_relative_path(target_root, target_path).as_posix(),
             target_path_key,
             sha256,
             config.model_name,
@@ -570,7 +640,7 @@ def export_image_search_html(
 def image_result_html(target: Path, result: ImageSearchResult) -> str:
     relative = relative_to_target(target, result.target_path)
     url = path_to_url(relative)
-    dimensions = image_dimensions(result.target_path)
+    dimensions = image_dimensions(db.absolute_target_path(target, result.target_path))
     size = f"{dimensions.width} x {dimensions.height}" if dimensions else "-"
     path_text = display_relative_path(target, result.target_path)
     return f"""    <div class="item">
@@ -583,10 +653,11 @@ def image_result_html(target: Path, result: ImageSearchResult) -> str:
 
 
 def relative_to_target(target: Path, path: Path) -> Path:
+    candidate = db.absolute_target_path(target, Path(path))
     try:
-        return path.resolve().relative_to(target.resolve())
+        return candidate.resolve().relative_to(target.resolve())
     except ValueError:
-        return Path(os.path.relpath(path, target))
+        return Path(os.path.relpath(candidate, target))
 
 
 def display_relative_path(target: Path, path: Path) -> str:
