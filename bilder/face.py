@@ -319,7 +319,7 @@ def add_group_to_person(target: Path, person_name: str, group_index: int) -> Add
         person_id = require_person(conn, clean_name)
         group = latest_group_by_index(conn, group_index)
         if group is None:
-            raise ValueError(f"Fant ikke ansiktsgruppe {group_index}. Kjør bildebank face-group først.")
+            raise ValueError(f"Fant ikke ansiktsgruppe {group_index}.")
         face_ids = [
             int(row["face_id"])
             for row in conn.execute(
@@ -603,7 +603,7 @@ def require_person(conn: sqlite3.Connection, name: str) -> int:
 def require_face(conn: sqlite3.Connection, face_id: int) -> None:
     row = conn.execute("SELECT id FROM faces WHERE id = ?", (face_id,)).fetchone()
     if row is None:
-        raise ValueError(f"Fant ikke ansikt-id {face_id}. Kjør make-face-browser eller face-group for å se id-er.")
+        raise ValueError(f"Fant ikke ansikt-id {face_id}. Kjør make-face-browser for å se id-er.")
 
 
 def latest_group_by_index(conn: sqlite3.Connection, group_index: int) -> sqlite3.Row | None:
@@ -1604,13 +1604,9 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
         <span id="groupTitle" class="status"></span>
       </div>
       <div id="person" class="status"></div>
-      <div class="command-row">
-        <div id="command" class="command"></div>
-        <button id="copyGroupCommand" class="copy-command" type="button">Kopier</button>
-      </div>
     </header>
     <main id="main">
-      <p class="empty">Ingen grupper beregnet ennå. Kjør bildebank face-group først.</p>
+      <p class="empty">Ingen grupper beregnet ennå.</p>
     </main>
   </div>
   <div id="lightbox" class="lightbox" hidden>
@@ -1626,8 +1622,6 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
     const statusEl = document.getElementById("status");
     const groupTitleEl = document.getElementById("groupTitle");
     const personEl = document.getElementById("person");
-    const commandEl = document.getElementById("command");
-    const copyGroupCommandButton = document.getElementById("copyGroupCommand");
     const mainEl = document.getElementById("main");
     const prevButton = document.getElementById("prevGroup");
     const nextButton = document.getElementById("nextGroup");
@@ -1637,7 +1631,6 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
     const lightboxCloseButton = document.getElementById("lightboxClose");
     prevButton.addEventListener("click", () => moveGroup(-1));
     nextButton.addEventListener("click", () => moveGroup(1));
-    copyGroupCommandButton.addEventListener("click", () => copyCommand(commandEl.textContent, copyGroupCommandButton));
     lightboxCloseButton.addEventListener("click", closeLightbox);
     lightboxEl.addEventListener("click", event => {{
       if (event.target === lightboxEl || event.target === lightboxStageEl) closeLightbox();
@@ -1654,8 +1647,6 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
       if (groups.length === 0) {{
         prevButton.disabled = true;
         nextButton.disabled = true;
-        copyGroupCommandButton.disabled = true;
-        commandEl.textContent = "";
         return;
       }}
       renderGroup();
@@ -1680,8 +1671,6 @@ def render_face_groups_html(groups: list[dict[str, Any]]) -> str:
         : `${{group.memberCount}} ansikter`;
       groupTitleEl.textContent = `Gruppe ${{group.index}} (${{countText}}), ${{groupIndex + 1}}/${{groups.length}}`;
       personEl.textContent = groupStatusText(group);
-      commandEl.textContent = `bildebank face-person-add-group "Navn" ${{group.index}}`;
-      copyGroupCommandButton.disabled = false;
       prevButton.disabled = groupIndex === 0;
       nextButton.disabled = groupIndex === groups.length - 1;
       const facesEl = document.createElement("div");
@@ -2445,7 +2434,6 @@ def render_face_group_section(group: dict[str, Any]) -> str:
     return f"""<section>
   <h2>Gruppe {group['index']} ({group['memberCount']} ansikter)</h2>
   {person}
-  <p class="command">bildebank face-person-add-group "Navn" {group['index']}</p>
   <div class="faces">
     {faces}
   </div>

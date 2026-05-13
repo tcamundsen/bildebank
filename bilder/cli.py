@@ -15,24 +15,20 @@ from .config import CONFIG_FILENAME, load_config
 from .exiftool_probe import exiftool_metadata_gaps
 from .face import (
     AddFaceToPersonResult,
-    AddGroupToPersonResult,
     DeletePersonResult,
     FaceResetResult,
     FaceReport,
     FaceSuggestStats,
     RemoveFaceFromPersonResult,
     add_face_to_person,
-    add_group_to_person,
     create_person,
     delete_person,
     export_face_browser,
-    export_face_groups_browser,
     export_people_browser,
     export_person_browser,
     face_db_path,
     face_db_summary,
     face_report,
-    group_faces,
     list_face_suggestions,
     list_persons,
     remove_face_from_person,
@@ -125,9 +121,7 @@ HELP_COMMAND_GROUPS = (
             ("run-server", "Start lokal Bildebank-server"),
             ("face-scan", "Scanning etter ansikter"),
             ("face-report", "Vis rapport for scannede ansikter"),
-            ("face-group", "Beregn mulige ansiktsgrupper"),
             ("face-person-create", "Opprett person i ansiktsdatabasen"),
-            ("face-person-add-group", "Koble ansiktsgruppe til person"),
             ("face-person-add-face", "Koble ett ansikt til person"),
             ("face-person-remove-face", "Fjern ett ansikt fra person"),
             ("face-person-delete", "Slett person fra ansiktsdatabasen"),
@@ -462,39 +456,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Vis rapport for scannede ansikter",
     )
     face_report_parser.add_argument("--limit", type=positive_int_arg, default=20, help="Maks antall linjer per liste")
-    face_group = add_command(
-        subparsers,
-        "face-group",
-        usage="bildebank face-group [valg]",
-        help="Beregn mulige ansiktsgrupper",
-    )
-    face_group.add_argument(
-        "--threshold",
-        type=similarity_threshold_arg,
-        default=0.6,
-        help="Likhetsterskel fra 0.0 til 1.0. Standard: 0.6",
-    )
-    face_group.add_argument(
-        "--max-size",
-        type=non_negative_int_arg,
-        default=DEFAULT_FACE_GROUP_MAX_SIZE,
-        help=(
-            "Ikke skriv grupper med flere enn dette antallet ansikter. "
-            f"Standard: {DEFAULT_FACE_GROUP_MAX_SIZE}. Bruk 0 for ingen maksgrense."
-        ),
-    )
-    face_group.add_argument(
-        "-o",
-        "--output",
-        dest="output",
-        type=Path,
-        help="Skriv HTML-filen hit. Standard: face-groups.html i bildesamlingen.",
-    )
-    face_group.add_argument(
-        "--include-known",
-        action="store_true",
-        help="Vis også grupper der alle synlige ansikter allerede er bekreftet som samme person.",
-    )
     face_person_create = add_command(
         subparsers,
         "face-person-create",
@@ -502,14 +463,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Opprett person i ansiktsdatabasen",
     )
     face_person_create.add_argument("name", metavar="navn", help="Personnavn")
-    face_person_add_group = add_command(
-        subparsers,
-        "face-person-add-group",
-        usage="bildebank face-person-add-group [valg] navn gruppe",
-        help="Koble ansiktsgruppe til person",
-    )
-    face_person_add_group.add_argument("name", metavar="navn", help="Personnavn")
-    face_person_add_group.add_argument("group", metavar="gruppe", type=positive_int_arg, help="Gruppe-id fra face-groups.html")
     face_person_add_face = add_command(
         subparsers,
         "face-person-add-face",
@@ -778,24 +731,9 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "face-report":
         return run_face_report(target, limit=args.limit)
 
-    if args.command == "face-group":
-        output = args.output.resolve() if args.output else None
-        return run_face_group(
-            target,
-            threshold=args.threshold,
-            max_size=args.max_size,
-            output=output,
-            include_known=args.include_known,
-        )
-
     if args.command == "face-person-create":
         person_id = create_person(target, args.name)
         print(f"Person #{person_id}: {args.name.strip()}")
-        return 0
-
-    if args.command == "face-person-add-group":
-        result = add_group_to_person(target, args.name, args.group)
-        print_add_group_to_person_result(result)
         return 0
 
     if args.command == "face-person-add-face":

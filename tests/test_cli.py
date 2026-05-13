@@ -343,6 +343,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("programmet\n   where-is", stdout)
         self.assertIn("bildebank <kommando> -h", stdout)
         self.assertNotIn("{create,add,import", stdout)
+        self.assertNotIn("face-group", stdout)
+        self.assertNotIn("face-person-add-group", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_subcommand_help_has_clean_usage(self) -> None:
@@ -374,20 +376,19 @@ class CliTests(unittest.TestCase):
         self.assertIn("krever alltid", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
-    def test_face_group_help_documents_default_max_size(self) -> None:
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
-            main(["face-group", "-h"])
+    def test_removed_group_commands_are_unavailable(self) -> None:
+        for command in ("face-group", "face-person-add-group"):
+            with self.subTest(command=command):
+                stdout_buffer = StringIO()
+                stderr_buffer = StringIO()
+                with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+                    main([command, "-h"])
 
-        self.assertEqual(raised.exception.code, 0)
-        stdout = stdout_buffer.getvalue()
-        self.assertIn("--max-size", stdout)
-        self.assertIn("Standard: 50", stdout)
-        self.assertIn("Bruk 0 for ingen maksgrense", stdout)
-        self.assertIn("--output", stdout)
-        self.assertIn("--include-known", stdout)
-        self.assertEqual(stderr_buffer.getvalue(), "")
+                self.assertEqual(raised.exception.code, 2)
+                self.assertEqual(stdout_buffer.getvalue(), "")
+                stderr = stderr_buffer.getvalue()
+                self.assertIn("invalid choice", stderr)
+                self.assertIn(command, stderr)
 
     def test_make_face_browser_help_marks_command_as_debug(self) -> None:
         stdout_buffer = StringIO()
@@ -2849,166 +2850,6 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-database finnes ikke.", stdout)
             self.assertIn("Kjør bildebank face-scan først.", stdout)
-
-    def test_face_group_creates_group_and_browser(self) -> None:
-        class FakeFace:
-            def __init__(self, bbox, embedding):
-                self.bbox = bbox
-                self.det_score = 0.9
-                self.embedding = embedding
-
-        class FakeApp:
-            def get(self, image):
-                return [
-                    FakeFace([1.0, 2.0, 11.0, 22.0], [1.0, 0.0, 0.0]),
-                    FakeFace([30.0, 4.0, 42.0, 24.0], [0.99, 0.01, 0.0]),
-                    FakeFace([50.0, 6.0, 64.0, 30.0], [0.0, 1.0, 0.0]),
-                    FakeFace([70.0, 8.0, 86.0, 34.0], [0.0, 0.99, 0.01]),
-                ]
-
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            source.mkdir()
-            (source / "IMG_20240102.jpg").write_bytes(b"image")
-            (self.program_root / "bildebank-config.toml").write_text(
-                """
-[face_recognition]
-enabled = true
-provider = "cpu"
-model_root = ".bildebank-insightface"
-model_name = "test-model"
-""",
-                encoding="utf-8",
-            )
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(
-                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
-                0,
-            )
-            with (
-                patch("bilder.face.load_face_app", return_value=FakeApp()),
-                patch("bilder.face.read_image", return_value=object()),
-            ):
-                self.assertEqual(run_cli(["--target", str(target), "face-scan", "--limit", "1"]), 0)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "face-group", "--threshold", "0.9"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Face-group: sammenligner 6 ansiktspar.", stdout)
-            self.assertIn("Face-group: sammenlignet=6/6 (100%), gjenstår=0s", stdout)
-            self.assertIn("Face-group: bygger grupper fra 4 ansikter.", stdout)
-            self.assertIn("grupper=2", stdout)
-            self.assertIn("grupperte_ansikter=4", stdout)
-            self.assertIn("Max gruppestørrelse: 50", stdout)
-            self.assertIn("Face-group: lager HTML-data=", stdout)
-            self.assertIn("Face-group: skriver HTML-fil=100%", stdout)
-            self.assertIn("Skrev HTML-browser for ansiktsgrupper", stdout)
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "face-group", "--threshold", "0.9", "--max-size", "0"]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("grupper=2", stdout)
-            self.assertIn("Max gruppestørrelse: ingen maksgrense", stdout)
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "face-group", "--threshold", "0.9", "--max-size", "1"]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("grupper=2", stdout)
-            self.assertIn("grupperte_ansikter=2", stdout)
-            self.assertIn("Max gruppestørrelse: 1", stdout)
-            self.assertIn("Store grupper er forkortet i HTML: grupper=2, skjulte_ansikter=2", stdout)
-
-            self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9"]), 0)
-            html = (target / "face-groups.html").read_text(encoding="utf-8")
-            self.assertIn("<h1>Ansiktsgrupper</h1>", html)
-            self.assertIn("Forrige gruppe", html)
-            self.assertIn("align-items: start", html)
-            self.assertIn("align-self: start", html)
-            self.assertIn('"index": 1', html)
-            self.assertIn('"memberCount": 2', html)
-            self.assertIn('"visibleMemberCount": 2', html)
-            self.assertIn('"index": 2', html)
-            self.assertIn("likhet", html)
-            self.assertIn("deteksjon", html)
-            self.assertIn('"faceId": 1', html)
-            self.assertIn('"otherGroupsInImage": [{"groupIndex": 2', html)
-            self.assertIn('"allFacesInImage": [{"faceId": 1', html)
-            self.assertIn("Alle ansikter i bildet", html)
-            self.assertIn("openAllFaces(face)", html)
-            self.assertIn("face-detail-title", html)
-            self.assertIn("face-command", html)
-            self.assertIn("copyGroupCommand", html)
-            self.assertIn("copyCommand(commandEl.textContent", html)
-            self.assertIn("navigator.clipboard.writeText", html)
-            self.assertIn("fallbackCopyCommand", html)
-            self.assertIn('face-person-add-face "Navn"', html)
-            self.assertIn("goToGroup(item.groupIndex)", html)
-            self.assertIn("className = \"box\"", html)
-            self.assertIn("id=\"lightbox\"", html)
-            self.assertIn("openLightbox(face)", html)
-            self.assertIn("lightbox-media", html)
-            self.assertIn("Vis stort bilde med ansiktsmarkering", html)
-            self.assertIn('face-person-add-group "Navn"', html)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-create", "Kari"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Person #", stdout)
-            self.assertIn("Kari", stdout)
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "face-person-add-group", "Kari", "1"]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Person: Kari", stdout)
-            self.assertIn("Nye ansikter koblet til person: 2", stdout)
-
-            self.assertEqual(run_cli(["--target", str(target), "face-person-create", "Ola"]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9", "--max-size", "1"]), 0)
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "face-person-add-group", "Ola", "2"]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Nye ansikter koblet til person: 1", stdout)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn(
-                "Kari\tbekreftede_bilder=1\tbekreftede_ansikter=2\tforslag=0",
-                stdout,
-            )
-
-            with patch("builtins.input", return_value="nei"):
-                code, stdout, stderr = capture_cli(["--target", str(target), "face-person-delete", "Kari"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Avbrutt", stdout)
-            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
-            self.assertIn(
-                "Kari\tbekreftede_bilder=1\tbekreftede_ansikter=2\tforslag=0",
-                stdout,
-            )
-
-            self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9"]), 0)
-            html = (target / "face-groups.html").read_text(encoding="utf-8")
-            self.assertNotIn('"index": 1', html)
-            self.assertNotIn('"personName": "Kari"', html)
-
-            self.assertEqual(run_cli(["--target", str(target), "face-group", "--threshold", "0.9", "--include-known"]), 0)
-            html = (target / "face-groups.html").read_text(encoding="utf-8")
-            self.assertIn('"index": 1', html)
-            self.assertIn("Ferdig: alle", html)
-            self.assertIn('"complete": true', html)
 
     def test_face_person_add_remove_face_and_suggest(self) -> None:
         class FakeFace:
