@@ -3050,44 +3050,114 @@ model_name = "test-model"
             root = Path(tmp)
             target = root / "target"
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            conn = connect_face_db(target)
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
             try:
-                conn.execute(
+                conn.executescript(
                     """
+                    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                    CREATE TABLE scanned_files (
+                        file_id INTEGER PRIMARY KEY,
+                        target_path TEXT NOT NULL,
+                        target_path_key TEXT NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        status TEXT NOT NULL,
+                        error_message TEXT,
+                        face_count INTEGER NOT NULL DEFAULT 0
+                    );
+                    CREATE TABLE faces (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        file_id INTEGER NOT NULL,
+                        target_path_key TEXT NOT NULL,
+                        bbox_x REAL NOT NULL,
+                        bbox_y REAL NOT NULL,
+                        bbox_width REAL NOT NULL,
+                        bbox_height REAL NOT NULL,
+                        detection_score REAL NOT NULL,
+                        embedding_model TEXT NOT NULL,
+                        embedding BLOB NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE TABLE face_group_runs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        threshold REAL NOT NULL,
+                        method TEXT NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE TABLE face_groups (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id INTEGER NOT NULL,
+                        group_index INTEGER NOT NULL,
+                        member_count INTEGER NOT NULL
+                    );
+                    CREATE TABLE face_group_members (
+                        group_id INTEGER NOT NULL,
+                        face_id INTEGER NOT NULL,
+                        similarity REAL NOT NULL,
+                        PRIMARY KEY(group_id, face_id)
+                    );
+                    CREATE TABLE persons (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE TABLE person_faces (
+                        person_id INTEGER NOT NULL,
+                        face_id INTEGER NOT NULL,
+                        confirmed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY(person_id, face_id)
+                    );
+                    CREATE TABLE face_suggestions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        person_id INTEGER NOT NULL,
+                        face_id INTEGER NOT NULL,
+                        similarity REAL NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(person_id, face_id)
+                    );
+                    INSERT INTO meta(key, value) VALUES('schema_version', '2');
                     INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
-                    VALUES(1, 'image.jpg', 'image.jpg', 'hash', 'ok', 1)
-                    """
-                )
-                conn.execute(
-                    """
+                    VALUES(1, 'image.jpg', 'image.jpg', 'hash', 'ok', 1);
                     INSERT INTO faces(
                         id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
                         detection_score, embedding_model, embedding
-                    ) VALUES(1, 1, 'image.jpg', 1, 2, 10, 20, 0.9, 'test', x'00000000')
+                    ) VALUES(1, 1, 'image.jpg', 1, 2, 10, 20, 0.9, 'test', x'00000000');
+                    INSERT INTO face_group_runs(id, threshold, method) VALUES(1, 0.6, 'test');
+                    INSERT INTO face_groups(id, run_id, group_index, member_count) VALUES(1, 1, 1, 1);
+                    INSERT INTO face_group_members(group_id, face_id, similarity) VALUES(1, 1, 1.0);
+                    INSERT INTO persons(id, name) VALUES(1, 'Kari');
+                    INSERT INTO person_faces(person_id, face_id) VALUES(1, 1);
+                    INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 1, 0.95);
                     """
                 )
-                conn.execute("INSERT INTO face_group_runs(id, threshold, method) VALUES(1, 0.6, 'test')")
-                conn.execute("INSERT INTO face_groups(id, run_id, group_index, member_count) VALUES(1, 1, 1, 1)")
-                conn.execute("INSERT INTO face_group_members(group_id, face_id, similarity) VALUES(1, 1, 1.0)")
-                conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
-                conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
-                conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 1, 0.95)")
                 conn.commit()
             finally:
                 conn.close()
 
-            with patch("builtins.input", return_value="ja, slett grupper og personer"):
+            with patch("builtins.input", return_value="ja, slett personer"):
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-reset", "--keep-scan"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-scan-resultater er beholdt", stdout)
             conn = sqlite3.connect(target / FACE_DB_FILENAME)
             try:
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "3")
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_members").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 0)
+                legacy_tables = {
+                    row[0]
+                    for row in conn.execute(
+                        """
+                        SELECT name
+                        FROM sqlite_master
+                        WHERE type = 'table' AND name LIKE 'face_group_%'
+                        """
+                    )
+                }
+                self.assertEqual(legacy_tables, set())
             finally:
                 conn.close()
 
@@ -3100,7 +3170,7 @@ model_name = "test-model"
             finally:
                 conn.close()
 
-            with patch("builtins.input", return_value="ja, slett grupper og personer"):
+            with patch("builtins.input", return_value="ja, slett personer"):
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-reset"])
 
             self.assertEqual(code, 0, stderr)
@@ -3109,8 +3179,6 @@ model_name = "test-model"
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0], 1)
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_runs").fetchone()[0], 0)
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_members").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 0)
             finally:
                 conn.close()

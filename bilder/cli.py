@@ -571,12 +571,12 @@ def build_parser() -> argparse.ArgumentParser:
     reset_mode.add_argument(
         "--all",
         action="store_true",
-        help="Slett hele face-databasen, inkludert face-scan, grupper, personer og forslag.",
+        help="Slett hele face-databasen, inkludert face-scan, personer og forslag.",
     )
     reset_mode.add_argument(
         "--keep-scan",
         action="store_true",
-        help="Behold face-scan-resultater, men slett grupper, personer, bekreftelser og forslag. Standard hvis ingen nivåvalg er brukt.",
+        help="Behold face-scan-resultater, men slett personer, bekreftelser og forslag. Standard hvis ingen nivåvalg er brukt.",
     )
     migrate = add_command(
         subparsers,
@@ -1568,7 +1568,7 @@ def face_reset_confirmation_phrase(mode: str) -> str:
     if mode == "all":
         return "ja, slett ansiktsdata"
     if mode == "keep-scan":
-        return "ja, slett grupper og personer"
+        return "ja, slett personer"
     raise ValueError(f"Ukjent face-reset-nivå: {mode}")
 
 
@@ -1576,12 +1576,12 @@ def face_reset_description(mode: str) -> str:
     if mode == "all":
         return (
             "Dette sletter hele face-databasen: face-scan-resultater, "
-            "grupper, personer, bekreftelser og forslag."
+            "personer, bekreftelser og forslag."
         )
     if mode == "keep-scan":
         return (
-            "Dette beholder face-scan-resultater, men sletter grupper, "
-            "personer, bekreftelser og forslag."
+            "Dette beholder face-scan-resultater, men sletter personer, "
+            "bekreftelser og forslag."
         )
     raise ValueError(f"Ukjent face-reset-nivå: {mode}")
 
@@ -1589,9 +1589,6 @@ def face_reset_description(mode: str) -> str:
 def print_face_reset_result(result: FaceResetResult) -> None:
     if result.mode == "keep-scan":
         print("Face-reset gjennomført. Face-scan-resultater er beholdt.")
-        print(f"Slettet grupper: {result.removed_groups}")
-        print(f"Slettet gruppekjøringer: {result.removed_group_runs}")
-        print(f"Slettet gruppemedlemmer: {result.removed_group_members}")
     else:
         print("Face-reset gjennomført.")
     print(f"Slettet personer: {result.removed_persons}")

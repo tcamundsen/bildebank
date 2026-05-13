@@ -18,7 +18,7 @@ from .media import IMAGE_EXTENSIONS, image_dimensions, image_orientation
 
 
 FACE_DB_FILENAME = ".bilder-faces.sqlite3"
-FACE_SCHEMA_VERSION = 2
+FACE_SCHEMA_VERSION = 3
 
 
 @dataclass
@@ -81,9 +81,6 @@ class FaceResetResult:
     removed_persons: int
     removed_person_faces: int
     removed_suggestions: int
-    removed_group_runs: int
-    removed_groups: int
-    removed_group_members: int
 
 
 @dataclass(frozen=True)
@@ -122,6 +119,10 @@ def apply_face_schema(conn: sqlite3.Connection) -> None:
             value TEXT NOT NULL
         );
 
+        DROP TABLE IF EXISTS face_group_members;
+        DROP TABLE IF EXISTS face_groups;
+        DROP TABLE IF EXISTS face_group_runs;
+
         CREATE TABLE IF NOT EXISTS scanned_files (
             file_id INTEGER PRIMARY KEY,
             target_path TEXT NOT NULL,
@@ -149,30 +150,6 @@ def apply_face_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_faces_file_id ON faces(file_id);
         CREATE INDEX IF NOT EXISTS idx_faces_target_path_key ON faces(target_path_key);
-
-        CREATE TABLE IF NOT EXISTS face_group_runs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            threshold REAL NOT NULL,
-            method TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-
-        CREATE TABLE IF NOT EXISTS face_groups (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_id INTEGER NOT NULL REFERENCES face_group_runs(id) ON DELETE CASCADE,
-            group_index INTEGER NOT NULL,
-            member_count INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS face_group_members (
-            group_id INTEGER NOT NULL REFERENCES face_groups(id) ON DELETE CASCADE,
-            face_id INTEGER NOT NULL,
-            similarity REAL NOT NULL,
-            PRIMARY KEY(group_id, face_id)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_face_groups_run_id ON face_groups(run_id);
-        CREATE INDEX IF NOT EXISTS idx_face_group_members_face_id ON face_group_members(face_id);
 
         CREATE TABLE IF NOT EXISTS persons (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -365,17 +342,7 @@ def reset_face_database(target: Path, *, mode: str) -> FaceResetResult:
         removed_persons = count_rows_if_table_exists(conn, "persons")
         removed_person_faces = count_rows_if_table_exists(conn, "person_faces")
         removed_suggestions = count_rows_if_table_exists(conn, "face_suggestions")
-        removed_group_runs = 0
-        removed_groups = 0
-        removed_group_members = 0
-        if mode == "keep-scan":
-            removed_group_runs = count_rows_if_table_exists(conn, "face_group_runs")
-            removed_groups = count_rows_if_table_exists(conn, "face_groups")
-            removed_group_members = count_rows_if_table_exists(conn, "face_group_members")
-            conn.execute("DELETE FROM face_group_members")
-            conn.execute("DELETE FROM face_groups")
-            conn.execute("DELETE FROM face_group_runs")
-        elif mode != "all":
+        if mode not in {"all", "keep-scan"}:
             raise ValueError(f"Ukjent face-reset-nivå: {mode}")
         conn.execute("DELETE FROM face_suggestions")
         conn.execute("DELETE FROM person_faces")
@@ -386,9 +353,6 @@ def reset_face_database(target: Path, *, mode: str) -> FaceResetResult:
             removed_persons=removed_persons,
             removed_person_faces=removed_person_faces,
             removed_suggestions=removed_suggestions,
-            removed_group_runs=removed_group_runs,
-            removed_groups=removed_groups,
-            removed_group_members=removed_group_members,
         )
     finally:
         conn.close()
@@ -2061,4 +2025,3 @@ def average_embedding(vectors: list[list[float]]) -> list[float]:
         sum(vector[index] for vector in same_length_vectors) / len(same_length_vectors)
         for index in range(length)
     ]
-
