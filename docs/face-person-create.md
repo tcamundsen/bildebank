@@ -8,5 +8,4 @@
 bildebank face-person-create "Kari"
 ```
 
-Personen må finnes før du kan koble grupper eller enkeltansikter til den.
-
+Personen må finnes før du kan koble enkeltansikter til den.

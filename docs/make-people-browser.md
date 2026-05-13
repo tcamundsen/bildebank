@@ -25,7 +25,7 @@ eksempelbilde, antall bilder, antall bekreftede ansikter og antall forslag.
 Klikk på en person for å åpne personens egen browser. Der kan du bla i bildene
 måned for måned, på samme måte som med `make-person-browser`.
 
-Hvis du har lagt til nye personer eller koblet flere grupper til personer, bør
+Hvis du har lagt til nye personer eller koblet flere ansikter til personer, bør
 du kjøre `make-people-browser` på nytt.
 
 `face-suggest` kjører vanligvis denne oppdateringen automatisk etter at forslag

@@ -13,7 +13,7 @@ Tallet `798` er `face-id`.
 Du finner `face-id` i `faces.html`, under bildet:
 
 ```text
-face-id 798, gruppelikhet 0.842, deteksjon 0.931
+face-id 798, deteksjon 0.931
 ```
 
 Du kan også finne `face-id` i personsidene. `faces.html` er først og fremst

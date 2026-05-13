@@ -58,10 +58,6 @@ from .target_lock import TargetLock
 
 FACE_SCAN_PROGRESS_STARTED_AT: float | None = None
 IMAGE_SCAN_PROGRESS_STARTED_AT: float | None = None
-FACE_GROUP_PROGRESS_STARTED_AT: float | None = None
-FACE_GROUP_PROGRESS_INLINE_ACTIVE = False
-FACE_GROUP_PROGRESS_INLINE_LENGTH = 0
-DEFAULT_FACE_GROUP_MAX_SIZE = 50
 
 
 HELP_COMMAND_GROUPS = (
@@ -1410,112 +1406,6 @@ def run_face_report(target: Path, *, limit: int) -> int:
     return 0
 
 
-def run_face_group(
-    target: Path,
-    *,
-    threshold: float,
-    max_size: int | None = None,
-    output: Path | None = None,
-    include_known: bool = False,
-) -> int:
-    effective_max_size = None if max_size == 0 else max_size
-    stats = group_faces(
-        target,
-        threshold=threshold,
-        max_size=effective_max_size,
-        progress=print_face_group_progress,
-    )
-    finish_face_group_progress_line()
-    print(
-        "Ansiktsgrupper: "
-        f"ansikter={stats.faces}, grupper={stats.groups}, "
-        f"grupperte_ansikter={stats.grouped_faces}, threshold={stats.threshold:.3f}"
-    )
-    if max_size == 0:
-        print("Max gruppestørrelse: ingen maksgrense")
-    elif max_size is not None:
-        print(f"Max gruppestørrelse: {max_size}")
-    if stats.truncated_groups:
-        print(
-            "Store grupper er forkortet i HTML: "
-            f"grupper={stats.truncated_groups}, skjulte_ansikter={stats.hidden_faces}"
-        )
-    output_path = export_face_groups_browser(
-        target,
-        output,
-        include_known=include_known,
-        progress=print_face_group_html_progress,
-    )
-    finish_face_group_progress_line()
-    print(f"Skrev HTML-browser for ansiktsgrupper: {output_path}")
-    print("Dette er beregnede forslag, ikke bekreftede personer.")
-    return 0
-
-
-def print_face_group_progress(stage: str, current: int, total: int) -> None:
-    global FACE_GROUP_PROGRESS_STARTED_AT
-    if stage == "start":
-        FACE_GROUP_PROGRESS_STARTED_AT = None
-        print(f"Face-group: sammenligner {total} ansiktspar.")
-        return
-    if stage == "compare":
-        if FACE_GROUP_PROGRESS_STARTED_AT is None:
-            FACE_GROUP_PROGRESS_STARTED_AT = time.monotonic()
-        if should_print_group_progress(current, total):
-            percent = (100.0 * current / total) if total else 100.0
-            eta = face_scan_eta_text(current, total, FACE_GROUP_PROGRESS_STARTED_AT)
-            print_face_group_progress_line(
-                f"Face-group: sammenlignet={current}/{total} ({percent:.0f}%), gjenstår={eta}"
-            )
-        return
-    if stage == "build_groups":
-        finish_face_group_progress_line()
-        print(f"Face-group: bygger grupper fra {total} ansikter.")
-        return
-    if stage == "write":
-        if should_print_progress(current, total):
-            print_face_group_progress_line(f"Face-group: skriver grupper={current}/{total}")
-        return
-    if stage == "done":
-        finish_face_group_progress_line()
-
-
-def print_face_group_html_progress(stage: str, current: int, total: int) -> None:
-    if stage == "html_data":
-        print_face_group_progress_line(f"Face-group: lager HTML-data={current}/{total}")
-        if current >= total:
-            finish_face_group_progress_line()
-        return
-    if stage == "html_write":
-        percent = (100.0 * current / total) if total else 100.0
-        print_face_group_progress_line(f"Face-group: skriver HTML-fil={percent:.0f}%")
-        if current >= total:
-            finish_face_group_progress_line()
-
-
-def print_face_group_progress_line(text: str) -> None:
-    global FACE_GROUP_PROGRESS_INLINE_ACTIVE, FACE_GROUP_PROGRESS_INLINE_LENGTH
-    padding = " " * max(FACE_GROUP_PROGRESS_INLINE_LENGTH - len(text), 0)
-    print(f"\r{text}{padding}", end="", flush=True)
-    FACE_GROUP_PROGRESS_INLINE_ACTIVE = True
-    FACE_GROUP_PROGRESS_INLINE_LENGTH = len(text)
-
-
-def finish_face_group_progress_line() -> None:
-    global FACE_GROUP_PROGRESS_INLINE_ACTIVE, FACE_GROUP_PROGRESS_INLINE_LENGTH
-    if FACE_GROUP_PROGRESS_INLINE_ACTIVE:
-        print()
-    FACE_GROUP_PROGRESS_INLINE_ACTIVE = False
-    FACE_GROUP_PROGRESS_INLINE_LENGTH = 0
-
-
-def should_print_group_progress(current: int, total: int) -> bool:
-    if total <= 100:
-        return True
-    step = max(1000, total // 100)
-    return current == total or current % step == 0
-
-
 def run_face_suggest(target: Path, *, threshold: float, browser: bool = True) -> int:
     stats = suggest_faces(target, threshold=threshold)
     print_face_suggest_stats(stats)
@@ -1526,14 +1416,6 @@ def run_face_suggest(target: Path, *, threshold: float, browser: bool = True) ->
         print(f"Skrev personsider: {len(result.person_pages)}")
     print("Dette er forslag basert på personer du allerede har bekreftet.")
     return 0
-
-
-def print_add_group_to_person_result(result: AddGroupToPersonResult) -> None:
-    print(f"Person: {result.person_name}")
-    print(f"Gruppe: {result.group_index}")
-    print(f"Nye ansikter koblet til person: {result.added_faces}")
-    print(f"Ansikter som allerede var koblet: {result.already_linked_faces}")
-    print(f"Husk å kjøre face-suggest og make-people-browser får å søke i se resultat")
 
 
 def print_add_face_to_person_result(result: AddFaceToPersonResult) -> None:
