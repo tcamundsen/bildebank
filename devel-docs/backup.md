@@ -192,9 +192,17 @@ Fallbacken er primært for portabilitet og testbarhet. For store samlinger er
 
 ## Dry-run
 
-`--dry-run` er implementert som planvisning. Den validerer målet og viser om
-kommandoen ville opprette eller oppdatere backupen, men den kopierer ikke,
-sletter ikke og skriver ikke metadata.
+`--dry-run` validerer målet og viser om kommandoen ville opprette eller
+oppdatere backupen, men den kopierer ikke, sletter ikke og skriver ikke
+metadata.
+
+Hvis ekstern motor finnes, skal dry-run kjøre samme speilingskommando i
+tørrkjøringsmodus:
+
+- Windows: `robocopy` med `/L`
+- Linux/macOS: `rsync` med `--dry-run`
+
+Hvis `robocopy` eller `rsync` mangler, viser Python-fallbacken bare planen.
 
 Eksempel:
 
@@ -213,10 +221,8 @@ Mode:
 
 Result:
   Would update backup.
+  motor=rsync
 ```
-
-Dry-run kjører ikke `robocopy /L` eller `rsync --dry-run` i dagens
-implementasjon.
 
 ## Feilhåndtering
 

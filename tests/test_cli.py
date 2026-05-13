@@ -916,12 +916,69 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--dry-run", str(backup_parent)])
+            with patch("bilder.backup.select_backup_engine", return_value=None):
+                code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--dry-run", str(backup_parent)])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Dry run", stdout)
             self.assertIn("Would create new backup.", stdout)
+            self.assertIn("motor=python", stdout)
+            self.assertIn("Dry-run viser bare plan", stdout)
             self.assertFalse((backup_parent / target.name).exists())
+
+    def test_backup_dry_run_uses_rsync_dry_run_without_creating_backup_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with (
+                patch("bilder.backup.sys.platform", "linux"),
+                patch("bilder.backup.shutil.which", return_value="/usr/bin/rsync"),
+                patch("bilder.backup.subprocess.run", return_value=SimpleNamespace(returncode=0)) as subprocess_run,
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--dry-run", str(backup_parent)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Dry run", stdout)
+            self.assertIn("motor=rsync", stdout)
+            command = subprocess_run.call_args.args[0]
+            self.assertIn("--dry-run", command)
+            self.assertIn("--delete", command)
+            self.assertIn("--exclude", command)
+            self.assertIn(".bildebank-backup.json", command)
+            self.assertEqual(command[-2], str(target.resolve()) + "/")
+            self.assertEqual(command[-1], str((backup_parent / target.name).resolve()) + "/")
+            self.assertFalse((backup_parent / target.name).exists())
+
+    def test_backup_dry_run_uses_robocopy_list_only_without_creating_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with (
+                patch("bilder.backup.sys.platform", "win32"),
+                patch("bilder.backup.shutil.which", return_value="robocopy"),
+                patch("bilder.backup.subprocess.run", return_value=SimpleNamespace(returncode=3)) as subprocess_run,
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--dry-run", str(backup_parent)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Dry run", stdout)
+            self.assertIn("motor=robocopy", stdout)
+            command = subprocess_run.call_args.args[0]
+            self.assertIn("/MIR", command)
+            self.assertIn("/L", command)
+            self.assertIn("/XF", command)
+            self.assertIn(".bildebank-backup.json", command)
+            self.assertFalse(((backup_parent / target.name) / ".bildebank-backup.json").exists())
 
     def test_backup_updates_existing_backup_and_removes_extra_backup_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

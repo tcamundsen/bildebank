@@ -1212,6 +1212,9 @@ def run_backup_command(target: Path, destination: Path, *, dry_run: bool = False
     if dry_run:
         action = "Would update backup." if plan.existing_backup else "Would create new backup."
         print(f"  {action}")
+        print(f"  motor={stats.engine}")
+        if stats.warning:
+            print(f"  ADVARSEL: {stats.warning}")
         return 0
     action = "Updated backup." if plan.existing_backup else "Created new backup."
     print(f"  {action}")

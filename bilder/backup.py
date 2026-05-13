@@ -76,7 +76,16 @@ def plan_backup(source_dir: Path, backup_parent_arg: Path, *, ensure_collection_
 def run_backup(source_dir: Path, backup_parent_arg: Path, *, dry_run: bool = False) -> BackupStats:
     plan = plan_backup(source_dir, backup_parent_arg, ensure_collection_id=not dry_run)
     if dry_run:
-        return BackupStats(plan, dry_run=True)
+        engine = select_backup_engine()
+        if engine is None:
+            return BackupStats(
+                plan,
+                dry_run=True,
+                engine="python",
+                warning="robocopy/rsync mangler. Dry-run viser bare plan.",
+            )
+        run_external_mirror(plan, engine, dry_run=True)
+        return BackupStats(plan, dry_run=True, engine=engine.name)
 
     conn = db.connect(plan.source_dir)
     try:
@@ -167,15 +176,15 @@ def select_backup_engine() -> BackupEngine | None:
     return BackupEngine("rsync", executable) if executable else None
 
 
-def run_external_mirror(plan: BackupPlan, engine: BackupEngine) -> "MirrorStats":
+def run_external_mirror(plan: BackupPlan, engine: BackupEngine, *, dry_run: bool = False) -> "MirrorStats":
     if engine.name == "robocopy":
-        return run_robocopy(plan, engine.executable)
+        return run_robocopy(plan, engine.executable, dry_run=dry_run)
     if engine.name == "rsync":
-        return run_rsync(plan, engine.executable)
+        return run_rsync(plan, engine.executable, dry_run=dry_run)
     raise ValueError(f"Ukjent backupmotor: {engine.name}")
 
 
-def run_robocopy(plan: BackupPlan, executable: str) -> "MirrorStats":
+def run_robocopy(plan: BackupPlan, executable: str, *, dry_run: bool = False) -> "MirrorStats":
     command = [
         executable,
         str(plan.source_dir),
@@ -191,13 +200,15 @@ def run_robocopy(plan: BackupPlan, executable: str) -> "MirrorStats":
         "/XF",
         BACKUP_METADATA_FILENAME,
     ]
+    if dry_run:
+        command.append("/L")
     result = subprocess.run(command, check=False)
     if result.returncode > 7:
         raise ValueError(f"robocopy feilet med exitkode {result.returncode}.")
     return MirrorStats()
 
 
-def run_rsync(plan: BackupPlan, executable: str) -> "MirrorStats":
+def run_rsync(plan: BackupPlan, executable: str, *, dry_run: bool = False) -> "MirrorStats":
     command = [
         executable,
         "--progress",
@@ -208,6 +219,8 @@ def run_rsync(plan: BackupPlan, executable: str) -> "MirrorStats":
         source_arg_with_trailing_slash(plan.source_dir),
         destination_arg_with_trailing_slash(plan.backup_dir),
     ]
+    if dry_run:
+        command.insert(1, "--dry-run")
     result = subprocess.run(command, check=False)
     if result.returncode != 0:
         raise ValueError(f"rsync feilet med exitkode {result.returncode}.")

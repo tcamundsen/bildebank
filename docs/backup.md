@@ -40,7 +40,9 @@ bildebank backup --dry-run D:\Backuper
 ```
 
 Dette er nyttig hvis du vil kontrollere at du peker på riktig backup-mappe før
-du lar programmet skrive noe.
+du lar programmet skrive noe. Når `robocopy` eller `rsync` finnes, kjører
+Bildebank verktøyets egen dry-run-funksjon slik at du får se hva verktøyet ville
+gjort.
 
 ## Sikkerhet
 
