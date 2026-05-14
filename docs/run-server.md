@@ -77,7 +77,7 @@ Knappen `Slett` flytter bildet til `deleted`-mappen i bildesamlingen og
 markerer filen som slettet i databasen. Dette er samme trygge sletting som
 kommandoen `bildebank remove`. Bildefilen slettes ikke permanent.
 
-## Teknisk retning
+## Teknisk info
 
 Serveren bruker en liten lokal HTTP-server fra Python-standardbiblioteket. Hvis
 behovet vokser, kan vi vurdere FastAPI eller lignende senere. Serveren har ikke
