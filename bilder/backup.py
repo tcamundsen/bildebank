@@ -234,6 +234,7 @@ def run_rsync(plan: BackupPlan, executable: str, *, dry_run: bool = False) -> "M
     command = [
         executable,
         "--progress",
+        "--stats",
         "-a",
         "--delete",
         "--exclude",
