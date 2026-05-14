@@ -12,7 +12,8 @@ from typing import Any, Callable
 
 from . import db
 from .config import OpenClipConfig
-from .media import IMAGE_EXTENSIONS, image_dimensions
+from .media import IMAGE_EXTENSIONS
+from .media_cache import cached_image_dimensions
 
 
 OPENCLIP_DB_FILENAME = ".bilder-openclip.sqlite3"
@@ -650,7 +651,7 @@ def export_image_search_html(
 def image_result_html(target: Path, result: ImageSearchResult) -> str:
     relative = relative_to_target(target, result.target_path)
     url = path_to_url(relative)
-    dimensions = image_dimensions(db.absolute_target_path(target, result.target_path))
+    dimensions = cached_image_dimensions(target, db.absolute_target_path(target, result.target_path))
     size = f"{dimensions.width} x {dimensions.height}" if dimensions else "-"
     path_text = display_relative_path(target, result.target_path)
     return f"""    <div class="item">

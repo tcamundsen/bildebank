@@ -23,6 +23,7 @@ from bilder.face import FACE_DB_FILENAME, apply_face_schema, connect_face_db, fa
 from bilder.html_export import render_html
 from bilder.importer import safe_copy
 from bilder.media import ImageDimensions, sha256_file
+from bilder.media_cache import cached_image_dimensions, cached_image_orientation
 from bilder.openclip import connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
 from bilder.program_state import PROGRAM_DB_FILENAME
 from bilder.server import (
@@ -677,6 +678,37 @@ class CliTests(unittest.TestCase):
 
         self.assertLess(month_order, date_order)
         self.assertLess(date_order, path_order)
+
+    def test_media_metadata_cache_stores_dimensions_and_orientation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            target_path = target / "2024" / "01" / "IMG_20240102.png"
+
+            dimensions = cached_image_dimensions(target, target_path)
+            orientation = cached_image_orientation(target, target_path)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                row = conn.execute(
+                    """
+                    SELECT media_width, media_height, media_orientation, media_metadata_mtime_ns
+                    FROM files
+                    WHERE stored_filename = 'IMG_20240102.png'
+                    """
+                ).fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(dimensions, ImageDimensions(100, 80))
+        self.assertEqual(orientation, 1)
+        self.assertEqual(row[:3], (100, 80, 1))
+        self.assertIsNotNone(row[3])
 
     def test_run_server_item_page_has_image_info_overlay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

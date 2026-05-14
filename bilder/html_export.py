@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 from . import db
 from .media import image_dimensions, image_orientation
+from .media_cache import MediaMetadataCache
 
 
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "webp", "tif", "tiff", "heic", "heif"}
@@ -47,14 +48,15 @@ def browser_items(
     conn = db.connect(target)
     try:
         face_data_by_file_id = face_browser_data_by_file_id(target)
-        items = [
-            item
-            for item in (
-                row_to_item(target, row, face_data_by_file_id=face_data_by_file_id)
-                for row in db.browser_files(conn)
-            )
-            if item_matches_filters(item, media_filter, date_source_filter)
-        ]
+        with MediaMetadataCache(target, conn) as media_cache:
+            items = [
+                item
+                for item in (
+                    row_to_item(target, row, face_data_by_file_id=face_data_by_file_id, media_cache=media_cache)
+                    for row in db.browser_files(conn)
+                )
+                if item_matches_filters(item, media_filter, date_source_filter)
+            ]
     finally:
         conn.close()
     return items
@@ -64,7 +66,8 @@ def export_html_conflicts(target: Path, output: Path | None = None) -> Path:
     output_path = output or (target / "name-conflicts.html")
     conn = db.connect(target)
     try:
-        conflicts = conflict_groups(target, list(db.conflict_candidate_files(conn)))
+        with MediaMetadataCache(target, conn) as media_cache:
+            conflicts = conflict_groups(target, list(db.conflict_candidate_files(conn)), media_cache=media_cache)
     finally:
         conn.close()
 
@@ -77,6 +80,7 @@ def row_to_item(
     row,
     *,
     face_data_by_file_id: dict[int, dict[str, object]] | None = None,
+    media_cache: MediaMetadataCache | None = None,
 ) -> dict[str, object]:
     target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
     relative_path = relative_to_target(target, target_path)
@@ -97,15 +101,20 @@ def row_to_item(
         "name": row["stored_filename"],
         "sizeText": format_bytes(int(row["size_bytes"])),
         "people": face_data.get("people", []),
-        "faces": browser_face_items(target_path, face_data.get("faces", [])),
+        "faces": browser_face_items(target_path, face_data.get("faces", []), media_cache=media_cache),
     }
 
 
-def browser_face_items(target_path: Path, faces: object) -> list[dict[str, object]]:
+def browser_face_items(
+    target_path: Path,
+    faces: object,
+    *,
+    media_cache: MediaMetadataCache | None = None,
+) -> list[dict[str, object]]:
     if not isinstance(faces, list) or not faces:
         return []
-    dimensions = image_dimensions(target_path)
-    orientation = image_orientation(target_path)
+    dimensions = media_cache.image_dimensions(target_path) if media_cache is not None else image_dimensions(target_path)
+    orientation = media_cache.image_orientation(target_path) if media_cache is not None else image_orientation(target_path)
     items: list[dict[str, object]] = []
     for face in faces:
         if not isinstance(face, dict):
@@ -286,7 +295,12 @@ def item_matches_filters(item: dict[str, str], media_filter: str, date_source_fi
     return True
 
 
-def conflict_groups(target: Path, rows: list) -> list[dict]:
+def conflict_groups(
+    target: Path,
+    rows: list,
+    *,
+    media_cache: MediaMetadataCache | None = None,
+) -> list[dict]:
     grouped: dict[tuple[str, str], list] = {}
     for row in rows:
         target_path = Path(str(row["target_path"]))
@@ -302,18 +316,23 @@ def conflict_groups(target: Path, rows: list) -> list[dict]:
             {
                 "originalFilename": original_filename,
                 "targetDir": display_relative_path(target, first_target.parent),
-                "items": [conflict_row_to_item(target, item) for item in items],
+                "items": [conflict_row_to_item(target, item, media_cache=media_cache) for item in items],
             }
         )
     conflicts.sort(key=lambda item: (item["targetDir"], item["originalFilename"]))
     return conflicts
 
 
-def conflict_row_to_item(target: Path, row) -> dict[str, object]:
+def conflict_row_to_item(
+    target: Path,
+    row,
+    *,
+    media_cache: MediaMetadataCache | None = None,
+) -> dict[str, object]:
     target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
     relative_path = relative_to_target(target, target_path)
     ext = target_path.suffix.lower().lstrip(".")
-    dimensions = image_dimensions(target_path)
+    dimensions = media_cache.image_dimensions(target_path) if media_cache is not None else image_dimensions(target_path)
     return {
         "storedFilename": row["stored_filename"],
         "originalFilename": row["original_filename"],

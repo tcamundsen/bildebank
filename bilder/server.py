@@ -25,7 +25,8 @@ from .html_export import (
     format_bytes,
     month_key_from_path,
 )
-from .media import camera_info, image_dimensions
+from .media import camera_info
+from .media_cache import cached_image_dimensions
 from .openclip import (
     ImageSearchResult,
     connect_openclip_db,
@@ -1582,7 +1583,7 @@ def image_info_overlay_html(target: Path, item: Any) -> str:
 def image_info_rows(target: Path, item: Any) -> list[str]:
     target_path = Path(str(item["target_path"]))
     absolute_path = db.absolute_target_path(target, target_path)
-    dimensions = image_dimensions(absolute_path)
+    dimensions = cached_image_dimensions(target, absolute_path)
     camera = camera_info(absolute_path)
     rows = [
         info_row_html("Filnavn", str(item["stored_filename"])),

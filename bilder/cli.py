@@ -44,7 +44,8 @@ from .importer import (
     validate_source_target,
 )
 from .html_export import export_html, export_html_conflicts
-from .media import explain_date, image_dimensions, inspect_metadata, sha256_file
+from .media import explain_date, inspect_metadata, sha256_file
+from .media_cache import MediaMetadataCache, cached_image_dimensions
 from .openclip import (
     openclip_db_path,
     openclip_db_summary,
@@ -838,8 +839,9 @@ def run(args: argparse.Namespace) -> int:
                 return 0
             print(f"Navnekollisjon: {row['original_filename']}")
             print(f"Mappe i bildesamlingen: {db.absolute_target_path(target, Path(str(row['target_path']))).parent}")
-            for item in rows:
-                print_name_conflict_item(target, item)
+            with MediaMetadataCache(target, conn) as media_cache:
+                for item in rows:
+                    print_name_conflict_item(target, item, media_cache=media_cache)
             return 0
 
         if args.command == "show-source":
@@ -1835,10 +1837,10 @@ def name_conflict_group(conn, row) -> list:
     return rows
 
 
-def print_name_conflict_item(target: Path, row) -> None:
+def print_name_conflict_item(target: Path, row, *, media_cache: MediaMetadataCache | None = None) -> None:
     target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
     source_path = Path(str(row["source_path"]))
-    dimensions = image_dimensions(target_path)
+    dimensions = media_cache.image_dimensions(target_path) if media_cache is not None else cached_image_dimensions(target, target_path)
     dimensions_text = f"{dimensions.width}x{dimensions.height}" if dimensions else "-"
     taken_date = row["taken_date"] or "-"
 

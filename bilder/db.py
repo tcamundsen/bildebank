@@ -105,6 +105,7 @@ def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection
     try:
         if require_current:
             require_current_schema(conn)
+            ensure_compatible_columns(conn)
             set_collection_id(conn)
             conn.commit()
         return conn
@@ -169,6 +170,10 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
     if table_exists(conn, "files"):
         ensure_column(conn, "files", "deleted_at", "TEXT")
         ensure_column(conn, "files", "deleted_original_target_path", "TEXT")
+        ensure_column(conn, "files", "media_width", "INTEGER")
+        ensure_column(conn, "files", "media_height", "INTEGER")
+        ensure_column(conn, "files", "media_orientation", "INTEGER")
+        ensure_column(conn, "files", "media_metadata_mtime_ns", "INTEGER")
     if table_exists(conn, "sources"):
         ensure_column(conn, "sources", "superseded_by_source_id", "INTEGER REFERENCES sources(id)")
 
@@ -241,7 +246,11 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             name_conflict INTEGER NOT NULL DEFAULT 0,
             imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             deleted_at TEXT,
-            deleted_original_target_path TEXT
+            deleted_original_target_path TEXT,
+            media_width INTEGER,
+            media_height INTEGER,
+            media_orientation INTEGER,
+            media_metadata_mtime_ns INTEGER
         );
 
         CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);

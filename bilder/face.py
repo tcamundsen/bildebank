@@ -14,7 +14,8 @@ from urllib.parse import quote
 
 from . import db
 from .config import FaceRecognitionConfig
-from .media import IMAGE_EXTENSIONS, image_dimensions, image_orientation
+from .media import IMAGE_EXTENSIONS
+from .media_cache import MediaMetadataCache
 
 
 FACE_DB_FILENAME = ".bilder-faces.sqlite3"
@@ -751,43 +752,44 @@ def person_browser_items(target: Path, conn: sqlite3.Connection, *, person_id: i
         (person_id, person_id),
     ).fetchall()
     grouped: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-        key = str(target_path)
-        dimensions = image_dimensions(target_path)
-        orientation = image_orientation(target_path)
-        item = grouped.setdefault(
-            key,
-            {
-                "path": display_relative_path(target, target_path),
-                "url": path_to_url(relative_to_target(target, target_path)),
-                "name": target_path.name,
-                "monthKey": person_month_key(target, target_path),
-                "sizeText": format_person_file_size(target_path),
-                "faceCount": int(row["face_count"]),
-                "dimensions": dimensions,
-                "orientation": orientation,
-                "faces": [],
-            },
-        )
-        face = {
-            "faceId": int(row["face_id"]),
-            "status": str(row["status"]),
-            "similarity": float(row["similarity"]),
-            "x": float(row["bbox_x"]),
-            "y": float(row["bbox_y"]),
-            "width": float(row["bbox_width"]),
-            "height": float(row["bbox_height"]),
-            "score": float(row["detection_score"]),
-        }
-        percent = face_box_percent(face, dimensions, orientation)
-        if percent is not None:
-            left, top, width, height = percent
-            face["left"] = left
-            face["top"] = top
-            face["boxWidth"] = width
-            face["boxHeight"] = height
-        item["faces"].append(face)
+    with MediaMetadataCache(target) as media_cache:
+        for row in rows:
+            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+            key = str(target_path)
+            dimensions = media_cache.image_dimensions(target_path)
+            orientation = media_cache.image_orientation(target_path)
+            item = grouped.setdefault(
+                key,
+                {
+                    "path": display_relative_path(target, target_path),
+                    "url": path_to_url(relative_to_target(target, target_path)),
+                    "name": target_path.name,
+                    "monthKey": person_month_key(target, target_path),
+                    "sizeText": format_person_file_size(target_path),
+                    "faceCount": int(row["face_count"]),
+                    "dimensions": dimensions,
+                    "orientation": orientation,
+                    "faces": [],
+                },
+            )
+            face = {
+                "faceId": int(row["face_id"]),
+                "status": str(row["status"]),
+                "similarity": float(row["similarity"]),
+                "x": float(row["bbox_x"]),
+                "y": float(row["bbox_y"]),
+                "width": float(row["bbox_width"]),
+                "height": float(row["bbox_height"]),
+                "score": float(row["detection_score"]),
+            }
+            percent = face_box_percent(face, dimensions, orientation)
+            if percent is not None:
+                left, top, width, height = percent
+                face["left"] = left
+                face["top"] = top
+                face["boxWidth"] = width
+                face["boxHeight"] = height
+            item["faces"].append(face)
     return list(grouped.values())
 
 
@@ -817,35 +819,36 @@ def face_browser_items(
         """
     )
     grouped: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-        key = str(target_path)
-        dimensions = image_dimensions(target_path)
-        orientation = image_orientation(target_path)
-        item = grouped.setdefault(
-            key,
-            {
-                "path": display_relative_path(target, target_path),
-                "url": path_to_url(relative_to_target(target, target_path)),
-                "faceCount": int(row["face_count"]),
-                "dimensions": dimensions,
-                "orientation": orientation,
-                "faces": [],
-            },
-        )
-        item["faces"].append(
-            {
-                "faceId": int(row["face_id"]),
-                "x": float(row["bbox_x"]),
-                "y": float(row["bbox_y"]),
-                "width": float(row["bbox_width"]),
-                "height": float(row["bbox_height"]),
-                "score": float(row["detection_score"]),
-                "model": str(row["embedding_model"]),
-            }
-        )
-        if limit is not None and len(grouped) >= limit:
-            break
+    with MediaMetadataCache(target) as media_cache:
+        for row in rows:
+            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+            key = str(target_path)
+            dimensions = media_cache.image_dimensions(target_path)
+            orientation = media_cache.image_orientation(target_path)
+            item = grouped.setdefault(
+                key,
+                {
+                    "path": display_relative_path(target, target_path),
+                    "url": path_to_url(relative_to_target(target, target_path)),
+                    "faceCount": int(row["face_count"]),
+                    "dimensions": dimensions,
+                    "orientation": orientation,
+                    "faces": [],
+                },
+            )
+            item["faces"].append(
+                {
+                    "faceId": int(row["face_id"]),
+                    "x": float(row["bbox_x"]),
+                    "y": float(row["bbox_y"]),
+                    "width": float(row["bbox_width"]),
+                    "height": float(row["bbox_height"]),
+                    "score": float(row["detection_score"]),
+                    "model": str(row["embedding_model"]),
+                }
+            )
+            if limit is not None and len(grouped) >= limit:
+                break
     return list(grouped.values())
 
 
