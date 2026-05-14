@@ -644,7 +644,8 @@ def export_face_browser(target: Path, output: Path | None = None, *, limit: int 
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target)
     try:
-        items = face_browser_items(target, conn, limit=limit)
+        with MediaMetadataCache(target) as media_cache:
+            items = face_browser_items(target, conn, limit=limit, media_cache=media_cache)
     finally:
         conn.close()
     output_path.write_text(render_face_browser_html(items), encoding="utf-8", newline="\n")
@@ -668,7 +669,8 @@ def export_person_browser(
         person = conn.execute("SELECT id, name FROM persons WHERE name = ?", (clean_name,)).fetchone()
         if person is None:
             raise ValueError(f"Fant ikke person: {clean_name}")
-        items = person_browser_items(target, conn, person_id=int(person["id"]))
+        with MediaMetadataCache(target) as media_cache:
+            items = person_browser_items(target, conn, person_id=int(person["id"]), media_cache=media_cache)
     finally:
         conn.close()
     output_path.write_text(
@@ -693,24 +695,31 @@ def export_people_browser(
         people = list(conn.execute("SELECT id, name FROM persons ORDER BY name"))
         index_people: list[dict[str, Any]] = []
         person_pages: list[Path] = []
-        for person in people:
-            name = str(person["name"])
-            page_path = target / f"person-{safe_filename(name)}.html"
-            items = person_browser_items(target, conn, person_id=int(person["id"]))
-            page_path.write_text(
-                render_person_browser_html(name, items, month_preview_limit=month_preview_limit),
-                encoding="utf-8",
-                newline="\n",
-            )
-            person_pages.append(page_path)
-            index_people.append(people_index_item(target, name, page_path, items))
+        with MediaMetadataCache(target) as media_cache:
+            for person in people:
+                name = str(person["name"])
+                page_path = target / f"person-{safe_filename(name)}.html"
+                items = person_browser_items(target, conn, person_id=int(person["id"]), media_cache=media_cache)
+                page_path.write_text(
+                    render_person_browser_html(name, items, month_preview_limit=month_preview_limit),
+                    encoding="utf-8",
+                    newline="\n",
+                )
+                person_pages.append(page_path)
+                index_people.append(people_index_item(target, name, page_path, items))
     finally:
         conn.close()
     output_path.write_text(render_people_index_html(index_people), encoding="utf-8", newline="\n")
     return PeopleBrowserResult(index_path=output_path, person_pages=tuple(person_pages))
 
 
-def person_browser_items(target: Path, conn: sqlite3.Connection, *, person_id: int) -> list[dict[str, Any]]:
+def person_browser_items(
+    target: Path,
+    conn: sqlite3.Connection,
+    *,
+    person_id: int,
+    media_cache: MediaMetadataCache | None = None,
+) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT
@@ -752,19 +761,23 @@ def person_browser_items(target: Path, conn: sqlite3.Connection, *, person_id: i
         (person_id, person_id),
     ).fetchall()
     grouped: dict[str, dict[str, Any]] = {}
-    with MediaMetadataCache(target) as media_cache:
+    own_cache = media_cache is None
+    if media_cache is None:
+        media_cache = MediaMetadataCache(target)
+    try:
         for row in rows:
-            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-            key = str(target_path)
+            relative_path = relative_to_target(target, Path(str(row["target_path"])))
+            target_path = db.absolute_target_path(target, relative_path)
+            key = relative_path.as_posix()
             dimensions = media_cache.image_dimensions(target_path)
             orientation = media_cache.image_orientation(target_path)
             item = grouped.setdefault(
                 key,
                 {
-                    "path": display_relative_path(target, target_path),
-                    "url": path_to_url(relative_to_target(target, target_path)),
-                    "name": target_path.name,
-                    "monthKey": person_month_key(target, target_path),
+                    "path": relative_path.as_posix(),
+                    "url": path_to_url(relative_path),
+                    "name": relative_path.name,
+                    "monthKey": person_month_key(target, relative_path),
                     "sizeText": format_person_file_size(target_path),
                     "faceCount": int(row["face_count"]),
                     "dimensions": dimensions,
@@ -790,6 +803,9 @@ def person_browser_items(target: Path, conn: sqlite3.Connection, *, person_id: i
                 face["boxWidth"] = width
                 face["boxHeight"] = height
             item["faces"].append(face)
+    finally:
+        if own_cache:
+            media_cache.close()
     return list(grouped.values())
 
 
@@ -798,6 +814,7 @@ def face_browser_items(
     conn: sqlite3.Connection,
     *,
     limit: int | None = None,
+    media_cache: MediaMetadataCache | None = None,
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
@@ -819,17 +836,21 @@ def face_browser_items(
         """
     )
     grouped: dict[str, dict[str, Any]] = {}
-    with MediaMetadataCache(target) as media_cache:
+    own_cache = media_cache is None
+    if media_cache is None:
+        media_cache = MediaMetadataCache(target)
+    try:
         for row in rows:
-            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-            key = str(target_path)
+            relative_path = relative_to_target(target, Path(str(row["target_path"])))
+            target_path = db.absolute_target_path(target, relative_path)
+            key = relative_path.as_posix()
             dimensions = media_cache.image_dimensions(target_path)
             orientation = media_cache.image_orientation(target_path)
             item = grouped.setdefault(
                 key,
                 {
-                    "path": display_relative_path(target, target_path),
-                    "url": path_to_url(relative_to_target(target, target_path)),
+                    "path": relative_path.as_posix(),
+                    "url": path_to_url(relative_path),
                     "faceCount": int(row["face_count"]),
                     "dimensions": dimensions,
                     "orientation": orientation,
@@ -849,11 +870,17 @@ def face_browser_items(
             )
             if limit is not None and len(grouped) >= limit:
                 break
+    finally:
+        if own_cache:
+            media_cache.close()
     return list(grouped.values())
 
 
 def relative_to_target(target: Path, path: Path) -> Path:
-    candidate = db.absolute_target_path(target, Path(path))
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        return candidate
+    candidate = db.absolute_target_path(target, candidate)
     try:
         return candidate.resolve().relative_to(target.resolve())
     except ValueError:
