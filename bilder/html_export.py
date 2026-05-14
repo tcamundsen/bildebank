@@ -122,14 +122,15 @@ def row_to_item(
     media_cache: MediaMetadataCache | None = None,
     include_face_boxes: bool = True,
 ) -> dict[str, object]:
-    target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-    relative_path = relative_to_target(target, target_path)
+    stored_path = Path(str(row["target_path"]))
+    relative_path = relative_to_target(target, stored_path)
     path = relative_path.as_posix()
-    ext = target_path.suffix.lower().lstrip(".")
+    ext = relative_path.suffix.lower().lstrip(".")
     kind = "video" if ext in VIDEO_EXTENSIONS else "image"
     month_key = month_key_from_path(relative_path)
     file_id = int(row["id"])
     face_data = (face_data_by_file_id or {}).get(file_id, {})
+    target_path = db.absolute_target_path(target, relative_path)
     return {
         "fileId": file_id,
         "path": path,
