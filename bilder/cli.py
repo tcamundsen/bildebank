@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 import webbrowser
 from pathlib import Path
 
@@ -156,7 +157,10 @@ def main(argv: list[str] | None = None) -> int:
         print("Avbrutt.", file=sys.stderr)
         return 130
     except Exception as exc:  # noqa: BLE001 - CLI should present readable errors
-        print(f"Feil: {exc}", file=sys.stderr)
+        if args.debug:
+            traceback.print_exception(type(exc), exc, exc.__traceback__)
+        else:
+            print(f"Feil: {exc}", file=sys.stderr)
         return 1
 
 
@@ -169,6 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=main_help_epilog(),
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--debug", action="store_true", help="Vis traceback ved feil. Må settes først")
     parser.add_argument("--target", type=Path, help=argparse.SUPPRESS)
 
     subparsers = parser.add_subparsers(dest="command", required=True)
