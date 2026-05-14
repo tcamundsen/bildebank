@@ -357,6 +357,23 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("face-person-add-group", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
+    def test_debug_shows_traceback_for_unhandled_errors(self) -> None:
+        with patch("bilder.cli.run", side_effect=RuntimeError("boom")):
+            code, stdout, stderr = capture_cli(["--debug", "status"])
+
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("Traceback (most recent call last):", stderr)
+        self.assertIn("RuntimeError: boom", stderr)
+
+    def test_errors_are_short_without_debug(self) -> None:
+        with patch("bilder.cli.run", side_effect=RuntimeError("boom")):
+            code, stdout, stderr = capture_cli(["status"])
+
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "")
+        self.assertEqual(stderr, "Feil: boom\n")
+
     def test_subcommand_help_has_clean_usage(self) -> None:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
