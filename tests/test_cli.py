@@ -11,6 +11,7 @@ import sys
 import warnings
 import uuid
 from contextlib import redirect_stderr, redirect_stdout
+from http import HTTPStatus
 from io import BytesIO, StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -777,6 +778,123 @@ class CliTests(unittest.TestCase):
         self.assertIn("Kilder", body)
         self.assertIn(source.name, body)
         self.assertIn("closeInfoOverlay", body)
+
+    def test_run_server_item_page_can_rotate_image_view(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            image_path = target / "2024" / "01" / "IMG_20240102.png"
+            original_bytes = image_path.read_bytes()
+            data = json.dumps({"file_id": 1, "direction": "right"}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_rotate_item(handler)  # type: ignore[arg-type]
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            month_body = month_page_html(target, "2024-01", browser_month_items(target, "2024-01"))
+            final_bytes = image_path.read_bytes()
+
+        self.assertEqual({"ok": True, "file_id": 1, "rotation": 90}, handler.body)
+        self.assertEqual(original_bytes, final_bytes)
+        self.assertIn("Roter venstre", body)
+        self.assertIn("Roter høyre", body)
+        self.assertIn('data-rotate-direction="left"', body)
+        self.assertIn('data-rotate-direction="right"', body)
+        self.assertIn("transform: rotate(90deg)", body)
+        self.assertIn("transform: rotate(90deg)", month_body)
+
+    def test_run_server_rotate_image_view_wraps_left(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            data = json.dumps({"file_id": 1, "direction": "left"}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_rotate_item(handler)  # type: ignore[arg-type]
+
+        self.assertEqual({"ok": True, "file_id": 1, "rotation": 270}, handler.body)
+
+    def test_run_server_rotate_image_view_rejects_invalid_direction(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            data = json.dumps({"file_id": 1, "direction": "up"}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+                status = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_rotate_item(handler)  # type: ignore[arg-type]
+
+        self.assertEqual({"ok": False, "error": "Ugyldig rotasjonsretning."}, handler.body)
+        self.assertEqual(HTTPStatus.BAD_REQUEST, handler.status)
+
+    def test_run_server_video_page_does_not_show_rotation_buttons(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "video.mp4").write_bytes(minimal_mp4_with_creation_date(dt.date(2024, 1, 2)))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+
+        self.assertNotIn("Roter venstre", body)
+        self.assertNotIn("Roter høyre", body)
 
     def test_run_server_date_source_browser_reuses_source_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

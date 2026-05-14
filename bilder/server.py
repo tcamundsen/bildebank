@@ -136,6 +136,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/face-person-create-and-add-face":
                 self.respond_create_person_and_add_face()
                 return
+            if parsed.path == "/api/item-rotate":
+                self.respond_rotate_item()
+                return
             self.respond_json({"ok": False, "error": "Ukjent endepunkt."}, status=HTTPStatus.NOT_FOUND)
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
@@ -337,6 +340,36 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             }
         )
 
+    def respond_rotate_item(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        try:
+            file_id = int(payload.get("file_id"))
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        direction = str(payload.get("direction") or "")
+        conn = db.connect(self.server.target)
+        try:
+            try:
+                rotation = db.rotate_file_view(conn, file_id, direction)
+            except ValueError as exc:
+                self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                return
+            conn.commit()
+        finally:
+            conn.close()
+        self.respond_json({"ok": True, "file_id": file_id, "rotation": rotation})
+
+    def read_json_payload(self) -> dict[str, object]:
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
+        if not raw:
+            return {}
+        payload = json.loads(raw)
+        if not isinstance(payload, dict):
+            raise ValueError("Ugyldig JSON.")
+        return payload
+
     def read_face_person_payload(self) -> tuple[str, int] | tuple[dict[str, object], HTTPStatus]:
         length = int(self.headers.get("Content-Length") or "0")
         raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
@@ -409,7 +442,10 @@ def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
     return source_part.strip("/"), page_mode, raw_value
 
 
-FILE_COLUMNS = "id, target_path, target_path_key, stored_filename, taken_date, date_source, size_bytes"
+FILE_COLUMNS = (
+    "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
+    "size_bytes, view_rotation_degrees"
+)
 ITEM_DATE_ORDER_SQL = db.BROWSER_DATE_ORDER_SQL
 ITEM_ORDER_SQL = f"{ITEM_DATE_ORDER_SQL}, target_path_key"
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
@@ -1295,7 +1331,14 @@ def source_item_page_html(
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
     media = source_item_media_html(target, source, item)
-    controls = source_controls_html(source, month_nav, previous_item, next_item, include_info_button=True)
+    controls = source_controls_html(
+        source,
+        month_nav,
+        previous_item,
+        next_item,
+        include_info_button=True,
+        rotation_buttons=rotation_buttons_html(source, item),
+    )
     people = people_links_html(confirmed_people_for_file(target, int(item["id"])))
     unconfirmed_faces = unconfirmed_faces_for_item(target, item)
     all_people = registered_people(target)
@@ -1377,7 +1420,7 @@ def item_media_html(item: Any) -> str:
     name = html.escape(str(item["stored_filename"]))
     if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
         return f'<video src="{url}" controls></video>'
-    return f'<a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>'
+    return f'<a href="{url}" target="_blank"><img src="{url}" alt="{name}"{rotation_style_attr(item)}></a>'
 
 
 def person_item_page_html(
@@ -1464,6 +1507,7 @@ def source_controls_html(
     next_item: Any | None,
     *,
     include_info_button: bool = False,
+    rotation_buttons: str = "",
 ) -> str:
     info_button = image_info_button_html() if include_info_button else ""
     return f"""
@@ -1474,6 +1518,7 @@ def source_controls_html(
       {source_month_nav_link(source, month_nav["next_month"], "Neste måned", "next-month")}
       {source_nav_link(source, previous_item, "Forrige bilde", "previous")}
       {source_nav_link(source, next_item, "Neste bilde", "next")}
+      {rotation_buttons}
       {info_button}
     </nav>
     """
@@ -1519,6 +1564,35 @@ def source_month_nav_link(source: BrowserSource, month_key: str | None, label: s
     if month_key is None:
         return nav_disabled(label)
     return nav_button(source_month_url(source, month_key), label, key_nav)
+
+
+def rotation_buttons_html(source: BrowserSource, item: Any) -> str:
+    if source.person_name is not None or not is_image_item(item):
+        return ""
+    file_id = int(item["id"])
+    return f"""
+      <button class="nav-button" type="button" data-rotate-item="{file_id}" data-rotate-direction="left">Roter venstre</button>
+      <button class="nav-button" type="button" data-rotate-item="{file_id}" data-rotate-direction="right">Roter høyre</button>
+    """
+
+
+def is_image_item(item: Any) -> bool:
+    target_path = Path(str(item["target_path"]))
+    return target_path.suffix.lower().lstrip(".") not in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}
+
+
+def item_view_rotation(item: Any) -> int:
+    try:
+        return db.normalize_view_rotation(item["view_rotation_degrees"])
+    except (KeyError, IndexError):
+        return 0
+
+
+def rotation_style_attr(item: Any) -> str:
+    rotation = item_view_rotation(item)
+    if rotation == 0:
+        return ""
+    return f' style="transform: rotate({rotation}deg);" data-view-rotation="{rotation}"'
 
 
 def image_info_button_html() -> str:
@@ -1823,7 +1897,7 @@ def thumbnail_media_html(target: Path, item: Any) -> str:
         return f'<div class="video-thumb">Video<br>{name}</div>'
     relative_path = db.target_relative_path(target, target_path)
     thumbnail_src = "/file/" + existing_thumbnail_url(target, relative_path)
-    return f'<img src="{html.escape(thumbnail_src)}" alt="{name}" loading="lazy">'
+    return f'<img src="{html.escape(thumbnail_src)}" alt="{name}" loading="lazy"{rotation_style_attr(item)}>'
 
 
 def page_html(title: str, body: str) -> str:
@@ -1931,6 +2005,7 @@ def page_html(title: str, body: str) -> str:
       max-height: calc(100vh - 10rem);
       object-fit: contain;
       display: block;
+      transform-origin: center center;
     }}
     .person-media {{
       position: relative;
@@ -1973,7 +2048,7 @@ def page_html(title: str, body: str) -> str:
       text-align: center;
     }}
     .item {{ background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }}
-    .item img {{ width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #181818; }}
+    .item img {{ width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #181818; transform-origin: center center; }}
     .text {{ padding: 10px; font-size: 14px; }}
     .path {{ overflow-wrap: anywhere; }}
     .score {{ color: var(--muted); margin-top: 4px; }}
@@ -2191,6 +2266,26 @@ def page_html(title: str, body: str) -> str:
   closeFacesButton?.addEventListener("click", closeFacesOverlay);
   openInfoButton?.addEventListener("click", openInfoOverlay);
   closeInfoButton?.addEventListener("click", closeInfoOverlay);
+  document.querySelectorAll("[data-rotate-item]").forEach(button => {{
+    button.addEventListener("click", async () => {{
+      const fileId = Number(button.dataset.rotateItem);
+      const direction = button.dataset.rotateDirection || "";
+      button.disabled = true;
+      try {{
+        const response = await fetch("/api/item-rotate", {{
+          method: "POST",
+          headers: {{"Content-Type": "application/json"}},
+          body: JSON.stringify({{file_id: fileId, direction}}),
+        }});
+        const payload = await response.json();
+        if (!payload.ok) throw new Error(payload.error || "Kunne ikke rotere.");
+        window.location.reload();
+      }} catch (error) {{
+        alert(error.message || "Kunne ikke rotere.");
+        button.disabled = false;
+      }}
+    }});
+  }});
   faceOverlay?.addEventListener("click", event => {{
     if (event.target === faceOverlay || event.target.classList?.contains("lightbox-stage")) closeFacesOverlay();
   }});

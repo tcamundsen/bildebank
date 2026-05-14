@@ -119,6 +119,10 @@ Knappen `Bildeinfo` i bildebrowseren viser filnavn, filstørrelse, oppløsning,
 kamera hvis dette finnes i metadata, og hvilke kilder som inkluderer bildet.
 Overlayet kan lukkes med `Lukk` eller Esc.
 
+På bildesider kan du bruke `Roter venstre` og `Roter høyre` for å rotere
+visningen av bildet. Bildebank lagrer bare rotasjonen i databasen. Selve
+bildefilen i samlingen endres ikke.
+
 ## Viktige valg
 
 - Serveren skal være lokal som standard.

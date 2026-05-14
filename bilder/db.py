@@ -174,6 +174,7 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
         ensure_column(conn, "files", "media_height", "INTEGER")
         ensure_column(conn, "files", "media_orientation", "INTEGER")
         ensure_column(conn, "files", "media_metadata_mtime_ns", "INTEGER")
+        ensure_column(conn, "files", "view_rotation_degrees", "INTEGER")
     if table_exists(conn, "sources"):
         ensure_column(conn, "sources", "superseded_by_source_id", "INTEGER REFERENCES sources(id)")
 
@@ -250,7 +251,8 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             media_width INTEGER,
             media_height INTEGER,
             media_orientation INTEGER,
-            media_metadata_mtime_ns INTEGER
+            media_metadata_mtime_ns INTEGER,
+            view_rotation_degrees INTEGER
         );
 
         CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);
@@ -1643,12 +1645,47 @@ def deleted_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
 def browser_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     return conn.execute(
         f"""
-        SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes
+        SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes, view_rotation_degrees
         FROM files
         WHERE deleted_at IS NULL
         ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path
         """
     )
+
+
+def normalize_view_rotation(value: object) -> int:
+    try:
+        rotation = int(value or 0) % 360
+    except (TypeError, ValueError):
+        rotation = 0
+    return rotation if rotation in {0, 90, 180, 270} else 0
+
+
+def rotate_file_view(conn: sqlite3.Connection, file_id: int, direction: str) -> int:
+    delta_by_direction = {"left": -90, "right": 90}
+    if direction not in delta_by_direction:
+        raise ValueError("Ugyldig rotasjonsretning.")
+    row = conn.execute(
+        """
+        SELECT view_rotation_degrees
+        FROM files
+        WHERE id = ?
+          AND deleted_at IS NULL
+        """,
+        (file_id,),
+    ).fetchone()
+    if row is None:
+        raise ValueError("Filen finnes ikke i bildesamlingen.")
+    rotation = (normalize_view_rotation(row["view_rotation_degrees"]) + delta_by_direction[direction]) % 360
+    conn.execute(
+        """
+        UPDATE files
+        SET view_rotation_degrees = ?
+        WHERE id = ?
+        """,
+        (rotation, file_id),
+    )
+    return rotation
 
 
 def mark_file_deleted(
