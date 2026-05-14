@@ -4,6 +4,7 @@ import html
 import json
 import mimetypes
 import re
+import shutil
 import sqlite3
 import threading
 import urllib.parse
@@ -37,6 +38,7 @@ from .openclip import (
     relative_to_target,
     text_embedding,
 )
+from .target_lock import TargetLock
 from .thumbnails import existing_thumbnail_url
 
 
@@ -138,6 +140,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/item-rotate":
                 self.respond_rotate_item()
+                return
+            if parsed.path == "/api/item-delete":
+                self.respond_delete_item()
                 return
             self.respond_json({"ok": False, "error": "Ukjent endepunkt."}, status=HTTPStatus.NOT_FOUND)
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
@@ -359,6 +364,20 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         finally:
             conn.close()
         self.respond_json({"ok": True, "file_id": file_id, "rotation": rotation})
+
+    def respond_delete_item(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        try:
+            file_id = int(payload.get("file_id"))
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            deleted_path = remove_file_from_browser(self.server.target, file_id)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_json({"ok": True, "file_id": file_id, "deleted_path": deleted_path.as_posix()})
 
     def read_json_payload(self) -> dict[str, object]:
         length = int(self.headers.get("Content-Length") or "0")
@@ -656,6 +675,52 @@ def cached_confirmed_people_for_file(target_path: str, face_db_mtime_ns: int, fi
 def clear_face_caches() -> None:
     cached_confirmed_people_for_file.cache_clear()
     cached_registered_people.cache_clear()
+
+
+def remove_file_from_browser(target: Path, file_id: int) -> Path:
+    with TargetLock(target, command="remove"):
+        conn = db.connect(target)
+        try:
+            row = conn.execute(
+                """
+                SELECT id, target_path, deleted_at
+                FROM files
+                WHERE id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Filen finnes ikke i importdatabasen.")
+            if row["deleted_at"] is not None:
+                raise ValueError("Filen er allerede markert som slettet.")
+
+            original_path = db.absolute_target_path(target, Path(str(row["target_path"]))).resolve()
+            if not original_path.exists():
+                raise ValueError(f"Målfilen finnes ikke på disk: {original_path}")
+            try:
+                relative_path = original_path.relative_to(target.resolve())
+            except ValueError as exc:
+                raise ValueError(f"Filen ligger ikke i bildesamlingen: {original_path}") from exc
+            if not relative_path.parts or relative_path.parts[0] == "deleted":
+                raise ValueError(f"Kan ikke slette filer fra deleted/: {original_path}")
+
+            deleted_path = target / "deleted" / relative_path
+            if deleted_path.exists():
+                raise ValueError(f"Slettemål finnes allerede: {deleted_path}")
+
+            deleted_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(original_path), str(deleted_path))
+            db.mark_file_deleted(
+                conn,
+                file_id=file_id,
+                target_root=target,
+                deleted_path=deleted_path,
+                original_target_path=original_path,
+            )
+            conn.commit()
+            return db.target_relative_path(target, deleted_path)
+        finally:
+            conn.close()
 
 
 def registered_people(target: Path) -> list[dict[str, str]]:
@@ -1338,6 +1403,7 @@ def source_item_page_html(
         next_item,
         include_info_button=True,
         rotation_buttons=rotation_buttons_html(source, item),
+        delete_button=delete_button_html(source, item, previous_item, next_item),
     )
     people = people_links_html(confirmed_people_for_file(target, int(item["id"])))
     unconfirmed_faces = unconfirmed_faces_for_item(target, item)
@@ -1508,6 +1574,7 @@ def source_controls_html(
     *,
     include_info_button: bool = False,
     rotation_buttons: str = "",
+    delete_button: str = "",
 ) -> str:
     info_button = image_info_button_html() if include_info_button else ""
     return f"""
@@ -1520,6 +1587,7 @@ def source_controls_html(
       {source_nav_link(source, next_item, "Neste bilde", "next")}
       {rotation_buttons}
       {info_button}
+      {delete_button}
     </nav>
     """
 
@@ -1574,6 +1642,21 @@ def rotation_buttons_html(source: BrowserSource, item: Any) -> str:
       <button class="nav-button" type="button" data-rotate-item="{file_id}" data-rotate-direction="left">Roter venstre</button>
       <button class="nav-button" type="button" data-rotate-item="{file_id}" data-rotate-direction="right">Roter høyre</button>
     """
+
+
+def delete_button_html(source: BrowserSource, item: Any, previous_item: Any | None, next_item: Any | None) -> str:
+    redirect_url = source_item_url(source, int(next_item["id"])) if next_item is not None else ""
+    if not redirect_url and previous_item is not None:
+        redirect_url = source_item_url(source, int(previous_item["id"]))
+    if not redirect_url:
+        redirect_url = source.root_url
+    relative = display_relative_path(Path("."), Path(str(item["target_path"])))
+    return (
+        f'<button class="nav-button danger-button" type="button" '
+        f'data-delete-item="{int(item["id"])}" '
+        f'data-delete-path="{html.escape(relative)}" '
+        f'data-delete-redirect="{html.escape(redirect_url)}">Slett</button>'
+    )
 
 
 def is_image_item(item: Any) -> bool:
@@ -1990,6 +2073,8 @@ def page_html(title: str, body: str) -> str:
     .person-link {{ color: var(--accent); }}
     .faces-button {{ color: var(--accent); }}
     .nav-button:hover, .server-search-link:hover, .person-link:hover, .faces-button:hover {{ background: #3a3a3a; text-decoration: none; }}
+    .danger-button {{ color: var(--danger); }}
+    .danger-button:hover {{ background: rgb(255 138 128 / 12%); }}
     .disabled {{ color: #777; cursor: default; }}
     .stage {{
       min-height: 0;
@@ -2282,6 +2367,28 @@ def page_html(title: str, body: str) -> str:
         window.location.reload();
       }} catch (error) {{
         alert(error.message || "Kunne ikke rotere.");
+        button.disabled = false;
+      }}
+    }});
+  }});
+  document.querySelectorAll("[data-delete-item]").forEach(button => {{
+    button.addEventListener("click", async () => {{
+      const fileId = Number(button.dataset.deleteItem);
+      const path = button.dataset.deletePath || "";
+      const redirectUrl = button.dataset.deleteRedirect || "/";
+      if (!confirm(`Flytte til deleted/?\\n\\n${{path}}`)) return;
+      button.disabled = true;
+      try {{
+        const response = await fetch("/api/item-delete", {{
+          method: "POST",
+          headers: {{"Content-Type": "application/json"}},
+          body: JSON.stringify({{file_id: fileId}}),
+        }});
+        const payload = await response.json();
+        if (!payload.ok) throw new Error(payload.error || "Kunne ikke slette.");
+        window.location.href = redirectUrl;
+      }} catch (error) {{
+        alert(error.message || "Kunne ikke slette.");
         button.disabled = false;
       }}
     }});

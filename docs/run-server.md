@@ -123,6 +123,10 @@ På bildesider kan du bruke `Roter venstre` og `Roter høyre` for å rotere
 visningen av bildet. Bildebank lagrer bare rotasjonen i databasen. Selve
 bildefilen i samlingen endres ikke.
 
+Knappen `Slett` flytter bildet til `deleted`-mappen i bildesamlingen og
+markerer filen som slettet i databasen. Dette er samme trygge sletting som
+kommandoen `bildebank remove`. Bildefilen slettes ikke permanent.
+
 ## Viktige valg
 
 - Serveren skal være lokal som standard.
@@ -130,7 +134,8 @@ bildefilen i samlingen endres ikke.
 - Den skal bruke samme config som resten av Bildebank.
 - Den skal ikke erstatte statiske HTML-filer i første omgang.
 - Den statiske browseren fra `make-browser` skal beholdes.
-- Den skal ikke åpne for redigering eller sletting i første versjon.
+- Sletting fra serveren skal flytte til `deleted`, ikke slette bildefiler
+  permanent.
 
 ## Ikke i første versjon
 
@@ -138,7 +143,7 @@ bildefilen i samlingen endres ikke.
 - deling på nettverk
 - redigering av metadata
 - import fra nettleser
-- sletting eller flytting av bilder
+- permanent sletting av bilder
 - live `image-scan` fra nettleser
 - flere samtidige brukere
 

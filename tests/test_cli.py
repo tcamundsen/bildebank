@@ -779,6 +779,69 @@ class CliTests(unittest.TestCase):
         self.assertIn(source.name, body)
         self.assertIn("closeInfoOverlay", body)
 
+    def test_run_server_item_page_has_delete_button(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+
+        self.assertIn("Slett", body)
+        self.assertIn('data-delete-item="1"', body)
+        self.assertIn('data-delete-path="2024/01/IMG_20240102.png"', body)
+        self.assertIn("/api/item-delete", body)
+        self.assertIn("Flytte til deleted/?", body)
+
+    def test_run_server_delete_button_moves_file_to_deleted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            original = target / "2024" / "01" / "IMG_20240102.png"
+            deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.png"
+            original_bytes = original.read_bytes()
+            data = json.dumps({"file_id": 1}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_delete_item(handler)  # type: ignore[arg-type]
+            conn = sqlite3.connect(target / DB_FILENAME)
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute("SELECT target_path, deleted_at, deleted_original_target_path FROM files WHERE id = 1").fetchone()
+            finally:
+                conn.close()
+
+            self.assertEqual({"ok": True, "file_id": 1, "deleted_path": "deleted/2024/01/IMG_20240102.png"}, handler.body)
+            self.assertFalse(original.exists())
+            self.assertTrue(deleted.exists())
+            self.assertEqual(deleted.read_bytes(), original_bytes)
+            self.assertEqual(row["target_path"], "deleted/2024/01/IMG_20240102.png")
+            self.assertEqual(row["deleted_original_target_path"], "2024/01/IMG_20240102.png")
+            self.assertIsNotNone(row["deleted_at"])
+            self.assertIsNone(browser_item_by_id(target, 1))
+
     def test_run_server_item_page_can_rotate_image_view(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
