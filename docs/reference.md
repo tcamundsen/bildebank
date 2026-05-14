@@ -11,6 +11,7 @@ Dette er en kort referanse over kommandoene i Bildebank.
 
 - [`status`](status.md)
 - [`make-thumbnails`](make-thumbnails.md)
+- [`run-server`](run-server.md)
 - [`make-browser`](make-browser.md)
 - [`open-browser`](open-browser.md)
 - [`list-sources`](list-sources.md)
@@ -60,10 +61,6 @@ Se også den samlede innføringen: [`insightface`](insightface.md).
 ## Tekstbasert bildesøk
 
 Se også den samlede innføringen: [`openclip`](openclip.md).
-
-## Lokal server
-
-- [`run-server`](run-server.md)
 
 ## Programmet
 

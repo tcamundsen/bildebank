@@ -1,17 +1,26 @@
 # run-server
 
-Dette er dokumentasjon for en enkel lokal Bildebank-server.
+Dette er dokumentasjon for den lokale Bildebank-serveren.
 
-Målet er å kunne bruke Bildebank i nettleseren på samme PC, og særlig å kunne
-søke med OpenCLIP uten å vente på at modellen lastes på nytt for hvert søk.
+Dette er vanligvis den beste måten å se på bildene på egen PC.
+[`make-browser`](make-browser.md) og [`open-browser`](open-browser.md) kan brukes
+hvis man vil se på bildene uten å ha Bildebank installert, for eksempel fra en
+ekstern disk på en annen PC.
 
-## Mål
+`run-server` gir også flere funksjoner som ikke er mulig med den statiske
+HTML-filen laget av `make-browser`.
 
-- Kjøre en lokal server fra en bildesamling.
-- Browse hele bildesamlingen i nettleseren.
-- Holde OpenCLIP-modellen lastet i minnet mens serveren kjører.
-- Søke etter bilder fra nettleseren.
-- Vise søkeresultater uten å skrive ny statisk HTML-fil for hvert søk.
+## Funksjoner
+
+- Bla gjennom hele bildesamlingen i nettleseren.
+- Slette bilder. (Foreløpig bare flytte til `deleted/`)
+- Rotere bilder som har feil orientering. Info om rotasjon lagres i
+  databasen og bildet roteres i nettleser. Dvs at originale bildefiler
+  ikke endres.
+- Holde OpenCLIP-modellen lastet i minnet mens serveren kjører, slik at
+  man slipper ventetid ved oppstart, og søk kan gjøres i nettleseren.
+  Dette gjør at søkene går raskere etter første søk.
+- Registrere personer og knytte gode bilder til dem.
 
 ## Start serveren
 
@@ -19,101 +28,42 @@ søke med OpenCLIP uten å vente på at modellen lastes på nytt for hvert søk.
 bildebank run-server
 ```
 
-Serveren bør som standard bare lytte lokalt:
+Når serveren har startet, åpnes nettsiden automatisk i nettleseren når serveren
+er klar til å svare.
 
-```text
-127.0.0.1
+Standard adresse er `http://127.0.0.1:8765/`.
+
+Denne adressen gjør at den kan brukes fra samme PC, men ikke deles på
+nettverket ved et uhell.
+
+Hvis du vil dele bildesamlingen på LAN, må du åpne brannmuren og starte serveren slik:
+
+```powershell
+bildebank run-server --host 0.0.0.0
 ```
 
-Det gjør at den kan brukes fra samme PC, men ikke deles på nettverket ved et
-uhell.
-
-Standardporten er:
-
-```text
-8765
-```
-
-Når serveren kjører, åpne:
-
-```text
-http://127.0.0.1:8765/
-```
-
-Terminalen skriver først at serveren starter, og deretter:
-
-```text
-Bildebank-serveren er klar: http://127.0.0.1:8765/
-```
-
-Nettleseren åpnes først når serveren er klar til å svare.
+Og så må du finne IP-adressen til laptopen som kjører serveren med `ipconfig`.
+Hvis adressen er 192.168.86.11, så skriver du `http://192.168.86.11:8765/` i
+adressefeltet til nettleseren.
 
 Hvis du vil velge port:
 
 ```powershell
 bildebank run-server --port 8766
 ```
-
 Hvis du ikke vil åpne nettleseren automatisk:
 
 ```powershell
 bildebank run-server --no-browser
 ```
 
-## Første versjon
-
-Første versjon er enkel:
-
-- start serveren fra bildesamlingen
-- åpne første bilde/video i samlingen
-- gi hvert bilde/video en stabil URL basert på `file_id`
-- la månedsoversikten laste bare filene i den måneden
-- vis lenke til OpenCLIP-søk fra browseren
-- last OpenCLIP-modellen første gang den trengs
-- behold modellen i minnet etter første søk
-- kjør søk uten å starte programmet på nytt
-- returner resultater som HTML
-
-## Hvorfor server
-
-I dag kjører `bildebank image-search` som en egen kommando. Da må Python starte,
-config leses, og OpenCLIP-modellen lastes før søket kan kjøres.
-
-Med en server kan denne kostnaden betales én gang:
-
-1. Start `bildebank run-server`.
-2. Serveren laster modellen ved første søk.
-3. Senere søk bruker samme modell i minnet.
-
-Dette bør gjøre flere søk etter hverandre merkbart raskere.
-
-Første søk kan fortsatt ta noen sekunder, fordi OpenCLIP-modellen lastes første
-gang den trengs. Senere søk i samme serverprosess bruker modellen som allerede
-ligger i minnet.
-
-Serverbrowseren skal ikke generere én stor HTML-side med hele samlingen. Den
-viser ett bilde/video om gangen, og månedsoversikten henter bare filene for den
-aktuelle måneden.
-
-## Mulige sider
-
-- `/` bildebrowser
-- `/item/123` viser ett bestemt bilde eller video
-- `/month/2024-01` viser bilder/videoer fra én måned
-- `/people` viser registrerte personer
-- `/person/Kari/confirmed` viser bilder der Kari er bekreftet
-- `/person/Kari` viser både bekreftede bilder og bilder foreslått av
-  `face-suggest`
-- `/date-source/filename` viser bilder der datoen kom fra filnavnet
-- `/date-source/mtime` viser bilder der datoen kom fra filens endringsdato
-- `/search` skjema for tekstsøk
-- `/search?q=beach` søkeresultat
-- `/file/...` viser bildefiler fra søket
-- `/file/123` viser selve bildefilen for ett `file_id`
+## Litt om bruk
 
 Når du åpner `Ansikter i bildet` i bildebrowseren, kan du enten velge en
 registrert person eller skrive inn et nytt navn under `Ny person` og trykke
 `Identifiser`. Da oppretter serveren personen og kobler ansiktet til personen.
+Se også den samlede innføringen: [`insightface`](insightface.md).
+
 
 Knappen `Bildeinfo` i bildebrowseren viser filnavn, filstørrelse, oppløsning,
 kamera hvis dette finnes i metadata, og hvilke kilder som inkluderer bildet.
@@ -127,30 +77,12 @@ Knappen `Slett` flytter bildet til `deleted`-mappen i bildesamlingen og
 markerer filen som slettet i databasen. Dette er samme trygge sletting som
 kommandoen `bildebank remove`. Bildefilen slettes ikke permanent.
 
-## Viktige valg
-
-- Serveren skal være lokal som standard.
-- Den skal ikke kreve internett etter at modeller er lastet ned.
-- Den skal bruke samme config som resten av Bildebank.
-- Den skal ikke erstatte statiske HTML-filer i første omgang.
-- Den statiske browseren fra `make-browser` skal beholdes.
-- Sletting fra serveren skal flytte til `deleted`, ikke slette bildefiler
-  permanent.
-
-## Ikke i første versjon
-
-- innlogging
-- deling på nettverk
-- redigering av metadata
-- import fra nettleser
-- permanent sletting av bilder
-- live `image-scan` fra nettleser
-- flere samtidige brukere
-
 ## Teknisk retning
 
 Serveren bruker en liten lokal HTTP-server fra Python-standardbiblioteket. Hvis
-behovet vokser kan vi vurdere FastAPI eller lignende senere.
+behovet vokser, kan vi vurdere FastAPI eller lignende senere. Serveren har ikke
+innebygd sikkerhet, og bør bare kjøres lokalt på laptop eller på et privat LAN
+der man har kontroll på brukerne.
 
 OpenCLIP-modellen ligger i serverprosessen, slik at den kan brukes om igjen
 mellom søk. Serveren tåler at modellen ikke er lastet ennå, og gir en lesbar

@@ -3,6 +3,11 @@
 Ansiktsgjenkjenning fungerer ganske greit nå, selv om dokumentasjon
 kanskje skal forbedres litt etter hvert. Spør etter det som er vanskelig.
 
+[`run-server`](run-server.md) har nå litt informasjon om hvordan
+man knytter bekreftede bilder til en person. Men beskrivelsen her
+inneholder litt annen informasjon, samt hvordan det gjøres fra PowerShell.
+
+
 InsightFace brukes til ansikansiktsgjenkjenning, og funksjonen er slått
 av i vanlig Bildebank-installasjon. Denne siden viser hvordan dette kan
 lastes ned og slås på.
