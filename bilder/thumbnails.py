@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -29,6 +30,9 @@ class ThumbnailStats:
     errors: int = 0
     last_error_path: Path | None = None
     last_error_message: str | None = None
+
+
+ThumbnailProgress = Callable[[str, int, int, ThumbnailStats, Path | None], None]
 
 
 def thumbnail_relative_path(original_relative_path: Path) -> Path:
@@ -128,22 +132,36 @@ def require_pillow():
     return Image, ImageOps
 
 
-def run_make_thumbnails(target: Path, *, limit: int | None = None, verbose: bool = False) -> ThumbnailStats:
+def run_make_thumbnails(
+    target: Path,
+    *,
+    limit: int | None = None,
+    verbose: bool = False,
+    progress: ThumbnailProgress | None = None,
+) -> ThumbnailStats:
     require_pillow()
     stats = ThumbnailStats()
     with TargetLock(target, command="make-thumbnails"):
-        for relative_path in active_thumbnail_candidates(target):
+        candidates = active_thumbnail_candidates(target)
+        if progress is not None:
+            progress("start", 0, len(candidates), stats, None)
+        current = 0
+        for current, relative_path in enumerate(candidates, 1):
             stats.total += 1
             if limit is not None and stats.checked >= limit:
                 break
             original_path = db.absolute_target_path(target, relative_path)
             if original_path.suffix.lower() not in IMAGE_EXTENSIONS:
                 stats.skipped_non_image += 1
+                if progress is not None:
+                    progress("check", current, len(candidates), stats, relative_path)
                 continue
             stats.checked += 1
             thumb_path = thumbnail_absolute_path(target, relative_path)
             if thumbnail_is_current(original_path, thumb_path):
                 stats.skipped_current += 1
+                if progress is not None:
+                    progress("check", current, len(candidates), stats, relative_path)
                 continue
             try:
                 result = ensure_thumbnail(target, relative_path)
@@ -153,7 +171,13 @@ def run_make_thumbnails(target: Path, *, limit: int | None = None, verbose: bool
                 stats.last_error_message = str(exc)
                 if verbose:
                     print(f"Feil ved thumbnail for {relative_path}: {exc}", file=sys.stderr)
+                if progress is not None:
+                    progress("error", current, len(candidates), stats, relative_path)
                 continue
             if result is not None:
                 stats.created += 1
+            if progress is not None:
+                progress("check", current, len(candidates), stats, relative_path)
+        if progress is not None:
+            progress("done", current, len(candidates), stats, None)
     return stats

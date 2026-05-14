@@ -4414,6 +4414,21 @@ model_name = "test-model"
             self.assertIn("feil=1", stdout)
             self.assertTrue(thumbnail_absolute_path(target, Path("2024/01/good.jpg")).is_file())
 
+    def test_make_thumbnails_shows_progress(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            image = target / "2024" / "01" / "image.jpg"
+            write_test_image(image)
+            register_target_file(target, Path("2024/01/image.jpg"))
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "make-thumbnails"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Thumbnails: 1 filer skal kontrolleres.", stdout)
+        self.assertIn("Thumbnails: kontrollert=1/1", stdout)
+        self.assertIn("Thumbnails: ferdig kontrollert 1/1 filer.", stdout)
+
     def test_make_browser_writes_thumbnail_src_when_thumbnail_is_current(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

@@ -992,7 +992,12 @@ def run(args: argparse.Namespace) -> int:
         if args.command == "make-thumbnails":
             conn.commit()
             conn.close()
-            stats = run_make_thumbnails(target, limit=args.limit, verbose=args.verbose)
+            stats = run_make_thumbnails(
+                target,
+                limit=args.limit,
+                verbose=args.verbose,
+                progress=print_thumbnail_progress,
+            )
             print_thumbnail_summary(stats)
             return 0 if stats.errors == 0 else 2
 
@@ -1040,6 +1045,34 @@ def print_thumbnail_summary(stats: ThumbnailStats) -> None:
     )
     if stats.last_error_path is not None and stats.last_error_message:
         print(f"Siste feil: {stats.last_error_path}: {stats.last_error_message}")
+
+
+def print_thumbnail_progress(
+    stage: str,
+    current: int,
+    total: int,
+    stats: ThumbnailStats,
+    path: Path | None,
+) -> None:
+    if stage == "start":
+        print(f"Thumbnails: {total} filer skal kontrolleres.")
+        return
+    if stage == "error":
+        message = stats.last_error_message or "ukjent feil"
+        print(f"Thumbnail-feil: {path}\t{message}")
+        return
+    if stage == "check":
+        if should_print_progress(current, total):
+            print(
+                "Thumbnails: "
+                f"kontrollert={current}/{total}, "
+                f"sjekket={stats.checked}, laget={stats.created}, "
+                f"ferske={stats.skipped_current}, feil={stats.errors}"
+            )
+        return
+    if stage == "done":
+        print(f"Thumbnails: ferdig kontrollert {min(current, total)}/{total} filer.")
+        return
 
 
 def resolve_target(target_arg: Path | None) -> Path:

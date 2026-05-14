@@ -46,6 +46,8 @@ bildebank make-browser
 Du kan også kjøre den etter en ny import. Da lager Bildebank thumbnails for nye
 bilder og hopper over thumbnails som fortsatt er oppdatert.
 
+Kommandoen tåler fint å avbrytes med Ctrl-C.
+
 ## Valg
 
 `--limit` begrenser hvor mange bildefiler som sjekkes:
