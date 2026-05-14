@@ -20,6 +20,7 @@ from bilder.cli import build_parser, main
 from bilder.config import OpenClipConfig, load_config
 from bilder.db import DB_FILENAME, init_database
 from bilder.face import FACE_DB_FILENAME, apply_face_schema, connect_face_db, face_box_percent, read_image
+from bilder.html_export import render_html
 from bilder.importer import safe_copy
 from bilder.media import ImageDimensions, sha256_file
 from bilder.openclip import connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
@@ -665,6 +666,17 @@ class CliTests(unittest.TestCase):
         self.assertIsNotNone(next_item)
         self.assertEqual(previous_item["stored_filename"], "z.jpg")
         self.assertEqual(next_item["stored_filename"], "m.jpg")
+
+    def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
+        html = render_html([], month_preview_limit=None)
+        compare = html[html.index("function compareItems") : html.index("function buildMonths")]
+
+        month_order = compare.index("a.monthKey.localeCompare")
+        date_order = compare.index("aDate.localeCompare")
+        path_order = compare.index("a.path.localeCompare")
+
+        self.assertLess(month_order, date_order)
+        self.assertLess(date_order, path_order)
 
     def test_run_server_item_page_has_image_info_overlay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
