@@ -4,7 +4,10 @@ import html
 import json
 import os
 import sqlite3
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
+from time import perf_counter
 from urllib.parse import quote
 
 from . import db
@@ -17,6 +20,16 @@ VIDEO_EXTENSIONS = {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3
 FACE_DB_FILENAME = ".bilder-faces.sqlite3"
 
 
+@dataclass
+class BrowserExportTiming:
+    steps: list[tuple[str, float]] = field(default_factory=list)
+
+    def measure(self, name: str, start: float) -> float:
+        now = perf_counter()
+        self.steps.append((name, now - start))
+        return now
+
+
 def export_html(
     target: Path,
     output: Path | None = None,
@@ -24,18 +37,32 @@ def export_html(
     media_filter: str = "all",
     date_source_filter: str = "all",
     month_preview_limit: int | None = None,
+    debug_timing: bool = False,
 ) -> Path:
+    timing = BrowserExportTiming() if debug_timing else None
+    start = perf_counter()
     output_path = output or (target / "index.html")
+    if timing is not None:
+        start = timing.measure("resolve_output", start)
     items = browser_items(
         target,
         media_filter=media_filter,
         date_source_filter=date_source_filter,
+        timing=timing,
     )
+    if timing is not None:
+        start = timing.measure("browser_items", start)
+    html_text = render_html(items, month_preview_limit=month_preview_limit)
+    if timing is not None:
+        start = timing.measure("render_html", start)
     output_path.write_text(
-        render_html(items, month_preview_limit=month_preview_limit),
+        html_text,
         encoding="utf-8",
         newline="\n",
     )
+    if timing is not None:
+        timing.measure("write_file", start)
+        print_browser_export_timing(timing, item_count=len(items))
     return output_path
 
 
@@ -44,10 +71,14 @@ def browser_items(
     *,
     media_filter: str = "all",
     date_source_filter: str = "all",
+    timing: BrowserExportTiming | None = None,
 ) -> list[dict[str, object]]:
     conn = db.connect(target)
     try:
+        start = perf_counter()
         face_data_by_file_id = face_browser_data_by_file_id(target)
+        if timing is not None:
+            start = timing.measure("face_data", start)
         items = [
             item
             for item in (
@@ -56,9 +87,18 @@ def browser_items(
             )
             if item_matches_filters(item, media_filter, date_source_filter)
         ]
+        if timing is not None:
+            timing.measure("rows_to_items", start)
     finally:
         conn.close()
     return items
+
+
+def print_browser_export_timing(timing: BrowserExportTiming, *, item_count: int) -> None:
+    print("make-browser timing:", file=sys.stderr)
+    for name, seconds in timing.steps:
+        print(f"  {name}: {seconds:.3f}s", file=sys.stderr)
+    print(f"  items: {item_count}", file=sys.stderr)
 
 
 def export_html_conflicts(target: Path, output: Path | None = None) -> Path:

@@ -973,6 +973,7 @@ def run(args: argparse.Namespace) -> int:
                 media_filter=args.media,
                 date_source_filter=args.date_source,
                 month_preview_limit=args.month_preview_limit,
+                debug_timing=args.debug,
             )
             print(f"Skrev HTML-browser: {output_path}")
             return 0
