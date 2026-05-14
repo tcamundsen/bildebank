@@ -7,7 +7,9 @@ name = "bildebank"
 version = "0.2.0"
 description = "Konservativt bildesorteringsprogram for å samle bilder og videoer."
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "Pillow",
+]
 
 [project.optional-dependencies]
 face = [

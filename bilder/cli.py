@@ -56,6 +56,7 @@ from .openclip import (
 from .program_state import known_targets, program_db_path, record_target_best_effort
 from .server import DEFAULT_HOST, DEFAULT_PORT, run_server as run_local_server
 from .target_lock import TargetLock
+from .thumbnails import ThumbnailStats, run_make_thumbnails
 
 
 FACE_SCAN_PROGRESS_STARTED_AT: float | None = None
@@ -74,6 +75,7 @@ HELP_COMMAND_GROUPS = (
         "se og kontrollere samlingen",
         (
             ("status", "Vis antall importerte bilder og videoer"),
+            ("make-thumbnails", "Lag thumbnails for rask månedsvisning"),
             ("make-browser", "Lag index.html for nettleseren"),
             ("open-browser", "Åpne HTML-browseren i nettleseren"),
             ("list-sources", "Vis registrerte kilder"),
@@ -331,6 +333,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skriv HTML-filen hit. Standard: index.html i bildesamlingsmappen.",
     )
     add_browser_filter_arguments(browser)
+
+    make_thumbnails = add_command(
+        subparsers,
+        "make-thumbnails",
+        usage="bildebank make-thumbnails [valg]",
+        help="Lag thumbnails for månedsvisning",
+    )
+    make_thumbnails.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
+    make_thumbnails.add_argument("--verbose", action="store_true", help="Vis filer som feiler")
 
     open_browser = add_command(
         subparsers,
@@ -978,6 +989,13 @@ def run(args: argparse.Namespace) -> int:
             print(f"Skrev HTML-browser: {output_path}")
             return 0
 
+        if args.command == "make-thumbnails":
+            conn.commit()
+            conn.close()
+            stats = run_make_thumbnails(target, limit=args.limit, verbose=args.verbose)
+            print_thumbnail_summary(stats)
+            return 0 if stats.errors == 0 else 2
+
         if args.command == "open-browser":
             conn.commit()
             conn.close()
@@ -1009,6 +1027,19 @@ def run(args: argparse.Namespace) -> int:
             conn.close()
         except Exception:
             pass
+
+
+def print_thumbnail_summary(stats: ThumbnailStats) -> None:
+    print(
+        "Thumbnails: "
+        f"sjekket={stats.checked}, "
+        f"laget={stats.created}, "
+        f"ferske={stats.skipped_current}, "
+        f"hoppet_over_ikke_bilde={stats.skipped_non_image}, "
+        f"feil={stats.errors}"
+    )
+    if stats.last_error_path is not None and stats.last_error_message:
+        print(f"Siste feil: {stats.last_error_path}: {stats.last_error_message}")
 
 
 def resolve_target(target_arg: Path | None) -> Path:

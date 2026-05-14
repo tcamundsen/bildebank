@@ -10,6 +10,7 @@ Dette er en kort referanse over kommandoene i Bildebank.
 ## Se og kontrollere samlingen
 
 - [`status`](status.md)
+- [`make-thumbnails`](make-thumbnails.md)
 - [`make-browser`](make-browser.md)
 - [`open-browser`](open-browser.md)
 - [`list-sources`](list-sources.md)

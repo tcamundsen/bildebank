@@ -13,6 +13,7 @@ from urllib.parse import quote
 from . import db
 from .media import image_dimensions, image_orientation
 from .media_cache import MediaMetadataCache
+from .thumbnails import existing_thumbnail_url
 
 
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "webp", "tif", "tiff", "heic", "heif"}
@@ -135,6 +136,7 @@ def row_to_item(
         "fileId": file_id,
         "path": path,
         "url": path_to_url(relative_path),
+        "thumbnailSrc": existing_thumbnail_url(target, relative_path) if kind == "image" else "",
         "kind": kind,
         "monthKey": month_key,
         "takenDate": row["taken_date"] or "",

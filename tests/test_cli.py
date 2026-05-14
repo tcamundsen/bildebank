@@ -18,6 +18,7 @@ from unittest.mock import patch
 
 from bilder.cli import build_parser, main
 from bilder.config import OpenClipConfig, load_config
+from bilder import db
 from bilder.db import DB_FILENAME, init_database
 from bilder.face import FACE_DB_FILENAME, apply_face_schema, connect_face_db, face_box_percent, read_image
 from bilder.html_export import render_html
@@ -53,6 +54,12 @@ from bilder.server import (
     source_month_page_html,
 )
 from bilder.target_lock import LOCK_FILENAME
+from bilder.thumbnails import (
+    existing_thumbnail_url,
+    thumbnail_absolute_path,
+    thumbnail_is_current,
+    thumbnail_relative_path,
+)
 from tests.test_media import (
     jpeg_with_xmp_date,
     minimal_avi_with_creation_date,
@@ -73,6 +80,41 @@ def capture_cli(args: list[str]) -> tuple[int, str, str]:
     with redirect_stdout(stdout), redirect_stderr(stderr):
         code = main(args)
     return code, stdout.getvalue(), stderr.getvalue()
+
+
+def write_test_image(path: Path, *, size: tuple[int, int] = (8, 8), color: tuple[int, int, int] = (200, 20, 20)) -> None:
+    from PIL import Image
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image = Image.new("RGB", size, color)
+    image.save(path)
+
+
+def register_target_file(target: Path, relative_path: Path, *, source: Path | None = None) -> int:
+    path = target / relative_path
+    conn = db.connect(target)
+    try:
+        source_path = source or path
+        source_root = source_path.parent
+        source_id = db.add_named_source(conn, source_root, f"source-{uuid.uuid4()}")
+        file_id = db.insert_imported_file(
+            conn,
+            source_id=source_id,
+            source_path=source_path,
+            target_root=target,
+            target_path=path,
+            original_filename=path.name,
+            stored_filename=path.name,
+            sha256=sha256_file(path),
+            size_bytes=path.stat().st_size,
+            taken_date="2024-01-02",
+            date_source="filename",
+            name_conflict=False,
+        )
+        conn.commit()
+        return file_id
+    finally:
+        conn.close()
 
 
 def create_legacy_database(
@@ -4320,6 +4362,97 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser", stdout)
             self.assertTrue(custom_output.exists())
+
+    def test_thumbnail_paths_and_existing_url_use_current_thumbnail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            original = target / "2024" / "01" / "image.png"
+            write_test_image(original)
+
+            relative = Path("2024/01/image.png")
+            thumb_relative = thumbnail_relative_path(relative)
+            thumb_path = thumbnail_absolute_path(target, relative)
+
+            self.assertEqual(thumb_relative, Path("thumbs/2024/01/image.jpg"))
+            self.assertEqual(existing_thumbnail_url(target, relative), "2024/01/image.png")
+
+            write_test_image(thumb_path)
+            os.utime(thumb_path, ns=(original.stat().st_mtime_ns + 1_000_000, original.stat().st_mtime_ns + 1_000_000))
+
+            self.assertTrue(thumbnail_is_current(original, thumb_path))
+            self.assertEqual(existing_thumbnail_url(target, relative), "thumbs/2024/01/image.jpg")
+
+    def test_existing_thumbnail_url_falls_back_when_thumbnail_is_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            original = target / "2024" / "01" / "image.jpg"
+            write_test_image(original)
+            relative = Path("2024/01/image.jpg")
+            thumb_path = thumbnail_absolute_path(target, relative)
+            write_test_image(thumb_path)
+            os.utime(thumb_path, ns=(original.stat().st_mtime_ns - 1_000_000, original.stat().st_mtime_ns - 1_000_000))
+
+            self.assertFalse(thumbnail_is_current(original, thumb_path))
+            self.assertEqual(existing_thumbnail_url(target, relative), "2024/01/image.jpg")
+
+    def test_make_thumbnails_continues_after_corrupt_file_and_returns_2(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            good = target / "2024" / "01" / "good.jpg"
+            bad = target / "2024" / "01" / "bad.jpg"
+            write_test_image(good)
+            bad.write_bytes(b"not a real image")
+            register_target_file(target, Path("2024/01/good.jpg"))
+            register_target_file(target, Path("2024/01/bad.jpg"))
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "make-thumbnails"])
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("feil=1", stdout)
+            self.assertTrue(thumbnail_absolute_path(target, Path("2024/01/good.jpg")).is_file())
+
+    def test_make_browser_writes_thumbnail_src_when_thumbnail_is_current(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            original = target / "2024" / "01" / "image.jpg"
+            write_test_image(original)
+            register_target_file(target, Path("2024/01/image.jpg"))
+            thumb_path = thumbnail_absolute_path(target, Path("2024/01/image.jpg"))
+            write_test_image(thumb_path)
+            os.utime(thumb_path, ns=(original.stat().st_mtime_ns + 1_000_000, original.stat().st_mtime_ns + 1_000_000))
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "make-browser"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser", stdout)
+            html = (target / "index.html").read_text(encoding="utf-8")
+            self.assertIn('"thumbnailSrc": "thumbs/2024/01/image.jpg"', html)
+            self.assertIn("item.thumbnailSrc || item.url", html)
+
+    def test_server_month_uses_current_thumbnail_via_file_thumbs_url(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            original = target / "2024" / "01" / "image.jpg"
+            write_test_image(original)
+            register_target_file(target, Path("2024/01/image.jpg"))
+            thumb_path = thumbnail_absolute_path(target, Path("2024/01/image.jpg"))
+            write_test_image(thumb_path)
+            os.utime(thumb_path, ns=(original.stat().st_mtime_ns + 1_000_000, original.stat().st_mtime_ns + 1_000_000))
+
+            items = browser_month_items(target, "2024-01")
+            html = month_page_html(target, "2024-01", items)
+
+            self.assertIn('src="/file/thumbs/2024/01/image.jpg"', html)
+
+    def test_docs_reference_includes_make_thumbnails(self) -> None:
+        reference = Path("docs/reference.md").read_text(encoding="utf-8")
+
+        self.assertIn("[`make-thumbnails`](make-thumbnails.md)", reference)
 
     def test_open_browser_opens_existing_index_without_rewriting_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -37,6 +37,7 @@ from .openclip import (
     relative_to_target,
     text_embedding,
 )
+from .thumbnails import existing_thumbnail_url
 
 
 DEFAULT_HOST = "127.0.0.1"
@@ -1797,7 +1798,7 @@ def person_month_item_html(target: Path, person_name: str, item: Any) -> str:
 def source_month_item_html(target: Path, source: BrowserSource, item: Any) -> str:
     target_path = Path(str(item["target_path"]))
     label = html.escape(display_relative_path(target, target_path))
-    media = thumbnail_media_html(item)
+    media = thumbnail_media_html(target, item)
     return f"""
     <article class="item">
       <a class="thumb-link" href="{source_item_url(source, int(item["id"]))}">{media}</a>
@@ -1813,14 +1814,16 @@ def month_item_html(target: Path, item: Any) -> str:
     return source_month_item_html(target, all_browser_source(), item)
 
 
-def thumbnail_media_html(item: Any) -> str:
+def thumbnail_media_html(target: Path, item: Any) -> str:
     file_id = int(item["id"])
     target_path = Path(str(item["target_path"]))
     url = f"/file/{file_id}"
     name = html.escape(str(item["stored_filename"]))
     if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
         return f'<div class="video-thumb">Video<br>{name}</div>'
-    return f'<img src="{url}" alt="{name}" loading="lazy">'
+    relative_path = db.target_relative_path(target, target_path)
+    thumbnail_src = "/file/" + existing_thumbnail_url(target, relative_path)
+    return f'<img src="{html.escape(thumbnail_src)}" alt="{name}" loading="lazy">'
 
 
 def page_html(title: str, body: str) -> str:
