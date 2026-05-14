@@ -664,7 +664,10 @@ def image_result_html(target: Path, result: ImageSearchResult) -> str:
 
 
 def relative_to_target(target: Path, path: Path) -> Path:
-    candidate = db.absolute_target_path(target, Path(path))
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        return candidate
+    candidate = db.absolute_target_path(target, candidate)
     try:
         return candidate.resolve().relative_to(target.resolve())
     except ValueError:

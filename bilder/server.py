@@ -759,9 +759,7 @@ def month_key_for_item(target: Path, item: Any) -> str:
     stored_key = month_key_from_stored_path(str(item["target_path"]))
     if stored_key is not None:
         return stored_key
-    return month_key_from_path(
-        Path(display_relative_path(target, db.absolute_target_path(target, Path(str(item["target_path"])))))
-    )
+    return month_key_from_path(relative_to_target(target, Path(str(item["target_path"]))))
 
 
 def month_key_from_stored_path(path: str) -> str | None:
