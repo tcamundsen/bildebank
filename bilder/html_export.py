@@ -48,15 +48,14 @@ def browser_items(
     conn = db.connect(target)
     try:
         face_data_by_file_id = face_browser_data_by_file_id(target)
-        with MediaMetadataCache(target, conn) as media_cache:
-            items = [
-                item
-                for item in (
-                    row_to_item(target, row, face_data_by_file_id=face_data_by_file_id, media_cache=media_cache)
-                    for row in db.browser_files(conn)
-                )
-                if item_matches_filters(item, media_filter, date_source_filter)
-            ]
+        items = [
+            item
+            for item in (
+                row_to_item(target, row, face_data_by_file_id=face_data_by_file_id, include_face_boxes=False)
+                for row in db.browser_files(conn)
+            )
+            if item_matches_filters(item, media_filter, date_source_filter)
+        ]
     finally:
         conn.close()
     return items
@@ -81,6 +80,7 @@ def row_to_item(
     *,
     face_data_by_file_id: dict[int, dict[str, object]] | None = None,
     media_cache: MediaMetadataCache | None = None,
+    include_face_boxes: bool = True,
 ) -> dict[str, object]:
     target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
     relative_path = relative_to_target(target, target_path)
@@ -101,7 +101,12 @@ def row_to_item(
         "name": row["stored_filename"],
         "sizeText": format_bytes(int(row["size_bytes"])),
         "people": face_data.get("people", []),
-        "faces": browser_face_items(target_path, face_data.get("faces", []), media_cache=media_cache),
+        "faces": browser_face_items(
+            target_path,
+            face_data.get("faces", []),
+            media_cache=media_cache,
+            include_boxes=include_face_boxes,
+        ),
     }
 
 
@@ -110,11 +115,15 @@ def browser_face_items(
     faces: object,
     *,
     media_cache: MediaMetadataCache | None = None,
+    include_boxes: bool = True,
 ) -> list[dict[str, object]]:
     if not isinstance(faces, list) or not faces:
         return []
-    dimensions = media_cache.image_dimensions(target_path) if media_cache is not None else image_dimensions(target_path)
-    orientation = media_cache.image_orientation(target_path) if media_cache is not None else image_orientation(target_path)
+    dimensions = None
+    orientation = 1
+    if include_boxes:
+        dimensions = media_cache.image_dimensions(target_path) if media_cache is not None else image_dimensions(target_path)
+        orientation = media_cache.image_orientation(target_path) if media_cache is not None else image_orientation(target_path)
     items: list[dict[str, object]] = []
     for face in faces:
         if not isinstance(face, dict):
@@ -123,7 +132,7 @@ def browser_face_items(
             "faceId": face["faceId"],
             "score": face["score"],
         }
-        if dimensions is not None:
+        if include_boxes and dimensions is not None:
             percent = face_box_percent(face, dimensions, orientation)
             if percent is not None:
                 left, top, width, height = percent
