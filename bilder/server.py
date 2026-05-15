@@ -1077,6 +1077,23 @@ def geo_area_items(target: Path, *, h3_cell: str, resolution: int, limit: int) -
         conn.close()
 
 
+def geo_child_area_items(target: Path, *, h3_cell: str, resolution: int) -> list[Any]:
+    if resolution >= max(H3_COLUMNS):
+        return []
+    parent_column = h3_column_for_resolution(resolution)
+    child_column = h3_column_for_resolution(resolution + 1)
+    conn = db.connect(target)
+    try:
+        return db.geo_child_areas(
+            conn,
+            parent_column=parent_column,
+            parent_h3_cell=h3_cell,
+            child_column=child_column,
+        )
+    finally:
+        conn.close()
+
+
 def geo_missing_items(target: Path, *, limit: int, offset: int) -> list[Any]:
     conn = db.connect(target)
     try:
@@ -1529,11 +1546,13 @@ def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: in
     finally:
         conn.close()
     items = geo_area_items(target, h3_cell=h3_cell, resolution=resolution, limit=limit)
+    child_areas = geo_child_area_items(target, h3_cell=h3_cell, resolution=resolution)
     cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
     content = cards if cards else '<p class="meta">Ingen aktive bilder i dette området.</p>'
     quoted = urllib.parse.quote(h3_cell, safe="")
     title = place_name or "Sted"
     escaped_name = html.escape(place_name or "")
+    child_area_section = geo_child_areas_section_html(child_areas, resolution=resolution + 1)
     return page_html(
         f"{title} {h3_cell}",
         f"""
@@ -1547,6 +1566,7 @@ def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: in
             <label>Stedsnavn <input name="name" value="{escaped_name}" autocomplete="off"></label>
             <button type="submit">Lagre navn</button>
           </form>
+          {child_area_section}
           <form action="/geo/area/{html.escape(quoted)}" method="get" class="geo-filter">
             <label>Maks bilder <input name="limit" value="{limit}" inputmode="numeric"></label>
             <button type="submit">Vis</button>
@@ -1555,6 +1575,19 @@ def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: in
         </main>
         """,
     )
+
+
+def geo_child_areas_section_html(rows: list[Any], *, resolution: int) -> str:
+    if not rows:
+        return ""
+    links = "\n".join(geo_area_row_html(row, resolution=resolution) for row in rows)
+    return f"""
+    <section class="geo-child-areas">
+      <h2>Inneholder</h2>
+      <p class="meta">Understeder på H3-{h3_resolution_label(resolution)}.</p>
+      <div class="geo-list">{links}</div>
+    </section>
+    """
 
 
 def geo_missing_page_html(target: Path, *, limit: int = DEFAULT_GEO_LIMIT, offset: int = 0) -> str:

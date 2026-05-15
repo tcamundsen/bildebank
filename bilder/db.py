@@ -1874,6 +1874,32 @@ def geo_area_files(
     return list(conn.execute(sql, params))
 
 
+def geo_child_areas(
+    conn: sqlite3.Connection,
+    *,
+    parent_column: str,
+    parent_h3_cell: str,
+    child_column: str,
+) -> list[sqlite3.Row]:
+    validate_h3_column(parent_column)
+    validate_h3_column(child_column)
+    return list(
+        conn.execute(
+            f"""
+            SELECT files.{child_column} AS h3_cell, COUNT(*) AS count, geo_place_names.name AS name
+            FROM files
+            LEFT JOIN geo_place_names ON geo_place_names.h3_cell = files.{child_column}
+            WHERE files.{parent_column} = ?
+              AND files.{child_column} IS NOT NULL
+              AND files.deleted_at IS NULL
+            GROUP BY files.{child_column}
+            ORDER BY count DESC, COALESCE(geo_place_names.name, files.{child_column}), files.{child_column}
+            """,
+            (parent_h3_cell,),
+        )
+    )
+
+
 def geo_place_name(conn: sqlite3.Connection, h3_cell: str) -> str | None:
     row = conn.execute("SELECT name FROM geo_place_names WHERE h3_cell = ?", (h3_cell,)).fetchone()
     return None if row is None else str(row["name"])

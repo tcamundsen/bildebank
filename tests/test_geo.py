@@ -219,6 +219,69 @@ class GeoTests(unittest.TestCase):
         self.assertIn("Hytta", html)
         self.assertIn(cells["h3_res7"], html)
 
+    def test_geo_area_page_links_to_child_areas_with_saved_names(self) -> None:
+        import h3
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            first_file_id = register_target_file(target, Path("2024/01/first.jpg"))
+            second_file_id = register_target_file(target, Path("2024/01/second.jpg"))
+            third_file_id = register_target_file(target, Path("2024/01/third.jpg"))
+            cells = h3_cells_for_point(59.91273, 10.74609)
+            parent_cell = cells["h3_res7"]
+            child_cells = sorted(h3.cell_to_children(parent_cell, 8))
+            first_child = child_cells[0]
+            second_child = child_cells[1]
+
+            conn = db.connect(target)
+            try:
+                for file_id, child_cell in (
+                    (first_file_id, first_child),
+                    (second_file_id, first_child),
+                    (third_file_id, second_child),
+                ):
+                    file_cells = dict(cells)
+                    file_cells["h3_res8"] = child_cell
+                    db.update_file_gps(
+                        conn,
+                        file_id=file_id,
+                        gps_lat=59.91273,
+                        gps_lon=10.74609,
+                        gps_alt=None,
+                        h3_cells=file_cells,
+                        gps_source="test",
+                        gps_error=None,
+                    )
+                db.set_geo_place_name(conn, first_child, "Brygga")
+                conn.commit()
+            finally:
+                conn.close()
+
+            html = geo_area_page_html(target, parent_cell, resolution=7, limit=10)
+
+        first_link = f'href="/geo/area/{first_child}"'
+        second_link = f'href="/geo/area/{second_child}"'
+        self.assertIn("<h2>Inneholder</h2>", html)
+        self.assertIn("Understeder på H3-oppløsning 8", html)
+        self.assertIn("Brygga", html)
+        self.assertIn(first_link, html)
+        self.assertIn(second_child, html)
+        self.assertIn(second_link, html)
+        self.assertLess(html.index("Brygga"), html.index(second_child))
+        self.assertIn("<strong>2 bilder</strong>", html)
+        self.assertIn("<strong>1 bilder</strong>", html)
+
+    def test_geo_area_page_omits_child_areas_for_highest_resolution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            cells = h3_cells_for_point(59.91273, 10.74609)
+
+            html = geo_area_page_html(target, cells["h3_res9"], resolution=9, limit=10)
+
+        self.assertNotIn("<h2>Inneholder</h2>", html)
+
     def test_geo_scan_uses_relative_target_path_under_collection_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
