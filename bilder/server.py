@@ -26,7 +26,7 @@ from .html_export import (
     format_bytes,
     month_key_from_path,
 )
-from .geo import H3_COLUMNS, h3_column_for_resolution, h3_resolution
+from .geo import H3_COLUMNS, h3_column_for_resolution, h3_resolution, h3_resolution_label
 from .media import camera_info
 from .media_cache import cached_image_dimensions
 from .openclip import (
@@ -1459,13 +1459,6 @@ def geo_index_page_html(
         if area_links
         else '<p class="meta">Ingen steder med nok bilder. Kjør bildebank geo-scan, eller senk min_count.</p>'
     )
-    area = {
-        5: "ca. 250 km²",
-        6: "ca. 36 km²",
-        7: "ca. 5 km²",
-        8: "ca. 0,7 km²",
-        9: "ca. 0,1 km²",
-    }
     return page_html(
         "Steder",
         f"""
@@ -1479,7 +1472,7 @@ def geo_index_page_html(
             <label>Maks steder <input name="limit" value="{limit}" inputmode="numeric"></label>
             <button type="submit">Vis</button>
           </form>
-          <p class="meta">Viser H3-oppløsning {resolution}, {area[resolution]}. Lavere tall gir større områder.</p>
+          <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder.</p>
           {content}
         </main>
         """,
@@ -1516,7 +1509,7 @@ def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: in
         <main class="shell">
           <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a></p>
           <h1>Sted</h1>
-          <p class="meta">H3-celle {html.escape(h3_cell)}, oppløsning {resolution}. Viser opptil {limit} bilder.</p>
+          <p class="meta">H3-celle {html.escape(h3_cell)}, {h3_resolution_label(resolution)}. Viser opptil {limit} bilder.</p>
           <form action="/geo/area/{html.escape(quoted)}" method="get" class="geo-filter">
             <label>Maks bilder <input name="limit" value="{limit}" inputmode="numeric"></label>
             <button type="submit">Vis</button>
@@ -1578,7 +1571,7 @@ def geo_area_row_html(row: Any, *, resolution: int) -> str:
     return f"""
     <a class="geo-row" href="{html.escape(url)}">
       <span>{html.escape(h3_cell)}</span>
-      <span>oppløsning {resolution}</span>
+      <span>{h3_resolution_label(resolution)}</span>
       <strong>{count} bilder</strong>
     </a>
     """

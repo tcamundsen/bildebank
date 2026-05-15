@@ -23,6 +23,13 @@ H3_COLUMNS = {
     8: "h3_res8",
     9: "h3_res9",
 }
+H3_AREA_LABELS_KM2 = {
+    5: "ca. 250 km²",
+    6: "ca. 36 km²",
+    7: "ca. 5 km²",
+    8: "ca. 0,7 km²",
+    9: "ca. 0,1 km²",
+}
 DEFAULT_EXIFTOOL_BATCH_SIZE = 200
 
 
@@ -82,6 +89,15 @@ def h3_column_for_resolution(resolution: int) -> str:
         return H3_COLUMNS[resolution]
     except KeyError as exc:
         raise ValueError("H3-oppløsning må være 5, 6, 7, 8 eller 9.") from exc
+
+
+def h3_area_label(resolution: int) -> str:
+    h3_column_for_resolution(resolution)
+    return H3_AREA_LABELS_KM2[resolution]
+
+
+def h3_resolution_label(resolution: int) -> str:
+    return f"oppløsning {resolution}, {h3_area_label(resolution)}"
 
 
 def h3_resolution(h3_cell: str) -> int:

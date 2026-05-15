@@ -14,7 +14,9 @@ from bilder.db import init_database
 from bilder.geo import (
     extract_gps_from_metadata,
     h3_cells_for_point,
+    h3_area_label,
     h3_column_for_resolution,
+    h3_resolution_label,
     scan_geo,
 )
 from bilder.media import sha256_file
@@ -90,6 +92,12 @@ class GeoTests(unittest.TestCase):
     def test_h3_column_for_resolution_rejects_unsupported_resolution(self) -> None:
         with self.assertRaises(ValueError):
             h3_column_for_resolution(4)
+
+    def test_h3_area_labels_are_available_for_supported_resolutions(self) -> None:
+        self.assertEqual(h3_area_label(7), "ca. 5 km²")
+        self.assertEqual(h3_resolution_label(8), "oppløsning 8, ca. 0,7 km²")
+        with self.assertRaises(ValueError):
+            h3_area_label(4)
 
     def test_geo_columns_are_added_to_new_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

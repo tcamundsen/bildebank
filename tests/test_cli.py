@@ -715,8 +715,10 @@ class CliTests(unittest.TestCase):
 
         self.assertIn("Steder", index_body)
         self.assertIn(cells["h3_res7"], index_body)
+        self.assertIn("oppløsning 7, ca. 5 km²", index_body)
         self.assertIn("Med GPS", stats_body)
         self.assertIn("IMG_20240102.png", area_body)
+        self.assertIn("oppløsning 7, ca. 5 km²", area_body)
         self.assertNotIn("IMG_20240103.png", area_body)
         self.assertIn("IMG_20240104.png", missing_body)
 
