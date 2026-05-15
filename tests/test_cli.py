@@ -722,7 +722,7 @@ class CliTests(unittest.TestCase):
         self.assertNotIn("IMG_20240103.png", area_body)
         self.assertIn("IMG_20240104.png", missing_body)
 
-    def test_run_server_item_page_shows_nearby_geo_images(self) -> None:
+    def test_run_server_item_page_does_not_show_nearby_geo_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -753,8 +753,8 @@ class CliTests(unittest.TestCase):
             self.assertIsNotNone(item)
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
 
-        self.assertIn("Nærliggende bilder", body)
-        self.assertIn("IMG_20240103.png", body)
+        self.assertNotIn("Nærliggende bilder", body)
+        self.assertNotIn("IMG_20240103.png", body)
 
     def test_run_server_month_page_uses_browser_controls(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -876,6 +876,22 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            cells = h3_cells_for_point(59.91273, 10.74609)
+            conn = db.connect(target)
+            try:
+                db.update_file_gps(
+                    conn,
+                    file_id=1,
+                    gps_lat=59.91273,
+                    gps_lon=10.74609,
+                    gps_alt=None,
+                    h3_cells=cells,
+                    gps_source="test",
+                    gps_error=None,
+                )
+                conn.commit()
+            finally:
+                conn.close()
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
@@ -890,8 +906,28 @@ class CliTests(unittest.TestCase):
         self.assertIn("100 x 80", body)
         self.assertIn("Kamera", body)
         self.assertIn("Kilder", body)
+        self.assertIn("<dt>Steder</dt>", body)
+        self.assertIn(f'href="/geo/area/{cells["h3_res5"]}"', body)
+        self.assertIn(f'href="/geo/area/{cells["h3_res9"]}"', body)
+        self.assertIn(f"H3-7: {cells['h3_res7']}", body)
         self.assertIn(source.name, body)
         self.assertIn("closeInfoOverlay", body)
+
+    def test_run_server_item_page_omits_geo_info_without_h3_cells(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+
+        self.assertNotIn("<dt>Steder</dt>", body)
+        self.assertNotIn("/geo/area/", body)
 
     def test_run_server_item_page_has_delete_button(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

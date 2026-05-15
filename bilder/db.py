@@ -1941,47 +1941,6 @@ def geo_missing_files(conn: sqlite3.Connection, *, limit: int, offset: int = 0) 
     )
 
 
-def geo_file_location(conn: sqlite3.Connection, file_id: int) -> sqlite3.Row | None:
-    return conn.execute(
-        f"""
-        SELECT {GEO_FILE_COLUMNS}
-        FROM files
-        WHERE id = ?
-          AND deleted_at IS NULL
-        """,
-        (file_id,),
-    ).fetchone()
-
-
-def geo_nearby_files(
-    conn: sqlite3.Connection,
-    *,
-    file_id: int,
-    column: str,
-    h3_cells: Iterable[str],
-    limit: int,
-) -> list[sqlite3.Row]:
-    validate_h3_column(column)
-    cells = sorted({cell for cell in h3_cells if cell})
-    if not cells:
-        return []
-    placeholders = ",".join("?" for _ in cells)
-    return list(
-        conn.execute(
-            f"""
-            SELECT {GEO_FILE_COLUMNS}
-            FROM files
-            WHERE deleted_at IS NULL
-              AND id != ?
-              AND {column} IN ({placeholders})
-            ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path_key
-            LIMIT ?
-            """,
-            (file_id, *cells, limit),
-        )
-    )
-
-
 def normalize_view_rotation(value: object) -> int:
     try:
         rotation = int(value or 0) % 360

@@ -49,7 +49,6 @@ DEFAULT_SEARCH_LIMIT = 100
 DEFAULT_GEO_RESOLUTION = 7
 DEFAULT_GEO_MIN_COUNT = 2
 DEFAULT_GEO_LIMIT = 100
-DEFAULT_GEO_NEARBY_LIMIT = 60
 
 
 @dataclass(frozen=True)
@@ -542,7 +541,7 @@ def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
 
 FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
-    "size_bytes, view_rotation_degrees"
+    "size_bytes, view_rotation_degrees, h3_res5, h3_res6, h3_res7, h3_res8, h3_res9"
 )
 ITEM_DATE_ORDER_SQL = db.BROWSER_DATE_ORDER_SQL
 ITEM_ORDER_SQL = f"{ITEM_DATE_ORDER_SQL}, target_path_key"
@@ -1100,55 +1099,6 @@ def geo_missing_items(target: Path, *, limit: int, offset: int) -> list[Any]:
         return db.geo_missing_files(conn, limit=limit, offset=offset)
     finally:
         conn.close()
-
-
-def geo_nearby_items(target: Path, item: Any, *, limit: int = DEFAULT_GEO_NEARBY_LIMIT) -> list[Any]:
-    file_id = int(item["id"])
-    conn = db.connect(target)
-    try:
-        location = db.geo_file_location(conn, file_id)
-        if location is None:
-            return []
-        rows = nearby_rows_for_resolution(conn, location, file_id=file_id, resolution=8, limit=limit)
-        if len(rows) >= min(12, limit):
-            return rows
-        fallback_rows = nearby_rows_for_resolution(conn, location, file_id=file_id, resolution=7, limit=limit)
-        if len(fallback_rows) > len(rows):
-            return fallback_rows
-        return rows
-    finally:
-        conn.close()
-
-
-def nearby_rows_for_resolution(
-    conn: sqlite3.Connection,
-    location: Any,
-    *,
-    file_id: int,
-    resolution: int,
-    limit: int,
-) -> list[Any]:
-    column = h3_column_for_resolution(resolution)
-    h3_cell = location[column]
-    if not h3_cell:
-        return []
-    return db.geo_nearby_files(
-        conn,
-        file_id=file_id,
-        column=column,
-        h3_cells=h3_neighbor_cells(str(h3_cell), 1),
-        limit=limit,
-    )
-
-
-def h3_neighbor_cells(h3_cell: str, distance: int) -> list[str]:
-    import h3
-
-    if hasattr(h3, "grid_disk"):
-        return list(h3.grid_disk(h3_cell, distance))
-    if hasattr(h3, "k_ring"):
-        return list(h3.k_ring(h3_cell, distance))
-    return [h3_cell]
 
 
 def first_person_item(target: Path, person_name: str) -> Any | None:
@@ -1755,7 +1705,6 @@ def source_item_page_html(
     faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if source.person_name is None else ""
     action_links = source_action_links_html(source)
     info_overlay = image_info_overlay_html(target, item)
-    nearby = geo_nearby_section_html(target, item) if source.person_name is None else ""
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
@@ -1770,7 +1719,6 @@ def source_item_page_html(
             {controls}
           </header>
           <section class="stage">{media}</section>
-          {nearby}
           <footer class="browser-footer">
             <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
           </footer>
@@ -2101,6 +2049,9 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
         rows.append(info_row_html("Kilder", "\n\n".join(sources), multiline=True))
     else:
         rows.append(info_row_html("Kilder", "-"))
+    geo_links = image_geo_area_links_html(item)
+    if geo_links:
+        rows.append(info_row_html("Steder", geo_links, raw_html=True))
     return rows
 
 
@@ -2124,9 +2075,20 @@ def image_source_rows(target: Path, target_path: Path) -> list[str]:
     return result
 
 
-def info_row_html(label: str, value: str, *, multiline: bool = False) -> str:
-    escaped_value = html.escape(value)
-    if multiline:
+def image_geo_area_links_html(item: Any) -> str:
+    links = []
+    for resolution, column in H3_COLUMNS.items():
+        h3_cell = item[column]
+        if not h3_cell:
+            continue
+        url = "/geo/area/" + urllib.parse.quote(str(h3_cell), safe="")
+        links.append(f'<a href="{html.escape(url)}">H3-{resolution}: {html.escape(str(h3_cell))}</a>')
+    return "<br>".join(links)
+
+
+def info_row_html(label: str, value: str, *, multiline: bool = False, raw_html: bool = False) -> str:
+    escaped_value = value if raw_html else html.escape(value)
+    if multiline and not raw_html:
         escaped_value = "<br>".join(escaped_value.splitlines())
     return f"""
     <div class="info-row">
@@ -2315,19 +2277,6 @@ def source_month_item_html(target: Path, source: BrowserSource, item: Any) -> st
     """
 
 
-def geo_nearby_section_html(target: Path, item: Any) -> str:
-    items = geo_nearby_items(target, item)
-    if not items:
-        return ""
-    cards = "\n".join(source_month_item_html(target, all_browser_source(), nearby_item) for nearby_item in items)
-    return f"""
-    <section class="nearby-section">
-      <div class="nearby-title">Nærliggende bilder</div>
-      <div class="month-grid-server">{cards}</div>
-    </section>
-    """
-
-
 def month_item_html(target: Path, item: Any) -> str:
     return source_month_item_html(target, all_browser_source(), item)
 
@@ -2492,8 +2441,6 @@ def page_html(title: str, body: str) -> str:
       padding: 12px;
       overflow: auto;
     }}
-    .nearby-section {{ background: var(--bg); border-top: 1px solid var(--border); max-height: 38vh; overflow: auto; }}
-    .nearby-title {{ padding: 10px 12px 0; color: var(--muted); font-size: 13px; }}
     .thumb-link {{ display: block; color: inherit; text-decoration: none; }}
     .thumb-link img, .video-thumb {{
       width: 100%;
