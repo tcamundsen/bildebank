@@ -1813,7 +1813,7 @@ def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
     boxes = "\n".join(person_face_box_html(face) for face in faces)
     return f"""
     <div class="person-media">
-      <a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>
+      <a href="{url}" target="_blank"><img src="{url}" alt="{name}"{rotation_style_attr(item)}></a>
       {boxes}
     </div>
     """
@@ -1931,7 +1931,7 @@ def source_month_nav_link(source: BrowserSource, month_key: str | None, label: s
 
 
 def rotation_buttons_html(source: BrowserSource, item: Any) -> str:
-    if source.person_name is not None or not is_image_item(item):
+    if not is_image_item(item):
         return ""
     file_id = int(item["id"])
     return f"""
