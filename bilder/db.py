@@ -91,7 +91,6 @@ class MigrationPlan:
     duplicate_findings: int
     creates_file_sources: bool
     rebuilds_files_without_legacy_source_columns: bool = False
-    converts_relative_paths: bool = False
     drops_duplicate_findings: bool = False
     rebuilds_errors_without_source_fk: bool = False
     rebuilds_sources_without_kind: bool = False
@@ -177,6 +176,41 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
         ensure_column(conn, "files", "view_rotation_degrees", "INTEGER")
     if table_exists(conn, "sources"):
         ensure_column(conn, "sources", "superseded_by_source_id", "INTEGER REFERENCES sources(id)")
+    ensure_performance_indexes(conn)
+
+
+def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
+    if table_exists(conn, "files"):
+        conn.executescript(
+            f"""
+        CREATE INDEX IF NOT EXISTS idx_files_active_browser_order
+        ON files ({BROWSER_DATE_ORDER_SQL}, target_path_key)
+        WHERE deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_active_date_source_order
+        ON files (date_source, {BROWSER_DATE_ORDER_SQL}, target_path_key)
+        WHERE deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_active_target_path_key
+        ON files(target_path_key)
+        WHERE deleted_at IS NULL;
+        """
+        )
+    if table_exists(conn, "file_sources"):
+        conn.executescript(
+            """
+        CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_id
+        ON file_sources(source_id, id);
+        """
+        )
+    if table_exists(conn, "errors"):
+        conn.executescript(
+            """
+        CREATE INDEX IF NOT EXISTS idx_errors_unresolved_stage_id
+        ON errors(stage, id DESC)
+        WHERE resolved_at IS NULL;
+        """
+        )
 
 
 def table_exists(conn: sqlite3.Connection, table: str) -> bool:
@@ -257,6 +291,27 @@ def apply_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);
 
+        CREATE INDEX IF NOT EXISTS idx_files_active_browser_order
+        ON files (
+            CASE WHEN taken_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'
+            THEN taken_date ELSE '9999-99-99' END,
+            target_path_key
+        )
+        WHERE deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_active_date_source_order
+        ON files (
+            date_source,
+            CASE WHEN taken_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'
+            THEN taken_date ELSE '9999-99-99' END,
+            target_path_key
+        )
+        WHERE deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_active_target_path_key
+        ON files(target_path_key)
+        WHERE deleted_at IS NULL;
+
         CREATE TABLE IF NOT EXISTS file_sources (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             file_id INTEGER NOT NULL REFERENCES files(id),
@@ -271,6 +326,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_file_sources_file_id ON file_sources(file_id);
         CREATE INDEX IF NOT EXISTS idx_file_sources_sha256 ON file_sources(sha256);
+        CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_id ON file_sources(source_id, id);
 
         CREATE TABLE IF NOT EXISTS errors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -281,6 +337,10 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             resolved_at TEXT
         );
+
+        CREATE INDEX IF NOT EXISTS idx_errors_unresolved_stage_id
+        ON errors(stage, id DESC)
+        WHERE resolved_at IS NULL;
         """
     )
     ensure_compatible_columns(conn)
@@ -303,6 +363,7 @@ def create_file_sources_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_file_sources_file_id ON file_sources(file_id);
         CREATE INDEX IF NOT EXISTS idx_file_sources_sha256 ON file_sources(sha256);
+        CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_id ON file_sources(source_id, id);
         """
     )
 
@@ -323,18 +384,6 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 imported_files=count_rows(conn, "files"),
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
-            )
-        if version == 4:
-            if validate:
-                validate_current_schema(conn)
-                validate_relative_path_migration_inputs(conn, target)
-            return MigrationPlan(
-                current_version=version,
-                target_version=SCHEMA_VERSION,
-                imported_files=count_rows(conn, "files"),
-                duplicate_findings=count_rows(conn, "duplicate_findings"),
-                creates_file_sources=False,
-                converts_relative_paths=True,
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -371,7 +420,6 @@ def backup_database(target: Path) -> Path:
 
 def migrate_database(target: Path) -> MigrationPlan:
     conn = connect(target, require_current=False)
-    path_migrated = False
     try:
         version = schema_version(conn)
         if version == SCHEMA_VERSION:
@@ -384,33 +432,6 @@ def migrate_database(target: Path) -> MigrationPlan:
                 imported_files=count_rows(conn, "files"),
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
-            )
-        if version == 4:
-            validate_current_schema(conn)
-            try:
-                conn.execute("BEGIN IMMEDIATE")
-                path_migrated = migrate_relative_paths(conn, target)
-                set_meta(conn, "schema_version", str(SCHEMA_VERSION))
-                log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
-                validate_current_schema(conn)
-                foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
-                if foreign_key_errors:
-                    raise ValueError(f"foreign_key_check feilet: {foreign_key_errors[0]}")
-                integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
-                if integrity != "ok":
-                    raise ValueError(f"integrity_check feilet: {integrity}")
-                set_collection_id(conn)
-                conn.commit()
-            except Exception:
-                conn.rollback()
-                raise
-            return MigrationPlan(
-                current_version=version,
-                target_version=SCHEMA_VERSION,
-                imported_files=count_rows(conn, "files"),
-                duplicate_findings=count_rows(conn, "duplicate_findings"),
-                creates_file_sources=False,
-                converts_relative_paths=path_migrated,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -443,7 +464,6 @@ def migrate_database(target: Path) -> MigrationPlan:
             rebuild_file_sources_without_kind(conn)
             if table_exists(conn, "duplicate_findings"):
                 conn.execute("DROP TABLE duplicate_findings")
-            path_migrated = migrate_relative_paths(conn, target)
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
             validate_current_schema(conn)
@@ -471,7 +491,6 @@ def migrate_database(target: Path) -> MigrationPlan:
             rebuilds_errors_without_source_fk=rebuilds_errors,
             rebuilds_sources_without_kind=rebuilds_sources,
             rebuilds_file_sources_without_kind=rebuilds_file_sources,
-            converts_relative_paths=path_migrated,
         )
     finally:
         conn.close()
@@ -627,53 +646,6 @@ def validate_relative_target_paths(conn: sqlite3.Connection) -> None:
             f"{row['id']} har absolutt deleted_original_target_path i v5-database: "
             f"{row['deleted_original_target_path']}. Kjør bildebank migrate."
         )
-
-
-def validate_relative_path_migration_inputs(conn: sqlite3.Connection, target: Path) -> None:
-    rows = conn.execute(
-        "SELECT id, target_path, deleted_original_target_path FROM files ORDER BY id"
-    ).fetchall()
-    for row in rows:
-        target_relative_path(target, Path(str(row["target_path"])))
-        if row["deleted_original_target_path"] is not None:
-            target_relative_path(target, Path(str(row["deleted_original_target_path"])))
-
-
-def migrate_relative_paths(conn: sqlite3.Connection, target: Path) -> bool:
-    rows = conn.execute(
-        """
-        SELECT id, target_path, deleted_original_target_path
-        FROM files
-        ORDER BY id
-        """
-    ).fetchall()
-    migrated = False
-    for row in rows:
-        target_path = target_relative_path(target, Path(str(row["target_path"])))
-        deleted_original = row["deleted_original_target_path"]
-        deleted_relative = (
-            target_relative_path(target, Path(str(deleted_original))).as_posix()
-            if deleted_original is not None
-            else None
-        )
-        if target_path.as_posix() != str(row["target_path"]) or deleted_relative != deleted_original:
-            migrated = True
-        conn.execute(
-            """
-            UPDATE files
-            SET target_path = ?,
-                target_path_key = ?,
-                deleted_original_target_path = ?
-            WHERE id = ?
-            """,
-            (
-                target_path.as_posix(),
-                relative_path_key(target_path),
-                deleted_relative,
-                int(row["id"]),
-            ),
-        )
-    return migrated
 
 
 def validate_legacy_file_sources_schema(conn: sqlite3.Connection) -> None:

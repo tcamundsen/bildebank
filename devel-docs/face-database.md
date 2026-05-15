@@ -63,35 +63,18 @@ target_root / relative_path
 Dette er nødvendig for at en bildesamling skal kunne flyttes eller få nytt
 mappenavn uten at face-databasen slutter å virke.
 
-## Path-normalisering
+## Path-forutsetning
 
-`connect_face_db(target)` gjør mer enn å åpne SQLite-filen:
+`connect_face_db(target)` gjør dette:
 
 - åpner `.bilder-faces.sqlite3`
 - sørger for gjeldende face-schema
-- normaliserer gamle face-stier til relative stier
 - oppdaterer `meta.target_path` til aktiv samlingsrot
 
-`normalize_face_paths()` håndterer to legacy-varianter:
-
-- gamle absolutte stier sammen med gammel `meta.target_path`
-- gamle absolutte stier uten brukbar `meta.target_path`
-
-Hvis gammel root finnes i `meta.target_path`, brukes den til å beregne relativ
-sti. Hvis den mangler eller ikke passer, prøver koden å finne en eksisterende
-suffix under aktiv samlingsrot.
-
-Eksempel etter rename av samlingsmappe:
-
-```text
-gammel verdi: C:\Users\Tom\bilder\2021\08\fil.jpg
-aktiv rot:    C:\Users\Tom\bilder2
-ny verdi:     2021/08/fil.jpg
-```
-
-Koden skal bare bruke suffix-fallback når den finner en faktisk fil under aktiv
-samlingsrot. Hvis den ikke finner en trygg match, skal den feile i stedet for å
-gjette.
+Face-databasen skal allerede lagre samlingsinterne bildestier relativt. Koden
+skal ikke forsøke å reparere gamle absolutte `target_path`-verdier ved åpning av
+databasen. Slike databaser må migreres eller regenereres før de brukes med
+gjeldende kode.
 
 ## Migrering v2 til v3
 

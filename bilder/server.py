@@ -1178,7 +1178,7 @@ def first_month_in_year(keys: list[str], year: str | None) -> str | None:
 
 def browser_month_items(target: Path, month_key: str) -> list[Any]:
     year, month = month_key.split("-", 1)
-    prefix = db.path_key(target / year / month) + "/"
+    prefix = db.relative_path_key(Path(year) / month) + "/"
     conn = db.connect(target)
     try:
         rows = list(
@@ -1242,7 +1242,7 @@ def search_server_images(server: BildebankServer, *, query: str, limit: int) -> 
                 (
                     cosine_similarity(text_vector, embedding_from_blob(bytes(row["embedding"]))),
                     int(row["file_id"]),
-                    db.absolute_target_path(server.target, Path(str(row["target_path"]))),
+                    Path(str(row["target_path"])),
                     str(row["target_path_key"]),
                 )
                 for row in rows
@@ -1261,7 +1261,7 @@ def search_server_images(server: BildebankServer, *, query: str, limit: int) -> 
                 (
                     run_id,
                     file_id,
-                    db.target_relative_path(server.target, target_path).as_posix(),
+                    target_path.as_posix(),
                     target_path_key,
                     score,
                     index,

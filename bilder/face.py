@@ -106,7 +106,6 @@ def connect_face_db(target: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(face_db_path(target))
     conn.row_factory = sqlite3.Row
     apply_face_schema(conn)
-    normalize_face_paths(conn, target)
     set_meta(conn, "target_path", str(target.resolve()))
     conn.commit()
     return conn
@@ -237,67 +236,6 @@ def create_current_face_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_face_suggestions_face_id ON face_suggestions(face_id);
         """
     )
-
-
-def normalize_face_paths(conn: sqlite3.Connection, target: Path) -> None:
-    current_root = target.resolve()
-    stored_root_value = get_meta(conn, "target_path")
-    old_root = Path(stored_root_value) if stored_root_value else current_root
-
-    scanned_rows = conn.execute(
-        "SELECT file_id, target_path FROM scanned_files ORDER BY file_id"
-    ).fetchall()
-    for row in scanned_rows:
-        relative_path = normalize_face_target_path(current_root, old_root, Path(str(row["target_path"])))
-        conn.execute(
-            """
-            UPDATE scanned_files
-            SET target_path = ?, target_path_key = ?
-            WHERE file_id = ?
-            """,
-            (relative_path.as_posix(), db.relative_path_key(relative_path), int(row["file_id"])),
-        )
-
-    face_rows = conn.execute(
-        """
-        SELECT faces.id AS face_id, scanned_files.target_path AS target_path
-        FROM faces
-        JOIN scanned_files ON scanned_files.file_id = faces.file_id
-        ORDER BY faces.id
-        """
-    ).fetchall()
-    for row in face_rows:
-        relative_path = normalize_face_target_path(current_root, old_root, Path(str(row["target_path"])))
-        conn.execute(
-            "UPDATE faces SET target_path_key = ? WHERE id = ?",
-            (db.relative_path_key(relative_path), int(row["face_id"])),
-        )
-
-    if stored_root_value is not None and stored_root_value != str(current_root):
-        set_meta(conn, "target_path", str(current_root))
-
-
-def normalize_face_target_path(current_root: Path, old_root: Path, path: Path) -> Path:
-    if not path.is_absolute():
-        return db.relative_path(path)
-    try:
-        return db.target_relative_path(old_root, path)
-    except ValueError:
-        inferred = infer_relative_path_after_collection_rename(current_root, path)
-        if inferred is not None:
-            return inferred
-        raise
-
-
-def infer_relative_path_after_collection_rename(current_root: Path, old_path: Path) -> Path | None:
-    parts = old_path.parts
-    for index in range(1, len(parts)):
-        suffix = Path(*parts[index:])
-        if suffix.is_absolute():
-            continue
-        if (current_root / suffix).exists():
-            return db.relative_path(suffix)
-    return None
 
 
 def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
@@ -877,16 +815,7 @@ def face_browser_items(
 
 
 def relative_to_target(target: Path, path: Path) -> Path:
-    candidate = Path(path)
-    if not candidate.is_absolute():
-        return candidate
-    candidate = db.absolute_target_path(target, candidate)
-    try:
-        return candidate.resolve().relative_to(target.resolve())
-    except ValueError:
-        import os
-
-        return Path(os.path.relpath(candidate, target))
+    return Path(path)
 
 
 def display_relative_path(target: Path, path: Path) -> str:

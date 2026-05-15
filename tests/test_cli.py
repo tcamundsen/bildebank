@@ -183,6 +183,7 @@ def create_legacy_database(
         source_file = source / "IMG_20240102.jpg"
         source_file.write_bytes(b"legacy-image")
         imported = target / "2024" / "01" / "IMG_20240102.jpg"
+        imported_relative = imported.relative_to(target)
         imported.parent.mkdir(parents=True)
         imported.write_bytes(b"legacy-image")
         file_hash = sha256_file(imported)
@@ -202,8 +203,8 @@ def create_legacy_database(
                 source_id,
                 str(source_file.resolve()),
                 str(source_file.resolve()),
-                str(imported.resolve()),
-                str(imported.resolve()),
+                imported_relative.as_posix(),
+                db.relative_path_key(imported_relative),
                 source_file.name,
                 imported.name,
                 file_hash,
@@ -547,6 +548,27 @@ class CliTests(unittest.TestCase):
         self.assertEqual(resolve_torch_device("cpu"), "cpu")
         with self.assertRaises(ValueError):
             resolve_torch_device("gpu")
+
+    def test_database_schema_includes_general_performance_indexes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                indexes = {
+                    row[0]
+                    for row in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'index'"
+                    )
+                }
+            finally:
+                conn.close()
+
+        self.assertIn("idx_files_active_browser_order", indexes)
+        self.assertIn("idx_files_active_date_source_order", indexes)
+        self.assertIn("idx_files_active_target_path_key", indexes)
+        self.assertIn("idx_file_sources_source_id_id", indexes)
+        self.assertIn("idx_errors_unresolved_stage_id", indexes)
 
     def test_run_server_renders_index_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2686,8 +2708,8 @@ model_name = "buffalo_s"
                         child_id,
                         str(child_source_file.resolve()),
                         str(child_source_file.resolve()),
-                        str(child_target_file.resolve()),
-                        str(child_target_file.resolve()),
+                        child_target_file.relative_to(target).as_posix(),
+                        db.relative_path_key(child_target_file.relative_to(target)),
                         child_source_file.name,
                         child_target_file.name,
                         child_hash,
@@ -2708,8 +2730,8 @@ model_name = "buffalo_s"
                         parent_id,
                         str(parent_source_file.resolve()),
                         str(parent_source_file.resolve()),
-                        str(parent_target_file.resolve()),
-                        str(parent_target_file.resolve()),
+                        parent_target_file.relative_to(target).as_posix(),
+                        db.relative_path_key(parent_target_file.relative_to(target)),
                         parent_source_file.name,
                         parent_target_file.name,
                         parent_hash,
@@ -3277,12 +3299,12 @@ model_name = "test-model"
             self.assertIn("bad.jpg", stdout)
             self.assertIn("Kunne ikke lese testbildet", stdout)
 
-    def test_face_report_prints_relative_paths_after_face_path_normalization(self) -> None:
+    def test_face_report_prints_relative_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
-            old_target = root / "old-target"
             image_path = target / "2024" / "01" / "IMG_20240102.jpg"
+            relative_image_path = Path("2024/01/IMG_20240102.jpg")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             image_path.parent.mkdir(parents=True)
@@ -3291,14 +3313,12 @@ model_name = "test-model"
             conn = sqlite3.connect(target / FACE_DB_FILENAME)
             try:
                 apply_face_schema(conn)
-                old_image_path = old_target / "2024" / "01" / "IMG_20240102.jpg"
-                conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('target_path', ?)", (str(old_target),))
                 conn.execute(
                     """
                     INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
                     VALUES(1, ?, ?, 'sha', 'ok', 1)
                     """,
-                    (str(old_image_path), str(old_image_path)),
+                    (relative_image_path.as_posix(), db.relative_path_key(relative_image_path)),
                 )
                 conn.execute(
                     """
@@ -3307,7 +3327,7 @@ model_name = "test-model"
                         detection_score, embedding_model, embedding
                     ) VALUES(1, ?, 1, 2, 3, 4, 0.9, 'test', ?)
                     """,
-                    (str(old_image_path), b"embedding"),
+                    (db.relative_path_key(relative_image_path), b"embedding"),
                 )
                 conn.commit()
             finally:
@@ -3317,15 +3337,13 @@ model_name = "test-model"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("1\t2024/01/IMG_20240102.jpg", stdout)
-            self.assertNotIn(str(old_target), stdout)
 
-    def test_face_suggest_normalizes_absolute_face_paths_after_collection_rename_without_stored_root(self) -> None:
+    def test_face_suggest_uses_relative_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "new-name"
-            old_target = root / "old-name"
             image_path = target / "2021" / "08" / "2019-1-6-1.jpg"
-            old_image_path = old_target / "2021" / "08" / "2019-1-6-1.jpg"
+            relative_image_path = Path("2021/08/2019-1-6-1.jpg")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             image_path.parent.mkdir(parents=True)
@@ -3340,7 +3358,7 @@ model_name = "test-model"
                     INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
                     VALUES(1, ?, ?, 'sha', 'ok', 2)
                     """,
-                    (str(old_image_path), str(old_image_path)),
+                    (relative_image_path.as_posix(), db.relative_path_key(relative_image_path)),
                 )
                 for face_id in (1, 2):
                     conn.execute(
@@ -3350,7 +3368,7 @@ model_name = "test-model"
                             detection_score, embedding_model, embedding
                         ) VALUES(?, 1, ?, 1, 2, 30, 40, 0.9, 'test', ?)
                         """,
-                        (face_id, str(old_image_path), embedding),
+                        (face_id, db.relative_path_key(relative_image_path), embedding),
                     )
                 conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
                 conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
@@ -3363,7 +3381,6 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Kari\tface-id=2", stdout)
             self.assertIn("2021/08/2019-1-6-1.jpg", stdout)
-            self.assertNotIn(str(old_target), stdout)
             conn = sqlite3.connect(target / FACE_DB_FILENAME)
             try:
                 self.assertEqual(
@@ -3373,12 +3390,12 @@ model_name = "test-model"
             finally:
                 conn.close()
 
-    def test_make_face_browser_normalizes_moved_face_paths(self) -> None:
+    def test_make_face_browser_uses_relative_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
-            old_target = root / "old-target"
             image_path = target / "2024" / "01" / "IMG_20240102.png"
+            relative_image_path = Path("2024/01/IMG_20240102.png")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             image_path.parent.mkdir(parents=True)
@@ -3387,14 +3404,12 @@ model_name = "test-model"
             conn = sqlite3.connect(target / FACE_DB_FILENAME)
             try:
                 apply_face_schema(conn)
-                old_image_path = old_target / "2024" / "01" / "IMG_20240102.png"
-                conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('target_path', ?)", (str(old_target),))
                 conn.execute(
                     """
                     INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
                     VALUES(1, ?, ?, 'sha', 'ok', 1)
                     """,
-                    (str(old_image_path), str(old_image_path)),
+                    (relative_image_path.as_posix(), db.relative_path_key(relative_image_path)),
                 )
                 conn.execute(
                     """
@@ -3403,7 +3418,7 @@ model_name = "test-model"
                         detection_score, embedding_model, embedding
                     ) VALUES(1, ?, 1, 2, 30, 40, 0.9, 'test', ?)
                     """,
-                    (str(old_image_path), b"embedding"),
+                    (db.relative_path_key(relative_image_path), b"embedding"),
                 )
                 conn.commit()
             finally:
@@ -3414,7 +3429,6 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             html = (target / "faces.html").read_text(encoding="utf-8")
             self.assertIn("2024/01/IMG_20240102.png", html)
-            self.assertNotIn(str(old_target), html)
 
     def test_make_face_browser_limit_restricts_number_of_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3428,12 +3442,13 @@ model_name = "test-model"
             conn = connect_face_db(target)
             try:
                 for file_id, path in ((1, first), (2, second)):
+                    relative_path = path.relative_to(target)
                     conn.execute(
                         """
                         INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
                         VALUES(?, ?, ?, ?, 'ok', 1)
                         """,
-                        (file_id, str(path), str(path), f"hash-{file_id}"),
+                        (file_id, relative_path.as_posix(), db.relative_path_key(relative_path), f"hash-{file_id}"),
                     )
                     conn.execute(
                         """
@@ -3442,7 +3457,7 @@ model_name = "test-model"
                             detection_score, embedding_model, embedding
                         ) VALUES(?, ?, 1, 2, 10, 20, 0.9, 'test-model', ?)
                         """,
-                        (file_id, str(path), b"embedding"),
+                        (file_id, db.relative_path_key(relative_path), b"embedding"),
                     )
                 conn.commit()
             finally:
@@ -4826,105 +4841,6 @@ model_name = "test-model"
             self.assertIn("Importerte filer: 1", stdout)
             self.assertIn("Kildefilforekomster: 2", stdout)
             self.assertIn("Duplikatkilder: 1", stdout)
-
-    def test_migrate_v4_converts_paths_to_relative_and_works_after_move(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            imported = target / "2024" / "01" / "IMG_20240102.jpg"
-            create_v4_database(target, source, imported=imported)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Nåværende schema_version: 4", stdout)
-            self.assertIn("Ny schema_version: 5", stdout)
-            conn = sqlite3.connect(target / DB_FILENAME)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute("SELECT * FROM files").fetchone()
-                self.assertEqual(Path(row["target_path"]), imported.relative_to(target))
-                self.assertEqual(Path(row["target_path_key"]), imported.relative_to(target))
-                self.assertIsNone(row["deleted_original_target_path"])
-            finally:
-                conn.close()
-
-            moved_target = root / "moved-target"
-            target.rename(moved_target)
-            moved_imported = moved_target / "2024" / "01" / "IMG_20240102.jpg"
-
-            code, stdout, stderr = capture_cli(["--target", str(moved_target), "show-source", str(moved_imported)])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Målfil:", stdout)
-            self.assertIn(str(moved_imported), stdout)
-            self.assertIn(str(source.resolve()), stdout)
-
-            code, stdout, stderr = capture_cli(["--target", str(moved_target), "remove", str(moved_imported)])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Flyttet til slettet mappe:", stdout)
-            conn = sqlite3.connect(moved_target / DB_FILENAME)
-            conn.row_factory = sqlite3.Row
-            try:
-                row = conn.execute("SELECT * FROM files").fetchone()
-                self.assertEqual(Path(row["target_path"]), Path("deleted/2024/01/IMG_20240102.jpg"))
-                self.assertEqual(
-                    Path(row["deleted_original_target_path"]),
-                    Path("2024/01/IMG_20240102.jpg"),
-                )
-            finally:
-                conn.close()
-
-    def test_migrate_check_v4_reports_relative_path_conversion_without_changes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            imported = target / "2024" / "01" / "IMG_20240102.jpg"
-            create_v4_database(target, source, imported=imported)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "migrate", "--check"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Nåværende schema_version: 4", stdout)
-            self.assertIn("Ny schema_version: 5", stdout)
-            self.assertIn("konvertere samlingsinterne stier til relative", stdout)
-            conn = sqlite3.connect(target / DB_FILENAME)
-            try:
-                self.assertEqual(
-                    conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "4",
-                )
-                self.assertEqual(
-                    conn.execute("SELECT target_path FROM files").fetchone()[0],
-                    str(imported.resolve()),
-                )
-            finally:
-                conn.close()
-
-    def test_migrate_v4_rejects_paths_outside_collection_root(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            imported = root / "elsewhere" / "IMG_20240102.jpg"
-            create_v4_database(target, source, imported=imported)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
-
-            self.assertEqual(code, 1)
-            self.assertIn("Lager backup:", stdout)
-            self.assertIn("utenfor bildesamlingen", stderr)
-            conn = sqlite3.connect(target / DB_FILENAME)
-            try:
-                self.assertEqual(
-                    conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "4",
-                )
-            finally:
-                conn.close()
 
     def test_current_schema_rejects_v5_database_with_absolute_target_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

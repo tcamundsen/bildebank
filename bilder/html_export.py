@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 import json
-import os
 import sqlite3
 import sys
 from dataclasses import dataclass, field
@@ -404,13 +403,7 @@ def conflict_row_to_item(
 
 
 def relative_to_target(target: Path, path: Path) -> Path:
-    candidate = Path(path)
-    if candidate.is_absolute():
-        try:
-            return candidate.resolve().relative_to(target.resolve())
-        except ValueError:
-            return Path(os.path.relpath(candidate, target))
-    return candidate
+    return Path(path)
 
 
 def display_relative_path(target: Path, path: Path) -> str:

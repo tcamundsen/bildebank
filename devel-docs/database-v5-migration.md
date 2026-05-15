@@ -1,5 +1,9 @@
 # Database v5: relative stier i bildesamlingen
 
+Status: v5-migreringen regnes som fullført for støttede databaser. Gjeldende
+kode antar at samlingsinterne bildestier allerede er relative, og inneholder
+ikke lenger runtime-reparasjon av gamle absolutte `target_path`-verdier.
+
 Dette dokumentet beskriver ønsket migrering fra absolutte stier til relative
 stier for filer som ligger inne i en Bildebank-samling.
 

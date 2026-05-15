@@ -1745,8 +1745,6 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  bygge om sources uten kind og gi alle kilder navn")
     if plan.rebuilds_file_sources_without_kind:
         print("  bygge om file_sources uten kind")
-    if plan.converts_relative_paths:
-        print("  konvertere samlingsinterne stier til relative")
     print("Vil lage backup før endring.")
     if check:
         print("Ingen endringer er gjort (--check).")
@@ -1782,8 +1780,6 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Bygger om sources uten kind og med name NOT NULL.")
     if result.rebuilds_file_sources_without_kind:
         print("Bygger om file_sources uten kind.")
-    if result.converts_relative_paths:
-        print("Konverterer samlingsinterne stier til relative.")
     print(f"Setter schema_version={result.target_version}.")
     print("Ferdig. Databasen er migrert.")
     return 0
