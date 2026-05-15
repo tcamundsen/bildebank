@@ -17,6 +17,8 @@ HTML-filen laget av `make-browser`.
 - Rotere bilder som har feil orientering. Info om rotasjon lagres i
   databasen og bildet roteres i nettleser. Dvs at originale bildefiler
   ikke endres.
+- Vise bilder gruppert etter sted når GPS-data er scannet med
+  `bildebank geo-scan`.
 - Holde OpenCLIP-modellen lastet i minnet mens serveren kjører, slik at
   man slipper ventetid ved oppstart, og søk kan gjøres i nettleseren.
   Dette gjør at søkene går raskere etter første søk.
@@ -72,6 +74,18 @@ Overlayet kan lukkes med `Lukk` eller Esc.
 På bildesider kan du bruke `Roter venstre` og `Roter høyre` for å rotere
 visningen av bildet. Bildebank lagrer bare rotasjonen i databasen. Selve
 bildefilen i samlingen endres ikke.
+
+Lenken `Steder` viser lokale geo-sider basert på GPS-data som allerede er
+lagret i databasen. Kjør først:
+
+```powershell
+bildebank geo-scan
+```
+
+Etterpå kan `http://127.0.0.1:8765/geo` vise områder med bilder,
+`http://127.0.0.1:8765/geo/missing` vise bilder uten GPS, og bildesidene kan
+vise nærliggende bilder. Serveren endrer ikke bildefilene og gjør ikke
+oppslag mot eksterne karttjenester.
 
 Knappen `Slett` flytter bildet til `deleted`-mappen i bildesamlingen og
 markerer filen som slettet i databasen. Dette er samme trygge sletting som

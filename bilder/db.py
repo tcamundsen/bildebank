@@ -174,6 +174,17 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
         ensure_column(conn, "files", "media_orientation", "INTEGER")
         ensure_column(conn, "files", "media_metadata_mtime_ns", "INTEGER")
         ensure_column(conn, "files", "view_rotation_degrees", "INTEGER")
+        ensure_column(conn, "files", "gps_lat", "REAL")
+        ensure_column(conn, "files", "gps_lon", "REAL")
+        ensure_column(conn, "files", "gps_alt", "REAL")
+        ensure_column(conn, "files", "h3_res5", "TEXT")
+        ensure_column(conn, "files", "h3_res6", "TEXT")
+        ensure_column(conn, "files", "h3_res7", "TEXT")
+        ensure_column(conn, "files", "h3_res8", "TEXT")
+        ensure_column(conn, "files", "h3_res9", "TEXT")
+        ensure_column(conn, "files", "gps_source", "TEXT")
+        ensure_column(conn, "files", "gps_scanned_at", "TEXT")
+        ensure_column(conn, "files", "gps_error", "TEXT")
     if table_exists(conn, "sources"):
         ensure_column(conn, "sources", "superseded_by_source_id", "INTEGER REFERENCES sources(id)")
     ensure_performance_indexes(conn)
@@ -194,6 +205,30 @@ def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_files_active_target_path_key
         ON files(target_path_key)
         WHERE deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_h3_res5
+        ON files(h3_res5)
+        WHERE h3_res5 IS NOT NULL AND deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_h3_res6
+        ON files(h3_res6)
+        WHERE h3_res6 IS NOT NULL AND deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_h3_res7
+        ON files(h3_res7)
+        WHERE h3_res7 IS NOT NULL AND deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_h3_res8
+        ON files(h3_res8)
+        WHERE h3_res8 IS NOT NULL AND deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_h3_res9
+        ON files(h3_res9)
+        WHERE h3_res9 IS NOT NULL AND deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_gps
+        ON files(gps_lat, gps_lon)
+        WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL AND deleted_at IS NULL;
         """
         )
     if table_exists(conn, "file_sources"):
@@ -286,7 +321,18 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             media_height INTEGER,
             media_orientation INTEGER,
             media_metadata_mtime_ns INTEGER,
-            view_rotation_degrees INTEGER
+            view_rotation_degrees INTEGER,
+            gps_lat REAL,
+            gps_lon REAL,
+            gps_alt REAL,
+            h3_res5 TEXT,
+            h3_res6 TEXT,
+            h3_res7 TEXT,
+            h3_res8 TEXT,
+            h3_res9 TEXT,
+            gps_source TEXT,
+            gps_scanned_at TEXT,
+            gps_error TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);
@@ -311,6 +357,30 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_files_active_target_path_key
         ON files(target_path_key)
         WHERE deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_h3_res5
+        ON files(h3_res5)
+        WHERE h3_res5 IS NOT NULL AND deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_h3_res6
+        ON files(h3_res6)
+        WHERE h3_res6 IS NOT NULL AND deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_h3_res7
+        ON files(h3_res7)
+        WHERE h3_res7 IS NOT NULL AND deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_h3_res8
+        ON files(h3_res8)
+        WHERE h3_res8 IS NOT NULL AND deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_h3_res9
+        ON files(h3_res9)
+        WHERE h3_res9 IS NOT NULL AND deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_gps
+        ON files(gps_lat, gps_lon)
+        WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL AND deleted_at IS NULL;
 
         CREATE TABLE IF NOT EXISTS file_sources (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -464,6 +534,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             rebuild_file_sources_without_kind(conn)
             if table_exists(conn, "duplicate_findings"):
                 conn.execute("DROP TABLE duplicate_findings")
+            ensure_compatible_columns(conn)
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
             validate_current_schema(conn)
@@ -1622,6 +1693,221 @@ def browser_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
         WHERE deleted_at IS NULL
         ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path
         """
+    )
+
+
+def geo_scan_files(
+    conn: sqlite3.Connection,
+    *,
+    force: bool = False,
+    only_missing: bool = False,
+    limit: int | None = None,
+) -> list[sqlite3.Row]:
+    where = ["deleted_at IS NULL"]
+    if only_missing:
+        where.append("gps_lat IS NULL")
+        where.append("gps_lon IS NULL")
+        where.append("gps_scanned_at IS NULL")
+        where.append("gps_error IS NULL")
+    elif not force:
+        where.append("(gps_scanned_at IS NULL OR gps_lat IS NULL OR gps_lon IS NULL)")
+    sql = """
+        SELECT id, target_path
+        FROM files
+        WHERE {where_sql}
+        ORDER BY target_path
+    """.format(where_sql=" AND ".join(where))
+    params: list[int] = []
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+    return list(conn.execute(sql, params))
+
+
+def update_file_gps(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    gps_lat: float | None,
+    gps_lon: float | None,
+    gps_alt: float | None,
+    h3_cells: dict[str, str | None] | None,
+    gps_source: str | None,
+    gps_error: str | None,
+) -> None:
+    cells = h3_cells or {}
+    conn.execute(
+        """
+        UPDATE files
+        SET gps_lat = ?,
+            gps_lon = ?,
+            gps_alt = ?,
+            h3_res5 = ?,
+            h3_res6 = ?,
+            h3_res7 = ?,
+            h3_res8 = ?,
+            h3_res9 = ?,
+            gps_source = ?,
+            gps_scanned_at = CURRENT_TIMESTAMP,
+            gps_error = ?
+        WHERE id = ?
+        """,
+        (
+            gps_lat,
+            gps_lon,
+            gps_alt,
+            cells.get("h3_res5"),
+            cells.get("h3_res6"),
+            cells.get("h3_res7"),
+            cells.get("h3_res8"),
+            cells.get("h3_res9"),
+            gps_source,
+            gps_error,
+            file_id,
+        ),
+    )
+
+
+def geo_stats(conn: sqlite3.Connection) -> dict[str, int]:
+    row = conn.execute(
+        """
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN gps_scanned_at IS NOT NULL THEN 1 ELSE 0 END) AS scanned,
+            SUM(CASE WHEN gps_lat IS NOT NULL AND gps_lon IS NOT NULL THEN 1 ELSE 0 END) AS with_gps,
+            SUM(CASE WHEN gps_scanned_at IS NOT NULL
+                      AND gps_lat IS NULL
+                      AND gps_lon IS NULL
+                      AND gps_error IS NULL THEN 1 ELSE 0 END) AS without_gps,
+            SUM(CASE WHEN gps_error IS NOT NULL THEN 1 ELSE 0 END) AS errors
+        FROM files
+        WHERE deleted_at IS NULL
+        """
+    ).fetchone()
+    return {
+        "total": int(row["total"] or 0),
+        "scanned": int(row["scanned"] or 0),
+        "with_gps": int(row["with_gps"] or 0),
+        "without_gps": int(row["without_gps"] or 0),
+        "errors": int(row["errors"] or 0),
+    }
+
+
+def geo_areas(
+    conn: sqlite3.Connection,
+    *,
+    column: str,
+    min_count: int,
+    limit: int,
+) -> list[sqlite3.Row]:
+    if column not in {"h3_res5", "h3_res6", "h3_res7", "h3_res8", "h3_res9"}:
+        raise ValueError(f"Ustøttet H3-kolonne: {column}")
+    return list(
+        conn.execute(
+            f"""
+            SELECT {column} AS h3_cell, COUNT(*) AS count
+            FROM files
+            WHERE {column} IS NOT NULL
+              AND deleted_at IS NULL
+            GROUP BY {column}
+            HAVING COUNT(*) >= ?
+            ORDER BY count DESC, {column}
+            LIMIT ?
+            """,
+            (min_count, limit),
+        )
+    )
+
+
+GEO_FILE_COLUMNS = (
+    "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
+    "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_alt, "
+    "h3_res5, h3_res6, h3_res7, h3_res8, h3_res9"
+)
+H3_FILE_COLUMNS = {"h3_res5", "h3_res6", "h3_res7", "h3_res8", "h3_res9"}
+
+
+def validate_h3_column(column: str) -> None:
+    if column not in H3_FILE_COLUMNS:
+        raise ValueError(f"Ustøttet H3-kolonne: {column}")
+
+
+def geo_area_files(
+    conn: sqlite3.Connection,
+    *,
+    column: str,
+    h3_cell: str,
+    limit: int | None = None,
+) -> list[sqlite3.Row]:
+    validate_h3_column(column)
+    sql = f"""
+        SELECT {GEO_FILE_COLUMNS}
+        FROM files
+        WHERE {column} = ?
+          AND deleted_at IS NULL
+        ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path_key
+    """
+    params: list[str | int] = [h3_cell]
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+    return list(conn.execute(sql, params))
+
+
+def geo_missing_files(conn: sqlite3.Connection, *, limit: int, offset: int = 0) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            f"""
+            SELECT {GEO_FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND (gps_lat IS NULL OR gps_lon IS NULL)
+            ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path_key
+            LIMIT ? OFFSET ?
+            """,
+            (limit, max(0, offset)),
+        )
+    )
+
+
+def geo_file_location(conn: sqlite3.Connection, file_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        f"""
+        SELECT {GEO_FILE_COLUMNS}
+        FROM files
+        WHERE id = ?
+          AND deleted_at IS NULL
+        """,
+        (file_id,),
+    ).fetchone()
+
+
+def geo_nearby_files(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    column: str,
+    h3_cells: Iterable[str],
+    limit: int,
+) -> list[sqlite3.Row]:
+    validate_h3_column(column)
+    cells = sorted({cell for cell in h3_cells if cell})
+    if not cells:
+        return []
+    placeholders = ",".join("?" for _ in cells)
+    return list(
+        conn.execute(
+            f"""
+            SELECT {GEO_FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND id != ?
+              AND {column} IN ({placeholders})
+            ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path_key
+            LIMIT ?
+            """,
+            (file_id, *cells, limit),
+        )
     )
 
 

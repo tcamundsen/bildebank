@@ -26,6 +26,7 @@ from .html_export import (
     format_bytes,
     month_key_from_path,
 )
+from .geo import H3_COLUMNS, h3_column_for_resolution, h3_resolution
 from .media import camera_info
 from .media_cache import cached_image_dimensions
 from .openclip import (
@@ -45,6 +46,10 @@ from .thumbnails import existing_thumbnail_url
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 DEFAULT_SEARCH_LIMIT = 100
+DEFAULT_GEO_RESOLUTION = 7
+DEFAULT_GEO_MIN_COUNT = 2
+DEFAULT_GEO_LIMIT = 100
+DEFAULT_GEO_NEARBY_LIMIT = 60
 
 
 @dataclass(frozen=True)
@@ -99,6 +104,18 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/people":
                 self.respond_html(people_page_html(self.server.target))
+                return
+            if parsed.path == "/geo":
+                self.respond_geo(parsed.query)
+                return
+            if parsed.path == "/geo/stats":
+                self.respond_html(geo_stats_page_html(self.server.target))
+                return
+            if parsed.path == "/geo/missing":
+                self.respond_geo_missing(parsed.query)
+                return
+            if parsed.path.startswith("/geo/area/"):
+                self.respond_geo_area(parsed.path.removeprefix("/geo/area/"), parsed.query)
                 return
             if parsed.path.startswith("/item/"):
                 self.respond_item(parsed.path.removeprefix("/item/"))
@@ -273,6 +290,33 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         self.respond_text("Ugyldig datokildeside.", status=HTTPStatus.NOT_FOUND)
 
+    def respond_geo(self, query: str) -> None:
+        params = urllib.parse.parse_qs(query)
+        resolution = positive_int_param(params, "resolution", DEFAULT_GEO_RESOLUTION)
+        min_count = positive_int_param(params, "min_count", DEFAULT_GEO_MIN_COUNT)
+        limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
+        if resolution not in H3_COLUMNS:
+            self.respond_text("H3-oppløsning må være 5, 6, 7, 8 eller 9.", status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_html(geo_index_page_html(self.server.target, resolution=resolution, min_count=min_count, limit=limit))
+
+    def respond_geo_area(self, raw_cell: str, query: str) -> None:
+        h3_cell = urllib.parse.unquote(raw_cell).strip()
+        params = urllib.parse.parse_qs(query)
+        limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
+        try:
+            resolution = h3_resolution(h3_cell)
+        except ValueError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_html(geo_area_page_html(self.server.target, h3_cell, resolution=resolution, limit=limit))
+
+    def respond_geo_missing(self, query: str) -> None:
+        params = urllib.parse.parse_qs(query)
+        limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
+        offset = nonnegative_int_param(params, "offset", 0)
+        self.respond_html(geo_missing_page_html(self.server.target, limit=limit, offset=offset))
+
     def respond_file(self, encoded_relative_path: str) -> None:
         raw_path = urllib.parse.unquote(encoded_relative_path).strip("/")
         if raw_path.isdigit():
@@ -424,6 +468,17 @@ def positive_int_param(params: dict[str, list[str]], name: str, default: int) ->
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+def nonnegative_int_param(params: dict[str, list[str]], name: str, default: int) -> int:
+    raw = first_param(params, name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return value if value >= 0 else default
 
 
 def parse_file_id(value: str) -> int:
@@ -989,6 +1044,72 @@ def items_by_file_ids(target: Path, file_ids: list[int]) -> list[Any]:
         conn.close()
 
 
+def geo_area_items(target: Path, *, h3_cell: str, resolution: int, limit: int) -> list[Any]:
+    column = h3_column_for_resolution(resolution)
+    conn = db.connect(target)
+    try:
+        return db.geo_area_files(conn, column=column, h3_cell=h3_cell, limit=limit)
+    finally:
+        conn.close()
+
+
+def geo_missing_items(target: Path, *, limit: int, offset: int) -> list[Any]:
+    conn = db.connect(target)
+    try:
+        return db.geo_missing_files(conn, limit=limit, offset=offset)
+    finally:
+        conn.close()
+
+
+def geo_nearby_items(target: Path, item: Any, *, limit: int = DEFAULT_GEO_NEARBY_LIMIT) -> list[Any]:
+    file_id = int(item["id"])
+    conn = db.connect(target)
+    try:
+        location = db.geo_file_location(conn, file_id)
+        if location is None:
+            return []
+        rows = nearby_rows_for_resolution(conn, location, file_id=file_id, resolution=8, limit=limit)
+        if len(rows) >= min(12, limit):
+            return rows
+        fallback_rows = nearby_rows_for_resolution(conn, location, file_id=file_id, resolution=7, limit=limit)
+        if len(fallback_rows) > len(rows):
+            return fallback_rows
+        return rows
+    finally:
+        conn.close()
+
+
+def nearby_rows_for_resolution(
+    conn: sqlite3.Connection,
+    location: Any,
+    *,
+    file_id: int,
+    resolution: int,
+    limit: int,
+) -> list[Any]:
+    column = h3_column_for_resolution(resolution)
+    h3_cell = location[column]
+    if not h3_cell:
+        return []
+    return db.geo_nearby_files(
+        conn,
+        file_id=file_id,
+        column=column,
+        h3_cells=h3_neighbor_cells(str(h3_cell), 1),
+        limit=limit,
+    )
+
+
+def h3_neighbor_cells(h3_cell: str, distance: int) -> list[str]:
+    import h3
+
+    if hasattr(h3, "grid_disk"):
+        return list(h3.grid_disk(h3_cell, distance))
+    if hasattr(h3, "k_ring"):
+        return list(h3.k_ring(h3_cell, distance))
+    return [h3_cell]
+
+
 def first_person_item(target: Path, person_name: str) -> Any | None:
     return first_source_item(target, person_browser_source(person_name, include_suggestions=True))
 
@@ -1318,6 +1439,144 @@ def search_html(server: BildebankServer, stats: ServerSearchStats, limit: int) -
     )
 
 
+def geo_index_page_html(
+    target: Path,
+    *,
+    resolution: int = DEFAULT_GEO_RESOLUTION,
+    min_count: int = DEFAULT_GEO_MIN_COUNT,
+    limit: int = DEFAULT_GEO_LIMIT,
+) -> str:
+    column = h3_column_for_resolution(resolution)
+    conn = db.connect(target)
+    try:
+        stats = db.geo_stats(conn)
+        areas = db.geo_areas(conn, column=column, min_count=min_count, limit=limit)
+    finally:
+        conn.close()
+    area_links = "\n".join(geo_area_row_html(row, resolution=resolution) for row in areas)
+    content = (
+        f'<div class="geo-list">{area_links}</div>'
+        if area_links
+        else '<p class="meta">Ingen steder med nok bilder. Kjør bildebank geo-scan, eller senk min_count.</p>'
+    )
+    return page_html(
+        "Steder",
+        f"""
+        <main class="shell">
+          <p><a href="/">Til bildebrowser</a> · <a href="/geo/stats">Geo-statistikk</a> · <a href="/geo/missing">Bilder uten GPS</a></p>
+          <h1>Steder</h1>
+          {geo_stats_summary_html(stats)}
+          <form action="/geo" method="get" class="geo-filter">
+            <label>H3-oppløsning <input name="resolution" value="{resolution}" inputmode="numeric"></label>
+            <label>Minst antall <input name="min_count" value="{min_count}" inputmode="numeric"></label>
+            <label>Maks steder <input name="limit" value="{limit}" inputmode="numeric"></label>
+            <button type="submit">Vis</button>
+          </form>
+          <p class="meta">Viser H3-oppløsning {resolution}. Lavere tall gir større områder.</p>
+          {content}
+        </main>
+        """,
+    )
+
+
+def geo_stats_page_html(target: Path) -> str:
+    conn = db.connect(target)
+    try:
+        stats = db.geo_stats(conn)
+    finally:
+        conn.close()
+    return page_html(
+        "Geo-statistikk",
+        f"""
+        <main class="shell">
+          <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a> · <a href="/geo/missing">Bilder uten GPS</a></p>
+          <h1>Geo-statistikk</h1>
+          {geo_stats_summary_html(stats)}
+          <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
+        </main>
+        """,
+    )
+
+
+def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: int = DEFAULT_GEO_LIMIT) -> str:
+    items = geo_area_items(target, h3_cell=h3_cell, resolution=resolution, limit=limit)
+    cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
+    content = cards if cards else '<p class="meta">Ingen aktive bilder i dette området.</p>'
+    quoted = urllib.parse.quote(h3_cell, safe="")
+    return page_html(
+        f"Sted {h3_cell}",
+        f"""
+        <main class="shell">
+          <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a></p>
+          <h1>Sted</h1>
+          <p class="meta">H3-celle {html.escape(h3_cell)}, oppløsning {resolution}. Viser opptil {limit} bilder.</p>
+          <form action="/geo/area/{html.escape(quoted)}" method="get" class="geo-filter">
+            <label>Maks bilder <input name="limit" value="{limit}" inputmode="numeric"></label>
+            <button type="submit">Vis</button>
+          </form>
+          <section class="month-grid-server">{content}</section>
+        </main>
+        """,
+    )
+
+
+def geo_missing_page_html(target: Path, *, limit: int = DEFAULT_GEO_LIMIT, offset: int = 0) -> str:
+    items = geo_missing_items(target, limit=limit, offset=offset)
+    cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
+    previous_offset = max(0, offset - limit)
+    next_offset = offset + limit
+    previous_link = (
+        f'<a class="server-search-link" href="/geo/missing?limit={limit}&offset={previous_offset}">Forrige side</a>'
+        if offset > 0
+        else '<span class="nav-button disabled">Forrige side</span>'
+    )
+    next_link = (
+        f'<a class="server-search-link" href="/geo/missing?limit={limit}&offset={next_offset}">Neste side</a>'
+        if len(items) == limit
+        else '<span class="nav-button disabled">Neste side</span>'
+    )
+    content = cards if cards else '<p class="meta">Ingen aktive bilder mangler GPS.</p>'
+    return page_html(
+        "Bilder uten GPS",
+        f"""
+        <main class="shell">
+          <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a> · <a href="/geo/stats">Geo-statistikk</a></p>
+          <h1>Bilder uten GPS</h1>
+          <p class="meta">Viser {len(items)} bilder fra offset {offset}.</p>
+          <nav class="controls">{previous_link}{next_link}</nav>
+          <section class="month-grid-server">{content}</section>
+        </main>
+        """,
+    )
+
+
+def geo_stats_summary_html(stats: dict[str, int]) -> str:
+    rows = "\n".join(
+        f"<div><strong>{label}</strong><span>{stats[key]}</span></div>"
+        for label, key in (
+            ("Aktive bilder", "total"),
+            ("Scannet", "scanned"),
+            ("Med GPS", "with_gps"),
+            ("Uten GPS", "without_gps"),
+            ("Feil", "errors"),
+        )
+    )
+    return f'<div class="geo-stats">{rows}</div>'
+
+
+def geo_area_row_html(row: Any, *, resolution: int) -> str:
+    h3_cell = str(row["h3_cell"])
+    count = int(row["count"])
+    url = "/geo/area/" + urllib.parse.quote(h3_cell, safe="")
+    return f"""
+    <a class="geo-row" href="{html.escape(url)}">
+      <span>{html.escape(h3_cell)}</span>
+      <span>oppløsning {resolution}</span>
+      <strong>{count} bilder</strong>
+    </a>
+    """
+
+
 def error_html(exc: Exception) -> str:
     return page_html(
         "Feil",
@@ -1412,6 +1671,7 @@ def source_item_page_html(
     faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if source.person_name is None else ""
     action_links = source_action_links_html(source)
     info_overlay = image_info_overlay_html(target, item)
+    nearby = geo_nearby_section_html(target, item) if source.person_name is None else ""
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
@@ -1426,6 +1686,7 @@ def source_item_page_html(
             {controls}
           </header>
           <section class="stage">{media}</section>
+          {nearby}
           <footer class="browser-footer">
             <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
           </footer>
@@ -1437,7 +1698,10 @@ def source_item_page_html(
 
 
 def source_top_links_html(source: BrowserSource) -> str:
-    links = ['<a class="server-search-link" href="/people">Personer</a>']
+    links = [
+        '<a class="server-search-link" href="/people">Personer</a>',
+        '<a class="server-search-link" href="/geo">Steder</a>',
+    ]
     if source.person_name is None and source.date_source is None:
         links.append('<a class="server-search-link" title="Vis alle bildene som ikke har dato fra metadata og der programmet har gjettet på dato basert på filnavnet" href="/date-source/filename">Dato fra filnavn</a>')
         links.append('<a class="server-search-link" title="Vis alle bildene som ikke har dato fra metadata og der programmet har tatt dato fra når filen ble sist endret." href="/date-source/mtime">Dato fra mtime</a>')
@@ -1967,6 +2231,19 @@ def source_month_item_html(target: Path, source: BrowserSource, item: Any) -> st
     """
 
 
+def geo_nearby_section_html(target: Path, item: Any) -> str:
+    items = geo_nearby_items(target, item)
+    if not items:
+        return ""
+    cards = "\n".join(source_month_item_html(target, all_browser_source(), nearby_item) for nearby_item in items)
+    return f"""
+    <section class="nearby-section">
+      <div class="nearby-title">Nærliggende bilder</div>
+      <div class="month-grid-server">{cards}</div>
+    </section>
+    """
+
+
 def month_item_html(target: Path, item: Any) -> str:
     return source_month_item_html(target, all_browser_source(), item)
 
@@ -2025,6 +2302,14 @@ def page_html(title: str, body: str) -> str:
     button {{ cursor: pointer; }}
     button:hover {{ background: #3a3a3a; }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }}
+    .geo-filter {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 18px 0; }}
+    .geo-filter label {{ display: grid; gap: 4px; color: var(--muted); font-size: 13px; }}
+    .geo-filter input {{ width: 120px; }}
+    .geo-stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 18px 0; }}
+    .geo-stats div {{ display: grid; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }}
+    .geo-stats span {{ color: var(--muted); }}
+    .geo-list {{ display: grid; gap: 8px; margin-top: 18px; }}
+    .geo-row {{ display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); }}
     .server-browser {{ min-height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }}
     .browser-header {{
       background: var(--panel);
@@ -2122,6 +2407,8 @@ def page_html(title: str, body: str) -> str:
       padding: 12px;
       overflow: auto;
     }}
+    .nearby-section {{ background: var(--bg); border-top: 1px solid var(--border); max-height: 38vh; overflow: auto; }}
+    .nearby-title {{ padding: 10px 12px 0; color: var(--muted); font-size: 13px; }}
     .thumb-link {{ display: block; color: inherit; text-decoration: none; }}
     .thumb-link img, .video-thumb {{
       width: 100%;
@@ -2299,6 +2586,7 @@ def page_html(title: str, body: str) -> str:
       .nav-button, .server-search-link, .person-link, .faces-button {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
       .top-actions {{ margin-left: 0; width: 100%; justify-content: stretch; }}
       .people-row {{ grid-template-columns: 1fr; align-items: stretch; }}
+      .geo-row {{ grid-template-columns: 1fr; }}
       .new-person-form {{ grid-template-columns: 1fr; align-items: stretch; }}
       .info-row {{ grid-template-columns: 1fr; gap: 4px; }}
     }}

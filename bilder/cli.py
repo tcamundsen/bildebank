@@ -37,6 +37,12 @@ from .face import (
     scan_faces,
     suggest_faces,
 )
+from .geo import (
+    DEFAULT_EXIFTOOL_BATCH_SIZE,
+    h3_column_for_resolution,
+    h3_resolution,
+    scan_geo,
+)
 from .importer import (
     import_source,
     import_source_dry_run,
@@ -106,6 +112,10 @@ HELP_COMMAND_GROUPS = (
             ("inspect-metadata", "Vis metadatafragmenter og datokandidater"),
             ("refresh-metadata", "Sjekk filer uten metadata på nytt"),
             ("exiftool-metadata-gaps", "Finn metadata Bildebank ikke leser ennå"),
+            ("geo-scan", "Scan GPS-koordinater fra metadata"),
+            ("geo-stats", "Vis GPS-status for bildesamlingen"),
+            ("geo-areas", "List H3-områder med bilder"),
+            ("geo-area", "List bilder i ett H3-område"),
             ("make-conflict-browser", "Lag HTML-side for navnekollisjoner"),
             ("report", "Vis importoppsummering"),
         ),
@@ -281,6 +291,56 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Path til exiftool.exe. Standard er exiftool.exe i bildesamlingsmappen.",
     )
+    geo_scan = add_command(
+        subparsers,
+        "geo-scan",
+        usage="bildebank geo-scan [valg]",
+        help="Scan GPS-koordinater fra metadata",
+    )
+    geo_scan.add_argument("--force", action="store_true", help="Les GPS-metadata på nytt for filer som allerede er scannet")
+    geo_scan.add_argument(
+        "--only-missing",
+        action="store_true",
+        help="Scan bare filer uten GPS-data og uten tidligere GPS-resultat",
+    )
+    geo_scan.add_argument("--limit", type=positive_int_arg, help="Maks antall filer som skal scannes")
+    geo_scan.add_argument("--verbose", action="store_true", help="Vis filer uten GPS eller med feil")
+    geo_scan.add_argument(
+        "--exiftool",
+        type=Path,
+        help="Path til exiftool. Standard er exiftool.exe i bildesamlingsmappen, ellers exiftool fra PATH.",
+    )
+    geo_scan.add_argument(
+        "--batch-size",
+        type=positive_int_arg,
+        default=DEFAULT_EXIFTOOL_BATCH_SIZE,
+        help=f"Antall filer per ExifTool-kall. Standard: {DEFAULT_EXIFTOOL_BATCH_SIZE}",
+    )
+    add_command(
+        subparsers,
+        "geo-stats",
+        usage="bildebank geo-stats [valg]",
+        help="Vis GPS-status for bildesamlingen",
+    )
+    geo_areas = add_command(
+        subparsers,
+        "geo-areas",
+        usage="bildebank geo-areas [valg]",
+        help="List H3-områder med bilder",
+    )
+    geo_areas.add_argument("--resolution", type=h3_resolution_arg, default=7, help="H3-oppløsning 5-9. Standard: 7")
+    geo_areas.add_argument("--min-count", type=positive_int_arg, default=2, help="Vis områder med minst N bilder. Standard: 2")
+    geo_areas.add_argument("--limit", type=positive_int_arg, default=50, help="Maks antall områder. Standard: 50")
+    geo_area = add_command(
+        subparsers,
+        "geo-area",
+        usage="bildebank geo-area [valg] h3_celle",
+        help="List bilder i ett H3-område",
+    )
+    geo_area.add_argument("h3_cell", metavar="h3_celle", help="H3-celle fra geo-areas")
+    geo_area.add_argument("--limit", type=positive_int_arg, help="Maks antall bilder som vises")
+    geo_area.add_argument("--with-date", action="store_true", help="Vis taken_date")
+    geo_area.add_argument("--with-coordinates", action="store_true", help="Vis GPS-koordinater")
     explain = add_command(
         subparsers,
         "explain-date",
@@ -723,6 +783,32 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "backup":
         return run_backup_command(target, args.destination, dry_run=args.dry_run)
+
+    if args.command == "geo-scan":
+        return run_geo_scan(
+            target,
+            force=args.force,
+            only_missing=args.only_missing,
+            limit=args.limit,
+            verbose=args.verbose,
+            exiftool_path=args.exiftool,
+            batch_size=args.batch_size,
+        )
+
+    if args.command == "geo-stats":
+        return run_geo_stats(target)
+
+    if args.command == "geo-areas":
+        return run_geo_areas(target, resolution=args.resolution, min_count=args.min_count, limit=args.limit)
+
+    if args.command == "geo-area":
+        return run_geo_area(
+            target,
+            h3_cell=args.h3_cell,
+            limit=args.limit,
+            with_date=args.with_date,
+            with_coordinates=args.with_coordinates,
+        )
 
     if args.command == "image-scan":
         return run_image_scan(target, limit=args.limit)
@@ -1226,6 +1312,97 @@ def run_backup_command(target: Path, destination: Path, *, dry_run: bool = False
             f"files_copied={stats.files_copied}, files_deleted={stats.files_deleted}, "
             f"dirs_created={stats.dirs_created}, dirs_deleted={stats.dirs_deleted}"
         )
+    return 0
+
+
+def run_geo_scan(
+    target: Path,
+    *,
+    force: bool,
+    only_missing: bool,
+    limit: int | None,
+    verbose: bool,
+    exiftool_path: Path | None,
+    batch_size: int,
+) -> int:
+    if force and only_missing:
+        raise ValueError("--force og --only-missing kan ikke brukes samtidig.")
+    stats = scan_geo(
+        target,
+        force=force,
+        only_missing=only_missing,
+        limit=limit,
+        verbose=verbose,
+        exiftool_path=exiftool_path.resolve() if exiftool_path else None,
+        batch_size=batch_size,
+    )
+    print("Scanning GPS metadata...")
+    print(f"Images checked: {stats.checked}")
+    print(f"With GPS:        {stats.with_gps}")
+    print(f"Without GPS:     {stats.without_gps}")
+    print(f"Errors:          {stats.errors}")
+    print(f"Updated:         {stats.updated}")
+    return 0 if stats.errors == 0 else 2
+
+
+def run_geo_stats(target: Path) -> int:
+    conn = db.connect(target)
+    try:
+        stats = db.geo_stats(conn)
+    finally:
+        conn.close()
+    print(f"Images total:             {stats['total']}")
+    print(f"Images scanned for GPS:   {stats['scanned']}")
+    print(f"Images with GPS:          {stats['with_gps']}")
+    print(f"Images without GPS:       {stats['without_gps']}")
+    print(f"Images with GPS errors:   {stats['errors']}")
+    return 0
+
+
+def run_geo_areas(target: Path, *, resolution: int, min_count: int, limit: int) -> int:
+    column = h3_column_for_resolution(resolution)
+    conn = db.connect(target)
+    try:
+        rows = db.geo_areas(conn, column=column, min_count=min_count, limit=limit)
+    finally:
+        conn.close()
+    print(f"Resolution: {resolution}")
+    print()
+    print("Count  H3 cell")
+    print("-----  ---------------")
+    for row in rows:
+        print(f"{int(row['count']):5d}  {row['h3_cell']}")
+    return 0
+
+
+def run_geo_area(
+    target: Path,
+    *,
+    h3_cell: str,
+    limit: int | None,
+    with_date: bool,
+    with_coordinates: bool,
+) -> int:
+    resolution = h3_resolution(h3_cell)
+    column = h3_column_for_resolution(resolution)
+    conn = db.connect(target)
+    try:
+        rows = db.geo_area_files(conn, column=column, h3_cell=h3_cell, limit=limit)
+    finally:
+        conn.close()
+
+    print(f"H3 cell: {h3_cell}")
+    print(f"Images: {len(rows)}")
+    print()
+    for row in rows:
+        parts = [str(row["target_path"])]
+        if with_date:
+            parts.append(row["taken_date"] or "-")
+        if with_coordinates:
+            lat = row["gps_lat"]
+            lon = row["gps_lon"]
+            parts.append("-" if lat is None or lon is None else f"{float(lat):.6f}, {float(lon):.6f}")
+        print("\t".join(parts))
     return 0
 
 
@@ -2013,6 +2190,16 @@ def non_negative_int_arg(value: str) -> int:
         raise argparse.ArgumentTypeError("må være et heltall") from exc
     if number < 0:
         raise argparse.ArgumentTypeError("må være minst 0")
+    return number
+
+
+def h3_resolution_arg(value: str) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("må være et heltall") from exc
+    if number not in {5, 6, 7, 8, 9}:
+        raise argparse.ArgumentTypeError("må være 5, 6, 7, 8 eller 9")
     return number
 
 

@@ -22,6 +22,7 @@ from bilder.config import OpenClipConfig, load_config
 from bilder import db
 from bilder.db import DB_FILENAME, init_database
 from bilder.face import FACE_DB_FILENAME, apply_face_schema, connect_face_db, face_box_percent, read_image
+from bilder.geo import h3_cells_for_point
 from bilder.html_export import render_html
 from bilder.importer import safe_copy
 from bilder.media import ImageDimensions, sha256_file
@@ -37,6 +38,10 @@ from bilder.server import (
     browser_month_items,
     browser_month_navigation,
     date_source_browser_source,
+    geo_area_page_html,
+    geo_index_page_html,
+    geo_missing_page_html,
+    geo_stats_page_html,
     index_html,
     item_page_html,
     month_page_html,
@@ -663,6 +668,91 @@ class CliTests(unittest.TestCase):
         self.assertIn("ArrowDown", body)
         self.assertIn("PageUp", body)
         self.assertIn("PageDown", body)
+
+    def test_run_server_geo_pages_use_stored_geo_data(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(10, 10))
+            (source / "IMG_20240103.png").write_bytes(minimal_png(11, 10))
+            (source / "IMG_20240104.png").write_bytes(minimal_png(12, 10))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            cells = h3_cells_for_point(59.91273, 10.74609)
+            conn = db.connect(target)
+            try:
+                db.update_file_gps(
+                    conn,
+                    file_id=1,
+                    gps_lat=59.91273,
+                    gps_lon=10.74609,
+                    gps_alt=None,
+                    h3_cells=cells,
+                    gps_source="test",
+                    gps_error=None,
+                )
+                db.update_file_gps(
+                    conn,
+                    file_id=2,
+                    gps_lat=59.91274,
+                    gps_lon=10.74610,
+                    gps_alt=None,
+                    h3_cells=cells,
+                    gps_source="test",
+                    gps_error=None,
+                )
+                conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 2")
+                conn.commit()
+            finally:
+                conn.close()
+
+            index_body = geo_index_page_html(target, resolution=7, min_count=1, limit=10)
+            stats_body = geo_stats_page_html(target)
+            area_body = geo_area_page_html(target, cells["h3_res7"], resolution=7, limit=10)
+            missing_body = geo_missing_page_html(target, limit=10, offset=0)
+
+        self.assertIn("Steder", index_body)
+        self.assertIn(cells["h3_res7"], index_body)
+        self.assertIn("Med GPS", stats_body)
+        self.assertIn("IMG_20240102.png", area_body)
+        self.assertNotIn("IMG_20240103.png", area_body)
+        self.assertIn("IMG_20240104.png", missing_body)
+
+    def test_run_server_item_page_shows_nearby_geo_images(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(10, 10))
+            (source / "IMG_20240103.png").write_bytes(minimal_png(11, 10))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            cells = h3_cells_for_point(59.91273, 10.74609)
+            conn = db.connect(target)
+            try:
+                for file_id in (1, 2):
+                    db.update_file_gps(
+                        conn,
+                        file_id=file_id,
+                        gps_lat=59.91273,
+                        gps_lon=10.74609,
+                        gps_alt=None,
+                        h3_cells=cells,
+                        gps_source="test",
+                        gps_error=None,
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+
+        self.assertIn("Nærliggende bilder", body)
+        self.assertIn("IMG_20240103.png", body)
 
     def test_run_server_month_page_uses_browser_controls(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
