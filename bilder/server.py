@@ -149,6 +149,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         try:
+            if parsed.path == "/geo/place-name":
+                self.respond_set_geo_place_name()
+                return
             if parsed.path == "/api/face-person-add-face":
                 self.respond_add_face_to_person()
                 return
@@ -316,6 +319,27 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
         offset = nonnegative_int_param(params, "offset", 0)
         self.respond_html(geo_missing_page_html(self.server.target, limit=limit, offset=offset))
+
+    def respond_set_geo_place_name(self) -> None:
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
+        params = urllib.parse.parse_qs(raw)
+        h3_cell = first_param(params, "h3_cell").strip()
+        name = first_param(params, "name")
+        limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
+        try:
+            h3_resolution(h3_cell)
+        except ValueError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
+            return
+        conn = db.connect(self.server.target)
+        try:
+            db.set_geo_place_name(conn, h3_cell, name)
+            conn.commit()
+        finally:
+            conn.close()
+        url = "/geo/area/" + urllib.parse.quote(h3_cell, safe="") + f"?limit={limit}"
+        self.redirect(url)
 
     def respond_file(self, encoded_relative_path: str) -> None:
         raw_path = urllib.parse.unquote(encoded_relative_path).strip("/")
@@ -1499,17 +1523,30 @@ def geo_stats_page_html(target: Path) -> str:
 
 
 def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: int = DEFAULT_GEO_LIMIT) -> str:
+    conn = db.connect(target)
+    try:
+        place_name = db.geo_place_name(conn, h3_cell)
+    finally:
+        conn.close()
     items = geo_area_items(target, h3_cell=h3_cell, resolution=resolution, limit=limit)
     cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
     content = cards if cards else '<p class="meta">Ingen aktive bilder i dette området.</p>'
     quoted = urllib.parse.quote(h3_cell, safe="")
+    title = place_name or "Sted"
+    escaped_name = html.escape(place_name or "")
     return page_html(
-        f"Sted {h3_cell}",
+        f"{title} {h3_cell}",
         f"""
         <main class="shell">
           <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a></p>
-          <h1>Sted</h1>
+          <h1>{html.escape(title)}</h1>
           <p class="meta">H3-celle {html.escape(h3_cell)}, {h3_resolution_label(resolution)}. Viser opptil {limit} bilder.</p>
+          <form action="/geo/place-name" method="post" class="geo-filter geo-name-form">
+            <input type="hidden" name="h3_cell" value="{html.escape(h3_cell)}">
+            <input type="hidden" name="limit" value="{limit}">
+            <label>Stedsnavn <input name="name" value="{escaped_name}" autocomplete="off"></label>
+            <button type="submit">Lagre navn</button>
+          </form>
           <form action="/geo/area/{html.escape(quoted)}" method="get" class="geo-filter">
             <label>Maks bilder <input name="limit" value="{limit}" inputmode="numeric"></label>
             <button type="submit">Vis</button>
@@ -1567,11 +1604,14 @@ def geo_stats_summary_html(stats: dict[str, int]) -> str:
 def geo_area_row_html(row: Any, *, resolution: int) -> str:
     h3_cell = str(row["h3_cell"])
     count = int(row["count"])
+    name = row["name"] if "name" in row.keys() else None
+    label = str(name) if name else h3_cell
+    detail = h3_cell if name else h3_resolution_label(resolution)
     url = "/geo/area/" + urllib.parse.quote(h3_cell, safe="")
     return f"""
     <a class="geo-row" href="{html.escape(url)}">
-      <span>{html.escape(h3_cell)}</span>
-      <span>{h3_resolution_label(resolution)}</span>
+      <span>{html.escape(label)}</span>
+      <span>{html.escape(detail)}</span>
       <strong>{count} bilder</strong>
     </a>
     """
@@ -2305,6 +2345,7 @@ def page_html(title: str, body: str) -> str:
     .geo-filter {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 18px 0; }}
     .geo-filter label {{ display: grid; gap: 4px; color: var(--muted); font-size: 13px; }}
     .geo-filter input {{ width: 120px; }}
+    .geo-name-form input[name="name"] {{ width: min(420px, 70vw); }}
     .geo-stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 18px 0; }}
     .geo-stats div {{ display: grid; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }}
     .geo-stats span {{ color: var(--muted); }}

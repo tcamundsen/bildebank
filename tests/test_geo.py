@@ -20,6 +20,7 @@ from bilder.geo import (
     scan_geo,
 )
 from bilder.media import sha256_file
+from bilder.server import geo_area_page_html, geo_index_page_html
 
 
 def capture_cli(args: list[str]) -> tuple[int, str, str]:
@@ -153,6 +154,70 @@ class GeoTests(unittest.TestCase):
         self.assertEqual(len(areas), 1)
         self.assertEqual(int(areas[0]["count"]), 1)
         self.assertEqual([row["target_path"] for row in files], ["2024/01/active.jpg"])
+
+    def test_geo_place_name_can_be_saved_and_cleared(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+            conn = db.connect(target)
+            try:
+                saved = db.set_geo_place_name(conn, h3_cell, "  Hytta  ")
+                self.assertEqual(saved, "Hytta")
+                self.assertEqual(db.geo_place_name(conn, h3_cell), "Hytta")
+
+                cleared = db.set_geo_place_name(conn, h3_cell, " ")
+                self.assertIsNone(cleared)
+                self.assertIsNone(db.geo_place_name(conn, h3_cell))
+            finally:
+                conn.close()
+
+    def test_geo_area_page_shows_place_name_form(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+            conn = db.connect(target)
+            try:
+                db.set_geo_place_name(conn, h3_cell, "Hytta")
+                conn.commit()
+            finally:
+                conn.close()
+
+            html = geo_area_page_html(target, h3_cell, resolution=7, limit=25)
+
+        self.assertIn("<h1>Hytta</h1>", html)
+        self.assertIn('action="/geo/place-name"', html)
+        self.assertIn('name="name" value="Hytta"', html)
+        self.assertIn(f'name="h3_cell" value="{h3_cell}"', html)
+
+    def test_geo_index_page_uses_saved_place_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = register_target_file(target, Path("2024/01/active.jpg"))
+            cells = h3_cells_for_point(59.91273, 10.74609)
+            conn = db.connect(target)
+            try:
+                db.update_file_gps(
+                    conn,
+                    file_id=file_id,
+                    gps_lat=59.91273,
+                    gps_lon=10.74609,
+                    gps_alt=None,
+                    h3_cells=cells,
+                    gps_source="test",
+                    gps_error=None,
+                )
+                db.set_geo_place_name(conn, cells["h3_res7"], "Hytta")
+                conn.commit()
+            finally:
+                conn.close()
+
+            html = geo_index_page_html(target, resolution=7, min_count=1, limit=10)
+
+        self.assertIn("Hytta", html)
+        self.assertIn(cells["h3_res7"], html)
 
     def test_geo_scan_uses_relative_target_path_under_collection_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

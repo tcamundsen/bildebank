@@ -164,6 +164,7 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    create_geo_place_names_schema(conn)
     if table_exists(conn, "errors"):
         ensure_column(conn, "errors", "resolved_at", "TEXT")
     if table_exists(conn, "files"):
@@ -382,6 +383,12 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         ON files(gps_lat, gps_lon)
         WHERE gps_lat IS NOT NULL AND gps_lon IS NOT NULL AND deleted_at IS NULL;
 
+        CREATE TABLE IF NOT EXISTS geo_place_names (
+            h3_cell TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
         CREATE TABLE IF NOT EXISTS file_sources (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             file_id INTEGER NOT NULL REFERENCES files(id),
@@ -414,6 +421,18 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         """
     )
     ensure_compatible_columns(conn)
+
+
+def create_geo_place_names_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS geo_place_names (
+            h3_cell TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
 
 
 def create_file_sources_schema(conn: sqlite3.Connection) -> None:
@@ -1805,13 +1824,14 @@ def geo_areas(
     return list(
         conn.execute(
             f"""
-            SELECT {column} AS h3_cell, COUNT(*) AS count
+            SELECT files.{column} AS h3_cell, COUNT(*) AS count, geo_place_names.name AS name
             FROM files
-            WHERE {column} IS NOT NULL
-              AND deleted_at IS NULL
-            GROUP BY {column}
+            LEFT JOIN geo_place_names ON geo_place_names.h3_cell = files.{column}
+            WHERE files.{column} IS NOT NULL
+              AND files.deleted_at IS NULL
+            GROUP BY files.{column}
             HAVING COUNT(*) >= ?
-            ORDER BY count DESC, {column}
+            ORDER BY count DESC, geo_place_names.name, files.{column}
             LIMIT ?
             """,
             (min_count, limit),
@@ -1852,6 +1872,31 @@ def geo_area_files(
         sql += " LIMIT ?"
         params.append(limit)
     return list(conn.execute(sql, params))
+
+
+def geo_place_name(conn: sqlite3.Connection, h3_cell: str) -> str | None:
+    row = conn.execute("SELECT name FROM geo_place_names WHERE h3_cell = ?", (h3_cell,)).fetchone()
+    return None if row is None else str(row["name"])
+
+
+def set_geo_place_name(conn: sqlite3.Connection, h3_cell: str, name: str) -> str | None:
+    clean_name = name.strip()
+    if not h3_cell.strip():
+        raise ValueError("H3-celle mangler.")
+    if not clean_name:
+        conn.execute("DELETE FROM geo_place_names WHERE h3_cell = ?", (h3_cell,))
+        return None
+    conn.execute(
+        """
+        INSERT INTO geo_place_names(h3_cell, name, updated_at)
+        VALUES(?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(h3_cell) DO UPDATE SET
+            name = excluded.name,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (h3_cell, clean_name),
+    )
+    return clean_name
 
 
 def geo_missing_files(conn: sqlite3.Connection, *, limit: int, offset: int = 0) -> list[sqlite3.Row]:
