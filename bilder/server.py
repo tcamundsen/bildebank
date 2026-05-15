@@ -26,7 +26,7 @@ from .html_export import (
     format_bytes,
     month_key_from_path,
 )
-from .geo import H3_COLUMNS, h3_column_for_resolution, h3_resolution, h3_resolution_label
+from .geo import H3_COLUMNS, h3_column_for_resolution, h3_resolution, h3_resolution_label, h3_area_label
 from .media import camera_info
 from .media_cache import cached_image_dimensions
 from .openclip import (
@@ -2049,7 +2049,7 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
         rows.append(info_row_html("Kilder", "\n\n".join(sources), multiline=True))
     else:
         rows.append(info_row_html("Kilder", "-"))
-    geo_links = image_geo_area_links_html(item)
+    geo_links = image_geo_area_links_html(target, item)
     if geo_links:
         rows.append(info_row_html("Steder", geo_links, raw_html=True))
     return rows
@@ -2075,16 +2075,23 @@ def image_source_rows(target: Path, target_path: Path) -> list[str]:
     return result
 
 
-def image_geo_area_links_html(item: Any) -> str:
-    links = []
-    for resolution, column in H3_COLUMNS.items():
-        h3_cell = item[column]
-        if not h3_cell:
-            continue
-        url = "/geo/area/" + urllib.parse.quote(str(h3_cell), safe="")
-        links.append(f'<a href="{html.escape(url)}">H3-{resolution}: {html.escape(str(h3_cell))}</a>')
-    return "<br>".join(links)
-
+def image_geo_area_links_html(target: Path, item: Any) -> str:
+    conn = db.connect(target)
+    try:
+        links = []
+        for resolution, column in H3_COLUMNS.items():
+            h3_cell = item[column]
+            if not h3_cell:
+                continue
+            place_name = db.geo_place_name(conn, str(h3_cell))
+            label = f"H3-{resolution}:" + h3_area_label(resolution) + f" {html.escape(str(h3_cell))}"
+            if place_name:
+                label += f" {place_name}"
+            url = "/geo/area/" + urllib.parse.quote(str(h3_cell), safe="")
+            links.append(f'<a href="{html.escape(url)}">{html.escape(label)}</a>')
+        return "<br>".join(links)
+    finally:
+        conn.close()
 
 def info_row_html(label: str, value: str, *, multiline: bool = False, raw_html: bool = False) -> str:
     escaped_value = value if raw_html else html.escape(value)
