@@ -1552,7 +1552,11 @@ def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: in
     quoted = urllib.parse.quote(h3_cell, safe="")
     title = place_name or "Sted"
     escaped_name = html.escape(place_name or "")
-    child_area_section = geo_child_areas_section_html(child_areas, resolution=resolution + 1)
+    child_area_section = geo_child_areas_section_html(
+        child_areas,
+        resolution=resolution + 1,
+        inherited_name=place_name,
+    )
     return page_html(
         f"{title} {h3_cell}",
         f"""
@@ -1577,10 +1581,10 @@ def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: in
     )
 
 
-def geo_child_areas_section_html(rows: list[Any], *, resolution: int) -> str:
+def geo_child_areas_section_html(rows: list[Any], *, resolution: int, inherited_name: str | None = None) -> str:
     if not rows:
         return ""
-    links = "\n".join(geo_area_row_html(row, resolution=resolution) for row in rows)
+    links = "\n".join(geo_area_row_html(row, resolution=resolution, inherited_name=inherited_name) for row in rows)
     return f"""
     <section class="geo-child-areas">
       <h2>Inneholder</h2>
@@ -1634,12 +1638,19 @@ def geo_stats_summary_html(stats: dict[str, int]) -> str:
     return f'<div class="geo-stats">{rows}</div>'
 
 
-def geo_area_row_html(row: Any, *, resolution: int) -> str:
+def geo_area_row_html(row: Any, *, resolution: int, inherited_name: str | None = None) -> str:
     h3_cell = str(row["h3_cell"])
     count = int(row["count"])
     name = row["name"] if "name" in row.keys() else None
-    label = str(name) if name else h3_cell
-    detail = h3_cell if name else h3_resolution_label(resolution)
+    if name:
+        label = str(name)
+        detail = h3_cell
+    elif inherited_name:
+        label = f"{inherited_name} (arvet)"
+        detail = h3_cell
+    else:
+        label = h3_cell
+        detail = h3_resolution_label(resolution)
     url = "/geo/area/" + urllib.parse.quote(h3_cell, safe="")
     return f"""
     <a class="geo-row" href="{html.escape(url)}">

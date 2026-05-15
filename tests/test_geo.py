@@ -253,6 +253,7 @@ class GeoTests(unittest.TestCase):
                         gps_source="test",
                         gps_error=None,
                     )
+                db.set_geo_place_name(conn, parent_cell, "Hytta")
                 db.set_geo_place_name(conn, first_child, "Brygga")
                 conn.commit()
             finally:
@@ -266,9 +267,9 @@ class GeoTests(unittest.TestCase):
         self.assertIn("Understeder på H3-oppløsning 8", html)
         self.assertIn("Brygga", html)
         self.assertIn(first_link, html)
-        self.assertIn(second_child, html)
+        self.assertIn("Hytta (arvet)", html)
         self.assertIn(second_link, html)
-        self.assertLess(html.index("Brygga"), html.index(second_child))
+        self.assertLess(html.index("Brygga"), html.index("Hytta (arvet)"))
         self.assertIn("<strong>2 bilder</strong>", html)
         self.assertIn("<strong>1 bilder</strong>", html)
 
