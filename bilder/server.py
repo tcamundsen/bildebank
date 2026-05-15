@@ -1459,6 +1459,13 @@ def geo_index_page_html(
         if area_links
         else '<p class="meta">Ingen steder med nok bilder. Kjør bildebank geo-scan, eller senk min_count.</p>'
     )
+    area = {
+        5: "ca. 250 km²",
+        6: "ca. 36 km²",
+        7: "ca. 5 km²",
+        8: "ca. 0,7 km²",
+        9: "ca. 0,1 km²",
+    }
     return page_html(
         "Steder",
         f"""
@@ -1472,7 +1479,7 @@ def geo_index_page_html(
             <label>Maks steder <input name="limit" value="{limit}" inputmode="numeric"></label>
             <button type="submit">Vis</button>
           </form>
-          <p class="meta">Viser H3-oppløsning {resolution}. Lavere tall gir større områder.</p>
+          <p class="meta">Viser H3-oppløsning {resolution}, {area[resolution]}. Lavere tall gir større områder.</p>
           {content}
         </main>
         """,
