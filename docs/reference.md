@@ -9,12 +9,17 @@ Dette er en kort referanse over kommandoene i Bildebank.
 
 ## Se og kontrollere samlingen
 
-- [`status`](status.md)
-- [`make-thumbnails`](make-thumbnails.md)
 - [`run-server`](run-server.md)
-- [`open-browser`](open-browser.md)
+- [`make-thumbnails`](make-thumbnails.md)
+- [`status`](status.md)
 - [`list-sources`](list-sources.md)
 - [`show-source`](show-source.md)
+
+## Rydde
+
+- [`remove`](remove.md)
+- [`unimport`](unimport.md)
+- [`list-removed`](list-removed.md)
 
 ## Finne ting som bør kontrolleres
 
@@ -22,12 +27,6 @@ Dette er en kort referanse over kommandoene i Bildebank.
 - [`show-conflict`](show-conflict.md)
 - [`non-metadata`](non-metadata.md)
 - [`errors`](errors.md)
-
-## Rydde
-
-- [`remove`](remove.md)
-- [`unimport`](unimport.md)
-- [`list-removed`](list-removed.md)
 
 ## Avansert kontroll
 
@@ -46,7 +45,8 @@ Dette er en kort referanse over kommandoene i Bildebank.
 - [`face-suggest`](face-suggest.md)
 - [`face-reset`](face-reset.md)
 
-Ting du kanskje ikke trenger hvis du bruker [`run-server`](run-server.md):
+Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
+[`run-server`](run-server.md):
 
 - [`face-status`](face-status.md)
 - [`face-report`](face-report.md)
