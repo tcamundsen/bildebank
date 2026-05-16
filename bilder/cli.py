@@ -513,6 +513,7 @@ def build_parser() -> argparse.ArgumentParser:
     face_scan = add_command(
         subparsers,
         "face-scan",
+        description="Scanner importerte bilder etter ansikter.",
         usage="bildebank face-scan [valg]",
         help="Scanning etter ansikter",
     )
@@ -568,6 +569,7 @@ def build_parser() -> argparse.ArgumentParser:
     face_suggest = add_command(
         subparsers,
         "face-suggest",
+        description="Foreslå personer for ukjente ansikter",
         usage="bildebank face-suggest [valg]",
         help="Foreslå personer for ukjente ansikter",
     )
@@ -578,9 +580,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Likhetsterskel fra 0.0 til 1.0. Standard: 0.6",
     )
     face_suggest.add_argument(
-        "--no-browser",
+        "--gen-browsers",
         action="store_true",
-        help="Ikke oppdater personer.html og personsidene etter at forslag er beregnet.",
+        help="Lag de statiske bildebrowserene etter at forslag er beregnet.",
     )
     face_browser = add_command(
         subparsers,
