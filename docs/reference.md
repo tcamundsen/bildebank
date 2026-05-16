@@ -61,7 +61,7 @@ Ting du kanskje ikke trenger hvis du bruker [`run-server`](run-server.md):
 
 ## Tekstbasert bildesøk
 
-Se også den samlede innføringen: [`openclip`](openclip.md).
+Se den samlede innføringen: [`openclip`](openclip.md).
 
 ## Programmet
 
