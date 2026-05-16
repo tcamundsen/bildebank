@@ -1,6 +1,7 @@
 # make-browser
 
-`make-browser` lager en HTML-fil for å bla i bildesamlingen i nettleseren.
+`make-browser` lager en statisk bildebrowser i form av en HTML-fil
+for å bla i bildesamlingen i nettleseren.
 
 ## Referanse
 
@@ -24,18 +25,13 @@ bildebank make-browser -o "familiebilder.html"
 Kommandoen lager en HTML-fil med oversikt over importerte bilder og videoer.
 Standardfilen heter `index.html` og legges i bildesamlingsmappen.
 
-Etterpå kan du åpne filen med:
-
-```powershell
-bildebank open-browser
-```
-
-Du kan også dobbeltklikke på `index.html` i Filutforsker.
-
 Hvis du importerer flere filer senere, må du kjøre `make-browser` på nytt for å
 oppdatere HTML-filen.
 
-Hvis ansiktsgjenkjenning er tatt i bruk, viser browseren også personer som er
+Sjekk om ansiktsgjenkjenning finnes i den statiske browseren. Tror egentlig
+iokke vi vil ha det.
+
+Hvis ansiktsgjenkjenning er aktivert, viser bildebrowseren også personer som er
 koblet til bildet. Navnene vises nederst ved filnavnet. Du kan klikke på et
 navn for å åpne personsiden, for eksempel `person-Kari.html`.
 

@@ -1,7 +1,7 @@
 # OpenCLIP
 
-OpenCLIP brukes til tekstbasert bildesøk. Målet er at du skal kunne søke etter
-innhold i bilder med vanlige ord, for eksempel:
+OpenCLIP brukes til tekstbasert bildesøk. Målet er å kunne søke etter
+innhold i bilder med vanlige ord. Eksempel:
 
 ```powershell
 bildebank image-search "strand"
@@ -12,7 +12,7 @@ InsightFace, mens tekstbasert bildesøk bruker OpenCLIP.
 
 ## Status
 
-Dette er en ny funksjon under arbeid.
+Dette er en ny funksjon som fortsatt er under utvikling.
 
 Første versjon er avgrenset til:
 
@@ -41,9 +41,10 @@ ViT-B-32 (laion2b_s34b_b79k)
 ViT-L-14 (laion2b_s32b_b82k)
 ```
 
-NB: dette betyr at foreløpig, så lastes to modeller, selv om vi bare trenger en.
-Dette fikses etter hvert når jeg vet hvilken som fungerer best. Også er mye bedre
-søk via nettleser under arbeid.
+Foreløpig lastes to modeller, selv om vi bare trenger én.
+Dette fikses etter hvert når jeg vet hvilken som fungerer best.
+Søk er tilgjengelig i bildebrowseren. I dette dokumentet vises
+de underliggende kommandoene.
 
 Modellfiler lagres lokalt i programmappen:
 
@@ -52,7 +53,7 @@ Modellfiler lagres lokalt i programmappen:
 ```
 
 OpenCLIP kan bruke nettet når modellen lastes ned første gang. Etter at
-modellfilene er lastet ned, skal selve scanning og søk kjøre lokalt på maskinen.
+modellfilene er lastet ned, skal selve skanning og søk kjøre lokalt på maskinen.
 Bildene sendes ikke til en nettjeneste for å søkes i.
 
 Hvis du ser en melding om `HF Hub` eller `HF_TOKEN`, betyr det vanligvis at
@@ -86,9 +87,9 @@ Modellen omtales ofte som `ViT-L/14`, men i OpenCLIP-config bruker vi navnet
 `ViT-L-14`.
 
 `ViT-L-14` kan gi bedre treff enn `ViT-B-32`, men den er større og tregere.
-Når du bytter modell, må `image-scan` kjøres på nytt for den modellen. Bildebank
-lagrer embeddings separat per modell, så du kan bytte tilbake uten å slette de
-gamle embeddingene.
+Når du bytter modell, må image-scan kjøres på nytt for å lage embeddings for
+den modellen.  Bildebank lagrer embeddings separat per modell, så du kan bytte
+tilbake uten å slette de gamle embeddingene.
 
 ## CPU eller GPU
 
@@ -98,7 +99,7 @@ Som standard bruker OpenCLIP:
 device = "auto"
 ```
 
-Da bruker Bildebank GPU hvis PyTorch finner CUDA. Hvis ikke brukes CPU. Du kan
+Da bruker Bildebank GPU hvis PyTorch finner CUDA. Hvis ikke, brukes CPU. Du kan
 tvinge CPU slik:
 
 ```toml
@@ -112,7 +113,7 @@ bildebank face-status
 ```
 
 Under `Tekstbasert bildesøk` viser kommandoen blant annet `device-valg`,
-om PyTorch er installert, om CUDA/GPU er funnet, og eventuelt GPU-navn.
+om PyTorch er installert, om CUDA/GPU ble funnet, og eventuelt GPU-navn.
 
 ## Sjekk status
 
@@ -155,7 +156,7 @@ Hvis `image-scan` kjøres på nytt, hopper Bildebank over bilder som allerede ha
 embedding for samme modell og samme filinnhold.
 
 Mens kommandoen kjører, viser den fremdrift i terminalen. Den skriver blant
-annet hvor mange bilder som er behandlet, hvor mange som er scannet, hvor mange
+annet hvor mange bilder som er behandlet, hvor mange som er skannet, hvor mange
 som er hoppet over, om noen bilder feilet, og omtrent hvor lang tid som gjenstår.
 
 Det er trygt å avbryte med `Ctrl-C`. `image-scan` lagrer underveis, og neste
@@ -193,7 +194,7 @@ bildebank image-search "strand" --limit 50
 ```
 
 Mens søket kjører, viser `image-search` hvor mange bilde-embeddings som er
-funnet, og hvor mange bilder søket er sammenlignet med.
+funnet, og hvor mange bilder det er søkt i.
 
 ## Hvordan skrive søk
 
@@ -254,7 +255,7 @@ bildebank image-search "snow"
 
 OpenCLIP forstår ikke bildene på samme måte som et menneske. Resultatene er
 forslag sortert etter likhet mellom søketeksten og bildet. Noen treff kan derfor
-være feil, og noen riktige bilder kan mangle.
+være irrelevante, og noen riktige bilder kan mangle.
 
 ## Filer og data
 

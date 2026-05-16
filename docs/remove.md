@@ -40,11 +40,7 @@ flyttes til:
 deleted\2024\01\IMG_0001.jpg
 ```
 
-Etterpå vises ikke filen i HTML-browseren når du lager den på nytt med:
-
-```powershell
-bildebank make-browser
-```
+Etterpå vises ikke filen i nettleservisningen.
 
 Originalfilen i kilden blir ikke slettet.
 

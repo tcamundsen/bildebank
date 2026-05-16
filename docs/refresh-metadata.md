@@ -12,8 +12,8 @@ bildebank refresh-metadata --verbose
 
 ## Hva kommandoen gjør
 
-Hvis Bildebank senere klarer å lese metadata som manglet ved import, kan filen
-flyttes til riktig datomappe.
+Hvis Bildebank senere klarer å lese metadata som manglet da filen ble
+importert, kan filen flyttes til riktig datomappe.
 
 Start med `--dry-run` for å se hva som ville skjedd uten å endre filer eller
 database.

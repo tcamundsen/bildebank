@@ -12,7 +12,6 @@ Dette er en kort referanse over kommandoene i Bildebank.
 - [`status`](status.md)
 - [`make-thumbnails`](make-thumbnails.md)
 - [`run-server`](run-server.md)
-- [`make-browser`](make-browser.md)
 - [`open-browser`](open-browser.md)
 - [`list-sources`](list-sources.md)
 - [`show-source`](show-source.md)

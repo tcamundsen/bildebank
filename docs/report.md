@@ -8,6 +8,6 @@
 bildebank report
 ```
 
-Kommandoen er en kort rapport over innholdet og importstatusen i
+Kommandoen viser en kort rapport over innholdet og importstatusen i
 bildesamlingen.
 

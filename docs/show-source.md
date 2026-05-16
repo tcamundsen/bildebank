@@ -1,6 +1,6 @@
 # show-source
 
-`show-source` viser hvilken kilde en importert fil kom fra.
+`show-source` viser hvilke kilder en importert fil kom fra.
 
 ## Referanse
 

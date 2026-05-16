@@ -57,5 +57,5 @@ Når du oppretter en bildesamling med `create`, lagres den i en liten oversikt
 ved siden av programmet.
 
 Hvis du allerede har en bildesamling fra før, blir den lagt til automatisk
-neste gang du bruker Bildebank fra den målmappen.
+neste gang du bruker Bildebank fra den bildesamlingsmappen.
 

@@ -29,7 +29,7 @@ bildebank unimport --name "Sommer2023"
 Hvis en fil bare kom fra denne ene importen, fjernes filen fra den aktive
 bildesamlingen.
 
-Hvis samme fil også finnes i en annen import, blir filen liggende. Da fjernes
+Hvis den samme filen også finnes i en annen import, blir filen liggende. Da fjernes
 bare henvisningen til importen du angrer.
 
 ## Dette er en destruktiv kommando
@@ -82,8 +82,8 @@ USB, CD eller minnekort, må riktig medium være satt inn når du kjører
 kommandoen.
 
 Hvis Bildebank sier at en kildefil mangler, sjekk at riktig USB-disk, CD eller
-minnekort er satt inn, og at den har samme stasjon/path som da importen ble
-kjørt.
+minnekort er koblet til, og at den har samme stasjonsbokstav og path som da
+importen ble kjørt.
 
 ## Etter unimport
 

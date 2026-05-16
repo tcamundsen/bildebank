@@ -1,6 +1,6 @@
 # create
 
-`create` gjør en mappe til en Bildebank-målmappe.
+`create` gjør en mappe til en bildesamlingsmappe.
 
 ## Referanse
 
@@ -24,7 +24,7 @@ Punktum betyr "mappen jeg står i nå".
 
 ## Hva kommandoen gjør
 
-`create` oppretter Bildebank-databasen i målmappen. Databasen er filen der
+`create` oppretter Bildebank-databasen i bildesamlingsmappen. Databasen er filen der
 Bildebank husker hvilke kilder som er lagt til, hvilke filer som er importert,
 og hvor filene ligger i bildesamlingen.
 
@@ -57,7 +57,7 @@ cd "$HOME\BildeSamling"
 bildebank create .
 ```
 
-Når dette er gjort, kan du kontrollere at Bildebank finner målmappen:
+Når dette er gjort, kan du kontrollere at Bildebank finner bildesamlingsmappen:
 
 ```powershell
 bildebank status

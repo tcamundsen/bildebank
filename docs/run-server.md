@@ -1,11 +1,12 @@
 # run-server
 
-Dette er dokumentasjon for den lokale Bildebank-serveren.
-
+`run-server` starter den lokale bildebrowseren for Bildebank. Dette er
+en lokal web-server som kjører på din PC, og som du ser i nettleseren.
 Dette er vanligvis den beste måten å se på bildene på egen PC.
-[`make-browser`](make-browser.md) og [`open-browser`](open-browser.md) kan brukes
-hvis man vil se på bildene uten å ha Bildebank installert, for eksempel fra en
-ekstern disk på en annen PC.
+
+Den statiske HTML-browseren laget med [`make-browser`](make-browser.md) kan
+fortsatt brukes når bildesamlingen skal åpnes på en maskin uten installert
+Bildebank.
 
 `run-server` gir også flere funksjoner som ikke er mulig med den statiske
 HTML-filen laget av `make-browser`.
@@ -14,13 +15,12 @@ HTML-filen laget av `make-browser`.
 
 - Bla gjennom hele bildesamlingen i nettleseren.
 - Slette bilder. (Foreløpig bare flytte til `deleted/`)
-- Rotere bilder som har feil orientering. Info om rotasjon lagres i
-  databasen og bildet roteres i nettleser. Dvs at originale bildefiler
-  ikke endres.
+- Rotere bilder som har feil orientering. Informasjon om rotasjon lagres i
+  databasen, og bildet roteres i nettleseren. Originale bildefiler endres ikke.
 - Vise bilder gruppert etter sted når GPS-data er scannet med
   `bildebank geo-scan`.
 - Holde OpenCLIP-modellen lastet i minnet mens serveren kjører, slik at
-  man slipper ventetid ved oppstart, og søk kan gjøres i nettleseren.
+  modellen ikke må lastes inn på nytt ved hvert søk.
   Dette gjør at søkene går raskere etter første søk.
 - Registrere personer og knytte gode bilder til dem.
 
@@ -44,7 +44,7 @@ Hvis du vil dele bildesamlingen på LAN, må du åpne brannmuren og starte serve
 bildebank run-server --host 0.0.0.0
 ```
 
-Og så må du finne IP-adressen til laptopen som kjører serveren med `ipconfig`.
+Og så må du finne IP-adressen til PC-en som kjører serveren med `ipconfig`.
 Hvis adressen er 192.168.86.11, så skriver du `http://192.168.86.11:8765/` i
 adressefeltet til nettleseren.
 
@@ -68,7 +68,8 @@ Se også den samlede innføringen: [`insightface`](insightface.md).
 
 
 Knappen `Bildeinfo` i bildebrowseren viser filnavn, filstørrelse, oppløsning,
-kamera hvis dette finnes i metadata, og hvilke kilder som inkluderer bildet.
+kamera hvis dette finnes i metadata, hvilke kilder som inkluderer bildet, og
+lenker til stedssidene for H3-nivåene bildet er del av når bildet har GPS-data.
 Overlayet kan lukkes med `Lukk` eller Esc.
 
 På bildesider kan du bruke `Roter venstre` og `Roter høyre` for å rotere
@@ -83,23 +84,23 @@ bildebank geo-scan
 ```
 
 Etterpå kan `http://127.0.0.1:8765/geo` vise områder med bilder,
-`http://127.0.0.1:8765/geo/missing` vise bilder uten GPS, og bildesidene kan
-vise nærliggende bilder. Serveren endrer ikke bildefilene og gjør ikke
-oppslag mot eksterne karttjenester.
+`http://127.0.0.1:8765/geo/missing` vise bilder uten GPS, og `Bildeinfo`
+på bildesidene kan lenke til stedssidene bildet er del av. Serveren endrer
+ikke bildefilene og gjør ikke oppslag mot eksterne karttjenester.
 
 Knappen `Slett` flytter bildet til `deleted`-mappen i bildesamlingen og
-markerer filen som slettet i databasen. Dette er samme trygge sletting som
-kommandoen `bildebank remove`. Bildefilen slettes ikke permanent.
+markerer filen som slettet i databasen. Dette er samme slettemekanisme
+som kommandoen [`bildebank remove`](remove.md).
 
 ## Teknisk info
 
 Serveren bruker en liten lokal HTTP-server fra Python-standardbiblioteket. Hvis
 behovet vokser, kan vi vurdere FastAPI eller lignende senere. Serveren har ikke
-innebygd sikkerhet, og bør bare kjøres lokalt på laptop eller på et privat LAN
+innebygd sikkerhet, og bør bare kjøres lokalt på PC-en eller på et privat LAN
 der man har kontroll på brukerne.
 
 OpenCLIP-modellen ligger i serverprosessen, slik at den kan brukes om igjen
-mellom søk. Serveren tåler at modellen ikke er lastet ennå, og gir en lesbar
+mellom søk. Serveren håndterer at modellen ikke er lastet ennå, og gir en lesbar
 feil hvis OpenCLIP ikke er installert eller `image-scan` ikke er kjørt.
 
 Bildebrowseren bruker samme underliggende database som `make-browser`, men har

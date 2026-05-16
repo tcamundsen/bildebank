@@ -10,6 +10,6 @@ bildebank status
 
 ## Hva kommandoen gjør
 
-Kommandoen teller importerte bilder og videoer og viser hvordan filene er
-fordelt. Bruk den for å kontrollere at en import ser rimelig ut.
-
+Kommandoen teller importerte bilder og videoer. Viser også hvor mange filer
+som har dato fra henholdsvis metadata, filnavn og mtime (når filen sist
+ble endret).
