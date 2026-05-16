@@ -28,12 +28,18 @@ HTML-filen laget av `make-browser`.
 
 ```powershell
 bildebank run-server
+Starter Bildebank-server. Dette kan ta noen sekunder.
+Bildesamling: C:\Users\TA487\code\bilde-samling
+Bildebank-serveren er klar: http://127.0.0.1:8765/
+Trykk Ctrl-C for å stoppe serveren.
+Åpner nettleser.
+
 ```
 
 Når serveren har startet, åpnes nettsiden automatisk i nettleseren når serveren
-er klar til å svare.
-
-Standard adresse er `http://127.0.0.1:8765/`.
+er klar til å svare. I eksempelet over er det tatt med output fra `run-server`.
+Der ser du adressen du skal åpne i nettleseren, hvis den ikke åpner seg av seg
+selv: [http://127.0.0.1:8765](http://127.0.0.1:8765/).
 
 Denne adressen gjør at den kan brukes fra samme PC, men ikke deles på
 nettverket ved et uhell.

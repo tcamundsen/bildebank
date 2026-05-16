@@ -2,13 +2,13 @@
 
 Ansiktsgjenkjenning fungerer ganske greit nå, selv om dokumentasjon
 kanskje skal forbedres litt etter hvert. Spør etter det som er vanskelig.
+Når du har lært hvordan ting gjøres, så bør du se på filen
+[face-suggest-strategier](face-suggest-strategier.md).
+Oversikt over kommandoer som har med ansiktsgjenkjenning å gjøre
+[finner du her](reference.md#ansiktsgjenkjenning).
 
-[`run-server`](run-server.md) har nå litt informasjon om hvordan
-man knytter bekreftede bilder til en person. Men beskrivelsen her
-inneholder litt annen informasjon, samt hvordan det gjøres fra PowerShell.
 
-
-InsightFace brukes til ansikansiktsgjenkjenning, og funksjonen er slått
+InsightFace brukes til ansiktsgjenkjenning, og funksjonen er slått
 av i vanlig Bildebank-installasjon. Denne siden viser hvordan dette kan
 lastes ned og slås på.
 
@@ -77,27 +77,46 @@ uten å måtte kjøre `face-scan` på nytt.
 
 ### 4. Opprett personer
 
-Når du finner et tydelig ansikt som tilhører en person:
+Start serveren og åpne bildebrowseren i nettleseren:
+```powershell
+bildebank runserver
+```
+
+Når InsightFace finner bilder med ansikter vises knappen "Ansikter i bildet"
+øverst i nettleservinduet.
+
+Trykk på den, og vi får opp visningen der vi kan legge til personer
+og knytte ansikter til personer. For hvert ansikt funnet i bildet
+vil visningen vise:
+
+- en linje med teksten face-id 0000, deteksjon 0.xyz
+- bildet, med funnet ansikt markert med et rødt rektangel
+- en rad med knapper med navnene på de personene som allerede er definert
+- en linje med teksten "Ny person", et tekstfelt til å skrive i og en
+  knapp med teksten "Identifiser"
+
+Hvis ansiktet markert med rødt rektangel er en allerede definert person,
+så klikker du på knappen med den personen. Hvis du vil legge til en ny
+person, så skriver du navnet og trykker "Identifiser".
+
+Hvis det er mange personer i bildet, så vil du se et bilde med rødt
+rektangel rundt ansiktet for hver eneste person. Pass på at du bruker
+knappene under bildet der riktig person er markert.
+
 
 ```powershell
 bildebank face-person-create "Kari"
 bildebank face-person-add-face "Kari" 798
 ```
 
-Tallet `798` er `face-id`. Du finner det i `faces.html`, i personsidene eller
-i vanlig `index.html`.
+Tallet `798` i eksempelet over er `face-id` som står over bildet.
 
 Du trenger ikke å markere alle ansikter manuelt. Det er vanligvis nok å legge
-inn noen få sikre eksempler per person.
+inn noen få sikre eksempler per person. Du får best resultat med bilder som er
+i fokus og med god oppløsning.
 
-Hvis bare ett enkelt ansikt skal kobles til personen:
-
-```powershell
-bildebank face-person-add-face "Kari" 798
-```
-
-Ikke koble usikre ansikter. Noen få sikre ansikter er bedre enn mange
-tvilsomme.
+Ikke koble usikre ansikter eller dårlige bilder. Noen få sikre ansikter er
+bedre enn mange tvilsomme.
 
 ### 6. La Bildebank foreslå flere bilder
 
@@ -109,18 +128,15 @@ bildebank face-suggest
 
 `face-suggest` bruker da bildene du har identifisert manuelt til å
 finne identifiserte personer i alle bildene som har blitt scannet med
-`face-scan`. Kommandoen oppdaterer også `personer.html` og personsidene.
+`face-scan`.
 
-Åpne `personer.html`, og klikk på personen du vil se. Personsiden viser både
-bekreftede treff og forslag.
+I bildebrowseren fra `run-server` ser man øverst på skjermen knapper med
+navnet til personer som `face-suggest` har kjent igjen. Og det er en knapp
+"Personer" som tar deg til en side med lenker til bildebrowser som bare viser
+bilder med personen du velger. Knappen "Bekreftede bilder" viser bare bildene
+du har bekreftet er personen.
 
-Hvis forslagene ser riktige ut, kan du bekrefte flere ansikter:
-
-```powershell
-bildebank face-person-add-face "Kari" 912
-```
-
-Kjør deretter på nytt:
+Hvis du bekrefter flere personer, så må du kjøre face-suggest på nytt:
 
 ```powershell
 bildebank face-suggest
@@ -143,111 +159,12 @@ bildebank face-person-remove-face "Kari" 912
 Tallet `912` er `face-id`. Du finner det under bildet i `faces.html` eller i
 personsiden.
 
-Slett en person som ble opprettet ved en feil:
+Slett en person som ble opprettet ved en feil, eller for å starte på nytt med
+den personen:
 
 ```powershell
-bildebank face-person-delete "Krai"
+bildebank face-person-delete "Kari"
 ```
-
-## Detaljer
-
-## Installere testkomponenten
-
-Kjør dette fra programmappen:
-
-```powershell
-.\install-insightface.ps1
-```
-
-Scriptet installerer InsightFace og ONNX Runtime i Bildebanks lokale
-Python-miljø i `.venv`. Det installerer ikke noe som et vanlig Windows-program.
-
-Scriptet lager også `bildebank-config.toml` hvis filen mangler.
-
-## Config
-
-Utgangspunktet ligger i:
-
-```text
-bildebank-config.example.toml
-```
-
-Den lokale filen heter:
-
-```text
-bildebank-config.toml
-```
-
-Den lokale filen skal ikke legges i Git.
-
-For testing kan den se slik ut:
-
-```toml
-[face_recognition]
-enabled = false
-provider = "cpu"
-model_root = ".bildebank-insightface"
-model_name = "buffalo_l"
-```
-
-`enabled = false` betyr at Bildebank ikke bruker ansiktsgjenkjenning.
-
-## Status
-
-Sjekk status med:
-
-```powershell
-bildebank face-status
-```
-
-Kommandoen viser om config er av eller på, hvor modellene skal ligge, og om
-`insightface` og `onnxruntime` er installert.
-
-Hvis kommandoen kjøres fra en bildesamling, viser den også status for
-ansiktsdatabasen i bildesamlingen.
-
-## Scanne ansikter
-
-Når InsightFace er installert og config er slått på, kan du teste scanning:
-
-```powershell
-bildebank face-scan --limit 10
-```
-
-`face-scan` scanner bare importerte bildefiler, ikke videoer. Bilder som
-allerede er scannet med samme innhold hoppes over.
-
-Kommandoen viser progresjon mens den jobber. Først kontrollerer den hvilke
-bilder som allerede er scannet, og deretter scanner den nye eller endrede
-bilder. Under selve scanningen viser den også et enkelt estimat for hvor mye tid
-som gjenstår.
-
-Bildebank skjuler vanligvis intern output fra InsightFace og ONNX Runtime. Hvis
-du feilsøker selve ansiktsmodellen, kan den vises med:
-
-```powershell
-bildebank face-scan --show-model-output
-```
-
-Hvis en bildefil feiler under scanning, skriver `face-scan` filstien og
-feilmeldingen. Du kan også se scan-feil senere med:
-
-```powershell
-bildebank face-report
-```
-
-Det er trygt å avbryte med `Ctrl-C`. Bildebank lagrer resultatet etter hvert
-bilde. Neste gang du kjører `face-scan`, fortsetter den ved å hoppe over bilder
-som allerede er ferdig scannet. For å finne ansikter i alle bildene må denne
-kjøres på alle bildene i samlingen.
-
-Ansiktsdata lagres i bildesamlingen:
-
-```text
-.bilder-faces.sqlite3
-```
-
-Dette er en egen database. Den vanlige Bildebank-databasen endres ikke.
 
 ## Rapport
 
@@ -265,133 +182,25 @@ Rapporten viser blant annet:
 - bilder med flest ansikter
 - eventuelle scan-feil
 
-## Ansikter og personer
+## Statiske HTML-filer
 
-`make-face-browser` lager en oversikt over scannede ansikter. Den er nyttig når
-du vil finne et konkret ansikt du kjenner igjen og koble det til en person.
+Du kan lage en statisk bildebrowsere som viser alle bildene med en person
+slik:
 
-Når du har funnet et tydelig ansikt:
-
-```powershell
-bildebank face-person-create "Kari"
-bildebank face-person-add-face "Kari" 798
+```
+bildebank make-person-browser "Tom"
 ```
 
-Tallet er `face-id`. Du finner det under bildet i `faces.html`, eller i vanlig
-`index.html` med knappen `Ansikter i bildet`.
-
-Personen må være opprettet før du kobler ansikter til den. Dette hindrer at en
-skrivefeil i navnet lager en ny person ved et uhell.
-
-Du trenger ikke å bekrefte mange ansikter for hver person. Noen få sikre
-eksempler er som regel nok til at `face-suggest` kan gjøre resten.
-
-Du kan se registrerte personer:
-
-```powershell
-bildebank face-person-list
-```
-
-Hvis en person er opprettet ved en feil, kan den slettes fra ansiktsdatabasen:
-
-```powershell
-bildebank face-person-delete "Krai"
-```
-
-Kommandoen ber om bekreftelse. Den sletter bare personen, bekreftede
-ansiktskoblinger og forslag for personen. Den sletter ingen bilder og ingen
-scannede ansikter.
-
-Dette er brukerbekreftet informasjon. Hvis et ansikt er koblet feil, kan
-koblingen fjernes igjen:
-
-```powershell
-bildebank face-person-remove-face "Kari" 17
-```
-
-Tallet er `face-id`. Du finner det under bildet i `faces.html` eller i
-personsiden.
-
-Når noen ansikter er koblet til personer, kan Bildebank lage forslag for
-ukjente ansikter:
-
-```powershell
-bildebank face-suggest
-```
-
-Forslagene er ikke bekreftede personer. De bygger bare på ansikter du allerede
-har koblet manuelt. Kommandoen skriver ut personnavn, ansikt-id, score og fil.
-Den oppdaterer også `personer.html` og personsidene automatisk.
-Strengheten kan justeres:
-
-```powershell
-bildebank face-suggest --threshold 0.70
-```
-
-Høyere tall gir færre og strengere forslag.
-
-Hvis du bare vil beregne forslag uten å skrive HTML, kan du bruke:
-
-```powershell
-bildebank face-suggest --no-browser
-```
-
-For å se bildene der Bildebank mener at registrerte personer finnes:
+og statisk bildebrowser av alle personer, samt oversiktsfilen `personer.html`
+lik:
 
 ```powershell
 bildebank make-people-browser
 ```
 
-Da lages en index og én side per person:
-
-```text
-personer.html
-person-Kari.html
-```
-
-Personsiden viser ett bilde om gangen, slik at den også kan brukes når personen
-finnes i mange bilder. Du kan bla til forrige/neste bilde, forrige/neste måned
-og forrige/neste år. Når du hopper måned eller år, vises en månedsoversikt med
-bilder fra den måneden.
-
-Bekreftede ansikter og forslag har ulik farge på boksen rundt ansiktet.
-
 ## Slette ansiktsdata
 
-`face-reset` krever alltid bekreftelse før noe slettes.
-
-Det finnes tre nivåer.
-
-### Slette alt
-
-Hvis du vil fjerne alle ansiktsdata fra bildesamlingen:
-
-```powershell
-bildebank face-reset --all
-```
-
-Dette sletter `.bilder-faces.sqlite3`. Det fjerner resultatene fra `face-scan`,
-personer, bekreftede ansiktskoblinger og forslag.
-
-Kommandoen sletter ingen bilder og endrer ikke den vanlige Bildebank-databasen.
-
-### Beholde face-scan
-
-Hvis du vil slippe å scanne bildene på nytt, men vil starte på nytt med
-personer:
-
-```powershell
-bildebank face-reset --keep-scan
-```
-
-Dette beholder resultatene fra `face-scan`, men sletter personer,
-bekreftede ansiktskoblinger og forslag.
-
-Hvis du kjører `face-reset` uten nivåvalg, er dette standardnivået:
-
-```powershell
-bildebank face-reset
-```
+Se [`face-reset`](face-reset.md).
 
 ## Modeller
 
