@@ -3,7 +3,7 @@
 ```text
 usage: bildebank face-suggest [valg]
 
-Foreslå personer for ukjente ansikter
+Foreslå personer for ukjente ansikter.
 
 options:
   -h, --help            show this help message and exit
@@ -17,10 +17,11 @@ options:
 Forslagene bygger på ansikter du allerede har bekreftet med
 `face-person-add-face`.
 
-## Valg
-
-`--threshold DESIMALTALL`
-: Høyere `--threshold` gir strengere forslag.
-
 Se også [`Strategier for face-suggest`](face-suggest-strategier.md) for råd om
 hvordan du bør velge ansikter som skal bekreftes.
+
+## Valg
+
+### `--threshold DESIMALTALL`
+
+Høyere `--threshold` gir strengere forslag.

@@ -13,17 +13,12 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-Kommandoen lagrer matematiske beskrivelse av ansikter `.bilder-faces.sqlite3`.
+`face-scan` scanner importerte bilder og lagrer matematiske beskrivelser av
+ansikter `.bilder-faces.sqlite3`.
 
 Den hopper over bilder som allerede er scannet med samme innhold. Det er trygt
 å avbryte med `Ctrl-C`; neste kjøring fortsetter ved å hoppe over det som er
 ferdig.
-
-`--limit ANTALL`
-: kjør scan på maks ANTALL bilder. Fint å bruke for å teste på et mindre antall bilder først.
-
-`--show-model-output`
-: viser intern output fra InsightFace/ONNX ved feilsøking.
 
 Hvis en fil feiler under scanning, skriver `face-scan` filstien og
 feilmeldingen. Feilen kan også ses senere med:
@@ -31,3 +26,13 @@ feilmeldingen. Feilen kan også ses senere med:
 ```powershell
 bildebank face-report
 ```
+
+## Valg
+
+### `--limit ANTALL`
+
+Skann maksimalt ANTALL bilder. Fint å bruke for å teste på et mindre antall bilder først.
+
+### `--show-model-output`
+
+Viser intern output fra InsightFace/ONNX ved feilsøking.
