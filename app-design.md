@@ -156,8 +156,8 @@ av disse filene som fortsatt blir liggende i målmappen fordi samme fil også er
 registrert fra andre kilder. Hvis en målfil bare har denne kilden som
 proveniens, fjernes målfilen fra den aktive samlingen. Hvis målfilen også har
 andre `file_sources`, skal selve målfilen ikke slettes; bare henvisningen til
-kilden som unimporteres fjernes. Etterpå skal `make-browser` og
-`open-browser` vise bildene som om denne importen aldri hadde skjedd.
+kilden som unimporteres fjernes. Etterpå skal `make-browser` lage en
+HTML-browser som viser bildene som om denne importen aldri hadde skjedd.
 
 Før noe endres skal brukeren bekrefte med en nøyaktig tekst:
 
@@ -269,14 +269,13 @@ undersøke aktive feil uten å bruke `sqlite3` direkte.
 For å lage en statisk HTML-browser i målmappen:
 
     $ bildebank make-browser
-    $ bildebank open-browser
 
 `make-browser` skriver `index.html` i målmappen. HTML-filen inneholder en
 innebygd indeks fra databasen og kan derfor åpnes direkte i nettleseren uten
 mappevelger. Den viser bilder og videoer med relative paths fra målmappen, men
-kopierer ikke bilde- eller videofilene. `open-browser` åpner som standard
-`index.html` i standard nettleser. Med `--file` kan den åpne en annen HTML-fil
-i målmappen. Browseren kan filtreres på medietype og datokilde når den lages:
+kopierer ikke bilde- eller videofilene. `index.html` kan åpnes direkte fra
+Filutforsker eller nettleseren. Browseren kan filtreres på medietype og
+datokilde når den lages:
 
     $ bildebank make-browser --media=image
     $ bildebank make-browser --media=video

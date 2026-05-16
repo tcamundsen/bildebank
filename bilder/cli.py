@@ -83,7 +83,6 @@ HELP_COMMAND_GROUPS = (
             ("status", "Vis antall importerte bilder og videoer"),
             ("make-thumbnails", "Lag thumbnails for rask månedsvisning"),
             ("make-browser", "Lag index.html for nettleseren"),
-            ("open-browser", "Åpne HTML-browseren i nettleseren"),
             ("list-sources", "Vis registrerte kilder"),
             ("show-source", "Vis hvor en importert fil kom fra"),
         ),
@@ -400,24 +399,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     make_thumbnails.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
     make_thumbnails.add_argument("--verbose", action="store_true", help="Vis filer som feiler")
-
-    open_browser = add_command(
-        subparsers,
-        "open-browser",
-        usage="bildebank open-browser [valg]",
-        help="Åpne HTML-browseren i standard nettleser",
-        description=(
-            "Åpner en eksisterende HTML-browser i standard nettleser. "
-            "Standard er index.html i bildesamlingsmappen."
-        ),
-    )
-    open_browser.add_argument(
-        "-f",
-        "--file",
-        dest="file",
-        type=Path,
-        help="HTML-filen som skal åpnes. Standard: index.html i bildesamlingsmappen.",
-    )
 
     export_conflicts = add_command(
         subparsers,
@@ -1083,19 +1064,6 @@ def run(args: argparse.Namespace) -> int:
             )
             print_thumbnail_summary(stats)
             return 0 if stats.errors == 0 else 2
-
-        if args.command == "open-browser":
-            conn.commit()
-            conn.close()
-            browser_path = resolve_browser_file_arg(target, args.file)
-            if not browser_path.exists():
-                raise ValueError(
-                    f"Fant ikke HTML-browseren: {browser_path}. "
-                    "Kjør bildebank make-browser først."
-                )
-            open_file_in_browser(browser_path)
-            print(f"Åpnet HTML-browser: {browser_path}")
-            return 0
 
         if args.command == "make-conflict-browser":
             output = args.output.resolve() if args.output else None
@@ -2017,14 +1985,6 @@ def run_update_command(command: list[str], *, cwd: Path) -> None:
 def open_file_in_browser(path: Path) -> None:
     if not webbrowser.open(path.resolve().as_uri()):
         raise ValueError(f"Klarte ikke åpne nettleseren for: {path}")
-
-
-def resolve_browser_file_arg(target: Path, path: Path | None) -> Path:
-    if path is None:
-        return target / "index.html"
-    if path.is_absolute():
-        return path.resolve()
-    return (target / path).resolve()
 
 
 def resolve_collection_file_arg(target: Path, path: Path) -> Path:
