@@ -205,9 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank import [valg] --name navn mappe",
         help="Importer en navngitt kilde direkte",
         description=(
-            "Registrerer og importerer én kilde direkte. Bruk et unikt navn "
-            "med --name, uansett om kilden er en vanlig mappe, USB-brikke, CD "
-            "eller minnekort."
+            "Registrerer og importerer bildene fra en mappe, USB-brikke, CD eller disk."
         ),
         )
     imp.add_argument("--quiet", action="store_true")

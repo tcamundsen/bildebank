@@ -1,6 +1,6 @@
 .PHONY: html
 
-CMDS ?= face-scan face-suggest create
+CMDS ?= face-scan face-suggest create import
 
 cli-help:
 	@for cmd in $(CMDS); do \
