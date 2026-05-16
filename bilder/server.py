@@ -2038,8 +2038,7 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
     dimensions = cached_image_dimensions(target, absolute_path)
     camera = camera_info(absolute_path)
     rows = [
-        info_row_html("Filnavn", str(item["stored_filename"])),
-        info_row_html("Filsti", display_relative_path(target, target_path)),
+        info_row_html("Filnavn", display_relative_path(target, target_path)),
         info_row_html("Filstørrelse", f"{format_bytes(int(item['size_bytes']))} ({int(item['size_bytes'])} bytes)"),
         info_row_html("Oppløsning", f"{dimensions.width} x {dimensions.height}" if dimensions else "-"),
         info_row_html("Kamera", camera_text(camera)),
