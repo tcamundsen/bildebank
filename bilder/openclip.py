@@ -69,10 +69,15 @@ def connect_openclip_db(target: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(openclip_db_path(target))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    apply_schema(conn)
-    set_meta(conn, "target_path", str(target.resolve()))
-    conn.commit()
-    return conn
+    try:
+        apply_schema(conn)
+        validate_relative_openclip_paths(conn)
+        set_meta(conn, "target_path", str(target.resolve()))
+        conn.commit()
+        return conn
+    except Exception:
+        conn.close()
+        raise
 
 
 def apply_schema(conn: sqlite3.Connection) -> None:
@@ -135,6 +140,26 @@ def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
         "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
         (key, value),
     )
+
+
+def validate_relative_openclip_paths(conn: sqlite3.Connection) -> None:
+    for table in ("image_embeddings", "image_search_results"):
+        row = conn.execute(
+            f"""
+            SELECT file_id, target_path
+            FROM {table}
+            WHERE target_path LIKE '/%'
+               OR target_path GLOB '[A-Za-z]:*'
+            ORDER BY file_id
+            LIMIT 1
+            """
+        ).fetchone()
+        if row is not None:
+            raise ValueError(
+                "OpenCLIP-databasen har absolutt target_path i "
+                f"{table} for file_id={row['file_id']}: {row['target_path']}. "
+                "Kjør bildebank image-scan på nytt."
+            )
 
 
 def active_image_files(target: Path, *, limit: int | None = None) -> list[sqlite3.Row]:

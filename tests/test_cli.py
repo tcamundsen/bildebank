@@ -632,6 +632,38 @@ class CliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_openclip_database_rejects_absolute_target_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            absolute_image = target / "2024" / "01" / "IMG_20240102.jpg"
+            config = OpenClipConfig()
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256, model_name, pretrained, embedding
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        1,
+                        str(absolute_image),
+                        "2024/01/img_20240102.jpg",
+                        "sha",
+                        config.model_name,
+                        config.pretrained,
+                        embedding_blob([1.0, 0.0]),
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with self.assertRaisesRegex(ValueError, "OpenCLIP-databasen har absolutt target_path"):
+                connect_openclip_db(target).close()
+
     def test_run_server_renders_bookmarkable_item_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -3465,6 +3497,28 @@ model_name = "test-model"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("1\t2024/01/IMG_20240102.jpg", stdout)
+
+    def test_face_database_rejects_absolute_target_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            image_path = target / "2024" / "01" / "IMG_20240102.jpg"
+            target.mkdir()
+            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            try:
+                apply_face_schema(conn)
+                conn.execute(
+                    """
+                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                    VALUES(1, ?, '2024/01/img_20240102.jpg', 'sha', 'ok', 0)
+                    """,
+                    (str(image_path),),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with self.assertRaisesRegex(ValueError, "Face-databasen har absolutt target_path"):
+                connect_face_db(target).close()
 
     def test_face_suggest_uses_relative_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

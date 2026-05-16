@@ -170,6 +170,28 @@ def validate_current_face_schema(conn: sqlite3.Connection) -> None:
             "Face-databasen har schema_version=3, men inneholder legacy-gruppetabeller "
             f"({', '.join(existing_legacy_tables)})."
         )
+    validate_relative_face_paths(conn)
+
+
+def validate_relative_face_paths(conn: sqlite3.Connection) -> None:
+    if not db.table_exists(conn, "scanned_files"):
+        return
+    row = conn.execute(
+        """
+        SELECT file_id, target_path
+        FROM scanned_files
+        WHERE target_path LIKE '/%'
+           OR target_path GLOB '[A-Za-z]:*'
+        ORDER BY file_id
+        LIMIT 1
+        """
+    ).fetchone()
+    if row is not None:
+        raise ValueError(
+            "Face-databasen har absolutt target_path for "
+            f"file_id={row['file_id']}: {row['target_path']}. "
+            "Kjør bildebank face-scan på nytt."
+        )
 
 
 def create_current_face_schema(conn: sqlite3.Connection) -> None:
