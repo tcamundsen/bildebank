@@ -1,29 +1,26 @@
 # face-suggest
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank face-suggest [valg]
+
+Foreslå personer for ukjente ansikter
+
+options:
+  -h, --help            show this help message and exit
+  --threshold THRESHOLD
+                        Likhetsterskel fra 0.0 til 1.0. Standard: 0.6
+```
+<!-- CLI-HELP-END -->
 
 `face-suggest` foreslår personer for ukjente ansikter.
-
-## Referanse
-
-```powershell
-bildebank face-suggest
-bildebank face-suggest --threshold 0.70
-bildebank face-suggest --no-browser
-```
 
 Forslagene bygger på ansikter du allerede har bekreftet med
 `face-person-add-face`.
 
-Høyere `--threshold` gir strengere forslag. Forslagene er ikke bekreftede før
-du selv kobler ansiktet til personen.
+## Valg
 
-Som standard oppdaterer kommandoen også `personer.html` og personsidene, slik
-at du kan åpne resultatet i nettleseren med en gang.
+`--threshold DESIMALTALL`
+: Høyere `--threshold` gir strengere forslag.
 
 Se også [`Strategier for face-suggest`](face-suggest-strategier.md) for råd om
 hvordan du bør velge ansikter som skal bekreftes.
-
-Hvis du bare vil beregne forslag uten å skrive HTML-filene, bruker du:
-
-```powershell
-bildebank face-suggest --no-browser
-```

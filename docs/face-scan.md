@@ -1,24 +1,29 @@
 # face-scan
 
-`face-scan` scanner importerte bilder etter ansikter.
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank face-scan [valg]
 
-## Referanse
+Scanner importerte bilder etter ansikter.
 
-```powershell
-bildebank face-scan
-bildebank face-scan --limit 100
-bildebank face-scan --show-model-output
+options:
+  -h, --help           show this help message and exit
+  --limit LIMIT        Maks antall bildefiler som skal sjekkes
+  --show-model-output  Vis intern output fra InsightFace/ONNX ved feilsøking
 ```
+<!-- CLI-HELP-END -->
 
-Kommandoen lagrer ansikter og embeddings i `.bilder-faces.sqlite3`.
+Kommandoen lagrer matematiske beskrivelse av ansikter `.bilder-faces.sqlite3`.
 
 Den hopper over bilder som allerede er scannet med samme innhold. Det er trygt
 å avbryte med `Ctrl-C`; neste kjøring fortsetter ved å hoppe over det som er
 ferdig.
 
-`--limit` kan brukes for å teste på et mindre antall bilder først.
+`--limit ANTALL`
+: kjør scan på maks ANTALL bilder. Fint å bruke for å teste på et mindre antall bilder først.
 
-`--show-model-output` viser intern output fra InsightFace/ONNX ved feilsøking.
+`--show-model-output`
+: viser intern output fra InsightFace/ONNX ved feilsøking.
 
 Hvis en fil feiler under scanning, skriver `face-scan` filstien og
 feilmeldingen. Feilen kan også ses senere med:
@@ -26,5 +31,3 @@ feilmeldingen. Feilen kan også ses senere med:
 ```powershell
 bildebank face-report
 ```
-
-Se også [`insightface`](insightface.md).
