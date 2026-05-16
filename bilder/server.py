@@ -2083,7 +2083,7 @@ def image_geo_area_links_html(target: Path, item: Any) -> str:
             if not h3_cell:
                 continue
             place_name = db.geo_place_name(conn, str(h3_cell))
-            label = f"H3-{resolution}:" + h3_area_label(resolution) + f" {html.escape(str(h3_cell))}"
+            label = f"H3-{resolution}: {h3_cell} ({h3_area_label(resolution)})"
             if place_name:
                 label += f" {place_name}"
             url = "/geo/area/" + urllib.parse.quote(str(h3_cell), safe="")

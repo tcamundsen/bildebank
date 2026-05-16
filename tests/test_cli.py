@@ -492,7 +492,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("--month-preview-limit", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
-    def test_face_suggest_help_documents_no_browser(self) -> None:
+    def test_face_suggest_help_documents_threshold(self) -> None:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
@@ -500,7 +500,8 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, 0)
         stdout = stdout_buffer.getvalue()
-        self.assertIn("--no-browser", stdout)
+        self.assertIn("--threshold", stdout)
+        self.assertNotIn("--no-browser", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_image_search_help_documents_limit_and_no_browser(self) -> None:
@@ -3572,14 +3573,15 @@ model_name = "test-model"
             code, stdout, stderr = capture_cli(["--target", str(target), "face-suggest"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Kari\tface-id=2", stdout)
-            self.assertIn("2021/08/2019-1-6-1.jpg", stdout)
+            self.assertIn("forslag=1", stdout)
+            self.assertNotIn("Kari\tface-id=2", stdout)
             conn = sqlite3.connect(target / FACE_DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("SELECT target_path FROM scanned_files WHERE file_id = 1").fetchone()[0],
                     "2021/08/2019-1-6-1.jpg",
                 )
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 1)
             finally:
                 conn.close()
 
@@ -3797,13 +3799,11 @@ model_name = "test-model"
             self.assertIn("personer=1", stdout)
             self.assertIn("ukjente_ansikter=2", stdout)
             self.assertIn("forslag=1", stdout)
-            self.assertIn("Forslag:", stdout)
-            self.assertIn("Kari\tface-id=2", stdout)
-            self.assertIn("2024/01/IMG_20240102.jpg", stdout)
-            self.assertIn("Skrev person-index", stdout)
-            self.assertIn("Skrev personsider: 1", stdout)
-            self.assertTrue((target / "personer.html").exists())
-            self.assertTrue((target / "person-Kari.html").exists())
+            self.assertNotIn("Forslag:", stdout)
+            self.assertNotIn("Kari\tface-id=2", stdout)
+            self.assertNotIn("Skrev person-index", stdout)
+            self.assertFalse((target / "personer.html").exists())
+            self.assertFalse((target / "person-Kari.html").exists())
 
             code, stdout, stderr = capture_cli(["--target", str(target), "face-report"])
 
@@ -3840,11 +3840,7 @@ model_name = "test-model"
 
             self.assertEqual(run_cli(["--target", str(target), "face-person-create", "Kari"]), 0)
             self.assertEqual(run_cli(["--target", str(target), "face-person-add-face", "Kari", "1"]), 0)
-            (target / "personer.html").unlink()
-            self.assertEqual(
-                run_cli(["--target", str(target), "face-suggest", "--threshold", "0.9", "--no-browser"]),
-                0,
-            )
+            self.assertEqual(run_cli(["--target", str(target), "face-suggest", "--threshold", "0.9"]), 0)
             self.assertFalse((target / "personer.html").exists())
 
             code, stdout, stderr = capture_cli(["--target", str(target), "make-person-browser", "Kari"])
