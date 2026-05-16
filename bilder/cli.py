@@ -1655,7 +1655,6 @@ def run_face_report(target: Path, *, limit: int) -> int:
 def run_face_suggest(target: Path, *, threshold: float) -> int:
     stats = suggest_faces(target, threshold=threshold)
     print_face_suggest_stats(stats)
-    print_face_suggestions(target)
     print("Dette er forslag basert på personer du allerede har bekreftet.")
     return 0
 
