@@ -2069,6 +2069,17 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(second_collection_id, first_collection_id)
 
+    def test_create_rejects_existing_collection_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            code, stdout, stderr = capture_cli(["create", str(target)])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamling finnes allerede", stderr)
+
     def test_opening_current_database_without_collection_id_repairs_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

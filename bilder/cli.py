@@ -569,7 +569,7 @@ def build_parser() -> argparse.ArgumentParser:
     face_suggest = add_command(
         subparsers,
         "face-suggest",
-        description="Foreslå personer for ukjente ansikter",
+        description="Foreslå personer for ukjente ansikter.",
         usage="bildebank face-suggest [valg]",
         help="Foreslå personer for ukjente ansikter",
     )
@@ -728,6 +728,8 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "create":
         target = args.path.resolve()
         validate_target_not_in_program_repo(target)
+        if db.db_path_for_target(target).exists():
+            raise ValueError(f"Bildesamling finnes allerede: {target}")
         db.init_database(target)
         conn = db.connect(target)
         try:
