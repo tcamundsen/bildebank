@@ -5,7 +5,7 @@
 [Siste nytt: import-endringer](import-endringer.md)
 
 Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
-har fulgt [README](README.md) og installert Bildebank. Den viser de vanligste
+har fulgt [README](../README.md) og installert Bildebank. Den viser de vanligste
 arbeidsflytene. Du finner mer detaljerte beskrivelser i lenkene øverst i
 dokumentet.
 
@@ -35,7 +35,7 @@ Noen prinsipper som ligger til grunn for Bildebank:
 Bildebank bruker to forskjellige typer mapper.
 
 **Programmappen** er mappen der selve Bildebank-programmet ligger. Hvis du har
-fulgt `README.md`, heter den ofte:
+fulgt [README](../README.md), heter den ofte:
 
 ```powershell
 $HOME\kode\bildebank
