@@ -579,11 +579,6 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.6,
         help="Likhetsterskel fra 0.0 til 1.0. Standard: 0.6",
     )
-    face_suggest.add_argument(
-        "--gen-browsers",
-        action="store_true",
-        help="Lag de statiske bildebrowserene etter at forslag er beregnet.",
-    )
     face_browser = add_command(
         subparsers,
         "make-face-browser",
@@ -816,7 +811,7 @@ def run(args: argparse.Namespace) -> int:
         return run_image_scan(target, limit=args.limit)
 
     if args.command == "image-search":
-        return run_image_search(target, query=args.query, limit=args.limit, browser=not args.no_browser)
+        return run_image_search(target, query=args.query, limit=args.limit, browsers=args.gen_browsers)
 
     if args.command == "run-server":
         return run_server_command(target, host=args.host, port=args.port, browser=not args.no_browser)
@@ -850,7 +845,7 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "face-suggest":
-        return run_face_suggest(target, threshold=args.threshold, browser=not args.no_browser)
+        return run_face_suggest(target, threshold=args.threshold)
 
     if args.command == "make-face-browser":
         output = args.output.resolve() if args.output else None
@@ -1657,14 +1652,10 @@ def run_face_report(target: Path, *, limit: int) -> int:
     return 0
 
 
-def run_face_suggest(target: Path, *, threshold: float, browser: bool = True) -> int:
+def run_face_suggest(target: Path, *, threshold: float) -> int:
     stats = suggest_faces(target, threshold=threshold)
     print_face_suggest_stats(stats)
     print_face_suggestions(target)
-    if browser:
-        result = export_people_browser(target)
-        print(f"Skrev person-index: {result.index_path}")
-        print(f"Skrev personsider: {len(result.person_pages)}")
     print("Dette er forslag basert på personer du allerede har bekreftet.")
     return 0
 
