@@ -840,7 +840,13 @@ def face_browser_items(
 
 
 def relative_to_target(target: Path, path: Path) -> Path:
-    return Path(path)
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        return candidate
+    try:
+        return candidate.resolve().relative_to(target.resolve())
+    except ValueError:
+        return candidate
 
 
 def display_relative_path(target: Path, path: Path) -> str:

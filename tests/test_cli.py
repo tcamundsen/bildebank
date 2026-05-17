@@ -4094,6 +4094,8 @@ model_name = "test-model"
             index_html = (target / "personer.html").read_text(encoding="utf-8")
             self.assertIn("<h1>Personer (1)</h1>", index_html)
             self.assertIn("person-Kari.html", index_html)
+            self.assertIn('href="person-Kari.html"', index_html)
+            self.assertNotIn(str(target), index_html)
             self.assertIn("Kari", index_html)
             self.assertIn("1 bilder", index_html)
             self.assertIn("1 bekreftet, 1 forslag", index_html)
