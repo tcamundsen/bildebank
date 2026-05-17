@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bilder.cli import build_parser, main
-from bilder.config import OpenClipConfig, load_config
+from bilder.config import AppConfig, FaceRecognitionConfig, OpenClipConfig, load_config
 from bilder import db
 from bilder.db import DB_FILENAME, init_database
 from bilder.face import FACE_DB_FILENAME, apply_face_schema, connect_face_db, face_box_percent, read_image
@@ -33,6 +33,7 @@ from bilder.server import (
     adjacent_browser_items,
     adjacent_person_items,
     adjacent_source_items,
+    app_status_page_html,
     BildebankRequestHandler,
     browser_item_by_id,
     browser_month_items,
@@ -665,6 +666,32 @@ class CliTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "OpenCLIP-databasen har absolutt target_path"):
                 connect_openclip_db(target).close()
 
+    def test_run_server_app_status_page_shows_config_and_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            config = AppConfig(
+                face_recognition=FaceRecognitionConfig(enabled=True),
+                openclip=OpenClipConfig(model_name="Test-Model", pretrained="test-weights", device="cpu"),
+            )
+
+            with (
+                patch("bilder.server.load_config", return_value=config),
+                patch("bilder.server.module_available", side_effect=lambda name: name == "open_clip"),
+            ):
+                body = app_status_page_html(target)
+
+        self.assertIn("<h1>App</h1>", body)
+        self.assertIn("Bildebank-versjon", body)
+        self.assertIn("Bildesamling", body)
+        self.assertIn(str(target), body)
+        self.assertIn("InsightFace aktivert", body)
+        self.assertIn("<dd>ja</dd>", body)
+        self.assertIn("InsightFace installert", body)
+        self.assertIn("OpenCLIP tilgjengelig", body)
+        self.assertIn("Test-Model", body)
+        self.assertIn("test-weights", body)
+        self.assertIn("cpu", body)
+
     def test_run_server_renders_bookmarkable_item_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -688,6 +715,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("/month/2024-02", body)
         self.assertIn("/month/2025-01", body)
         self.assertIn("/search", body)
+        self.assertIn('href="/app">App</a>', body)
         self.assertNotIn("Månedsoversikt</a>", body)
         self.assertIn('data-key-nav="previous"', body)
         self.assertIn('data-key-nav="next"', body)

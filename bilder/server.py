@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import importlib.util
 import json
 import mimetypes
 import re
@@ -15,8 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
-from . import db
-from .config import OpenClipConfig
+from . import __version__, db
+from .config import OpenClipConfig, load_config
 from .face import add_face_to_person, create_person, normalize_person_name
 from .html_export import (
     FACE_DB_FILENAME,
@@ -103,6 +104,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/people":
                 self.respond_html(people_page_html(self.server.target))
+                return
+            if parsed.path == "/app":
+                self.respond_html(app_status_page_html(self.server.target))
                 return
             if parsed.path == "/geo":
                 self.respond_geo(parsed.query)
@@ -1759,8 +1763,59 @@ def source_action_links_html(source: BrowserSource) -> str:
     <div class="top-actions">
       {source_top_links_html(source)}
       <a class="server-search-link" href="/search">Bildesøk</a>
+      <a class="server-search-link" href="/app">App</a>
     </div>
     """
+
+
+def app_status_page_html(target: Path) -> str:
+    config = load_config(server_program_repo_root())
+    rows = "\n".join(
+        app_status_row_html(label, value)
+        for label, value in (
+            ("Bildesamling", str(target)),
+            ("Bildebank-versjon", __version__),
+            ("InsightFace aktivert", yes_no(config.face_recognition.enabled)),
+            ("InsightFace installert", yes_no(module_available("insightface"))),
+            ("OpenCLIP tilgjengelig", yes_no(module_available("open_clip"))),
+            ("OpenCLIP-modell", config.openclip.model_name),
+            ("OpenCLIP-pretrained", config.openclip.pretrained),
+            ("OpenCLIP-device", config.openclip.device),
+        )
+    )
+    return page_html(
+        "App",
+        f"""
+        <main class="shell">
+          <p><a href="/">Til bildebrowser</a></p>
+          <h1>App</h1>
+          <dl class="info-list app-status">
+            {rows}
+          </dl>
+        </main>
+        """,
+    )
+
+
+def app_status_row_html(label: str, value: str) -> str:
+    return f"""
+    <div class="info-row">
+      <dt>{html.escape(label)}</dt>
+      <dd>{html.escape(value)}</dd>
+    </div>
+    """
+
+
+def yes_no(value: bool) -> str:
+    return "ja" if value else "nei"
+
+
+def module_available(module_name: str) -> bool:
+    return importlib.util.find_spec(module_name) is not None
+
+
+def server_program_repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
 
 
 def source_item_media_html(target: Path, source: BrowserSource, item: Any) -> str:
