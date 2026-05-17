@@ -1633,7 +1633,7 @@ class CliTests(unittest.TestCase):
 
         self.assertIn(">Kari<", body)
         self.assertIn("/person/Kari/month/2024-02", body)
-        self.assertIn('href="/person/Kari/no-faces"', body)
+        self.assertIn('href="/person/Kari/no-faces/item/1"', body)
         self.assertIn("Uten ansiktsmarkering", body)
         self.assertIn("person-face-box", body)
         self.assertIn("bekreftet face-id 1", body)
@@ -1641,7 +1641,7 @@ class CliTests(unittest.TestCase):
         self.assertIn('<div class="person-media" style="transform: rotate(90deg);" data-view-rotation="90">', body)
         self.assertNotIn("IMG_20250104", body)
         self.assertIn("Kari - uten ansiktsmarkering", plain_body)
-        self.assertIn('href="/person/Kari"', plain_body)
+        self.assertIn('href="/person/Kari/item/1"', plain_body)
         self.assertIn("Med ansiktsmarkering", plain_body)
         self.assertNotIn('<div class="person-face-box"', plain_body)
         self.assertNotIn('<span class="person-face-label">face-id 1</span>', plain_body)

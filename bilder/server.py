@@ -1831,7 +1831,7 @@ def source_item_page_html(
     all_people = registered_people(target)
     faces_button = faces_button_html(unconfirmed_faces) if source.person_name is None else ""
     faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if source.person_name is None else ""
-    action_links = source_action_links_html(source)
+    action_links = source_action_links_html(source, item)
     info_overlay = image_info_overlay_html(target, item)
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item)
     return page_html(
@@ -1895,7 +1895,7 @@ def confirmed_person_face_count_for_item(target: Path, person_name: str, file_id
         conn.close()
 
 
-def source_top_links_html(source: BrowserSource) -> str:
+def source_top_links_html(source: BrowserSource, item: Any | None = None) -> str:
     links = [
         '<a class="server-search-link" href="/people">Personer</a>',
         '<a class="server-search-link" href="/geo">Steder</a>',
@@ -1908,14 +1908,26 @@ def source_top_links_html(source: BrowserSource) -> str:
     if source.person_name is not None:
         links.insert(0, '<a class="server-search-link" href="/">Alle bilder</a>')
         if source.show_faces:
+            no_faces_source = person_browser_source(
+                source.person_name,
+                include_suggestions=source.include_suggestions,
+                show_faces=False,
+            )
+            no_faces_url = source_item_url(no_faces_source, int(item["id"])) if item is not None else no_faces_source.root_url
             links.insert(
                 1,
-                f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=source.include_suggestions, show_faces=False).root_url)}">Uten ansiktsmarkering</a>',
+                f'<a class="server-search-link" href="{html.escape(no_faces_url)}">Uten ansiktsmarkering</a>',
             )
         else:
+            faces_source = person_browser_source(
+                source.person_name,
+                include_suggestions=source.include_suggestions,
+                show_faces=True,
+            )
+            faces_url = source_item_url(faces_source, int(item["id"])) if item is not None else faces_source.root_url
             links.insert(
                 1,
-                f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=source.include_suggestions, show_faces=True).root_url)}">Med ansiktsmarkering</a>',
+                f'<a class="server-search-link" href="{html.escape(faces_url)}">Med ansiktsmarkering</a>',
             )
         if source.include_suggestions:
             links.insert(
@@ -1930,10 +1942,10 @@ def source_top_links_html(source: BrowserSource) -> str:
     return "\n".join(links)
 
 
-def source_action_links_html(source: BrowserSource) -> str:
+def source_action_links_html(source: BrowserSource, item: Any | None = None) -> str:
     return f"""
     <div class="top-actions">
-      {source_top_links_html(source)}
+      {source_top_links_html(source, item)}
       <a class="server-search-link" href="/search">Bildesøk</a>
       <a class="server-search-link" href="/app">App</a>
     </div>
