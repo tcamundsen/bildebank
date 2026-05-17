@@ -1447,6 +1447,12 @@ class CliTests(unittest.TestCase):
                 face_conn.commit()
             finally:
                 face_conn.close()
+            conn = db.connect(target)
+            try:
+                db.rotate_file_view(conn, 1, "right")
+                conn.commit()
+            finally:
+                conn.close()
 
             item = person_item_by_id(target, "Kari", 1)
             self.assertIsNotNone(item)
@@ -1457,6 +1463,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("/person/Kari/month/2024-02", body)
         self.assertIn("person-face-box", body)
         self.assertIn("bekreftet face-id 1", body)
+        self.assertIn('<div class="person-media" style="transform: rotate(90deg);" data-view-rotation="90">', body)
         self.assertNotIn("IMG_20250104", body)
         self.assertIn("/person/Kari/item/2", month_body)
         self.assertNotIn("/person/Kari/item/3", month_body)

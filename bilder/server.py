@@ -1812,8 +1812,8 @@ def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
         return f'<video src="{url}" controls></video>'
     boxes = "\n".join(person_face_box_html(face) for face in faces)
     return f"""
-    <div class="person-media">
-      <a href="{url}" target="_blank"><img src="{url}" alt="{name}"{rotation_style_attr(item)}></a>
+    <div class="person-media"{rotation_style_attr(item)}>
+      <a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>
       {boxes}
     </div>
     """
@@ -2000,7 +2000,7 @@ def faces_overlay_html(item: Any, faces: list[dict[str, object]], people: list[d
     target_path = Path(str(item["target_path"]))
     file_id = int(item["id"])
     image_url = f"/file/{file_id}"
-    face_items = "\n".join(face_overlay_item_html(image_url, face, people) for face in faces)
+    face_items = "\n".join(face_overlay_item_html(item, image_url, face, people) for face in faces)
     return f"""
     <div id="faceOverlay" class="face-overlay" hidden>
       <div class="lightbox-bar">
@@ -2104,7 +2104,7 @@ def info_row_html(label: str, value: str, *, multiline: bool = False, raw_html: 
     """
 
 
-def face_overlay_item_html(image_url: str, face: dict[str, object], people: list[dict[str, str]]) -> str:
+def face_overlay_item_html(item: Any, image_url: str, face: dict[str, object], people: list[dict[str, str]]) -> str:
     face_id = int(face["faceId"])
     people_buttons = person_assignment_buttons_html(face_id, people)
     box = ""
@@ -2120,7 +2120,7 @@ def face_overlay_item_html(image_url: str, face: dict[str, object], people: list
     return f"""
     <section class="face-detail" data-face-detail="{face_id}">
       <div class="face-detail-title">face-id {face_id}, deteksjon {float(face["score"]):.3f}</div>
-      <div class="lightbox-media">
+      <div class="lightbox-media"{rotation_style_attr(item)}>
         <img src="{html.escape(image_url)}" alt="">
         {box}
       </div>
@@ -2422,6 +2422,7 @@ def page_html(title: str, body: str) -> str:
       display: inline-block;
       max-width: min(100%, 92vw);
       max-height: calc(100vh - 10rem);
+      transform-origin: center center;
     }}
     .person-media img {{
       max-width: 100%;
@@ -2577,6 +2578,7 @@ def page_html(title: str, body: str) -> str:
       width: fit-content;
       max-width: 100%;
       justify-self: start;
+      transform-origin: center center;
     }}
     .lightbox-media img {{
       display: block;
