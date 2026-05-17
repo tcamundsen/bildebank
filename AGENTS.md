@@ -1,4 +1,5 @@
-Designet for appen er beskrevet i app-design.md
+Les app-design.md ved endringer i import, database, filflytting/sletting, browser/server eller overordnet
+produktatferd. For kommando-detaljer, bruk docs/<kommando>.md og relevant devel-docs først.
 
 Dokumentasjonsfilene som finnes er README.md, README.linux.md
 og docs/. Disse filene er skrevet for brukere som
@@ -10,9 +11,9 @@ dvs for eksempel `C:\Users\Tom` og ikke `/home/tom`.
 
 - Sikkerhet for bilder er viktigere enn ryddighet og automatisering.
 - Ingen kommando skal permanent slette bildefiler.
-- "bildebank remove" skal bare til deleted/ og markere metadata, ikke slette
-  fysisk.
-- backup skal kopiere også trash-can.
+- "bildebank remove" skal bare flytte filer til deleted/ og markere metadata,
+  ikke slette fysisk.
+- backup skal kopiere deleted/.
 - Destruktive operasjoner skal ha dry-run når praktisk mulig.
 - Endre bare det oppgaven ber om.
 - Ikke refaktorer bredt uten eksplisitt beskjed.
@@ -21,10 +22,7 @@ dvs for eksempel `C:\Users\Tom` og ikke `/home/tom`.
   hvordan det skal gjøres.
 - Det er litt rotete med design-dokumenter nå, men det ryddes nå opp, og da
   plasseres brukerdokumentasjon i docs/ og dokumentasjon for utvikler og AI
-  i devel-docs/.  Hver kommando skal få en fil docs/kommandonavn.md som
-  beskriver for brukeren hvordan den brukes.
-- Hvis docs/ og devel-docs/ motsier hverandre skal devel-docs foretrekkes, og
-  det må rapporteres om at filene motsier hverandre.
+  i devel-docs/.
 
 ## Omfang
 Gjør minimale, målrettede endringer. Ikke refaktorer kode som ikke er
