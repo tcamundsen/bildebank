@@ -65,6 +65,7 @@ class BrowserSource:
     person_name: str | None = None
     include_suggestions: bool = True
     date_source: str | None = None
+    show_faces: bool = True
 
 
 class OpenClipSearchCache:
@@ -233,7 +234,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         self.respond_html(source_month_page_html(self.server.target, source, month_key, items))
 
     def respond_person(self, raw_path: str) -> None:
-        raw_name, person_mode, page_mode, raw_value = parse_person_path(raw_path)
+        raw_name, person_mode, show_faces, page_mode, raw_value = parse_person_path(raw_path)
         person_name = urllib.parse.unquote(raw_name).strip()
         if not person_name:
             self.respond_text("Personnavn mangler.", status=HTTPStatus.BAD_REQUEST)
@@ -243,7 +244,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             self.respond_html(person_not_found_html(person_name), status=HTTPStatus.NOT_FOUND)
             return
         canonical_name = str(person["name"])
-        source = person_browser_source(canonical_name, include_suggestions=person_mode != "confirmed")
+        source = person_browser_source(canonical_name, include_suggestions=person_mode != "confirmed", show_faces=show_faces)
         if page_mode is None:
             item = first_source_item(self.server.target, source)
             if item is None:
@@ -563,16 +564,20 @@ def parse_file_id(value: str) -> int:
     return file_id
 
 
-def parse_person_path(raw_path: str) -> tuple[str, str, str | None, str]:
+def parse_person_path(raw_path: str) -> tuple[str, str, bool, str | None, str]:
     person_part, page_mode, raw_value = parse_source_path(raw_path)
     person_mode = "all"
+    show_faces = True
+    if person_part.endswith("/no-faces"):
+        person_part = person_part.removesuffix("/no-faces")
+        show_faces = False
     if person_part.endswith("/confirmed"):
         person_part = person_part.removesuffix("/confirmed")
         person_mode = "confirmed"
     elif person_part.endswith("/all"):
         person_part = person_part.removesuffix("/all")
         person_mode = "all"
-    return person_part.strip("/"), person_mode, page_mode, raw_value
+    return person_part.strip("/"), person_mode, show_faces, page_mode, raw_value
 
 
 def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
@@ -601,10 +606,13 @@ def all_browser_source() -> BrowserSource:
     return BrowserSource("Bildebrowser", "/")
 
 
-def person_browser_source(person_name: str, *, include_suggestions: bool) -> BrowserSource:
+def person_browser_source(person_name: str, *, include_suggestions: bool, show_faces: bool = True) -> BrowserSource:
     title = person_name if include_suggestions else f"{person_name} - bekreftet"
     root_url = person_url(person_name) if include_suggestions else f"{person_url(person_name)}/confirmed"
-    return BrowserSource(title, root_url, person_name, include_suggestions)
+    if not show_faces:
+        title = f"{title} - uten ansiktsmarkering"
+        root_url = f"{root_url}/no-faces"
+    return BrowserSource(title, root_url, person_name, include_suggestions, show_faces=show_faces)
 
 
 def date_source_browser_source(date_source: str) -> BrowserSource:
@@ -1899,14 +1907,24 @@ def source_top_links_html(source: BrowserSource) -> str:
         links.insert(0, '<a class="server-search-link" href="/">Alle bilder</a>')
     if source.person_name is not None:
         links.insert(0, '<a class="server-search-link" href="/">Alle bilder</a>')
-        if source.include_suggestions:
+        if source.show_faces:
             links.insert(
                 1,
-                f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=False).root_url)}">Bare bekreftede</a>',
+                f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=source.include_suggestions, show_faces=False).root_url)}">Uten ansiktsmarkering</a>',
             )
         else:
             links.insert(
                 1,
+                f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=source.include_suggestions, show_faces=True).root_url)}">Med ansiktsmarkering</a>',
+            )
+        if source.include_suggestions:
+            links.insert(
+                2,
+                f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=False).root_url)}">Bare bekreftede</a>',
+            )
+        else:
+            links.insert(
+                2,
                 f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=True).root_url)}">Med forslag</a>',
             )
     return "\n".join(links)
@@ -2019,6 +2037,8 @@ def server_program_repo_root() -> Path:
 
 def source_item_media_html(target: Path, source: BrowserSource, item: Any) -> str:
     if source.person_name is not None:
+        if not source.show_faces:
+            return item_media_html(item)
         faces = person_faces_for_item(
             target,
             source.person_name,

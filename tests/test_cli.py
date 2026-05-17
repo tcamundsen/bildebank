@@ -1619,15 +1619,33 @@ class CliTests(unittest.TestCase):
             item = person_item_by_id(target, "Kari", 1)
             self.assertIsNotNone(item)
             body = person_item_page_html(target, "Kari", item, *adjacent_person_items(target, "Kari", item), person_month_navigation(target, "Kari", item))
+            plain_source = person_browser_source("Kari", include_suggestions=True, show_faces=False)
+            plain_item = source_item_by_id(target, plain_source, 1)
+            self.assertIsNotNone(plain_item)
+            plain_body = source_item_page_html(
+                target,
+                plain_source,
+                plain_item,
+                *adjacent_source_items(target, plain_source, plain_item),
+                source_month_navigation(target, plain_source, plain_item),
+            )
             month_body = person_month_page_html(target, "Kari", "2024-02", person_month_items(target, "Kari", "2024-02"))
 
         self.assertIn(">Kari<", body)
         self.assertIn("/person/Kari/month/2024-02", body)
+        self.assertIn('href="/person/Kari/no-faces"', body)
+        self.assertIn("Uten ansiktsmarkering", body)
         self.assertIn("person-face-box", body)
         self.assertIn("bekreftet face-id 1", body)
         self.assertIn('<span class="person-face-label">face-id 1</span>', body)
         self.assertIn('<div class="person-media" style="transform: rotate(90deg);" data-view-rotation="90">', body)
         self.assertNotIn("IMG_20250104", body)
+        self.assertIn("Kari - uten ansiktsmarkering", plain_body)
+        self.assertIn('href="/person/Kari"', plain_body)
+        self.assertIn("Med ansiktsmarkering", plain_body)
+        self.assertNotIn('<div class="person-face-box"', plain_body)
+        self.assertNotIn('<span class="person-face-label">face-id 1</span>', plain_body)
+        self.assertIn('<img src="/file/1"', plain_body)
         self.assertIn("/person/Kari/item/2", month_body)
         self.assertNotIn("/person/Kari/item/3", month_body)
 
