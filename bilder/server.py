@@ -1900,9 +1900,6 @@ def source_top_links_html(source: BrowserSource, item: Any | None = None) -> str
         '<a class="server-search-link" href="/people">Personer</a>',
         '<a class="server-search-link" href="/geo">Steder</a>',
     ]
-    if source.person_name is None and source.date_source is None:
-        links.append('<a class="server-search-link" title="Vis alle bildene som ikke har dato fra metadata og der programmet har gjettet på dato basert på filnavnet" href="/date-source/filename">Dato fra filnavn</a>')
-        links.append('<a class="server-search-link" title="Vis alle bildene som ikke har dato fra metadata og der programmet har tatt dato fra når filen ble sist endret." href="/date-source/mtime">Dato fra mtime</a>')
     if source.date_source is not None:
         all_url = source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/"
         links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">Alle bilder</a>')
@@ -1973,7 +1970,7 @@ def app_status_page_html(target: Path) -> str:
         "App",
         f"""
         <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/app/removed">Slettede bilder</a></p>
+          <p><a href="/">Til bildebrowser</a> · <a href="/app/removed">Slettede bilder</a> · <a href="/date-source/filename">Dato fra filnavn</a> · <a href="/date-source/mtime">Dato fra mtime</a></p>
           <h1>App</h1>
           <dl class="info-list app-status">
             {rows}
