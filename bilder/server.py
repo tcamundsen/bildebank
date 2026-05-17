@@ -2052,13 +2052,14 @@ def person_face_box_html(face: dict[str, object]) -> str:
         return ""
     css_class = "person-face-box suggested" if face.get("status") == "forslag" else "person-face-box"
     title = f'{face.get("status", "")} face-id {face["faceId"]} score {float(face.get("similarity", 0.0)):.3f}'
+    label = f'face-id {face["faceId"]}'
     return (
         f'<div class="{css_class}" title="{html.escape(title)}" style="'
         f'left: {float(face["left"]):.4f}%; '
         f'top: {float(face["top"]):.4f}%; '
         f'width: {float(face["boxWidth"]):.4f}%; '
         f'height: {float(face["boxHeight"]):.4f}%;'
-        '"></div>'
+        f'"><span class="person-face-label">{html.escape(label)}</span></div>'
     )
 
 
@@ -2688,6 +2689,18 @@ def page_html(title: str, body: str) -> str:
       border: 2px solid #2fbf71;
       background: rgb(47 191 113 / 13%);
       pointer-events: none;
+    }}
+    .person-face-label {{
+      position: absolute;
+      left: -2px;
+      top: -24px;
+      padding: 3px 6px;
+      border-radius: 4px;
+      background: rgb(0 0 0 / 78%);
+      color: #fff;
+      font-size: 12px;
+      line-height: 1;
+      white-space: nowrap;
     }}
     .person-face-box.suggested {{
       border-color: #e19b2d;

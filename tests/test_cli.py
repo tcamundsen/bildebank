@@ -1571,6 +1571,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("/person/Kari/month/2024-02", body)
         self.assertIn("person-face-box", body)
         self.assertIn("bekreftet face-id 1", body)
+        self.assertIn('<span class="person-face-label">face-id 1</span>', body)
         self.assertIn('<div class="person-media" style="transform: rotate(90deg);" data-view-rotation="90">', body)
         self.assertNotIn("IMG_20250104", body)
         self.assertIn("/person/Kari/item/2", month_body)
