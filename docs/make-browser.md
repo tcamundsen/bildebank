@@ -1,27 +1,19 @@
 # make-browser
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank make-browser [valg]
 
-`make-browser` lager en enkel statisk bildebrowser som HTML-fil. Den kan åpnes
-direkte i nettleseren uten at Bildebank kjører.
-
-For vanlig arbeid i bildesamlingen er [`run-server`](run-server.md) anbefalt.
-
-## Referanse
-
-```powershell
-bildebank make-browser [valg]
+options:
+  -h, --help            show this help message and exit
+  -o, --output OUTPUT   Skriv HTML-filen hit. Standard: index.html i
+                        bildesamlingsmappen.
+  --month-preview-limit MONTH_PREVIEW_LIMIT
+                        Maks antall filer i månedsoversikten. Standard: vis
+                        alle.
 ```
+<!-- CLI-HELP-END -->
 
-Vanlige valg:
-
-```powershell
-bildebank make-browser
-bildebank make-browser --month-preview-limit 40
-bildebank make-browser -o "familiebilder.html"
-```
-
-## Hva kommandoen gjør
-
-Kommandoen skriver en HTML-fil med alle aktive bilder og videoer i
+`make-browser` skriver en HTML-fil med alle aktive bilder og videoer i
 bildesamlingen. Standardfilen heter `index.html` og legges i
 bildesamlingsmappen.
 
@@ -31,13 +23,19 @@ en enkel månedsoversikt.
 Hvis du importerer flere filer senere, må du kjøre `make-browser` på nytt for å
 oppdatere HTML-filen.
 
+For vanlig arbeid i bildesamlingen er [`run-server`](run-server.md) anbefalt.
+
 ## Valg
 
-`--month-preview-limit` begrenser hvor mange filer som vises i månedsoversikten:
+### `--month-preview-limit`
+
+Begrenser hvor mange filer som vises i månedsoversikten:
 
 ```powershell
 bildebank make-browser --month-preview-limit 40
 ```
+
+### `--output`
 
 `-o` eller `--output` skriver HTML-filen til et annet filnavn:
 
