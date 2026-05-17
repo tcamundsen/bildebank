@@ -1904,9 +1904,11 @@ def source_top_links_html(source: BrowserSource, item: Any | None = None) -> str
         links.append('<a class="server-search-link" title="Vis alle bildene som ikke har dato fra metadata og der programmet har gjettet på dato basert på filnavnet" href="/date-source/filename">Dato fra filnavn</a>')
         links.append('<a class="server-search-link" title="Vis alle bildene som ikke har dato fra metadata og der programmet har tatt dato fra når filen ble sist endret." href="/date-source/mtime">Dato fra mtime</a>')
     if source.date_source is not None:
-        links.insert(0, '<a class="server-search-link" href="/">Alle bilder</a>')
+        all_url = source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/"
+        links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">Alle bilder</a>')
     if source.person_name is not None:
-        links.insert(0, '<a class="server-search-link" href="/">Alle bilder</a>')
+        all_url = source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/"
+        links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">Alle bilder</a>')
         if source.show_faces:
             no_faces_source = person_browser_source(
                 source.person_name,
