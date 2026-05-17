@@ -936,7 +936,28 @@ def registered_people_rows(target: Path) -> list[dict[str, object]]:
                     SELECT COUNT(*)
                     FROM face_suggestions
                     WHERE face_suggestions.person_id = persons.id
-                ) AS suggestion_count
+                ) AS suggestion_count,
+                (
+                    SELECT COUNT(*)
+                    FROM (
+                        SELECT faces.file_id
+                        FROM person_faces
+                        JOIN faces ON faces.id = person_faces.face_id
+                        WHERE person_faces.person_id = persons.id
+                        GROUP BY faces.file_id
+                        HAVING COUNT(*) > 1
+                    )
+                ) AS duplicate_confirmed_file_count,
+                (
+                    SELECT COALESCE(MAX(confirmed_face_count), 0)
+                    FROM (
+                        SELECT COUNT(*) AS confirmed_face_count
+                        FROM person_faces
+                        JOIN faces ON faces.id = person_faces.face_id
+                        WHERE person_faces.person_id = persons.id
+                        GROUP BY faces.file_id
+                    )
+                ) AS max_confirmed_faces_per_file
             FROM persons
             ORDER BY persons.name
             """
@@ -947,6 +968,8 @@ def registered_people_rows(target: Path) -> list[dict[str, object]]:
                 "confirmed_file_count": int(row["confirmed_file_count"]),
                 "all_file_count": int(row["all_file_count"]),
                 "suggestion_count": int(row["suggestion_count"]),
+                "duplicate_confirmed_file_count": int(row["duplicate_confirmed_file_count"]),
+                "max_confirmed_faces_per_file": int(row["max_confirmed_faces_per_file"]),
             }
             for row in rows
         ]
@@ -1776,6 +1799,7 @@ def source_item_page_html(
     faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if source.person_name is None else ""
     action_links = source_action_links_html(source)
     info_overlay = image_info_overlay_html(target, item)
+    duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item)
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
@@ -1788,6 +1812,7 @@ def source_item_page_html(
               {action_links}
             </div>
             {controls}
+            {duplicate_warning}
           </header>
           <section class="stage">{media}</section>
           <footer class="browser-footer">
@@ -1798,6 +1823,42 @@ def source_item_page_html(
         {info_overlay}
         """,
     )
+
+
+def source_duplicate_confirmed_faces_warning_html(target: Path, source: BrowserSource, item: Any) -> str:
+    if source.person_name is None or source.include_suggestions:
+        return ""
+    count = confirmed_person_face_count_for_item(target, source.person_name, int(item["id"]))
+    if count < 2:
+        return ""
+    return (
+        '<div class="warning">'
+        f"NB: {count} bekreftede ansikter for {html.escape(source.person_name)} i dette bildet"
+        "</div>"
+    )
+
+
+def confirmed_person_face_count_for_item(target: Path, person_name: str, file_id: int) -> int:
+    person = person_by_name(target, person_name)
+    if person is None:
+        return 0
+    conn = sqlite3.connect(target / FACE_DB_FILENAME)
+    try:
+        row = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM person_faces
+            JOIN faces ON faces.id = person_faces.face_id
+            WHERE person_faces.person_id = ?
+              AND faces.file_id = ?
+            """,
+            (int(person["id"]), file_id),
+        ).fetchone()
+        return int(row[0]) if row is not None else 0
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
 
 
 def source_top_links_html(source: BrowserSource) -> str:
@@ -2415,11 +2476,21 @@ def people_row_html(person: dict[str, object]) -> str:
     confirmed_count = int(person["confirmed_file_count"])
     all_count = int(person["all_file_count"])
     suggestion_count = int(person["suggestion_count"])
+    duplicate_count = int(person["duplicate_confirmed_file_count"])
+    max_confirmed_faces = int(person["max_confirmed_faces_per_file"])
     confirmed_source = person_browser_source(name, include_suggestions=False)
     all_source = person_browser_source(name, include_suggestions=True)
+    duplicate_warning = ""
+    if duplicate_count > 0:
+        duplicate_warning = (
+            '<span class="warning people-warning">'
+            f"NB: {max_confirmed_faces} bekreftede ansikter i samme bilde"
+            "</span>"
+        )
     return f"""
     <div class="people-row">
       <div class="people-name">{html.escape(name)}</div>
+      {duplicate_warning}
       <a class="person-link" href="{html.escape(confirmed_source.root_url)}">Bekreftede bilder ({confirmed_count})</a>
       <a class="person-link" href="{html.escape(all_source.root_url)}">Bekreftede og forslag ({all_count})</a>
       <span class="status">forslag: {suggestion_count}</span>
@@ -2528,6 +2599,7 @@ def page_html(title: str, body: str) -> str:
     .topline, .controls {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
     .title {{ font-weight: 700; margin-right: 8px; line-height: 1.2; }}
     .status {{ color: var(--muted); font-size: 13px; line-height: 1.2; }}
+    .warning {{ color: #ffd166; font-size: 13px; line-height: 1.2; font-weight: 700; }}
     .people {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
     .top-actions {{
       margin-left: auto;
@@ -2553,7 +2625,7 @@ def page_html(title: str, body: str) -> str:
     .removed-row span {{ color: var(--muted); }}
     .people-row {{
       display: grid;
-      grid-template-columns: minmax(160px, 1fr) auto auto auto;
+      grid-template-columns: minmax(160px, 1fr) auto auto auto auto;
       gap: 8px;
       align-items: center;
       padding: 8px;
@@ -2562,6 +2634,7 @@ def page_html(title: str, body: str) -> str:
       background: var(--panel);
     }}
     .people-name {{ font-weight: 700; overflow-wrap: anywhere; }}
+    .people-warning {{ justify-self: start; }}
     a, .disabled {{ color: var(--accent); }}
     a {{ text-decoration: none; }}
     a:hover {{ text-decoration: underline; }}

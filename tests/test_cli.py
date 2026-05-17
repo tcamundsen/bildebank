@@ -48,6 +48,7 @@ from bilder.server import (
     month_page_html,
     person_item_by_id,
     person_item_page_html,
+    person_browser_source,
     people_page_html,
     person_month_items,
     person_month_navigation,
@@ -1608,7 +1609,18 @@ class CliTests(unittest.TestCase):
                     """,
                     (b"embedding-2",),
                 )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(3, 1, 'key-3', 5, 6, 14, 24, 0.7, 'test', ?)
+                    """,
+                    (b"embedding-3",),
+                )
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 3)")
                 face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)")
                 face_conn.commit()
             finally:
@@ -1617,11 +1629,23 @@ class CliTests(unittest.TestCase):
             body = people_page_html(target)
             confirmed_items = person_items(target, "Kari", include_suggestions=False)
             all_items = person_items(target, "Kari", include_suggestions=True)
+            confirmed_source = person_browser_source("Kari", include_suggestions=False)
+            confirmed_item = source_item_by_id(target, confirmed_source, 1)
+            self.assertIsNotNone(confirmed_item)
+            confirmed_body = source_item_page_html(
+                target,
+                confirmed_source,
+                confirmed_item,
+                *adjacent_source_items(target, confirmed_source, confirmed_item),
+                source_month_navigation(target, confirmed_source, confirmed_item),
+            )
 
         self.assertIn('href="/person/Kari/confirmed"', body)
         self.assertIn('href="/person/Kari"', body)
         self.assertIn("Bekreftede bilder (1)", body)
         self.assertIn("Bekreftede og forslag (2)", body)
+        self.assertIn("NB: 2 bekreftede ansikter i samme bilde", body)
+        self.assertIn("NB: 2 bekreftede ansikter for Kari i dette bildet", confirmed_body)
         self.assertEqual([int(item["id"]) for item in confirmed_items], [1])
         self.assertEqual([int(item["id"]) for item in all_items], [1, 2])
 
