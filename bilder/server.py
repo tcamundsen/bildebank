@@ -3,6 +3,7 @@ from __future__ import annotations
 import html
 import importlib.util
 import json
+import math
 import mimetypes
 import re
 import shutil
@@ -68,6 +69,15 @@ class BrowserSource:
     show_faces: bool = True
 
 
+@dataclass(frozen=True)
+class GeoMapCell:
+    h3_cell: str
+    count: int
+    name: str | None
+    x: float
+    y: float
+
+
 class OpenClipSearchCache:
     def __init__(self, config: OpenClipConfig) -> None:
         self.config = config
@@ -114,6 +124,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/geo":
                 self.respond_geo(parsed.query)
+                return
+            if parsed.path == "/geo/map":
+                self.respond_geo_map(parsed.query)
                 return
             if parsed.path == "/geo/stats":
                 self.respond_html(geo_stats_page_html(self.server.target))
@@ -315,6 +328,16 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             self.respond_text("H3-oppløsning må være 5, 6, 7, 8 eller 9.", status=HTTPStatus.BAD_REQUEST)
             return
         self.respond_html(geo_index_page_html(self.server.target, resolution=resolution, min_count=min_count, limit=limit))
+
+    def respond_geo_map(self, query: str) -> None:
+        params = urllib.parse.parse_qs(query)
+        resolution = positive_int_param(params, "resolution", DEFAULT_GEO_RESOLUTION)
+        min_count = positive_int_param(params, "min_count", DEFAULT_GEO_MIN_COUNT)
+        limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
+        if resolution not in H3_COLUMNS:
+            self.respond_text("H3-oppløsning må være 5, 6, 7, 8 eller 9.", status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_html(geo_map_page_html(self.server.target, resolution=resolution, min_count=min_count, limit=limit))
 
     def respond_geo_area(self, raw_cell: str, query: str) -> None:
         h3_cell = urllib.parse.unquote(raw_cell).strip()
@@ -1581,7 +1604,7 @@ def geo_index_page_html(
         "Steder",
         f"""
         <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/geo/stats">Geo-statistikk</a> · <a href="/geo/missing">Bilder uten GPS</a></p>
+          <p><a href="/">Til bildebrowser</a> · <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a> · <a href="/geo/stats">Geo-statistikk</a> · <a href="/geo/missing">Bilder uten GPS</a></p>
           <h1>Steder</h1>
           {geo_stats_summary_html(stats)}
           <form action="/geo" method="get" class="geo-filter">
@@ -1595,6 +1618,162 @@ def geo_index_page_html(
         </main>
         """,
     )
+
+
+def geo_map_page_html(
+    target: Path,
+    *,
+    resolution: int = DEFAULT_GEO_RESOLUTION,
+    min_count: int = DEFAULT_GEO_MIN_COUNT,
+    limit: int = DEFAULT_GEO_LIMIT,
+) -> str:
+    column = h3_column_for_resolution(resolution)
+    conn = db.connect(target)
+    try:
+        areas = db.geo_areas(conn, column=column, min_count=min_count, limit=limit)
+    finally:
+        conn.close()
+    cells = geo_map_layout(areas)
+    content = geo_map_svg_html(cells) if cells else '<p class="meta">Ingen steder med nok bilder. Kjør bildebank geo-scan, eller senk min_count.</p>'
+    return page_html(
+        "Heksagonkart",
+        f"""
+        <main class="shell">
+          <p><a href="/">Til bildebrowser</a> · <a href="/geo?resolution={resolution}&min_count={min_count}&limit={limit}">Steder</a></p>
+          <h1>Heksagonkart</h1>
+          <form action="/geo/map" method="get" class="geo-filter">
+            <label>H3-oppløsning <input name="resolution" value="{resolution}" inputmode="numeric"></label>
+            <label>Minst antall <input name="min_count" value="{min_count}" inputmode="numeric"></label>
+            <label>Maks steder <input name="limit" value="{limit}" inputmode="numeric"></label>
+            <button type="submit">Vis</button>
+          </form>
+          <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Heksagoner som er H3-naboer legges sammen i klynger. Klyngene er ikke plassert med geografisk avstand.</p>
+          {content}
+        </main>
+        """,
+    )
+
+
+def geo_map_layout(rows: list[Any]) -> list[GeoMapCell]:
+    import h3
+
+    row_by_cell = {str(row["h3_cell"]): row for row in rows}
+    remaining = set(row_by_cell)
+    components: list[list[str]] = []
+    while remaining:
+        start = min(remaining)
+        remaining.remove(start)
+        component = [start]
+        stack = [start]
+        while stack:
+            cell = stack.pop()
+            for neighbor in sorted(set(h3.grid_disk(cell, 1)) & remaining):
+                remaining.remove(neighbor)
+                stack.append(neighbor)
+                component.append(neighbor)
+        components.append(sorted(component))
+
+    size = 34.0
+    component_gap = 120.0
+    max_row_width = 980.0
+    placed: list[GeoMapCell] = []
+    offset_x = 0.0
+    offset_y = 0.0
+    row_height = 0.0
+    for component in sorted(components, key=lambda cells: (-len(cells), cells[0])):
+        coords = geo_component_coordinates(component)
+        min_x = min(x for x, _ in coords.values())
+        min_y = min(y for _, y in coords.values())
+        max_x = max(x for x, _ in coords.values())
+        max_y = max(y for _, y in coords.values())
+        width = (max_x - min_x + 1) * size * math.sqrt(3) + size
+        height = (max_y - min_y + 1) * size * 1.5 + size
+        if offset_x > 0 and offset_x + width > max_row_width:
+            offset_x = 0.0
+            offset_y += row_height + component_gap
+            row_height = 0.0
+        for cell in component:
+            row = row_by_cell[cell]
+            grid_x, grid_y = coords[cell]
+            placed.append(
+                GeoMapCell(
+                    h3_cell=cell,
+                    count=int(row["count"]),
+                    name=str(row["name"]) if "name" in row.keys() and row["name"] else None,
+                    x=offset_x + (grid_x - min_x) * size * math.sqrt(3) + size * 1.5,
+                    y=offset_y + (grid_y - min_y) * size * 1.5 + size * 1.5,
+                )
+            )
+        offset_x += width + component_gap
+        row_height = max(row_height, height)
+    return placed
+
+
+def geo_component_coordinates(cells: list[str]) -> dict[str, tuple[float, float]]:
+    import h3
+
+    origin = cells[0]
+    coords: dict[str, tuple[float, float]] = {}
+    try:
+        for cell in cells:
+            ij = h3.cell_to_local_ij(origin, cell)
+            i = float(ij[0] if isinstance(ij, tuple) else ij["i"])
+            j = float(ij[1] if isinstance(ij, tuple) else ij["j"])
+            coords[cell] = ((i + j) * 0.5, -i + j)
+    except Exception:  # noqa: BLE001 - H3 can fail for cells without a shared local IJ space
+        coords = geo_component_fallback_coordinates(cells)
+    return coords
+
+
+def geo_component_fallback_coordinates(cells: list[str]) -> dict[str, tuple[float, float]]:
+    import h3
+
+    directions = [(1.0, 0.0), (0.5, 1.0), (-0.5, 1.0), (-1.0, 0.0), (-0.5, -1.0), (0.5, -1.0)]
+    cell_set = set(cells)
+    coords = {cells[0]: (0.0, 0.0)}
+    queue = [cells[0]]
+    while queue:
+        cell = queue.pop(0)
+        x, y = coords[cell]
+        for index, neighbor in enumerate(sorted(set(h3.grid_disk(cell, 1)) & cell_set)):
+            if neighbor in coords or neighbor == cell:
+                continue
+            dx, dy = directions[index % len(directions)]
+            coords[neighbor] = (x + dx, y + dy)
+            queue.append(neighbor)
+    for cell in cells:
+        coords.setdefault(cell, (float(len(coords)), 0.0))
+    return coords
+
+
+def geo_map_svg_html(cells: list[GeoMapCell]) -> str:
+    size = 28.0
+    max_x = max(cell.x for cell in cells) + size * 2
+    max_y = max(cell.y for cell in cells) + size * 2
+    shapes = "\n".join(geo_map_cell_svg(cell, size=size) for cell in cells)
+    return f"""
+    <div class="geo-map-wrap">
+      <svg class="geo-map" viewBox="0 0 {max_x:.0f} {max_y:.0f}" role="img" aria-label="H3-heksagonkart">
+        {shapes}
+      </svg>
+    </div>
+    """
+
+
+def geo_map_cell_svg(cell: GeoMapCell, *, size: float) -> str:
+    points = []
+    for index in range(6):
+        angle = math.pi / 6 + index * math.pi / 3
+        points.append(f"{cell.x + size * math.cos(angle):.1f},{cell.y + size * math.sin(angle):.1f}")
+    label = cell.name or cell.h3_cell
+    url = "/geo/area/" + urllib.parse.quote(cell.h3_cell, safe="")
+    return f"""
+    <a class="geo-hex-link" href="{html.escape(url)}">
+      <polygon class="geo-hex" points="{' '.join(points)}"></polygon>
+      <text class="geo-hex-count" x="{cell.x:.1f}" y="{cell.y + 4:.1f}" text-anchor="middle">{cell.count}</text>
+      <title>{html.escape(label)} - {cell.count} bilder</title>
+    </a>
+    """
 
 
 def geo_stats_page_html(target: Path) -> str:
@@ -2666,6 +2845,11 @@ def page_html(title: str, body: str) -> str:
     .geo-stats span {{ color: var(--muted); }}
     .geo-list {{ display: grid; gap: 8px; margin-top: 18px; }}
     .geo-row {{ display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); }}
+    .geo-map-wrap {{ width: 100%; overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }}
+    .geo-map {{ display: block; min-width: 760px; width: 100%; height: auto; }}
+    .geo-hex {{ fill: #2f6f73; stroke: #8fd8dd; stroke-width: 2; }}
+    .geo-hex-link:hover .geo-hex {{ fill: #3f858a; }}
+    .geo-hex-count {{ fill: var(--text); font-size: 13px; font-weight: 700; pointer-events: none; }}
     .server-browser {{ min-height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }}
     .browser-header {{
       background: var(--panel);

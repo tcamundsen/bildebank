@@ -41,6 +41,7 @@ from bilder.server import (
     date_source_browser_source,
     geo_area_page_html,
     geo_index_page_html,
+    geo_map_page_html,
     geo_missing_page_html,
     geo_stats_page_html,
     index_html,
@@ -745,10 +746,14 @@ class CliTests(unittest.TestCase):
             (source / "IMG_20240102.png").write_bytes(minimal_png(10, 10))
             (source / "IMG_20240103.png").write_bytes(minimal_png(11, 10))
             (source / "IMG_20240104.png").write_bytes(minimal_png(12, 10))
+            (source / "IMG_20240105.png").write_bytes(minimal_png(13, 10))
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            import h3
+
             cells = h3_cells_for_point(59.91273, 10.74609)
+            neighbor_cell = next(cell for cell in sorted(h3.grid_disk(cells["h3_res7"], 1)) if cell != cells["h3_res7"])
             conn = db.connect(target)
             try:
                 db.update_file_gps(
@@ -771,19 +776,27 @@ class CliTests(unittest.TestCase):
                     gps_source="test",
                     gps_error=None,
                 )
+                conn.execute("UPDATE files SET h3_res7 = ? WHERE id = 4", (neighbor_cell,))
                 conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 2")
                 conn.commit()
             finally:
                 conn.close()
 
             index_body = geo_index_page_html(target, resolution=7, min_count=1, limit=10)
+            map_body = geo_map_page_html(target, resolution=7, min_count=1, limit=10)
             stats_body = geo_stats_page_html(target)
             area_body = geo_area_page_html(target, cells["h3_res7"], resolution=7, limit=10)
             missing_body = geo_missing_page_html(target, limit=10, offset=0)
 
         self.assertIn("Steder", index_body)
         self.assertIn(cells["h3_res7"], index_body)
+        self.assertIn("/geo/map?resolution=7&min_count=1&limit=10", index_body)
         self.assertIn("oppløsning 7, ca. 5 km²", index_body)
+        self.assertIn("Heksagonkart", map_body)
+        self.assertIn(f'href="/geo/area/{cells["h3_res7"]}"', map_body)
+        self.assertIn(f'href="/geo/area/{neighbor_cell}"', map_body)
+        self.assertIn("geo-hex", map_body)
+        self.assertIn(">1</text>", map_body)
         self.assertIn("Med GPS", stats_body)
         self.assertIn("IMG_20240102.png", area_body)
         self.assertIn("oppløsning 7, ca. 5 km²", area_body)
