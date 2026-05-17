@@ -40,6 +40,7 @@ from bilder.server import (
     browser_month_navigation,
     date_source_browser_source,
     geo_area_page_html,
+    geo_component_pixel_coordinates,
     geo_index_page_html,
     geo_map_page_html,
     geo_missing_page_html,
@@ -802,6 +803,32 @@ class CliTests(unittest.TestCase):
         self.assertIn("oppløsning 7, ca. 5 km²", area_body)
         self.assertNotIn("IMG_20240103.png", area_body)
         self.assertIn("IMG_20240104.png", missing_body)
+
+    def test_geo_map_component_orientation_matches_cardinal_directions(self) -> None:
+        import h3
+
+        origin = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        cells = sorted(h3.grid_disk(origin, 1))
+        coords = geo_component_pixel_coordinates(cells, 28.0)
+        origin_lat, origin_lon = h3.cell_to_latlng(origin)
+        origin_x, origin_y = coords[origin]
+
+        mismatches = 0
+        comparisons = 0
+        for cell in cells:
+            if cell == origin:
+                continue
+            lat, lon = h3.cell_to_latlng(cell)
+            x, y = coords[cell]
+            if abs(lon - origin_lon) > 0.000001:
+                comparisons += 1
+                mismatches += (x > origin_x) != (lon > origin_lon)
+            if abs(lat - origin_lat) > 0.000001:
+                comparisons += 1
+                mismatches += (y > origin_y) != (lat < origin_lat)
+
+        self.assertGreater(comparisons, 0)
+        self.assertLessEqual(mismatches, 1)
 
     def test_run_server_item_page_does_not_show_nearby_geo_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -1647,7 +1647,7 @@ def geo_map_page_html(
             <label>Maks steder <input name="limit" value="{limit}" inputmode="numeric"></label>
             <button type="submit">Vis</button>
           </form>
-          <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Heksagoner som er H3-naboer legges sammen i klynger. Klyngene er ikke plassert med geografisk avstand.</p>
+          <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Heksagoner som er H3-naboer legges sammen i klynger. Hver klynge orienteres etter faktiske GPS-retninger, men klyngene er ikke plassert med geografisk avstand.</p>
           {content}
         </main>
         """,
@@ -1681,27 +1681,27 @@ def geo_map_layout(rows: list[Any]) -> list[GeoMapCell]:
     offset_y = 0.0
     row_height = 0.0
     for component in sorted(components, key=lambda cells: (-len(cells), cells[0])):
-        coords = geo_component_coordinates(component)
+        coords = geo_component_pixel_coordinates(component, size)
         min_x = min(x for x, _ in coords.values())
         min_y = min(y for _, y in coords.values())
         max_x = max(x for x, _ in coords.values())
         max_y = max(y for _, y in coords.values())
-        width = (max_x - min_x + 1) * size * math.sqrt(3) + size
-        height = (max_y - min_y + 1) * size * 1.5 + size
+        width = max_x - min_x + size * 3
+        height = max_y - min_y + size * 3
         if offset_x > 0 and offset_x + width > max_row_width:
             offset_x = 0.0
             offset_y += row_height + component_gap
             row_height = 0.0
         for cell in component:
             row = row_by_cell[cell]
-            grid_x, grid_y = coords[cell]
+            pixel_x, pixel_y = coords[cell]
             placed.append(
                 GeoMapCell(
                     h3_cell=cell,
                     count=int(row["count"]),
                     name=str(row["name"]) if "name" in row.keys() and row["name"] else None,
-                    x=offset_x + (grid_x - min_x) * size * math.sqrt(3) + size * 1.5,
-                    y=offset_y + (grid_y - min_y) * size * 1.5 + size * 1.5,
+                    x=offset_x + (pixel_x - min_x) + size * 1.5,
+                    y=offset_y + (pixel_y - min_y) + size * 1.5,
                 )
             )
         offset_x += width + component_gap
@@ -1709,7 +1709,15 @@ def geo_map_layout(rows: list[Any]) -> list[GeoMapCell]:
     return placed
 
 
-def geo_component_coordinates(cells: list[str]) -> dict[str, tuple[float, float]]:
+def geo_component_pixel_coordinates(cells: list[str], size: float) -> dict[str, tuple[float, float]]:
+    coords = geo_component_grid_coordinates(cells)
+    pixels = {cell: (x * size * math.sqrt(3), y * size * 1.5) for cell, (x, y) in coords.items()}
+    if len(cells) < 2:
+        return pixels
+    return geo_oriented_component_pixels(cells, pixels)
+
+
+def geo_component_grid_coordinates(cells: list[str]) -> dict[str, tuple[float, float]]:
     import h3
 
     origin = cells[0]
@@ -1723,6 +1731,61 @@ def geo_component_coordinates(cells: list[str]) -> dict[str, tuple[float, float]
     except Exception:  # noqa: BLE001 - H3 can fail for cells without a shared local IJ space
         coords = geo_component_fallback_coordinates(cells)
     return coords
+
+
+def geo_oriented_component_pixels(
+    cells: list[str],
+    pixels: dict[str, tuple[float, float]],
+) -> dict[str, tuple[float, float]]:
+    import h3
+
+    lat_lon = {cell: h3.cell_to_latlng(cell) for cell in cells}
+    center_lat = sum(float(lat) for lat, _ in lat_lon.values()) / len(lat_lon)
+    lon_scale = max(0.2, math.cos(math.radians(center_lat)))
+    geo_points = {
+        cell: (float(lon) * lon_scale, -float(lat))
+        for cell, (lat, lon) in lat_lon.items()
+    }
+    candidates = []
+    for reflect in (False, True):
+        reflected = {
+            cell: ((-x if reflect else x), y)
+            for cell, (x, y) in pixels.items()
+        }
+        for step in range(6):
+            angle = step * math.pi / 3
+            candidates.append(geo_rotate_points(reflected, angle))
+    return max(candidates, key=lambda candidate: geo_orientation_score(cells, candidate, geo_points))
+
+
+def geo_rotate_points(points: dict[str, tuple[float, float]], angle: float) -> dict[str, tuple[float, float]]:
+    cos_angle = math.cos(angle)
+    sin_angle = math.sin(angle)
+    return {
+        cell: (x * cos_angle - y * sin_angle, x * sin_angle + y * cos_angle)
+        for cell, (x, y) in points.items()
+    }
+
+
+def geo_orientation_score(
+    cells: list[str],
+    layout_points: dict[str, tuple[float, float]],
+    geo_points: dict[str, tuple[float, float]],
+) -> float:
+    score = 0.0
+    for index, first in enumerate(cells):
+        for second in cells[index + 1 :]:
+            layout_dx = layout_points[second][0] - layout_points[first][0]
+            layout_dy = layout_points[second][1] - layout_points[first][1]
+            geo_dx = geo_points[second][0] - geo_points[first][0]
+            geo_dy = geo_points[second][1] - geo_points[first][1]
+            layout_length = math.hypot(layout_dx, layout_dy)
+            geo_length = math.hypot(geo_dx, geo_dy)
+            if layout_length == 0 or geo_length == 0:
+                continue
+            score += (layout_dx / layout_length) * (geo_dx / geo_length)
+            score += (layout_dy / layout_length) * (geo_dy / geo_length)
+    return score
 
 
 def geo_component_fallback_coordinates(cells: list[str]) -> dict[str, tuple[float, float]]:
