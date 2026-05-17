@@ -202,3 +202,17 @@ filen faktisk ble funnet og vurdert.
 - Hvordan skal programmet rapportere feil, for eksempel utilgjengelige mapper
   eller filer som ikke kan leses? Første utgave av programmet kan skrive om
   dette til stdout og registrere feilen i databasen.
+
+## Browserutvalg i run-server
+
+`run-server` skal behandle bildebrowseren som en felles visning som kan brukes
+for mange forskjellige bildeutvalg. Nye utvalg, for eksempel bilder for en
+person, bilder fra en kilde, bilder fra et geografisk område eller kombinasjoner
+av sted, år og personer, bør derfor gjenbruke den felles browserflyten.
+
+Ny funksjonalitet bør primært beskrive hvilket utvalg som skal vises, og så
+bruke felles funksjoner for selve browseren, for eksempel
+`source_item_page_html`, `source_month_page_html`, `source_item_url`,
+`source_items`, navigasjon mellom bilder og månedsnavigasjon. Det gjør at nye
+utvalg får samme blaing, rotering, bildeinfo, sletting og lenkestruktur uten at
+det lages egne parallelle browsere for hvert tilfelle.
