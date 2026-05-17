@@ -25,6 +25,10 @@ eksempelbilde, antall bilder, antall bekreftede ansikter og antall forslag.
 Klikk på en person for å åpne personens egen browser. Der kan du bla i bildene
 måned for måned, på samme måte som med `make-person-browser`.
 
+Personsider som lages her er enkle statiske bildebrowsere. Bruk
+[`run-server`](run-server.md) for å bekrefte ansikter, se ansiktsbokser og
+arbeide videre med forslag.
+
 Hvis du har lagt til nye personer eller koblet flere ansikter til personer, bør
 du kjøre `make-people-browser` på nytt.
 

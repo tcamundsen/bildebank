@@ -34,8 +34,6 @@ def export_html(
     target: Path,
     output: Path | None = None,
     *,
-    media_filter: str = "all",
-    date_source_filter: str = "all",
     month_preview_limit: int | None = None,
     debug_timing: bool = False,
 ) -> Path:
@@ -46,8 +44,6 @@ def export_html(
         start = timing.measure("resolve_output", start)
     items = browser_items(
         target,
-        media_filter=media_filter,
-        date_source_filter=date_source_filter,
         timing=timing,
     )
     if timing is not None:
@@ -69,23 +65,14 @@ def export_html(
 def browser_items(
     target: Path,
     *,
-    media_filter: str = "all",
-    date_source_filter: str = "all",
     timing: BrowserExportTiming | None = None,
 ) -> list[dict[str, object]]:
     conn = db.connect(target)
     try:
         start = perf_counter()
-        face_data_by_file_id = face_browser_data_by_file_id(target)
-        if timing is not None:
-            start = timing.measure("face_data", start)
         items = [
-            item
-            for item in (
-                row_to_item(target, row, face_data_by_file_id=face_data_by_file_id, include_face_boxes=False)
-                for row in db.browser_files(conn)
-            )
-            if item_matches_filters(item, media_filter, date_source_filter)
+            row_to_item(target, row, include_face_boxes=False)
+            for row in db.browser_files(conn)
         ]
         if timing is not None:
             timing.measure("rows_to_items", start)
@@ -129,8 +116,6 @@ def row_to_item(
     kind = "video" if ext in VIDEO_EXTENSIONS else "image"
     month_key = month_key_from_path(relative_path)
     file_id = int(row["id"])
-    face_data = (face_data_by_file_id or {}).get(file_id, {})
-    target_path = db.absolute_target_path(target, relative_path)
     return {
         "fileId": file_id,
         "path": path,
@@ -142,13 +127,6 @@ def row_to_item(
         "dateSource": row["date_source"],
         "name": row["stored_filename"],
         "sizeText": format_bytes(int(row["size_bytes"])),
-        "people": face_data.get("people", []),
-        "faces": browser_face_items(
-            target_path,
-            face_data.get("faces", []),
-            media_cache=media_cache,
-            include_boxes=include_face_boxes,
-        ),
     }
 
 
@@ -226,91 +204,6 @@ def orient_face_box(
     return x, y, width, height, image_width, image_height
 
 
-def face_browser_data_by_file_id(target: Path) -> dict[int, dict[str, object]]:
-    path = target / FACE_DB_FILENAME
-    if not path.exists():
-        return {}
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    try:
-        if not face_tables_exist(conn):
-            return {}
-        people: dict[int, dict[str, str]] = {}
-        for row in conn.execute(
-            """
-            SELECT faces.file_id, persons.name, 'bekreftet' AS status
-            FROM person_faces
-            JOIN persons ON persons.id = person_faces.person_id
-            JOIN faces ON faces.id = person_faces.face_id
-            UNION ALL
-            SELECT faces.file_id, persons.name, 'forslag' AS status
-            FROM face_suggestions
-            JOIN persons ON persons.id = face_suggestions.person_id
-            JOIN faces ON faces.id = face_suggestions.face_id
-            ORDER BY name, status
-            """
-        ):
-            file_id = int(row["file_id"])
-            name = str(row["name"])
-            key = f"{file_id}\0{name}"
-            existing = people.get(key)
-            status = str(row["status"])
-            if existing is None or existing["status"] != "bekreftet":
-                people[key] = {
-                    "fileId": str(file_id),
-                    "name": name,
-                    "status": status,
-                    "url": person_page_url(name),
-                }
-        grouped: dict[int, list[dict[str, str]]] = {}
-        for person in sorted(people.values(), key=lambda item: (item["name"], item["status"])):
-            file_id = int(person["fileId"])
-            grouped.setdefault(file_id, []).append(
-                {
-                    "name": person["name"],
-                    "status": person["status"],
-                    "url": person["url"],
-                }
-            )
-        data: dict[int, dict[str, object]] = {
-            file_id: {"people": items, "faces": []}
-            for file_id, items in grouped.items()
-        }
-        for row in conn.execute(
-            """
-            SELECT
-                id,
-                file_id,
-                bbox_x,
-                bbox_y,
-                bbox_width,
-                bbox_height,
-                detection_score
-            FROM faces
-            ORDER BY file_id, id
-            """
-        ):
-            file_id = int(row["file_id"])
-            data.setdefault(file_id, {"people": [], "faces": []})
-            faces = data[file_id]["faces"]
-            if isinstance(faces, list):
-                faces.append(
-                    {
-                        "faceId": int(row["id"]),
-                        "x": float(row["bbox_x"]),
-                        "y": float(row["bbox_y"]),
-                        "width": float(row["bbox_width"]),
-                        "height": float(row["bbox_height"]),
-                        "score": float(row["detection_score"]),
-                    }
-                )
-        return data
-    except sqlite3.Error:
-        return {}
-    finally:
-        conn.close()
-
-
 def face_tables_exist(conn: sqlite3.Connection) -> bool:
     rows = conn.execute(
         """
@@ -326,25 +219,6 @@ def face_tables_exist(conn: sqlite3.Connection) -> bool:
         "person_faces",
         "face_suggestions",
     }
-
-
-def person_page_url(name: str) -> str:
-    return path_to_url(Path(f"person-{safe_filename(name)}.html"))
-
-
-def safe_filename(value: str) -> str:
-    safe = "".join(char if char.isalnum() or char in ("-", "_") else "-" for char in value.strip())
-    safe = "-".join(part for part in safe.split("-") if part)
-    return safe or "person"
-
-
-def item_matches_filters(item: dict[str, str], media_filter: str, date_source_filter: str) -> bool:
-    if media_filter != "all" and item["kind"] != media_filter:
-        return False
-    if date_source_filter != "all" and item["dateSource"] != date_source_filter:
-        return False
-    return True
-
 
 def conflict_groups(
     target: Path,
@@ -437,36 +311,18 @@ def month_key_from_path(path: Path) -> str:
 def render_html(
     items: list[dict[str, object]],
     *,
+    title: str = "Bildebrowser",
     month_preview_limit: int | None = None,
-    search_url: str | None = None,
 ) -> str:
     items_json = json.dumps(items, ensure_ascii=False)
     month_preview_limit_json = json.dumps(month_preview_limit)
-    search_link = (
-        f'<a class="server-search-link" href="{html.escape(search_url)}">Bildesøk</a>'
-        if search_url
-        else ""
-    )
-    search_link_css = """
-    .server-search-link {
-      color: var(--accent);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 7px 10px;
-      text-decoration: none;
-      background: #303030;
-    }
-    .server-search-link:hover {
-      background: #3a3a3a;
-      text-decoration: none;
-    }
-""" if search_url else ""
+    escaped_title = html.escape(title)
     return f"""<!doctype html>
 <html lang="no">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Bildebrowser</title>
+  <title>{escaped_title}</title>
   <style>
     :root {{
       color-scheme: dark;
@@ -529,7 +385,6 @@ def render_html(
       color: var(--muted);
       font-size: 14px;
     }}
-{search_link_css}
     .position {{
       color: var(--accent);
       font-weight: 650;
@@ -643,135 +498,14 @@ def render_html(
       white-space: nowrap;
       text-overflow: ellipsis;
     }}
-    .people {{
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      align-items: center;
-      min-width: 0;
-      color: var(--muted);
-    }}
-    .people a.person-link {{
-      color: var(--accent);
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 2px 7px;
-      background: #303030;
-      line-height: 1.5;
-    }}
-    .people a.person-link.suggested {{
-      color: #e7c16a;
-    }}
-    .faces-button {{
-      min-height: 28px;
-      padding: 3px 8px;
-      font-size: 13px;
-    }}
-    .lightbox {{
-      position: fixed;
-      inset: 0;
-      z-index: 10;
-      background: rgb(0 0 0 / 86%);
-      display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
-      gap: 8px;
-      padding: 12px;
-    }}
-    .lightbox[hidden] {{ display: none; }}
-    .lightbox-bar {{
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      color: #fff;
-      font-size: 14px;
-      min-width: 0;
-    }}
-    .lightbox-title {{
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }}
-    .lightbox-close {{
-      border-color: rgb(255 255 255 / 35%);
-      background: rgb(255 255 255 / 10%);
-      color: #fff;
-      min-width: 42px;
-    }}
-    .lightbox-stage {{
-      min-width: 0;
-      min-height: 0;
-      display: grid;
-      place-items: center;
-      overflow: auto;
-    }}
-    .face-list {{
-      width: min(1200px, 100%);
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 18px;
-      align-items: start;
-    }}
-    .face-detail {{
-      display: grid;
-      gap: 6px;
-      color: #fff;
-    }}
-    .face-detail-title {{
-      font-size: 13px;
-      overflow-wrap: anywhere;
-    }}
-    .lightbox-media {{
-      position: relative;
-      display: inline-block;
-      width: fit-content;
-      max-width: 100%;
-      justify-self: start;
-    }}
-    .lightbox-media img {{
-      display: block;
-      max-width: calc(100vw - 24px);
-      width: auto;
-      height: auto;
-    }}
-    .face-box {{
-      position: absolute;
-      border: 3px solid #ff1f1f;
-      background: rgb(255 31 31 / 12%);
-      pointer-events: none;
-    }}
-    .command-row {{
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
-      align-items: stretch;
-    }}
-    .face-command {{
-      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
-      font-size: 13px;
-      color: #fff;
-      background: rgb(255 255 255 / 10%);
-      border: 1px solid rgb(255 255 255 / 22%);
-      border-radius: 6px;
-      padding: 7px;
-      overflow-wrap: anywhere;
-    }}
-    .copy-command {{
-      border-color: rgb(255 255 255 / 35%);
-      background: rgb(255 255 255 / 10%);
-      color: #fff;
-      min-width: 70px;
-      white-space: nowrap;
-    }}
   </style>
 </head>
 <body>
   <div class="app">
     <header>
       <div class="topline">
-        <div class="title">Bildebrowser</div>
+        <div class="title">{escaped_title}</div>
         <span id="status" class="status"></span>
-        {search_link}
       </div>
       <div class="controls">
         <button id="prevYear" type="button">Forrige år</button>
@@ -790,15 +524,7 @@ def render_html(
     </main>
     <footer>
       <a id="filename" class="filename" href="#">Ingen fil valgt</a>
-      <div id="people" class="people"></div>
     </footer>
-  </div>
-  <div id="lightbox" class="lightbox" hidden>
-    <div class="lightbox-bar">
-      <div id="lightboxTitle" class="lightbox-title"></div>
-      <button id="lightboxClose" class="lightbox-close" type="button">Lukk</button>
-    </div>
-    <div id="lightboxStage" class="lightbox-stage"></div>
   </div>
   <script>
     const embeddedItems = {items_json};
@@ -808,11 +534,6 @@ def render_html(
     const positionEl = document.getElementById("position");
     const viewer = document.getElementById("viewer");
     const filenameEl = document.getElementById("filename");
-    const peopleEl = document.getElementById("people");
-    const lightboxEl = document.getElementById("lightbox");
-    const lightboxTitleEl = document.getElementById("lightboxTitle");
-    const lightboxStageEl = document.getElementById("lightboxStage");
-    const lightboxCloseButton = document.getElementById("lightboxClose");
     const buttons = {{
       prevYear: document.getElementById("prevYear"),
       nextYear: document.getElementById("nextYear"),
@@ -827,13 +548,7 @@ def render_html(
     buttons.nextMonth.addEventListener("click", () => moveMonth(1));
     buttons.prevItem.addEventListener("click", () => moveItem(-1));
     buttons.nextItem.addEventListener("click", () => moveItem(1));
-    lightboxCloseButton.addEventListener("click", closeLightbox);
-    lightboxEl.addEventListener("click", event => {{
-      if (event.target === lightboxEl || event.target === lightboxStageEl) closeLightbox();
-    }});
     document.addEventListener("keydown", event => {{
-      if (!lightboxEl.hidden && event.key === "Escape") {{ event.preventDefault(); closeLightbox(); return; }}
-      if (!lightboxEl.hidden) return;
       if (event.key === "ArrowLeft") {{
         event.preventDefault();
         moveItem(-1);
@@ -966,7 +681,6 @@ def render_html(
       filenameEl.textContent = `${{htmlDecode(item.path)}} (${{item.sizeText}})`;
       filenameEl.href = item.url;
       filenameEl.target = "_blank";
-      renderPeopleAndFaces(item);
       updateButtons();
     }}
     function renderMonth() {{
@@ -1004,119 +718,7 @@ def render_html(
       filenameEl.textContent = `Månedsoversikt: ${{month.key}}`;
       filenameEl.removeAttribute("href");
       filenameEl.removeAttribute("target");
-      peopleEl.replaceChildren();
       updateButtons();
-    }}
-    function renderPeopleAndFaces(item) {{
-      peopleEl.replaceChildren();
-      const people = item.people || [];
-      const faces = item.faces || [];
-      if (people.length) {{
-        const label = document.createElement("span");
-        label.textContent = "Personer:";
-        peopleEl.append(label);
-      }}
-      for (const person of people) {{
-        const link = document.createElement("a");
-        link.className = person.status === "forslag" ? "person-link suggested" : "person-link";
-        link.href = person.url;
-        link.textContent = person.status === "forslag" ? `${{person.name}} (forslag)` : person.name;
-        peopleEl.append(link);
-      }}
-      if (faces.length) {{
-        const button = document.createElement("button");
-        button.className = "faces-button";
-        button.type = "button";
-        button.textContent = `Ansikter i bildet (${{faces.length}})`;
-        button.title = "Vis face-id og kopier kommando for hvert ansikt";
-        button.addEventListener("click", () => openAllFaces(item));
-        peopleEl.append(button);
-      }}
-    }}
-    function openAllFaces(item) {{
-      lightboxTitleEl.textContent = `Ansikter - ${{item.path}}`;
-      const list = document.createElement("div");
-      list.className = "face-list";
-      for (const face of item.faces || []) {{
-        const detail = document.createElement("div");
-        detail.className = "face-detail";
-        const title = document.createElement("div");
-        title.className = "face-detail-title";
-        title.textContent = `face-id ${{face.faceId}}, deteksjon ${{face.score.toFixed(3)}}`;
-        detail.append(
-          title,
-          renderMarkedImage(item, face),
-          renderCommand(`bildebank face-person-add-face "Navn" ${{face.faceId}}`)
-        );
-        list.append(detail);
-      }}
-      lightboxStageEl.replaceChildren(list);
-      lightboxEl.hidden = false;
-      lightboxCloseButton.focus();
-    }}
-    function renderMarkedImage(item, face) {{
-      const media = document.createElement("div");
-      media.className = "lightbox-media";
-      const img = document.createElement("img");
-      img.src = item.url;
-      img.alt = "";
-      media.append(img);
-      if (face.left !== undefined) {{
-        const box = document.createElement("div");
-        box.className = "face-box";
-        box.style.left = `${{face.left.toFixed(4)}}%`;
-        box.style.top = `${{face.top.toFixed(4)}}%`;
-        box.style.width = `${{face.boxWidth.toFixed(4)}}%`;
-        box.style.height = `${{face.boxHeight.toFixed(4)}}%`;
-        media.append(box);
-      }}
-      return media;
-    }}
-    function renderCommand(commandText) {{
-      const row = document.createElement("div");
-      row.className = "command-row";
-      const command = document.createElement("div");
-      command.className = "face-command";
-      command.textContent = commandText;
-      const button = document.createElement("button");
-      button.className = "copy-command";
-      button.type = "button";
-      button.textContent = "Kopier";
-      button.addEventListener("click", () => copyCommand(commandText, button));
-      row.append(command, button);
-      return row;
-    }}
-    async function copyCommand(text, button) {{
-      if (!text) return;
-      const originalText = button.textContent;
-      try {{
-        if (navigator.clipboard && window.isSecureContext) {{
-          await navigator.clipboard.writeText(text);
-        }} else {{
-          fallbackCopyCommand(text);
-        }}
-        button.textContent = "Kopiert";
-      }} catch (_error) {{
-        button.textContent = "Kunne ikke kopiere";
-      }}
-      window.setTimeout(() => {{
-        button.textContent = originalText;
-      }}, 1600);
-    }}
-    function fallbackCopyCommand(text) {{
-      const textarea = document.createElement("textarea");
-      textarea.value = text;
-      textarea.setAttribute("readonly", "");
-      textarea.style.position = "fixed";
-      textarea.style.left = "-9999px";
-      document.body.append(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      textarea.remove();
-    }}
-    function closeLightbox() {{
-      lightboxEl.hidden = true;
-      lightboxStageEl.replaceChildren();
     }}
     function representativeItems(items, limit) {{
       if (limit === null) return items;

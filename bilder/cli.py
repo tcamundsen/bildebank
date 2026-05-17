@@ -397,7 +397,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Skriv HTML-filen hit. Standard: index.html i bildesamlingsmappen.",
     )
-    add_browser_filter_arguments(browser)
+    add_month_preview_limit_argument(browser)
 
     make_thumbnails = add_command(
         subparsers,
@@ -657,20 +657,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def add_browser_filter_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "-m",
-        "--media",
-        choices=("all", "image", "video"),
-        default="all",
-        help="Filtrer browseren til bilder, videoer eller begge deler.",
-    )
-    parser.add_argument(
-        "--date-source",
-        choices=("all", "metadata", "filename", "mtime", "unknown"),
-        default="all",
-        help="Filtrer browseren etter hvilken datokilde filene er plassert med.",
-    )
+def add_month_preview_limit_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--month-preview-limit",
         type=positive_int_arg,
@@ -1081,8 +1068,6 @@ def run(args: argparse.Namespace) -> int:
             output_path = export_html(
                 target,
                 output,
-                media_filter=args.media,
-                date_source_filter=args.date_source,
                 month_preview_limit=args.month_preview_limit,
                 debug_timing=args.debug,
             )

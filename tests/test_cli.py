@@ -4073,19 +4073,18 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser for person", stdout)
             html = (target / "person-Kari.html").read_text(encoding="utf-8")
-            self.assertIn("<h1>Kari</h1>", html)
+            self.assertIn("<title>Kari</title>", html)
+            self.assertIn('<div class="title">Kari</div>', html)
             self.assertIn("Forrige måned", html)
-            self.assertIn("button:hover { background: #e6e6df; }", html)
-            self.assertIn("color: #9a9a92;", html)
             self.assertIn("const embeddedItems", html)
             self.assertIn("IMG_20240102.jpg", html)
-            self.assertIn('"faceId": 1', html)
-            self.assertIn('"status": "bekreftet"', html)
-            self.assertIn('"faceId": 2', html)
-            self.assertIn('"status": "forslag"', html)
-            self.assertIn('"box suggested"', html)
-            self.assertIn("const imageRect = img.getBoundingClientRect();", html)
-            self.assertNotIn("const imageRatio = img.naturalWidth / img.naturalHeight;", html)
+            self.assertIn('"kind": "image"', html)
+            self.assertNotIn('"faceId": 1', html)
+            self.assertNotIn('"status": "bekreftet"', html)
+            self.assertNotIn('"faceId": 2', html)
+            self.assertNotIn('"status": "forslag"', html)
+            self.assertNotIn('"box suggested"', html)
+            self.assertNotIn("const imageRect = img.getBoundingClientRect();", html)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "make-people-browser"])
 
@@ -4896,18 +4895,14 @@ model_name = "test-model"
             self.assertIn("function representativeItems(items, limit)", html)
             self.assertNotIn("server-search-link", html)
             self.assertIn('img.loading = "lazy";', html)
-            self.assertIn('"people": [{"name": "Kari", "status": "bekreftet", "url": "person-Kari.html"}', html)
-            self.assertIn('"name": "Ola Nordmann", "status": "forslag", "url": "person-Ola-Nordmann.html"', html)
-            self.assertIn('"faces": [{"faceId": 1, "score": 0.9}', html)
-            self.assertIn('"faceId": 2, "score": 0.8', html)
-            self.assertIn("Personer:", html)
-            self.assertIn("(forslag)", html)
-            self.assertIn("Ansikter i bildet", html)
-            self.assertIn("width: fit-content;", html)
-            self.assertIn("justify-self: start;", html)
-            self.assertIn('face-person-add-face "Navn"', html)
-            self.assertIn("navigator.clipboard.writeText", html)
-            self.assertIn("fallbackCopyCommand", html)
+            self.assertNotIn('"people":', html)
+            self.assertNotIn('"faces":', html)
+            self.assertNotIn("Personer:", html)
+            self.assertNotIn("(forslag)", html)
+            self.assertNotIn("Ansikter i bildet", html)
+            self.assertNotIn('face-person-add-face "Navn"', html)
+            self.assertNotIn("navigator.clipboard.writeText", html)
+            self.assertNotIn("fallbackCopyCommand", html)
 
             limited_output = root / "limited.html"
             code, stdout, stderr = capture_cli(
@@ -4928,7 +4923,7 @@ model_name = "test-model"
             self.assertIn("const MONTH_PREVIEW_LIMIT = 40;", limited_html)
             self.assertIn("if (limit === 1) return [items[0]];", limited_html)
 
-    def test_make_browser_filters_by_media_and_date_source(self) -> None:
+    def test_make_browser_writes_custom_output_without_filters(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -4939,24 +4934,6 @@ model_name = "test-model"
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-
-            code, stdout, stderr = capture_cli(
-                [
-                    "--target",
-                    str(target),
-                    "make-browser",
-                    "--media",
-                    "video",
-                    "--date-source",
-                    "metadata",
-                ]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Skrev HTML-browser", stdout)
-            html = (target / "index.html").read_text(encoding="utf-8")
-            self.assertIn('"path": "2010/07/video.mp4"', html)
-            self.assertNotIn("IMG_20240102.jpg", html)
 
             custom_output = root / "filtered.html"
             code, stdout, stderr = capture_cli(
@@ -4972,6 +4949,24 @@ model_name = "test-model"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser", stdout)
             self.assertTrue(custom_output.exists())
+            html = custom_output.read_text(encoding="utf-8")
+            self.assertIn('"path": "2010/07/video.mp4"', html)
+            self.assertIn('"path": "2024/01/IMG_20240102.jpg"', html)
+
+    def test_make_browser_help_omits_filters(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["make-browser", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("make-browser", stdout)
+        self.assertIn("--month-preview-limit", stdout)
+        self.assertIn("--output", stdout)
+        self.assertNotIn("--media", stdout)
+        self.assertNotIn("--date-source", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_thumbnail_paths_and_existing_url_use_current_thumbnail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

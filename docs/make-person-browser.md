@@ -33,8 +33,9 @@ Siden viser bilder der personen enten er:
 - bekreftet med `face-person-add-face`
 - foreslått med `face-suggest`
 
-Bekreftede ansikter og forslag markeres med ulik farge på boksen rundt
-ansiktet.
+Selve HTML-browseren er enkel og viser bildene uten ansiktsbokser eller
+redigeringsfunksjoner. Bruk [`run-server`](run-server.md) hvis du vil bekrefte
+ansikter eller arbeide videre med personforslag.
 
 ## Før du bruker kommandoen
 
