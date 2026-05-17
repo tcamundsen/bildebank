@@ -100,6 +100,7 @@ HELP_COMMAND_GROUPS = (
         "rydde",
         (
             ("remove", "Flytt en importert fil til deleted/"),
+            ("undelete", "Flytt en slettet fil tilbake fra deleted/"),
             ("unimport", "Reverser en tidligere importert kilde"),
             ("list-removed", "List filer som er flyttet til deleted/"),
         ),
@@ -265,6 +266,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Flytt en importert målfil til deleted/ og marker den som slettet",
     )
     remove.add_argument("path", metavar="fil", type=Path, help="Importert målfil som skal fjernes")
+    undelete = add_command(
+        subparsers,
+        "undelete",
+        usage="bildebank undelete [valg] fil",
+        help="Flytt en slettet fil tilbake fra deleted/",
+    )
+    undelete.add_argument("path", metavar="fil", type=Path, help="Slettet fil under deleted/")
     add_command(subparsers, "list-removed", usage="bildebank list-removed [valg]", help="List filer som er markert som slettet")
     non_metadata = add_command(
         subparsers,
@@ -987,6 +995,34 @@ def run(args: argparse.Namespace) -> int:
         if args.command == "list-removed":
             for row in db.deleted_files(conn):
                 print_deleted_item(target, row)
+            return 0
+
+        if args.command == "undelete":
+            deleted_path = resolve_deleted_file_arg(target, args.path)
+            row = db.file_by_target_path(conn, target, deleted_path)
+            if row is None:
+                raise ValueError(f"Filen finnes ikke i importdatabasen: {deleted_path}")
+            if row["deleted_at"] is None:
+                raise ValueError(f"Filen er ikke markert som slettet: {deleted_path}")
+            if row["deleted_original_target_path"] is None:
+                raise ValueError(f"Filen mangler opprinnelig målsti i databasen: {deleted_path}")
+            if not deleted_path.exists():
+                raise ValueError(f"Slettet fil finnes ikke på disk: {deleted_path}")
+
+            restored_path = target / Path(str(row["deleted_original_target_path"]))
+            if restored_path.exists():
+                raise ValueError(f"Målfilen finnes allerede: {restored_path}")
+
+            restored_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(deleted_path), str(restored_path))
+            db.mark_file_undeleted(
+                conn,
+                file_id=int(row["id"]),
+                target_root=target,
+                restored_path=restored_path,
+            )
+            conn.commit()
+            print(f"Flyttet tilbake til bildesamlingen: {restored_path}")
             return 0
 
         if args.command == "non-metadata":
@@ -2000,6 +2036,14 @@ def resolve_collection_file_arg(target: Path, path: Path) -> Path:
 def resolve_target_file_arg(target: Path, path: Path) -> Path:
     resolved = resolve_collection_file_arg(target, path)
     relative_path_under_target(target, resolved)
+    return resolved
+
+
+def resolve_deleted_file_arg(target: Path, path: Path) -> Path:
+    resolved = resolve_collection_file_arg(target, path)
+    relative_path = relative_collection_path(target, resolved)
+    if len(relative_path.parts) < 2 or relative_path.parts[0] != "deleted":
+        raise ValueError(f"Undelete krever sti under deleted/: {path}")
     return resolved
 
 

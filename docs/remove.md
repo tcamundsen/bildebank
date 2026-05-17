@@ -71,6 +71,12 @@ bildebank list-removed
 Listen viser blant annet når filen ble slettet, hvor den lå før, hvor den ligger
 nå, og hvilken kildefil den kom fra.
 
+Du kan flytte en fil tilbake fra `deleted`-mappen med:
+
+```powershell
+bildebank undelete "deleted\2024\01\IMG_0001.jpg"
+```
+
 ## Hvis kommandoen stopper
 
 Hvis Bildebank sier at filen ikke finnes i importdatabasen, betyr det vanligvis

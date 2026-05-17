@@ -2003,6 +2003,31 @@ def mark_file_deleted(
     )
 
 
+def mark_file_undeleted(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    target_root: Path,
+    restored_path: Path,
+) -> None:
+    conn.execute(
+        """
+        UPDATE files
+        SET target_path = ?,
+            target_path_key = ?,
+            deleted_at = NULL,
+            deleted_original_target_path = NULL
+        WHERE id = ?
+          AND deleted_at IS NOT NULL
+        """,
+        (
+            target_relative_path(target_root, restored_path).as_posix(),
+            target_relative_path_key(target_root, restored_path),
+            file_id,
+        ),
+    )
+
+
 def update_file_placement(
     conn: sqlite3.Connection,
     *,

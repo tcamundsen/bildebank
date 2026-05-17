@@ -53,12 +53,14 @@ from bilder.server import (
     person_month_navigation,
     person_month_page_html,
     person_items,
+    removed_files_page_html,
     search_server_images,
     source_item_by_id,
     source_item_page_html,
     source_month_items,
     source_month_navigation,
     source_month_page_html,
+    undelete_file_from_browser,
 )
 from bilder.target_lock import LOCK_FILENAME
 from bilder.thumbnails import (
@@ -1052,6 +1054,83 @@ class CliTests(unittest.TestCase):
             self.assertEqual(row["deleted_original_target_path"], "2024/01/IMG_20240102.png")
             self.assertIsNotNone(row["deleted_at"])
             self.assertIsNone(browser_item_by_id(target, 1))
+
+    def test_app_links_to_removed_files_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "remove", "2024/01/IMG_20240102.png"]), 0)
+
+            app_body = app_status_page_html(target)
+            removed_body = removed_files_page_html(target)
+
+        self.assertIn('href="/app/removed"', app_body)
+        self.assertIn("Slettede bilder", removed_body)
+        self.assertIn('href="/file/deleted/2024/01/IMG_20240102.png"', removed_body)
+        self.assertIn("2024/01/IMG_20240102.png", removed_body)
+        self.assertIn('data-undelete-item="1"', removed_body)
+        self.assertIn("/api/item-undelete", removed_body)
+
+    def test_run_server_undelete_restores_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "remove", "2024/01/IMG_20240102.png"]), 0)
+            restored = undelete_file_from_browser(target, 1)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute("SELECT target_path, deleted_at, deleted_original_target_path FROM files WHERE id = 1").fetchone()
+            finally:
+                conn.close()
+
+            self.assertEqual(restored.as_posix(), "2024/01/IMG_20240102.png")
+            self.assertEqual(row["target_path"], "2024/01/IMG_20240102.png")
+            self.assertIsNone(row["deleted_at"])
+            self.assertIsNone(row["deleted_original_target_path"])
+            self.assertIsNotNone(browser_item_by_id(target, 1))
+
+    def test_run_server_undelete_endpoint_restores_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "remove", "2024/01/IMG_20240102.png"]), 0)
+            data = json.dumps({"file_id": 1}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_undelete_item(handler)  # type: ignore[arg-type]
+
+            self.assertEqual({"ok": True, "file_id": 1, "restored_path": "2024/01/IMG_20240102.png"}, handler.body)
+            self.assertTrue((target / "2024" / "01" / "IMG_20240102.png").exists())
+            self.assertFalse((target / "deleted" / "2024" / "01" / "IMG_20240102.png").exists())
 
     def test_run_server_item_page_can_rotate_image_view(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2503,6 +2582,117 @@ model_name = "buffalo_s"
             self.assertIn(f"  kildefil: {(source / 'IMG_20240102.jpg').resolve()}", stdout)
             self.assertIn("filstørrelse: 9 bytes (9 bytes)", stdout)
             self.assertIn("sha256:", stdout)
+
+    def test_undelete_restores_removed_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]), 0)
+
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "undelete", "deleted/2024/01/IMG_20240102.jpg"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Flyttet tilbake til bildesamlingen", stdout)
+            self.assertTrue(imported.exists())
+            self.assertFalse(deleted.exists())
+            self.assertEqual(imported.read_bytes(), b"image-one")
+            conn = sqlite3.connect(target / DB_FILENAME)
+            conn.row_factory = sqlite3.Row
+            try:
+                row = conn.execute("SELECT target_path, deleted_at, deleted_original_target_path FROM files").fetchone()
+            finally:
+                conn.close()
+            self.assertEqual(row["target_path"], "2024/01/IMG_20240102.jpg")
+            self.assertIsNone(row["deleted_at"])
+            self.assertIsNone(row["deleted_original_target_path"])
+            self.assertIsNotNone(browser_item_by_id(target, 1))
+
+    def test_undelete_rejects_original_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]), 0)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "undelete", "2024/01/IMG_20240102.jpg"]
+            )
+
+            self.assertNotEqual(code, 0)
+            self.assertIn("Undelete krever sti under deleted/", stderr)
+            self.assertFalse((target / "2024" / "01" / "IMG_20240102.jpg").exists())
+            self.assertTrue((target / "deleted" / "2024" / "01" / "IMG_20240102.jpg").exists())
+
+    def test_undelete_fails_when_destination_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]), 0)
+            destination = target / "2024" / "01" / "IMG_20240102.jpg"
+            destination.write_bytes(b"already-here")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "undelete", "deleted/2024/01/IMG_20240102.jpg"]
+            )
+
+            self.assertNotEqual(code, 0)
+            self.assertIn("Målfilen finnes allerede", stderr)
+            self.assertEqual(destination.read_bytes(), b"already-here")
+            self.assertTrue((target / "deleted" / "2024" / "01" / "IMG_20240102.jpg").exists())
+
+    def test_undelete_fails_when_deleted_file_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]), 0)
+            (target / "deleted" / "2024" / "01" / "IMG_20240102.jpg").unlink()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "undelete", "deleted/2024/01/IMG_20240102.jpg"]
+            )
+
+            self.assertNotEqual(code, 0)
+            self.assertIn("Slettet fil finnes ikke på disk", stderr)
+            self.assertFalse((target / "2024" / "01" / "IMG_20240102.jpg").exists())
+
+    def test_undelete_fails_when_database_row_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
+            deleted.parent.mkdir(parents=True)
+            deleted.write_bytes(b"image-one")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "undelete", "deleted/2024/01/IMG_20240102.jpg"]
+            )
+
+            self.assertNotEqual(code, 0)
+            self.assertIn("Filen finnes ikke i importdatabasen", stderr)
+            self.assertTrue(deleted.exists())
 
     def test_import_dry_run_lists_files_without_database_or_copy_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

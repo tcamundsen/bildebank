@@ -18,6 +18,7 @@ Dette er en kort referanse over kommandoene i Bildebank.
 ## Rydde
 
 - [`remove`](remove.md)
+- [`undelete`](undelete.md)
 - [`unimport`](unimport.md)
 - [`list-removed`](list-removed.md)
 

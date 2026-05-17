@@ -108,6 +108,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/app":
                 self.respond_html(app_status_page_html(self.server.target))
                 return
+            if parsed.path in {"/app/removed", "/app/removed/"}:
+                self.respond_html(removed_files_page_html(self.server.target))
+                return
             if parsed.path == "/geo":
                 self.respond_geo(parsed.query)
                 return
@@ -166,6 +169,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/item-delete":
                 self.respond_delete_item()
+                return
+            if parsed.path == "/api/item-undelete":
+                self.respond_undelete_item()
                 return
             self.respond_json({"ok": False, "error": "Ukjent endepunkt."}, status=HTTPStatus.NOT_FOUND)
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
@@ -449,6 +455,20 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         self.respond_json({"ok": True, "file_id": file_id, "deleted_path": deleted_path.as_posix()})
+
+    def respond_undelete_item(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        try:
+            file_id = int(payload.get("file_id"))
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            restored_path = undelete_file_from_browser(self.server.target, file_id)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_json({"ok": True, "file_id": file_id, "restored_path": restored_path.as_posix()})
 
     def read_json_payload(self) -> dict[str, object]:
         length = int(self.headers.get("Content-Length") or "0")
@@ -801,6 +821,53 @@ def remove_file_from_browser(target: Path, file_id: int) -> Path:
             )
             conn.commit()
             return db.target_relative_path(target, deleted_path)
+        finally:
+            conn.close()
+
+
+def undelete_file_from_browser(target: Path, file_id: int) -> Path:
+    with TargetLock(target, command="undelete"):
+        conn = db.connect(target)
+        try:
+            row = conn.execute(
+                """
+                SELECT id, target_path, deleted_at, deleted_original_target_path
+                FROM files
+                WHERE id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Filen finnes ikke i importdatabasen.")
+            if row["deleted_at"] is None:
+                raise ValueError("Filen er ikke markert som slettet.")
+            if row["deleted_original_target_path"] is None:
+                raise ValueError("Filen mangler opprinnelig målsti i databasen.")
+
+            deleted_path = db.absolute_target_path(target, Path(str(row["target_path"]))).resolve()
+            if not deleted_path.exists():
+                raise ValueError(f"Slettet fil finnes ikke på disk: {deleted_path}")
+            try:
+                deleted_relative_path = deleted_path.relative_to(target.resolve())
+            except ValueError as exc:
+                raise ValueError(f"Filen ligger ikke i bildesamlingen: {deleted_path}") from exc
+            if len(deleted_relative_path.parts) < 2 or deleted_relative_path.parts[0] != "deleted":
+                raise ValueError(f"Slettet fil ligger ikke under deleted/: {deleted_path}")
+
+            restored_path = target / Path(str(row["deleted_original_target_path"]))
+            if restored_path.exists():
+                raise ValueError(f"Målfilen finnes allerede: {restored_path}")
+
+            restored_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(deleted_path), str(restored_path))
+            db.mark_file_undeleted(
+                conn,
+                file_id=file_id,
+                target_root=target,
+                restored_path=restored_path,
+            )
+            conn.commit()
+            return db.target_relative_path(target, restored_path)
         finally:
             conn.close()
 
@@ -1787,7 +1854,7 @@ def app_status_page_html(target: Path) -> str:
         "App",
         f"""
         <main class="shell">
-          <p><a href="/">Til bildebrowser</a></p>
+          <p><a href="/">Til bildebrowser</a> · <a href="/app/removed">Slettede bilder</a></p>
           <h1>App</h1>
           <dl class="info-list app-status">
             {rows}
@@ -1795,6 +1862,51 @@ def app_status_page_html(target: Path) -> str:
         </main>
         """,
     )
+
+
+def removed_files_page_html(target: Path) -> str:
+    conn = db.connect(target)
+    try:
+        rows = list(db.deleted_files(conn))
+    finally:
+        conn.close()
+    items = "\n".join(removed_file_row_html(target, row) for row in rows)
+    content = (
+        f'<div class="removed-list">{items}</div>'
+        if items
+        else '<p class="meta">Ingen bilder er flyttet til deleted/.</p>'
+    )
+    return page_html(
+        "Slettede bilder",
+        f"""
+        <main class="shell">
+          <p><a href="/app">Til app</a> · <a href="/">Til bildebrowser</a></p>
+          <h1>Slettede bilder</h1>
+          <p class="meta">{len(rows)} bilder flyttet til deleted/.</p>
+          {content}
+        </main>
+        """,
+    )
+
+
+def removed_file_row_html(target: Path, row: Any) -> str:
+    deleted_path = Path(str(row["target_path"]))
+    original_path = row["deleted_original_target_path"] or row["target_path"]
+    link = "/file/" + urllib.parse.quote(deleted_path.as_posix())
+    exists = "finnes" if db.absolute_target_path(target, deleted_path).is_file() else "mangler"
+    taken_date = str(row["taken_date"] or "ukjent dato")
+    size = format_bytes(int(row["size_bytes"])) if row["size_bytes"] is not None else "ukjent størrelse"
+    deleted_at = str(row["deleted_at"] or "")
+    return f"""
+    <div class="removed-row">
+      <a href="{html.escape(link)}" target="_blank">{html.escape(str(original_path))}</a>
+      <span>{html.escape(deleted_at)}</span>
+      <span>{html.escape(taken_date)}</span>
+      <span>{html.escape(size)}</span>
+      <span>{exists}</span>
+      <button class="nav-button" type="button" data-undelete-item="{int(row["id"])}" data-undelete-path="{html.escape(str(original_path))}">Undelete</button>
+    </div>
+    """
 
 
 def app_status_row_html(label: str, value: str) -> str:
@@ -2426,6 +2538,19 @@ def page_html(title: str, body: str) -> str:
       justify-content: flex-end;
     }}
     .people-table {{ display: grid; gap: 8px; margin-top: 18px; }}
+    .removed-list {{ display: grid; gap: 6px; margin-top: 18px; }}
+    .removed-row {{
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) auto auto auto auto auto;
+      gap: 10px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      font-size: 14px;
+    }}
+    .removed-row span {{ color: var(--muted); }}
     .people-row {{
       display: grid;
       grid-template-columns: minmax(160px, 1fr) auto auto auto;
@@ -2681,6 +2806,7 @@ def page_html(title: str, body: str) -> str:
       .nav-button, .server-search-link, .person-link, .faces-button {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
       .top-actions {{ margin-left: 0; width: 100%; justify-content: stretch; }}
       .people-row {{ grid-template-columns: 1fr; align-items: stretch; }}
+      .removed-row {{ grid-template-columns: 1fr; align-items: stretch; }}
       .geo-row {{ grid-template-columns: 1fr; }}
       .new-person-form {{ grid-template-columns: 1fr; align-items: stretch; }}
       .info-row {{ grid-template-columns: 1fr; gap: 4px; }}
@@ -2772,6 +2898,27 @@ def page_html(title: str, body: str) -> str:
         window.location.href = redirectUrl;
       }} catch (error) {{
         alert(error.message || "Kunne ikke slette.");
+        button.disabled = false;
+      }}
+    }});
+  }});
+  document.querySelectorAll("[data-undelete-item]").forEach(button => {{
+    button.addEventListener("click", async () => {{
+      const fileId = Number(button.dataset.undeleteItem);
+      const path = button.dataset.undeletePath || "";
+      if (!confirm(`Flytte tilbake til bildesamlingen?\\n\\n${{path}}`)) return;
+      button.disabled = true;
+      try {{
+        const response = await fetch("/api/item-undelete", {{
+          method: "POST",
+          headers: {{"Content-Type": "application/json"}},
+          body: JSON.stringify({{file_id: fileId}}),
+        }});
+        const payload = await response.json();
+        if (!payload.ok) throw new Error(payload.error || "Kunne ikke angre sletting.");
+        button.closest(".removed-row")?.remove();
+      }} catch (error) {{
+        alert(error.message || "Kunne ikke angre sletting.");
         button.disabled = false;
       }}
     }});
