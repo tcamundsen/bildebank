@@ -1504,6 +1504,60 @@ class CliTests(unittest.TestCase):
             finally:
                 face_conn.close()
 
+    def test_run_server_api_removes_face_from_person(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(1, 1, 'key-1', 1, 2, 10, 20, 0.9, 'test', ?)
+                    """,
+                    (b"embedding-1",),
+                )
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            data = json.dumps({"face_id": 1, "person_name": "Kari"}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_remove_face_from_person(handler)  # type: ignore[arg-type]
+
+            self.assertEqual(
+                {"ok": True, "person_name": "Kari", "person_url": "/person/Kari", "face_id": 1, "removed": True},
+                handler.body,
+            )
+            face_conn = connect_face_db(target)
+            try:
+                self.assertEqual(face_conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0], 0)
+            finally:
+                face_conn.close()
+
     def test_run_server_person_browser_filters_and_marks_faces(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -1647,6 +1701,11 @@ class CliTests(unittest.TestCase):
         self.assertIn("Bekreftede og forslag (2)", body)
         self.assertIn("NB: 2 bekreftede ansikter i samme bilde", body)
         self.assertIn("NB: 2 bekreftede ansikter for Kari i dette bildet", confirmed_body)
+        self.assertIn('data-unconfirm-face="1"', confirmed_body)
+        self.assertIn('data-unconfirm-face="3"', confirmed_body)
+        self.assertIn('data-unconfirm-person="Kari"', confirmed_body)
+        self.assertIn("Avbekreft face-id 1", confirmed_body)
+        self.assertIn("/api/face-person-remove-face", confirmed_body)
         self.assertEqual([int(item["id"]) for item in confirmed_items], [1])
         self.assertEqual([int(item["id"]) for item in all_items], [1, 2])
 

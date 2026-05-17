@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 from . import __version__, db
 from .config import OpenClipConfig, load_config
-from .face import add_face_to_person, create_person, normalize_person_name
+from .face import add_face_to_person, create_person, normalize_person_name, remove_face_from_person
 from .html_export import (
     FACE_DB_FILENAME,
     browser_face_items,
@@ -160,6 +160,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/face-person-add-face":
                 self.respond_add_face_to_person()
+                return
+            if parsed.path == "/api/face-person-remove-face":
+                self.respond_remove_face_from_person()
                 return
             if parsed.path == "/api/face-person-create-and-add-face":
                 self.respond_create_person_and_add_face()
@@ -396,6 +399,28 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 "person_url": person_url(result.person_name),
                 "face_id": result.face_id,
                 "added": result.added,
+            }
+        )
+
+    def respond_remove_face_from_person(self) -> None:
+        payload = BildebankRequestHandler.read_face_person_payload(self)
+        if isinstance(payload[0], dict):
+            self.respond_json(payload[0], status=payload[1])
+            return
+        person_name, face_id = payload
+        try:
+            result = remove_face_from_person(self.server.target, person_name, face_id)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        clear_face_caches()
+        self.respond_json(
+            {
+                "ok": True,
+                "person_name": result.person_name,
+                "person_url": person_url(result.person_name),
+                "face_id": result.face_id,
+                "removed": result.removed,
             }
         )
 
@@ -1790,6 +1815,7 @@ def source_item_page_html(
         next_item,
         include_info_button=True,
         rotation_buttons=rotation_buttons_html(source, item),
+        unconfirm_buttons=unconfirm_face_buttons_html(target, source, item),
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
     people = people_links_html(confirmed_people_for_file(target, int(item["id"])))
@@ -2099,6 +2125,7 @@ def source_controls_html(
     *,
     include_info_button: bool = False,
     rotation_buttons: str = "",
+    unconfirm_buttons: str = "",
     delete_button: str = "",
 ) -> str:
     info_button = image_info_button_html() if include_info_button else ""
@@ -2112,9 +2139,28 @@ def source_controls_html(
       {source_nav_link(source, next_item, "Neste bilde", "next")}
       {rotation_buttons}
       {info_button}
+      {unconfirm_buttons}
       {delete_button}
     </nav>
     """
+
+
+def unconfirm_face_buttons_html(target: Path, source: BrowserSource, item: Any) -> str:
+    if source.person_name is None or source.include_suggestions:
+        return ""
+    faces = person_faces_for_item(target, source.person_name, item, include_suggestions=False)
+    buttons = []
+    for face in faces:
+        face_id = int(face["faceId"])
+        person_name = source.person_name
+        buttons.append(
+            '<button class="nav-button danger-button" type="button" '
+            f'data-unconfirm-face="{face_id}" '
+            f'data-unconfirm-person="{html.escape(person_name)}">'
+            f"Avbekreft face-id {face_id}"
+            "</button>"
+        )
+    return "\n".join(buttons)
 
 
 def person_controls_html(
@@ -3005,6 +3051,29 @@ def page_html(title: str, body: str) -> str:
         button.closest(".removed-row")?.remove();
       }} catch (error) {{
         alert(error.message || "Kunne ikke angre sletting.");
+        button.disabled = false;
+      }}
+    }});
+  }});
+  document.querySelectorAll("[data-unconfirm-face]").forEach(button => {{
+    button.addEventListener("click", async () => {{
+      const faceId = Number(button.dataset.unconfirmFace);
+      const personName = button.dataset.unconfirmPerson || "";
+      if (!faceId || !personName) return;
+      const command = `bildebank face-person-remove-face "${{personName}}" ${{faceId}}`;
+      if (!confirm(`Avbekrefte face-id ${{faceId}} fra ${{personName}}?\\n\\nTilsvarer:\\n${{command}}`)) return;
+      button.disabled = true;
+      try {{
+        const response = await fetch("/api/face-person-remove-face", {{
+          method: "POST",
+          headers: {{"Content-Type": "application/json"}},
+          body: JSON.stringify({{face_id: faceId, person_name: personName}}),
+        }});
+        const payload = await response.json();
+        if (!payload.ok) throw new Error(payload.error || "Kunne ikke avbekrefte.");
+        window.location.reload();
+      }} catch (error) {{
+        alert(error.message || "Kunne ikke avbekrefte.");
         button.disabled = false;
       }}
     }});
