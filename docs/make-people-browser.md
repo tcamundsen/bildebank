@@ -1,38 +1,32 @@
 # make-people-browser
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank make-people-browser [valg]
 
-`make-people-browser` lager HTML-sider for alle personer som er registrert i
-ansiktsdatabasen.
+options:
+  -h, --help            show this help message and exit
+  --month-preview-limit MONTH_PREVIEW_LIMIT
+                        Maks antall bilder i månedsoversikten på hver
+                        personside. Standard: vis alle.
+```
+<!-- CLI-HELP-END -->
 
-## Referanse
+`make-people-browser` lager HTML-sider med `make-person-browser` for alle
+personer som er registrert i ansiktsdatabasen samt filen `personer.html` som
+lenker alle person-sidene.
+
+## Valg
+
+### `--month-preview-limit`
+
+Begrenser hvor mange filer som vises i månedsoversikten:
 
 ```powershell
-bildebank make-people-browser
-bildebank make-people-browser --month-preview-limit 40
+bildebank make-browser --month-preview-limit 40
 ```
 
-Kommandoen lager:
 
-```text
-personer.html
-person-Kari.html
-person-Ola.html
-...
-```
+## Oppdatere HTML-filen
 
-`personer.html` er en startside med ett kort per person. Kortet viser et
-eksempelbilde, antall bilder, antall bekreftede ansikter og antall forslag.
-
-Klikk på en person for å åpne personens egen browser. Der kan du bla i bildene
-måned for måned, på samme måte som med `make-person-browser`.
-
-Personsider som lages her er enkle statiske bildebrowsere. Bruk
-[`run-server`](run-server.md) for å bekrefte ansikter, se ansiktsbokser og
-arbeide videre med forslag.
-
-Hvis du har lagt til nye personer eller koblet flere ansikter til personer, bør
-du kjøre `make-people-browser` på nytt.
-
-`face-suggest` kjører vanligvis denne oppdateringen automatisk etter at forslag
-er beregnet.
-
-Se også [`make-person-browser`](make-person-browser.md).
+Hvis du scanner flere bilder, kjører `face-suggest`, eller bekrefter flere
+ansikter, må du kjøre `make-people-browser` på nytt for å oppdatere HTML-filene.

@@ -1,32 +1,26 @@
 # make-person-browser
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank make-person-browser [valg] navn
+
+positional arguments:
+  navn                  Personnavn
+
+options:
+  -h, --help            show this help message and exit
+  -o, --output OUTPUT   Skriv HTML-filen hit. Standard: person-Navn.html i
+                        bildesamlingen.
+  --month-preview-limit MONTH_PREVIEW_LIMIT
+                        Maks antall bilder i månedsoversikten. Standard: vis
+                        alle.
+```
+<!-- CLI-HELP-END -->
 
 `make-person-browser` lager en HTML-fil for å bla i bilder der Bildebank tror en
 bestemt person finnes.
 
-Dette er en del av ansiktsgjenkjenningen.
-
-## Referanse
-
-```powershell
-bildebank make-person-browser "Navn"
-```
-
-Vanlige valg:
-
-```powershell
-bildebank make-person-browser "Kari"
-bildebank make-person-browser "Kari" --month-preview-limit 40
-bildebank make-person-browser "Kari" -o "kari.html"
-```
-
-## Hva kommandoen gjør
-
-Kommandoen lager en HTML-fil i bildesamlingen. Standardfilen får navn etter
-personen, for eksempel:
-
-```text
-person-Kari.html
-```
+Denne kommandoen krever at ansiktsgjenkjenning er aktivert og tatt i bruk.
+Se [InsightFace](insightface.md).
 
 Siden viser bilder der personen enten er:
 
@@ -35,39 +29,27 @@ Siden viser bilder der personen enten er:
 
 Selve HTML-browseren er enkel og viser bildene uten ansiktsbokser eller
 redigeringsfunksjoner. Bruk [`run-server`](run-server.md) hvis du vil bekrefte
-ansikter eller arbeide videre med personforslag.
+ansikter eller arbeide videre med personforslag. Tanken er at den skal kunne brukes
+til å vise bilder på PC-er som ikke har Bildebank installert.
 
-## Før du bruker kommandoen
 
-Du må først ha scannet bilder:
+## Valg
 
-```powershell
-bildebank face-scan
-```
+### `--month-preview-limit`
 
-Deretter må personen finnes i ansiktsdatabasen. Det kan gjøres ved å bekrefte
-et ansikt. Personen må opprettes først:
+Begrenser hvor mange filer som vises i månedsoversikten:
 
 ```powershell
-bildebank face-person-create "Kari"
-bildebank face-person-add-face "Kari" 798
+bildebank make-browser --month-preview-limit 40
 ```
 
-Når noen ansikter er bekreftet, kan Bildebank lage forslag:
+### `--output`
+
+`-o` eller `--output` skriver HTML-filen til et annet filnavn:
 
 ```powershell
-bildebank face-suggest
+bildebank make-browser -o "familiebilder.html"
 ```
-
-Da kan `make-person-browser` vise både bekreftede bilder og foreslåtte bilder.
-
-## Bla i personbrowseren
-
-Personbrowseren viser ett bilde om gangen. Dette gjør at den kan brukes selv om
-personen finnes i mange bilder.
-
-Når du hopper til en annen måned eller et annet år, viser siden først en
-månedsoversikt. Klikk på et bilde i oversikten for å åpne det.
 
 ## Hurtigtaster
 
@@ -82,23 +64,6 @@ Når HTML-filen er åpen i nettleseren, kan du bla med tastaturet:
 | Page Up | Forrige år |
 | Page Down | Neste år |
 
-## Valg
-
-`--month-preview-limit` begrenser hvor mange bilder som vises i
-månedsoversikten:
-
-```powershell
-bildebank make-person-browser "Kari" --month-preview-limit 40
-```
-
-Dette kan gjøre månedsoversikten lettere å bruke hvis personen finnes i mange
-bilder i samme måned.
-
-`-o` eller `--output` skriver HTML-filen til et annet filnavn:
-
-```powershell
-bildebank make-person-browser "Kari" -o "kari.html"
-```
 
 ## Oppdatere HTML-filen
 

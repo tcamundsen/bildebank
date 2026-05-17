@@ -1,7 +1,8 @@
 .PHONY: html
 
 CMDS ?= face-scan face-suggest create import status make-thumbnails \
-		list-sources show-source undelete make-browser
+		list-sources show-source undelete \
+		make-browser make-people-browser make-person-browser
 
 cli-help:
 	@for cmd in $(CMDS); do \
