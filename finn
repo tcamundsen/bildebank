@@ -1,0 +1,12 @@
+#!/usr/bin/bash
+# finn fungerer i git bash
+
+find -name "*.py" -not -path "./venv/*"  > finn.tmp
+find -name "*.html" -not -path "./venv/*" >> finn.tmp
+find -name "*.css" -not -path "./venv/*" >> finn.tmp
+find -name "*.js" -not -path "./venv/*" >> finn.tmp
+cat finn.tmp | xargs grep -n $1
+rm finn.tmp
+
+
+#rg -n --glob '!venv313/**' --glob '!music/migrations/**' --glob '*.py' --glob '*.html' --glob '*.css' "$@"
