@@ -987,6 +987,10 @@ class CliTests(unittest.TestCase):
         self.assertIn("100 x 80", body)
         self.assertIn("Kamera", body)
         self.assertIn("Kilder", body)
+        self.assertIn("<dt>Kart</dt>", body)
+        self.assertIn('href="https://www.google.com/maps/search/?api=1&amp;query=59.9127300,10.7460900"', body)
+        self.assertIn('target="_blank"', body)
+        self.assertIn('rel="noopener"', body)
         self.assertIn("<dt>Steder</dt>", body)
         self.assertIn(f'href="/geo/area/{cells["h3_res5"]}"', body)
         self.assertIn(f'href="/geo/area/{cells["h3_res9"]}"', body)
@@ -1008,6 +1012,8 @@ class CliTests(unittest.TestCase):
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
 
         self.assertNotIn("<dt>Steder</dt>", body)
+        self.assertNotIn("<dt>Kart</dt>", body)
+        self.assertNotIn("google.com/maps", body)
         self.assertNotIn("/geo/area/", body)
 
     def test_run_server_item_page_has_delete_button(self) -> None:

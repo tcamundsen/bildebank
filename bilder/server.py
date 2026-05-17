@@ -618,7 +618,7 @@ def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
 
 FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
-    "size_bytes, view_rotation_degrees, h3_res5, h3_res6, h3_res7, h3_res8, h3_res9"
+    "size_bytes, view_rotation_degrees, gps_lat, gps_lon, h3_res5, h3_res6, h3_res7, h3_res8, h3_res9"
 )
 ITEM_DATE_ORDER_SQL = db.BROWSER_DATE_ORDER_SQL
 ITEM_ORDER_SQL = f"{ITEM_DATE_ORDER_SQL}, target_path_key"
@@ -1673,7 +1673,7 @@ def geo_map_layout(rows: list[Any]) -> list[GeoMapCell]:
                 component.append(neighbor)
         components.append(sorted(component))
 
-    size = 34.0
+    size = 28.0
     component_gap = 120.0
     max_row_width = 980.0
     placed: list[GeoMapCell] = []
@@ -2533,10 +2533,26 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
         rows.append(info_row_html("Kilder", "\n\n".join(sources), multiline=True))
     else:
         rows.append(info_row_html("Kilder", "-"))
+    maps_link = google_maps_link_html(item)
+    if maps_link:
+        rows.append(info_row_html("Kart", maps_link, raw_html=True))
     geo_links = image_geo_area_links_html(target, item)
     if geo_links:
         rows.append(info_row_html("Steder", geo_links, raw_html=True))
     return rows
+
+
+def google_maps_link_html(item: Any) -> str:
+    lat = item["gps_lat"]
+    lon = item["gps_lon"]
+    if lat is None or lon is None:
+        return ""
+    latitude = float(lat)
+    longitude = float(lon)
+    query = urllib.parse.quote(f"{latitude:.7f},{longitude:.7f}", safe=",")
+    url = f"https://www.google.com/maps/search/?api=1&query={query}"
+    label = f"Åpne i Google Maps ({latitude:.7f}, {longitude:.7f})"
+    return f'<a href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
 
 
 def camera_text(camera: Any | None) -> str:
