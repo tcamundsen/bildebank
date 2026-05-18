@@ -39,6 +39,7 @@ from bilder.server import (
     browser_month_items,
     browser_month_navigation,
     date_source_browser_source,
+    empty_source_html,
     geo_area_page_html,
     geo_component_pixel_coordinates,
     geo_index_page_html,
@@ -1359,6 +1360,7 @@ model_name = "test-model"
                 "2024-01",
                 source_month_items(target, mtime_source, "2024-01"),
             )
+            empty_source_disabled_body = empty_source_html(filename_source, face_enabled=False)
             filename_excludes_mtime_item = source_item_by_id(target, filename_source, 2) is None
 
         self.assertIn("Dato fra filnavn", filename_body)
@@ -1368,6 +1370,7 @@ model_name = "test-model"
         self.assertIn("Dato fra mtime", mtime_month_body)
         self.assertIn("/date-source/mtime/item/2", mtime_month_body)
         self.assertNotIn("/date-source/mtime/item/1", mtime_month_body)
+        self.assertNotIn('href="/people"', empty_source_disabled_body)
 
     def test_run_server_month_navigation_tolerates_foreign_path_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

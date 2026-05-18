@@ -324,7 +324,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         if page_mode is None:
             item = first_source_item(self.server.target, source)
             if item is None:
-                self.respond_html(empty_source_html(source))
+                self.respond_html(empty_source_html(source, face_enabled=self.server.face_enabled))
                 return
             self.redirect(source_item_url(source, int(item["id"])))
             return
@@ -2825,12 +2825,15 @@ def empty_person_browser_html(person: str | BrowserSource) -> str:
     return empty_source_html(source)
 
 
-def empty_source_html(source: BrowserSource) -> str:
+def empty_source_html(source: BrowserSource, *, face_enabled: bool = True) -> str:
+    links = ['<a href="/">Til bildebrowser</a>']
+    if face_enabled:
+        links.append('<a href="/people">Personer</a>')
     return page_html(
         source.title,
         f"""
         <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/people">Personer</a></p>
+          <p>{" · ".join(links)}</p>
           <h1>{html.escape(source.title)}</h1>
           <p class="meta">{html.escape(empty_source_message(source))}</p>
         </main>
