@@ -144,6 +144,18 @@ def browser_face_items(
     if include_boxes:
         dimensions = media_cache.image_dimensions(target_path) if media_cache is not None else image_dimensions(target_path)
         orientation = media_cache.image_orientation(target_path) if media_cache is not None else image_orientation(target_path)
+    return browser_face_items_from_metadata(faces, dimensions, orientation, include_boxes=include_boxes)
+
+
+def browser_face_items_from_metadata(
+    faces: object,
+    dimensions,
+    orientation: int = 1,
+    *,
+    include_boxes: bool = True,
+) -> list[dict[str, object]]:
+    if not isinstance(faces, list) or not faces:
+        return []
     items: list[dict[str, object]] = []
     for face in faces:
         if not isinstance(face, dict):

@@ -1859,10 +1859,16 @@ pretrained = "laion2b_s34b_b79k"
                 conn.commit()
             finally:
                 conn.close()
+            cached_image_dimensions(target, target / "2024" / "01" / "IMG_20240102.png")
+            cached_image_orientation(target, target / "2024" / "01" / "IMG_20240102.png")
 
             item = person_item_by_id(target, "Kari", 1)
             self.assertIsNotNone(item)
-            body = person_item_page_html(target, "Kari", item, *adjacent_person_items(target, "Kari", item), person_month_navigation(target, "Kari", item))
+            with (
+                patch("bilder.server.image_dimensions", side_effect=AssertionError("cached dimensions should be used")),
+                patch("bilder.server.image_orientation", side_effect=AssertionError("cached orientation should be used")),
+            ):
+                body = person_item_page_html(target, "Kari", item, *adjacent_person_items(target, "Kari", item), person_month_navigation(target, "Kari", item))
             plain_source = person_browser_source("Kari", include_suggestions=True, show_faces=False)
             plain_item = source_item_by_id(target, plain_source, 1)
             self.assertIsNotNone(plain_item)

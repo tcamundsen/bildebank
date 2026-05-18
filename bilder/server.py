@@ -22,7 +22,7 @@ from .config import AppConfig, load_config
 from .face import add_face_to_person, create_person, normalize_person_name, remove_face_from_person
 from .html_export import (
     FACE_DB_FILENAME,
-    browser_face_items,
+    browser_face_items_from_metadata,
     display_relative_path,
     face_tables_exist,
     format_bytes,
@@ -38,7 +38,7 @@ from .geo import (
     h3_resolution_label,
     predefined_geo_place,
 )
-from .media import camera_info
+from .media import ImageDimensions, camera_info, image_dimensions, image_orientation
 from .media_cache import cached_image_dimensions
 from .openclip import (
     ImageSearchResult,
@@ -834,7 +834,9 @@ def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
 
 FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
-    f"size_bytes, view_rotation_degrees, gps_lat, gps_lon, {db.H3_FILE_COLUMNS_SQL}"
+    "size_bytes, view_rotation_degrees, gps_lat, gps_lon, "
+    "media_width, media_height, media_orientation, media_metadata_mtime_ns, "
+    f"{db.H3_FILE_COLUMNS_SQL}"
 )
 ITEM_DATE_ORDER_SQL = db.BROWSER_DATE_ORDER_SQL
 ITEM_ORDER_SQL = f"{ITEM_DATE_ORDER_SQL}, target_path_key"
@@ -1434,7 +1436,7 @@ def unconfirmed_faces_for_item(target: Path, item: Any) -> list[dict[str, object
         return []
     finally:
         conn.close()
-    return browser_face_items(db.absolute_target_path(target, Path(str(item["target_path"]))), faces)
+    return cached_face_box_items_for_item(target, item, faces)
 
 
 def unconfirmed_face_count_for_item(target: Path, file_id: int) -> int:
@@ -1830,13 +1832,91 @@ def person_faces_for_item(
     finally:
         conn.close()
     face_meta = {int(face["faceId"]): face for face in faces}
-    rendered = browser_face_items(db.absolute_target_path(target, Path(str(item["target_path"]))), faces)
+    rendered = cached_face_box_items_for_item(target, item, faces)
     for face in rendered:
         meta = face_meta.get(int(face["faceId"]))
         if meta is not None:
             face["status"] = meta["status"]
             face["similarity"] = meta["similarity"]
     return rendered
+
+
+def cached_face_box_items_for_item(target: Path, item: Any, faces: list[dict[str, object]]) -> list[dict[str, object]]:
+    dimensions, orientation = cached_face_box_media_metadata(target, item)
+    return browser_face_items_from_metadata(faces, dimensions, orientation)
+
+
+def cached_face_box_media_metadata(target: Path, item: Any) -> tuple[ImageDimensions | None, int]:
+    target_path = db.absolute_target_path(target, Path(str(item["target_path"])))
+    mtime_ns = file_mtime_ns(target_path)
+    cached_dimensions, cached_orientation = face_box_media_metadata_from_item(item, mtime_ns)
+    if cached_orientation is not None:
+        return cached_dimensions, cached_orientation
+
+    dimensions = image_dimensions(target_path)
+    orientation = image_orientation(target_path)
+    update_face_box_media_metadata(target, int(item["id"]), dimensions, orientation, mtime_ns)
+    return dimensions, orientation
+
+
+def face_box_media_metadata_from_item(item: Any, mtime_ns: int | None) -> tuple[ImageDimensions | None, int | None]:
+    cached_mtime = item_field(item, "media_metadata_mtime_ns")
+    if cached_mtime is None or mtime_ns is None or int(cached_mtime) != mtime_ns:
+        return None, None
+    orientation = item_field(item, "media_orientation")
+    if orientation is None:
+        return None, None
+    width = item_field(item, "media_width")
+    height = item_field(item, "media_height")
+    dimensions = None
+    if width is not None and height is not None and int(width) > 0 and int(height) > 0:
+        dimensions = ImageDimensions(int(width), int(height))
+    return dimensions, int(orientation)
+
+
+def item_field(item: Any, key: str) -> Any | None:
+    try:
+        return item[key]
+    except (KeyError, IndexError):
+        return None
+
+
+def file_mtime_ns(path: Path) -> int | None:
+    try:
+        return path.stat().st_mtime_ns
+    except OSError:
+        return None
+
+
+def update_face_box_media_metadata(
+    target: Path,
+    file_id: int,
+    dimensions: ImageDimensions | None,
+    orientation: int,
+    mtime_ns: int | None,
+) -> None:
+    conn = db.connect(target)
+    try:
+        conn.execute(
+            """
+            UPDATE files
+            SET media_width = ?,
+                media_height = ?,
+                media_orientation = ?,
+                media_metadata_mtime_ns = ?
+            WHERE id = ?
+            """,
+            (
+                dimensions.width if dimensions is not None else None,
+                dimensions.height if dimensions is not None else None,
+                orientation,
+                mtime_ns,
+                file_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def person_url(person_name: str) -> str:
