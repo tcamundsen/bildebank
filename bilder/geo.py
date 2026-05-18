@@ -68,6 +68,21 @@ PREDEFINED_GEO_PLACES: tuple[PredefinedGeoPlace, ...] = (
             "843f73dffffffff",
         ),
     ),
+    PredefinedGeoPlace(
+        slug="hadseløya",
+        name="Hadseløya",
+        h3_cells=(
+            "86095876fffffff",
+            "860958397ffffff",
+            "86095839fffffff",
+            "8609582b7ffffff",
+            "8609582a7ffffff",
+            "86095874fffffff",
+            "860958747ffffff",
+            "860958297ffffff",
+            "860958287ffffff",
+        ),
+    ),
 )
 
 
