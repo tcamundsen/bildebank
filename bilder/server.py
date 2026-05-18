@@ -1868,6 +1868,9 @@ def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: in
     child_areas = geo_child_area_items(target, h3_cell=h3_cell, resolution=resolution)
     cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
     content = cards if cards else '<p class="meta">Ingen aktive bilder i dette området.</p>'
+    maps_link = google_maps_link_html(items[0]) if items else ""
+    maps_paragraph = f'<p class="meta">{maps_link}</p>' if maps_link else ""
+    parent_link = geo_parent_area_link_html(target, h3_cell, resolution)
     quoted = urllib.parse.quote(h3_cell, safe="")
     title = place_name or "Sted"
     escaped_name = html.escape(place_name or "")
@@ -1882,7 +1885,8 @@ def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: in
         <main class="shell">
           <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a></p>
           <h1>{html.escape(title)}</h1>
-          <p class="meta">H3-celle {html.escape(h3_cell)}, {h3_resolution_label(resolution)}. Viser opptil {limit} bilder.</p>
+          <p class="meta">H3-celle {html.escape(h3_cell)}, {h3_resolution_label(resolution)}. Viser opptil {limit} bilder.{parent_link}</p>
+          {maps_paragraph}
           <form action="/geo/place-name" method="post" class="geo-filter geo-name-form">
             <input type="hidden" name="h3_cell" value="{html.escape(h3_cell)}">
             <input type="hidden" name="limit" value="{limit}">
@@ -1897,6 +1901,27 @@ def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: in
           <section class="month-grid-server">{content}</section>
         </main>
         """,
+    )
+
+
+def geo_parent_area_link_html(target: Path, h3_cell: str, resolution: int) -> str:
+    if resolution <= min(H3_COLUMNS):
+        return ""
+    import h3
+
+    parent_resolution = resolution - 1
+    parent_cell = h3.cell_to_parent(h3_cell, parent_resolution)
+    conn = db.connect(target)
+    try:
+        parent_name = db.geo_place_name(conn, parent_cell)
+    finally:
+        conn.close()
+    url = "/geo/area/" + urllib.parse.quote(parent_cell, safe="")
+    label = parent_name or parent_cell
+    return (
+        " "
+        f'<a href="{html.escape(url)}">Større område: H3-{parent_resolution} '
+        f"{html.escape(label)}</a>"
     )
 
 

@@ -778,6 +778,7 @@ class CliTests(unittest.TestCase):
                     gps_error=None,
                 )
                 conn.execute("UPDATE files SET h3_res7 = ? WHERE id = 4", (neighbor_cell,))
+                db.set_geo_place_name(conn, cells["h3_res6"], "Oslo-området")
                 conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 2")
                 conn.commit()
             finally:
@@ -800,7 +801,12 @@ class CliTests(unittest.TestCase):
         self.assertIn(">1</text>", map_body)
         self.assertIn("Med GPS", stats_body)
         self.assertIn("IMG_20240102.png", area_body)
+        self.assertIn('href="https://www.google.com/maps/search/?api=1&amp;query=59.9127300,10.7460900"', area_body)
+        self.assertIn("Åpne i Google Maps", area_body)
         self.assertIn("oppløsning 7, ca. 5 km²", area_body)
+        self.assertIn(f'href="/geo/area/{cells["h3_res6"]}"', area_body)
+        self.assertIn("Større område: H3-6 Oslo-området", area_body)
+        self.assertNotIn(f"Større område: H3-6 {cells['h3_res6']}", area_body)
         self.assertNotIn("IMG_20240103.png", area_body)
         self.assertIn("IMG_20240104.png", missing_body)
 
