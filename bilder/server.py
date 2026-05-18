@@ -413,7 +413,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
 
     def respond_geo(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
-        resolution = positive_int_param(params, "resolution", DEFAULT_GEO_RESOLUTION)
+        resolution = nonnegative_int_param(params, "resolution", DEFAULT_GEO_RESOLUTION)
         min_count = positive_int_param(params, "min_count", DEFAULT_GEO_MIN_COUNT)
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
         if resolution not in H3_COLUMNS:
@@ -423,7 +423,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
 
     def respond_geo_map(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
-        resolution = positive_int_param(params, "resolution", DEFAULT_GEO_RESOLUTION)
+        resolution = nonnegative_int_param(params, "resolution", DEFAULT_GEO_RESOLUTION)
         min_count = positive_int_param(params, "min_count", DEFAULT_GEO_MIN_COUNT)
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
         if resolution not in H3_COLUMNS:
@@ -1710,7 +1710,7 @@ def geo_index_page_html(
           <h1>Steder</h1>
           {geo_stats_summary_html(stats)}
           {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
-          <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder.</p>
+          <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder. {len(areas)} steder funnet.</p>
           {content}
         </main>
         """,
