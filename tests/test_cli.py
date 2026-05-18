@@ -381,6 +381,18 @@ class CliTests(unittest.TestCase):
         self.program_root_patcher.stop()
         self.program_root_tempdir.cleanup()
 
+    def enable_face_recognition_config(self) -> None:
+        (self.program_root / "bildebank-config.toml").write_text(
+            """
+[face_recognition]
+enabled = true
+provider = "cpu"
+model_root = ".bildebank-insightface"
+model_name = "test-model"
+""",
+            encoding="utf-8",
+        )
+
     def test_main_without_arguments_shows_help(self) -> None:
         code, stdout, stderr = capture_cli([])
 
@@ -586,7 +598,7 @@ class CliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
             init_database(target)
-            server = SimpleNamespace(target=target, config=OpenClipConfig())
+            server = SimpleNamespace(target=target, config=AppConfig(openclip=OpenClipConfig()), face_enabled=True)
             body = index_html(server)
 
         self.assertIn("Bildebrowser", body)
@@ -623,7 +635,7 @@ class CliTests(unittest.TestCase):
 
             server = SimpleNamespace(
                 target=target,
-                config=config,
+                config=AppConfig(openclip=config),
                 search_cache=SimpleNamespace(text_vector=lambda query: [1.0, 0.0]),
             )
 
@@ -795,6 +807,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("/geo/map?resolution=7&min_count=1&limit=10", index_body)
         self.assertIn("oppløsning 7, ca. 5 km²", index_body)
         self.assertIn("Heksagonkart", map_body)
+        self.assertIn('<select name="resolution">', map_body)
+        self.assertIn('<option value="7" selected>H3-7 (ca. 5 km²)</option>', map_body)
         self.assertIn(f'href="/geo/area/{cells["h3_res7"]}"', map_body)
         self.assertIn(f'href="/geo/area/{neighbor_cell}"', map_body)
         self.assertIn("geo-hex", map_body)
@@ -1431,6 +1445,13 @@ class CliTests(unittest.TestCase):
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            disabled_body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+                face_enabled=False,
+            )
 
         self.assertNotIn("1 filer, 1 måneder", body)
         self.assertIn('class="person-link" href="/person/Kari">Kari</a>', body)
@@ -1445,6 +1466,10 @@ class CliTests(unittest.TestCase):
         self.assertIn('data-person-name="Kari"', body)
         self.assertIn('data-person-name="Ola Nordmann"', body)
         self.assertNotIn('data-face-id="1"', body)
+        self.assertNotIn('href="/people"', disabled_body)
+        self.assertNotIn('href="/person/Kari"', disabled_body)
+        self.assertNotIn("Ansikter i bildet", disabled_body)
+        self.assertNotIn("Ny person", disabled_body)
 
     def test_run_server_api_adds_face_to_person(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3707,6 +3732,13 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("Ansiktsgjenkjenning er av", stderr)
             self.assertFalse((target / FACE_DB_FILENAME).exists())
 
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Ansiktsgjenkjenning er av", stderr)
+            self.assertFalse((target / FACE_DB_FILENAME).exists())
+
     def test_face_scan_writes_faces_to_separate_database(self) -> None:
         class FakeFace:
             bbox = [1.0, 2.0, 11.0, 22.0]
@@ -3730,16 +3762,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             source = root / "source"
             source.mkdir()
             (source / "IMG_20240102.jpg").write_bytes(b"image")
-            (self.program_root / "bildebank-config.toml").write_text(
-                """
-[face_recognition]
-enabled = true
-provider = "cpu"
-model_root = ".bildebank-insightface"
-model_name = "test-model"
-""",
-                encoding="utf-8",
-            )
+            self.enable_face_recognition_config()
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
@@ -3820,16 +3843,7 @@ model_name = "test-model"
             source.mkdir()
             bad_image = source / "bad.jpg"
             bad_image.write_bytes(b"image")
-            (self.program_root / "bildebank-config.toml").write_text(
-                """
-[face_recognition]
-enabled = true
-provider = "cpu"
-model_root = ".bildebank-insightface"
-model_name = "test-model"
-""",
-                encoding="utf-8",
-            )
+            self.enable_face_recognition_config()
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
@@ -3863,6 +3877,7 @@ model_name = "test-model"
             image_path = target / "2024" / "01" / "IMG_20240102.jpg"
             relative_image_path = Path("2024/01/IMG_20240102.jpg")
 
+            self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
             image_path.parent.mkdir(parents=True)
             image_path.write_bytes(b"image")
@@ -3924,6 +3939,7 @@ model_name = "test-model"
             image_path = target / "2021" / "08" / "2019-1-6-1.jpg"
             relative_image_path = Path("2021/08/2019-1-6-1.jpg")
 
+            self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
             image_path.parent.mkdir(parents=True)
             image_path.write_bytes(minimal_png(640, 480))
@@ -3977,6 +3993,7 @@ model_name = "test-model"
             image_path = target / "2024" / "01" / "IMG_20240102.png"
             relative_image_path = Path("2024/01/IMG_20240102.png")
 
+            self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
             image_path.parent.mkdir(parents=True)
             image_path.write_bytes(minimal_png(640, 480))
@@ -4014,6 +4031,7 @@ model_name = "test-model"
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
+            self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
             first = target / "first.jpg"
             second = target / "second.jpg"
@@ -4095,6 +4113,7 @@ model_name = "test-model"
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
+            self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "face-report"])
@@ -4124,16 +4143,7 @@ model_name = "test-model"
             source = root / "source"
             source.mkdir()
             (source / "IMG_20240102.jpg").write_bytes(b"image")
-            (self.program_root / "bildebank-config.toml").write_text(
-                """
-[face_recognition]
-enabled = true
-provider = "cpu"
-model_root = ".bildebank-insightface"
-model_name = "test-model"
-""",
-                encoding="utf-8",
-            )
+            self.enable_face_recognition_config()
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
@@ -4277,6 +4287,7 @@ model_name = "test-model"
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
+            self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
             face_db = target / FACE_DB_FILENAME
             face_db.write_bytes(b"face-data")
@@ -4299,6 +4310,7 @@ model_name = "test-model"
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
+            self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
             conn = sqlite3.connect(target / FACE_DB_FILENAME)
             try:

@@ -792,6 +792,23 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "run-server":
         return run_server_command(target, host=args.host, port=args.port, browser=not args.no_browser)
 
+    face_commands = {
+        "face-scan",
+        "face-report",
+        "face-person-create",
+        "face-person-add-face",
+        "face-person-remove-face",
+        "face-person-delete",
+        "face-person-list",
+        "face-suggest",
+        "make-face-browser",
+        "make-person-browser",
+        "make-people-browser",
+        "face-reset",
+    }
+    if args.command in face_commands:
+        require_face_enabled(load_config(program_repo_root()).face_recognition.enabled)
+
     if args.command == "face-scan":
         return run_face_scan(target, limit=args.limit, show_model_output=args.show_model_output)
 
@@ -1509,7 +1526,7 @@ def run_image_search(target: Path, *, query: str, limit: int, browser: bool = Tr
 
 
 def run_server_command(target: Path, *, host: str, port: int, browser: bool = True) -> int:
-    config = load_config(program_repo_root()).openclip
+    config = load_config(program_repo_root())
     print("Starter Bildebank-server. Dette kan ta noen sekunder.")
     print(f"Bildesamling: {target}")
 

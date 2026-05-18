@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import __version__, db
-from .config import OpenClipConfig, load_config
+from .config import AppConfig, load_config
 from .face import add_face_to_person, create_person, normalize_person_name, remove_face_from_person
 from .html_export import (
     FACE_DB_FILENAME,
@@ -79,7 +79,7 @@ class GeoMapCell:
 
 
 class OpenClipSearchCache:
-    def __init__(self, config: OpenClipConfig) -> None:
+    def __init__(self, config: AppConfig) -> None:
         self.config = config
         self._lock = threading.Lock()
         self._model: Any | None = None
@@ -88,7 +88,7 @@ class OpenClipSearchCache:
     def text_vector(self, query: str) -> list[float]:
         with self._lock:
             if self._model is None or self._tokenizer is None:
-                self._model, self._tokenizer = load_text_model(self.config)
+                self._model, self._tokenizer = load_text_model(self.config.openclip)
             return text_embedding(self._model, self._tokenizer, query)
 
     @property
@@ -97,11 +97,15 @@ class OpenClipSearchCache:
 
 
 class BildebankServer(ThreadingHTTPServer):
-    def __init__(self, address: tuple[str, int], target: Path, config: OpenClipConfig) -> None:
+    def __init__(self, address: tuple[str, int], target: Path, config: AppConfig) -> None:
         super().__init__(address, BildebankRequestHandler)
         self.target = target
         self.config = config
         self.search_cache = OpenClipSearchCache(config)
+
+    @property
+    def face_enabled(self) -> bool:
+        return self.config.face_recognition.enabled
 
 
 class BildebankRequestHandler(BaseHTTPRequestHandler):
@@ -114,6 +118,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 self.respond_browser_root()
                 return
             if parsed.path == "/people":
+                if not self.server.face_enabled:
+                    self.respond_text("Ansiktsgjenkjenning er av.", status=HTTPStatus.NOT_FOUND)
+                    return
                 self.respond_html(people_page_html(self.server.target))
                 return
             if parsed.path == "/app":
@@ -147,6 +154,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 self.respond_date_source(parsed.path.removeprefix("/date-source/"))
                 return
             if parsed.path.startswith("/person/"):
+                if not self.server.face_enabled:
+                    self.respond_text("Ansiktsgjenkjenning er av.", status=HTTPStatus.NOT_FOUND)
+                    return
                 self.respond_person(parsed.path.removeprefix("/person/"))
                 return
             if parsed.path == "/search":
@@ -173,12 +183,21 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 self.respond_set_geo_place_name()
                 return
             if parsed.path == "/api/face-person-add-face":
+                if not self.server.face_enabled:
+                    self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
+                    return
                 self.respond_add_face_to_person()
                 return
             if parsed.path == "/api/face-person-remove-face":
+                if not self.server.face_enabled:
+                    self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
+                    return
                 self.respond_remove_face_from_person()
                 return
             if parsed.path == "/api/face-person-create-and-add-face":
+                if not self.server.face_enabled:
+                    self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
+                    return
                 self.respond_create_person_and_add_face()
                 return
             if parsed.path == "/api/item-rotate":
@@ -235,7 +254,17 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         previous_item, next_item = adjacent_source_items(self.server.target, source, item)
         month_nav = source_month_navigation(self.server.target, source, item)
-        self.respond_html(source_item_page_html(self.server.target, source, item, previous_item, next_item, month_nav))
+        self.respond_html(
+            source_item_page_html(
+                self.server.target,
+                source,
+                item,
+                previous_item,
+                next_item,
+                month_nav,
+                face_enabled=self.server.face_enabled,
+            )
+        )
 
     def respond_month(self, raw_month: str) -> None:
         month_key = urllib.parse.unquote(raw_month).strip()
@@ -244,7 +273,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         source = all_browser_source()
         items = source_month_items(self.server.target, source, month_key)
-        self.respond_html(source_month_page_html(self.server.target, source, month_key, items))
+        self.respond_html(source_month_page_html(self.server.target, source, month_key, items, face_enabled=self.server.face_enabled))
 
     def respond_person(self, raw_path: str) -> None:
         raw_name, person_mode, show_faces, page_mode, raw_value = parse_person_path(raw_path)
@@ -281,7 +310,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
                 return
             items = source_month_items(self.server.target, source, month_key)
-            self.respond_html(source_month_page_html(self.server.target, source, month_key, items))
+            self.respond_html(source_month_page_html(self.server.target, source, month_key, items, face_enabled=self.server.face_enabled))
             return
         self.respond_text("Ugyldig personside.", status=HTTPStatus.NOT_FOUND)
 
@@ -315,7 +344,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
                 return
             items = source_month_items(self.server.target, source, month_key)
-            self.respond_html(source_month_page_html(self.server.target, source, month_key, items))
+            self.respond_html(source_month_page_html(self.server.target, source, month_key, items, face_enabled=self.server.face_enabled))
             return
         self.respond_text("Ugyldig datokildeside.", status=HTTPStatus.NOT_FOUND)
 
@@ -1484,6 +1513,7 @@ def search_server_images(server: BildebankServer, *, query: str, limit: int) -> 
     clean_query = query.strip()
     if not clean_query:
         raise ValueError("Søketekst kan ikke være tom.")
+    openclip_config = server.config.openclip
     conn = connect_openclip_db(server.target)
     try:
         rows = list(
@@ -1493,7 +1523,7 @@ def search_server_images(server: BildebankServer, *, query: str, limit: int) -> 
                 FROM image_embeddings
                 WHERE model_name = ? AND pretrained = ?
                 """,
-                (server.config.model_name, server.config.pretrained),
+                (openclip_config.model_name, openclip_config.pretrained),
             )
         )
         if not rows:
@@ -1512,7 +1542,7 @@ def search_server_images(server: BildebankServer, *, query: str, limit: int) -> 
             reverse=True,
             key=lambda item: item[0],
         )[:limit]
-        run_id = create_search_run(conn, clean_query, server.config, limit)
+        run_id = create_search_run(conn, clean_query, openclip_config, limit)
         results: list[ImageSearchResult] = []
         for index, (score, file_id, target_path, target_path_key) in enumerate(scored, start=1):
             conn.execute(
@@ -1544,17 +1574,18 @@ def index_html(server: BildebankServer, *, message: str = "") -> str:
         return empty_browser_html()
     previous_item, next_item = adjacent_browser_items(server.target, item)
     month_nav = browser_month_navigation(server.target, item)
-    return item_page_html(server.target, item, previous_item, next_item, month_nav)
+    return item_page_html(server.target, item, previous_item, next_item, month_nav, face_enabled=server.face_enabled)
 
 
 def search_start_html(server: BildebankServer, *, message: str = "") -> str:
+    openclip_config = server.config.openclip
     return page_html(
         "Bildesøk",
         f"""
         <main class="shell">
           <p><a href="/">Til bildebrowser</a></p>
           <h1>Bildesøk</h1>
-          <p class="meta">OpenCLIP {html.escape(server.config.model_name)} ({html.escape(server.config.pretrained)})</p>
+          <p class="meta">OpenCLIP {html.escape(openclip_config.model_name)} ({html.escape(openclip_config.pretrained)})</p>
           {message_html(message)}
           {search_form("")}
         </main>
@@ -1642,7 +1673,7 @@ def geo_map_page_html(
           <p><a href="/">Til bildebrowser</a> · <a href="/geo?resolution={resolution}&min_count={min_count}&limit={limit}">Steder</a></p>
           <h1>Heksagonkart</h1>
           <form action="/geo/map" method="get" class="geo-filter">
-            <label>H3-oppløsning <input name="resolution" value="{resolution}" inputmode="numeric"></label>
+            <label>H3-oppløsning {h3_resolution_select_html(resolution)}</label>
             <label>Minst antall <input name="min_count" value="{min_count}" inputmode="numeric"></label>
             <label>Maks steder <input name="limit" value="{limit}" inputmode="numeric"></label>
             <button type="submit">Vis</button>
@@ -1652,6 +1683,14 @@ def geo_map_page_html(
         </main>
         """,
     )
+
+
+def h3_resolution_select_html(selected_resolution: int) -> str:
+    options = "\n".join(
+        f'<option value="{resolution}"{" selected" if resolution == selected_resolution else ""}>H3-{resolution} ({html.escape(h3_area_label(resolution))})</option>'
+        for resolution in sorted(H3_COLUMNS)
+    )
+    return f'<select name="resolution">{options}</select>'
 
 
 def geo_map_layout(rows: list[Any]) -> list[GeoMapCell]:
@@ -2068,8 +2107,10 @@ def item_page_html(
     previous_item: Any | None,
     next_item: Any | None,
     month_nav: dict[str, str | None],
+    *,
+    face_enabled: bool = True,
 ) -> str:
-    return source_item_page_html(target, all_browser_source(), item, previous_item, next_item, month_nav)
+    return source_item_page_html(target, all_browser_source(), item, previous_item, next_item, month_nav, face_enabled=face_enabled)
 
 
 def source_item_page_html(
@@ -2079,6 +2120,8 @@ def source_item_page_html(
     previous_item: Any | None,
     next_item: Any | None,
     month_nav: dict[str, str | None],
+    *,
+    face_enabled: bool = True,
 ) -> str:
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
@@ -2090,17 +2133,17 @@ def source_item_page_html(
         next_item,
         include_info_button=True,
         rotation_buttons=rotation_buttons_html(source, item),
-        unconfirm_buttons=unconfirm_face_buttons_html(target, source, item),
+        unconfirm_buttons=unconfirm_face_buttons_html(target, source, item) if face_enabled else "",
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
-    people = people_links_html(confirmed_people_for_file(target, int(item["id"])))
-    unconfirmed_faces = unconfirmed_faces_for_item(target, item)
-    all_people = registered_people(target)
-    faces_button = faces_button_html(unconfirmed_faces) if source.person_name is None else ""
-    faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if source.person_name is None else ""
-    action_links = source_action_links_html(source, item)
+    people = people_links_html(confirmed_people_for_file(target, int(item["id"]))) if face_enabled else ""
+    unconfirmed_faces = unconfirmed_faces_for_item(target, item) if face_enabled else []
+    all_people = registered_people(target) if face_enabled else []
+    faces_button = faces_button_html(unconfirmed_faces) if face_enabled and source.person_name is None else ""
+    faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if face_enabled and source.person_name is None else ""
+    action_links = source_action_links_html(source, item, face_enabled=face_enabled)
     info_overlay = image_info_overlay_html(target, item)
-    duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item)
+    duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item) if face_enabled else ""
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
@@ -2162,15 +2205,16 @@ def confirmed_person_face_count_for_item(target: Path, person_name: str, file_id
         conn.close()
 
 
-def source_top_links_html(source: BrowserSource, item: Any | None = None) -> str:
+def source_top_links_html(source: BrowserSource, item: Any | None = None, *, face_enabled: bool = True) -> str:
     links = [
-        '<a class="server-search-link" href="/people">Personer</a>',
         '<a class="server-search-link" href="/geo">Steder</a>',
     ]
+    if face_enabled:
+        links.insert(0, '<a class="server-search-link" href="/people">Personer</a>')
     if source.date_source is not None:
         all_url = source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/"
         links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">Alle bilder</a>')
-    if source.person_name is not None:
+    if source.person_name is not None and face_enabled:
         all_url = source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/"
         links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">Alle bilder</a>')
         if source.show_faces:
@@ -2208,10 +2252,10 @@ def source_top_links_html(source: BrowserSource, item: Any | None = None) -> str
     return "\n".join(links)
 
 
-def source_action_links_html(source: BrowserSource, item: Any | None = None) -> str:
+def source_action_links_html(source: BrowserSource, item: Any | None = None, *, face_enabled: bool = True) -> str:
     return f"""
     <div class="top-actions">
-      {source_top_links_html(source, item)}
+      {source_top_links_html(source, item, face_enabled=face_enabled)}
       <a class="server-search-link" href="/search">Bildesøk</a>
       <a class="server-search-link" href="/app">App</a>
     </div>
@@ -2742,12 +2786,19 @@ def month_page_html(target: Path, month_key: str, items: list[Any]) -> str:
     return source_month_page_html(target, all_browser_source(), month_key, items)
 
 
-def source_month_page_html(target: Path, source: BrowserSource, month_key: str, items: list[Any]) -> str:
+def source_month_page_html(
+    target: Path,
+    source: BrowserSource,
+    month_key: str,
+    items: list[Any],
+    *,
+    face_enabled: bool = True,
+) -> str:
     cards = "\n".join(source_month_item_html(target, source, item) for item in items)
     previous_item = items[-1] if items else None
     next_item = items[0] if items else None
     controls = source_controls_html(source, source_month_navigation_for_key(target, source, month_key), previous_item, next_item)
-    action_links = source_action_links_html(source)
+    action_links = source_action_links_html(source, face_enabled=face_enabled)
     return page_html(
         f"{source.title}: {month_key}",
         f"""
@@ -2929,7 +2980,7 @@ def page_html(title: str, body: str) -> str:
     h1 {{ margin: 0 0 8px; font-size: 28px; }}
     .meta {{ color: var(--muted); margin: 0 0 18px; }}
     .search {{ display: grid; grid-template-columns: minmax(0, 1fr) 90px auto; gap: 8px; margin: 18px 0; }}
-    input, button {{
+    input, select, button {{
       font: inherit;
       padding: 10px 12px;
       border: 1px solid var(--border);
@@ -3492,7 +3543,7 @@ def page_html(title: str, body: str) -> str:
 
 def run_server(
     target: Path,
-    config: OpenClipConfig,
+    config: AppConfig,
     *,
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
