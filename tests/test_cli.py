@@ -1433,22 +1433,29 @@ pretrained = "laion2b_s34b_b79k"
 
             filename_source = date_source_browser_source("filename")
             mtime_source = date_source_browser_source("mtime")
-            filename_item = source_item_by_id(target, filename_source, 1)
-            mtime_item = source_item_by_id(target, mtime_source, 2)
+            with patch("bilder.server.source_items", side_effect=AssertionError("source_items should not be used")):
+                filename_item = source_item_by_id(target, filename_source, 1)
+                mtime_item = source_item_by_id(target, mtime_source, 2)
+                self.assertIsNotNone(filename_item)
+                self.assertIsNotNone(mtime_item)
+                filename_adjacent = adjacent_source_items(target, filename_source, filename_item)
+                filename_month_navigation = source_month_navigation(target, filename_source, filename_item)
+                mtime_month_items = source_month_items(target, mtime_source, "2024-01")
+                filename_excludes_mtime_item = source_item_by_id(target, filename_source, 2) is None
             self.assertIsNotNone(filename_item)
             self.assertIsNotNone(mtime_item)
             filename_body = source_item_page_html(
                 target,
                 filename_source,
                 filename_item,
-                *adjacent_source_items(target, filename_source, filename_item),
-                source_month_navigation(target, filename_source, filename_item),
+                *filename_adjacent,
+                filename_month_navigation,
             )
             mtime_month_body = source_month_page_html(
                 target,
                 mtime_source,
                 "2024-01",
-                source_month_items(target, mtime_source, "2024-01"),
+                mtime_month_items,
             )
             all_month_disabled_body = source_month_page_html(
                 target,
@@ -1459,7 +1466,6 @@ pretrained = "laion2b_s34b_b79k"
                 openclip_enabled=False,
             )
             empty_source_disabled_body = empty_source_html(filename_source, face_enabled=False, openclip_enabled=False)
-            filename_excludes_mtime_item = source_item_by_id(target, filename_source, 2) is None
 
         self.assertIn("Dato fra filnavn", filename_body)
         self.assertIn("/date-source/filename/item/3", filename_body)

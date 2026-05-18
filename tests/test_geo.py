@@ -34,6 +34,7 @@ from bilder.server import (
     source_item_by_id,
     source_item_url,
     source_month_items,
+    source_month_navigation,
     source_month_page_html,
 )
 
@@ -323,14 +324,18 @@ class GeoTests(unittest.TestCase):
             set_file_h3_cells(target, first_id, {column: h3_cell})
             set_file_h3_cells(target, second_id, {column: h3_cell})
             source = geo_place_browser_source(place)
-            item = source_item_by_id(target, source, first_id)
+            with patch("bilder.server.source_items", side_effect=AssertionError("source_items should not be used")):
+                item = source_item_by_id(target, source, first_id)
+                assert item is not None
+                previous_item, next_item = adjacent_source_items(target, source, item)
+                month_items = source_month_items(target, source, "2024-01")
+                month_navigation = source_month_navigation(target, source, item)
             assert item is not None
-            previous_item, next_item = adjacent_source_items(target, source, item)
-            month_items = source_month_items(target, source, "2024-01")
             month_html = source_month_page_html(target, source, "2024-01", month_items)
 
         self.assertIsNone(previous_item)
         self.assertEqual(int(next_item["id"]), second_id)
+        self.assertEqual(month_navigation["previous_month"], None)
         self.assertEqual(source_item_url(source, first_id), "/geo/place/kreta/item/" + str(first_id))
         self.assertIn('href="/geo/place/kreta/item/', month_html)
         self.assertIn("Månedsoversikt: 2024-01", month_html)

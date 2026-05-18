@@ -874,6 +874,23 @@ def is_filtered_source(source: BrowserSource) -> bool:
     return source.person_name is not None or source.date_source is not None or source.geo_place_slug is not None
 
 
+def source_has_sql_filter(source: BrowserSource) -> bool:
+    return source.date_source is not None or source.geo_place_slug is not None
+
+
+def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[str, ...]]:
+    if source.date_source is not None:
+        if not valid_browser_date_source(source.date_source):
+            raise ValueError("Ugyldig datokilde.")
+        return "date_source = ?", (source.date_source,)
+    if source.geo_place_slug is not None:
+        place = predefined_geo_place(source.geo_place_slug)
+        if place is None:
+            raise ValueError("Ukjent forhåndsdefinert sted.")
+        return db.geo_place_where_clause(geo_place_cells_by_column(place))
+    raise ValueError("Kilden har ikke SQL-filter.")
+
+
 def source_item_url(source: BrowserSource, file_id: int) -> str:
     if is_filtered_source(source):
         return f"{source.root_url}/item/{file_id}"
@@ -892,10 +909,34 @@ def first_browser_item(target: Path) -> Any | None:
 
 
 def first_source_item(target: Path, source: BrowserSource) -> Any | None:
+    if source_has_sql_filter(source):
+        return first_sql_filtered_source_item(target, source)
+    if source.person_name is not None:
+        items = source_items(target, source)
+        return items[0] if items else None
     if not is_filtered_source(source):
         return first_unfiltered_source_item(target)
     items = source_items(target, source)
     return items[0] if items else None
+
+
+def first_sql_filtered_source_item(target: Path, source: BrowserSource) -> Any | None:
+    where_sql, params = source_sql_filter(source)
+    conn = db.connect(target)
+    try:
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND ({where_sql})
+            ORDER BY {ITEM_ORDER_SQL}
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+    finally:
+        conn.close()
 
 
 def first_unfiltered_source_item(target: Path) -> Any | None:
@@ -919,7 +960,23 @@ def browser_item_by_id(target: Path, file_id: int) -> Any | None:
 
 
 def source_item_by_id(target: Path, source: BrowserSource, file_id: int) -> Any | None:
-    if is_filtered_source(source):
+    if source_has_sql_filter(source):
+        where_sql, params = source_sql_filter(source)
+        conn = db.connect(target)
+        try:
+            return conn.execute(
+                f"""
+                SELECT {FILE_COLUMNS}
+                FROM files
+                WHERE deleted_at IS NULL
+                  AND id = ?
+                  AND ({where_sql})
+                """,
+                (file_id, *params),
+            ).fetchone()
+        finally:
+            conn.close()
+    if source.person_name is not None:
         return next((item for item in source_items(target, source) if int(item["id"]) == file_id), None)
     conn = db.connect(target)
     try:
@@ -940,7 +997,9 @@ def adjacent_browser_items(target: Path, item: Any) -> tuple[Any | None, Any | N
 
 
 def adjacent_source_items(target: Path, source: BrowserSource, item: Any) -> tuple[Any | None, Any | None]:
-    if is_filtered_source(source):
+    if source_has_sql_filter(source):
+        return adjacent_sql_filtered_source_items(target, source, item)
+    if source.person_name is not None:
         return adjacent_items_from_list(source_items(target, source), item)
     order_key = item_order_key(item)
     conn = db.connect(target)
@@ -972,6 +1031,40 @@ def adjacent_source_items(target: Path, source: BrowserSource, item: Any) -> tup
         conn.close()
 
 
+def adjacent_sql_filtered_source_items(target: Path, source: BrowserSource, item: Any) -> tuple[Any | None, Any | None]:
+    where_sql, params = source_sql_filter(source)
+    order_key = item_order_key(item)
+    conn = db.connect(target)
+    try:
+        previous_item = conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND ({where_sql})
+              AND ({ITEM_DATE_ORDER_SQL}, target_path_key) < (?, ?)
+            ORDER BY {ITEM_DATE_ORDER_SQL} DESC, target_path_key DESC
+            LIMIT 1
+            """,
+            (*params, *order_key),
+        ).fetchone()
+        next_item = conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND ({where_sql})
+              AND ({ITEM_DATE_ORDER_SQL}, target_path_key) > (?, ?)
+            ORDER BY {ITEM_ORDER_SQL}
+            LIMIT 1
+            """,
+            (*params, *order_key),
+        ).fetchone()
+        return previous_item, next_item
+    finally:
+        conn.close()
+
+
 def item_order_key(item: Any) -> tuple[str, str]:
     taken_date = str(item["taken_date"] or "")
     if not re.match(r"^\d{4}-\d{2}-\d{2}", taken_date):
@@ -993,7 +1086,9 @@ def browser_month_keys(target: Path) -> list[str]:
 
 
 def source_month_keys(target: Path, source: BrowserSource) -> list[str]:
-    if is_filtered_source(source):
+    if source_has_sql_filter(source):
+        return sql_filtered_source_month_keys(target, source)
+    if source.person_name is not None:
         keys = {month_key_for_item(target, item) for item in source_items(target, source)}
         return sorted(key for key in keys if valid_month_key(key))
     db_path = db.db_path_for_target(target)
@@ -1019,6 +1114,26 @@ def cached_browser_month_keys(target_path: str, db_mtime_ns: int) -> tuple[str, 
             """
         )
         return tuple(str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"])))
+    finally:
+        conn.close()
+
+
+def sql_filtered_source_month_keys(target: Path, source: BrowserSource) -> list[str]:
+    where_sql, params = source_sql_filter(source)
+    conn = db.connect(target)
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT substr(target_path, 1, 4) || '-' || substr(target_path, 6, 2) AS month_key
+            FROM files
+            WHERE deleted_at IS NULL
+              AND ({where_sql})
+              AND target_path GLOB '[0-9][0-9][0-9][0-9]/[0-9][0-9]/*'
+            ORDER BY month_key
+            """,
+            params,
+        )
+        return [str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"]))]
     finally:
         conn.close()
 
@@ -1611,9 +1726,36 @@ def person_month_items(target: Path, person_name: str, month_key: str) -> list[A
 
 
 def source_month_items(target: Path, source: BrowserSource, month_key: str) -> list[Any]:
-    if is_filtered_source(source):
+    if source_has_sql_filter(source):
+        return sql_filtered_source_month_items(target, source, month_key)
+    if source.person_name is not None:
         return [item for item in source_items(target, source) if month_key_for_item(target, item) == month_key]
     return browser_month_items(target, month_key)
+
+
+def sql_filtered_source_month_items(target: Path, source: BrowserSource, month_key: str) -> list[Any]:
+    if not valid_month_key(month_key):
+        return []
+    where_sql, params = source_sql_filter(source)
+    year, month = month_key.split("-", 1)
+    path_glob = f"{year}/{month}/*"
+    conn = db.connect(target)
+    try:
+        return list(
+            conn.execute(
+                f"""
+                SELECT {FILE_COLUMNS}
+                FROM files
+                WHERE deleted_at IS NULL
+                  AND ({where_sql})
+                  AND target_path GLOB ?
+                ORDER BY {ITEM_ORDER_SQL}
+                """,
+                (*params, path_glob),
+            )
+        )
+    finally:
+        conn.close()
 
 
 def person_faces_for_item(
