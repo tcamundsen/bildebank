@@ -107,6 +107,10 @@ class BildebankServer(ThreadingHTTPServer):
     def face_enabled(self) -> bool:
         return self.config.face_recognition.enabled
 
+    @property
+    def openclip_enabled(self) -> bool:
+        return self.config.openclip.enabled
+
 
 class BildebankRequestHandler(BaseHTTPRequestHandler):
     server: BildebankServer
@@ -160,6 +164,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 self.respond_person(parsed.path.removeprefix("/person/"))
                 return
             if parsed.path == "/search":
+                if not self.server.openclip_enabled:
+                    self.respond_text("Tekstbasert bildesøk er av.", status=HTTPStatus.NOT_FOUND)
+                    return
                 params = urllib.parse.parse_qs(parsed.query)
                 query = first_param(params, "q").strip()
                 limit = positive_int_param(params, "limit", DEFAULT_SEARCH_LIMIT)
@@ -241,7 +248,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         source = all_browser_source()
         item = first_source_item(self.server.target, source)
         if item is None:
-            self.respond_html(empty_browser_html())
+            self.respond_html(empty_browser_html(openclip_enabled=self.server.openclip_enabled))
             return
         self.redirect(source_item_url(source, int(item["id"])))
 
@@ -263,6 +270,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 next_item,
                 month_nav,
                 face_enabled=self.server.face_enabled,
+                openclip_enabled=self.server.openclip_enabled,
             )
         )
 
@@ -273,7 +281,16 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         source = all_browser_source()
         items = source_month_items(self.server.target, source, month_key)
-        self.respond_html(source_month_page_html(self.server.target, source, month_key, items, face_enabled=self.server.face_enabled))
+        self.respond_html(
+            source_month_page_html(
+                self.server.target,
+                source,
+                month_key,
+                items,
+                face_enabled=self.server.face_enabled,
+                openclip_enabled=self.server.openclip_enabled,
+            )
+        )
 
     def respond_person(self, raw_path: str) -> None:
         raw_name, person_mode, show_faces, page_mode, raw_value = parse_person_path(raw_path)
@@ -290,7 +307,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         if page_mode is None:
             item = first_source_item(self.server.target, source)
             if item is None:
-                self.respond_html(empty_person_browser_html(source))
+                self.respond_html(empty_person_browser_html(source, openclip_enabled=self.server.openclip_enabled))
                 return
             self.redirect(source_item_url(source, int(item["id"])))
             return
@@ -302,7 +319,18 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             previous_item, next_item = adjacent_source_items(self.server.target, source, item)
             month_nav = source_month_navigation(self.server.target, source, item)
-            self.respond_html(source_item_page_html(self.server.target, source, item, previous_item, next_item, month_nav))
+            self.respond_html(
+                source_item_page_html(
+                    self.server.target,
+                    source,
+                    item,
+                    previous_item,
+                    next_item,
+                    month_nav,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                )
+            )
             return
         if page_mode == "month":
             month_key = urllib.parse.unquote(raw_value).strip()
@@ -310,7 +338,16 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
                 return
             items = source_month_items(self.server.target, source, month_key)
-            self.respond_html(source_month_page_html(self.server.target, source, month_key, items, face_enabled=self.server.face_enabled))
+            self.respond_html(
+                source_month_page_html(
+                    self.server.target,
+                    source,
+                    month_key,
+                    items,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                )
+            )
             return
         self.respond_text("Ugyldig personside.", status=HTTPStatus.NOT_FOUND)
 
@@ -324,7 +361,13 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         if page_mode is None:
             item = first_source_item(self.server.target, source)
             if item is None:
-                self.respond_html(empty_source_html(source, face_enabled=self.server.face_enabled))
+                self.respond_html(
+                    empty_source_html(
+                        source,
+                        face_enabled=self.server.face_enabled,
+                        openclip_enabled=self.server.openclip_enabled,
+                    )
+                )
                 return
             self.redirect(source_item_url(source, int(item["id"])))
             return
@@ -336,7 +379,18 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             previous_item, next_item = adjacent_source_items(self.server.target, source, item)
             month_nav = source_month_navigation(self.server.target, source, item)
-            self.respond_html(source_item_page_html(self.server.target, source, item, previous_item, next_item, month_nav))
+            self.respond_html(
+                source_item_page_html(
+                    self.server.target,
+                    source,
+                    item,
+                    previous_item,
+                    next_item,
+                    month_nav,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                )
+            )
             return
         if page_mode == "month":
             month_key = urllib.parse.unquote(raw_value).strip()
@@ -344,7 +398,16 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
                 return
             items = source_month_items(self.server.target, source, month_key)
-            self.respond_html(source_month_page_html(self.server.target, source, month_key, items, face_enabled=self.server.face_enabled))
+            self.respond_html(
+                source_month_page_html(
+                    self.server.target,
+                    source,
+                    month_key,
+                    items,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                )
+            )
             return
         self.respond_text("Ugyldig datokildeside.", status=HTTPStatus.NOT_FOUND)
 
@@ -1571,10 +1634,18 @@ def index_html(server: BildebankServer, *, message: str = "") -> str:
         return search_start_html(server, message=message)
     item = first_browser_item(server.target)
     if item is None:
-        return empty_browser_html()
+        return empty_browser_html(openclip_enabled=server.openclip_enabled)
     previous_item, next_item = adjacent_browser_items(server.target, item)
     month_nav = browser_month_navigation(server.target, item)
-    return item_page_html(server.target, item, previous_item, next_item, month_nav, face_enabled=server.face_enabled)
+    return item_page_html(
+        server.target,
+        item,
+        previous_item,
+        next_item,
+        month_nav,
+        face_enabled=server.face_enabled,
+        openclip_enabled=server.openclip_enabled,
+    )
 
 
 def search_start_html(server: BildebankServer, *, message: str = "") -> str:
@@ -2088,14 +2159,15 @@ def result_html(target: Path, result: ImageSearchResult) -> str:
     """
 
 
-def empty_browser_html() -> str:
+def empty_browser_html(*, openclip_enabled: bool = True) -> str:
+    search_link = '<p><a href="/search">Bildesøk</a></p>' if openclip_enabled else ""
     return page_html(
         "Bildebrowser",
-        """
+        f"""
         <main class="shell">
           <h1>Bildebrowser</h1>
           <p class="meta">Ingen filer i bildesamlingen.</p>
-          <p><a href="/search">Bildesøk</a></p>
+          {search_link}
         </main>
         """,
     )
@@ -2109,8 +2181,18 @@ def item_page_html(
     month_nav: dict[str, str | None],
     *,
     face_enabled: bool = True,
+    openclip_enabled: bool = True,
 ) -> str:
-    return source_item_page_html(target, all_browser_source(), item, previous_item, next_item, month_nav, face_enabled=face_enabled)
+    return source_item_page_html(
+        target,
+        all_browser_source(),
+        item,
+        previous_item,
+        next_item,
+        month_nav,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
 
 
 def source_item_page_html(
@@ -2122,6 +2204,7 @@ def source_item_page_html(
     month_nav: dict[str, str | None],
     *,
     face_enabled: bool = True,
+    openclip_enabled: bool = True,
 ) -> str:
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
@@ -2141,7 +2224,7 @@ def source_item_page_html(
     all_people = registered_people(target) if face_enabled else []
     faces_button = faces_button_html(unconfirmed_faces) if face_enabled and source.person_name is None else ""
     faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if face_enabled and source.person_name is None else ""
-    action_links = source_action_links_html(source, item, face_enabled=face_enabled)
+    action_links = source_action_links_html(source, item, face_enabled=face_enabled, openclip_enabled=openclip_enabled)
     info_overlay = image_info_overlay_html(target, item)
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item) if face_enabled else ""
     return page_html(
@@ -2252,11 +2335,18 @@ def source_top_links_html(source: BrowserSource, item: Any | None = None, *, fac
     return "\n".join(links)
 
 
-def source_action_links_html(source: BrowserSource, item: Any | None = None, *, face_enabled: bool = True) -> str:
+def source_action_links_html(
+    source: BrowserSource,
+    item: Any | None = None,
+    *,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    search_link = '<a class="server-search-link" href="/search">Bildesøk</a>' if openclip_enabled else ""
     return f"""
     <div class="top-actions">
       {source_top_links_html(source, item, face_enabled=face_enabled)}
-      <a class="server-search-link" href="/search">Bildesøk</a>
+      {search_link}
       <a class="server-search-link" href="/app">App</a>
     </div>
     """
@@ -2272,6 +2362,7 @@ def app_status_page_html(target: Path) -> str:
             ("InsightFace aktivert", yes_no(config.face_recognition.enabled)),
             ("InsightFace installert", yes_no(module_available("insightface"))),
             ("OpenCLIP tilgjengelig", yes_no(module_available("open_clip"))),
+            ("OpenCLIP aktivert", yes_no(config.openclip.enabled)),
             ("OpenCLIP-modell", config.openclip.model_name),
             ("OpenCLIP-pretrained", config.openclip.pretrained),
             ("OpenCLIP-device", config.openclip.device),
@@ -2793,12 +2884,13 @@ def source_month_page_html(
     items: list[Any],
     *,
     face_enabled: bool = True,
+    openclip_enabled: bool = True,
 ) -> str:
     cards = "\n".join(source_month_item_html(target, source, item) for item in items)
     previous_item = items[-1] if items else None
     next_item = items[0] if items else None
     controls = source_controls_html(source, source_month_navigation_for_key(target, source, month_key), previous_item, next_item)
-    action_links = source_action_links_html(source, face_enabled=face_enabled)
+    action_links = source_action_links_html(source, face_enabled=face_enabled, openclip_enabled=openclip_enabled)
     return page_html(
         f"{source.title}: {month_key}",
         f"""
@@ -2820,15 +2912,17 @@ def source_month_page_html(
     )
 
 
-def empty_person_browser_html(person: str | BrowserSource) -> str:
+def empty_person_browser_html(person: str | BrowserSource, *, openclip_enabled: bool = True) -> str:
     source = person if isinstance(person, BrowserSource) else person_browser_source(person, include_suggestions=True)
-    return empty_source_html(source)
+    return empty_source_html(source, openclip_enabled=openclip_enabled)
 
 
-def empty_source_html(source: BrowserSource, *, face_enabled: bool = True) -> str:
+def empty_source_html(source: BrowserSource, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
     links = ['<a href="/">Til bildebrowser</a>']
     if face_enabled:
         links.append('<a href="/people">Personer</a>')
+    if openclip_enabled:
+        links.append('<a href="/search">Bildesøk</a>')
     return page_html(
         source.title,
         f"""

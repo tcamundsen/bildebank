@@ -19,6 +19,7 @@ class FaceRecognitionConfig:
 
 @dataclass(frozen=True)
 class OpenClipConfig:
+    enabled: bool = False
     model_root: Path = Path(".bildebank-openclip")
     model_name: str = "ViT-B-32"
     pretrained: str = "laion2b_s34b_b79k"
@@ -57,6 +58,7 @@ def load_config(repo_root: Path) -> AppConfig:
             model_name=str(face_data.get("model_name", "buffalo_l")),
         ),
         openclip=OpenClipConfig(
+            enabled=bool(openclip_data.get("enabled", False)),
             model_root=openclip_model_root,
             model_name=str(openclip_data.get("model_name", "ViT-B-32")),
             pretrained=str(openclip_data.get("pretrained", "laion2b_s34b_b79k")),

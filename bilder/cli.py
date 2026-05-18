@@ -783,10 +783,10 @@ def run(args: argparse.Namespace) -> int:
             with_coordinates=args.with_coordinates,
         )
 
-    if args.command == "image-scan":
-        return run_image_scan(target, limit=args.limit)
-
-    if args.command == "image-search":
+    if args.command in {"image-scan", "image-search"}:
+        require_openclip_enabled(load_config(program_repo_root()).openclip.enabled)
+        if args.command == "image-scan":
+            return run_image_scan(target, limit=args.limit)
         return run_image_search(target, query=args.query, limit=args.limit, browsers=args.gen_browsers)
 
     if args.command == "run-server":
@@ -1423,6 +1423,7 @@ def run_face_status(target_arg: Path | None = None) -> int:
     print(f"  onnxruntime installert: {module_available('onnxruntime')}")
     print()
     print("Tekstbasert bildesøk:")
+    print(f"  konfigurert: {'på' if config.openclip.enabled else 'av'}")
     print(f"  modellmappe: {config.openclip.model_root}")
     print(f"  modellnavn: {config.openclip.model_name}")
     print(f"  pretrained: {config.openclip.pretrained}")
@@ -1847,6 +1848,14 @@ def require_face_enabled(enabled: bool) -> None:
     if not enabled:
         raise ValueError(
             f"Ansiktsgjenkjenning er av. Sett enabled = true i {CONFIG_FILENAME} "
+            "hvis du vil teste."
+        )
+
+
+def require_openclip_enabled(enabled: bool) -> None:
+    if not enabled:
+        raise ValueError(
+            f"Tekstbasert bildesøk er av. Sett enabled = true under [openclip] i {CONFIG_FILENAME} "
             "hvis du vil teste."
         )
 

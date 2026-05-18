@@ -33,6 +33,7 @@ from bilder.server import (
     adjacent_browser_items,
     adjacent_person_items,
     adjacent_source_items,
+    all_browser_source,
     app_status_page_html,
     BildebankRequestHandler,
     browser_item_by_id,
@@ -394,6 +395,19 @@ model_name = "test-model"
             encoding="utf-8",
         )
 
+    def enable_openclip_config(self) -> None:
+        (self.program_root / "bildebank-config.toml").write_text(
+            """
+[openclip]
+enabled = true
+model_root = ".bildebank-openclip"
+device = "cpu"
+model_name = "ViT-B-32"
+pretrained = "laion2b_s34b_b79k"
+""",
+            encoding="utf-8",
+        )
+
     def test_main_without_arguments_shows_help(self) -> None:
         code, stdout, stderr = capture_cli([])
 
@@ -599,12 +613,25 @@ model_name = "test-model"
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
             init_database(target)
-            server = SimpleNamespace(target=target, config=AppConfig(openclip=OpenClipConfig()), face_enabled=True)
+            server = SimpleNamespace(
+                target=target,
+                config=AppConfig(openclip=OpenClipConfig(enabled=True)),
+                face_enabled=True,
+                openclip_enabled=True,
+            )
             body = index_html(server)
+            disabled_server = SimpleNamespace(
+                target=target,
+                config=AppConfig(openclip=OpenClipConfig(enabled=False)),
+                face_enabled=True,
+                openclip_enabled=False,
+            )
+            disabled_body = index_html(disabled_server)
 
         self.assertIn("Bildebrowser", body)
         self.assertIn("Bildesøk", body)
         self.assertIn("Ingen filer i bildesamlingen", body)
+        self.assertNotIn("Bildesøk", disabled_body)
 
     def test_run_server_image_search_stores_relative_result_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -689,7 +716,7 @@ model_name = "test-model"
             target = Path(tmp) / "target"
             config = AppConfig(
                 face_recognition=FaceRecognitionConfig(enabled=True),
-                openclip=OpenClipConfig(model_name="Test-Model", pretrained="test-weights", device="cpu"),
+                openclip=OpenClipConfig(enabled=True, model_name="Test-Model", pretrained="test-weights", device="cpu"),
             )
 
             with (
@@ -705,6 +732,7 @@ model_name = "test-model"
         self.assertIn("InsightFace aktivert", body)
         self.assertIn("<dd>ja</dd>", body)
         self.assertIn("InsightFace installert", body)
+        self.assertIn("OpenCLIP aktivert", body)
         self.assertIn('href="/date-source/filename">Dato fra filnavn</a>', body)
         self.assertIn('href="/date-source/mtime">Dato fra mtime</a>', body)
         self.assertIn("OpenCLIP tilgjengelig", body)
@@ -1360,7 +1388,15 @@ model_name = "test-model"
                 "2024-01",
                 source_month_items(target, mtime_source, "2024-01"),
             )
-            empty_source_disabled_body = empty_source_html(filename_source, face_enabled=False)
+            all_month_disabled_body = source_month_page_html(
+                target,
+                all_browser_source(),
+                "2024-01",
+                browser_month_items(target, "2024-01"),
+                face_enabled=False,
+                openclip_enabled=False,
+            )
+            empty_source_disabled_body = empty_source_html(filename_source, face_enabled=False, openclip_enabled=False)
             filename_excludes_mtime_item = source_item_by_id(target, filename_source, 2) is None
 
         self.assertIn("Dato fra filnavn", filename_body)
@@ -1370,7 +1406,10 @@ model_name = "test-model"
         self.assertIn("Dato fra mtime", mtime_month_body)
         self.assertIn("/date-source/mtime/item/2", mtime_month_body)
         self.assertNotIn("/date-source/mtime/item/1", mtime_month_body)
+        self.assertNotIn('href="/people"', all_month_disabled_body)
+        self.assertNotIn('href="/search"', all_month_disabled_body)
         self.assertNotIn('href="/people"', empty_source_disabled_body)
+        self.assertNotIn('href="/search"', empty_source_disabled_body)
 
     def test_run_server_month_navigation_tolerates_foreign_path_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1454,6 +1493,7 @@ model_name = "test-model"
                 *adjacent_browser_items(target, item),
                 browser_month_navigation(target, item),
                 face_enabled=False,
+                openclip_enabled=False,
             )
 
         self.assertNotIn("1 filer, 1 måneder", body)
@@ -1471,6 +1511,7 @@ model_name = "test-model"
         self.assertNotIn('data-face-id="1"', body)
         self.assertNotIn('href="/people"', disabled_body)
         self.assertNotIn('href="/person/Kari"', disabled_body)
+        self.assertNotIn('href="/search"', disabled_body)
         self.assertNotIn("Ansikter i bildet", disabled_body)
         self.assertNotIn("Ny person", disabled_body)
 
@@ -2519,6 +2560,13 @@ enabled = true
 provider = "cpu"
 model_root = "models/insightface"
 model_name = "buffalo_s"
+
+[openclip]
+enabled = true
+model_root = "models/openclip"
+device = "cpu"
+model_name = "ViT-L-14"
+pretrained = "laion2b_s32b_b82k"
 """,
                 encoding="utf-8",
             )
@@ -2529,6 +2577,11 @@ model_name = "buffalo_s"
             self.assertEqual(config.face_recognition.provider, "cpu")
             self.assertEqual(config.face_recognition.model_root, root / "models" / "insightface")
             self.assertEqual(config.face_recognition.model_name, "buffalo_s")
+            self.assertTrue(config.openclip.enabled)
+            self.assertEqual(config.openclip.model_root, root / "models" / "openclip")
+            self.assertEqual(config.openclip.device, "cpu")
+            self.assertEqual(config.openclip.model_name, "ViT-L-14")
+            self.assertEqual(config.openclip.pretrained, "laion2b_s32b_b82k")
 
     def test_rejects_target_inside_program_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3741,6 +3794,26 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(stdout, "")
             self.assertIn("Ansiktsgjenkjenning er av", stderr)
             self.assertFalse((target / FACE_DB_FILENAME).exists())
+
+    def test_image_commands_require_enabled_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "image-scan", "--limit", "1"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Tekstbasert bildesøk er av", stderr)
+            self.assertFalse(openclip_db_path(target).exists())
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "image-search", "strand"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Tekstbasert bildesøk er av", stderr)
+            self.assertFalse(openclip_db_path(target).exists())
 
     def test_face_scan_writes_faces_to_separate_database(self) -> None:
         class FakeFace:

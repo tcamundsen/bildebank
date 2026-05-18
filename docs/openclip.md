@@ -67,6 +67,7 @@ OpenCLIP-modellen velges i `bildebank-config.toml`:
 
 ```toml
 [openclip]
+enabled = true
 model_root = ".bildebank-openclip"
 device = "auto"
 model_name = "ViT-B-32"
@@ -77,6 +78,7 @@ For å teste den større L/14-modellen, bytt til:
 
 ```toml
 [openclip]
+enabled = true
 model_root = ".bildebank-openclip"
 device = "auto"
 model_name = "ViT-L-14"
@@ -90,6 +92,10 @@ Modellen omtales ofte som `ViT-L/14`, men i OpenCLIP-config bruker vi navnet
 Når du bytter modell, må image-scan kjøres på nytt for å lage embeddings for
 den modellen.  Bildebank lagrer embeddings separat per modell, så du kan bytte
 tilbake uten å slette de gamle embeddingene.
+
+Hvis `enabled = false`, skjuler `run-server` bildesøk-knappen og kommandoene
+`image-scan` og `image-search` sier fra at tekstbasert bildesøk er slått av.
+Eksisterende OpenCLIP-database og embeddings slettes ikke.
 
 ## CPU eller GPU
 

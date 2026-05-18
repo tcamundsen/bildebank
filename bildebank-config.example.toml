@@ -13,6 +13,7 @@ model_name = "buffalo_l"
 [openclip]
 # OpenCLIP brukes til tekstbasert bildesøk, for eksempel "strand".
 # Dette er separat fra ansiktsgjenkjenning.
+enabled = false
 model_root = ".bildebank-openclip"
 
 # Bruk "auto" for GPU hvis PyTorch finner CUDA, ellers CPU.
