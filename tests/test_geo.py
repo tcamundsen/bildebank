@@ -132,6 +132,7 @@ class GeoTests(unittest.TestCase):
             conn = db.connect(target)
             try:
                 columns = db.table_columns(conn, "files")
+                indexes = {str(row["name"]) for row in conn.execute("PRAGMA index_list(files)")}
             finally:
                 conn.close()
 
@@ -140,6 +141,8 @@ class GeoTests(unittest.TestCase):
         self.assertIn("h3_res7", columns)
         self.assertIn("h3_res9", columns)
         self.assertIn("gps_scanned_at", columns)
+        self.assertIn("idx_files_h3_res7", indexes)
+        self.assertIn("idx_files_h3_res7_browser_order", indexes)
 
     def test_geo_areas_filters_deleted_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

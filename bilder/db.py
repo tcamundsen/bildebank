@@ -34,6 +34,10 @@ def h3_file_index_sql() -> str:
     return "\n\n        ".join(
         f"""CREATE INDEX IF NOT EXISTS idx_files_{column}
         ON files({column})
+        WHERE {column} IS NOT NULL AND deleted_at IS NULL;
+
+        CREATE INDEX IF NOT EXISTS idx_files_{column}_browser_order
+        ON files({column}, {BROWSER_DATE_ORDER_SQL}, target_path_key)
         WHERE {column} IS NOT NULL AND deleted_at IS NULL;"""
         for column in H3_FILE_COLUMNS
     )
