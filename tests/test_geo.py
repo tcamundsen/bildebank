@@ -13,6 +13,7 @@ from bilder.cli import main
 from bilder.db import init_database
 from bilder.geo import (
     PREDEFINED_GEO_PLACES,
+    PredefinedGeoPlace,
     extract_gps_from_metadata,
     h3_cells_for_point,
     h3_area_label,
@@ -281,6 +282,15 @@ class GeoTests(unittest.TestCase):
         self.assertEqual(set(item_ids), {first_id, second_id, duplicate_match_id})
         self.assertEqual(len(item_ids), len(set(item_ids)))
         self.assertEqual(count, 3)
+
+    def test_geo_place_cells_above_stored_resolution_match_h3_res9_parent(self) -> None:
+        import h3
+
+        high_resolution_cell = h3.latlng_to_cell(59.91273, 10.74609, 11)
+        place = PredefinedGeoPlace("test", "Test", (high_resolution_cell,))
+        parent = h3.cell_to_parent(high_resolution_cell, 9)
+
+        self.assertEqual(geo_place_cells_by_column(place), [("h3_res9", parent)])
 
     def test_geo_index_page_lists_predefined_places_with_count(self) -> None:
         place = PREDEFINED_GEO_PLACES[0]

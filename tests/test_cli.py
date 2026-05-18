@@ -781,6 +781,22 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("PageUp", body)
         self.assertIn("PageDown", body)
 
+    def test_run_server_top_steder_link_points_to_geo_not_search(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+
+        self.assertIn('<a class="server-search-link" href="/geo">Steder</a>', body)
+        self.assertLess(body.index('href="/geo">Steder'), body.index('href="/search">Bildesøk'))
+
     def test_run_server_geo_pages_use_stored_geo_data(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

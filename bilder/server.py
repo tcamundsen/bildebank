@@ -143,7 +143,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             if parsed.path in {"/app/removed", "/app/removed/"}:
                 self.respond_html(removed_files_page_html(self.server.target))
                 return
-            if parsed.path == "/geo":
+            if parsed.path in {"/geo", "/geo/"}:
                 self.respond_geo(parsed.query)
                 return
             if parsed.path == "/geo/map":
@@ -1448,7 +1448,27 @@ def geo_place_items(target: Path, slug: str, *, limit: int | None = None) -> lis
 
 
 def geo_place_cells_by_column(place: PredefinedGeoPlace) -> list[tuple[str, str]]:
-    return [(h3_column_for_resolution(h3_resolution(cell)), cell) for cell in place.h3_cells]
+    import h3
+
+    cells_by_column: list[tuple[str, str]] = []
+    max_resolution = max(H3_COLUMNS)
+    for cell in place.h3_cells:
+        resolution = h3_resolution_any(cell)
+        query_cell = h3.cell_to_parent(cell, max_resolution) if resolution > max_resolution else cell
+        query_resolution = min(resolution, max_resolution)
+        cells_by_column.append((h3_column_for_resolution(query_resolution), query_cell))
+    return cells_by_column
+
+
+def h3_resolution_any(h3_cell: str) -> int:
+    import h3
+
+    if hasattr(h3, "is_valid_cell") and not h3.is_valid_cell(h3_cell):
+        raise ValueError(f"Ugyldig H3-celle: {h3_cell}")
+    try:
+        return int(h3.get_resolution(h3_cell))
+    except Exception as exc:  # noqa: BLE001 - h3 raises library-specific exceptions
+        raise ValueError(f"Ugyldig H3-celle: {h3_cell}") from exc
 
 
 def geo_child_area_items(target: Path, *, h3_cell: str, resolution: int) -> list[Any]:
@@ -2293,9 +2313,9 @@ def error_html(exc: Exception) -> str:
         "Feil",
         f"""
         <main class="shell">
+          <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a> · <a href="/app">App</a></p>
           <h1>Feil</h1>
           <p class="error">{html.escape(str(exc))}</p>
-          {search_form("")}
         </main>
         """,
     )
