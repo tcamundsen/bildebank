@@ -192,6 +192,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/api/item-info":
                 self.respond_item_info(parsed.query)
                 return
+            if parsed.path == "/api/item-faces":
+                self.respond_item_faces(parsed.query)
+                return
             if parsed.path.startswith("/file/"):
                 self.respond_file(parsed.path.removeprefix("/file/"))
                 return
@@ -585,6 +588,22 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Filen finnes ikke."}, status=HTTPStatus.NOT_FOUND)
             return
         self.respond_json({"ok": True, "html": image_info_content_html(self.server.target, item)})
+
+    def respond_item_faces(self, query: str) -> None:
+        if not self.server.face_enabled:
+            self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
+            return
+        params = urllib.parse.parse_qs(query)
+        try:
+            file_id = parse_file_id(first_param(params, "file_id"))
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        item = browser_item_by_id(self.server.target, file_id)
+        if item is None:
+            self.respond_json({"ok": False, "error": "Filen finnes ikke."}, status=HTTPStatus.NOT_FOUND)
+            return
+        self.respond_json({"ok": True, "html": face_overlay_content_html(self.server.target, item)})
 
     def respond_add_face_to_person(self) -> None:
         payload = BildebankRequestHandler.read_face_person_payload(self)
@@ -1286,6 +1305,35 @@ def unconfirmed_faces_for_item(target: Path, item: Any) -> list[dict[str, object
     finally:
         conn.close()
     return browser_face_items(db.absolute_target_path(target, Path(str(item["target_path"]))), faces)
+
+
+def unconfirmed_face_count_for_item(target: Path, file_id: int) -> int:
+    face_db_path = target / FACE_DB_FILENAME
+    if not face_db_path.exists():
+        return 0
+    conn = sqlite3.connect(face_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if not face_tables_exist(conn):
+            return 0
+        row = conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM faces
+            WHERE faces.file_id = ?
+              AND NOT EXISTS (
+                SELECT 1
+                FROM person_faces
+                WHERE person_faces.face_id = faces.id
+              )
+            """,
+            (file_id,),
+        ).fetchone()
+        return int(row[0] or 0) if row is not None else 0
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
 
 
 def browser_month_navigation(target: Path, item: Any) -> dict[str, str | None]:
@@ -2415,10 +2463,9 @@ def source_item_page_html(
     )
     people = people_links_html(confirmed_people_for_file(target, int(item["id"]))) if face_enabled else ""
     show_unconfirmed_faces = face_enabled and source.person_name is None
-    unconfirmed_faces = unconfirmed_faces_for_item(target, item) if show_unconfirmed_faces else []
-    all_people = registered_people(target) if unconfirmed_faces else []
-    faces_button = faces_button_html(unconfirmed_faces) if show_unconfirmed_faces else ""
-    faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if show_unconfirmed_faces else ""
+    unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"])) if show_unconfirmed_faces else 0
+    faces_button = faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
+    faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
     action_links = source_action_links_html(source, item, face_enabled=face_enabled, openclip_enabled=openclip_enabled)
     info_overlay = image_info_overlay_html()
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item) if face_enabled else ""
@@ -2893,19 +2940,14 @@ def people_links_html(people: list[dict[str, str]]) -> str:
     return f'<div class="people">{links}</div>'
 
 
-def faces_button_html(faces: list[dict[str, object]]) -> str:
-    if not faces:
+def faces_button_html(face_count: int, file_id: int) -> str:
+    if face_count <= 0:
         return ""
-    return f'<button class="faces-button" type="button" data-open-faces>Ansikter i bildet ({len(faces)})</button>'
+    return f'<button class="faces-button" type="button" data-open-faces data-faces-item="{file_id}">Ansikter i bildet ({face_count})</button>'
 
 
-def faces_overlay_html(item: Any, faces: list[dict[str, object]], people: list[dict[str, str]]) -> str:
-    if not faces:
-        return ""
+def faces_overlay_html(item: Any) -> str:
     target_path = Path(str(item["target_path"]))
-    file_id = int(item["id"])
-    image_url = f"/file/{file_id}"
-    face_items = "\n".join(face_overlay_item_html(item, image_url, face, people) for face in faces)
     return f"""
     <div id="faceOverlay" class="face-overlay" hidden>
       <div class="lightbox-bar">
@@ -2913,10 +2955,19 @@ def faces_overlay_html(item: Any, faces: list[dict[str, object]], people: list[d
         <button class="lightbox-close" type="button" data-close-faces>Lukk</button>
       </div>
       <div class="lightbox-stage">
-        <div class="face-list">{face_items}</div>
+        <div class="face-list" data-face-list></div>
       </div>
     </div>
     """
+
+
+def face_overlay_content_html(target: Path, item: Any) -> str:
+    faces = unconfirmed_faces_for_item(target, item)
+    if not faces:
+        return '<p class="empty">Ingen ubekreftede ansikter i bildet.</p>'
+    people = registered_people(target)
+    image_url = f"/file/{int(item['id'])}"
+    return "\n".join(face_overlay_item_html(item, image_url, face, people) for face in faces)
 
 
 def image_info_overlay_html() -> str:
@@ -3621,11 +3672,36 @@ def page_html(title: str, body: str) -> str:
   const closeFacesButton = document.querySelector("[data-close-faces]");
   const openInfoButton = document.querySelector("[data-open-info]");
   const closeInfoButton = document.querySelector("[data-close-info]");
+  const faceList = faceOverlay?.querySelector("[data-face-list]");
   const infoList = infoOverlay?.querySelector("[data-info-list]");
+  let facesLoaded = false;
   let infoLoaded = false;
-  function openFacesOverlay() {{
+  function faceStatusMessage(message) {{
+    const item = document.createElement("p");
+    item.className = "empty";
+    item.textContent = message;
+    return item;
+  }}
+  async function loadFacesOverlay() {{
+    if (!faceList || facesLoaded) return;
+    const fileId = openFacesButton?.dataset.facesItem || "";
+    if (!fileId) return;
+    faceList.replaceChildren(faceStatusMessage("Laster..."));
+    try {{
+      const response = await fetch(`/api/item-faces?file_id=${{encodeURIComponent(fileId)}}`);
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke laste ansikter.");
+      faceList.innerHTML = payload.html || "";
+      bindFaceAssignmentHandlers(faceList);
+      facesLoaded = true;
+    }} catch (error) {{
+      faceList.replaceChildren(faceStatusMessage(error.message || "Kunne ikke laste ansikter."));
+    }}
+  }}
+  async function openFacesOverlay() {{
     if (!faceOverlay) return;
     faceOverlay.hidden = false;
+    await loadFacesOverlay();
     closeFacesButton?.focus();
   }}
   function closeFacesOverlay() {{
@@ -3803,25 +3879,28 @@ def page_html(title: str, body: str) -> str:
       detail.querySelectorAll("button, input").forEach(item => item.disabled = false);
     }}
   }}
-  document.querySelectorAll(".assign-person-button").forEach(button => {{
-    button.addEventListener("click", async () => {{
-      const faceId = button.dataset.faceId;
-      const personName = button.dataset.personName;
-      const detail = button.closest(".face-detail");
-      const status = detail?.querySelector(".assign-status");
-      await assignFace(detail, status, "/api/face-person-add-face", faceId, personName);
+  function bindFaceAssignmentHandlers(root = document) {{
+    root.querySelectorAll(".assign-person-button").forEach(button => {{
+      button.addEventListener("click", async () => {{
+        const faceId = button.dataset.faceId;
+        const personName = button.dataset.personName;
+        const detail = button.closest(".face-detail");
+        const status = detail?.querySelector(".assign-status");
+        await assignFace(detail, status, "/api/face-person-add-face", faceId, personName);
+      }});
     }});
-  }});
-  document.querySelectorAll("[data-new-person-form]").forEach(form => {{
-    form.addEventListener("submit", async event => {{
-      event.preventDefault();
-      const detail = form.closest(".face-detail");
-      const status = detail?.querySelector(".assign-status");
-      const faceId = form.querySelector('input[name="face_id"]')?.value;
-      const personName = form.querySelector('input[name="person_name"]')?.value?.trim();
-      await assignFace(detail, status, "/api/face-person-create-and-add-face", faceId, personName);
+    root.querySelectorAll("[data-new-person-form]").forEach(form => {{
+      form.addEventListener("submit", async event => {{
+        event.preventDefault();
+        const detail = form.closest(".face-detail");
+        const status = detail?.querySelector(".assign-status");
+        const faceId = form.querySelector('input[name="face_id"]')?.value;
+        const personName = form.querySelector('input[name="person_name"]')?.value?.trim();
+        await assignFace(detail, status, "/api/face-person-create-and-add-face", faceId, personName);
+      }});
     }});
-  }});
+  }}
+  bindFaceAssignmentHandlers();
   document.addEventListener("keydown", event => {{
     if (faceOverlay && !faceOverlay.hidden) {{
       if (event.key === "Escape") {{

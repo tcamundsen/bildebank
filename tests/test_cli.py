@@ -41,6 +41,7 @@ from bilder.server import (
     browser_month_navigation,
     date_source_browser_source,
     empty_source_html,
+    face_overlay_content_html,
     geo_area_page_html,
     geo_component_pixel_coordinates,
     geo_index_page_html,
@@ -1544,6 +1545,7 @@ pretrained = "laion2b_s34b_b79k"
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            face_body = face_overlay_content_html(target, item)
             disabled_body = item_page_html(
                 target,
                 item,
@@ -1557,20 +1559,70 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('class="person-link" href="/person/Kari">Kari</a>', body)
         self.assertIn('class="person-link" href="/person/Ola%20Nordmann">Ola Nordmann</a>', body)
         self.assertIn("Ansikter i bildet (1)", body)
+        self.assertIn('data-faces-item="1"', body)
+        self.assertIn('data-face-list', body)
+        self.assertNotIn("Ny person", body)
         self.assertIn("width: fit-content;", body)
         self.assertIn("justify-self: start;", body)
-        self.assertIn("Ny person", body)
+        self.assertIn("Ny person", face_body)
         self.assertIn("/api/face-person-create-and-add-face", body)
-        self.assertIn("Identifiser", body)
-        self.assertIn('data-face-id="2"', body)
-        self.assertIn('data-person-name="Kari"', body)
-        self.assertIn('data-person-name="Ola Nordmann"', body)
+        self.assertIn("/api/item-faces?file_id=", body)
+        self.assertIn("Identifiser", face_body)
+        self.assertIn('data-face-id="2"', face_body)
+        self.assertIn('data-person-name="Kari"', face_body)
+        self.assertIn('data-person-name="Ola Nordmann"', face_body)
         self.assertNotIn('data-face-id="1"', body)
+        self.assertNotIn('data-face-id="1"', face_body)
         self.assertNotIn('href="/people"', disabled_body)
         self.assertNotIn('href="/person/Kari"', disabled_body)
         self.assertNotIn('href="/search"', disabled_body)
         self.assertNotIn("Ansikter i bildet", disabled_body)
         self.assertNotIn("Ny person", disabled_body)
+
+    def test_run_server_item_faces_api_returns_lazy_overlay_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(1, 1, 'key-1', 3, 4, 12, 22, 0.8, 'test', ?)
+                    """,
+                    (b"embedding-1",),
+                )
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            response: dict[str, object] = {}
+            handler = object.__new__(BildebankRequestHandler)
+            handler.server = SimpleNamespace(target=target, face_enabled=True)
+
+            def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                response["content"] = content
+                response["status"] = status
+
+            handler.respond_json = fake_respond_json  # type: ignore[method-assign]
+            handler.respond_item_faces("file_id=1")
+
+        self.assertEqual(response["status"], HTTPStatus.OK)
+        content = response["content"]
+        assert isinstance(content, dict)
+        self.assertIs(content["ok"], True)
+        self.assertIn('data-face-detail="1"', str(content["html"]))
+        self.assertIn('data-person-name="Kari"', str(content["html"]))
+        self.assertIn("face-box", str(content["html"]))
 
     def test_run_server_api_adds_face_to_person(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
