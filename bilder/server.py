@@ -1709,12 +1709,7 @@ def geo_index_page_html(
           <p><a href="/">Til bildebrowser</a> · <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a> · <a href="/geo/stats">Geo-statistikk</a> · <a href="/geo/missing">Bilder uten GPS</a></p>
           <h1>Steder</h1>
           {geo_stats_summary_html(stats)}
-          <form action="/geo" method="get" class="geo-filter">
-            <label>H3-oppløsning <input name="resolution" value="{resolution}" inputmode="numeric"></label>
-            <label>Minst antall <input name="min_count" value="{min_count}" inputmode="numeric"></label>
-            <label>Maks steder <input name="limit" value="{limit}" inputmode="numeric"></label>
-            <button type="submit">Vis</button>
-          </form>
+          {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
           <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder.</p>
           {content}
         </main>
@@ -1743,17 +1738,23 @@ def geo_map_page_html(
         <main class="shell">
           <p><a href="/">Til bildebrowser</a> · <a href="/geo?resolution={resolution}&min_count={min_count}&limit={limit}">Steder</a></p>
           <h1>Heksagonkart</h1>
-          <form action="/geo/map" method="get" class="geo-filter">
-            <label>H3-oppløsning {h3_resolution_select_html(resolution)}</label>
-            <label>Minst antall <input name="min_count" value="{min_count}" inputmode="numeric"></label>
-            <label>Maks steder <input name="limit" value="{limit}" inputmode="numeric"></label>
-            <button type="submit">Vis</button>
-          </form>
+          {geo_filter_form_html("/geo/map", resolution=resolution, min_count=min_count, limit=limit)}
           <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Heksagoner som er H3-naboer legges sammen i klynger. Hver klynge orienteres etter faktiske GPS-retninger, men klyngene er ikke plassert med geografisk avstand.</p>
           {content}
         </main>
         """,
     )
+
+
+def geo_filter_form_html(action: str, *, resolution: int, min_count: int, limit: int) -> str:
+    return f"""
+          <form action="{html.escape(action)}" method="get" class="geo-filter">
+            <label>H3-oppløsning {h3_resolution_select_html(resolution)}</label>
+            <label>Minst antall <input name="min_count" value="{min_count}" inputmode="numeric"></label>
+            <label>Maks steder <input name="limit" value="{limit}" inputmode="numeric"></label>
+            <button type="submit">Vis</button>
+          </form>
+    """
 
 
 def h3_resolution_select_html(selected_resolution: int) -> str:
