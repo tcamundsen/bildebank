@@ -2283,6 +2283,7 @@ def geo_place_rows(conn: sqlite3.Connection) -> list[dict[str, object]]:
         {
             "slug": place.slug,
             "name": place.name,
+            "kind": "system" if place in PREDEFINED_GEO_PLACES else "user",
             "count": db.geo_place_count(conn, cells_by_column=geo_place_cells_by_column(place)),
         }
         for place in sorted((*PREDEFINED_GEO_PLACES, *custom_geo_places(conn)), key=lambda item: (item.name, item.slug))
@@ -2306,10 +2307,14 @@ def geo_place_row_html(row: dict[str, object]) -> str:
     name = str(row["name"])
     count = int(row["count"])
     url = "/geo/place/" + urllib.parse.quote(slug, safe="")
+    if row["kind"] == 'system':
+        icon = "system"
+    else:
+        icon = "user"
     return f"""
     <a class="geo-row" href="{html.escape(url)}">
       <span>{html.escape(name)}</span>
-      <span class="status">{html.escape(slug)}</span>
+      <span class="status">{icon}</span>
       <strong>{count} bilder</strong>
     </a>
     """
