@@ -33,6 +33,9 @@ from bilder.server import (
     geo_place_browser_source,
     geo_place_cells_by_column,
     geo_place_items,
+    markdown_doc_page_html,
+    markdown_to_html,
+    resolve_doc_path,
     source_item_by_id,
     source_item_url,
     source_month_items,
@@ -385,9 +388,41 @@ class GeoTests(unittest.TestCase):
         self.assertIn("Min plass", html)
         self.assertIn('href="/geo/place/min_plass"', html)
         self.assertIn('href="/geo/custom-places"', html)
+        self.assertIn('href="/help/web/steder"', html)
         self.assertNotIn('action="/geo/custom-place"', html)
         self.assertNotIn('action="/geo/custom-place-delete"', html)
         self.assertIn("<strong>1 bilder</strong>", html)
+
+    def test_geo_help_markdown_is_rendered_as_html(self) -> None:
+        doc_path = resolve_doc_path("web/steder")
+        self.assertIsNotNone(doc_path)
+        assert doc_path is not None
+
+        html = markdown_doc_page_html(doc_path, doc_path.read_text(encoding="utf-8"))
+
+        self.assertIn("<h1>Steder</h1>", html)
+        self.assertIn("<code>/geo</code>", html)
+        self.assertIn("<strong>Steder</strong>", html)
+        self.assertIn("http://127.0.0.1:8765/geo", html)
+        self.assertNotIn("# Steder", html)
+
+    def test_markdown_help_renderer_omits_cli_help_markers(self) -> None:
+        html = markdown_to_html(
+            """# Import
+
+<!-- CLI-HELP-START -->
+usage: bildebank import [valg]
+<!-- CLI-HELP-END -->
+
+Vanlig dokumentasjon.
+"""
+        )
+
+        self.assertIn("<h1>Import</h1>", html)
+        self.assertIn("Vanlig dokumentasjon.", html)
+        self.assertIn("usage: bildebank import", html)
+        self.assertNotIn("CLI-HELP-START", html)
+        self.assertNotIn("CLI-HELP-END", html)
 
     def test_custom_geo_places_page_has_edit_forms(self) -> None:
         place = PREDEFINED_GEO_PLACES[0]

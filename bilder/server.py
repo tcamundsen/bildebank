@@ -150,6 +150,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/static/server.js":
                 self.respond_static_asset(SERVER_JS, "application/javascript; charset=utf-8")
                 return
+            if parsed.path.startswith("/help/"):
+                self.respond_help(parsed.path.removeprefix("/help/"))
+                return
             if parsed.path in {"/geo", "/geo/"}:
                 self.respond_geo(parsed.query)
                 return
@@ -641,6 +644,21 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         self.respond_bytes(content, content_type)
 
+    def respond_help(self, raw_help_path: str) -> None:
+        doc_path = resolve_doc_path(raw_help_path)
+        if doc_path is None:
+            self.respond_text("Ugyldig hjelpeside.", status=HTTPStatus.FORBIDDEN)
+            return
+        if not doc_path.is_file():
+            self.respond_text("Hjelpesiden finnes ikke.", status=HTTPStatus.NOT_FOUND)
+            return
+        try:
+            markdown = doc_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        self.respond_html(markdown_doc_page_html(doc_path, markdown))
+
     def respond_item_info(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
         try:
@@ -876,6 +894,24 @@ def parse_geo_place_cells(value: str) -> list[str]:
     if not clean_cells:
         raise ValueError("Stedet må ha minst én H3-celle.")
     return clean_cells
+
+
+def resolve_doc_path(raw_doc_path: str) -> Path | None:
+    raw_path = urllib.parse.unquote(raw_doc_path).strip("/")
+    if not raw_path:
+        return None
+    relative = Path(raw_path)
+    if relative.is_absolute() or any(part == ".." for part in relative.parts):
+        return None
+    if relative.suffix != ".md":
+        relative = relative.with_suffix(".md")
+    docs_root = (server_program_repo_root() / "docs").resolve()
+    candidate = (docs_root / relative).resolve()
+    try:
+        candidate.relative_to(docs_root)
+    except ValueError:
+        return None
+    return candidate
 
 
 def parse_person_path(raw_path: str) -> tuple[str, str, bool, str | None, str]:
@@ -2248,10 +2284,15 @@ def geo_index_page_html(
         "Steder",
         f"""
         <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a> · <a href="/geo/stats">Geo-statistikk</a> · <a href="/geo/missing">Bilder uten GPS</a> · <a href="/geo/custom-places">Egne steder</a></p>
-          <h1>Steder</h1>
+          <p><a href="/">Til bildebrowser</a>
+           · <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a>
+           · <a href="/geo/stats">Geo-statistikk</a>
+           · <a href="/geo/missing">Bilder uten GPS</a>
+           · <a href="/help/web/steder">Hjelp</a></p>
+          <h2>Statistikk over bilder med GPS-posisjon</h2>
           {geo_stats_summary_html(stats)}
           {geo_places_section_html(geo_places)}
+          <h2>H3-heksagoner</h2>
           {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
           <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder. {len(areas)} steder funnet.</p>
           {content}
@@ -2267,10 +2308,13 @@ def custom_geo_places_page_html(target: Path) -> str:
     finally:
         conn.close()
     return page_html(
-        "Egne steder",
+        "Egendefinerte steder",
         f"""
         <main class="shell">
-          <p><a href="/geo">Til steder</a> · <a href="/">Til bildebrowser</a></p>
+          <p><a href="/geo">Til steder</a>
+           · <a href="/">Til bildebrowser</a>
+           · <a href="/help/web/egendefinerte-steder.md">Hjelp</a>
+          </p>
           <h1>Egne steder</h1>
           {custom_geo_places_admin_html(places)}
         </main>
@@ -2296,7 +2340,8 @@ def geo_places_section_html(rows: list[dict[str, object]]) -> str:
     links = "\n".join(geo_place_row_html(row) for row in rows)
     return f"""
           <section class="geo-predefined">
-            <h2>Steder</h2>
+            <h2>Definerte steder</h2>
+            <a href="/geo/custom-places">Rediger egendefinerte steder</a>
             <div class="geo-list">{links}</div>
           </section>
     """
@@ -2785,6 +2830,124 @@ def message_html(message: str) -> str:
     if not message:
         return ""
     return f'<p class="message">{html.escape(message)}</p>'
+
+
+def markdown_doc_page_html(doc_path: Path, markdown: str) -> str:
+    title = markdown_doc_title(markdown, doc_path)
+    body = markdown_to_html(markdown)
+    return page_html(
+        title,
+        f"""
+        <main class="shell doc-page">
+          <p><a href="/">Til bildebrowser</a></p>
+          <article class="doc-content">
+            {body}
+          </article>
+        </main>
+        """,
+    )
+
+
+def markdown_doc_title(markdown: str, doc_path: Path) -> str:
+    for line in markdown.splitlines():
+        clean = line.strip()
+        if clean.startswith("# "):
+            return clean[2:].strip()
+    return doc_path.stem.replace("-", " ").title()
+
+
+def markdown_to_html(markdown: str) -> str:
+    lines = strip_markdown_cli_help_markers(markdown).splitlines()
+    html_lines: list[str] = []
+    paragraph: list[str] = []
+    list_items: list[str] = []
+    in_code = False
+    code_lines: list[str] = []
+
+    def flush_paragraph() -> None:
+        if paragraph:
+            html_lines.append("<p>" + markdown_inline_html(" ".join(paragraph)) + "</p>")
+            paragraph.clear()
+
+    def flush_list() -> None:
+        if list_items:
+            html_lines.append("<ul>" + "".join(f"<li>{item}</li>" for item in list_items) + "</ul>")
+            list_items.clear()
+
+    def flush_code() -> None:
+        if code_lines:
+            html_lines.append("<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>")
+            code_lines.clear()
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            if in_code:
+                flush_code()
+                in_code = False
+            else:
+                flush_paragraph()
+                flush_list()
+                in_code = True
+            continue
+        if in_code:
+            code_lines.append(line)
+            continue
+        if not stripped:
+            flush_paragraph()
+            flush_list()
+            continue
+        if stripped.startswith("#"):
+            flush_paragraph()
+            flush_list()
+            level = min(len(stripped) - len(stripped.lstrip("#")), 3)
+            text = stripped[level:].strip()
+            if text:
+                html_lines.append(f"<h{level}>{markdown_inline_html(text)}</h{level}>")
+            continue
+        if stripped.startswith(("- ", "* ")):
+            flush_paragraph()
+            list_items.append(markdown_inline_html(stripped[2:].strip()))
+            continue
+        paragraph.append(stripped)
+
+    flush_paragraph()
+    flush_list()
+    if in_code:
+        flush_code()
+    return "\n".join(html_lines)
+
+
+def strip_markdown_cli_help_markers(markdown: str) -> str:
+    lines: list[str] = []
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if stripped in {"<!-- CLI-HELP-START -->", "<!-- CLI-HELP-END -->"}:
+            continue
+        lines.append(line)
+    return "\n".join(lines)
+
+
+def markdown_inline_html(text: str) -> str:
+    escaped = html.escape(text)
+    escaped = re.sub(r"`([^`]+)`", lambda match: f"<code>{match.group(1)}</code>", escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", lambda match: f"<strong>{match.group(1)}</strong>", escaped)
+    return re.sub(
+        r"\[([^\]]+)\]\(([^)]+)\)",
+        lambda match: markdown_link_html(match.group(1), match.group(2)),
+        escaped,
+    )
+
+
+def markdown_link_html(label: str, url: str) -> str:
+    if not safe_markdown_link(url):
+        return html.escape(label)
+    return f'<a href="{html.escape(url, quote=True)}">{label}</a>'
+
+
+def safe_markdown_link(url: str) -> bool:
+    parsed = urllib.parse.urlparse(url)
+    return parsed.scheme in {"", "http", "https"} and not url.startswith("//")
 
 
 def result_html(target: Path, result: ImageSearchResult) -> str:
@@ -3757,6 +3920,25 @@ SERVER_CSS = r"""    :root {
     .custom-place-list { display: grid; gap: 10px; margin-top: 12px; }
     .custom-place-edit { border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: 10px; }
     .custom-place-delete { margin-top: -8px; }
+    .doc-page { max-width: 860px; }
+    .doc-content { line-height: 1.6; }
+    .doc-content h1, .doc-content h2, .doc-content h3 { margin: 1.2em 0 0.45em; }
+    .doc-content p, .doc-content ul, .doc-content pre { margin: 0 0 1em; }
+    .doc-content code {
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      background: #303030;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 4px;
+    }
+    .doc-content pre {
+      overflow: auto;
+      background: #101010;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+    }
+    .doc-content pre code { background: transparent; border: 0; padding: 0; }
     .geo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 18px 0; }
     .geo-stats div { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
     .geo-stats span { color: var(--muted); }
