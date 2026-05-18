@@ -842,8 +842,26 @@ def first_browser_item(target: Path) -> Any | None:
 
 
 def first_source_item(target: Path, source: BrowserSource) -> Any | None:
+    if not is_filtered_source(source):
+        return first_unfiltered_source_item(target)
     items = source_items(target, source)
     return items[0] if items else None
+
+
+def first_unfiltered_source_item(target: Path) -> Any | None:
+    conn = db.connect(target)
+    try:
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+            ORDER BY {ITEM_ORDER_SQL}
+            LIMIT 1
+            """
+        ).fetchone()
+    finally:
+        conn.close()
 
 
 def browser_item_by_id(target: Path, file_id: int) -> Any | None:
@@ -943,14 +961,14 @@ def cached_browser_month_keys(target_path: str, db_mtime_ns: int) -> tuple[str, 
     try:
         rows = conn.execute(
             """
-            SELECT target_path
+            SELECT DISTINCT substr(target_path, 1, 4) || '-' || substr(target_path, 6, 2) AS month_key
             FROM files
             WHERE deleted_at IS NULL
-            ORDER BY target_path
+              AND target_path GLOB '[0-9][0-9][0-9][0-9]/[0-9][0-9]/*'
+            ORDER BY month_key
             """
         )
-        keys = {month_key_from_stored_path(str(row["target_path"])) for row in rows}
-        return tuple(sorted(key for key in keys if key is not None))
+        return tuple(str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"])))
     finally:
         conn.close()
 
