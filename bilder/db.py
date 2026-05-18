@@ -185,6 +185,7 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
         """
     )
     create_geo_place_names_schema(conn)
+    create_geo_places_schema(conn)
     if table_exists(conn, "errors"):
         ensure_column(conn, "errors", "resolved_at", "TEXT")
     if table_exists(conn, "files"):
@@ -366,6 +367,22 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS geo_places (
+            slug TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS geo_place_cells (
+            slug TEXT NOT NULL REFERENCES geo_places(slug) ON DELETE CASCADE,
+            h3_cell TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            PRIMARY KEY(slug, h3_cell)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_geo_place_cells_slug_position
+        ON geo_place_cells(slug, position);
+
         CREATE TABLE IF NOT EXISTS file_sources (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             file_id INTEGER NOT NULL REFERENCES files(id),
@@ -408,6 +425,28 @@ def create_geo_place_names_schema(conn: sqlite3.Connection) -> None:
             name TEXT NOT NULL,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
+        """
+    )
+
+
+def create_geo_places_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS geo_places (
+            slug TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS geo_place_cells (
+            slug TEXT NOT NULL REFERENCES geo_places(slug) ON DELETE CASCADE,
+            h3_cell TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            PRIMARY KEY(slug, h3_cell)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_geo_place_cells_slug_position
+        ON geo_place_cells(slug, position);
         """
     )
 
@@ -1944,6 +1983,99 @@ def set_geo_place_name(conn: sqlite3.Connection, h3_cell: str, name: str) -> str
         (h3_cell, clean_name),
     )
     return clean_name
+
+
+def custom_geo_places(conn: sqlite3.Connection) -> list[dict[str, object]]:
+    places = list(conn.execute("SELECT slug, name FROM geo_places ORDER BY name, slug"))
+    if not places:
+        return []
+    cells_by_slug = custom_geo_place_cells_by_slug(conn)
+    return [
+        {
+            "slug": str(row["slug"]),
+            "name": str(row["name"]),
+            "h3_cells": tuple(cells_by_slug.get(str(row["slug"]), ())),
+        }
+        for row in places
+    ]
+
+
+def custom_geo_place(conn: sqlite3.Connection, slug: str) -> dict[str, object] | None:
+    clean_slug = slug.strip().lower()
+    row = conn.execute("SELECT slug, name FROM geo_places WHERE slug = ?", (clean_slug,)).fetchone()
+    if row is None:
+        return None
+    cells = tuple(row["h3_cell"] for row in custom_geo_place_cells(conn, clean_slug))
+    return {"slug": str(row["slug"]), "name": str(row["name"]), "h3_cells": cells}
+
+
+def custom_geo_place_cells_by_slug(conn: sqlite3.Connection) -> dict[str, list[str]]:
+    rows = conn.execute(
+        """
+        SELECT slug, h3_cell
+        FROM geo_place_cells
+        ORDER BY slug, position, h3_cell
+        """
+    )
+    result: dict[str, list[str]] = {}
+    for row in rows:
+        result.setdefault(str(row["slug"]), []).append(str(row["h3_cell"]))
+    return result
+
+
+def custom_geo_place_cells(conn: sqlite3.Connection, slug: str) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT h3_cell
+            FROM geo_place_cells
+            WHERE slug = ?
+            ORDER BY position, h3_cell
+            """,
+            (slug,),
+        )
+    )
+
+
+def set_custom_geo_place(conn: sqlite3.Connection, *, slug: str, name: str, h3_cells: list[str]) -> None:
+    clean_slug = slug.strip().lower()
+    clean_name = name.strip()
+    if not clean_slug:
+        raise ValueError("Slug mangler.")
+    if not clean_name:
+        raise ValueError("Navn mangler.")
+    clean_cells: list[str] = []
+    seen: set[str] = set()
+    for cell in h3_cells:
+        clean_cell = cell.strip()
+        if not clean_cell or clean_cell in seen:
+            continue
+        clean_cells.append(clean_cell)
+        seen.add(clean_cell)
+    if not clean_cells:
+        raise ValueError("Stedet må ha minst én H3-celle.")
+    conn.execute(
+        """
+        INSERT INTO geo_places(slug, name, updated_at)
+        VALUES(?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(slug) DO UPDATE SET
+            name = excluded.name,
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (clean_slug, clean_name),
+    )
+    conn.execute("DELETE FROM geo_place_cells WHERE slug = ?", (clean_slug,))
+    conn.executemany(
+        """
+        INSERT INTO geo_place_cells(slug, h3_cell, position)
+        VALUES(?, ?, ?)
+        """,
+        [(clean_slug, cell, index) for index, cell in enumerate(clean_cells)],
+    )
+
+
+def delete_custom_geo_place(conn: sqlite3.Connection, slug: str) -> None:
+    conn.execute("DELETE FROM geo_places WHERE slug = ?", (slug.strip().lower(),))
 
 
 def geo_missing_files(conn: sqlite3.Connection, *, limit: int, offset: int = 0) -> list[sqlite3.Row]:

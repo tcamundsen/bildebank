@@ -28,6 +28,7 @@ from bilder.server import (
     adjacent_source_items,
     geo_area_page_html,
     geo_index_page_html,
+    geo_place_by_slug,
     geo_place_browser_source,
     geo_place_cells_by_column,
     geo_place_items,
@@ -145,6 +146,22 @@ class GeoTests(unittest.TestCase):
         self.assertIn("gps_scanned_at", columns)
         self.assertIn("idx_files_h3_res7", indexes)
         self.assertIn("idx_files_h3_res7_browser_order", indexes)
+
+    def test_custom_geo_place_tables_are_added_to_new_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                tables = {
+                    str(row["name"])
+                    for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+                }
+            finally:
+                conn.close()
+
+        self.assertIn("geo_places", tables)
+        self.assertIn("geo_place_cells", tables)
 
     def test_geo_areas_filters_deleted_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -284,6 +301,55 @@ class GeoTests(unittest.TestCase):
         self.assertEqual(len(item_ids), len(set(item_ids)))
         self.assertEqual(count, 3)
 
+    def test_custom_geo_place_uses_same_browser_flow_as_predefined_places(self) -> None:
+        import h3
+
+        parent_cell = h3.latlng_to_cell(59.91273, 10.74609, 7)
+        child_cell = sorted(h3.cell_to_children(parent_cell, 8))[0]
+        parent_column = h3_column_for_resolution(7)
+        child_column = h3_column_for_resolution(8)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            parent_id = register_target_file(target, Path("2024/01/01-parent.jpg"), content=b"parent")
+            child_id = register_target_file(target, Path("2024/01/02-child.jpg"), content=b"child")
+            duplicate_id = register_target_file(target, Path("2024/01/03-both.jpg"), content=b"both")
+            outside_id = register_target_file(target, Path("2024/01/04-outside.jpg"), content=b"outside")
+            set_file_h3_cells(target, parent_id, {parent_column: parent_cell})
+            set_file_h3_cells(target, child_id, {child_column: child_cell})
+            set_file_h3_cells(target, duplicate_id, {parent_column: parent_cell, child_column: child_cell})
+            set_file_h3_cells(target, outside_id, {parent_column: "871ec9fffffffff"})
+            conn = db.connect(target)
+            try:
+                db.set_custom_geo_place(
+                    conn,
+                    slug="hytta",
+                    name="Hytta",
+                    h3_cells=[parent_cell, child_cell],
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            place = geo_place_by_slug(target, "hytta")
+            assert place is not None
+            source = geo_place_browser_source(place)
+            with patch("bilder.server.source_items", side_effect=AssertionError("source_items should not be used")):
+                items = geo_place_items(target, "hytta")
+                item = source_item_by_id(target, source, parent_id)
+                assert item is not None
+                previous_item, next_item = adjacent_source_items(target, source, item)
+                month_items = source_month_items(target, source, "2024-01")
+
+        item_ids = [int(item["id"]) for item in items]
+        self.assertEqual(set(item_ids), {parent_id, child_id, duplicate_id})
+        self.assertEqual(len(item_ids), len(set(item_ids)))
+        self.assertIsNone(previous_item)
+        self.assertEqual(int(next_item["id"]), child_id)
+        self.assertEqual([int(item["id"]) for item in month_items], [parent_id, child_id, duplicate_id])
+        self.assertEqual(source_item_url(source, parent_id), f"/geo/place/hytta/item/{parent_id}")
+
     def test_geo_place_cells_above_stored_resolution_match_h3_res9_parent(self) -> None:
         import h3
 
@@ -293,7 +359,7 @@ class GeoTests(unittest.TestCase):
 
         self.assertEqual(geo_place_cells_by_column(place), [("h3_res9", parent)])
 
-    def test_geo_index_page_lists_predefined_places_with_count(self) -> None:
+    def test_geo_index_page_lists_predefined_and_custom_places_with_count(self) -> None:
         place = PREDEFINED_GEO_PLACES[0]
         h3_cell = place.h3_cells[0]
         column = h3_column_for_resolution(h3_resolution(h3_cell))
@@ -303,12 +369,22 @@ class GeoTests(unittest.TestCase):
             init_database(target)
             file_id = register_target_file(target, Path("2024/01/kreta.jpg"))
             set_file_h3_cells(target, file_id, {column: h3_cell})
+            conn = db.connect(target)
+            try:
+                db.set_custom_geo_place(conn, slug="min_plass", name="Min plass", h3_cells=[h3_cell])
+                conn.commit()
+            finally:
+                conn.close()
 
             html = geo_index_page_html(target, resolution=7, min_count=1, limit=10)
 
-        self.assertIn("Forhåndsdefinerte steder", html)
+        self.assertIn("<h2>Steder</h2>", html)
         self.assertIn("Kreta", html)
         self.assertIn('href="/geo/place/kreta"', html)
+        self.assertIn("Min plass", html)
+        self.assertIn('href="/geo/place/min_plass"', html)
+        self.assertIn('action="/geo/custom-place"', html)
+        self.assertIn('action="/geo/custom-place-delete"', html)
         self.assertIn("<strong>1 bilder</strong>", html)
 
     def test_geo_place_item_and_month_pages_use_browser_source_urls(self) -> None:
@@ -343,6 +419,11 @@ class GeoTests(unittest.TestCase):
     def test_unknown_geo_place_slug_returns_404(self) -> None:
         response: dict[str, object] = {}
         handler = object.__new__(BildebankRequestHandler)
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        target = Path(tempdir.name) / "target"
+        init_database(target)
+        handler.server = type("Server", (), {"target": target})()  # type: ignore[attr-defined]
 
         def fake_respond_text(content: str, *, status: object) -> None:
             response["content"] = content
@@ -353,7 +434,7 @@ class GeoTests(unittest.TestCase):
         handler.respond_geo_place("ukjent")
 
         self.assertEqual(getattr(response["status"], "value", None), 404)
-        self.assertEqual(response["content"], "Ukjent forhåndsdefinert sted.")
+        self.assertEqual(response["content"], "Ukjent sted.")
 
     def test_geo_area_page_links_to_child_areas_with_saved_names(self) -> None:
         import h3

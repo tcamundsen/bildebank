@@ -77,6 +77,7 @@ class BrowserSource:
     date_source: str | None = None
     show_faces: bool = True
     geo_place_slug: str | None = None
+    geo_place_cells: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -213,6 +214,12 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         try:
             if parsed.path == "/geo/place-name":
                 self.respond_set_geo_place_name()
+                return
+            if parsed.path == "/geo/custom-place":
+                self.respond_set_custom_geo_place()
+                return
+            if parsed.path == "/geo/custom-place-delete":
+                self.respond_delete_custom_geo_place()
                 return
             if parsed.path == "/api/face-person-add-face":
                 if not self.server.face_enabled:
@@ -479,9 +486,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
     def respond_geo_place(self, raw_path: str) -> None:
         raw_slug, page_mode, raw_value = parse_source_path(raw_path)
         slug = urllib.parse.unquote(raw_slug).strip()
-        place = predefined_geo_place(slug)
+        place = geo_place_by_slug(self.server.target, slug)
         if place is None:
-            self.respond_text("Ukjent forhåndsdefinert sted.", status=HTTPStatus.NOT_FOUND)
+            self.respond_text("Ukjent sted.", status=HTTPStatus.NOT_FOUND)
             return
         source = geo_place_browser_source(place)
         if page_mode is None:
@@ -563,6 +570,46 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             conn.close()
         url = "/geo/area/" + urllib.parse.quote(h3_cell, safe="") + f"?limit={limit}"
         self.redirect(url)
+
+    def respond_set_custom_geo_place(self) -> None:
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
+        params = urllib.parse.parse_qs(raw)
+        try:
+            slug = normalize_geo_place_slug(first_param(params, "slug"))
+            if predefined_geo_place(slug) is not None:
+                raise ValueError("Slug er reservert for et innebygd sted.")
+            name = first_param(params, "name")
+            h3_cells = parse_geo_place_cells(first_param(params, "h3_cells"))
+            conn = db.connect(self.server.target)
+            try:
+                db.set_custom_geo_place(conn, slug=slug, name=name, h3_cells=h3_cells)
+                conn.commit()
+            finally:
+                conn.close()
+        except ValueError as exc:
+            self.respond_html(error_html(exc), status=HTTPStatus.BAD_REQUEST)
+            return
+        self.redirect("/geo/place/" + urllib.parse.quote(slug, safe=""))
+
+    def respond_delete_custom_geo_place(self) -> None:
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
+        params = urllib.parse.parse_qs(raw)
+        try:
+            slug = normalize_geo_place_slug(first_param(params, "slug"))
+            if predefined_geo_place(slug) is not None:
+                raise ValueError("Innebygde steder kan ikke slettes.")
+            conn = db.connect(self.server.target)
+            try:
+                db.delete_custom_geo_place(conn, slug)
+                conn.commit()
+            finally:
+                conn.close()
+        except ValueError as exc:
+            self.respond_html(error_html(exc), status=HTTPStatus.BAD_REQUEST)
+            return
+        self.redirect("/geo")
 
     def respond_file(self, encoded_relative_path: str) -> None:
         raw_path = urllib.parse.unquote(encoded_relative_path).strip("/")
@@ -803,6 +850,31 @@ def parse_file_id(value: str) -> int:
     return file_id
 
 
+def normalize_geo_place_slug(value: str) -> str:
+    slug = re.sub(r"\s+", "_", value.strip().lower())
+    if not slug:
+        raise ValueError("Slug mangler.")
+    if any(char in slug for char in "/?#"):
+        raise ValueError("Slug kan ikke inneholde /, ? eller #.")
+    if len(slug) > 120:
+        raise ValueError("Slug er for lang.")
+    return slug
+
+
+def parse_geo_place_cells(value: str) -> list[str]:
+    cells = [cell.strip() for cell in re.split(r"[\s,]+", value) if cell.strip()]
+    clean_cells: list[str] = []
+    seen: set[str] = set()
+    for cell in cells:
+        h3_resolution_any(cell)
+        if cell not in seen:
+            clean_cells.append(cell)
+            seen.add(cell)
+    if not clean_cells:
+        raise ValueError("Stedet må ha minst én H3-celle.")
+    return clean_cells
+
+
 def parse_person_path(raw_path: str) -> tuple[str, str, bool, str | None, str]:
     person_part, page_mode, raw_value = parse_source_path(raw_path)
     person_mode = "all"
@@ -865,7 +937,12 @@ def date_source_browser_source(date_source: str) -> BrowserSource:
 
 
 def geo_place_browser_source(place: PredefinedGeoPlace) -> BrowserSource:
-    return BrowserSource(place.name, "/geo/place/" + urllib.parse.quote(place.slug, safe=""), geo_place_slug=place.slug)
+    return BrowserSource(
+        place.name,
+        "/geo/place/" + urllib.parse.quote(place.slug, safe=""),
+        geo_place_slug=place.slug,
+        geo_place_cells=place.h3_cells,
+    )
 
 
 def valid_browser_date_source(date_source: str) -> bool:
@@ -886,9 +963,7 @@ def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[str, ...]]:
             raise ValueError("Ugyldig datokilde.")
         return "date_source = ?", (source.date_source,)
     if source.geo_place_slug is not None:
-        place = predefined_geo_place(source.geo_place_slug)
-        if place is None:
-            raise ValueError("Ukjent forhåndsdefinert sted.")
+        place = PredefinedGeoPlace(source.geo_place_slug, source.title, source.geo_place_cells)
         return db.geo_place_where_clause(geo_place_cells_by_column(place))
     raise ValueError("Kilden har ikke SQL-filter.")
 
@@ -1617,7 +1692,7 @@ def geo_area_items(target: Path, *, h3_cell: str, resolution: int, limit: int) -
 
 
 def geo_place_items(target: Path, slug: str, *, limit: int | None = None) -> list[Any]:
-    place = predefined_geo_place(slug)
+    place = geo_place_by_slug(target, slug)
     if place is None:
         return []
     conn = db.connect(target)
@@ -1625,6 +1700,31 @@ def geo_place_items(target: Path, slug: str, *, limit: int | None = None) -> lis
         return db.geo_place_files(conn, cells_by_column=geo_place_cells_by_column(place), limit=limit)
     finally:
         conn.close()
+
+
+def geo_place_by_slug(target: Path, slug: str) -> PredefinedGeoPlace | None:
+    clean_slug = slug.strip().lower()
+    place = predefined_geo_place(clean_slug)
+    if place is not None:
+        return place
+    conn = db.connect(target)
+    try:
+        custom = db.custom_geo_place(conn, clean_slug)
+    finally:
+        conn.close()
+    return geo_place_from_row(custom) if custom is not None else None
+
+
+def geo_place_from_row(row: dict[str, object]) -> PredefinedGeoPlace:
+    return PredefinedGeoPlace(
+        slug=str(row["slug"]),
+        name=str(row["name"]),
+        h3_cells=tuple(str(cell) for cell in row["h3_cells"]),
+    )
+
+
+def custom_geo_places(conn: sqlite3.Connection) -> list[PredefinedGeoPlace]:
+    return [geo_place_from_row(row) for row in db.custom_geo_places(conn)]
 
 
 def geo_place_cells_by_column(place: PredefinedGeoPlace) -> list[tuple[str, str]]:
@@ -2132,7 +2232,8 @@ def geo_index_page_html(
     try:
         stats = db.geo_stats(conn)
         areas = db.geo_areas(conn, column=column, min_count=min_count, limit=limit)
-        predefined_places = predefined_geo_place_rows(conn)
+        geo_places = geo_place_rows(conn)
+        custom_places = custom_geo_places(conn)
     finally:
         conn.close()
     area_links = "\n".join(geo_area_row_html(row, resolution=resolution) for row in areas)
@@ -2148,7 +2249,8 @@ def geo_index_page_html(
           <p><a href="/">Til bildebrowser</a> · <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a> · <a href="/geo/stats">Geo-statistikk</a> · <a href="/geo/missing">Bilder uten GPS</a></p>
           <h1>Steder</h1>
           {geo_stats_summary_html(stats)}
-          {predefined_geo_places_section_html(predefined_places)}
+          {geo_places_section_html(geo_places)}
+          {custom_geo_places_admin_html(custom_places)}
           {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
           <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder. {len(areas)} steder funnet.</p>
           {content}
@@ -2157,30 +2259,30 @@ def geo_index_page_html(
     )
 
 
-def predefined_geo_place_rows(conn: sqlite3.Connection) -> list[dict[str, object]]:
+def geo_place_rows(conn: sqlite3.Connection) -> list[dict[str, object]]:
     return [
         {
             "slug": place.slug,
             "name": place.name,
             "count": db.geo_place_count(conn, cells_by_column=geo_place_cells_by_column(place)),
         }
-        for place in PREDEFINED_GEO_PLACES
+        for place in sorted((*PREDEFINED_GEO_PLACES, *custom_geo_places(conn)), key=lambda item: (item.name, item.slug))
     ]
 
 
-def predefined_geo_places_section_html(rows: list[dict[str, object]]) -> str:
+def geo_places_section_html(rows: list[dict[str, object]]) -> str:
     if not rows:
         return ""
-    links = "\n".join(predefined_geo_place_row_html(row) for row in rows)
+    links = "\n".join(geo_place_row_html(row) for row in rows)
     return f"""
           <section class="geo-predefined">
-            <h2>Forhåndsdefinerte steder</h2>
+            <h2>Steder</h2>
             <div class="geo-list">{links}</div>
           </section>
     """
 
 
-def predefined_geo_place_row_html(row: dict[str, object]) -> str:
+def geo_place_row_html(row: dict[str, object]) -> str:
     slug = str(row["slug"])
     name = str(row["name"])
     count = int(row["count"])
@@ -2191,6 +2293,45 @@ def predefined_geo_place_row_html(row: dict[str, object]) -> str:
       <span class="status">{html.escape(slug)}</span>
       <strong>{count} bilder</strong>
     </a>
+    """
+
+
+def custom_geo_places_admin_html(places: list[PredefinedGeoPlace]) -> str:
+    existing = "\n".join(custom_geo_place_edit_html(place) for place in places)
+    existing_section = f'<div class="custom-place-list">{existing}</div>' if existing else ""
+    return f"""
+          <section class="custom-geo-places">
+            <h2>Egne steder</h2>
+            {custom_geo_place_form_html()}
+            {existing_section}
+          </section>
+    """
+
+
+def custom_geo_place_form_html(place: PredefinedGeoPlace | None = None) -> str:
+    slug = place.slug if place is not None else ""
+    name = place.name if place is not None else ""
+    cells = "\n".join(place.h3_cells) if place is not None else ""
+    button_text = "Oppdater sted" if place is not None else "Legg til sted"
+    return f"""
+    <form action="/geo/custom-place" method="post" class="geo-filter custom-place-form">
+      <label>Slug <input name="slug" value="{html.escape(slug)}" autocomplete="off"></label>
+      <label>Navn <input name="name" value="{html.escape(name)}" autocomplete="off"></label>
+      <label class="custom-place-cells">H3-celler <textarea name="h3_cells" rows="4">{html.escape(cells)}</textarea></label>
+      <button type="submit">{button_text}</button>
+    </form>
+    """
+
+
+def custom_geo_place_edit_html(place: PredefinedGeoPlace) -> str:
+    return f"""
+    <div class="custom-place-edit">
+      {custom_geo_place_form_html(place)}
+      <form action="/geo/custom-place-delete" method="post" class="custom-place-delete">
+        <input type="hidden" name="slug" value="{html.escape(place.slug)}">
+        <button class="danger-button" type="submit">Slett sted</button>
+      </form>
+    </div>
     """
 
 
@@ -3572,7 +3713,26 @@ SERVER_CSS = r"""    :root {
     .geo-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 18px 0; }
     .geo-filter label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
     .geo-filter input { width: 120px; }
+    .geo-filter textarea {
+      width: min(520px, 78vw);
+      min-height: 96px;
+      resize: vertical;
+      font: 13px ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #303030;
+      color: var(--text);
+    }
     .geo-name-form input[name="name"] { width: min(420px, 70vw); }
+    .custom-geo-places { margin-top: 28px; }
+    .custom-place-form { align-items: stretch; }
+    .custom-place-form input[name="slug"] { width: 180px; }
+    .custom-place-form input[name="name"] { width: 260px; }
+    .custom-place-cells { flex: 1 1 360px; }
+    .custom-place-list { display: grid; gap: 10px; margin-top: 12px; }
+    .custom-place-edit { border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: 10px; }
+    .custom-place-delete { margin-top: -8px; }
     .geo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 18px 0; }
     .geo-stats div { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
     .geo-stats span { color: var(--muted); }
