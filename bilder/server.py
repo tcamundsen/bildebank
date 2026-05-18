@@ -2367,10 +2367,17 @@ def geo_place_row_html(row: dict[str, object]) -> str:
 
 def custom_geo_places_admin_html(places: list[PredefinedGeoPlace]) -> str:
     existing = "\n".join(custom_geo_place_edit_html(place) for place in places)
-    existing_section = f'<div class="custom-place-list">{existing}</div>' if existing else ""
+    existing_section = (
+        f"""
+            <h2>Lagrede steder</h2>
+            <div class="custom-place-list">{existing}</div>
+        """
+        if existing
+        else '<p class="meta">Ingen egne steder er lagret ennå.</p>'
+    )
     return f"""
           <section class="custom-geo-places">
-            <h2>Egne steder</h2>
+            <h2>Legg til sted</h2>
             {custom_geo_place_form_html()}
             {existing_section}
           </section>
@@ -2382,25 +2389,41 @@ def custom_geo_place_form_html(place: PredefinedGeoPlace | None = None) -> str:
     name = place.name if place is not None else ""
     cells = "\n".join(place.h3_cells) if place is not None else ""
     button_text = "Oppdater sted" if place is not None else "Legg til sted"
+    delete_button = (
+        '<button class="danger-button" type="submit" '
+        'formaction="/geo/custom-place-delete" formmethod="post">Slett sted</button>'
+        if place is not None
+        else ""
+    )
     return f"""
     <form action="/geo/custom-place" method="post" class="custom-place-form">
-      <label>Slug <input name="slug" value="{html.escape(slug)}" autocomplete="off"></label>
-      <label>Navn <input name="name" value="{html.escape(name)}" autocomplete="off"></label>
+      <div class="custom-place-identity">
+        <label>Slug <input name="slug" value="{html.escape(slug)}" autocomplete="off"></label>
+        <label>Navn <input name="name" value="{html.escape(name)}" autocomplete="off"></label>
+      </div>
       <label class="custom-place-cells">H3-celler <textarea name="h3_cells" rows="4">{html.escape(cells)}</textarea></label>
-      <button type="submit">{button_text}</button>
+      <div class="custom-place-actions">
+        <button type="submit">{button_text}</button>
+        {delete_button}
+      </div>
     </form>
     """
 
 
 def custom_geo_place_edit_html(place: PredefinedGeoPlace) -> str:
+    cell_count = len(place.h3_cells)
+    cell_label = "1 H3-celle" if cell_count == 1 else f"{cell_count} H3-celler"
     return f"""
-    <div class="custom-place-edit">
-      {custom_geo_place_form_html(place)}
-      <form action="/geo/custom-place-delete" method="post" class="custom-place-delete">
-        <input type="hidden" name="slug" value="{html.escape(place.slug)}">
-        <button class="danger-button" type="submit">Slett</button>
-      </form>
-    </div>
+    <details class="custom-place-edit">
+      <summary>
+        <span class="custom-place-name">{html.escape(place.name)}</span>
+        <span class="status">{html.escape(place.slug)}</span>
+        <span class="status">{cell_label}</span>
+      </summary>
+      <div class="custom-place-edit-body">
+        {custom_geo_place_form_html(place)}
+      </div>
+    </details>
     """
 
 
@@ -3915,29 +3938,52 @@ SERVER_CSS = r"""    :root {
     .custom-geo-places { margin-top: 28px; }
     .custom-place-form {
       display: grid;
-      grid-template-columns: minmax(160px, 220px) minmax(220px, 320px) minmax(320px, 1fr) auto;
+      grid-template-columns: minmax(240px, 360px) minmax(320px, 1fr) auto;
       gap: 12px;
-      align-items: end;
+      align-items: stretch;
       margin: 18px 0;
     }
-    .custom-place-form label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
+    .custom-place-form label,
+    .custom-place-identity {
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+    }
     .custom-place-form input, .custom-place-form textarea { width: 100%; }
-    .custom-place-form button, .custom-place-delete button { align-self: end; min-height: 40px; white-space: nowrap; }
+    .custom-place-actions {
+      display: grid;
+      gap: 8px;
+      align-content: end;
+    }
+    .custom-place-actions button { min-height: 40px; white-space: nowrap; }
     .custom-place-list { display: grid; gap: 10px; margin-top: 12px; }
     .custom-place-edit {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 10px;
-      align-items: end;
       border: 1px solid var(--border);
       border-radius: 6px;
       background: var(--panel);
-      padding: 10px;
+      overflow: hidden;
+    }
+    .custom-place-edit summary {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) minmax(120px, auto) auto;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      cursor: pointer;
+      list-style: none;
+    }
+    .custom-place-edit summary::-webkit-details-marker { display: none; }
+    .custom-place-edit summary:hover { background: #2b2b2b; }
+    .custom-place-name { font-weight: 700; }
+    .custom-place-edit-body {
+      border-top: 1px solid var(--border);
+      padding: 12px 14px 14px;
     }
     .custom-place-edit .custom-place-form { margin: 0; }
-    .custom-place-delete { margin: 0; }
     @media (max-width: 900px) {
-      .custom-place-form, .custom-place-edit {
+      .custom-place-form,
+      .custom-place-edit summary {
         grid-template-columns: 1fr;
       }
     }
