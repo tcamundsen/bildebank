@@ -382,7 +382,7 @@ class GeoTests(unittest.TestCase):
 
             html = geo_index_page_html(target, resolution=7, min_count=1, limit=10)
 
-        self.assertIn("<h2>Steder</h2>", html)
+        self.assertIn("<h2>Definerte steder</h2>", html)
         self.assertIn("Kreta", html)
         self.assertIn('href="/geo/place/kreta"', html)
         self.assertIn("Min plass", html)
@@ -400,10 +400,10 @@ class GeoTests(unittest.TestCase):
 
         html = markdown_doc_page_html(doc_path, doc_path.read_text(encoding="utf-8"))
 
-        self.assertIn("<h1>Steder</h1>", html)
+        self.assertIn("<h1>Bruk av GPS-lokasjon i bilder</h1>", html)
         self.assertIn("<code>/geo</code>", html)
-        self.assertIn("<strong>Steder</strong>", html)
-        self.assertIn("http://127.0.0.1:8765/geo", html)
+        self.assertIn("<strong>Egendefinerte steder</strong>", html)
+        self.assertIn("statistikk over bilder med og uten GPS-lokasjon", html)
         self.assertNotIn("# Steder", html)
 
     def test_markdown_help_renderer_omits_cli_help_markers(self) -> None:

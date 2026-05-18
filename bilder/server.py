@@ -2383,7 +2383,7 @@ def custom_geo_place_form_html(place: PredefinedGeoPlace | None = None) -> str:
     cells = "\n".join(place.h3_cells) if place is not None else ""
     button_text = "Oppdater sted" if place is not None else "Legg til sted"
     return f"""
-    <form action="/geo/custom-place" method="post" class="geo-filter custom-place-form">
+    <form action="/geo/custom-place" method="post" class="custom-place-form">
       <label>Slug <input name="slug" value="{html.escape(slug)}" autocomplete="off"></label>
       <label>Navn <input name="name" value="{html.escape(name)}" autocomplete="off"></label>
       <label class="custom-place-cells">H3-celler <textarea name="h3_cells" rows="4">{html.escape(cells)}</textarea></label>
@@ -2398,7 +2398,7 @@ def custom_geo_place_edit_html(place: PredefinedGeoPlace) -> str:
       {custom_geo_place_form_html(place)}
       <form action="/geo/custom-place-delete" method="post" class="custom-place-delete">
         <input type="hidden" name="slug" value="{html.escape(place.slug)}">
-        <button class="danger-button" type="submit">Slett sted</button>
+        <button class="danger-button" type="submit">Slett</button>
       </form>
     </div>
     """
@@ -3900,7 +3900,7 @@ SERVER_CSS = r"""    :root {
     .geo-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 18px 0; }
     .geo-filter label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
     .geo-filter input { width: 120px; }
-    .geo-filter textarea {
+    .geo-filter textarea, .custom-place-form textarea {
       width: min(520px, 78vw);
       min-height: 96px;
       resize: vertical;
@@ -3913,13 +3913,34 @@ SERVER_CSS = r"""    :root {
     }
     .geo-name-form input[name="name"] { width: min(420px, 70vw); }
     .custom-geo-places { margin-top: 28px; }
-    .custom-place-form { align-items: stretch; }
-    .custom-place-form input[name="slug"] { width: 180px; }
-    .custom-place-form input[name="name"] { width: 260px; }
-    .custom-place-cells { flex: 1 1 360px; }
+    .custom-place-form {
+      display: grid;
+      grid-template-columns: minmax(160px, 220px) minmax(220px, 320px) minmax(320px, 1fr) auto;
+      gap: 12px;
+      align-items: end;
+      margin: 18px 0;
+    }
+    .custom-place-form label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
+    .custom-place-form input, .custom-place-form textarea { width: 100%; }
+    .custom-place-form button, .custom-place-delete button { align-self: end; min-height: 40px; white-space: nowrap; }
     .custom-place-list { display: grid; gap: 10px; margin-top: 12px; }
-    .custom-place-edit { border: 1px solid var(--border); border-radius: 6px; background: var(--panel); padding: 10px; }
-    .custom-place-delete { margin-top: -8px; }
+    .custom-place-edit {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      padding: 10px;
+    }
+    .custom-place-edit .custom-place-form { margin: 0; }
+    .custom-place-delete { margin: 0; }
+    @media (max-width: 900px) {
+      .custom-place-form, .custom-place-edit {
+        grid-template-columns: 1fr;
+      }
+    }
     .doc-page { max-width: 860px; }
     .doc-content { line-height: 1.6; }
     .doc-content h1, .doc-content h2, .doc-content h3 { margin: 1.2em 0 0.45em; }
