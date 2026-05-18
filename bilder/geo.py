@@ -83,25 +83,6 @@ PREDEFINED_GEO_PLACES: tuple[PredefinedGeoPlace, ...] = (
             "860958287ffffff",
         ),
     ),
-    PredefinedGeoPlace(
-        slug="prestjordveien_65",
-        name="Prestjordveien 65",
-        h3_cells=(
-            "8b08ec86e529fff",
-            "8b08ec86e576fff",
-            "8b08ec86e52bfff",
-            "8b08ec86e528fff",
-        ),
-    ),
-    PredefinedGeoPlace(
-        slug="orrhågveien_45",
-        name="Orrhågveien 45",
-        h3_cells=(
-            "8b08ecb28da2fff",
-            "8b08ecb28da0fff",
-            "8b08ecb28da3fff",
-        ),
-    ),
 )
 
 
