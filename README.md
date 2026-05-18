@@ -36,6 +36,13 @@ cd $HOME\Downloads
 powershell.exe -ExecutionPolicy Bypass -File .\setup-windows.ps1
 ```
 
+Hvis du vil testinstallere i en annen mappe og bruke et annet kommandonavn,
+kan du for eksempel kjøre:
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\setup-windows.ps1 -InstallDir "$HOME\kode\bildebank-test" -CommandName bb2
+```
+
 Når scriptet er ferdig, **lukk PowerShell og åpne PowerShell på nytt**. Da skal du
 kunne skrive:
 

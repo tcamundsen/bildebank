@@ -1,6 +1,7 @@
 param(
     [string]$RepoUrl = "https://github.com/tcamundsen/bildebank.git",
     [string]$InstallDir = (Join-Path $HOME "kode\bildebank"),
+    [string]$CommandName = "bildebank",
     [switch]$SkipInstall
 )
 
@@ -105,6 +106,24 @@ function Get-RepoDir {
     return $InstallDir
 }
 
+function Get-ValidatedCommandName {
+    param([string]$Name)
+
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        throw "CommandName kan ikke være tom."
+    }
+    if ($Name.EndsWith(".cmd", [StringComparison]::OrdinalIgnoreCase)) {
+        $Name = $Name.Substring(0, $Name.Length - 4)
+    }
+    if ($Name -notmatch '^[A-Za-z0-9_.-]+$') {
+        throw "CommandName kan bare inneholde bokstaver, tall, punktum, understrek og bindestrek: $Name"
+    }
+    if ($Name -in @(".", "..")) {
+        throw "CommandName kan ikke være '$Name'."
+    }
+    return $Name
+}
+
 function Ensure-Repo {
     param([string]$RepoDir)
 
@@ -155,6 +174,26 @@ function Ensure-Venv {
     }
 }
 
+function Ensure-CommandShim {
+    param(
+        [string]$BinDir,
+        [string]$CommandName
+    )
+
+    $defaultShim = Join-Path $BinDir "bildebank.cmd"
+    if (-not (Test-Path -LiteralPath $defaultShim)) {
+        throw "Fant ikke kommando-wrapper: $defaultShim"
+    }
+
+    $commandShim = Join-Path $BinDir "$CommandName.cmd"
+    if ([string]::Equals($CommandName, "bildebank", [StringComparison]::OrdinalIgnoreCase)) {
+        return
+    }
+
+    Write-Step "Lager kommandoen $CommandName"
+    Copy-Item -LiteralPath $defaultShim -Destination $commandShim -Force
+}
+
 function Add-ToUserPath {
     param([string]$Directory)
 
@@ -184,19 +223,29 @@ function Add-ToUserPath {
 }
 
 function Warn-CommandCollision {
-    param([string]$ExpectedBinDir)
+    param(
+        [string]$ExpectedBinDir,
+        [string]$CommandName
+    )
 
-    $command = Get-Command "bildebank" -ErrorAction SilentlyContinue
+    $command = Get-Command $CommandName -ErrorAction SilentlyContinue
     if ($null -eq $command) {
+        return
+    }
+    if ([string]::IsNullOrWhiteSpace($command.Source)) {
+        Write-Host "Advarsel: '$CommandName' finnes allerede som $($command.CommandType)."
+        Write-Host "Hvis feil kommando starter, endre eller fjern den eksisterende kommandoen."
         return
     }
     $expected = (Resolve-Path -LiteralPath $ExpectedBinDir).Path
     $actual = Split-Path -Parent $command.Source
     if (-not [string]::Equals($actual.TrimEnd("\"), $expected.TrimEnd("\"), [StringComparison]::OrdinalIgnoreCase)) {
-        Write-Host "Advarsel: 'bildebank' finnes allerede her: $($command.Source)"
+        Write-Host "Advarsel: '$CommandName' finnes allerede her: $($command.Source)"
         Write-Host "Hvis feil kommando starter, flytt $expected tidligere i PATH."
     }
 }
+
+$CommandName = Get-ValidatedCommandName -Name $CommandName
 
 Write-Step "Sjekker Git og Python"
 Ensure-Git
@@ -207,13 +256,14 @@ Ensure-Repo -RepoDir $repoDir
 Ensure-Venv -RepoDir $repoDir
 
 $binDir = Join-Path $repoDir "bin"
+Ensure-CommandShim -BinDir $binDir -CommandName $CommandName
 Add-ToUserPath -Directory $binDir
-Warn-CommandCollision -ExpectedBinDir $binDir
+Warn-CommandCollision -ExpectedBinDir $binDir -CommandName $CommandName
 
 Write-Step "Ferdig"
 Write-Host "Programmet ligger i: $repoDir"
 Write-Host "Start en ny PowerShell og test:"
-Write-Host "  bildebank --help"
+Write-Host "  $CommandName --help"
 Write-Host ""
 Write-Host "Hvis du vil oppdatere senere:"
-Write-Host "  bildebank update"
+Write-Host "  $CommandName update"
