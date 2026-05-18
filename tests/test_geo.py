@@ -12,15 +12,29 @@ from bilder import db
 from bilder.cli import main
 from bilder.db import init_database
 from bilder.geo import (
+    PREDEFINED_GEO_PLACES,
     extract_gps_from_metadata,
     h3_cells_for_point,
     h3_area_label,
     h3_column_for_resolution,
+    h3_resolution,
     h3_resolution_label,
     scan_geo,
 )
 from bilder.media import sha256_file
-from bilder.server import geo_area_page_html, geo_index_page_html
+from bilder.server import (
+    BildebankRequestHandler,
+    adjacent_source_items,
+    geo_area_page_html,
+    geo_index_page_html,
+    geo_place_browser_source,
+    geo_place_cells_by_column,
+    geo_place_items,
+    source_item_by_id,
+    source_item_url,
+    source_month_items,
+    source_month_page_html,
+)
 
 
 def capture_cli(args: list[str]) -> tuple[int, str, str]:
@@ -57,6 +71,16 @@ def register_target_file(target: Path, relative_path: Path, *, content: bytes = 
         )
         conn.commit()
         return file_id
+    finally:
+        conn.close()
+
+
+def set_file_h3_cells(target: Path, file_id: int, cells: dict[str, str]) -> None:
+    conn = db.connect(target)
+    try:
+        assignments = ", ".join(f"{column} = ?" for column in cells)
+        conn.execute(f"UPDATE files SET {assignments} WHERE id = ?", (*cells.values(), file_id))
+        conn.commit()
     finally:
         conn.close()
 
@@ -221,6 +245,97 @@ class GeoTests(unittest.TestCase):
 
         self.assertIn("Hytta", html)
         self.assertIn(cells["h3_res7"], html)
+
+    def test_predefined_geo_place_finds_cells_across_resolutions_without_duplicates(self) -> None:
+        place = PREDEFINED_GEO_PLACES[0]
+        first_cell = place.h3_cells[0]
+        second_cell = place.h3_cells[2]
+        first_column = h3_column_for_resolution(h3_resolution(first_cell))
+        second_column = h3_column_for_resolution(h3_resolution(second_cell))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            first_id = register_target_file(target, Path("2024/01/first.jpg"), content=b"first")
+            second_id = register_target_file(target, Path("2024/01/second.jpg"), content=b"second")
+            duplicate_match_id = register_target_file(target, Path("2024/01/both.jpg"), content=b"both")
+            outside_id = register_target_file(target, Path("2024/01/outside.jpg"), content=b"outside")
+
+            set_file_h3_cells(target, first_id, {first_column: first_cell})
+            set_file_h3_cells(target, second_id, {second_column: second_cell})
+            set_file_h3_cells(target, duplicate_match_id, {first_column: first_cell, second_column: second_cell})
+            set_file_h3_cells(target, outside_id, {first_column: "831ec9fffffffff"})
+
+            items = geo_place_items(target, place.slug)
+
+            conn = db.connect(target)
+            try:
+                count = db.geo_place_count(conn, cells_by_column=geo_place_cells_by_column(place))
+            finally:
+                conn.close()
+
+        item_ids = [int(item["id"]) for item in items]
+        self.assertEqual(set(item_ids), {first_id, second_id, duplicate_match_id})
+        self.assertEqual(len(item_ids), len(set(item_ids)))
+        self.assertEqual(count, 3)
+
+    def test_geo_index_page_lists_predefined_places_with_count(self) -> None:
+        place = PREDEFINED_GEO_PLACES[0]
+        h3_cell = place.h3_cells[0]
+        column = h3_column_for_resolution(h3_resolution(h3_cell))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = register_target_file(target, Path("2024/01/kreta.jpg"))
+            set_file_h3_cells(target, file_id, {column: h3_cell})
+
+            html = geo_index_page_html(target, resolution=7, min_count=1, limit=10)
+
+        self.assertIn("Forhåndsdefinerte steder", html)
+        self.assertIn("Kreta", html)
+        self.assertIn('href="/geo/place/kreta"', html)
+        self.assertIn("<strong>1 bilder</strong>", html)
+
+    def test_geo_place_item_and_month_pages_use_browser_source_urls(self) -> None:
+        place = PREDEFINED_GEO_PLACES[0]
+        h3_cell = place.h3_cells[0]
+        column = h3_column_for_resolution(h3_resolution(h3_cell))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            first_id = register_target_file(target, Path("2024/01/first.jpg"), content=b"first")
+            second_id = register_target_file(target, Path("2024/01/second.jpg"), content=b"second")
+            set_file_h3_cells(target, first_id, {column: h3_cell})
+            set_file_h3_cells(target, second_id, {column: h3_cell})
+            source = geo_place_browser_source(place)
+            item = source_item_by_id(target, source, first_id)
+            assert item is not None
+            previous_item, next_item = adjacent_source_items(target, source, item)
+            month_items = source_month_items(target, source, "2024-01")
+            month_html = source_month_page_html(target, source, "2024-01", month_items)
+
+        self.assertIsNone(previous_item)
+        self.assertEqual(int(next_item["id"]), second_id)
+        self.assertEqual(source_item_url(source, first_id), "/geo/place/kreta/item/" + str(first_id))
+        self.assertIn('href="/geo/place/kreta/item/', month_html)
+        self.assertIn("Månedsoversikt: 2024-01", month_html)
+
+    def test_unknown_geo_place_slug_returns_404(self) -> None:
+        response: dict[str, object] = {}
+        handler = object.__new__(BildebankRequestHandler)
+
+        def fake_respond_text(content: str, *, status: object) -> None:
+            response["content"] = content
+            response["status"] = status
+
+        handler.respond_text = fake_respond_text  # type: ignore[method-assign]
+
+        handler.respond_geo_place("ukjent")
+
+        self.assertEqual(getattr(response["status"], "value", None), 404)
+        self.assertEqual(response["content"], "Ukjent forhåndsdefinert sted.")
 
     def test_geo_area_page_links_to_child_areas_with_saved_names(self) -> None:
         import h3

@@ -48,6 +48,34 @@ class GeoScanStats:
     updated: int = 0
 
 
+@dataclass(frozen=True)
+class PredefinedGeoPlace:
+    slug: str
+    name: str
+    h3_cells: tuple[str, ...]
+
+
+PREDEFINED_GEO_PLACES: tuple[PredefinedGeoPlace, ...] = (
+    PredefinedGeoPlace(
+        slug="kreta",
+        name="Kreta",
+        h3_cells=(
+            "833f72fffffffff",
+            "833f73fffffffff",
+            "843f729ffffffff",
+            "843f72bffffffff",
+            "843f731ffffffff",
+            "843f73dffffffff",
+        ),
+    ),
+)
+
+
+def predefined_geo_place(slug: str) -> PredefinedGeoPlace | None:
+    clean_slug = slug.strip().lower()
+    return next((place for place in PREDEFINED_GEO_PLACES if place.slug == clean_slug), None)
+
+
 def extract_gps_from_metadata(meta: dict[str, object]) -> GpsData | None:
     lat = first_metadata_value(meta, "EXIF:GPSLatitude", "Composite:GPSLatitude", "GPSLatitude")
     lon = first_metadata_value(meta, "EXIF:GPSLongitude", "Composite:GPSLongitude", "GPSLongitude")

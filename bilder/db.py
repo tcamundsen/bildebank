@@ -1838,6 +1838,59 @@ def geo_area_files(
     return list(conn.execute(sql, params))
 
 
+def geo_place_count(conn: sqlite3.Connection, *, cells_by_column: list[tuple[str, str]]) -> int:
+    conditions, params = geo_place_where_clause(cells_by_column)
+    row = conn.execute(
+        f"""
+        SELECT COUNT(DISTINCT id) AS count
+        FROM files
+        WHERE deleted_at IS NULL
+          AND ({conditions})
+        """,
+        params,
+    ).fetchone()
+    return int(row["count"] or 0)
+
+
+def geo_place_files(
+    conn: sqlite3.Connection,
+    *,
+    cells_by_column: list[tuple[str, str]],
+    limit: int | None = None,
+) -> list[sqlite3.Row]:
+    conditions, params = geo_place_where_clause(cells_by_column)
+    sql = f"""
+        SELECT DISTINCT {GEO_FILE_COLUMNS}
+        FROM files
+        WHERE deleted_at IS NULL
+          AND ({conditions})
+        ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path_key
+    """
+    query_params: list[str | int] = list(params)
+    if limit is not None:
+        sql += " LIMIT ?"
+        query_params.append(limit)
+    return list(conn.execute(sql, query_params))
+
+
+def geo_place_where_clause(cells_by_column: list[tuple[str, str]]) -> tuple[str, tuple[str, ...]]:
+    clean_cells: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for column, h3_cell in cells_by_column:
+        validate_h3_column(column)
+        clean_cell = h3_cell.strip()
+        if not clean_cell:
+            continue
+        key = (column, clean_cell)
+        if key not in seen:
+            clean_cells.append(key)
+            seen.add(key)
+    if not clean_cells:
+        raise ValueError("Geo-sted mangler H3-celler.")
+    conditions = " OR ".join(f"{column} = ?" for column, _h3_cell in clean_cells)
+    return conditions, tuple(h3_cell for _column, h3_cell in clean_cells)
+
+
 def geo_child_areas(
     conn: sqlite3.Connection,
     *,

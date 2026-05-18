@@ -28,7 +28,16 @@ from .html_export import (
     format_bytes,
     month_key_from_path,
 )
-from .geo import H3_COLUMNS, h3_column_for_resolution, h3_resolution, h3_resolution_label, h3_area_label
+from .geo import (
+    H3_COLUMNS,
+    PREDEFINED_GEO_PLACES,
+    PredefinedGeoPlace,
+    h3_area_label,
+    h3_column_for_resolution,
+    h3_resolution,
+    h3_resolution_label,
+    predefined_geo_place,
+)
 from .media import camera_info
 from .media_cache import cached_image_dimensions
 from .openclip import (
@@ -67,6 +76,7 @@ class BrowserSource:
     include_suggestions: bool = True
     date_source: str | None = None
     show_faces: bool = True
+    geo_place_slug: str | None = None
 
 
 @dataclass(frozen=True)
@@ -144,6 +154,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/geo/missing":
                 self.respond_geo_missing(parsed.query)
+                return
+            if parsed.path.startswith("/geo/place/"):
+                self.respond_geo_place(parsed.path.removeprefix("/geo/place/"))
                 return
             if parsed.path.startswith("/geo/area/"):
                 self.respond_geo_area(parsed.path.removeprefix("/geo/area/"), parsed.query)
@@ -442,6 +455,67 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         self.respond_html(geo_area_page_html(self.server.target, h3_cell, resolution=resolution, limit=limit))
 
+    def respond_geo_place(self, raw_path: str) -> None:
+        raw_slug, page_mode, raw_value = parse_source_path(raw_path)
+        slug = urllib.parse.unquote(raw_slug).strip()
+        place = predefined_geo_place(slug)
+        if place is None:
+            self.respond_text("Ukjent forhåndsdefinert sted.", status=HTTPStatus.NOT_FOUND)
+            return
+        source = geo_place_browser_source(place)
+        if page_mode is None:
+            item = first_source_item(self.server.target, source)
+            if item is None:
+                self.respond_html(
+                    empty_source_html(
+                        source,
+                        face_enabled=self.server.face_enabled,
+                        openclip_enabled=self.server.openclip_enabled,
+                    )
+                )
+                return
+            self.redirect(source_item_url(source, int(item["id"])))
+            return
+        if page_mode == "item":
+            file_id = parse_file_id(raw_value)
+            item = source_item_by_id(self.server.target, source, file_id)
+            if item is None:
+                self.respond_text("Filen finnes ikke for dette stedet.", status=HTTPStatus.NOT_FOUND)
+                return
+            previous_item, next_item = adjacent_source_items(self.server.target, source, item)
+            month_nav = source_month_navigation(self.server.target, source, item)
+            self.respond_html(
+                source_item_page_html(
+                    self.server.target,
+                    source,
+                    item,
+                    previous_item,
+                    next_item,
+                    month_nav,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                )
+            )
+            return
+        if page_mode == "month":
+            month_key = urllib.parse.unquote(raw_value).strip()
+            if not valid_month_key(month_key):
+                self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
+                return
+            items = source_month_items(self.server.target, source, month_key)
+            self.respond_html(
+                source_month_page_html(
+                    self.server.target,
+                    source,
+                    month_key,
+                    items,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                )
+            )
+            return
+        self.respond_text("Ugyldig stedsside.", status=HTTPStatus.NOT_FOUND)
+
     def respond_geo_missing(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
@@ -738,19 +812,27 @@ def date_source_browser_source(date_source: str) -> BrowserSource:
     return BrowserSource(labels[date_source], f"/date-source/{date_source}", date_source=date_source)
 
 
+def geo_place_browser_source(place: PredefinedGeoPlace) -> BrowserSource:
+    return BrowserSource(place.name, "/geo/place/" + urllib.parse.quote(place.slug, safe=""), geo_place_slug=place.slug)
+
+
 def valid_browser_date_source(date_source: str) -> bool:
     return date_source in {"filename", "mtime"}
 
 
+def is_filtered_source(source: BrowserSource) -> bool:
+    return source.person_name is not None or source.date_source is not None or source.geo_place_slug is not None
+
+
 def source_item_url(source: BrowserSource, file_id: int) -> str:
-    if source.person_name is not None or source.date_source is not None:
+    if is_filtered_source(source):
         return f"{source.root_url}/item/{file_id}"
     return f"/item/{file_id}"
 
 
 def source_month_url(source: BrowserSource, month_key: str) -> str:
     quoted = urllib.parse.quote(month_key)
-    if source.person_name is not None or source.date_source is not None:
+    if is_filtered_source(source):
         return f"{source.root_url}/month/{quoted}"
     return f"/month/{quoted}"
 
@@ -769,7 +851,7 @@ def browser_item_by_id(target: Path, file_id: int) -> Any | None:
 
 
 def source_item_by_id(target: Path, source: BrowserSource, file_id: int) -> Any | None:
-    if source.person_name is not None or source.date_source is not None:
+    if is_filtered_source(source):
         return next((item for item in source_items(target, source) if int(item["id"]) == file_id), None)
     conn = db.connect(target)
     try:
@@ -790,7 +872,7 @@ def adjacent_browser_items(target: Path, item: Any) -> tuple[Any | None, Any | N
 
 
 def adjacent_source_items(target: Path, source: BrowserSource, item: Any) -> tuple[Any | None, Any | None]:
-    if source.person_name is not None or source.date_source is not None:
+    if is_filtered_source(source):
         return adjacent_items_from_list(source_items(target, source), item)
     order_key = item_order_key(item)
     conn = db.connect(target)
@@ -843,7 +925,7 @@ def browser_month_keys(target: Path) -> list[str]:
 
 
 def source_month_keys(target: Path, source: BrowserSource) -> list[str]:
-    if source.person_name is not None or source.date_source is not None:
+    if is_filtered_source(source):
         keys = {month_key_for_item(target, item) for item in source_items(target, source)}
         return sorted(key for key in keys if valid_month_key(key))
     db_path = db.db_path_for_target(target)
@@ -1254,6 +1336,8 @@ def person_items(target: Path, person_name: str, *, include_suggestions: bool = 
 def source_items(target: Path, source: BrowserSource) -> list[Any]:
     if source.person_name is not None:
         return person_items(target, source.person_name, include_suggestions=source.include_suggestions)
+    if source.geo_place_slug is not None:
+        return geo_place_items(target, source.geo_place_slug)
     if source.date_source is not None:
         conn = db.connect(target)
         try:
@@ -1316,6 +1400,21 @@ def geo_area_items(target: Path, *, h3_cell: str, resolution: int, limit: int) -
         return db.geo_area_files(conn, column=column, h3_cell=h3_cell, limit=limit)
     finally:
         conn.close()
+
+
+def geo_place_items(target: Path, slug: str, *, limit: int | None = None) -> list[Any]:
+    place = predefined_geo_place(slug)
+    if place is None:
+        return []
+    conn = db.connect(target)
+    try:
+        return db.geo_place_files(conn, cells_by_column=geo_place_cells_by_column(place), limit=limit)
+    finally:
+        conn.close()
+
+
+def geo_place_cells_by_column(place: PredefinedGeoPlace) -> list[tuple[str, str]]:
+    return [(h3_column_for_resolution(h3_resolution(cell)), cell) for cell in place.h3_cells]
 
 
 def geo_child_area_items(target: Path, *, h3_cell: str, resolution: int) -> list[Any]:
@@ -1395,7 +1494,7 @@ def person_month_items(target: Path, person_name: str, month_key: str) -> list[A
 
 
 def source_month_items(target: Path, source: BrowserSource, month_key: str) -> list[Any]:
-    if source.person_name is not None:
+    if is_filtered_source(source):
         return [item for item in source_items(target, source) if month_key_for_item(target, item) == month_key]
     return browser_month_items(target, month_key)
 
@@ -1694,6 +1793,7 @@ def geo_index_page_html(
     try:
         stats = db.geo_stats(conn)
         areas = db.geo_areas(conn, column=column, min_count=min_count, limit=limit)
+        predefined_places = predefined_geo_place_rows(conn)
     finally:
         conn.close()
     area_links = "\n".join(geo_area_row_html(row, resolution=resolution) for row in areas)
@@ -1709,12 +1809,50 @@ def geo_index_page_html(
           <p><a href="/">Til bildebrowser</a> · <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a> · <a href="/geo/stats">Geo-statistikk</a> · <a href="/geo/missing">Bilder uten GPS</a></p>
           <h1>Steder</h1>
           {geo_stats_summary_html(stats)}
+          {predefined_geo_places_section_html(predefined_places)}
           {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
           <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder. {len(areas)} steder funnet.</p>
           {content}
         </main>
         """,
     )
+
+
+def predefined_geo_place_rows(conn: sqlite3.Connection) -> list[dict[str, object]]:
+    return [
+        {
+            "slug": place.slug,
+            "name": place.name,
+            "count": db.geo_place_count(conn, cells_by_column=geo_place_cells_by_column(place)),
+        }
+        for place in PREDEFINED_GEO_PLACES
+    ]
+
+
+def predefined_geo_places_section_html(rows: list[dict[str, object]]) -> str:
+    if not rows:
+        return ""
+    links = "\n".join(predefined_geo_place_row_html(row) for row in rows)
+    return f"""
+          <section class="geo-predefined">
+            <h2>Forhåndsdefinerte steder</h2>
+            <div class="geo-list">{links}</div>
+          </section>
+    """
+
+
+def predefined_geo_place_row_html(row: dict[str, object]) -> str:
+    slug = str(row["slug"])
+    name = str(row["name"])
+    count = int(row["count"])
+    url = "/geo/place/" + urllib.parse.quote(slug, safe="")
+    return f"""
+    <a class="geo-row" href="{html.escape(url)}">
+      <span>{html.escape(name)}</span>
+      <span class="status">{html.escape(slug)}</span>
+      <strong>{count} bilder</strong>
+    </a>
+    """
 
 
 def geo_map_page_html(
@@ -2295,7 +2433,7 @@ def source_top_links_html(source: BrowserSource, item: Any | None = None, *, fac
     ]
     if face_enabled:
         links.insert(0, '<a class="server-search-link" href="/people">Personer</a>')
-    if source.date_source is not None:
+    if source.date_source is not None or source.geo_place_slug is not None:
         all_url = source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/"
         links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">Alle bilder</a>')
     if source.person_name is not None and face_enabled:
@@ -2942,6 +3080,8 @@ def empty_source_message(source: BrowserSource) -> str:
             return "Ingen bilder med dato fra filnavn."
         if source.date_source == "mtime":
             return "Ingen bilder med dato fra mtime."
+        if source.geo_place_slug is not None:
+            return "Ingen aktive bilder for dette stedet."
         return "Ingen filer i bildesamlingen."
     if source.include_suggestions:
         return "Ingen bekreftede ansikter eller forslag for denne personen ennå."
