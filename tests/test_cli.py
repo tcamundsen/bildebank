@@ -47,6 +47,7 @@ from bilder.server import (
     geo_map_page_html,
     geo_missing_page_html,
     geo_stats_page_html,
+    image_info_content_html,
     index_html,
     item_page_html,
     month_page_html,
@@ -1061,27 +1062,58 @@ pretrained = "laion2b_s34b_b79k"
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            info_body = image_info_content_html(target, item)
 
         self.assertLess(body.index("Neste bilde"), body.index("Bildeinfo"))
         self.assertIn('data-open-info', body)
+        self.assertIn('data-info-item="1"', body)
         self.assertIn('id="infoOverlay"', body)
-        self.assertIn("Filnavn", body)
-        self.assertIn("IMG_20240102.png", body)
-        self.assertIn("Filstørrelse", body)
-        self.assertIn("Oppløsning", body)
-        self.assertIn("100 x 80", body)
-        self.assertIn("Kamera", body)
-        self.assertIn("Kilder", body)
-        self.assertIn("<dt>Kart</dt>", body)
-        self.assertIn('href="https://www.google.com/maps/search/?api=1&amp;query=59.9127300,10.7460900"', body)
-        self.assertIn('target="_blank"', body)
-        self.assertIn('rel="noopener"', body)
-        self.assertIn("<dt>Steder</dt>", body)
-        self.assertIn(f'href="/geo/area/{cells["h3_res5"]}"', body)
-        self.assertIn(f'href="/geo/area/{cells["h3_res9"]}"', body)
-        self.assertIn(f"H3-7: {cells['h3_res7']}", body)
-        self.assertIn(source.name, body)
+        self.assertIn("/api/item-info?file_id=", body)
+        self.assertNotIn("<dt>Filnavn</dt>", body)
+        self.assertIn("Filnavn", info_body)
+        self.assertIn("IMG_20240102.png", info_body)
+        self.assertIn("Filstørrelse", info_body)
+        self.assertIn("Oppløsning", info_body)
+        self.assertIn("100 x 80", info_body)
+        self.assertIn("Kamera", info_body)
+        self.assertIn("Kilder", info_body)
+        self.assertIn("<dt>Kart</dt>", info_body)
+        self.assertIn('href="https://www.google.com/maps/search/?api=1&amp;query=59.9127300,10.7460900"', info_body)
+        self.assertIn('target="_blank"', info_body)
+        self.assertIn('rel="noopener"', info_body)
+        self.assertIn("<dt>Steder</dt>", info_body)
+        self.assertIn(f'href="/geo/area/{cells["h3_res5"]}"', info_body)
+        self.assertIn(f'href="/geo/area/{cells["h3_res9"]}"', info_body)
+        self.assertIn(f"H3-7: {cells['h3_res7']}", info_body)
+        self.assertIn(source.name, info_body)
         self.assertIn("closeInfoOverlay", body)
+
+    def test_run_server_item_info_api_returns_lazy_panel_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            response: dict[str, object] = {}
+            handler = object.__new__(BildebankRequestHandler)
+            handler.server = SimpleNamespace(target=target)
+
+            def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                response["content"] = content
+                response["status"] = status
+
+            handler.respond_json = fake_respond_json  # type: ignore[method-assign]
+            handler.respond_item_info("file_id=1")
+
+        self.assertEqual(response["status"], HTTPStatus.OK)
+        content = response["content"]
+        assert isinstance(content, dict)
+        self.assertIs(content["ok"], True)
+        self.assertIn("<dt>Filnavn</dt>", str(content["html"]))
+        self.assertIn("IMG_20240102.png", str(content["html"]))
 
     def test_run_server_item_page_omits_geo_info_without_h3_cells(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1094,7 +1126,7 @@ pretrained = "laion2b_s34b_b79k"
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
-            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            body = image_info_content_html(target, item)
 
         self.assertNotIn("<dt>Steder</dt>", body)
         self.assertNotIn("<dt>Kart</dt>", body)

@@ -189,6 +189,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 stats = search_server_images(self.server, query=query, limit=limit)
                 self.respond_html(search_html(self.server, stats, limit))
                 return
+            if parsed.path == "/api/item-info":
+                self.respond_item_info(parsed.query)
+                return
             if parsed.path.startswith("/file/"):
                 self.respond_file(parsed.path.removeprefix("/file/"))
                 return
@@ -569,6 +572,19 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         self.respond_bytes(content, content_type)
+
+    def respond_item_info(self, query: str) -> None:
+        params = urllib.parse.parse_qs(query)
+        try:
+            file_id = parse_file_id(first_param(params, "file_id"))
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        item = browser_item_by_id(self.server.target, file_id)
+        if item is None:
+            self.respond_json({"ok": False, "error": "Filen finnes ikke."}, status=HTTPStatus.NOT_FOUND)
+            return
+        self.respond_json({"ok": True, "html": image_info_content_html(self.server.target, item)})
 
     def respond_add_face_to_person(self) -> None:
         payload = BildebankRequestHandler.read_face_person_payload(self)
@@ -2372,6 +2388,7 @@ def source_item_page_html(
         previous_item,
         next_item,
         include_info_button=True,
+        info_file_id=int(item["id"]),
         rotation_buttons=rotation_buttons_html(source, item),
         unconfirm_buttons=unconfirm_face_buttons_html(target, source, item) if face_enabled else "",
         delete_button=delete_button_html(source, item, previous_item, next_item),
@@ -2382,7 +2399,7 @@ def source_item_page_html(
     faces_button = faces_button_html(unconfirmed_faces) if face_enabled and source.person_name is None else ""
     faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if face_enabled and source.person_name is None else ""
     action_links = source_action_links_html(source, item, face_enabled=face_enabled, openclip_enabled=openclip_enabled)
-    info_overlay = image_info_overlay_html(target, item)
+    info_overlay = image_info_overlay_html()
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item) if face_enabled else ""
     return page_html(
         f"{source.title}: {target_path.name}",
@@ -2714,11 +2731,12 @@ def source_controls_html(
     next_item: Any | None,
     *,
     include_info_button: bool = False,
+    info_file_id: int | None = None,
     rotation_buttons: str = "",
     unconfirm_buttons: str = "",
     delete_button: str = "",
 ) -> str:
-    info_button = image_info_button_html() if include_info_button else ""
+    info_button = image_info_button_html(info_file_id) if include_info_button else ""
     return f"""
     <nav class="controls" aria-label="Navigering">
       {source_month_nav_link(source, month_nav["previous_year"], "Forrige år", "previous-year")}
@@ -2839,8 +2857,9 @@ def rotation_style_attr(item: Any) -> str:
     return f' style="transform: rotate({rotation}deg);" data-view-rotation="{rotation}"'
 
 
-def image_info_button_html() -> str:
-    return '<button class="nav-button" type="button" data-open-info>Bildeinfo</button>'
+def image_info_button_html(file_id: int | None) -> str:
+    file_attr = f' data-info-item="{file_id}"' if file_id is not None else ""
+    return f'<button class="nav-button" type="button" data-open-info{file_attr}>Bildeinfo</button>'
 
 
 def people_links_html(people: list[dict[str, str]]) -> str:
@@ -2879,8 +2898,7 @@ def faces_overlay_html(item: Any, faces: list[dict[str, object]], people: list[d
     """
 
 
-def image_info_overlay_html(target: Path, item: Any) -> str:
-    rows = "\n".join(image_info_rows(target, item))
+def image_info_overlay_html() -> str:
     return f"""
     <div id="infoOverlay" class="info-overlay" hidden>
       <div class="lightbox-bar">
@@ -2889,12 +2907,14 @@ def image_info_overlay_html(target: Path, item: Any) -> str:
       </div>
       <div class="info-panel">
         <h2>Bildeinfo</h2>
-        <dl class="info-list">
-          {rows}
-        </dl>
+        <dl class="info-list" data-info-list></dl>
       </div>
     </div>
     """
+
+
+def image_info_content_html(target: Path, item: Any) -> str:
+    return "\n".join(image_info_rows(target, item))
 
 
 def image_info_rows(target: Path, item: Any) -> list[str]:
@@ -3580,6 +3600,8 @@ def page_html(title: str, body: str) -> str:
   const closeFacesButton = document.querySelector("[data-close-faces]");
   const openInfoButton = document.querySelector("[data-open-info]");
   const closeInfoButton = document.querySelector("[data-close-info]");
+  const infoList = infoOverlay?.querySelector("[data-info-list]");
+  let infoLoaded = false;
   function openFacesOverlay() {{
     if (!faceOverlay) return;
     faceOverlay.hidden = false;
@@ -3589,9 +3611,35 @@ def page_html(title: str, body: str) -> str:
     if (!faceOverlay) return;
     faceOverlay.hidden = true;
   }}
-  function openInfoOverlay() {{
+  function infoStatusRow(message) {{
+    const row = document.createElement("div");
+    row.className = "info-row";
+    const label = document.createElement("dt");
+    label.textContent = "Status";
+    const value = document.createElement("dd");
+    value.textContent = message;
+    row.append(label, value);
+    return row;
+  }}
+  async function loadInfoOverlay() {{
+    if (!infoList || infoLoaded) return;
+    const fileId = openInfoButton?.dataset.infoItem || "";
+    if (!fileId) return;
+    infoList.replaceChildren(infoStatusRow("Laster..."));
+    try {{
+      const response = await fetch(`/api/item-info?file_id=${{encodeURIComponent(fileId)}}`);
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke laste bildeinfo.");
+      infoList.innerHTML = payload.html || "";
+      infoLoaded = true;
+    }} catch (error) {{
+      infoList.replaceChildren(infoStatusRow(error.message || "Kunne ikke laste bildeinfo."));
+    }}
+  }}
+  async function openInfoOverlay() {{
     if (!infoOverlay) return;
     infoOverlay.hidden = false;
+    await loadInfoOverlay();
     closeInfoButton?.focus();
   }}
   function closeInfoOverlay() {{
