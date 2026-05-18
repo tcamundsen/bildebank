@@ -26,6 +26,7 @@ from bilder.media import sha256_file
 from bilder.server import (
     BildebankRequestHandler,
     adjacent_source_items,
+    custom_geo_places_page_html,
     geo_area_page_html,
     geo_index_page_html,
     geo_place_by_slug,
@@ -383,9 +384,33 @@ class GeoTests(unittest.TestCase):
         self.assertIn('href="/geo/place/kreta"', html)
         self.assertIn("Min plass", html)
         self.assertIn('href="/geo/place/min_plass"', html)
+        self.assertIn('href="/geo/custom-places"', html)
+        self.assertNotIn('action="/geo/custom-place"', html)
+        self.assertNotIn('action="/geo/custom-place-delete"', html)
+        self.assertIn("<strong>1 bilder</strong>", html)
+
+    def test_custom_geo_places_page_has_edit_forms(self) -> None:
+        place = PREDEFINED_GEO_PLACES[0]
+        h3_cell = place.h3_cells[0]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                db.set_custom_geo_place(conn, slug="min_plass", name="Min plass", h3_cells=[h3_cell])
+                conn.commit()
+            finally:
+                conn.close()
+
+            html = custom_geo_places_page_html(target)
+
+        self.assertIn("<h1>Egne steder</h1>", html)
         self.assertIn('action="/geo/custom-place"', html)
         self.assertIn('action="/geo/custom-place-delete"', html)
-        self.assertIn("<strong>1 bilder</strong>", html)
+        self.assertIn('name="slug" value="min_plass"', html)
+        self.assertIn('name="name" value="Min plass"', html)
+        self.assertIn(h3_cell, html)
 
     def test_geo_place_item_and_month_pages_use_browser_source_urls(self) -> None:
         place = PREDEFINED_GEO_PLACES[0]

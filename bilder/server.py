@@ -162,6 +162,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/geo/missing":
                 self.respond_geo_missing(parsed.query)
                 return
+            if parsed.path == "/geo/custom-places":
+                self.respond_html(custom_geo_places_page_html(self.server.target))
+                return
             if parsed.path.startswith("/geo/place/"):
                 self.respond_geo_place(parsed.path.removeprefix("/geo/place/"))
                 return
@@ -2233,7 +2236,6 @@ def geo_index_page_html(
         stats = db.geo_stats(conn)
         areas = db.geo_areas(conn, column=column, min_count=min_count, limit=limit)
         geo_places = geo_place_rows(conn)
-        custom_places = custom_geo_places(conn)
     finally:
         conn.close()
     area_links = "\n".join(geo_area_row_html(row, resolution=resolution) for row in areas)
@@ -2246,14 +2248,31 @@ def geo_index_page_html(
         "Steder",
         f"""
         <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a> · <a href="/geo/stats">Geo-statistikk</a> · <a href="/geo/missing">Bilder uten GPS</a></p>
+          <p><a href="/">Til bildebrowser</a> · <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a> · <a href="/geo/stats">Geo-statistikk</a> · <a href="/geo/missing">Bilder uten GPS</a> · <a href="/geo/custom-places">Egne steder</a></p>
           <h1>Steder</h1>
           {geo_stats_summary_html(stats)}
           {geo_places_section_html(geo_places)}
-          {custom_geo_places_admin_html(custom_places)}
           {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
           <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder. {len(areas)} steder funnet.</p>
           {content}
+        </main>
+        """,
+    )
+
+
+def custom_geo_places_page_html(target: Path) -> str:
+    conn = db.connect(target)
+    try:
+        places = custom_geo_places(conn)
+    finally:
+        conn.close()
+    return page_html(
+        "Egne steder",
+        f"""
+        <main class="shell">
+          <p><a href="/geo">Til steder</a> · <a href="/">Til bildebrowser</a></p>
+          <h1>Egne steder</h1>
+          {custom_geo_places_admin_html(places)}
         </main>
         """,
     )
