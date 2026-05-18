@@ -143,6 +143,12 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             if parsed.path in {"/app/removed", "/app/removed/"}:
                 self.respond_html(removed_files_page_html(self.server.target))
                 return
+            if parsed.path == "/static/server.css":
+                self.respond_static_asset(SERVER_CSS, "text/css; charset=utf-8")
+                return
+            if parsed.path == "/static/server.js":
+                self.respond_static_asset(SERVER_JS, "application/javascript; charset=utf-8")
+                return
             if parsed.path in {"/geo", "/geo/"}:
                 self.respond_geo(parsed.query)
                 return
@@ -250,6 +256,15 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
 
     def respond_json(self, content: dict[str, Any], *, status: HTTPStatus = HTTPStatus.OK) -> None:
         self.respond_bytes(json.dumps(content).encode("utf-8"), "application/json; charset=utf-8", status=status)
+
+    def respond_static_asset(self, content: str, content_type: str) -> None:
+        encoded = content.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "public, max-age=3600")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
 
     def respond_bytes(self, content: bytes, content_type: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
         self.send_response(status)
@@ -3297,15 +3312,8 @@ def thumbnail_media_html(target: Path, item: Any) -> str:
     return f'<img src="{html.escape(thumbnail_src)}" alt="{name}" loading="lazy"{rotation_style_attr(item)}>'
 
 
-def page_html(title: str, body: str) -> str:
-    return f"""<!doctype html>
-<html lang="no">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{html.escape(title)}</title>
-  <style>
-    :root {{
+SERVER_ASSET_VERSION = "1"
+SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
       --panel: #242424;
@@ -3315,68 +3323,68 @@ def page_html(title: str, body: str) -> str:
       --muted: #b8b8b8;
       --accent: #7db7ff;
       --danger: #ff8a80;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
+    }
+    * { box-sizing: border-box; }
+    body {
       margin: 0;
       min-height: 100vh;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg);
       color: var(--text);
-    }}
-    .shell {{ max-width: 1200px; margin: 0 auto; padding: 24px; }}
-    h1 {{ margin: 0 0 8px; font-size: 28px; }}
-    .meta {{ color: var(--muted); margin: 0 0 18px; }}
-    .search {{ display: grid; grid-template-columns: minmax(0, 1fr) 90px auto; gap: 8px; margin: 18px 0; }}
-    input, select, button {{
+    }
+    .shell { max-width: 1200px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    .meta { color: var(--muted); margin: 0 0 18px; }
+    .search { display: grid; grid-template-columns: minmax(0, 1fr) 90px auto; gap: 8px; margin: 18px 0; }
+    input, select, button {
       font: inherit;
       padding: 10px 12px;
       border: 1px solid var(--border);
       border-radius: 6px;
       background: #303030;
       color: var(--text);
-    }}
-    button {{ cursor: pointer; }}
-    button:hover {{ background: #3a3a3a; }}
-    .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }}
-    .geo-filter {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 18px 0; }}
-    .geo-filter label {{ display: grid; gap: 4px; color: var(--muted); font-size: 13px; }}
-    .geo-filter input {{ width: 120px; }}
-    .geo-name-form input[name="name"] {{ width: min(420px, 70vw); }}
-    .geo-stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 18px 0; }}
-    .geo-stats div {{ display: grid; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }}
-    .geo-stats span {{ color: var(--muted); }}
-    .geo-list {{ display: grid; gap: 8px; margin-top: 18px; }}
-    .geo-row {{ display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); }}
-    .geo-map-wrap {{ width: 100%; overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }}
-    .geo-map {{ display: block; min-width: 760px; width: 100%; height: auto; }}
-    .geo-hex {{ fill: #2f6f73; stroke: #8fd8dd; stroke-width: 2; }}
-    .geo-hex-link:hover .geo-hex {{ fill: #3f858a; }}
-    .geo-hex-count {{ fill: var(--text); font-size: 13px; font-weight: 700; pointer-events: none; }}
-    .server-browser {{ min-height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }}
-    .browser-header {{
+    }
+    button { cursor: pointer; }
+    button:hover { background: #3a3a3a; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+    .geo-filter { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin: 18px 0; }
+    .geo-filter label { display: grid; gap: 4px; color: var(--muted); font-size: 13px; }
+    .geo-filter input { width: 120px; }
+    .geo-name-form input[name="name"] { width: min(420px, 70vw); }
+    .geo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 18px 0; }
+    .geo-stats div { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+    .geo-stats span { color: var(--muted); }
+    .geo-list { display: grid; gap: 8px; margin-top: 18px; }
+    .geo-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); }
+    .geo-map-wrap { width: 100%; overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+    .geo-map { display: block; min-width: 760px; width: 100%; height: auto; }
+    .geo-hex { fill: #2f6f73; stroke: #8fd8dd; stroke-width: 2; }
+    .geo-hex-link:hover .geo-hex { fill: #3f858a; }
+    .geo-hex-count { fill: var(--text); font-size: 13px; font-weight: 700; pointer-events: none; }
+    .server-browser { min-height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+    .browser-header {
       background: var(--panel);
       border-bottom: 1px solid var(--border);
       padding: 8px 10px;
       display: grid;
       gap: 7px;
-    }}
-    .topline, .controls {{ display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }}
-    .title {{ font-weight: 700; margin-right: 8px; line-height: 1.2; }}
-    .status {{ color: var(--muted); font-size: 13px; line-height: 1.2; }}
-    .warning {{ color: #ffd166; font-size: 13px; line-height: 1.2; font-weight: 700; }}
-    .people {{ display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }}
-    .top-actions {{
+    }
+    .topline, .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .title { font-weight: 700; margin-right: 8px; line-height: 1.2; }
+    .status { color: var(--muted); font-size: 13px; line-height: 1.2; }
+    .warning { color: #ffd166; font-size: 13px; line-height: 1.2; font-weight: 700; }
+    .people { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .top-actions {
       margin-left: auto;
       display: flex;
       align-items: center;
       gap: 8px;
       flex-wrap: wrap;
       justify-content: flex-end;
-    }}
-    .people-table {{ display: grid; gap: 8px; margin-top: 18px; }}
-    .removed-list {{ display: grid; gap: 6px; margin-top: 18px; }}
-    .removed-row {{
+    }
+    .people-table { display: grid; gap: 8px; margin-top: 18px; }
+    .removed-list { display: grid; gap: 6px; margin-top: 18px; }
+    .removed-row {
       display: grid;
       grid-template-columns: minmax(220px, 1fr) auto auto auto auto auto;
       gap: 10px;
@@ -3386,9 +3394,9 @@ def page_html(title: str, body: str) -> str:
       border-radius: 6px;
       background: var(--panel);
       font-size: 14px;
-    }}
-    .removed-row span {{ color: var(--muted); }}
-    .people-row {{
+    }
+    .removed-row span { color: var(--muted); }
+    .people-row {
       display: grid;
       grid-template-columns: minmax(160px, 1fr) auto auto auto auto;
       gap: 8px;
@@ -3397,13 +3405,13 @@ def page_html(title: str, body: str) -> str:
       border: 1px solid var(--border);
       border-radius: 6px;
       background: var(--panel);
-    }}
-    .people-name {{ font-weight: 700; overflow-wrap: anywhere; }}
-    .people-warning {{ justify-self: start; }}
-    a, .disabled {{ color: var(--accent); }}
-    a {{ text-decoration: none; }}
-    a:hover {{ text-decoration: underline; }}
-    .nav-button, .server-search-link, .person-link, .faces-button {{
+    }
+    .people-name { font-weight: 700; overflow-wrap: anywhere; }
+    .people-warning { justify-self: start; }
+    a, .disabled { color: var(--accent); }
+    a { text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .nav-button, .server-search-link, .person-link, .faces-button {
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 6px 9px;
@@ -3412,14 +3420,14 @@ def page_html(title: str, body: str) -> str:
       min-height: 32px;
       display: inline-flex;
       align-items: center;
-    }}
-    .person-link {{ color: var(--accent); }}
-    .faces-button {{ color: var(--accent); }}
-    .nav-button:hover, .server-search-link:hover, .person-link:hover, .faces-button:hover {{ background: #3a3a3a; text-decoration: none; }}
-    .danger-button {{ color: var(--danger); }}
-    .danger-button:hover {{ background: rgb(255 138 128 / 12%); }}
-    .disabled {{ color: #777; cursor: default; }}
-    .stage {{
+    }
+    .person-link { color: var(--accent); }
+    .faces-button { color: var(--accent); }
+    .nav-button:hover, .server-search-link:hover, .person-link:hover, .faces-button:hover { background: #3a3a3a; text-decoration: none; }
+    .danger-button { color: var(--danger); }
+    .danger-button:hover { background: rgb(255 138 128 / 12%); }
+    .disabled { color: #777; cursor: default; }
+    .stage {
       min-height: 0;
       display: grid;
       place-items: center;
@@ -3427,34 +3435,34 @@ def page_html(title: str, body: str) -> str:
       border-top: 1px solid var(--border);
       overflow: hidden;
       padding: 14px;
-    }}
-    .stage img, .stage video {{
+    }
+    .stage img, .stage video {
       max-width: min(100%, 92vw);
       max-height: calc(100vh - 10rem);
       object-fit: contain;
       display: block;
       transform-origin: center center;
-    }}
-    .person-media {{
+    }
+    .person-media {
       position: relative;
       display: inline-block;
       max-width: min(100%, 92vw);
       max-height: calc(100vh - 10rem);
       transform-origin: center center;
-    }}
-    .person-media img {{
+    }
+    .person-media img {
       max-width: 100%;
       max-height: calc(100vh - 10rem);
       object-fit: contain;
       display: block;
-    }}
-    .person-face-box {{
+    }
+    .person-face-box {
       position: absolute;
       border: 2px solid #2fbf71;
       background: rgb(47 191 113 / 13%);
       pointer-events: none;
-    }}
-    .person-face-label {{
+    }
+    .person-face-label {
       position: absolute;
       left: -2px;
       top: -24px;
@@ -3465,21 +3473,21 @@ def page_html(title: str, body: str) -> str:
       font-size: 12px;
       line-height: 1;
       white-space: nowrap;
-    }}
-    .person-face-box.suggested {{
+    }
+    .person-face-box.suggested {
       border-color: #e19b2d;
       background: rgb(225 155 45 / 14%);
-    }}
-    .month-grid-server {{
+    }
+    .month-grid-server {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
       gap: 14px;
       align-content: start;
       padding: 12px;
       overflow: auto;
-    }}
-    .thumb-link {{ display: block; color: inherit; text-decoration: none; }}
-    .thumb-link img, .video-thumb {{
+    }
+    .thumb-link { display: block; color: inherit; text-decoration: none; }
+    .thumb-link img, .video-thumb {
       width: 100%;
       aspect-ratio: 4 / 3;
       object-fit: cover;
@@ -3487,15 +3495,15 @@ def page_html(title: str, body: str) -> str:
       place-items: center;
       background: #181818;
       text-align: center;
-    }}
-    .item {{ background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }}
-    .item img {{ width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #181818; transform-origin: center center; }}
-    .text {{ padding: 10px; font-size: 14px; }}
-    .path {{ overflow-wrap: anywhere; }}
-    .score {{ color: var(--muted); margin-top: 4px; }}
-    .error {{ color: var(--danger); }}
-    .message {{ color: var(--muted); }}
-    .browser-footer {{
+    }
+    .item { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+    .item img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #181818; transform-origin: center center; }
+    .text { padding: 10px; font-size: 14px; }
+    .path { overflow-wrap: anywhere; }
+    .score { color: var(--muted); margin-top: 4px; }
+    .error { color: var(--danger); }
+    .message { color: var(--muted); }
+    .browser-footer {
       background: var(--panel);
       border-top: 1px solid var(--border);
       padding: 8px 12px;
@@ -3505,15 +3513,15 @@ def page_html(title: str, body: str) -> str:
       gap: 8px 14px;
       align-items: center;
       min-width: 0;
-    }}
-    .filename {{
+    }
+    .filename {
       min-width: 0;
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
       color: var(--muted);
-    }}
-    .face-overlay {{
+    }
+    .face-overlay {
       position: fixed;
       inset: 0;
       z-index: 10;
@@ -3522,9 +3530,9 @@ def page_html(title: str, body: str) -> str:
       grid-template-rows: auto minmax(0, 1fr);
       gap: 8px;
       padding: 12px;
-    }}
-    .face-overlay[hidden] {{ display: none; }}
-    .info-overlay {{
+    }
+    .face-overlay[hidden] { display: none; }
+    .info-overlay {
       position: fixed;
       inset: 0;
       z-index: 10;
@@ -3533,9 +3541,9 @@ def page_html(title: str, body: str) -> str:
       grid-template-rows: auto minmax(0, 1fr);
       gap: 8px;
       padding: 12px;
-    }}
-    .info-overlay[hidden] {{ display: none; }}
-    .info-panel {{
+    }
+    .info-overlay[hidden] { display: none; }
+    .info-panel {
       align-self: start;
       justify-self: center;
       width: min(760px, 100%);
@@ -3546,20 +3554,20 @@ def page_html(title: str, body: str) -> str:
       border-radius: 6px;
       padding: 18px;
       color: var(--text);
-    }}
-    .info-panel h2 {{ margin: 0 0 14px; font-size: 20px; }}
-    .info-list {{ display: grid; gap: 0; margin: 0; }}
-    .info-row {{
+    }
+    .info-panel h2 { margin: 0 0 14px; font-size: 20px; }
+    .info-list { display: grid; gap: 0; margin: 0; }
+    .info-row {
       display: grid;
       grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
       gap: 12px;
       padding: 9px 0;
       border-top: 1px solid var(--border);
-    }}
-    .info-row:first-child {{ border-top: 0; }}
-    .info-row dt {{ color: var(--muted); }}
-    .info-row dd {{ margin: 0; overflow-wrap: anywhere; }}
-    .lightbox-bar {{
+    }
+    .info-row:first-child { border-top: 0; }
+    .info-row dt { color: var(--muted); }
+    .info-row dd { margin: 0; overflow-wrap: anywhere; }
+    .lightbox-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -3567,106 +3575,102 @@ def page_html(title: str, body: str) -> str:
       color: #fff;
       font-size: 14px;
       min-width: 0;
-    }}
-    .lightbox-title {{
+    }
+    .lightbox-title {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-    }}
-    .lightbox-close {{
+    }
+    .lightbox-close {
       border-color: rgb(255 255 255 / 35%);
       background: rgb(255 255 255 / 10%);
       color: #fff;
       min-width: 42px;
-    }}
-    .lightbox-stage {{
+    }
+    .lightbox-stage {
       min-width: 0;
       min-height: 0;
       display: grid;
       place-items: center;
       overflow: auto;
-    }}
-    .face-list {{
+    }
+    .face-list {
       width: min(1200px, 100%);
       display: grid;
       grid-template-columns: 1fr;
       gap: 18px;
       align-items: start;
-    }}
-    .face-detail {{
+    }
+    .face-detail {
       display: grid;
       gap: 8px;
       color: #fff;
-    }}
-    .face-detail-title {{
+    }
+    .face-detail-title {
       font-size: 13px;
       overflow-wrap: anywhere;
-    }}
-    .lightbox-media {{
+    }
+    .lightbox-media {
       position: relative;
       display: inline-block;
       width: fit-content;
       max-width: 100%;
       justify-self: start;
       transform-origin: center center;
-    }}
-    .lightbox-media img {{
+    }
+    .lightbox-media img {
       display: block;
       max-width: calc(100vw - 24px);
       width: auto;
       height: auto;
-    }}
-    .face-box {{
+    }
+    .face-box {
       position: absolute;
       border: 3px solid #ff1f1f;
       background: rgb(255 31 31 / 12%);
       pointer-events: none;
-    }}
-    .assign-row {{
+    }
+    .assign-row {
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
       align-items: center;
-    }}
-    .new-person-form {{
+    }
+    .new-person-form {
       display: grid;
       grid-template-columns: auto minmax(160px, 280px) auto;
       gap: 8px;
       align-items: center;
       justify-content: start;
-    }}
-    .new-person-form label {{
+    }
+    .new-person-form label {
       color: var(--muted);
       font-size: 13px;
-    }}
-    .assign-person-button {{
+    }
+    .assign-person-button {
       border-color: rgb(255 255 255 / 22%);
       background: rgb(255 255 255 / 10%);
       color: #fff;
       min-height: 34px;
       padding: 6px 10px;
-    }}
-    .assign-person-button:hover {{ background: rgb(255 255 255 / 18%); }}
-    .assign-person-button:disabled {{ opacity: 0.55; cursor: default; }}
-    .assign-status {{ color: var(--muted); font-size: 13px; min-height: 1.3em; }}
-    @media (max-width: 640px) {{
-      .shell {{ padding: 16px; }}
-      .search {{ grid-template-columns: 1fr; }}
-      .browser-header {{ align-items: stretch; }}
-      .nav-button, .server-search-link, .person-link, .faces-button {{ flex: 1 1 auto; justify-content: center; text-align: center; }}
-      .top-actions {{ margin-left: 0; width: 100%; justify-content: stretch; }}
-      .people-row {{ grid-template-columns: 1fr; align-items: stretch; }}
-      .removed-row {{ grid-template-columns: 1fr; align-items: stretch; }}
-      .geo-row {{ grid-template-columns: 1fr; }}
-      .new-person-form {{ grid-template-columns: 1fr; align-items: stretch; }}
-      .info-row {{ grid-template-columns: 1fr; gap: 4px; }}
-    }}
-  </style>
-</head>
-<body>
-{body}
-<script>
-  const faceOverlay = document.getElementById("faceOverlay");
+    }
+    .assign-person-button:hover { background: rgb(255 255 255 / 18%); }
+    .assign-person-button:disabled { opacity: 0.55; cursor: default; }
+    .assign-status { color: var(--muted); font-size: 13px; min-height: 1.3em; }
+    @media (max-width: 640px) {
+      .shell { padding: 16px; }
+      .search { grid-template-columns: 1fr; }
+      .browser-header { align-items: stretch; }
+      .nav-button, .server-search-link, .person-link, .faces-button { flex: 1 1 auto; justify-content: center; text-align: center; }
+      .top-actions { margin-left: 0; width: 100%; justify-content: stretch; }
+      .people-row { grid-template-columns: 1fr; align-items: stretch; }
+      .removed-row { grid-template-columns: 1fr; align-items: stretch; }
+      .geo-row { grid-template-columns: 1fr; }
+      .new-person-form { grid-template-columns: 1fr; align-items: stretch; }
+      .info-row { grid-template-columns: 1fr; gap: 4px; }
+    }
+"""
+SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   const infoOverlay = document.getElementById("infoOverlay");
   const openFacesButton = document.querySelector("[data-open-faces]");
   const closeFacesButton = document.querySelector("[data-close-faces]");
@@ -3676,39 +3680,39 @@ def page_html(title: str, body: str) -> str:
   const infoList = infoOverlay?.querySelector("[data-info-list]");
   let facesLoaded = false;
   let infoLoaded = false;
-  function faceStatusMessage(message) {{
+  function faceStatusMessage(message) {
     const item = document.createElement("p");
     item.className = "empty";
     item.textContent = message;
     return item;
-  }}
-  async function loadFacesOverlay() {{
+  }
+  async function loadFacesOverlay() {
     if (!faceList || facesLoaded) return;
     const fileId = openFacesButton?.dataset.facesItem || "";
     if (!fileId) return;
     faceList.replaceChildren(faceStatusMessage("Laster..."));
-    try {{
-      const response = await fetch(`/api/item-faces?file_id=${{encodeURIComponent(fileId)}}`);
+    try {
+      const response = await fetch(`/api/item-faces?file_id=${encodeURIComponent(fileId)}`);
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke laste ansikter.");
       faceList.innerHTML = payload.html || "";
       bindFaceAssignmentHandlers(faceList);
       facesLoaded = true;
-    }} catch (error) {{
+    } catch (error) {
       faceList.replaceChildren(faceStatusMessage(error.message || "Kunne ikke laste ansikter."));
-    }}
-  }}
-  async function openFacesOverlay() {{
+    }
+  }
+  async function openFacesOverlay() {
     if (!faceOverlay) return;
     faceOverlay.hidden = false;
     await loadFacesOverlay();
     closeFacesButton?.focus();
-  }}
-  function closeFacesOverlay() {{
+  }
+  function closeFacesOverlay() {
     if (!faceOverlay) return;
     faceOverlay.hidden = true;
-  }}
-  function infoStatusRow(message) {{
+  }
+  function infoStatusRow(message) {
     const row = document.createElement("div");
     row.className = "info-row";
     const label = document.createElement("dt");
@@ -3717,40 +3721,40 @@ def page_html(title: str, body: str) -> str:
     value.textContent = message;
     row.append(label, value);
     return row;
-  }}
-  async function loadInfoOverlay() {{
+  }
+  async function loadInfoOverlay() {
     if (!infoList || infoLoaded) return;
     const fileId = openInfoButton?.dataset.infoItem || "";
     if (!fileId) return;
     infoList.replaceChildren(infoStatusRow("Laster..."));
-    try {{
-      const response = await fetch(`/api/item-info?file_id=${{encodeURIComponent(fileId)}}`);
+    try {
+      const response = await fetch(`/api/item-info?file_id=${encodeURIComponent(fileId)}`);
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke laste bildeinfo.");
       infoList.innerHTML = payload.html || "";
       infoLoaded = true;
-    }} catch (error) {{
+    } catch (error) {
       infoList.replaceChildren(infoStatusRow(error.message || "Kunne ikke laste bildeinfo."));
-    }}
-  }}
-  async function openInfoOverlay() {{
+    }
+  }
+  async function openInfoOverlay() {
     if (!infoOverlay) return;
     infoOverlay.hidden = false;
     await loadInfoOverlay();
     closeInfoButton?.focus();
-  }}
-  function closeInfoOverlay() {{
+  }
+  function closeInfoOverlay() {
     if (!infoOverlay) return;
     infoOverlay.hidden = true;
-  }}
-  function ensureTopPersonLink(name, url) {{
+  }
+  function ensureTopPersonLink(name, url) {
     if (!name || !url) return;
     let people = document.querySelector(".topline .people");
-    if (!people) {{
+    if (!people) {
       people = document.createElement("div");
       people.className = "people";
       document.querySelector(".topline .title")?.after(people);
-    }}
+    }
     const exists = Array.from(people.querySelectorAll(".person-link")).some(link => link.textContent === name);
     if (exists) return;
     const link = document.createElement("a");
@@ -3758,164 +3762,164 @@ def page_html(title: str, body: str) -> str:
     link.href = url;
     link.textContent = name;
     people.append(link);
-  }}
+  }
   openFacesButton?.addEventListener("click", openFacesOverlay);
   closeFacesButton?.addEventListener("click", closeFacesOverlay);
   openInfoButton?.addEventListener("click", openInfoOverlay);
   closeInfoButton?.addEventListener("click", closeInfoOverlay);
-  document.querySelectorAll("[data-rotate-item]").forEach(button => {{
-    button.addEventListener("click", async () => {{
+  document.querySelectorAll("[data-rotate-item]").forEach(button => {
+    button.addEventListener("click", async () => {
       const fileId = Number(button.dataset.rotateItem);
       const direction = button.dataset.rotateDirection || "";
       button.disabled = true;
-      try {{
-        const response = await fetch("/api/item-rotate", {{
+      try {
+        const response = await fetch("/api/item-rotate", {
           method: "POST",
-          headers: {{"Content-Type": "application/json"}},
-          body: JSON.stringify({{file_id: fileId, direction}}),
-        }});
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({file_id: fileId, direction}),
+        });
         const payload = await response.json();
         if (!payload.ok) throw new Error(payload.error || "Kunne ikke rotere.");
         window.location.reload();
-      }} catch (error) {{
+      } catch (error) {
         alert(error.message || "Kunne ikke rotere.");
         button.disabled = false;
-      }}
-    }});
-  }});
-  document.querySelectorAll("[data-delete-item]").forEach(button => {{
-    button.addEventListener("click", async () => {{
+      }
+    });
+  });
+  document.querySelectorAll("[data-delete-item]").forEach(button => {
+    button.addEventListener("click", async () => {
       const fileId = Number(button.dataset.deleteItem);
       const path = button.dataset.deletePath || "";
       const redirectUrl = button.dataset.deleteRedirect || "/";
-      if (!confirm(`Flytte til deleted/?\\n\\n${{path}}`)) return;
+      if (!confirm(`Flytte til deleted/?\\n\\n${path}`)) return;
       button.disabled = true;
-      try {{
-        const response = await fetch("/api/item-delete", {{
+      try {
+        const response = await fetch("/api/item-delete", {
           method: "POST",
-          headers: {{"Content-Type": "application/json"}},
-          body: JSON.stringify({{file_id: fileId}}),
-        }});
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({file_id: fileId}),
+        });
         const payload = await response.json();
         if (!payload.ok) throw new Error(payload.error || "Kunne ikke slette.");
         window.location.href = redirectUrl;
-      }} catch (error) {{
+      } catch (error) {
         alert(error.message || "Kunne ikke slette.");
         button.disabled = false;
-      }}
-    }});
-  }});
-  document.querySelectorAll("[data-undelete-item]").forEach(button => {{
-    button.addEventListener("click", async () => {{
+      }
+    });
+  });
+  document.querySelectorAll("[data-undelete-item]").forEach(button => {
+    button.addEventListener("click", async () => {
       const fileId = Number(button.dataset.undeleteItem);
       const path = button.dataset.undeletePath || "";
-      if (!confirm(`Flytte tilbake til bildesamlingen?\\n\\n${{path}}`)) return;
+      if (!confirm(`Flytte tilbake til bildesamlingen?\\n\\n${path}`)) return;
       button.disabled = true;
-      try {{
-        const response = await fetch("/api/item-undelete", {{
+      try {
+        const response = await fetch("/api/item-undelete", {
           method: "POST",
-          headers: {{"Content-Type": "application/json"}},
-          body: JSON.stringify({{file_id: fileId}}),
-        }});
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({file_id: fileId}),
+        });
         const payload = await response.json();
         if (!payload.ok) throw new Error(payload.error || "Kunne ikke angre sletting.");
         button.closest(".removed-row")?.remove();
-      }} catch (error) {{
+      } catch (error) {
         alert(error.message || "Kunne ikke angre sletting.");
         button.disabled = false;
-      }}
-    }});
-  }});
-  document.querySelectorAll("[data-unconfirm-face]").forEach(button => {{
-    button.addEventListener("click", async () => {{
+      }
+    });
+  });
+  document.querySelectorAll("[data-unconfirm-face]").forEach(button => {
+    button.addEventListener("click", async () => {
       const faceId = Number(button.dataset.unconfirmFace);
       const personName = button.dataset.unconfirmPerson || "";
       if (!faceId || !personName) return;
-      const command = `bildebank face-person-remove-face "${{personName}}" ${{faceId}}`;
-      if (!confirm(`Avbekrefte face-id ${{faceId}} fra ${{personName}}?\\n\\nTilsvarer:\\n${{command}}`)) return;
+      const command = `bildebank face-person-remove-face "${personName}" ${faceId}`;
+      if (!confirm(`Avbekrefte face-id ${faceId} fra ${personName}?\\n\\nTilsvarer:\\n${command}`)) return;
       button.disabled = true;
-      try {{
-        const response = await fetch("/api/face-person-remove-face", {{
+      try {
+        const response = await fetch("/api/face-person-remove-face", {
           method: "POST",
-          headers: {{"Content-Type": "application/json"}},
-          body: JSON.stringify({{face_id: faceId, person_name: personName}}),
-        }});
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({face_id: faceId, person_name: personName}),
+        });
         const payload = await response.json();
         if (!payload.ok) throw new Error(payload.error || "Kunne ikke avbekrefte.");
         window.location.reload();
-      }} catch (error) {{
+      } catch (error) {
         alert(error.message || "Kunne ikke avbekrefte.");
         button.disabled = false;
-      }}
-    }});
-  }});
-  faceOverlay?.addEventListener("click", event => {{
+      }
+    });
+  });
+  faceOverlay?.addEventListener("click", event => {
     if (event.target === faceOverlay || event.target.classList?.contains("lightbox-stage")) closeFacesOverlay();
-  }});
-  infoOverlay?.addEventListener("click", event => {{
+  });
+  infoOverlay?.addEventListener("click", event => {
     if (event.target === infoOverlay) closeInfoOverlay();
-  }});
-  async function assignFace(detail, status, endpoint, faceId, personName) {{
+  });
+  async function assignFace(detail, status, endpoint, faceId, personName) {
     if (!detail || !status || !faceId || !personName) return;
     status.textContent = "Lagrer...";
     detail.querySelectorAll("button, input").forEach(item => item.disabled = true);
-    try {{
-      const response = await fetch(endpoint, {{
+    try {
+      const response = await fetch(endpoint, {
         method: "POST",
-        headers: {{"Content-Type": "application/json"}},
-        body: JSON.stringify({{face_id: Number(faceId), person_name: personName}}),
-      }});
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({face_id: Number(faceId), person_name: personName}),
+      });
       const payload = await response.json();
       if (!payload.ok) throw new Error(payload.error || "Kunne ikke lagre.");
-      status.textContent = `Koblet til ${{payload.person_name}}.`;
+      status.textContent = `Koblet til ${payload.person_name}.`;
       ensureTopPersonLink(payload.person_name, payload.person_url);
       detail.remove();
-      if (!document.querySelector(".face-detail")) {{
+      if (!document.querySelector(".face-detail")) {
         closeFacesOverlay();
         window.location.reload();
-      }}
-    }} catch (error) {{
+      }
+    } catch (error) {
       status.textContent = error.message || "Kunne ikke lagre.";
       detail.querySelectorAll("button, input").forEach(item => item.disabled = false);
-    }}
-  }}
-  function bindFaceAssignmentHandlers(root = document) {{
-    root.querySelectorAll(".assign-person-button").forEach(button => {{
-      button.addEventListener("click", async () => {{
+    }
+  }
+  function bindFaceAssignmentHandlers(root = document) {
+    root.querySelectorAll(".assign-person-button").forEach(button => {
+      button.addEventListener("click", async () => {
         const faceId = button.dataset.faceId;
         const personName = button.dataset.personName;
         const detail = button.closest(".face-detail");
         const status = detail?.querySelector(".assign-status");
         await assignFace(detail, status, "/api/face-person-add-face", faceId, personName);
-      }});
-    }});
-    root.querySelectorAll("[data-new-person-form]").forEach(form => {{
-      form.addEventListener("submit", async event => {{
+      });
+    });
+    root.querySelectorAll("[data-new-person-form]").forEach(form => {
+      form.addEventListener("submit", async event => {
         event.preventDefault();
         const detail = form.closest(".face-detail");
         const status = detail?.querySelector(".assign-status");
         const faceId = form.querySelector('input[name="face_id"]')?.value;
         const personName = form.querySelector('input[name="person_name"]')?.value?.trim();
         await assignFace(detail, status, "/api/face-person-create-and-add-face", faceId, personName);
-      }});
-    }});
-  }}
+      });
+    });
+  }
   bindFaceAssignmentHandlers();
-  document.addEventListener("keydown", event => {{
-    if (faceOverlay && !faceOverlay.hidden) {{
-      if (event.key === "Escape") {{
+  document.addEventListener("keydown", event => {
+    if (faceOverlay && !faceOverlay.hidden) {
+      if (event.key === "Escape") {
         event.preventDefault();
         closeFacesOverlay();
-      }}
+      }
       return;
-    }}
-    if (infoOverlay && !infoOverlay.hidden) {{
-      if (event.key === "Escape") {{
+    }
+    if (infoOverlay && !infoOverlay.hidden) {
+      if (event.key === "Escape") {
         event.preventDefault();
         closeInfoOverlay();
-      }}
+      }
       return;
-    }}
+    }
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
     const target = event.target;
     if (
@@ -3925,21 +3929,36 @@ def page_html(title: str, body: str) -> str:
       target instanceof HTMLButtonElement ||
       target?.isContentEditable
     ) return;
-    const selector = {{
+    const selector = {
       ArrowLeft: '[data-key-nav="previous"]',
       ArrowRight: '[data-key-nav="next"]',
       ArrowUp: '[data-key-nav="previous-month"]',
       ArrowDown: '[data-key-nav="next-month"]',
       PageUp: '[data-key-nav="previous-year"]',
       PageDown: '[data-key-nav="next-year"]',
-    }}[event.key] || "";
+    }[event.key] || "";
     if (!selector) return;
     const link = document.querySelector(selector);
     if (!(link instanceof HTMLAnchorElement)) return;
     event.preventDefault();
     window.location.href = link.href;
-  }});
-</script>
+  });
+"""
+
+
+def page_html(title: str, body: str) -> str:
+    asset_version = urllib.parse.quote(SERVER_ASSET_VERSION, safe="")
+    return f"""<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(title)}</title>
+  <link rel="stylesheet" href="/static/server.css?v={asset_version}">
+</head>
+<body>
+{body}
+<script src="/static/server.js?v={asset_version}"></script>
 </body>
 </html>
 """

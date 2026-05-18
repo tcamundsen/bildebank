@@ -62,6 +62,8 @@ from bilder.server import (
     person_items,
     removed_files_page_html,
     search_server_images,
+    SERVER_CSS,
+    SERVER_JS,
     source_item_by_id,
     source_item_page_html,
     source_month_items,
@@ -775,12 +777,14 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('data-key-nav="next-year"', body)
         self.assertIn('data-key-nav="previous-month"', body)
         self.assertIn('data-key-nav="next-month"', body)
-        self.assertIn("ArrowLeft", body)
-        self.assertIn("ArrowRight", body)
-        self.assertIn("ArrowUp", body)
-        self.assertIn("ArrowDown", body)
-        self.assertIn("PageUp", body)
-        self.assertIn("PageDown", body)
+        self.assertIn('href="/static/server.css?v=', body)
+        self.assertIn('src="/static/server.js?v=', body)
+        self.assertIn("ArrowLeft", SERVER_JS)
+        self.assertIn("ArrowRight", SERVER_JS)
+        self.assertIn("ArrowUp", SERVER_JS)
+        self.assertIn("ArrowDown", SERVER_JS)
+        self.assertIn("PageUp", SERVER_JS)
+        self.assertIn("PageDown", SERVER_JS)
 
     def test_run_server_top_steder_link_points_to_geo_not_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1085,7 +1089,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('data-open-info', body)
         self.assertIn('data-info-item="1"', body)
         self.assertIn('id="infoOverlay"', body)
-        self.assertIn("/api/item-info?file_id=", body)
+        self.assertIn("/api/item-info?file_id=", SERVER_JS)
         self.assertNotIn("<dt>Filnavn</dt>", body)
         self.assertIn("Filnavn", info_body)
         self.assertIn("IMG_20240102.png", info_body)
@@ -1103,7 +1107,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn(f'href="/geo/area/{cells["h3_res9"]}"', info_body)
         self.assertIn(f"H3-7: {cells['h3_res7']}", info_body)
         self.assertIn(source.name, info_body)
-        self.assertIn("closeInfoOverlay", body)
+        self.assertIn("closeInfoOverlay", SERVER_JS)
 
     def test_run_server_item_info_api_returns_lazy_panel_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1166,8 +1170,8 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Slett", body)
         self.assertIn('data-delete-item="1"', body)
         self.assertIn('data-delete-path="2024/01/IMG_20240102.png"', body)
-        self.assertIn("/api/item-delete", body)
-        self.assertIn("Flytte til deleted/?", body)
+        self.assertIn("/api/item-delete", SERVER_JS)
+        self.assertIn("Flytte til deleted/?", SERVER_JS)
 
     def test_run_server_delete_button_moves_file_to_deleted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1232,7 +1236,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('href="/file/deleted/2024/01/IMG_20240102.png"', removed_body)
         self.assertIn("2024/01/IMG_20240102.png", removed_body)
         self.assertIn('data-undelete-item="1"', removed_body)
-        self.assertIn("/api/item-undelete", removed_body)
+        self.assertIn("/api/item-undelete", SERVER_JS)
 
     def test_run_server_undelete_restores_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1562,11 +1566,11 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('data-faces-item="1"', body)
         self.assertIn('data-face-list', body)
         self.assertNotIn("Ny person", body)
-        self.assertIn("width: fit-content;", body)
-        self.assertIn("justify-self: start;", body)
+        self.assertIn("width: fit-content;", SERVER_CSS)
+        self.assertIn("justify-self: start;", SERVER_CSS)
         self.assertIn("Ny person", face_body)
-        self.assertIn("/api/face-person-create-and-add-face", body)
-        self.assertIn("/api/item-faces?file_id=", body)
+        self.assertIn("/api/face-person-create-and-add-face", SERVER_JS)
+        self.assertIn("/api/item-faces?file_id=", SERVER_JS)
         self.assertIn("Identifiser", face_body)
         self.assertIn('data-face-id="2"', face_body)
         self.assertIn('data-person-name="Kari"', face_body)
@@ -1959,7 +1963,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('data-unconfirm-face="3"', confirmed_body)
         self.assertIn('data-unconfirm-person="Kari"', confirmed_body)
         self.assertIn("Avbekreft face-id 1", confirmed_body)
-        self.assertIn("/api/face-person-remove-face", confirmed_body)
+        self.assertIn("/api/face-person-remove-face", SERVER_JS)
         self.assertEqual([int(item["id"]) for item in confirmed_items], [1])
         self.assertEqual([int(item["id"]) for item in all_items], [1, 2])
 
