@@ -97,10 +97,9 @@ PREDEFINED_GEO_PLACES: tuple[PredefinedGeoPlace, ...] = (
         slug="orrhågveien_45",
         name="Orrhågveien 45",
         h3_cells=(
-            "8b08ecb2ea42fff",
-            "8b08ecb2ea40fff",
-            "8b08ecb2ea5cfff",
-            "8b08ecb2ea43fff",
+            "8b08ecb28da2fff",
+            "8b08ecb28da0fff",
+            "8b08ecb28da3fff",
         ),
     ),
 )
