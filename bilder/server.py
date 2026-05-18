@@ -2414,10 +2414,11 @@ def source_item_page_html(
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
     people = people_links_html(confirmed_people_for_file(target, int(item["id"]))) if face_enabled else ""
-    unconfirmed_faces = unconfirmed_faces_for_item(target, item) if face_enabled else []
-    all_people = registered_people(target) if face_enabled else []
-    faces_button = faces_button_html(unconfirmed_faces) if face_enabled and source.person_name is None else ""
-    faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if face_enabled and source.person_name is None else ""
+    show_unconfirmed_faces = face_enabled and source.person_name is None
+    unconfirmed_faces = unconfirmed_faces_for_item(target, item) if show_unconfirmed_faces else []
+    all_people = registered_people(target) if unconfirmed_faces else []
+    faces_button = faces_button_html(unconfirmed_faces) if show_unconfirmed_faces else ""
+    faces_overlay = faces_overlay_html(item, unconfirmed_faces, all_people) if show_unconfirmed_faces else ""
     action_links = source_action_links_html(source, item, face_enabled=face_enabled, openclip_enabled=openclip_enabled)
     info_overlay = image_info_overlay_html()
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item) if face_enabled else ""
