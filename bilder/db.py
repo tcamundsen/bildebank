@@ -21,6 +21,22 @@ BROWSER_DATE_ORDER_SQL = (
     "CASE WHEN taken_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' "
     "THEN taken_date ELSE '9999-99-99' END"
 )
+H3_FILE_COLUMNS = tuple(f"h3_res{resolution}" for resolution in range(10))
+H3_FILE_COLUMN_SET = set(H3_FILE_COLUMNS)
+H3_FILE_COLUMNS_SQL = ", ".join(H3_FILE_COLUMNS)
+
+
+def h3_file_column_definitions_sql() -> str:
+    return ",\n            ".join(f"{column} TEXT" for column in H3_FILE_COLUMNS)
+
+
+def h3_file_index_sql() -> str:
+    return "\n\n        ".join(
+        f"""CREATE INDEX IF NOT EXISTS idx_files_{column}
+        ON files({column})
+        WHERE {column} IS NOT NULL AND deleted_at IS NULL;"""
+        for column in H3_FILE_COLUMNS
+    )
 
 
 def path_key(path: Path) -> str:
@@ -178,11 +194,8 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
         ensure_column(conn, "files", "gps_lat", "REAL")
         ensure_column(conn, "files", "gps_lon", "REAL")
         ensure_column(conn, "files", "gps_alt", "REAL")
-        ensure_column(conn, "files", "h3_res5", "TEXT")
-        ensure_column(conn, "files", "h3_res6", "TEXT")
-        ensure_column(conn, "files", "h3_res7", "TEXT")
-        ensure_column(conn, "files", "h3_res8", "TEXT")
-        ensure_column(conn, "files", "h3_res9", "TEXT")
+        for column in H3_FILE_COLUMNS:
+            ensure_column(conn, "files", column, "TEXT")
         ensure_column(conn, "files", "gps_source", "TEXT")
         ensure_column(conn, "files", "gps_scanned_at", "TEXT")
         ensure_column(conn, "files", "gps_error", "TEXT")
@@ -207,25 +220,7 @@ def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
         ON files(target_path_key)
         WHERE deleted_at IS NULL;
 
-        CREATE INDEX IF NOT EXISTS idx_files_h3_res5
-        ON files(h3_res5)
-        WHERE h3_res5 IS NOT NULL AND deleted_at IS NULL;
-
-        CREATE INDEX IF NOT EXISTS idx_files_h3_res6
-        ON files(h3_res6)
-        WHERE h3_res6 IS NOT NULL AND deleted_at IS NULL;
-
-        CREATE INDEX IF NOT EXISTS idx_files_h3_res7
-        ON files(h3_res7)
-        WHERE h3_res7 IS NOT NULL AND deleted_at IS NULL;
-
-        CREATE INDEX IF NOT EXISTS idx_files_h3_res8
-        ON files(h3_res8)
-        WHERE h3_res8 IS NOT NULL AND deleted_at IS NULL;
-
-        CREATE INDEX IF NOT EXISTS idx_files_h3_res9
-        ON files(h3_res9)
-        WHERE h3_res9 IS NOT NULL AND deleted_at IS NULL;
+        {h3_file_index_sql()}
 
         CREATE INDEX IF NOT EXISTS idx_files_gps
         ON files(gps_lat, gps_lon)
@@ -280,7 +275,7 @@ def init_database(target: Path) -> None:
 
 def apply_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(
-        """
+        f"""
         CREATE TABLE IF NOT EXISTS meta (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
@@ -326,11 +321,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             gps_lat REAL,
             gps_lon REAL,
             gps_alt REAL,
-            h3_res5 TEXT,
-            h3_res6 TEXT,
-            h3_res7 TEXT,
-            h3_res8 TEXT,
-            h3_res9 TEXT,
+            {h3_file_column_definitions_sql()},
             gps_source TEXT,
             gps_scanned_at TEXT,
             gps_error TEXT
@@ -359,25 +350,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         ON files(target_path_key)
         WHERE deleted_at IS NULL;
 
-        CREATE INDEX IF NOT EXISTS idx_files_h3_res5
-        ON files(h3_res5)
-        WHERE h3_res5 IS NOT NULL AND deleted_at IS NULL;
-
-        CREATE INDEX IF NOT EXISTS idx_files_h3_res6
-        ON files(h3_res6)
-        WHERE h3_res6 IS NOT NULL AND deleted_at IS NULL;
-
-        CREATE INDEX IF NOT EXISTS idx_files_h3_res7
-        ON files(h3_res7)
-        WHERE h3_res7 IS NOT NULL AND deleted_at IS NULL;
-
-        CREATE INDEX IF NOT EXISTS idx_files_h3_res8
-        ON files(h3_res8)
-        WHERE h3_res8 IS NOT NULL AND deleted_at IS NULL;
-
-        CREATE INDEX IF NOT EXISTS idx_files_h3_res9
-        ON files(h3_res9)
-        WHERE h3_res9 IS NOT NULL AND deleted_at IS NULL;
+        {h3_file_index_sql()}
 
         CREATE INDEX IF NOT EXISTS idx_files_gps
         ON files(gps_lat, gps_lon)
@@ -1755,17 +1728,14 @@ def update_file_gps(
     gps_error: str | None,
 ) -> None:
     cells = h3_cells or {}
+    assignments = ",\n            ".join(f"{column} = ?" for column in H3_FILE_COLUMNS)
     conn.execute(
-        """
+        f"""
         UPDATE files
         SET gps_lat = ?,
             gps_lon = ?,
             gps_alt = ?,
-            h3_res5 = ?,
-            h3_res6 = ?,
-            h3_res7 = ?,
-            h3_res8 = ?,
-            h3_res9 = ?,
+            {assignments},
             gps_source = ?,
             gps_scanned_at = CURRENT_TIMESTAMP,
             gps_error = ?
@@ -1775,11 +1745,7 @@ def update_file_gps(
             gps_lat,
             gps_lon,
             gps_alt,
-            cells.get("h3_res5"),
-            cells.get("h3_res6"),
-            cells.get("h3_res7"),
-            cells.get("h3_res8"),
-            cells.get("h3_res9"),
+            *(cells.get(column) for column in H3_FILE_COLUMNS),
             gps_source,
             gps_error,
             file_id,
@@ -1819,8 +1785,7 @@ def geo_areas(
     min_count: int,
     limit: int,
 ) -> list[sqlite3.Row]:
-    if column not in {"h3_res5", "h3_res6", "h3_res7", "h3_res8", "h3_res9"}:
-        raise ValueError(f"Ustøttet H3-kolonne: {column}")
+    validate_h3_column(column)
     return list(
         conn.execute(
             f"""
@@ -1842,13 +1807,12 @@ def geo_areas(
 GEO_FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
     "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_alt, "
-    "h3_res5, h3_res6, h3_res7, h3_res8, h3_res9"
+    f"{H3_FILE_COLUMNS_SQL}"
 )
-H3_FILE_COLUMNS = {"h3_res5", "h3_res6", "h3_res7", "h3_res8", "h3_res9"}
 
 
 def validate_h3_column(column: str) -> None:
-    if column not in H3_FILE_COLUMNS:
+    if column not in H3_FILE_COLUMN_SET:
         raise ValueError(f"Ustøttet H3-kolonne: {column}")
 
 

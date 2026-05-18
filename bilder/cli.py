@@ -333,7 +333,7 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank geo-areas [valg]",
         help="List H3-områder med bilder",
     )
-    geo_areas.add_argument("--resolution", type=h3_resolution_arg, default=7, help="H3-oppløsning 5-9. Standard: 7")
+    geo_areas.add_argument("--resolution", type=h3_resolution_arg, default=7, help="H3-oppløsning 0-9. Standard: 7")
     geo_areas.add_argument("--min-count", type=positive_int_arg, default=2, help="Vis områder med minst N bilder. Standard: 2")
     geo_areas.add_argument("--limit", type=positive_int_arg, default=50, help="Maks antall områder. Standard: 50")
     geo_area = add_command(
@@ -2205,8 +2205,8 @@ def h3_resolution_arg(value: str) -> int:
         number = int(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError("må være et heltall") from exc
-    if number not in {5, 6, 7, 8, 9}:
-        raise argparse.ArgumentTypeError("må være 5, 6, 7, 8 eller 9")
+    if not 0 <= number <= 9:
+        raise argparse.ArgumentTypeError("må være mellom 0 og 9")
     return number
 
 

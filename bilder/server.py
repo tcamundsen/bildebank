@@ -417,7 +417,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         min_count = positive_int_param(params, "min_count", DEFAULT_GEO_MIN_COUNT)
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
         if resolution not in H3_COLUMNS:
-            self.respond_text("H3-oppløsning må være 5, 6, 7, 8 eller 9.", status=HTTPStatus.BAD_REQUEST)
+            self.respond_text("H3-oppløsning må være mellom 0 og 9.", status=HTTPStatus.BAD_REQUEST)
             return
         self.respond_html(geo_index_page_html(self.server.target, resolution=resolution, min_count=min_count, limit=limit))
 
@@ -427,7 +427,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         min_count = positive_int_param(params, "min_count", DEFAULT_GEO_MIN_COUNT)
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
         if resolution not in H3_COLUMNS:
-            self.respond_text("H3-oppløsning må være 5, 6, 7, 8 eller 9.", status=HTTPStatus.BAD_REQUEST)
+            self.respond_text("H3-oppløsning må være mellom 0 og 9.", status=HTTPStatus.BAD_REQUEST)
             return
         self.respond_html(geo_map_page_html(self.server.target, resolution=resolution, min_count=min_count, limit=limit))
 
@@ -710,7 +710,7 @@ def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
 
 FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
-    "size_bytes, view_rotation_degrees, gps_lat, gps_lon, h3_res5, h3_res6, h3_res7, h3_res8, h3_res9"
+    f"size_bytes, view_rotation_degrees, gps_lat, gps_lon, {db.H3_FILE_COLUMNS_SQL}"
 )
 ITEM_DATE_ORDER_SQL = db.BROWSER_DATE_ORDER_SQL
 ITEM_ORDER_SQL = f"{ITEM_DATE_ORDER_SQL}, target_path_key"
