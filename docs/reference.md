@@ -42,6 +42,7 @@ Dette er en kort referanse over kommandoene i Bildebank.
 
 - [`insightface`](insightface.md) - innføring.
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
+- [`face-config`](face-config.md)
 - [`face-scan`](face-scan.md)
 - [`face-suggest`](face-suggest.md)
 - [`face-reset`](face-reset.md)

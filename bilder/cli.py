@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import __version__, db
 from .backup import run_backup
-from .config import CONFIG_FILENAME, load_config
+from .config import CONFIG_FILENAME, load_config, set_face_recognition_enabled
 from .exiftool_probe import exiftool_metadata_gaps
 from .face import (
     AddFaceToPersonResult,
@@ -126,6 +126,7 @@ HELP_COMMAND_GROUPS = (
             ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
             ("backup", "Lag eller oppdater backup av bildesamlingen"),
             ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
+            ("face-config", "Slå ansiktsgjenkjenning på eller av"),
             ("image-scan", "Scan bilder for tekstbasert bildesøk"),
             ("image-search", "Søk etter bilder med tekst"),
             ("run-server", "Start lokal Bildebank-server"),
@@ -450,6 +451,18 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank face-status [valg]",
         help="Vis status for valgfri ansiktsgjenkjenning",
     )
+    face_config = add_command(
+        subparsers,
+        "face-config",
+        usage="bildebank face-config true|false",
+        help="Slå ansiktsgjenkjenning på eller av",
+    )
+    face_config.add_argument(
+        "enabled",
+        metavar="true|false",
+        type=bool_arg,
+        help="true slår på ansiktsgjenkjenning, false slår den av",
+    )
     image_scan = add_command(
         subparsers,
         "image-scan",
@@ -681,6 +694,15 @@ def add_command(
     )
 
 
+def bool_arg(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise argparse.ArgumentTypeError("Bruk true eller false.")
+
+
 def main_help_epilog() -> str:
     lines = ["Vanlige kommandoer:"]
     for heading, commands in HELP_COMMAND_GROUPS:
@@ -748,6 +770,9 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "face-status":
         return run_face_status(args.target)
+
+    if args.command == "face-config":
+        return run_face_config(args.enabled)
 
     target = resolve_target(args.target)
     record_target_best_effort(program_repo_root(), target)
@@ -1448,6 +1473,14 @@ def run_face_status(target_arg: Path | None = None) -> int:
         print(f"  openclip-database finnes: {'ja' if openclip_summary.exists else 'nei'}")
         print(f"  bilde-embeddings: {openclip_summary.embeddings}")
         print(f"  bildesøk: {openclip_summary.search_runs}")
+    return 0
+
+
+def run_face_config(enabled: bool) -> int:
+    repo_root = program_repo_root()
+    config_path = set_face_recognition_enabled(repo_root, enabled)
+    print(f"Ansiktsgjenkjenning er satt til {'på' if enabled else 'av'}.")
+    print(f"Config-fil: {config_path}")
     return 0
 
 

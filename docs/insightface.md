@@ -28,15 +28,11 @@ Kjør dette fra programmappen til Bildebank:
 .\install-insightface.ps1
 ```
 
-Åpne `bildebank-config.toml` og sett:
+Slå på ansiktsgjenkjenning:
 
-```toml
-[face_recognition]
-enabled = true
+```powershell
+bildebank face-config true
 ```
-
-Du kan finne filen ved å bla til programmappen i Filutforsker. Høyreklikk på
-`bildebank-config.toml`, velg "Åpne i" og deretter "Notisblokk".
 
 Sjekk at funksjonen er klar:
 

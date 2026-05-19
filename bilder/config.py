@@ -67,8 +67,65 @@ def load_config(repo_root: Path) -> AppConfig:
     )
 
 
+def set_face_recognition_enabled(repo_root: Path, enabled: bool) -> Path:
+    config_path = repo_root / CONFIG_FILENAME
+    if not config_path.exists():
+        config_path.write_text(
+            "[face_recognition]\n"
+            f"enabled = {_toml_bool(enabled)}\n",
+            encoding="utf-8",
+        )
+        return config_path
+
+    text = config_path.read_text(encoding="utf-8")
+    _section(tomllib.loads(text), "face_recognition")
+    config_path.write_text(
+        _set_toml_bool(text, section="face_recognition", key="enabled", value=enabled),
+        encoding="utf-8",
+    )
+    return config_path
+
+
 def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
     value = data.get(name, {})
     if not isinstance(value, dict):
         raise ValueError(f"{CONFIG_FILENAME}: [{name}] må være en tabell.")
     return value
+
+
+def _set_toml_bool(text: str, *, section: str, key: str, value: bool) -> str:
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines(keepends=True)
+    start: int | None = None
+    end = len(lines)
+    section_header = f"[{section}]"
+    key_prefix = f"{key} "
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == section_header:
+            start = index
+            continue
+        if start is not None and index > start and stripped.startswith("[") and stripped.endswith("]"):
+            end = index
+            break
+
+    new_line = f"{key} = {_toml_bool(value)}{newline}"
+    if start is None:
+        prefix = "" if not text or text.endswith(("\n", "\r")) else newline
+        section_prefix = "" if not text else newline
+        return f"{text}{prefix}{section_prefix}{section_header}{newline}{new_line}"
+
+    for index in range(start + 1, end):
+        stripped = lines[index].lstrip()
+        if stripped.startswith(key_prefix) or stripped.startswith(f"{key}="):
+            indent = lines[index][: len(lines[index]) - len(stripped)]
+            lines[index] = f"{indent}{new_line}"
+            return "".join(lines)
+
+    lines.insert(start + 1, new_line)
+    return "".join(lines)
+
+
+def _toml_bool(value: bool) -> str:
+    return "true" if value else "false"

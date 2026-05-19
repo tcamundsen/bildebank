@@ -2590,6 +2590,45 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("insightface installert:", stdout)
         self.assertEqual(stderr, "")
 
+    def test_face_config_creates_config_file(self) -> None:
+        code, stdout, stderr = capture_cli(["face-config", "true"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Ansiktsgjenkjenning er satt til på.", stdout)
+        config = load_config(self.program_root)
+        self.assertTrue(config.face_recognition.enabled)
+
+    def test_face_config_updates_existing_config_file(self) -> None:
+        (self.program_root / "bildebank-config.toml").write_text(
+            """
+[face_recognition]
+enabled = true
+provider = "cpu"
+model_root = "models/insightface"
+model_name = "buffalo_s"
+
+[openclip]
+enabled = true
+model_root = "models/openclip"
+device = "cpu"
+model_name = "ViT-L-14"
+pretrained = "laion2b_s32b_b82k"
+""",
+            encoding="utf-8",
+        )
+
+        code, stdout, stderr = capture_cli(["face-config", "false"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Ansiktsgjenkjenning er satt til av.", stdout)
+        config = load_config(self.program_root)
+        self.assertFalse(config.face_recognition.enabled)
+        self.assertEqual(config.face_recognition.provider, "cpu")
+        self.assertEqual(config.face_recognition.model_root, self.program_root / "models" / "insightface")
+        self.assertEqual(config.face_recognition.model_name, "buffalo_s")
+        self.assertTrue(config.openclip.enabled)
+        self.assertEqual(config.openclip.model_root, self.program_root / "models" / "openclip")
+
     def test_face_status_uses_explicit_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
