@@ -3196,12 +3196,13 @@ def source_action_links_html(
 
 def app_status_page_html(target: Path) -> str:
     config = load_config(server_program_repo_root())
+    insightface_installed = module_available("insightface")
     rows = "\n".join(
         (
             app_status_row_html("Bildesamling", str(target)),
             app_status_row_html("Bildebank-versjon", __version__),
-            app_status_face_config_row_html(config.face_recognition.enabled),
-            app_status_row_html("InsightFace installert", yes_no(module_available("insightface"))),
+            app_status_face_config_row_html(config.face_recognition.enabled, insightface_installed=insightface_installed),
+            app_status_row_html("InsightFace installert", yes_no(insightface_installed)),
             app_status_row_html("OpenCLIP tilgjengelig", yes_no(module_available("open_clip"))),
             app_status_row_html("OpenCLIP aktivert", yes_no(config.openclip.enabled)),
             app_status_row_html("OpenCLIP-modell", config.openclip.model_name),
@@ -3277,9 +3278,14 @@ def app_status_row_html(label: str, value: str) -> str:
     """
 
 
-def app_status_face_config_row_html(enabled: bool) -> str:
+def app_status_face_config_row_html(enabled: bool, *, insightface_installed: bool = True) -> str:
     checked = " checked" if enabled else ""
     status = "På" if enabled else "Av"
+    install_note = (
+        ""
+        if insightface_installed
+        else '<span class="app-toggle-note">InsightFace må installeres for å scanne ansikter i nye bilder.</span>'
+    )
     return f"""
     <div class="info-row">
       <dt>InsightFace aktivert</dt>
@@ -3291,6 +3297,7 @@ def app_status_face_config_row_html(enabled: bool) -> str:
             <span class="app-toggle-track" aria-hidden="true"><span></span></span>
             <span class="app-toggle-status">{status}</span>
           </label>
+          {install_note}
         </form>
       </dd>
     </div>

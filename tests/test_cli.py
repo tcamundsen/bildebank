@@ -737,6 +737,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("InsightFace aktivert", body)
         self.assertIn('action="/app/face-config"', body)
         self.assertIn('name="enabled" value="true" checked', body)
+        self.assertIn("InsightFace må installeres for å scanne ansikter i nye bilder.", body)
         self.assertNotIn("app-toggle-submit", body)
         self.assertIn("<dd>ja</dd>", body)
         self.assertIn("InsightFace installert", body)
