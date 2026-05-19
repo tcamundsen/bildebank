@@ -15,3 +15,6 @@ På nettsiden [h3geo.org/](https://h3geo.org/)
 kan man zoome inn til man får heksagoner av passende størrelse, og markere
 det som er et område man vil finne bilder tatt i. Kodene for disse limes inn
 i boksene på siden for [egendefinerte steder](/geo/custom-places).
+
+Spør Tom hvis det er vanskelig, så lager han stedene for deg eller viser
+deg hvordan det gjøres.
