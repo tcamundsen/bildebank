@@ -2291,6 +2291,7 @@ def geo_index_page_html(
            · <a href="/help/web/steder">Hjelp</a></p>
           <h2>Statistikk over bilder med GPS-posisjon</h2>
           {geo_stats_summary_html(stats)}
+          <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
           {geo_places_section_html(geo_places)}
           <h2>H3-heksagoner</h2>
           {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
