@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import __version__, db
-from .config import AppConfig, load_config
+from .config import AppConfig, load_config, set_face_recognition_enabled
 from .face import add_face_to_person, create_person, normalize_person_name, remove_face_from_person
 from .html_export import (
     FACE_DB_FILENAME,
@@ -116,7 +116,7 @@ class BildebankServer(ThreadingHTTPServer):
 
     @property
     def face_enabled(self) -> bool:
-        return self.config.face_recognition.enabled
+        return load_config(server_program_repo_root()).face_recognition.enabled
 
     @property
     def openclip_enabled(self) -> bool:
@@ -226,6 +226,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path == "/geo/custom-place-delete":
                 self.respond_delete_custom_geo_place()
+                return
+            if parsed.path == "/app/face-config":
+                self.respond_set_face_config()
                 return
             if parsed.path == "/api/face-person-add-face":
                 if not self.server.face_enabled:
@@ -616,6 +619,14 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             self.respond_html(error_html(exc), status=HTTPStatus.BAD_REQUEST)
             return
         self.redirect("/geo")
+
+    def respond_set_face_config(self) -> None:
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
+        params = urllib.parse.parse_qs(raw)
+        enabled = first_param(params, "enabled").strip().lower() == "true"
+        set_face_recognition_enabled(server_program_repo_root(), enabled)
+        self.redirect("/app")
 
     def respond_file(self, encoded_relative_path: str) -> None:
         raw_path = urllib.parse.unquote(encoded_relative_path).strip("/")
@@ -3186,17 +3197,16 @@ def source_action_links_html(
 def app_status_page_html(target: Path) -> str:
     config = load_config(server_program_repo_root())
     rows = "\n".join(
-        app_status_row_html(label, value)
-        for label, value in (
-            ("Bildesamling", str(target)),
-            ("Bildebank-versjon", __version__),
-            ("InsightFace aktivert", yes_no(config.face_recognition.enabled)),
-            ("InsightFace installert", yes_no(module_available("insightface"))),
-            ("OpenCLIP tilgjengelig", yes_no(module_available("open_clip"))),
-            ("OpenCLIP aktivert", yes_no(config.openclip.enabled)),
-            ("OpenCLIP-modell", config.openclip.model_name),
-            ("OpenCLIP-pretrained", config.openclip.pretrained),
-            ("OpenCLIP-device", config.openclip.device),
+        (
+            app_status_row_html("Bildesamling", str(target)),
+            app_status_row_html("Bildebank-versjon", __version__),
+            app_status_face_config_row_html(config.face_recognition.enabled),
+            app_status_row_html("InsightFace installert", yes_no(module_available("insightface"))),
+            app_status_row_html("OpenCLIP tilgjengelig", yes_no(module_available("open_clip"))),
+            app_status_row_html("OpenCLIP aktivert", yes_no(config.openclip.enabled)),
+            app_status_row_html("OpenCLIP-modell", config.openclip.model_name),
+            app_status_row_html("OpenCLIP-pretrained", config.openclip.pretrained),
+            app_status_row_html("OpenCLIP-device", config.openclip.device),
         )
     )
     return page_html(
@@ -3263,6 +3273,26 @@ def app_status_row_html(label: str, value: str) -> str:
     <div class="info-row">
       <dt>{html.escape(label)}</dt>
       <dd>{html.escape(value)}</dd>
+    </div>
+    """
+
+
+def app_status_face_config_row_html(enabled: bool) -> str:
+    checked = " checked" if enabled else ""
+    status = "På" if enabled else "Av"
+    return f"""
+    <div class="info-row">
+      <dt>InsightFace aktivert</dt>
+      <dd>
+        <form action="/app/face-config" method="post" class="app-toggle-form">
+          <input type="hidden" name="enabled" value="false">
+          <label class="app-toggle">
+            <input type="checkbox" name="enabled" value="true"{checked} onchange="this.form.submit()">
+            <span class="app-toggle-track" aria-hidden="true"><span></span></span>
+            <span class="app-toggle-status">{status}</span>
+          </label>
+        </form>
+      </dd>
     </div>
     """
 
@@ -4223,6 +4253,34 @@ SERVER_CSS = r"""    :root {
     .info-row:first-child { border-top: 0; }
     .info-row dt { color: var(--muted); }
     .info-row dd { margin: 0; overflow-wrap: anywhere; }
+    .app-toggle-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .app-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+    .app-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+    .app-toggle-track {
+      width: 44px;
+      height: 24px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #303030;
+      padding: 2px;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+    .app-toggle-track span {
+      display: block;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: transform 120ms ease, background 120ms ease;
+    }
+    .app-toggle input:checked + .app-toggle-track {
+      border-color: #6fbf8f;
+      background: #1f5c38;
+    }
+    .app-toggle input:checked + .app-toggle-track span {
+      transform: translateX(20px);
+      background: #d8ffe5;
+    }
     .lightbox-bar {
       display: flex;
       align-items: center;

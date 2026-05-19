@@ -35,6 +35,7 @@ from bilder.server import (
     adjacent_source_items,
     all_browser_source,
     app_status_page_html,
+    BildebankServer,
     BildebankRequestHandler,
     browser_item_by_id,
     browser_month_items,
@@ -734,6 +735,9 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Bildesamling", body)
         self.assertIn(str(target), body)
         self.assertIn("InsightFace aktivert", body)
+        self.assertIn('action="/app/face-config"', body)
+        self.assertIn('name="enabled" value="true" checked', body)
+        self.assertNotIn("app-toggle-submit", body)
         self.assertIn("<dd>ja</dd>", body)
         self.assertIn("InsightFace installert", body)
         self.assertIn("OpenCLIP aktivert", body)
@@ -743,6 +747,46 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Test-Model", body)
         self.assertIn("test-weights", body)
         self.assertIn("cpu", body)
+
+    def test_run_server_face_enabled_reflects_config_without_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "program"
+            target = Path(tmp) / "target"
+            root.mkdir()
+            target.mkdir()
+            server = object.__new__(BildebankServer)
+            server.target = target
+            server.config = AppConfig(face_recognition=FaceRecognitionConfig(enabled=False))
+
+            with patch("bilder.server.server_program_repo_root", return_value=root):
+                self.assertFalse(server.face_enabled)
+                (root / "bildebank-config.toml").write_text(
+                    "[face_recognition]\nenabled = true\n",
+                    encoding="utf-8",
+                )
+                self.assertTrue(server.face_enabled)
+
+    def test_run_server_face_config_post_updates_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = b"enabled=true"
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+            handler = FakeHandler()
+            with patch("bilder.server.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_face_config(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+
+        self.assertTrue(config.face_recognition.enabled)
+        self.assertEqual(handler.location, "/app")
 
     def test_run_server_renders_bookmarkable_item_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
