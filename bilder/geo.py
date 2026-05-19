@@ -248,7 +248,7 @@ def scan_geo(
                         gps_alt=None,
                         h3_cells=None,
                         gps_source="exiftool",
-                        gps_error=f"Filen finnes ikke: {path}",
+                        gps_error=db.GPS_ERROR_FILE_MISSING,
                     )
                     if verbose:
                         print(f"Mangler fil: {path}")
@@ -259,22 +259,10 @@ def scan_geo(
                 try:
                     metadata_by_path = read_gps_metadata_batch(tool, existing_batch)
                 except Exception as exc:  # noqa: BLE001 - one batch should not stop the scan
-                    message = str(exc)
-                    for path in existing_batch:
-                        errors += 1
-                        updated += 1
-                        db.update_file_gps(
-                            conn,
-                            file_id=file_ids_by_path[path],
-                            gps_lat=None,
-                            gps_lon=None,
-                            gps_alt=None,
-                            h3_cells=None,
-                            gps_source="exiftool",
-                            gps_error=message,
-                        )
-                        if verbose:
-                            print(f"Feil: {path}: {message}")
+                    errors += len(existing_batch)
+                    if verbose:
+                        print(f"ExifTool-feil for batch med {len(existing_batch)} filer: {exc}")
+                    continue
                 else:
                     for path in existing_batch:
                         meta = metadata_by_path.get(path)
@@ -295,7 +283,7 @@ def scan_geo(
                                 gps_alt=None,
                                 h3_cells=None,
                                 gps_source="exiftool",
-                                gps_error=str(exc),
+                                gps_error=db.GPS_ERROR_EXIFTOOL,
                             )
                             if verbose:
                                 print(f"Feil: {path}: {exc}")
@@ -312,7 +300,7 @@ def scan_geo(
                                 gps_alt=None,
                                 h3_cells=None,
                                 gps_source="exiftool",
-                                gps_error=str(error_value),
+                                gps_error=db.GPS_ERROR_EXIFTOOL,
                             )
                         elif gps is None:
                             without_gps += 1

@@ -35,6 +35,8 @@ Dette er en kort referanse over kommandoene i Bildebank.
 - [`inspect-metadata`](inspect-metadata.md)
 - [`refresh-metadata`](refresh-metadata.md)
 - [`exiftool-metadata-gaps`](exiftool-metadata-gaps.md)
+- [`geo-scan`](geo-scan.md)
+- [`geo-stats`](geo-stats.md)
 - [`make-conflict-browser`](make-conflict-browser.md)
 - [`report`](report.md)
 
@@ -74,4 +76,5 @@ Se den samlede innføringen: [`openclip`](openclip.md).
 - [`where-is`](where-is.md)
 - [`backup`](backup.md)
 - [`migrate`](migrate.md)
+- [`vacuum`](vacuum.md)
 - [`update`](update.md)

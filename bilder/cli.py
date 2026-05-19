@@ -143,6 +143,7 @@ HELP_COMMAND_GROUPS = (
             ("make-person-browser", "Lag HTML-side for en person"),
             ("face-reset", "Slett ansiktsdata"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
+            ("vacuum", "Pakk databasen så SQLite-filen krymper fysisk"),
             ("update", "Oppdater programinstallasjonen"),
         ),
     ),
@@ -664,6 +665,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Vis hva migreringen vil gjøre uten å endre databasen",
     )
+    add_command(
+        subparsers,
+        "vacuum",
+        usage="bildebank vacuum [valg]",
+        help="Pakk databasen så SQLite-filen krymper fysisk",
+        description="Kjører SQLite VACUUM på Bildebank-databasen. Kommandoen endrer ikke bildefiler.",
+    )
     add_command(subparsers, "update", usage="bildebank update [valg]", help="Oppdater programinstallasjonen",
                 description="Laster ned aller siste versjon av programmet fra GitHub.")
 
@@ -781,6 +789,9 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "backup":
         return run_backup_command(target, args.destination, dry_run=args.dry_run)
+
+    if args.command == "vacuum":
+        return run_vacuum(target)
 
     if args.command == "geo-scan":
         return run_geo_scan(
@@ -1387,6 +1398,22 @@ def run_geo_stats(target: Path) -> int:
     return 0
 
 
+def run_vacuum(target: Path) -> int:
+    database_path = db.db_path_for_target(target)
+    before = database_path.stat().st_size
+    conn = db.connect(target)
+    try:
+        conn.execute("VACUUM")
+    finally:
+        conn.close()
+    after = database_path.stat().st_size
+    print(f"Database: {database_path}")
+    print(f"Størrelse før:  {format_bytes(before)}")
+    print(f"Størrelse etter: {format_bytes(after)}")
+    print("Ferdig. Databasen er pakket.")
+    return 0
+
+
 def run_geo_areas(target: Path, *, resolution: int, min_count: int, limit: int) -> int:
     column = h3_column_for_resolution(resolution)
     conn = db.connect(target)
@@ -1962,6 +1989,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  bygge om sources uten kind og gi alle kilder navn")
     if plan.rebuilds_file_sources_without_kind:
         print("  bygge om file_sources uten kind")
+    if plan.cleans_gps_errors:
+        print("  rydde gamle GPS-feilmeldinger")
     print("Vil lage backup før endring.")
     if check:
         print("Ingen endringer er gjort (--check).")
@@ -1997,8 +2026,12 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Bygger om sources uten kind og med name NOT NULL.")
     if result.rebuilds_file_sources_without_kind:
         print("Bygger om file_sources uten kind.")
+    if result.cleans_gps_errors:
+        print("Rydder gamle GPS-feilmeldinger.")
     print(f"Setter schema_version={result.target_version}.")
     print("Ferdig. Databasen er migrert.")
+    if result.cleans_gps_errors:
+        print("Kjør bildebank vacuum hvis du vil krympe SQLite-filen fysisk.")
     return 0
 
 

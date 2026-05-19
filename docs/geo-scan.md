@@ -29,3 +29,7 @@ Vanlige valg:
 - `--verbose` viser mer informasjon om filer uten GPS eller med feil.
 
 Slettede bilder, altså bilder som er flyttet til `deleted/`, scannes ikke.
+
+Hvis ExifTool ikke finner GPS i en fil, registreres det som "uten GPS". Hvis
+ExifTool ikke klarer å scanne en fil, lagrer Bildebank bare en kort feilmarkør
+i databasen. Selve ExifTool-feilmeldingen lagres ikke.

@@ -596,6 +596,74 @@ Vanlig dokumentasjon.
         self.assertEqual(float(row["gps_lon"]), 10.74609)
         self.assertTrue(row["h3_res7"])
 
+    def test_geo_scan_does_not_update_files_when_batch_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            register_target_file(target, Path("2024/01/image.jpg"))
+            long_error = "\n".join(f"Error: File not found - image-{index}.jpg" for index in range(200))
+
+            def fake_read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, dict[str, object]]:
+                raise RuntimeError(long_error)
+
+            with patch("bilder.geo.read_gps_metadata_batch", fake_read_gps_metadata_batch):
+                with redirect_stderr(StringIO()):
+                    stats = scan_geo(target, exiftool_path="exiftool", batch_size=1)
+
+            conn = db.connect(target)
+            try:
+                row = conn.execute("SELECT gps_error FROM files").fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(stats.errors, 1)
+        self.assertEqual(stats.updated, 0)
+        self.assertIsNone(row["gps_error"])
+
+    def test_geo_scan_marks_per_file_exiftool_errors_without_storing_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            register_target_file(target, Path("2024/01/image.jpg"))
+            expected_path = target / "2024/01/image.jpg"
+
+            def fake_read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, dict[str, object]]:
+                return {expected_path: {"SourceFile": str(expected_path), "Error": "unsupported file type with long details"}}
+
+            with patch("bilder.geo.read_gps_metadata_batch", fake_read_gps_metadata_batch):
+                with redirect_stderr(StringIO()):
+                    stats = scan_geo(target, exiftool_path="exiftool", batch_size=1)
+
+            conn = db.connect(target)
+            try:
+                row = conn.execute("SELECT gps_error FROM files").fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(stats.errors, 1)
+        self.assertEqual(stats.updated, 1)
+        self.assertEqual(row["gps_error"], db.GPS_ERROR_EXIFTOOL)
+
+    def test_geo_scan_marks_missing_target_file_without_storing_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            register_target_file(target, Path("2024/01/image.jpg"))
+            (target / "2024/01/image.jpg").unlink()
+
+            with redirect_stderr(StringIO()):
+                stats = scan_geo(target, exiftool_path="exiftool", batch_size=1)
+
+            conn = db.connect(target)
+            try:
+                row = conn.execute("SELECT gps_error FROM files").fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(stats.errors, 1)
+        self.assertEqual(stats.updated, 1)
+        self.assertEqual(row["gps_error"], db.GPS_ERROR_FILE_MISSING)
+
     def test_geo_stats_cli_reports_active_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

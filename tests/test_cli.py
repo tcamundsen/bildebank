@@ -2071,7 +2071,7 @@ pretrained = "laion2b_s34b_b79k"
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "6",
+                    "7",
                 )
                 file_columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 self.assertNotIn("source_id", file_columns)
@@ -3624,12 +3624,12 @@ pretrained = "laion2b_s32b_b82k"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 2", stdout)
-            self.assertIn("Ny schema_version: 6", stdout)
+            self.assertIn("Ny schema_version: 7", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "6",
+                    "7",
                 )
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
                 source_columns = {row[1] for row in conn.execute("pragma table_info(sources)")}
@@ -5614,14 +5614,14 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 1", stdout)
-            self.assertIn("Ny schema_version: 6", stdout)
+            self.assertIn("Ny schema_version: 7", stdout)
             self.assertIn("Vil opprette tabellen file_sources.", stdout)
             self.assertIn("  importerte filer: 1", stdout)
             self.assertIn("  duplikatfunn: 1", stdout)
             self.assertIn("  bygge om files uten gamle v1-kildekolonner", stdout)
             self.assertIn("  fjerne legacy-tabellen duplicate_findings", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
-            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-6-*")))
+            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-7-*")))
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertFalse(
@@ -5644,13 +5644,13 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(code, 0, stderr)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Ferdig. Databasen er migrert.", stdout)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-6-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-7-*"))), 1)
 
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "6",
+                    "7",
                 )
                 self.assertEqual(conn.execute("select count(*) from file_sources").fetchone()[0], 2)
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
@@ -5677,7 +5677,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("Kildefilforekomster: 2", stdout)
             self.assertIn("Duplikatkilder: 1", stdout)
 
-    def test_migrate_v5_to_v6_creates_performance_indexes(self) -> None:
+    def test_migrate_v5_to_v7_creates_performance_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             self.assertEqual(run_cli(["create", str(target)]), 0)
@@ -5693,12 +5693,12 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 5", stdout)
-            self.assertIn("Ny schema_version: 6", stdout)
+            self.assertIn("Ny schema_version: 7", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "6",
+                    "7",
                 )
                 self.assertTrue(
                     conn.execute(
@@ -5708,7 +5708,96 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             finally:
                 conn.close()
 
-    def test_current_schema_rejects_v6_database_with_absolute_target_path(self) -> None:
+    def test_migrate_v6_to_v7_replaces_legacy_gps_error_messages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename, stored_filename,
+                        sha256, size_bytes, date_source, gps_error
+                    )
+                    VALUES('2024/01/image.jpg', '2024/01/image.jpg', 'image.jpg', 'image.jpg',
+                           'abc', 3, 'filename', ?)
+                    """,
+                    ("Error: File not found\n" * 1000,),
+                )
+                conn.execute("UPDATE meta SET value = '6' WHERE key = 'schema_version'")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Nåværende schema_version: 6", stdout)
+            self.assertIn("Ny schema_version: 7", stdout)
+            self.assertIn("Rydder gamle GPS-feilmeldinger.", stdout)
+            self.assertIn("bildebank vacuum", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
+                    "7",
+                )
+                self.assertEqual(
+                    conn.execute("SELECT gps_error FROM files").fetchone()[0],
+                    db.GPS_ERROR_EXIFTOOL,
+                )
+            finally:
+                conn.close()
+
+    def test_migrate_v6_to_v7_keeps_missing_file_as_short_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename, stored_filename,
+                        sha256, size_bytes, date_source, gps_error
+                    )
+                    VALUES('2024/01/missing.jpg', '2024/01/missing.jpg', 'missing.jpg', 'missing.jpg',
+                           'abc', 3, 'filename', ?)
+                    """,
+                    ("Filen finnes ikke: C:\\Bilder\\missing.jpg",),
+                )
+                conn.execute("UPDATE meta SET value = '6' WHERE key = 'schema_version'")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 0, stderr)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT gps_error FROM files").fetchone()[0],
+                    db.GPS_ERROR_FILE_MISSING,
+                )
+            finally:
+                conn.close()
+
+    def test_vacuum_packs_current_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "vacuum"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Database:", stdout)
+            self.assertIn("Størrelse før:", stdout)
+            self.assertIn("Størrelse etter:", stdout)
+            self.assertIn("Ferdig. Databasen er pakket.", stdout)
+
+    def test_current_schema_rejects_v7_database_with_absolute_target_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -5717,7 +5806,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             create_v4_database(target, source, imported=imported)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
-                conn.execute("UPDATE meta SET value = '6' WHERE key = 'schema_version'")
+                conn.execute("UPDATE meta SET value = '7' WHERE key = 'schema_version'")
                 conn.commit()
             finally:
                 conn.close()
@@ -5815,7 +5904,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Ny schema_version: 6", stdout)
+            self.assertIn("Ny schema_version: 7", stdout)
             conn = sqlite3.connect(db_path)
             try:
                 names = [row[0] for row in conn.execute("SELECT name FROM sources ORDER BY id")]
@@ -5843,7 +5932,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(code, 1)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Databasen ble ikke migrert", stderr)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-6-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-7-*"))), 1)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
@@ -5878,7 +5967,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
-            self.assertIn("schema_version=6", stderr)
+            self.assertIn("schema_version=7", stderr)
             self.assertIn("bildebank migrate", stderr)
 
 

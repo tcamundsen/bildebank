@@ -14,7 +14,9 @@ from typing import Any, Iterable
 
 
 DB_FILENAME = ".bilder.sqlite3"
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+GPS_ERROR_EXIFTOOL = "exiftool_error"
+GPS_ERROR_FILE_MISSING = "file_missing"
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
 COLLECTION_ID_META_KEY = "collection_id"
 BROWSER_DATE_ORDER_SQL = (
@@ -126,6 +128,7 @@ class MigrationPlan:
     rebuilds_errors_without_source_fk: bool = False
     rebuilds_sources_without_kind: bool = False
     rebuilds_file_sources_without_kind: bool = False
+    cleans_gps_errors: bool = False
 
 
 def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection:
@@ -174,7 +177,7 @@ def require_current_schema(conn: sqlite3.Connection, *, full: bool = True) -> No
                 validate_current_schema(conn)
             except ValueError as exc:
                 raise SchemaMigrationRequired(
-                    f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v6-struktur.\n"
+                    f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v7-struktur.\n"
                     f"{exc}\n"
                     "Kjør bildebank migrate før du gjør endringer."
                 ) from exc
@@ -509,7 +512,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
             )
-        if version == 5:
+        if version in {5, 6}:
             if validate:
                 validate_current_schema(conn, require_performance_indexes=False)
             return MigrationPlan(
@@ -518,6 +521,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 imported_files=count_rows(conn, "files"),
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
+                cleans_gps_errors=has_legacy_gps_errors(conn),
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -539,6 +543,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             rebuilds_sources_without_kind=bool("kind" in source_columns)
             or not source_name_is_not_null(conn),
             rebuilds_file_sources_without_kind=bool("kind" in file_source_columns),
+            cleans_gps_errors=has_legacy_gps_errors(conn),
         )
     finally:
         conn.close()
@@ -567,14 +572,16 @@ def migrate_database(target: Path) -> MigrationPlan:
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
             )
-        if version == 5:
+        if version in {5, 6}:
             imported_files = count_rows(conn, "files")
             duplicate_findings = count_rows(conn, "duplicate_findings")
+            cleans_gps_errors = has_legacy_gps_errors(conn)
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 validate_current_schema(conn, require_performance_indexes=False)
                 ensure_compatible_columns(conn)
                 ensure_performance_indexes(conn)
+                cleanup_legacy_gps_errors(conn)
                 set_meta(conn, "schema_version", str(SCHEMA_VERSION))
                 log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
                 validate_current_schema(conn)
@@ -595,6 +602,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 imported_files=imported_files,
                 duplicate_findings=duplicate_findings,
                 creates_file_sources=False,
+                cleans_gps_errors=cleans_gps_errors,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -610,6 +618,7 @@ def migrate_database(target: Path) -> MigrationPlan:
         )
         rebuilds_sources = bool("kind" in source_columns) or not source_name_is_not_null(conn)
         rebuilds_file_sources = bool("kind" in file_source_columns)
+        cleans_gps_errors = has_legacy_gps_errors(conn)
         try:
             conn.execute("PRAGMA foreign_keys = OFF")
             conn.execute("BEGIN IMMEDIATE")
@@ -629,6 +638,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 conn.execute("DROP TABLE duplicate_findings")
             ensure_compatible_columns(conn)
             ensure_performance_indexes(conn)
+            cleanup_legacy_gps_errors(conn)
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
             validate_current_schema(conn)
@@ -656,6 +666,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             rebuilds_errors_without_source_fk=rebuilds_errors,
             rebuilds_sources_without_kind=rebuilds_sources,
             rebuilds_file_sources_without_kind=rebuilds_file_sources,
+            cleans_gps_errors=cleans_gps_errors,
         )
     finally:
         conn.close()
@@ -1865,6 +1876,42 @@ def update_file_gps(
             file_id,
         ),
     )
+
+
+def has_legacy_gps_errors(conn: sqlite3.Connection) -> bool:
+    if not table_exists(conn, "files") or "gps_error" not in table_columns(conn, "files"):
+        return False
+    return (
+        conn.execute(
+            """
+            SELECT 1
+            FROM files
+            WHERE gps_error IS NOT NULL
+              AND gps_error NOT IN (?, ?)
+            LIMIT 1
+            """,
+            (GPS_ERROR_EXIFTOOL, GPS_ERROR_FILE_MISSING),
+        ).fetchone()
+        is not None
+    )
+
+
+def cleanup_legacy_gps_errors(conn: sqlite3.Connection) -> int:
+    if not table_exists(conn, "files") or "gps_error" not in table_columns(conn, "files"):
+        return 0
+    cursor = conn.execute(
+        """
+        UPDATE files
+        SET gps_error = CASE
+            WHEN gps_error LIKE 'Filen finnes ikke:%' THEN ?
+            ELSE ?
+        END
+        WHERE gps_error IS NOT NULL
+          AND gps_error NOT IN (?, ?)
+        """,
+        (GPS_ERROR_FILE_MISSING, GPS_ERROR_EXIFTOOL, GPS_ERROR_EXIFTOOL, GPS_ERROR_FILE_MISSING),
+    )
+    return int(cursor.rowcount or 0)
 
 
 def geo_stats(conn: sqlite3.Connection) -> dict[str, int]:

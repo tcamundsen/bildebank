@@ -76,10 +76,11 @@ lagring uten å kreve en separat databaseserver.
 
 ## Databaseversjoner
 
-- gjeldende schema er v5
+- gjeldende schema er v7
 - historiske migreringer ligger i devel-docs/database-v4-migration.md og
-  devel-docs/database-v5-migration.md
-- ny runtime-kode skal anta v5, med mindre oppgaven eksplisitt gjelder
+  devel-docs/database-v5-migration.md, devel-docs/database-v6-migration.md og
+  devel-docs/database-v7-migration.md
+- ny runtime-kode skal anta v7, med mindre oppgaven eksplisitt gjelder
   migrering
 
 ## Plattform
