@@ -4693,6 +4693,7 @@ def run_server(
     port: int = DEFAULT_PORT,
     ready: Callable[[str], None] | None = None,
 ) -> None:
+    db.prepare_database(target)
     server = BildebankServer((host, port), target, config)
     actual_host, actual_port = server.server_address
     url = f"http://{actual_host}:{actual_port}/"

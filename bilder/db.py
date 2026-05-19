@@ -14,7 +14,7 @@ from typing import Any, Iterable
 
 
 DB_FILENAME = ".bilder.sqlite3"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
 COLLECTION_ID_META_KEY = "collection_id"
 BROWSER_DATE_ORDER_SQL = (
@@ -24,6 +24,17 @@ BROWSER_DATE_ORDER_SQL = (
 H3_FILE_COLUMNS = tuple(f"h3_res{resolution}" for resolution in range(10))
 H3_FILE_COLUMN_SET = set(H3_FILE_COLUMNS)
 H3_FILE_COLUMNS_SQL = ", ".join(H3_FILE_COLUMNS)
+PERFORMANCE_INDEX_NAMES = (
+    "idx_files_active_browser_order",
+    "idx_files_active_date_source_order",
+    "idx_files_active_target_path_key",
+    *(f"idx_files_{column}" for column in H3_FILE_COLUMNS),
+    *(f"idx_files_{column}_browser_order" for column in H3_FILE_COLUMNS),
+    "idx_files_gps",
+    "idx_file_sources_source_id_id",
+    "idx_errors_unresolved_stage_id",
+)
+_PREPARED_TARGETS: set[str] = set()
 
 
 def h3_file_column_definitions_sql() -> str:
@@ -123,14 +134,22 @@ def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         if require_current:
-            require_current_schema(conn)
-            ensure_compatible_columns(conn)
-            set_collection_id(conn)
-            conn.commit()
+            require_current_schema(conn, full=str(target.resolve()) not in _PREPARED_TARGETS)
         return conn
     except Exception:
         conn.close()
         raise
+
+
+def prepare_database(target: Path) -> None:
+    conn = connect(target, require_current=False)
+    try:
+        require_current_schema(conn, full=True)
+        set_collection_id(conn)
+        conn.commit()
+        _PREPARED_TARGETS.add(str(target.resolve()))
+    finally:
+        conn.close()
 
 
 def schema_version(conn: sqlite3.Connection) -> int:
@@ -147,17 +166,18 @@ def schema_version(conn: sqlite3.Connection) -> int:
     return 0
 
 
-def require_current_schema(conn: sqlite3.Connection) -> None:
+def require_current_schema(conn: sqlite3.Connection, *, full: bool = True) -> None:
     version = schema_version(conn)
     if version == SCHEMA_VERSION:
-        try:
-            validate_current_schema(conn)
-        except ValueError as exc:
-            raise SchemaMigrationRequired(
-                f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v5-struktur.\n"
-                f"{exc}\n"
-                "Kjør bildebank migrate før du gjør endringer."
-            ) from exc
+        if full:
+            try:
+                validate_current_schema(conn)
+            except ValueError as exc:
+                raise SchemaMigrationRequired(
+                    f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v6-struktur.\n"
+                    f"{exc}\n"
+                    "Kjør bildebank migrate før du gjør endringer."
+                ) from exc
         return
     if version < SCHEMA_VERSION:
         raise SchemaMigrationRequired(
@@ -206,7 +226,6 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
         ensure_column(conn, "files", "gps_error", "TEXT")
     if table_exists(conn, "sources"):
         ensure_column(conn, "sources", "superseded_by_source_id", "INTEGER REFERENCES sources(id)")
-    ensure_performance_indexes(conn)
 
 
 def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
@@ -490,6 +509,16 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
             )
+        if version == 5:
+            if validate:
+                validate_current_schema(conn, require_performance_indexes=False)
+            return MigrationPlan(
+                current_version=version,
+                target_version=SCHEMA_VERSION,
+                imported_files=count_rows(conn, "files"),
+                duplicate_findings=count_rows(conn, "duplicate_findings"),
+                creates_file_sources=False,
+            )
         if validate:
             validate_pre_migration(conn, version)
         file_columns = table_columns(conn, "files") if table_exists(conn, "files") else set()
@@ -538,6 +567,35 @@ def migrate_database(target: Path) -> MigrationPlan:
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
             )
+        if version == 5:
+            imported_files = count_rows(conn, "files")
+            duplicate_findings = count_rows(conn, "duplicate_findings")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                validate_current_schema(conn, require_performance_indexes=False)
+                ensure_compatible_columns(conn)
+                ensure_performance_indexes(conn)
+                set_meta(conn, "schema_version", str(SCHEMA_VERSION))
+                log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
+                validate_current_schema(conn)
+                foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+                if foreign_key_errors:
+                    raise ValueError(f"foreign_key_check feilet: {foreign_key_errors[0]}")
+                integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+                if integrity != "ok":
+                    raise ValueError(f"integrity_check feilet: {integrity}")
+                set_collection_id(conn)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            return MigrationPlan(
+                current_version=version,
+                target_version=SCHEMA_VERSION,
+                imported_files=imported_files,
+                duplicate_findings=duplicate_findings,
+                creates_file_sources=False,
+            )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
         duplicate_findings = count_rows(conn, "duplicate_findings")
@@ -570,6 +628,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             if table_exists(conn, "duplicate_findings"):
                 conn.execute("DROP TABLE duplicate_findings")
             ensure_compatible_columns(conn)
+            ensure_performance_indexes(conn)
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
             validate_current_schema(conn)
@@ -691,7 +750,7 @@ def source_name_is_not_null(conn: sqlite3.Connection) -> bool:
     return False
 
 
-def validate_current_schema(conn: sqlite3.Connection) -> None:
+def validate_current_schema(conn: sqlite3.Connection, *, require_performance_indexes: bool = True) -> None:
     if not table_exists(conn, "sources"):
         raise ValueError("Databasen mangler tabellen sources.")
     if table_exists(conn, "duplicate_findings"):
@@ -711,8 +770,20 @@ def validate_current_schema(conn: sqlite3.Connection) -> None:
     if table_exists(conn, "errors") and conn.execute("PRAGMA foreign_key_list(errors)").fetchall():
         raise ValueError("errors har gammel foreign key til sources. Kjør bildebank migrate.")
     validate_file_sources_schema(conn)
-    if schema_version(conn) == SCHEMA_VERSION:
+    if schema_version(conn) >= 5:
         validate_relative_target_paths(conn)
+    if require_performance_indexes:
+        validate_performance_indexes(conn)
+
+
+def validate_performance_indexes(conn: sqlite3.Connection) -> None:
+    existing = {
+        str(row["name"])
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+    }
+    missing = sorted(name for name in PERFORMANCE_INDEX_NAMES if name not in existing)
+    if missing:
+        raise ValueError(f"Databasen mangler ytelsesindeks: {missing[0]}. Kjør bildebank migrate.")
 
 
 def validate_relative_target_paths(conn: sqlite3.Connection) -> None:
@@ -730,7 +801,7 @@ def validate_relative_target_paths(conn: sqlite3.Connection) -> None:
     ).fetchone()
     if row is not None:
         raise ValueError(
-            f"files #{row['id']} har absolutt target_path i v5-database: {row['target_path']}. "
+            f"files #{row['id']} har absolutt target_path i schema_version={schema_version(conn)}-database: {row['target_path']}. "
             "Kjør bildebank migrate."
         )
     row = conn.execute(
@@ -749,7 +820,7 @@ def validate_relative_target_paths(conn: sqlite3.Connection) -> None:
     if row is not None:
         raise ValueError(
             "files #"
-            f"{row['id']} har absolutt deleted_original_target_path i v5-database: "
+            f"{row['id']} har absolutt deleted_original_target_path i schema_version={schema_version(conn)}-database: "
             f"{row['deleted_original_target_path']}. Kjør bildebank migrate."
         )
 
