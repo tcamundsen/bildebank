@@ -3284,7 +3284,7 @@ def app_status_face_config_row_html(enabled: bool, *, insightface_installed: boo
     install_note = (
         ""
         if insightface_installed
-        else '<span class="app-toggle-note">InsightFace må installeres for å scanne ansikter i nye bilder.</span>'
+        else '<span class="app-toggle-note"><a href="/help/insightface">InsightFace</a> må installeres for å scanne ansikter i nye bilder.</span>'
     )
     return f"""
     <div class="info-row">
