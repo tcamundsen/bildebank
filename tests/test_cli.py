@@ -769,7 +769,7 @@ pretrained = "laion2b_s34b_b79k"
     def test_run_server_face_config_post_updates_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            data = b"enabled=true"
+            data = b"enabled=false&enabled=true"
 
             class FakeHandler:
                 headers = {"Content-Length": str(len(data))}

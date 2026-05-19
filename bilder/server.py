@@ -624,7 +624,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or "0")
         raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
         params = urllib.parse.parse_qs(raw)
-        enabled = first_param(params, "enabled").strip().lower() == "true"
+        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
         set_face_recognition_enabled(server_program_repo_root(), enabled)
         self.redirect("/app")
 
