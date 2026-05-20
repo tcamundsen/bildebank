@@ -7,6 +7,8 @@ ikke er programmerere, og som ikke er vant til å jobbe i et
 terminalvindu. All brukerdokumentasjon skal bruke Windows-filnavn,
 dvs for eksempel `C:\Users\Tom` og ikke `/home/tom`.
 
+Hvis bruker starter prompt med "Spørsmål:" så skal du ikke endre kode.
+
 # AI-regler for bildebanksystemet
 
 - Sikkerhet for bilder er viktigere enn ryddighet og automatisering.
