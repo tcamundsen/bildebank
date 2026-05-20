@@ -10,7 +10,7 @@ import shutil
 import sqlite3
 import threading
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import __version__, db
-from .config import AppConfig, FaceRecognitionConfig, load_config, set_face_recognition_enabled, set_face_recognition_model_name
+from .config import AppConfig, FaceRecognitionConfig, set_face_recognition_enabled, set_face_recognition_model_name
 from .face import add_face_to_person, create_person, face_db_path, normalize_person_name, remove_face_from_person
 from .html_export import (
     browser_face_items_from_metadata,
@@ -61,8 +61,10 @@ DEFAULT_GEO_MIN_COUNT = 2
 DEFAULT_GEO_LIMIT = 100
 
 
-def current_face_db_path(target: Path) -> Path:
-    return face_db_path(target, load_config(server_program_repo_root()).face_recognition)
+def current_face_db_path(target: Path, face_config: FaceRecognitionConfig | None = None) -> Path:
+    if face_config is None:
+        face_config = FaceRecognitionConfig()
+    return face_db_path(target, face_config)
 
 
 @dataclass(frozen=True)
@@ -119,7 +121,7 @@ class BildebankServer(ThreadingHTTPServer):
 
     @property
     def face_enabled(self) -> bool:
-        return load_config(server_program_repo_root()).face_recognition.enabled
+        return self.config.face_recognition.enabled
 
     @property
     def openclip_enabled(self) -> bool:
@@ -139,10 +141,10 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 if not self.server.face_enabled:
                     self.respond_text("Ansiktsgjenkjenning er av.", status=HTTPStatus.NOT_FOUND)
                     return
-                self.respond_html(people_page_html(self.server.target))
+                self.respond_html(people_page_html(self.server.target, self.server.config.face_recognition))
                 return
             if parsed.path == "/settings":
-                self.respond_html(app_status_page_html(self.server.target))
+                self.respond_html(app_status_page_html(self.server.target, self.server.config))
                 return
             if parsed.path in {"/settings/removed", "/settings/removed/"}:
                 self.respond_html(removed_files_page_html(self.server.target))
@@ -327,6 +329,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 month_nav,
                 face_enabled=self.server.face_enabled,
                 openclip_enabled=self.server.openclip_enabled,
+                face_config=self.server.config.face_recognition,
             )
         )
 
@@ -345,6 +348,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 items,
                 face_enabled=self.server.face_enabled,
                 openclip_enabled=self.server.openclip_enabled,
+                face_config=self.server.config.face_recognition,
             )
         )
 
@@ -354,14 +358,14 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         if not person_name:
             self.respond_text("Personnavn mangler.", status=HTTPStatus.BAD_REQUEST)
             return
-        person = person_by_name(self.server.target, person_name)
+        person = person_by_name(self.server.target, person_name, self.server.config.face_recognition)
         if person is None:
             self.respond_html(person_not_found_html(person_name), status=HTTPStatus.NOT_FOUND)
             return
         canonical_name = str(person["name"])
         source = person_browser_source(canonical_name, include_suggestions=person_mode != "confirmed", show_faces=show_faces)
         if page_mode is None:
-            item = first_source_item(self.server.target, source)
+            item = first_source_item(self.server.target, source, self.server.config.face_recognition)
             if item is None:
                 self.respond_html(empty_person_browser_html(source, openclip_enabled=self.server.openclip_enabled))
                 return
@@ -369,12 +373,12 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         if page_mode == "item":
             file_id = parse_file_id(raw_value)
-            item = source_item_by_id(self.server.target, source, file_id)
+            item = source_item_by_id(self.server.target, source, file_id, self.server.config.face_recognition)
             if item is None:
                 self.respond_text("Filen finnes ikke for denne personen.", status=HTTPStatus.NOT_FOUND)
                 return
-            previous_item, next_item = adjacent_source_items(self.server.target, source, item)
-            month_nav = source_month_navigation(self.server.target, source, item)
+            previous_item, next_item = adjacent_source_items(self.server.target, source, item, self.server.config.face_recognition)
+            month_nav = source_month_navigation(self.server.target, source, item, self.server.config.face_recognition)
             self.respond_html(
                 source_item_page_html(
                     self.server.target,
@@ -385,6 +389,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                     month_nav,
                     face_enabled=self.server.face_enabled,
                     openclip_enabled=self.server.openclip_enabled,
+                    face_config=self.server.config.face_recognition,
                 )
             )
             return
@@ -393,7 +398,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             if not valid_month_key(month_key):
                 self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
                 return
-            items = source_month_items(self.server.target, source, month_key)
+            items = source_month_items(self.server.target, source, month_key, self.server.config.face_recognition)
             self.respond_html(
                 source_month_page_html(
                     self.server.target,
@@ -402,6 +407,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                     items,
                     face_enabled=self.server.face_enabled,
                     openclip_enabled=self.server.openclip_enabled,
+                    face_config=self.server.config.face_recognition,
                 )
             )
             return
@@ -445,6 +451,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                     month_nav,
                     face_enabled=self.server.face_enabled,
                     openclip_enabled=self.server.openclip_enabled,
+                    face_config=self.server.config.face_recognition,
                 )
             )
             return
@@ -462,6 +469,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                     items,
                     face_enabled=self.server.face_enabled,
                     openclip_enabled=self.server.openclip_enabled,
+                    face_config=self.server.config.face_recognition,
                 )
             )
             return
@@ -537,6 +545,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                     month_nav,
                     face_enabled=self.server.face_enabled,
                     openclip_enabled=self.server.openclip_enabled,
+                    face_config=self.server.config.face_recognition,
                 )
             )
             return
@@ -554,6 +563,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                     items,
                     face_enabled=self.server.face_enabled,
                     openclip_enabled=self.server.openclip_enabled,
+                    face_config=self.server.config.face_recognition,
                 )
             )
             return
@@ -632,6 +642,10 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         params = urllib.parse.parse_qs(raw)
         enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
         set_face_recognition_enabled(server_program_repo_root(), enabled)
+        self.server.config = replace(
+            self.server.config,
+            face_recognition=replace(self.server.config.face_recognition, enabled=enabled),
+        )
         self.redirect("/settings")
 
     def respond_set_face_model(self) -> None:
@@ -639,11 +653,15 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
         params = urllib.parse.parse_qs(raw)
         model_name = (params.get("model_name") or [""])[0].strip()
-        config = load_config(server_program_repo_root()).face_recognition
+        config = self.server.config.face_recognition
         installed_models = installed_insightface_models(config)
         if model_name not in installed_models:
             raise ValueError(f"InsightFace-modellen er ikke installert: {model_name}")
         set_face_recognition_model_name(server_program_repo_root(), model_name)
+        self.server.config = replace(
+            self.server.config,
+            face_recognition=replace(self.server.config.face_recognition, model_name=model_name),
+        )
         self.redirect("/settings")
 
     def respond_file(self, encoded_relative_path: str) -> None:
@@ -715,7 +733,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         if item is None:
             self.respond_json({"ok": False, "error": "Filen finnes ikke."}, status=HTTPStatus.NOT_FOUND)
             return
-        self.respond_json({"ok": True, "html": face_overlay_content_html(self.server.target, item)})
+        self.respond_json({"ok": True, "html": face_overlay_content_html(self.server.target, item, self.server.config.face_recognition)})
 
     def respond_add_face_to_person(self) -> None:
         payload = BildebankRequestHandler.read_face_person_payload(self)
@@ -724,7 +742,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         person_name, face_id = payload
         try:
-            config = load_config(server_program_repo_root()).face_recognition
+            config = self.server.config.face_recognition
             result = add_face_to_person(self.server.target, person_name, face_id, config)
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -747,7 +765,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         person_name, face_id = payload
         try:
-            config = load_config(server_program_repo_root()).face_recognition
+            config = self.server.config.face_recognition
             result = remove_face_from_person(self.server.target, person_name, face_id, config)
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
@@ -770,7 +788,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         person_name, face_id = payload
         try:
-            config = load_config(server_program_repo_root()).face_recognition
+            config = self.server.config.face_recognition
             create_person(self.server.target, person_name, config)
             result = add_face_to_person(self.server.target, person_name, face_id, config)
         except ValueError as exc:
@@ -1056,15 +1074,19 @@ def first_browser_item(target: Path) -> Any | None:
     return first_source_item(target, all_browser_source())
 
 
-def first_source_item(target: Path, source: BrowserSource) -> Any | None:
+def first_source_item(
+    target: Path,
+    source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
+) -> Any | None:
     if source_has_sql_filter(source):
         return first_sql_filtered_source_item(target, source)
     if source.person_name is not None:
-        items = source_items(target, source)
+        items = source_items(target, source, face_config)
         return items[0] if items else None
     if not is_filtered_source(source):
         return first_unfiltered_source_item(target)
-    items = source_items(target, source)
+    items = source_items(target, source, face_config)
     return items[0] if items else None
 
 
@@ -1107,7 +1129,12 @@ def browser_item_by_id(target: Path, file_id: int) -> Any | None:
     return source_item_by_id(target, all_browser_source(), file_id)
 
 
-def source_item_by_id(target: Path, source: BrowserSource, file_id: int) -> Any | None:
+def source_item_by_id(
+    target: Path,
+    source: BrowserSource,
+    file_id: int,
+    face_config: FaceRecognitionConfig | None = None,
+) -> Any | None:
     if source_has_sql_filter(source):
         where_sql, params = source_sql_filter(source)
         conn = db.connect(target)
@@ -1125,7 +1152,7 @@ def source_item_by_id(target: Path, source: BrowserSource, file_id: int) -> Any 
         finally:
             conn.close()
     if source.person_name is not None:
-        return next((item for item in source_items(target, source) if int(item["id"]) == file_id), None)
+        return next((item for item in source_items(target, source, face_config) if int(item["id"]) == file_id), None)
     conn = db.connect(target)
     try:
         return conn.execute(
@@ -1144,11 +1171,16 @@ def adjacent_browser_items(target: Path, item: Any) -> tuple[Any | None, Any | N
     return adjacent_source_items(target, all_browser_source(), item)
 
 
-def adjacent_source_items(target: Path, source: BrowserSource, item: Any) -> tuple[Any | None, Any | None]:
+def adjacent_source_items(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    face_config: FaceRecognitionConfig | None = None,
+) -> tuple[Any | None, Any | None]:
     if source_has_sql_filter(source):
         return adjacent_sql_filtered_source_items(target, source, item)
     if source.person_name is not None:
-        return adjacent_items_from_list(source_items(target, source), item)
+        return adjacent_items_from_list(source_items(target, source, face_config), item)
     order_key = item_order_key(item)
     conn = db.connect(target)
     try:
@@ -1233,11 +1265,15 @@ def browser_month_keys(target: Path) -> list[str]:
     return source_month_keys(target, all_browser_source())
 
 
-def source_month_keys(target: Path, source: BrowserSource) -> list[str]:
+def source_month_keys(
+    target: Path,
+    source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
+) -> list[str]:
     if source_has_sql_filter(source):
         return sql_filtered_source_month_keys(target, source)
     if source.person_name is not None:
-        keys = {month_key_for_item(target, item) for item in source_items(target, source)}
+        keys = {month_key_for_item(target, item) for item in source_items(target, source, face_config)}
         return sorted(key for key in keys if valid_month_key(key))
     db_path = db.db_path_for_target(target)
     try:
@@ -1286,8 +1322,12 @@ def sql_filtered_source_month_keys(target: Path, source: BrowserSource) -> list[
         conn.close()
 
 
-def confirmed_people_for_file(target: Path, file_id: int) -> list[dict[str, str]]:
-    face_db_path = current_face_db_path(target)
+def confirmed_people_for_file(
+    target: Path,
+    file_id: int,
+    face_config: FaceRecognitionConfig | None = None,
+) -> list[dict[str, str]]:
+    face_db_path = current_face_db_path(target, face_config)
     try:
         mtime_ns = face_db_path.stat().st_mtime_ns
     except OSError:
@@ -1433,8 +1473,8 @@ def undelete_file_from_browser(target: Path, file_id: int) -> Path:
             conn.close()
 
 
-def registered_people(target: Path) -> list[dict[str, str]]:
-    face_db_path = current_face_db_path(target)
+def registered_people(target: Path, face_config: FaceRecognitionConfig | None = None) -> list[dict[str, str]]:
+    face_db_path = current_face_db_path(target, face_config)
     try:
         mtime_ns = face_db_path.stat().st_mtime_ns
     except OSError:
@@ -1460,8 +1500,8 @@ def cached_registered_people(face_db_path: str, face_db_mtime_ns: int) -> tuple[
         conn.close()
 
 
-def registered_people_rows(target: Path) -> list[dict[str, object]]:
-    face_db_path = current_face_db_path(target)
+def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | None = None) -> list[dict[str, object]]:
+    face_db_path = current_face_db_path(target, face_config)
     if not face_db_path.exists():
         return []
     conn = sqlite3.connect(face_db_path)
@@ -1538,8 +1578,12 @@ def registered_people_rows(target: Path) -> list[dict[str, object]]:
         conn.close()
 
 
-def unconfirmed_faces_for_item(target: Path, item: Any) -> list[dict[str, object]]:
-    face_db_path = current_face_db_path(target)
+def unconfirmed_faces_for_item(
+    target: Path,
+    item: Any,
+    face_config: FaceRecognitionConfig | None = None,
+) -> list[dict[str, object]]:
+    face_db_path = current_face_db_path(target, face_config)
     if not face_db_path.exists():
         return []
     conn = sqlite3.connect(face_db_path)
@@ -1585,8 +1629,12 @@ def unconfirmed_faces_for_item(target: Path, item: Any) -> list[dict[str, object
     return cached_face_box_items_for_item(target, item, faces)
 
 
-def unconfirmed_face_count_for_item(target: Path, file_id: int) -> int:
-    face_db_path = current_face_db_path(target)
+def unconfirmed_face_count_for_item(
+    target: Path,
+    file_id: int,
+    face_config: FaceRecognitionConfig | None = None,
+) -> int:
+    face_db_path = current_face_db_path(target, face_config)
     if not face_db_path.exists():
         return 0
     conn = sqlite3.connect(face_db_path)
@@ -1634,8 +1682,12 @@ def month_key_from_stored_path(path: str) -> str | None:
     return month_key if valid_month_key(month_key) else None
 
 
-def person_by_name(target: Path, person_name: str) -> sqlite3.Row | None:
-    face_db_path = current_face_db_path(target)
+def person_by_name(
+    target: Path,
+    person_name: str,
+    face_config: FaceRecognitionConfig | None = None,
+) -> sqlite3.Row | None:
+    face_db_path = current_face_db_path(target, face_config)
     if not face_db_path.exists():
         return None
     clean_name = normalize_person_name(person_name)
@@ -1649,11 +1701,17 @@ def person_by_name(target: Path, person_name: str) -> sqlite3.Row | None:
         conn.close()
 
 
-def person_file_ids(target: Path, person_name: str, *, include_suggestions: bool = True) -> list[int]:
-    person = person_by_name(target, person_name)
+def person_file_ids(
+    target: Path,
+    person_name: str,
+    *,
+    include_suggestions: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
+) -> list[int]:
+    person = person_by_name(target, person_name, face_config)
     if person is None:
         return []
-    conn = sqlite3.connect(current_face_db_path(target))
+    conn = sqlite3.connect(current_face_db_path(target, face_config))
     conn.row_factory = sqlite3.Row
     try:
         if include_suggestions:
@@ -1688,14 +1746,34 @@ def person_file_ids(target: Path, person_name: str, *, include_suggestions: bool
         conn.close()
 
 
-def person_items(target: Path, person_name: str, *, include_suggestions: bool = True) -> list[Any]:
-    file_ids = person_file_ids(target, person_name, include_suggestions=include_suggestions)
+def person_items(
+    target: Path,
+    person_name: str,
+    *,
+    include_suggestions: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
+) -> list[Any]:
+    file_ids = person_file_ids(
+        target,
+        person_name,
+        include_suggestions=include_suggestions,
+        face_config=face_config,
+    )
     return items_by_file_ids(target, file_ids)
 
 
-def source_items(target: Path, source: BrowserSource) -> list[Any]:
+def source_items(
+    target: Path,
+    source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
+) -> list[Any]:
     if source.person_name is not None:
-        return person_items(target, source.person_name, include_suggestions=source.include_suggestions)
+        return person_items(
+            target,
+            source.person_name,
+            include_suggestions=source.include_suggestions,
+            face_config=face_config,
+        )
     if source.geo_place_slug is not None:
         return geo_place_items(target, source.geo_place_slug)
     if source.date_source is not None:
@@ -1871,14 +1949,24 @@ def person_month_navigation_for_key(target: Path, person_name: str, current_key:
     return source_month_navigation_for_key(target, person_browser_source(person_name, include_suggestions=True), current_key)
 
 
-def source_month_navigation(target: Path, source: BrowserSource, item: Any) -> dict[str, str | None]:
-    return source_month_navigation_for_key(target, source, month_key_for_item(target, item))
+def source_month_navigation(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    face_config: FaceRecognitionConfig | None = None,
+) -> dict[str, str | None]:
+    return source_month_navigation_for_key(target, source, month_key_for_item(target, item), face_config)
 
 
-def source_month_navigation_for_key(target: Path, source: BrowserSource, current_key: str) -> dict[str, str | None]:
+def source_month_navigation_for_key(
+    target: Path,
+    source: BrowserSource,
+    current_key: str,
+    face_config: FaceRecognitionConfig | None = None,
+) -> dict[str, str | None]:
     if not valid_month_key(current_key):
         return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
-    keys = source_month_keys(target, source)
+    keys = source_month_keys(target, source, face_config)
     if not keys:
         return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
     years = sorted({key[:4] for key in keys})
@@ -1898,11 +1986,20 @@ def person_month_items(target: Path, person_name: str, month_key: str) -> list[A
     return source_month_items(target, person_browser_source(person_name, include_suggestions=True), month_key)
 
 
-def source_month_items(target: Path, source: BrowserSource, month_key: str) -> list[Any]:
+def source_month_items(
+    target: Path,
+    source: BrowserSource,
+    month_key: str,
+    face_config: FaceRecognitionConfig | None = None,
+) -> list[Any]:
     if source_has_sql_filter(source):
         return sql_filtered_source_month_items(target, source, month_key)
     if source.person_name is not None:
-        return [item for item in source_items(target, source) if month_key_for_item(target, item) == month_key]
+        return [
+            item
+            for item in source_items(target, source, face_config)
+            if month_key_for_item(target, item) == month_key
+        ]
     return browser_month_items(target, month_key)
 
 
@@ -1937,11 +2034,12 @@ def person_faces_for_item(
     item: Any,
     *,
     include_suggestions: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
 ) -> list[dict[str, object]]:
-    person = person_by_name(target, person_name)
+    person = person_by_name(target, person_name, face_config)
     if person is None:
         return []
-    conn = sqlite3.connect(current_face_db_path(target))
+    conn = sqlite3.connect(current_face_db_path(target, face_config))
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
@@ -3044,6 +3142,7 @@ def item_page_html(
     *,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
 ) -> str:
     return source_item_page_html(
         target,
@@ -3054,6 +3153,7 @@ def item_page_html(
         month_nav,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        face_config=face_config,
     )
 
 
@@ -3067,10 +3167,11 @@ def source_item_page_html(
     *,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
 ) -> str:
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
-    media = source_item_media_html(target, source, item)
+    media = source_item_media_html(target, source, item, face_config)
     controls = source_controls_html(
         source,
         month_nav,
@@ -3079,17 +3180,17 @@ def source_item_page_html(
         include_info_button=True,
         info_file_id=int(item["id"]),
         rotation_buttons=rotation_buttons_html(source, item),
-        unconfirm_buttons=unconfirm_face_buttons_html(target, source, item) if face_enabled else "",
+        unconfirm_buttons=unconfirm_face_buttons_html(target, source, item, face_config) if face_enabled else "",
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
-    people = people_links_html(confirmed_people_for_file(target, int(item["id"]))) if face_enabled else ""
+    people = people_links_html(confirmed_people_for_file(target, int(item["id"]), face_config)) if face_enabled else ""
     show_unconfirmed_faces = face_enabled and source.person_name is None
-    unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"])) if show_unconfirmed_faces else 0
+    unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
     faces_button = faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
     faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
     action_links = source_action_links_html(source, item, face_enabled=face_enabled, openclip_enabled=openclip_enabled)
     info_overlay = image_info_overlay_html()
-    duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item) if face_enabled else ""
+    duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config) if face_enabled else ""
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
@@ -3115,10 +3216,15 @@ def source_item_page_html(
     )
 
 
-def source_duplicate_confirmed_faces_warning_html(target: Path, source: BrowserSource, item: Any) -> str:
+def source_duplicate_confirmed_faces_warning_html(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
     if source.person_name is None or source.include_suggestions:
         return ""
-    count = confirmed_person_face_count_for_item(target, source.person_name, int(item["id"]))
+    count = confirmed_person_face_count_for_item(target, source.person_name, int(item["id"]), face_config)
     if count < 2:
         return ""
     return (
@@ -3128,11 +3234,16 @@ def source_duplicate_confirmed_faces_warning_html(target: Path, source: BrowserS
     )
 
 
-def confirmed_person_face_count_for_item(target: Path, person_name: str, file_id: int) -> int:
-    person = person_by_name(target, person_name)
+def confirmed_person_face_count_for_item(
+    target: Path,
+    person_name: str,
+    file_id: int,
+    face_config: FaceRecognitionConfig | None = None,
+) -> int:
+    person = person_by_name(target, person_name, face_config)
     if person is None:
         return 0
-    conn = sqlite3.connect(current_face_db_path(target))
+    conn = sqlite3.connect(current_face_db_path(target, face_config))
     try:
         row = conn.execute(
             """
@@ -3215,8 +3326,9 @@ def source_action_links_html(
     """
 
 
-def app_status_page_html(target: Path) -> str:
-    config = load_config(server_program_repo_root())
+def app_status_page_html(target: Path, config: AppConfig | None = None) -> str:
+    if config is None:
+        config = AppConfig()
     insightface_installed = module_available("insightface")
     rows = "\n".join(
         (
@@ -3385,7 +3497,12 @@ def server_program_repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def source_item_media_html(target: Path, source: BrowserSource, item: Any) -> str:
+def source_item_media_html(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
     if source.person_name is not None:
         if not source.show_faces:
             return item_media_html(item)
@@ -3394,6 +3511,7 @@ def source_item_media_html(target: Path, source: BrowserSource, item: Any) -> st
             source.person_name,
             item,
             include_suggestions=source.include_suggestions,
+            face_config=face_config,
         )
         return person_item_media_html(item, faces)
     return item_media_html(item)
@@ -3516,10 +3634,21 @@ def source_controls_html(
     """
 
 
-def unconfirm_face_buttons_html(target: Path, source: BrowserSource, item: Any) -> str:
+def unconfirm_face_buttons_html(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
     if source.person_name is None or source.include_suggestions:
         return ""
-    faces = person_faces_for_item(target, source.person_name, item, include_suggestions=False)
+    faces = person_faces_for_item(
+        target,
+        source.person_name,
+        item,
+        include_suggestions=False,
+        face_config=face_config,
+    )
     buttons = []
     for face in faces:
         face_id = int(face["faceId"])
@@ -3656,11 +3785,15 @@ def faces_overlay_html(item: Any) -> str:
     """
 
 
-def face_overlay_content_html(target: Path, item: Any) -> str:
-    faces = unconfirmed_faces_for_item(target, item)
+def face_overlay_content_html(
+    target: Path,
+    item: Any,
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
+    faces = unconfirmed_faces_for_item(target, item, face_config)
     if not faces:
         return '<p class="empty">Ingen ubekreftede ansikter i bildet.</p>'
-    people = registered_people(target)
+    people = registered_people(target, face_config)
     image_url = f"/file/{int(item['id'])}"
     return "\n".join(face_overlay_item_html(item, image_url, face, people) for face in faces)
 
@@ -3829,11 +3962,17 @@ def source_month_page_html(
     *,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
 ) -> str:
     cards = "\n".join(source_month_item_html(target, source, item) for item in items)
     previous_item = items[-1] if items else None
     next_item = items[0] if items else None
-    controls = source_controls_html(source, source_month_navigation_for_key(target, source, month_key), previous_item, next_item)
+    controls = source_controls_html(
+        source,
+        source_month_navigation_for_key(target, source, month_key, face_config),
+        previous_item,
+        next_item,
+    )
     action_links = source_action_links_html(source, face_enabled=face_enabled, openclip_enabled=openclip_enabled)
     return page_html(
         f"{source.title}: {month_key}",
@@ -3906,8 +4045,8 @@ def person_not_found_html(person_name: str) -> str:
     )
 
 
-def people_page_html(target: Path) -> str:
-    people = registered_people_rows(target)
+def people_page_html(target: Path, face_config: FaceRecognitionConfig | None = None) -> str:
+    people = registered_people_rows(target, face_config)
     rows = "\n".join(people_row_html(person) for person in people)
     content = (
         f'<div class="people-table">{rows}</div>'

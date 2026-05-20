@@ -738,11 +738,9 @@ pretrained = "laion2b_s34b_b79k"
             )
 
             with (
-                patch("bilder.server.server_program_repo_root", return_value=root),
-                patch("bilder.server.load_config", return_value=config),
                 patch("bilder.server.module_available", side_effect=lambda name: name == "open_clip"),
             ):
-                body = app_status_page_html(target)
+                body = app_status_page_html(target, config)
 
         self.assertIn("<h1>Innstillinger</h1>", body)
         self.assertIn("Bildebank-versjon", body)
@@ -767,7 +765,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("test-weights", body)
         self.assertIn("cpu", body)
 
-    def test_run_server_face_enabled_reflects_config_without_restart(self) -> None:
+    def test_run_server_face_enabled_uses_server_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "program"
             target = Path(tmp) / "target"
@@ -777,13 +775,12 @@ pretrained = "laion2b_s34b_b79k"
             server.target = target
             server.config = AppConfig(face_recognition=FaceRecognitionConfig(enabled=False))
 
-            with patch("bilder.server.server_program_repo_root", return_value=root):
-                self.assertFalse(server.face_enabled)
-                (root / "bildebank-config.toml").write_text(
-                    "[face_recognition]\nenabled = true\n",
-                    encoding="utf-8",
-                )
-                self.assertTrue(server.face_enabled)
+            self.assertFalse(server.face_enabled)
+            (root / "bildebank-config.toml").write_text(
+                "[face_recognition]\nenabled = true\n",
+                encoding="utf-8",
+            )
+            self.assertFalse(server.face_enabled)
 
     def test_run_server_face_config_post_updates_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -793,6 +790,7 @@ pretrained = "laion2b_s34b_b79k"
             class FakeHandler:
                 headers = {"Content-Length": str(len(data))}
                 rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=False)))
                 location: str | None = None
 
                 def redirect(self, location: str) -> None:
@@ -805,6 +803,7 @@ pretrained = "laion2b_s34b_b79k"
             config = load_config(root)
 
         self.assertTrue(config.face_recognition.enabled)
+        self.assertTrue(handler.server.config.face_recognition.enabled)
         self.assertEqual(handler.location, "/settings")
 
     def test_run_server_face_model_post_updates_config(self) -> None:
@@ -826,6 +825,7 @@ model_name = "buffalo_l"
             class FakeHandler:
                 headers = {"Content-Length": str(len(data))}
                 rfile = BytesIO(data)
+                server = SimpleNamespace(config=load_config(root))
                 location: str | None = None
 
                 def redirect(self, location: str) -> None:
@@ -838,6 +838,7 @@ model_name = "buffalo_l"
             config = load_config(root)
 
         self.assertEqual(config.face_recognition.model_name, "antelopev2")
+        self.assertEqual(handler.server.config.face_recognition.model_name, "antelopev2")
         self.assertEqual(handler.location, "/settings")
 
     def test_run_server_face_model_post_rejects_not_installed_model(self) -> None:
@@ -856,6 +857,7 @@ model_name = "buffalo_l"
             class FakeHandler:
                 headers = {"Content-Length": str(len(data))}
                 rfile = BytesIO(data)
+                server = SimpleNamespace(config=load_config(root))
 
             handler = FakeHandler()
             with patch("bilder.server.server_program_repo_root", return_value=root):
@@ -1242,7 +1244,7 @@ model_name = "buffalo_l"
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
             response: dict[str, object] = {}
             handler = object.__new__(BildebankRequestHandler)
-            handler.server = SimpleNamespace(target=target)
+            handler.server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
 
             def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
                 response["content"] = content
@@ -1315,7 +1317,7 @@ model_name = "buffalo_l"
                     "Content-Type": "application/json",
                 }
                 rfile = BytesIO(data)
-                server = SimpleNamespace(target=target)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
                 body: dict[str, object] | None = None
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
@@ -1403,7 +1405,7 @@ model_name = "buffalo_l"
                     "Content-Type": "application/json",
                 }
                 rfile = BytesIO(data)
-                server = SimpleNamespace(target=target)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
                 body: dict[str, object] | None = None
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
@@ -1435,7 +1437,7 @@ model_name = "buffalo_l"
                     "Content-Type": "application/json",
                 }
                 rfile = BytesIO(data)
-                server = SimpleNamespace(target=target)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
                 body: dict[str, object] | None = None
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
@@ -1475,7 +1477,7 @@ model_name = "buffalo_l"
                     "Content-Type": "application/json",
                 }
                 rfile = BytesIO(data)
-                server = SimpleNamespace(target=target)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
                 body: dict[str, object] | None = None
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
@@ -1503,7 +1505,7 @@ model_name = "buffalo_l"
                     "Content-Type": "application/json",
                 }
                 rfile = BytesIO(data)
-                server = SimpleNamespace(target=target)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
                 body: dict[str, object] | None = None
                 status = None
 
@@ -1739,7 +1741,7 @@ model_name = "buffalo_l"
 
             response: dict[str, object] = {}
             handler = object.__new__(BildebankRequestHandler)
-            handler.server = SimpleNamespace(target=target, face_enabled=True)
+            handler.server = SimpleNamespace(target=target, face_enabled=True, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
 
             def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
                 response["content"] = content
@@ -1791,7 +1793,7 @@ model_name = "buffalo_l"
                     "Content-Type": "application/x-www-form-urlencoded",
                 }
                 rfile = BytesIO(data)
-                server = SimpleNamespace(target=target)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
                 body: dict[str, object] | None = None
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
@@ -1847,7 +1849,7 @@ model_name = "buffalo_l"
                     "Content-Type": "application/json",
                 }
                 rfile = BytesIO(data)
-                server = SimpleNamespace(target=target)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
                 body: dict[str, object] | None = None
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
@@ -1905,7 +1907,7 @@ model_name = "buffalo_l"
                     "Content-Type": "application/json",
                 }
                 rfile = BytesIO(data)
-                server = SimpleNamespace(target=target)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
                 body: dict[str, object] | None = None
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
