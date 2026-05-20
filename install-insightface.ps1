@@ -23,6 +23,7 @@ if (-not (Test-Path -LiteralPath $VenvPython)) {
 Push-Location $RepoDir
 try {
     Write-Host "Installerer valgfri InsightFace-stotte i Bildebanks lokale Python-miljo"
+    # .[face] betyr optional-dependencies face, som listet i pyprosject.toml
     Invoke-Native -FilePath $VenvPython -ArgumentList @("-m", "pip", "install", "-e", ".[face]")
 
     if (-not (Test-Path -LiteralPath $ConfigFile)) {
