@@ -852,17 +852,20 @@ def run(args: argparse.Namespace) -> int:
         return run_face_report(target, limit=args.limit)
 
     if args.command == "face-person-create":
-        person_id = create_person(target, args.name)
+        config = load_config(program_repo_root()).face_recognition
+        person_id = create_person(target, args.name, config)
         print(f"Person #{person_id}: {args.name.strip()}")
         return 0
 
     if args.command == "face-person-add-face":
-        result = add_face_to_person(target, args.name, args.face_id)
+        config = load_config(program_repo_root()).face_recognition
+        result = add_face_to_person(target, args.name, args.face_id, config)
         print_add_face_to_person_result(result)
         return 0
 
     if args.command == "face-person-remove-face":
-        result = remove_face_from_person(target, args.name, args.face_id)
+        config = load_config(program_repo_root()).face_recognition
+        result = remove_face_from_person(target, args.name, args.face_id, config)
         print_remove_face_from_person_result(result)
         return 0
 
@@ -877,8 +880,9 @@ def run(args: argparse.Namespace) -> int:
         return run_face_suggest(target, threshold=args.threshold)
 
     if args.command == "make-face-browser":
+        config = load_config(program_repo_root()).face_recognition
         output = args.output.resolve() if args.output else None
-        output_path = export_face_browser(target, output, limit=args.limit)
+        output_path = export_face_browser(target, output, limit=args.limit, config=config)
         print(f"Skrev HTML-browser for ansikter: {output_path}")
         return 0
 
@@ -889,12 +893,17 @@ def run(args: argparse.Namespace) -> int:
             args.name,
             output,
             month_preview_limit=args.month_preview_limit,
+            config=load_config(program_repo_root()).face_recognition,
         )
         print(f"Skrev HTML-browser for person: {output_path}")
         return 0
 
     if args.command == "make-people-browser":
-        result = export_people_browser(target, month_preview_limit=args.month_preview_limit)
+        result = export_people_browser(
+            target,
+            month_preview_limit=args.month_preview_limit,
+            config=load_config(program_repo_root()).face_recognition,
+        )
         print(f"Skrev person-index: {result.index_path}")
         print(f"Skrev personsider: {len(result.person_pages)}")
         return 0
@@ -1469,6 +1478,7 @@ def run_face_status(target_arg: Path | None = None) -> int:
     print(f"  konfigurert: {'på' if face.enabled else 'av'}")
     print(f"  config-fil: {repo_root / CONFIG_FILENAME}")
     print(f"  modellmappe: {face.model_root}")
+    print(f"  database-mappe: {face.database_dir}")
     print(f"  modellnavn: {face.model_name}")
     print(f"  provider: {face.provider}")
     print(f"  insightface installert: {module_available('insightface')}")
@@ -1487,12 +1497,12 @@ def run_face_status(target_arg: Path | None = None) -> int:
     print(f"  gpu-navn: {gpu_status['device']}")
     target = db.find_target(target_arg)
     if target is not None:
-        exists, scanned, faces = face_db_summary(target)
+        exists, scanned, faces = face_db_summary(target, face)
         openclip_summary = openclip_db_summary(target)
         print()
         print("Aktiv bildesamling:")
         print(f"  {target}")
-        print(f"  face-database: {face_db_path(target)}")
+        print(f"  face-database: {face_db_path(target, face)}")
         print(f"  face-database finnes: {'ja' if exists else 'nei'}")
         print(f"  scannede filer: {scanned}")
         print(f"  ansikter funnet: {faces}")
@@ -1638,7 +1648,7 @@ def run_face_scan(target: Path, *, limit: int | None, show_model_output: bool = 
         f"sjekket={stats.checked}, hoppet_over={stats.skipped}, "
         f"scannet={stats.scanned}, ansikter={stats.faces}, feil={stats.errors}"
     )
-    print(f"Face-database: {face_db_path(target)}")
+    print(f"Face-database: {face_db_path(target, config)}")
     return 0 if stats.errors == 0 else 2
 
 
@@ -1714,13 +1724,15 @@ def format_duration(seconds: float) -> str:
 
 
 def run_face_report(target: Path, *, limit: int) -> int:
-    report = face_report(target, limit=limit)
-    print_face_report(target, report)
+    config = load_config(program_repo_root()).face_recognition
+    report = face_report(target, limit=limit, config=config)
+    print_face_report(target, report, config=config)
     return 0
 
 
 def run_face_suggest(target: Path, *, threshold: float) -> int:
-    stats = suggest_faces(target, threshold=threshold)
+    config = load_config(program_repo_root()).face_recognition
+    stats = suggest_faces(target, threshold=threshold, config=config)
     print_face_suggest_stats(stats)
     print("Dette er forslag basert på personer du allerede har bekreftet.")
     return 0
@@ -1752,7 +1764,8 @@ def run_face_person_delete(target: Path, name: str) -> int:
     if answer != f"slett {clean_name}":
         print("Avbrutt. Ingen endringer er gjort.")
         return 0
-    result = delete_person(target, clean_name)
+    config = load_config(program_repo_root()).face_recognition
+    result = delete_person(target, clean_name, config)
     print_delete_person_result(result)
     return 0
 
@@ -1773,7 +1786,8 @@ def print_face_suggest_stats(stats: FaceSuggestStats) -> None:
 
 
 def print_face_suggestions(target: Path) -> None:
-    rows = list_face_suggestions(target)
+    config = load_config(program_repo_root()).face_recognition
+    rows = list_face_suggestions(target, config)
     if not rows:
         print("Ingen forslag.")
         return
@@ -1788,7 +1802,8 @@ def print_face_suggestions(target: Path) -> None:
 
 
 def print_persons(target: Path) -> None:
-    rows = list_persons(target)
+    config = load_config(program_repo_root()).face_recognition
+    rows = list_persons(target, config)
     if not rows:
         print("Ingen personer registrert.")
         return
@@ -1802,10 +1817,10 @@ def print_persons(target: Path) -> None:
         )
 
 
-def print_face_report(target: Path, report: FaceReport) -> None:
+def print_face_report(target: Path, report: FaceReport, *, config=None) -> None:
     print("Ansiktsrapport")
     print(f"Bildesamling: {target}")
-    print(f"Face-database: {face_db_path(target)}")
+    print(f"Face-database: {face_db_path(target, config)}")
     if not report.database_exists:
         print("Face-database finnes ikke.")
         print("Kjør bildebank face-scan først.")
@@ -1843,7 +1858,8 @@ def run_face_reset(
     *,
     all_data: bool = False,
 ) -> int:
-    path = face_db_path(target)
+    config = load_config(program_repo_root()).face_recognition
+    path = face_db_path(target, config)
     if not path.exists():
         print(f"Fant ingen face-database: {path}")
         return 0
@@ -1861,7 +1877,7 @@ def run_face_reset(
         print(f"Slettet face-database: {path}")
         print("Alle ansiktsdata er slettet.")
         return 0
-    result = reset_face_database(target, mode=mode)
+    result = reset_face_database(target, mode=mode, config=config)
     print_face_reset_result(result)
     return 0
 

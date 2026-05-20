@@ -21,7 +21,14 @@ from bilder.cli import build_parser, main
 from bilder.config import AppConfig, FaceRecognitionConfig, OpenClipConfig, load_config
 from bilder import db
 from bilder.db import DB_FILENAME, init_database
-from bilder.face import FACE_DB_FILENAME, apply_face_schema, connect_face_db, face_box_percent, read_image
+from bilder.face import (
+    apply_face_schema,
+    connect_face_db,
+    face_box_percent,
+    face_db_path,
+    normalize_insightface_model_layout,
+    read_image,
+)
 from bilder.geo import h3_cells_for_point
 from bilder.html_export import render_html
 from bilder.importer import safe_copy
@@ -395,7 +402,7 @@ class CliTests(unittest.TestCase):
 enabled = true
 provider = "cpu"
 model_root = ".bildebank-insightface"
-model_name = "test-model"
+model_name = "buffalo_l"
 """,
             encoding="utf-8",
         )
@@ -737,7 +744,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("InsightFace aktivert", body)
         self.assertIn('action="/app/face-config"', body)
         self.assertIn('name="enabled" value="true" checked', body)
-        self.assertIn("InsightFace må installeres for å scanne ansikter i nye bilder.", body)
+        self.assertIn("må installeres for å scanne ansikter i nye bilder.", body)
         self.assertNotIn("app-toggle-submit", body)
         self.assertIn("<dd>ja</dd>", body)
         self.assertIn("InsightFace installert", body)
@@ -2650,6 +2657,7 @@ pretrained = "laion2b_s34b_b79k"
 enabled = true
 provider = "cpu"
 model_root = "models/insightface"
+database_dir = ".faces-by-model"
 model_name = "buffalo_s"
 
 [openclip]
@@ -2670,6 +2678,7 @@ pretrained = "laion2b_s32b_b82k"
         self.assertFalse(config.face_recognition.enabled)
         self.assertEqual(config.face_recognition.provider, "cpu")
         self.assertEqual(config.face_recognition.model_root, self.program_root / "models" / "insightface")
+        self.assertEqual(config.face_recognition.database_dir, Path(".faces-by-model"))
         self.assertEqual(config.face_recognition.model_name, "buffalo_s")
         self.assertTrue(config.openclip.enabled)
         self.assertEqual(config.openclip.model_root, self.program_root / "models" / "openclip")
@@ -2768,6 +2777,7 @@ pretrained = "laion2b_s32b_b82k"
 enabled = true
 provider = "cpu"
 model_root = "models/insightface"
+database_dir = "faces"
 model_name = "buffalo_s"
 
 [openclip]
@@ -2785,6 +2795,7 @@ pretrained = "laion2b_s32b_b82k"
             self.assertTrue(config.face_recognition.enabled)
             self.assertEqual(config.face_recognition.provider, "cpu")
             self.assertEqual(config.face_recognition.model_root, root / "models" / "insightface")
+            self.assertEqual(config.face_recognition.database_dir, Path("faces"))
             self.assertEqual(config.face_recognition.model_name, "buffalo_s")
             self.assertTrue(config.openclip.enabled)
             self.assertEqual(config.openclip.model_root, root / "models" / "openclip")
@@ -3995,14 +4006,14 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
             self.assertIn("Ansiktsgjenkjenning er av", stderr)
-            self.assertFalse((target / FACE_DB_FILENAME).exists())
+            self.assertFalse((face_db_path(target)).exists())
 
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
             self.assertIn("Ansiktsgjenkjenning er av", stderr)
-            self.assertFalse((target / FACE_DB_FILENAME).exists())
+            self.assertFalse((face_db_path(target)).exists())
 
     def test_image_commands_require_enabled_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4069,7 +4080,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertNotIn("internal model", stdout)
             self.assertNotIn("internal model", stderr)
             self.assertIn("ansikter=1", stdout)
-            face_db = target / FACE_DB_FILENAME
+            face_db = face_db_path(target)
             self.assertTrue(face_db.exists())
             conn = sqlite3.connect(face_db)
             try:
@@ -4077,7 +4088,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 face = conn.execute(
                     "SELECT bbox_x, bbox_y, bbox_width, bbox_height, detection_score, embedding_model FROM faces"
                 ).fetchone()
-                self.assertEqual(face, (1.0, 2.0, 10.0, 20.0, 0.9, "test-model"))
+                self.assertEqual(face, (1.0, 2.0, 10.0, 20.0, 0.9, "buffalo_l"))
             finally:
                 conn.close()
 
@@ -4167,7 +4178,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             image_path.parent.mkdir(parents=True)
             image_path.write_bytes(b"image")
 
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 apply_face_schema(conn)
                 conn.execute(
@@ -4200,7 +4211,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             target = Path(tmp) / "target"
             image_path = target / "2024" / "01" / "IMG_20240102.jpg"
             target.mkdir()
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 apply_face_schema(conn)
                 conn.execute(
@@ -4217,6 +4228,70 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             with self.assertRaisesRegex(ValueError, "Face-databasen har absolutt target_path"):
                 connect_face_db(target).close()
 
+    def test_face_database_path_uses_model_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            config = FaceRecognitionConfig(model_name="antelopev2")
+
+            conn = connect_face_db(target, config)
+            try:
+                self.assertEqual(face_db_path(target, config), target / ".bildebank-faces" / "antelopev2.sqlite3")
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'model_name'").fetchone()[0], "antelopev2")
+            finally:
+                conn.close()
+
+    def test_face_database_rejects_model_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            antelope_config = FaceRecognitionConfig(model_name="antelopev2")
+            conn = sqlite3.connect(face_db_path(target, antelope_config))
+            try:
+                apply_face_schema(conn)
+                conn.execute(
+                    "INSERT INTO meta(key, value) VALUES('model_name', 'buffalo_l')"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with self.assertRaisesRegex(ValueError, "tilhører en annen modell"):
+                connect_face_db(target, antelope_config).close()
+
+    def test_face_database_moves_legacy_buffalo_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            legacy_path = target / ".bilder-faces.sqlite3"
+            conn = sqlite3.connect(legacy_path)
+            try:
+                apply_face_schema(conn)
+                conn.commit()
+            finally:
+                conn.close()
+
+            new_path = face_db_path(target, FaceRecognitionConfig(model_name="buffalo_l"))
+
+            self.assertFalse(legacy_path.exists())
+            self.assertTrue(new_path.exists())
+
+    def test_normalize_insightface_model_layout_moves_nested_onnx_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            nested = root / ".bildebank-insightface" / "models" / "antelopev2" / "antelopev2"
+            nested.mkdir(parents=True)
+            (nested / "scrfd_10g_bnkps.onnx").write_bytes(b"detector")
+            (nested / "glintr100.onnx").write_bytes(b"recognition")
+            config = FaceRecognitionConfig(model_root=root / ".bildebank-insightface", model_name="antelopev2")
+
+            self.assertTrue(normalize_insightface_model_layout(config))
+
+            model_dir = root / ".bildebank-insightface" / "models" / "antelopev2"
+            self.assertTrue((model_dir / "scrfd_10g_bnkps.onnx").exists())
+            self.assertTrue((model_dir / "glintr100.onnx").exists())
+            self.assertFalse(nested.exists())
+
     def test_face_suggest_uses_relative_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -4229,7 +4304,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             image_path.parent.mkdir(parents=True)
             image_path.write_bytes(minimal_png(640, 480))
 
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 apply_face_schema(conn)
                 embedding = struct.pack("ff", 1.0, 0.0)
@@ -4261,7 +4336,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(code, 0, stderr)
             self.assertIn("forslag=1", stdout)
             self.assertNotIn("Kari\tface-id=2", stdout)
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 self.assertEqual(
                     conn.execute("SELECT target_path FROM scanned_files WHERE file_id = 1").fetchone()[0],
@@ -4283,7 +4358,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             image_path.parent.mkdir(parents=True)
             image_path.write_bytes(minimal_png(640, 480))
 
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 apply_face_schema(conn)
                 conn.execute(
@@ -4555,7 +4630,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("1 bilder", index_html)
             self.assertIn("1 bekreftet, 1 forslag", index_html)
 
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 suggestion = conn.execute(
                     """
@@ -4574,7 +4649,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             target = root / "target"
             self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            face_db = target / FACE_DB_FILENAME
+            face_db = face_db_path(target)
             face_db.write_bytes(b"face-data")
 
             with patch("builtins.input", return_value="nei"):
@@ -4597,7 +4672,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             target = root / "target"
             self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 conn.executescript(
                     """
@@ -4687,7 +4762,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-scan-resultater er beholdt", stdout)
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "3")
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
@@ -4708,7 +4783,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             finally:
                 conn.close()
 
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
                 conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
@@ -4722,7 +4797,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-scan-resultater er beholdt", stdout)
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0], 1)
@@ -4733,7 +4808,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
     def test_face_schema_v2_migration_drops_legacy_group_tables(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 conn.executescript(
                     """
@@ -4781,7 +4856,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
     def test_face_schema_current_version_rejects_legacy_group_tables(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
-            conn = sqlite3.connect(target / FACE_DB_FILENAME)
+            conn = sqlite3.connect(face_db_path(target))
             try:
                 apply_face_schema(conn)
                 conn.execute("CREATE TABLE face_group_runs (id INTEGER PRIMARY KEY)")

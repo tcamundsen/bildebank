@@ -14,6 +14,7 @@ class FaceRecognitionConfig:
     enabled: bool = False
     provider: str = "cpu"
     model_root: Path = Path(".bildebank-insightface")
+    database_dir: Path = Path(".bildebank-faces")
     model_name: str = "buffalo_l"
 
 
@@ -37,7 +38,8 @@ def load_config(repo_root: Path) -> AppConfig:
     if not config_path.exists():
         return AppConfig(
             face_recognition=FaceRecognitionConfig(
-                model_root=repo_root / ".bildebank-insightface"
+                model_root=repo_root / ".bildebank-insightface",
+                database_dir=Path(".bildebank-faces"),
             ),
             openclip=OpenClipConfig(model_root=repo_root / ".bildebank-openclip"),
         )
@@ -55,6 +57,7 @@ def load_config(repo_root: Path) -> AppConfig:
             enabled=bool(face_data.get("enabled", False)),
             provider=str(face_data.get("provider", "cpu")),
             model_root=model_root,
+            database_dir=Path(str(face_data.get("database_dir", ".bildebank-faces"))),
             model_name=str(face_data.get("model_name", "buffalo_l")),
         ),
         openclip=OpenClipConfig(

@@ -8,6 +8,7 @@ provider = "cpu"
 
 # Modellene skal ligge lokalt i programmappen, ikke i brukerens hjemmemappe.
 model_root = ".bildebank-insightface"
+database_dir = ".bildebank-faces"
 model_name = "buffalo_l"
 
 [openclip]

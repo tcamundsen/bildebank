@@ -172,6 +172,8 @@ def schema_version(conn: sqlite3.Connection) -> int:
 def require_current_schema(conn: sqlite3.Connection, *, full: bool = True) -> None:
     version = schema_version(conn)
     if version == SCHEMA_VERSION:
+        set_collection_id(conn)
+        conn.commit()
         if full:
             try:
                 validate_current_schema(conn)

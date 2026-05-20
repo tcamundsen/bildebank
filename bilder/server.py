@@ -19,9 +19,8 @@ from typing import Any, Callable
 
 from . import __version__, db
 from .config import AppConfig, load_config, set_face_recognition_enabled
-from .face import add_face_to_person, create_person, normalize_person_name, remove_face_from_person
+from .face import add_face_to_person, create_person, face_db_path, normalize_person_name, remove_face_from_person
 from .html_export import (
-    FACE_DB_FILENAME,
     browser_face_items_from_metadata,
     display_relative_path,
     face_tables_exist,
@@ -60,6 +59,10 @@ DEFAULT_SEARCH_LIMIT = 100
 DEFAULT_GEO_RESOLUTION = 7
 DEFAULT_GEO_MIN_COUNT = 2
 DEFAULT_GEO_LIMIT = 100
+
+
+def current_face_db_path(target: Path) -> Path:
+    return face_db_path(target, load_config(server_program_repo_root()).face_recognition)
 
 
 @dataclass(frozen=True)
@@ -706,7 +709,8 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         person_name, face_id = payload
         try:
-            result = add_face_to_person(self.server.target, person_name, face_id)
+            config = load_config(server_program_repo_root()).face_recognition
+            result = add_face_to_person(self.server.target, person_name, face_id, config)
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -728,7 +732,8 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         person_name, face_id = payload
         try:
-            result = remove_face_from_person(self.server.target, person_name, face_id)
+            config = load_config(server_program_repo_root()).face_recognition
+            result = remove_face_from_person(self.server.target, person_name, face_id, config)
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -750,8 +755,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         person_name, face_id = payload
         try:
-            create_person(self.server.target, person_name)
-            result = add_face_to_person(self.server.target, person_name, face_id)
+            config = load_config(server_program_repo_root()).face_recognition
+            create_person(self.server.target, person_name, config)
+            result = add_face_to_person(self.server.target, person_name, face_id, config)
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1266,20 +1272,20 @@ def sql_filtered_source_month_keys(target: Path, source: BrowserSource) -> list[
 
 
 def confirmed_people_for_file(target: Path, file_id: int) -> list[dict[str, str]]:
-    face_db_path = target / FACE_DB_FILENAME
+    face_db_path = current_face_db_path(target)
     try:
         mtime_ns = face_db_path.stat().st_mtime_ns
     except OSError:
         return []
     return [
         {"name": name, "url": person_url(name)}
-        for name in cached_confirmed_people_for_file(str(target.resolve()), mtime_ns, file_id)
+        for name in cached_confirmed_people_for_file(str(face_db_path), mtime_ns, file_id)
     ]
 
 
 @lru_cache(maxsize=512)
-def cached_confirmed_people_for_file(target_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[str, ...]:
-    conn = sqlite3.connect(Path(target_path) / FACE_DB_FILENAME)
+def cached_confirmed_people_for_file(face_db_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[str, ...]:
+    conn = sqlite3.connect(face_db_path)
     conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(conn):
@@ -1413,20 +1419,20 @@ def undelete_file_from_browser(target: Path, file_id: int) -> Path:
 
 
 def registered_people(target: Path) -> list[dict[str, str]]:
-    face_db_path = target / FACE_DB_FILENAME
+    face_db_path = current_face_db_path(target)
     try:
         mtime_ns = face_db_path.stat().st_mtime_ns
     except OSError:
         return []
     return [
         {"name": name, "url": person_url(name)}
-        for name in cached_registered_people(str(target.resolve()), mtime_ns)
+        for name in cached_registered_people(str(face_db_path), mtime_ns)
     ]
 
 
 @lru_cache(maxsize=8)
-def cached_registered_people(target_path: str, face_db_mtime_ns: int) -> tuple[str, ...]:
-    conn = sqlite3.connect(Path(target_path) / FACE_DB_FILENAME)
+def cached_registered_people(face_db_path: str, face_db_mtime_ns: int) -> tuple[str, ...]:
+    conn = sqlite3.connect(face_db_path)
     conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(conn):
@@ -1440,7 +1446,7 @@ def cached_registered_people(target_path: str, face_db_mtime_ns: int) -> tuple[s
 
 
 def registered_people_rows(target: Path) -> list[dict[str, object]]:
-    face_db_path = target / FACE_DB_FILENAME
+    face_db_path = current_face_db_path(target)
     if not face_db_path.exists():
         return []
     conn = sqlite3.connect(face_db_path)
@@ -1518,7 +1524,7 @@ def registered_people_rows(target: Path) -> list[dict[str, object]]:
 
 
 def unconfirmed_faces_for_item(target: Path, item: Any) -> list[dict[str, object]]:
-    face_db_path = target / FACE_DB_FILENAME
+    face_db_path = current_face_db_path(target)
     if not face_db_path.exists():
         return []
     conn = sqlite3.connect(face_db_path)
@@ -1565,7 +1571,7 @@ def unconfirmed_faces_for_item(target: Path, item: Any) -> list[dict[str, object
 
 
 def unconfirmed_face_count_for_item(target: Path, file_id: int) -> int:
-    face_db_path = target / FACE_DB_FILENAME
+    face_db_path = current_face_db_path(target)
     if not face_db_path.exists():
         return 0
     conn = sqlite3.connect(face_db_path)
@@ -1614,7 +1620,7 @@ def month_key_from_stored_path(path: str) -> str | None:
 
 
 def person_by_name(target: Path, person_name: str) -> sqlite3.Row | None:
-    face_db_path = target / FACE_DB_FILENAME
+    face_db_path = current_face_db_path(target)
     if not face_db_path.exists():
         return None
     clean_name = normalize_person_name(person_name)
@@ -1632,7 +1638,7 @@ def person_file_ids(target: Path, person_name: str, *, include_suggestions: bool
     person = person_by_name(target, person_name)
     if person is None:
         return []
-    conn = sqlite3.connect(target / FACE_DB_FILENAME)
+    conn = sqlite3.connect(current_face_db_path(target))
     conn.row_factory = sqlite3.Row
     try:
         if include_suggestions:
@@ -1920,7 +1926,7 @@ def person_faces_for_item(
     person = person_by_name(target, person_name)
     if person is None:
         return []
-    conn = sqlite3.connect(target / FACE_DB_FILENAME)
+    conn = sqlite3.connect(current_face_db_path(target))
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
@@ -3111,7 +3117,7 @@ def confirmed_person_face_count_for_item(target: Path, person_name: str, file_id
     person = person_by_name(target, person_name)
     if person is None:
         return 0
-    conn = sqlite3.connect(target / FACE_DB_FILENAME)
+    conn = sqlite3.connect(current_face_db_path(target))
     try:
         row = conn.execute(
             """

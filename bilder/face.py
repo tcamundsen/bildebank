@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
+import shutil
 import sqlite3
 import warnings
 from collections.abc import Callable
@@ -20,8 +22,12 @@ from .media_cache import MediaMetadataCache
 from .thumbnails import existing_thumbnail_url
 
 
-FACE_DB_FILENAME = ".bilder-faces.sqlite3"
+LEGACY_FACE_DB_FILENAME = ".bilder-faces.sqlite3"
+FACE_DB_DIRNAME = ".bildebank-faces"
+FACE_DB_FILENAME = f"{FACE_DB_DIRNAME}/buffalo_l.sqlite3"
+DEFAULT_FACE_MODEL_NAME = "buffalo_l"
 FACE_SCHEMA_VERSION = 3
+FACE_MODEL_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 @dataclass
@@ -100,17 +106,62 @@ class FaceSuggestStats:
     threshold: float
 
 
-def face_db_path(target: Path) -> Path:
-    return target / FACE_DB_FILENAME
+def face_database_dir(target: Path, config: FaceRecognitionConfig | None = None) -> Path:
+    database_dir = config.database_dir if config is not None else Path(FACE_DB_DIRNAME)
+    if database_dir.is_absolute():
+        return database_dir
+    return target / database_dir
 
 
-def connect_face_db(target: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(face_db_path(target))
+def face_model_db_filename(model_name: str) -> str:
+    if not FACE_MODEL_FILENAME_RE.fullmatch(model_name):
+        raise ValueError(
+            "Ugyldig InsightFace-modellnavn for databasefil: "
+            f"{model_name!r}. Bruk bare bokstaver, tall, punktum, bindestrek og understrek."
+        )
+    return f"{model_name}.sqlite3"
+
+
+def face_db_path(target: Path, config: FaceRecognitionConfig | None = None) -> Path:
+    model_name = config.model_name if config is not None else DEFAULT_FACE_MODEL_NAME
+    path = face_database_dir(target, config) / face_model_db_filename(model_name)
+    move_legacy_face_db_if_needed(target, path, model_name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def move_legacy_face_db_if_needed(target: Path, new_path: Path, model_name: str) -> None:
+    if model_name != DEFAULT_FACE_MODEL_NAME:
+        return
+    legacy_path = target / LEGACY_FACE_DB_FILENAME
+    if not legacy_path.exists() or new_path.exists():
+        return
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    # KOMPATIBILITET: flytt gammel face-database til modellspesifikk buffalo_l-database.
+    shutil.move(str(legacy_path), str(new_path))
+
+
+def connect_face_db(target: Path, config: FaceRecognitionConfig | None = None) -> sqlite3.Connection:
+    model_name = config.model_name if config is not None else DEFAULT_FACE_MODEL_NAME
+    conn = sqlite3.connect(face_db_path(target, config))
     conn.row_factory = sqlite3.Row
     apply_face_schema(conn)
+    validate_face_database_model(conn, model_name)
     set_meta(conn, "target_path", str(target.resolve()))
     conn.commit()
     return conn
+
+
+def validate_face_database_model(conn: sqlite3.Connection, model_name: str) -> None:
+    stored_model = get_meta(conn, "model_name")
+    if stored_model is None:
+        set_meta(conn, "model_name", model_name)
+        return
+    if stored_model != model_name:
+        raise ValueError(
+            "Face-databasen tilhører en annen modell "
+            f"({stored_model}) enn aktiv config ({model_name})."
+        )
 
 
 def apply_face_schema(conn: sqlite3.Connection) -> None:
@@ -275,8 +326,8 @@ def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
     )
 
 
-def face_db_summary(target: Path) -> tuple[bool, int, int]:
-    path = face_db_path(target)
+def face_db_summary(target: Path, config: FaceRecognitionConfig | None = None) -> tuple[bool, int, int]:
+    path = face_db_path(target, config)
     if not path.exists():
         return False, 0, 0
     conn = sqlite3.connect(path)
@@ -288,9 +339,9 @@ def face_db_summary(target: Path) -> tuple[bool, int, int]:
         conn.close()
 
 
-def create_person(target: Path, name: str) -> int:
+def create_person(target: Path, name: str, config: FaceRecognitionConfig | None = None) -> int:
     clean_name = normalize_person_name(name)
-    conn = connect_face_db(target)
+    conn = connect_face_db(target, config)
     try:
         row = conn.execute("SELECT id FROM persons WHERE name = ?", (clean_name,)).fetchone()
         if row is not None:
@@ -307,9 +358,14 @@ def create_person(target: Path, name: str) -> int:
         conn.close()
 
 
-def add_face_to_person(target: Path, person_name: str, face_id: int) -> AddFaceToPersonResult:
+def add_face_to_person(
+    target: Path,
+    person_name: str,
+    face_id: int,
+    config: FaceRecognitionConfig | None = None,
+) -> AddFaceToPersonResult:
     clean_name = normalize_person_name(person_name)
-    conn = connect_face_db(target)
+    conn = connect_face_db(target, config)
     try:
         require_face(conn, face_id)
         person_id = require_person(conn, clean_name)
@@ -329,9 +385,14 @@ def add_face_to_person(target: Path, person_name: str, face_id: int) -> AddFaceT
         conn.close()
 
 
-def remove_face_from_person(target: Path, person_name: str, face_id: int) -> RemoveFaceFromPersonResult:
+def remove_face_from_person(
+    target: Path,
+    person_name: str,
+    face_id: int,
+    config: FaceRecognitionConfig | None = None,
+) -> RemoveFaceFromPersonResult:
     clean_name = normalize_person_name(person_name)
-    conn = connect_face_db(target)
+    conn = connect_face_db(target, config)
     try:
         require_face(conn, face_id)
         row = conn.execute("SELECT id FROM persons WHERE name = ?", (clean_name,)).fetchone()
@@ -349,9 +410,9 @@ def remove_face_from_person(target: Path, person_name: str, face_id: int) -> Rem
         conn.close()
 
 
-def delete_person(target: Path, person_name: str) -> DeletePersonResult:
+def delete_person(target: Path, person_name: str, config: FaceRecognitionConfig | None = None) -> DeletePersonResult:
     clean_name = normalize_person_name(person_name)
-    conn = connect_face_db(target)
+    conn = connect_face_db(target, config)
     try:
         person_id = require_person(conn, clean_name)
         removed_faces = int(
@@ -375,8 +436,13 @@ def delete_person(target: Path, person_name: str) -> DeletePersonResult:
         conn.close()
 
 
-def reset_face_database(target: Path, *, mode: str) -> FaceResetResult:
-    conn = connect_face_db(target)
+def reset_face_database(
+    target: Path,
+    *,
+    mode: str,
+    config: FaceRecognitionConfig | None = None,
+) -> FaceResetResult:
+    conn = connect_face_db(target, config)
     try:
         removed_persons = count_rows_if_table_exists(conn, "persons")
         removed_person_faces = count_rows_if_table_exists(conn, "person_faces")
@@ -397,11 +463,16 @@ def reset_face_database(target: Path, *, mode: str) -> FaceResetResult:
         conn.close()
 
 
-def suggest_faces(target: Path, *, threshold: float = 0.6) -> FaceSuggestStats:
-    path = face_db_path(target)
+def suggest_faces(
+    target: Path,
+    *,
+    threshold: float = 0.6,
+    config: FaceRecognitionConfig | None = None,
+) -> FaceSuggestStats:
+    path = face_db_path(target, config)
     if not path.exists():
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
-    conn = connect_face_db(target)
+    conn = connect_face_db(target, config)
     try:
         person_vectors: dict[int, list[list[float]]] = {}
         for row in conn.execute(
@@ -464,11 +535,11 @@ def suggest_faces(target: Path, *, threshold: float = 0.6) -> FaceSuggestStats:
         conn.close()
 
 
-def list_face_suggestions(target: Path) -> list[sqlite3.Row]:
-    path = face_db_path(target)
+def list_face_suggestions(target: Path, config: FaceRecognitionConfig | None = None) -> list[sqlite3.Row]:
+    path = face_db_path(target, config)
     if not path.exists():
         return []
-    conn = connect_face_db(target)
+    conn = connect_face_db(target, config)
     try:
         return list(
             conn.execute(
@@ -490,11 +561,11 @@ def list_face_suggestions(target: Path) -> list[sqlite3.Row]:
         conn.close()
 
 
-def list_persons(target: Path) -> list[sqlite3.Row]:
-    path = face_db_path(target)
+def list_persons(target: Path, config: FaceRecognitionConfig | None = None) -> list[sqlite3.Row]:
+    path = face_db_path(target, config)
     if not path.exists():
         return []
-    conn = connect_face_db(target)
+    conn = connect_face_db(target, config)
     try:
         return list(
             conn.execute(
@@ -550,11 +621,16 @@ def require_face(conn: sqlite3.Connection, face_id: int) -> None:
         raise ValueError(f"Fant ikke ansikt-id {face_id}. Kjør make-face-browser for å se id-er.")
 
 
-def face_report(target: Path, *, limit: int = 20) -> FaceReport:
-    path = face_db_path(target)
+def face_report(
+    target: Path,
+    *,
+    limit: int = 20,
+    config: FaceRecognitionConfig | None = None,
+) -> FaceReport:
+    path = face_db_path(target, config)
     if not path.exists():
         return FaceReport(database_exists=False)
-    conn = connect_face_db(target)
+    conn = connect_face_db(target, config)
     try:
         return FaceReport(
             database_exists=True,
@@ -599,12 +675,18 @@ def face_report(target: Path, *, limit: int = 20) -> FaceReport:
         conn.close()
 
 
-def export_face_browser(target: Path, output: Path | None = None, *, limit: int | None = None) -> Path:
+def export_face_browser(
+    target: Path,
+    output: Path | None = None,
+    *,
+    limit: int | None = None,
+    config: FaceRecognitionConfig | None = None,
+) -> Path:
     output_path = output or (target / "faces.html")
-    path = face_db_path(target)
+    path = face_db_path(target, config)
     if not path.exists():
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
-    conn = connect_face_db(target)
+    conn = connect_face_db(target, config)
     try:
         with MediaMetadataCache(target) as media_cache:
             items = face_browser_items(target, conn, limit=limit, media_cache=media_cache)
@@ -620,13 +702,14 @@ def export_person_browser(
     output: Path | None = None,
     *,
     month_preview_limit: int | None = None,
+    config: FaceRecognitionConfig | None = None,
 ) -> Path:
     clean_name = normalize_person_name(person_name)
     output_path = output or (target / f"person-{safe_filename(clean_name)}.html")
-    path = face_db_path(target)
+    path = face_db_path(target, config)
     if not path.exists():
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
-    conn = connect_face_db(target)
+    conn = connect_face_db(target, config)
     try:
         person = conn.execute("SELECT id, name FROM persons WHERE name = ?", (clean_name,)).fetchone()
         if person is None:
@@ -647,12 +730,13 @@ def export_people_browser(
     target: Path,
     *,
     month_preview_limit: int | None = None,
+    config: FaceRecognitionConfig | None = None,
 ) -> PeopleBrowserResult:
     output_path = target / "personer.html"
-    path = face_db_path(target)
+    path = face_db_path(target, config)
     if not path.exists():
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
-    conn = connect_face_db(target)
+    conn = connect_face_db(target, config)
     try:
         people = list(conn.execute("SELECT id, name FROM persons ORDER BY name"))
         index_people: list[dict[str, Any]] = []
@@ -1399,7 +1483,7 @@ def scan_faces(
 ) -> FaceScanStats:
     stats = FaceScanStats()
     main_conn = db.connect(target)
-    face_conn = connect_face_db(target)
+    face_conn = connect_face_db(target, config)
     try:
         rows = active_image_files(main_conn, limit=limit)
         stats.total = len(rows)
@@ -1601,9 +1685,44 @@ def load_face_app(config: FaceRecognitionConfig):
             "InsightFace er ikke installert. Kjør install-insightface.ps1 fra programmappen."
         ) from exc
     providers = ["CPUExecutionProvider"] if config.provider == "cpu" else None
-    app = FaceAnalysis(name=config.model_name, root=str(config.model_root), providers=providers)
+    normalize_insightface_model_layout(config)
+    try:
+        app = FaceAnalysis(name=config.model_name, root=str(config.model_root), providers=providers)
+    except AssertionError as exc:
+        if normalize_insightface_model_layout(config):
+            app = FaceAnalysis(name=config.model_name, root=str(config.model_root), providers=providers)
+        else:
+            raise ValueError(
+                "Kunne ikke laste InsightFace-modellen "
+                f"{config.model_name!r}. Modellen mangler detection-del eller har feil mappestruktur."
+            ) from exc
     app.prepare(ctx_id=-1 if config.provider == "cpu" else 0, det_size=(640, 640))
     return app
+
+
+def normalize_insightface_model_layout(config: FaceRecognitionConfig) -> bool:
+    model_dir = config.model_root / "models" / config.model_name
+    nested_dir = model_dir / config.model_name
+    if not nested_dir.is_dir():
+        return False
+    try:
+        parent_onnx = list(model_dir.glob("*.onnx"))
+        nested_onnx = list(nested_dir.glob("*.onnx"))
+    except OSError:
+        return False
+    if parent_onnx or not nested_onnx:
+        return False
+    for source in nested_onnx:
+        destination = model_dir / source.name
+        if destination.exists():
+            raise ValueError(f"Kan ikke normalisere modellmappe fordi filen finnes fra før: {destination}")
+    for source in nested_onnx:
+        shutil.move(str(source), str(model_dir / source.name))
+    try:
+        nested_dir.rmdir()
+    except OSError:
+        pass
+    return True
 
 
 def read_image(path: Path):
