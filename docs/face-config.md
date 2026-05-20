@@ -13,7 +13,7 @@ Bruk `true` for å slå på ansiktsgjenkjenning og `false` for å slå den av.
 Kommandoen oppretter `bildebank-config.toml` hvis filen mangler.
 
 Når `bildebank run-server` kjører, kan du også slå dette på og av fra
-`App`-siden i nettleseren.
+`Innstillinger`-siden i nettleseren.
 
 Se status etterpå:
 

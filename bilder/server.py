@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import __version__, db
-from .config import AppConfig, load_config, set_face_recognition_enabled
+from .config import AppConfig, FaceRecognitionConfig, load_config, set_face_recognition_enabled, set_face_recognition_model_name
 from .face import add_face_to_person, create_person, face_db_path, normalize_person_name, remove_face_from_person
 from .html_export import (
     browser_face_items_from_metadata,
@@ -141,10 +141,10 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                     return
                 self.respond_html(people_page_html(self.server.target))
                 return
-            if parsed.path == "/app":
+            if parsed.path == "/settings":
                 self.respond_html(app_status_page_html(self.server.target))
                 return
-            if parsed.path in {"/app/removed", "/app/removed/"}:
+            if parsed.path in {"/settings/removed", "/settings/removed/"}:
                 self.respond_html(removed_files_page_html(self.server.target))
                 return
             if parsed.path == "/static/server.css":
@@ -230,8 +230,11 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/geo/custom-place-delete":
                 self.respond_delete_custom_geo_place()
                 return
-            if parsed.path == "/app/face-config":
+            if parsed.path == "/settings/face-config":
                 self.respond_set_face_config()
+                return
+            if parsed.path == "/settings/face-model":
+                self.respond_set_face_model()
                 return
             if parsed.path == "/api/face-person-add-face":
                 if not self.server.face_enabled:
@@ -629,7 +632,19 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         params = urllib.parse.parse_qs(raw)
         enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
         set_face_recognition_enabled(server_program_repo_root(), enabled)
-        self.redirect("/app")
+        self.redirect("/settings")
+
+    def respond_set_face_model(self) -> None:
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
+        params = urllib.parse.parse_qs(raw)
+        model_name = (params.get("model_name") or [""])[0].strip()
+        config = load_config(server_program_repo_root()).face_recognition
+        installed_models = installed_insightface_models(config)
+        if model_name not in installed_models:
+            raise ValueError(f"InsightFace-modellen er ikke installert: {model_name}")
+        set_face_recognition_model_name(server_program_repo_root(), model_name)
+        self.redirect("/settings")
 
     def respond_file(self, encoded_relative_path: str) -> None:
         raw_path = urllib.parse.unquote(encoded_relative_path).strip("/")
@@ -2849,7 +2864,7 @@ def error_html(exc: Exception) -> str:
         "Feil",
         f"""
         <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a> · <a href="/app">App</a></p>
+          <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a> · <a href="/settings">Innstillinger</a></p>
           <h1>Feil</h1>
           <p class="error">{html.escape(str(exc))}</p>
         </main>
@@ -3195,7 +3210,7 @@ def source_action_links_html(
     <div class="top-actions">
       {source_top_links_html(source, item, face_enabled=face_enabled)}
       {search_link}
-      <a class="server-search-link" href="/app">App</a>
+      <a class="server-search-link" href="/settings">Innstillinger</a>
     </div>
     """
 
@@ -3208,6 +3223,7 @@ def app_status_page_html(target: Path) -> str:
             app_status_row_html("Bildesamling", str(target)),
             app_status_row_html("Bildebank-versjon", __version__),
             app_status_face_config_row_html(config.face_recognition.enabled, insightface_installed=insightface_installed),
+            app_status_face_model_row_html(config.face_recognition),
             app_status_row_html("InsightFace installert", yes_no(insightface_installed)),
             app_status_row_html("OpenCLIP tilgjengelig", yes_no(module_available("open_clip"))),
             app_status_row_html("OpenCLIP aktivert", yes_no(config.openclip.enabled)),
@@ -3217,11 +3233,11 @@ def app_status_page_html(target: Path) -> str:
         )
     )
     return page_html(
-        "App",
+        "Innstillinger",
         f"""
         <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/app/removed">Slettede bilder</a> · <a href="/date-source/filename">Dato fra filnavn</a> · <a href="/date-source/mtime">Dato fra mtime</a></p>
-          <h1>App</h1>
+          <p><a href="/">Til bildebrowser</a> · <a href="/settings/removed">Slettede bilder</a> · <a href="/date-source/filename">Dato fra filnavn</a> · <a href="/date-source/mtime">Dato fra mtime</a></p>
+          <h1>Innstillinger</h1>
           <dl class="info-list app-status">
             {rows}
           </dl>
@@ -3246,7 +3262,7 @@ def removed_files_page_html(target: Path) -> str:
         "Slettede bilder",
         f"""
         <main class="shell">
-          <p><a href="/app">Til app</a> · <a href="/">Til bildebrowser</a></p>
+          <p><a href="/settings">Til innstillinger</a> · <a href="/">Til bildebrowser</a></p>
           <h1>Slettede bilder</h1>
           <p class="meta">{len(rows)} bilder flyttet til deleted/.</p>
           {content}
@@ -3296,7 +3312,7 @@ def app_status_face_config_row_html(enabled: bool, *, insightface_installed: boo
     <div class="info-row">
       <dt>InsightFace aktivert</dt>
       <dd>
-        <form action="/app/face-config" method="post" class="app-toggle-form">
+        <form action="/settings/face-config" method="post" class="app-toggle-form">
           <input type="hidden" name="enabled" value="false">
           <label class="app-toggle">
             <input type="checkbox" name="enabled" value="true"{checked} onchange="this.form.submit()">
@@ -3308,6 +3324,53 @@ def app_status_face_config_row_html(enabled: bool, *, insightface_installed: boo
       </dd>
     </div>
     """
+
+
+def app_status_face_model_row_html(config: FaceRecognitionConfig) -> str:
+    installed_models = installed_insightface_models(config)
+    if not installed_models:
+        return app_status_row_html("InsightFace-modell", f"{config.model_name} (ingen installerte modeller funnet)")
+    options = "\n".join(
+        f'<option value="{html.escape(model)}"{selected_attr(model == config.model_name)}>{html.escape(model)}</option>'
+        for model in installed_models
+    )
+    note = (
+        ""
+        if config.model_name in installed_models
+        else f'<span class="app-toggle-note">Aktiv config er {html.escape(config.model_name)}, men modellen finnes ikke i modellmappen.</span>'
+    )
+    return f"""
+    <div class="info-row">
+      <dt>InsightFace-modell</dt>
+      <dd>
+        <form action="/settings/face-model" method="post" class="app-toggle-form">
+          <select name="model_name" onchange="this.form.submit()">
+            {options}
+          </select>
+          {note}
+        </form>
+      </dd>
+    </div>
+    """
+
+
+def selected_attr(selected: bool) -> str:
+    return " selected" if selected else ""
+
+
+def installed_insightface_models(config: FaceRecognitionConfig) -> list[str]:
+    models_dir = config.model_root / "models"
+    try:
+        children = list(models_dir.iterdir())
+    except OSError:
+        return []
+    models: list[str] = []
+    for child in children:
+        if not child.is_dir():
+            continue
+        if list(child.glob("*.onnx")) or list((child / child.name).glob("*.onnx")):
+            models.append(child.name)
+    return sorted(models, key=str.lower)
 
 
 def yes_no(value: bool) -> str:

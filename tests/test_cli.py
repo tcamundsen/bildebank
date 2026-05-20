@@ -725,25 +725,36 @@ pretrained = "laion2b_s34b_b79k"
 
     def test_run_server_app_status_page_shows_config_and_version(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "program"
             target = Path(tmp) / "target"
+            model_root = root / ".bildebank-insightface"
+            (model_root / "models" / "antelopev2").mkdir(parents=True)
+            (model_root / "models" / "antelopev2" / "scrfd_10g_bnkps.onnx").write_bytes(b"model")
+            (model_root / "models" / "buffalo_l").mkdir(parents=True)
+            (model_root / "models" / "buffalo_l" / "det_10g.onnx").write_bytes(b"model")
             config = AppConfig(
-                face_recognition=FaceRecognitionConfig(enabled=True),
+                face_recognition=FaceRecognitionConfig(enabled=True, model_root=model_root, model_name="buffalo_l"),
                 openclip=OpenClipConfig(enabled=True, model_name="Test-Model", pretrained="test-weights", device="cpu"),
             )
 
             with (
+                patch("bilder.server.server_program_repo_root", return_value=root),
                 patch("bilder.server.load_config", return_value=config),
                 patch("bilder.server.module_available", side_effect=lambda name: name == "open_clip"),
             ):
                 body = app_status_page_html(target)
 
-        self.assertIn("<h1>App</h1>", body)
+        self.assertIn("<h1>Innstillinger</h1>", body)
         self.assertIn("Bildebank-versjon", body)
         self.assertIn("Bildesamling", body)
         self.assertIn(str(target), body)
         self.assertIn("InsightFace aktivert", body)
-        self.assertIn('action="/app/face-config"', body)
+        self.assertIn('action="/settings/face-config"', body)
         self.assertIn('name="enabled" value="true" checked', body)
+        self.assertIn("InsightFace-modell", body)
+        self.assertIn('action="/settings/face-model"', body)
+        self.assertIn('<option value="antelopev2">antelopev2</option>', body)
+        self.assertIn('<option value="buffalo_l" selected>buffalo_l</option>', body)
         self.assertIn("må installeres for å scanne ansikter i nye bilder.", body)
         self.assertNotIn("app-toggle-submit", body)
         self.assertIn("<dd>ja</dd>", body)
@@ -794,7 +805,66 @@ pretrained = "laion2b_s34b_b79k"
             config = load_config(root)
 
         self.assertTrue(config.face_recognition.enabled)
-        self.assertEqual(handler.location, "/app")
+        self.assertEqual(handler.location, "/settings")
+
+    def test_run_server_face_model_post_updates_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            model_root = root / ".bildebank-insightface"
+            (model_root / "models" / "antelopev2").mkdir(parents=True)
+            (model_root / "models" / "antelopev2" / "scrfd_10g_bnkps.onnx").write_bytes(b"model")
+            (root / "bildebank-config.toml").write_text(
+                """
+[face_recognition]
+model_root = ".bildebank-insightface"
+model_name = "buffalo_l"
+""",
+                encoding="utf-8",
+            )
+            data = b"model_name=antelopev2"
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+            handler = FakeHandler()
+            with patch("bilder.server.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_face_model(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+
+        self.assertEqual(config.face_recognition.model_name, "antelopev2")
+        self.assertEqual(handler.location, "/settings")
+
+    def test_run_server_face_model_post_rejects_not_installed_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "bildebank-config.toml").write_text(
+                """
+[face_recognition]
+model_root = ".bildebank-insightface"
+model_name = "buffalo_l"
+""",
+                encoding="utf-8",
+            )
+            data = b"model_name=antelopev2"
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+
+            handler = FakeHandler()
+            with patch("bilder.server.server_program_repo_root", return_value=root):
+                with self.assertRaisesRegex(ValueError, "ikke installert"):
+                    BildebankRequestHandler.respond_set_face_model(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+
+        self.assertEqual(config.face_recognition.model_name, "buffalo_l")
 
     def test_run_server_renders_bookmarkable_item_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -819,7 +889,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("/month/2024-02", body)
         self.assertIn("/month/2025-01", body)
         self.assertIn("/search", body)
-        self.assertIn('href="/app">App</a>', body)
+        self.assertIn('href="/settings">Innstillinger</a>', body)
         self.assertNotIn("Dato fra filnavn", body)
         self.assertNotIn("Dato fra mtime", body)
         self.assertNotIn("Månedsoversikt</a>", body)
@@ -1283,7 +1353,7 @@ pretrained = "laion2b_s34b_b79k"
             app_body = app_status_page_html(target)
             removed_body = removed_files_page_html(target)
 
-        self.assertIn('href="/app/removed"', app_body)
+        self.assertIn('href="/settings/removed"', app_body)
         self.assertIn("Slettede bilder", removed_body)
         self.assertIn('href="/file/deleted/2024/01/IMG_20240102.png"', removed_body)
         self.assertIn("2024/01/IMG_20240102.png", removed_body)

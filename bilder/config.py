@@ -89,6 +89,28 @@ def set_face_recognition_enabled(repo_root: Path, enabled: bool) -> Path:
     return config_path
 
 
+def set_face_recognition_model_name(repo_root: Path, model_name: str) -> Path:
+    clean_model_name = model_name.strip()
+    if not clean_model_name:
+        raise ValueError("InsightFace-modellnavn kan ikke være tomt.")
+    config_path = repo_root / CONFIG_FILENAME
+    if not config_path.exists():
+        config_path.write_text(
+            "[face_recognition]\n"
+            f'model_name = "{_toml_string_value(clean_model_name)}"\n',
+            encoding="utf-8",
+        )
+        return config_path
+
+    text = config_path.read_text(encoding="utf-8")
+    _section(tomllib.loads(text), "face_recognition")
+    config_path.write_text(
+        _set_toml_string(text, section="face_recognition", key="model_name", value=clean_model_name),
+        encoding="utf-8",
+    )
+    return config_path
+
+
 def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
     value = data.get(name, {})
     if not isinstance(value, dict):
@@ -97,6 +119,14 @@ def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
 
 
 def _set_toml_bool(text: str, *, section: str, key: str, value: bool) -> str:
+    return _set_toml_value(text, section=section, key=key, value=_toml_bool(value))
+
+
+def _set_toml_string(text: str, *, section: str, key: str, value: str) -> str:
+    return _set_toml_value(text, section=section, key=key, value=f'"{_toml_string_value(value)}"')
+
+
+def _set_toml_value(text: str, *, section: str, key: str, value: str) -> str:
     newline = "\r\n" if "\r\n" in text else "\n"
     lines = text.splitlines(keepends=True)
     start: int | None = None
@@ -113,7 +143,7 @@ def _set_toml_bool(text: str, *, section: str, key: str, value: bool) -> str:
             end = index
             break
 
-    new_line = f"{key} = {_toml_bool(value)}{newline}"
+    new_line = f"{key} = {value}{newline}"
     if start is None:
         prefix = "" if not text or text.endswith(("\n", "\r")) else newline
         section_prefix = "" if not text else newline
@@ -132,3 +162,7 @@ def _set_toml_bool(text: str, *, section: str, key: str, value: bool) -> str:
 
 def _toml_bool(value: bool) -> str:
     return "true" if value else "false"
+
+
+def _toml_string_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
