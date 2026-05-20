@@ -2,8 +2,6 @@
 
 [Kommando-referanse](reference.md)
 
-[Siste nytt: import-endringer](import-endringer.md)
-
 Denne manualen er for deg som bruker Windows og PowerShell, og som allerede
 har fulgt [README](../README.md) og installert Bildebank. Den viser de vanligste
 arbeidsflytene. Du finner mer detaljerte beskrivelser i lenkene øverst i
