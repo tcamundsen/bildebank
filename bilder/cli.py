@@ -70,7 +70,9 @@ from .thumbnails import ThumbnailStats, run_make_thumbnails
 
 THUMBNAIL_PROGRESS: ProgressMeter | None = None
 IMAGE_SCAN_PROGRESS: ProgressMeter | None = None
+IMAGE_SEARCH_PROGRESS: ProgressMeter | None = None
 FACE_SCAN_PROGRESS: ProgressMeter | None = None
+REFRESH_METADATA_PROGRESS: ProgressMeter | None = None
 
 
 HELP_COMMAND_GROUPS = (
@@ -1128,7 +1130,7 @@ def run(args: argparse.Namespace) -> int:
             conn.commit()
             conn.close()
             stats = refresh_non_metadata_files(
-                target, dry_run=args.dry_run, verbose=args.verbose
+                target, dry_run=args.dry_run, verbose=args.verbose, progress=print_refresh_metadata_progress
             )
             print_refresh_summary(stats, dry_run=args.dry_run)
             return 0 if stats.errors == 0 else 2
@@ -1658,23 +1660,27 @@ def print_image_search_progress(
     total: int,
     stats,
 ) -> None:
+    global IMAGE_SEARCH_PROGRESS
     if stage == "load_model":
-        print(f"Image-search: fant {total} bilde-embeddings. Laster OpenCLIP-modell.")
+        IMAGE_SEARCH_PROGRESS = ProgressMeter("Image-search")
+        IMAGE_SEARCH_PROGRESS.message(f"Image-search: fant {total} bilde-embeddings. Laster OpenCLIP-modell.")
         return
+    if IMAGE_SEARCH_PROGRESS is None:
+        IMAGE_SEARCH_PROGRESS = ProgressMeter("Image-search")
     if stage == "compare_start":
-        print(f'Image-search: søker etter "{stats.query}" i {total} bilder.')
+        IMAGE_SEARCH_PROGRESS.reset_eta()
+        IMAGE_SEARCH_PROGRESS.message(f'Image-search: søker etter "{stats.query}" i {total} bilder.')
         return
     if stage == "compare":
-        if should_print_progress(current, total):
-            print(f"Image-search: søkt={current}/{total}")
+        IMAGE_SEARCH_PROGRESS.update(current, total, action="søkt", eta=True)
         return
     if stage == "write":
-        print(f"Image-search: skriver {current} treff til image-search.html.")
+        IMAGE_SEARCH_PROGRESS.message(f"Image-search: skriver {current} treff til image-search.html.")
         return
-
-
-def should_print_progress(current: int, total: int) -> bool:
-    return total <= 20 or current == total or current % 25 == 0
+    if stage == "done":
+        IMAGE_SEARCH_PROGRESS.done()
+        IMAGE_SEARCH_PROGRESS = None
+        return
 
 
 def run_face_scan(target: Path, *, limit: int | None, show_model_output: bool = False) -> int:
@@ -2409,3 +2415,40 @@ def print_refresh_summary(stats, *, dry_run: bool) -> None:
         f"sjekket={stats.checked}, metadata_funnet={stats.metadata_found}, "
         f"flyttet={stats.moved}, allerede_riktig={stats.already_correct}, feil={stats.errors}"
     )
+
+
+def print_refresh_metadata_progress(
+    stage: str,
+    current: int,
+    total: int,
+    stats,
+    path: Path | None,
+) -> None:
+    global REFRESH_METADATA_PROGRESS
+    if stage == "start":
+        REFRESH_METADATA_PROGRESS = ProgressMeter("Refresh-metadata")
+        REFRESH_METADATA_PROGRESS.message(f"Refresh-metadata: {total} filer skal kontrolleres.")
+        return
+    if REFRESH_METADATA_PROGRESS is None:
+        REFRESH_METADATA_PROGRESS = ProgressMeter("Refresh-metadata")
+    if stage == "error":
+        REFRESH_METADATA_PROGRESS.error(f"Refresh-metadata-feil: {path}")
+        return
+    if stage == "check":
+        REFRESH_METADATA_PROGRESS.update(
+            current,
+            total,
+            action="kontrollert",
+            details=(
+                f"metadata_funnet={stats.metadata_found}, flyttet={stats.moved}, "
+                f"allerede_riktig={stats.already_correct}, feil={stats.errors}"
+            ),
+            eta=True,
+        )
+        return
+    if stage == "done":
+        REFRESH_METADATA_PROGRESS.done(
+            f"Refresh-metadata: ferdig kontrollert {min(current, total)}/{total} filer."
+        )
+        REFRESH_METADATA_PROGRESS = None
+        return

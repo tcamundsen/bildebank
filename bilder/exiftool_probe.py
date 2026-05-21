@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
-from .progress import ProgressLine
+from .progress import ProgressMeter
 
 
 EXIFTOOL_DATE_TAGS = (
@@ -48,14 +48,22 @@ def exiftool_metadata_gaps(
 
     gaps: list[ExifToolMetadataGap] = []
     total = len(rows)
-    progress_line = ProgressLine(sys.stderr)
+    progress_meter = ProgressMeter("exiftool", stream=sys.stderr)
     try:
+        if progress:
+            progress_meter.message(f"exiftool: {total} filer skal kontrolleres.")
         for index, row in enumerate(rows, start=1):
-            if progress and (index == 1 or index == total or index % 25 == 0):
-                progress_line.write(f"exiftool {index}/{total}: {row['target_path']}")
             target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
             found = exiftool_first_date(tool, target_path)
             if found is None:
+                if progress:
+                    progress_meter.update(
+                        index,
+                        total,
+                        action="kontrollert",
+                        details=f"funnet={len(gaps)}",
+                        eta=True,
+                    )
                 continue
             tag, value, date = found
             gaps.append(
@@ -68,8 +76,16 @@ def exiftool_metadata_gaps(
                     date=date,
                 )
             )
+            if progress:
+                progress_meter.update(
+                    index,
+                    total,
+                    action="kontrollert",
+                    details=f"funnet={len(gaps)}",
+                    eta=True,
+                )
     finally:
-        progress_line.finish()
+        progress_meter.done()
     return gaps
 
 

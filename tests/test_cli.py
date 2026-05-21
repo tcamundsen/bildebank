@@ -17,7 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from bilder.cli import build_parser, main
+from bilder.cli import build_parser, main, print_image_search_progress
 from bilder.config import AppConfig, FaceRecognitionConfig, OpenClipConfig, load_config
 from bilder import db
 from bilder.db import DB_FILENAME, init_database
@@ -4120,7 +4120,8 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("bildebank=filename:2024-01-02", stdout)
             self.assertIn("IMG_20240102.jpg", stdout)
             self.assertIn("Oppsummering: exiftool_metadata_funnet=1", stdout)
-            self.assertIn("exiftool 1/1:", stderr)
+            self.assertIn("exiftool: kontrollert=1/1", stderr)
+            self.assertIn("gjenstår=0s", stderr)
 
     def test_rejects_target_inside_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -4207,6 +4208,22 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(stdout, "")
             self.assertIn("Tekstbasert bildesøk er av", stderr)
             self.assertFalse(openclip_db_path(target).exists())
+
+    def test_image_search_progress_uses_progress_meter(self) -> None:
+        stdout = StringIO()
+        stats = SimpleNamespace(query="strand")
+
+        with redirect_stdout(stdout):
+            print_image_search_progress("load_model", 0, 10, stats)
+            print_image_search_progress("compare_start", 0, 10, stats)
+            print_image_search_progress("compare", 10, 10, stats)
+            print_image_search_progress("write", 5, 5, stats)
+            print_image_search_progress("done", 5, 5, stats)
+
+        output = stdout.getvalue()
+        self.assertIn("Image-search: søker etter \"strand\" i 10 bilder.", output)
+        self.assertIn("Image-search: søkt=10/10, gjenstår=0s", output)
+        self.assertIn("Image-search: skriver 5 treff til image-search.html.", output)
 
     def test_face_scan_writes_faces_to_separate_database(self) -> None:
         class FakeFace:
@@ -5462,6 +5479,8 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             code, stdout, stderr = capture_cli(["--target", str(target), "refresh-metadata"])
 
             self.assertEqual(code, 0, stderr)
+            self.assertIn("Refresh-metadata: kontrollert=1/1", stdout)
+            self.assertIn("gjenstår=0s", stdout)
             self.assertIn("flyttet=1", stdout)
             self.assertFalse(old_target.exists())
             self.assertTrue(new_target.exists())

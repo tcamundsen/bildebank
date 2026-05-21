@@ -6,7 +6,7 @@ import sys
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TextIO
+from typing import Callable, TextIO
 
 from . import db
 from .media import MediaDate, is_supported_media, media_date, sha256_file
@@ -35,6 +35,9 @@ class MetadataRefreshStats:
     moved: int = 0
     already_correct: int = 0
     errors: int = 0
+
+
+MetadataRefreshProgress = Callable[[str, int, int, MetadataRefreshStats, Path | None], None]
 
 
 @dataclass
@@ -369,31 +372,45 @@ def install_copied_file(temp: Path, destination: Path, expected_hash: str) -> No
 
 
 def refresh_non_metadata_files(
-    target: Path, *, dry_run: bool = False, verbose: bool = False
+    target: Path,
+    *,
+    dry_run: bool = False,
+    verbose: bool = False,
+    progress: MetadataRefreshProgress | None = None,
 ) -> MetadataRefreshStats:
     stats = MetadataRefreshStats()
     conn = db.connect(target)
     try:
         rows = list(db.non_metadata_files(conn))
-        for row in rows:
+        total = len(rows)
+        if progress is not None:
+            progress("start", 0, total, stats, None)
+        for index, row in enumerate(rows, start=1):
             stats.checked += 1
+            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
             try:
                 refresh_non_metadata_file(
                     conn, target, row, stats, dry_run=dry_run, verbose=verbose
                 )
             except Exception as exc:  # noqa: BLE001 - keep processing and record the file
                 stats.errors += 1
+                if progress is not None:
+                    progress("error", index, total, stats, target_path)
                 if verbose:
                     print(f"FEIL\t{row['target_path']}\t{exc}", flush=True)
                 db.insert_error(
                     conn,
                     source_id=None,
-                    source_path=db.absolute_target_path(target, Path(str(row["target_path"]))),
+                    source_path=target_path,
                     stage="refresh-metadata",
                     message=str(exc),
                 )
+            if progress is not None:
+                progress("check", index, total, stats, target_path)
         if not dry_run:
             conn.commit()
+        if progress is not None:
+            progress("done", total, total, stats, None)
     finally:
         conn.close()
     return stats
