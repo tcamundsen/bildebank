@@ -1844,13 +1844,28 @@ def print_persons(target: Path) -> None:
     if not rows:
         print("Ingen personer registrert.")
         return
+    name_width = max(len("Navn"), *(len(str(row["name"])) for row in rows))
+    print(
+        f"{'Navn':<{name_width}}  "
+        f"{'Bilder':>6}  "
+        f"{'Ansikter':>8}  "
+        f"{'Forslag':>7}  "
+        "Oppdatert"
+    )
+    print(
+        f"{'-' * name_width}  "
+        f"{'-' * 6}  "
+        f"{'-' * 8}  "
+        f"{'-' * 7}  "
+        f"{'-' * 19}"
+    )
     for row in rows:
         print(
-            f"{row['name']}"
-            f"\tbekreftede_bilder={row['confirmed_file_count']}"
-            f"\tbekreftede_ansikter={row['face_count']}"
-            f"\tforslag={row['suggestion_count']}"
-            f"\toppdatert={row['updated_at']}"
+            f"{str(row['name']):<{name_width}}  "
+            f"{int(row['confirmed_file_count']):>6}  "
+            f"{int(row['face_count']):>8}  "
+            f"{int(row['suggestion_count']):>7}  "
+            f"{row['updated_at']}"
         )
 
 

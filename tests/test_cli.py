@@ -4797,10 +4797,8 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn(
-                "Kari\tbekreftede_bilder=1\tbekreftede_ansikter=1\tforslag=1",
-                stdout,
-            )
+            self.assertIn("Navn  Bilder  Ansikter  Forslag  Oppdatert", stdout)
+            self.assertRegex(stdout, r"Kari\s+1\s+1\s+1\s+\d{4}-\d{2}-\d{2}")
 
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-rename", "Kari", "Kari Nordmann"])
 
@@ -4810,11 +4808,8 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn(
-                "Kari Nordmann\tbekreftede_bilder=1\tbekreftede_ansikter=1\tforslag=1",
-                stdout,
-            )
-            self.assertNotIn("Kari\tbekreftede_bilder", stdout)
+            self.assertRegex(stdout, r"Kari Nordmann\s+1\s+1\s+1\s+\d{4}-\d{2}-\d{2}")
+            self.assertNotIn("Kari  ", stdout)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "face-person-rename", "Kari", "Kari Nordmann"])
 
