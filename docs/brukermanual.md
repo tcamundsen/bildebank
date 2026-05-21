@@ -175,14 +175,14 @@ Vi prøver først med testmappen `TestBilder`:
 bildebank import --name "TestBilder" --dry-run "$HOME\Pictures\TestBilder"
 ```
 
-`--dry-run` betyr at Bildebank viser hva programmet ville ha importert, uten å
-kopiere filer og uten å endre databasen.
+`--dry-run` betyr at Bildebank kontrollerer kilden og viser en oppsummering,
+uten å kopiere filer og uten å endre databasen.
 
 Hvis Bildebank ikke finner mappen, høyreklikker du mappen i Filutforsker og
 velger **Kopier som bane**. Lim inn banen i kommandoen i stedet for
 `$HOME\Pictures\TestBilder`.
 
-Se gjennom listen. Hvis den ser riktig ut, kan du importere på ordentlig:
+Se gjennom oppsummeringen. Hvis den ser riktig ut, kan du importere på ordentlig:
 
 ```powershell
 bildebank import --name "TestBilder" "$HOME\Pictures\TestBilder"

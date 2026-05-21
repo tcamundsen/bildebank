@@ -13,9 +13,8 @@ options:
   --quiet
   --name NAME          Unikt navn på importen, for eksempel Sommer2023 eller
                        Familie-CD-2004
-  --dry-run            List filer som ville blitt importert uten å kopiere
-                       eller endre databasen
-  --log-file LOG_FILE  Skriv dry-run-listen til fil i stedet for stdout
+  --dry-run            Vis importoppsummering uten å kopiere filer eller endre
+                       databasen
 ```
 <!-- CLI-HELP-END -->
 
@@ -59,23 +58,18 @@ deler av samme USB-brikke hver for seg, må hver del få sitt eget navn.
 
 ### `--dry-run`
 
-Vis hva programmet ville gjort med kommandoen din, men uten å kopiere filer eller
-endre databasen:
+Vis en oppsummering av hva programmet ville gjort med kommandoen din, men uten å
+kopiere filer eller endre databasen:
 
 ```powershell
 bildebank import --name "Sommer2023" --dry-run "C:\Users\deg\Pictures\Sommer2023"
 ```
 
-Hvis listen ser riktig ut, kjører du samme kommando uten `--dry-run`:
+Hvis oppsummeringen ser riktig ut, kjører du samme kommando uten `--dry-run`:
 
 ```powershell
 bildebank import --name "Sommer2023" "C:\Users\deg\Pictures\Sommer2023"
 ```
-
-### `--log-file LOG_FILE`
-
-Skriv dry-run-listen til filen `LOG_FILE` i stedet for å skrive den i
-terminalvinduet.
 
 ## Duplikater
 

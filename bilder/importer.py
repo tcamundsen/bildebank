@@ -10,7 +10,7 @@ from typing import Callable, TextIO
 
 from . import db
 from .media import MediaDate, is_supported_media, media_date, sha256_file
-from .progress import ProgressLine
+from .progress import ProgressMeter
 
 
 COMMIT_EVERY = 200
@@ -84,8 +84,10 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
     covered_sources = covered_imported_subsources(conn, source)
     covered_roots = [covered.path.resolve() for covered in covered_sources]
     errors_before = stats.errors
-    progress = ProgressLine(sys.stderr)
+    progress = ProgressMeter("Import", stream=sys.stderr) if verbose else None
     try:
+        if progress is not None:
+            progress.message(f"Import: scanner {root}.")
         for item in iter_media_files(root):
             if isinstance(item, WalkError):
                 stats.errors += 1
@@ -113,22 +115,24 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
                     stage="import",
                     message=str(exc),
                 )
-            if verbose and stats.scanned % 50 == 0:
-                progress.write(
-                    f"{source.id}: scannet={stats.scanned} "
-                    f"importert={stats.imported} duplikater={stats.duplicates} "
-                    f"dekket={stats.skipped_covered} feil={stats.errors}"
+            if progress is not None:
+                progress.update_count(
+                    stats.scanned,
+                    action="scannet",
+                    details=import_progress_details(stats),
                 )
             if (stats.imported + stats.duplicates + stats.skipped_existing) % COMMIT_EVERY == 0:
                 conn.commit()
     except KeyboardInterrupt:
         stats.stopped = True
         conn.commit()
-        progress.finish()
+        if progress is not None:
+            progress.done()
         print("Avbrutt. Databaseendringer er lagret så langt det var mulig.", flush=True)
         return stats
     finally:
-        progress.finish()
+        if progress is not None:
+            progress.done()
 
     if stats.errors == errors_before:
         db.mark_source_imported(conn, source.id)
@@ -155,8 +159,10 @@ def import_source_dry_run(
 
     covered_sources = covered_imported_subsources(conn, source)
     covered_roots = [covered.path.resolve() for covered in covered_sources]
-    progress = ProgressLine(sys.stderr)
+    progress = ProgressMeter("Import dry-run", stream=sys.stderr) if verbose else None
     try:
+        if progress is not None:
+            progress.message(f"Import dry-run: scanner {root}.")
         for item in iter_media_files(root):
             if isinstance(item, WalkError):
                 stats.errors += 1
@@ -172,20 +178,30 @@ def import_source_dry_run(
             except Exception as exc:  # noqa: BLE001 - dry-run should keep reporting
                 stats.errors += 1
                 print(f"FEIL\t{path}\t{exc}", file=output)
-            if verbose and stats.scanned % 50 == 0:
-                progress.write(
-                    f"{source.id}: dry-run scannet={stats.scanned} "
-                    f"ville_importert={stats.imported} duplikater={stats.duplicates} "
-                    f"dekket={stats.skipped_covered} feil={stats.errors}"
+            if progress is not None:
+                progress.update_count(
+                    stats.scanned,
+                    action="scannet",
+                    details=import_progress_details(stats, dry_run=True),
                 )
     except KeyboardInterrupt:
         stats.stopped = True
-        progress.finish()
+        if progress is not None:
+            progress.done()
         print("Avbrutt. Dry-run har ikke endret databasen.", flush=True)
         return stats
     finally:
-        progress.finish()
+        if progress is not None:
+            progress.done()
     return stats
+
+
+def import_progress_details(stats: ImportStats, *, dry_run: bool = False) -> str:
+    imported_label = "ville_importert" if dry_run else "importert"
+    return (
+        f"{imported_label}={stats.imported}, duplikater={stats.duplicates}, "
+        f"eksisterende={stats.skipped_existing}, dekket={stats.skipped_covered}, feil={stats.errors}"
+    )
 
 
 def iter_media_files(root: Path):
@@ -312,11 +328,6 @@ def process_file_dry_run(
     stats.imported += 1
     if name_conflict:
         stats.name_conflicts += 1
-    taken_date = _date_string(date) or "-"
-    print(
-        f"IMPORT\t{taken_date}\t{date.source}\t{path.resolve()}\t->\t{destination_path.resolve()}",
-        file=output,
-    )
 
 
 def destination_directory(target: Path, date: MediaDate) -> Path:

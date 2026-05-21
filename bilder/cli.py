@@ -239,12 +239,7 @@ def build_parser() -> argparse.ArgumentParser:
     imp.add_argument(
         "--dry-run",
         action="store_true",
-        help="List filer som ville blitt importert uten å kopiere eller endre databasen",
-    )
-    imp.add_argument(
-        "--log-file",
-        type=Path,
-        help="Skriv dry-run-listen til fil i stedet for stdout",
+        help="Vis importoppsummering uten å kopiere filer eller endre databasen",
     )
     imp.add_argument("path", metavar="mappe", type=Path, help="Kilden som skal importeres")
 
@@ -965,8 +960,6 @@ def run(args: argparse.Namespace) -> int:
         if not (args.command == "unimport" and args.dry_run):
             db.log_command(conn, args.command, vars_for_log(args))
         if args.command == "import":
-            if args.log_file:
-                raise ValueError("--log-file kan bare brukes sammen med --dry-run.")
             source = existing_path_arg(args.path).resolve()
             if not source.is_dir():
                 raise ValueError(f"Kilden finnes ikke som mappe: {source}")
@@ -2114,7 +2107,6 @@ def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
     if not source.is_dir():
         raise ValueError(f"Kilden finnes ikke som mappe: {source}")
     validate_source_target(source, target)
-    output_path = args.log_file.resolve() if args.log_file else None
     conn = db.connect(target)
     try:
         existing = db.find_source_by_name(conn, args.name)
@@ -2132,17 +2124,9 @@ def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
             status="dry-run",
             superseded_by_source_id=None,
         )
-        if output_path is None:
-            stats = import_source_dry_run(
-                conn, target, source_row, output=sys.stdout, verbose=not args.quiet
-            )
-        else:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with output_path.open("w", encoding="utf-8", newline="\n") as output:
-                stats = import_source_dry_run(
-                    conn, target, source_row, output=output, verbose=not args.quiet
-                )
-            print(f"Skrev dry-run importliste: {output_path}")
+        stats = import_source_dry_run(
+            conn, target, source_row, output=sys.stdout, verbose=not args.quiet
+        )
         print_summary(stats)
         return 0 if stats.errors == 0 else 2
     finally:
@@ -2488,7 +2472,11 @@ def vars_for_log(args: argparse.Namespace) -> dict[str, str]:
 
 
 def print_summary(stats) -> None:
-    print(
+    print(summary_line(stats))
+
+
+def summary_line(stats) -> str:
+    return (
         "Oppsummering: "
         f"scannet={stats.scanned}, importert={stats.imported}, "
         f"duplikater={stats.duplicates}, eksisterende={stats.skipped_existing}, "

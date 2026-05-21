@@ -66,6 +66,21 @@ class ProgressMeter:
             parts.append(f"gjenstår={self.eta_text(current, total)}")
         self.line.write(", ".join(parts))
 
+    def update_count(
+        self,
+        current: int,
+        *,
+        action: str,
+        details: str = "",
+        force: bool = False,
+    ) -> None:
+        if not self.should_update_count(current, force=force):
+            return
+        parts = [f"{self.label}: {action}={current}"]
+        if details:
+            parts.append(details)
+        self.line.write(", ".join(parts))
+
     def error(self, message: str) -> None:
         self.line.finish()
         print(message, file=self.line.stream, flush=True)
@@ -77,6 +92,17 @@ class ProgressMeter:
 
     def should_update(self, current: int, total: int, *, force: bool = False) -> bool:
         if force or total <= 20 or current >= total:
+            return True
+        if self.item_interval > 0 and current % self.item_interval == 0:
+            return True
+        now = time.monotonic()
+        if now - self.last_update_at >= self.time_interval_seconds:
+            self.last_update_at = now
+            return True
+        return False
+
+    def should_update_count(self, current: int, *, force: bool = False) -> bool:
+        if force:
             return True
         if self.item_interval > 0 and current % self.item_interval == 0:
             return True

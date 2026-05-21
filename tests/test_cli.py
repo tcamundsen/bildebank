@@ -3359,9 +3359,9 @@ pretrained = "laion2b_s32b_b82k"
             )
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("IMPORT\t2024-01-02\tfilename", stdout)
-            self.assertIn(str(source_file.resolve()), stdout)
-            self.assertIn(str((target / "2024" / "01" / "IMG_20240102.jpg").resolve()), stdout)
+            self.assertNotIn("IMPORT\t", stdout)
+            self.assertNotIn(str(source_file.resolve()), stdout)
+            self.assertNotIn(str((target / "2024" / "01" / "IMG_20240102.jpg").resolve()), stdout)
             self.assertIn("importert=1", stdout)
             self.assertFalse((target / "2024").exists())
 
@@ -3373,39 +3373,6 @@ pretrained = "laion2b_s32b_b82k"
                 self.assertEqual(commands_after, commands_before)
             finally:
                 conn.close()
-
-    def test_import_dry_run_log_file_writes_list_to_file(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            source.mkdir()
-            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
-            log_file = root / "dry-run.txt"
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-
-            code, stdout, stderr = capture_cli(
-                [
-                    "--target",
-                    str(target),
-                    "import",
-                    "--name",
-                    source.name,
-                    "--dry-run",
-                    "--quiet",
-                    "--log-file",
-                    str(log_file),
-                    str(source),
-                ]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Skrev dry-run importliste", stdout)
-            self.assertNotIn("IMG_20240102.jpg\t->", stdout)
-            content = log_file.read_text(encoding="utf-8")
-            self.assertIn("IMPORT\t2024-01-02\tfilename", content)
-            self.assertIn("IMG_20240102.jpg", content)
 
     def test_import_stops_when_target_is_locked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5469,8 +5436,8 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             )
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("IMPORT\t2024-02-03\tfilename", stdout)
-            self.assertIn(str(removable_file.resolve()), stdout)
+            self.assertNotIn("IMPORT\t", stdout)
+            self.assertNotIn(str(removable_file.resolve()), stdout)
             self.assertIn("importert=1", stdout)
             self.assertFalse((target / "2024" / "02" / "REM_20240203.jpg").exists())
 
