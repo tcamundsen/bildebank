@@ -1486,6 +1486,7 @@ def person_item_url_for_face(
 
 def clear_face_caches() -> None:
     cached_confirmed_people_for_file.cache_clear()
+    cached_person_file_ids.cache_clear()
     cached_registered_people.cache_clear()
 
 
@@ -1817,12 +1818,30 @@ def person_file_ids(
     include_suggestions: bool = True,
     face_config: FaceRecognitionConfig | None = None,
 ) -> list[int]:
-    person = person_by_name(target, person_name, face_config)
-    if person is None:
+    face_db_path = current_face_db_path(target, face_config)
+    try:
+        mtime_ns = face_db_path.stat().st_mtime_ns
+    except OSError:
         return []
-    conn = sqlite3.connect(current_face_db_path(target, face_config))
+    clean_name = normalize_person_name(person_name)
+    return list(cached_person_file_ids(str(face_db_path), mtime_ns, clean_name, include_suggestions))
+
+
+@lru_cache(maxsize=256)
+def cached_person_file_ids(
+    face_db_path: str,
+    face_db_mtime_ns: int,
+    person_name: str,
+    include_suggestions: bool,
+) -> tuple[int, ...]:
+    conn = sqlite3.connect(face_db_path)
     conn.row_factory = sqlite3.Row
     try:
+        if not face_tables_exist(conn):
+            return ()
+        person = conn.execute("SELECT id FROM persons WHERE name = ?", (person_name,)).fetchone()
+        if person is None:
+            return ()
         if include_suggestions:
             rows = conn.execute(
                 """
@@ -1850,7 +1869,7 @@ def person_file_ids(
                 """,
                 (int(person["id"]),),
             )
-        return [int(row["file_id"]) for row in rows]
+        return tuple(int(row["file_id"]) for row in rows)
     finally:
         conn.close()
 

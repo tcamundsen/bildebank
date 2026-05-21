@@ -47,6 +47,7 @@ from bilder.server import (
     browser_item_by_id,
     browser_month_items,
     browser_month_navigation,
+    cached_person_file_ids,
     date_source_browser_source,
     empty_source_html,
     face_overlay_content_html,
@@ -64,6 +65,7 @@ from bilder.server import (
     person_item_by_id,
     person_item_page_html,
     person_browser_source,
+    person_file_ids,
     people_page_html,
     person_month_items,
     person_month_navigation,
@@ -2165,6 +2167,11 @@ model_name = "buffalo_l"
             finally:
                 face_conn.close()
 
+            cached_person_file_ids.cache_clear()
+            first_file_ids = person_file_ids(target, "Kari", include_suggestions=True)
+            cache_after_first = cached_person_file_ids.cache_info()
+            second_file_ids = person_file_ids(target, "Kari", include_suggestions=True)
+            cache_after_second = cached_person_file_ids.cache_info()
             body = people_page_html(target)
             confirmed_items = person_items(target, "Kari", include_suggestions=False)
             all_items = person_items(target, "Kari", include_suggestions=True)
@@ -2179,6 +2186,10 @@ model_name = "buffalo_l"
                 source_month_navigation(target, confirmed_source, confirmed_item),
             )
 
+        self.assertEqual(first_file_ids, [1, 2])
+        self.assertEqual(second_file_ids, [1, 2])
+        self.assertEqual(cache_after_first.misses, 1)
+        self.assertEqual(cache_after_second.hits, cache_after_first.hits + 1)
         self.assertIn('href="/person/Kari/confirmed"', body)
         self.assertIn('href="/person/Kari"', body)
         self.assertIn("Bekreftede bilder (1)", body)
