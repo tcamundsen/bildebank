@@ -3787,7 +3787,7 @@ def people_links_html(people: list[dict[str, object]]) -> str:
 
 def people_link_html(person: dict[str, object]) -> str:
     name = str(person["name"])
-    badge = '<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet">V</span>' if person.get("confirmed") else ""
+    badge = '<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet"> ✅</span>' if person.get("confirmed") else ""
     return (
         f'<a class="person-link" href="{html.escape(str(person["url"]))}" '
         f'data-person-name="{html.escape(name)}">{html.escape(name)}{badge}</a>'
