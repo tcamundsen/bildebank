@@ -69,12 +69,15 @@ def main() -> None:
     template_file = OUT_DIR / "_template.html"
     template_file.write_text(HTML_TEMPLATE, encoding="utf-8")
 
-    for md_file in sorted(DOCS_DIR.glob("*.md")):
-        out_file = OUT_DIR / f"{md_file.stem}.html"
+    md_files = sorted(DOCS_DIR.glob("*.md")) + sorted((DOCS_DIR / "web").glob("*.md"))
+    for md_file in md_files:
+        relative_md_file = md_file.relative_to(DOCS_DIR)
+        out_file = OUT_DIR / relative_md_file.with_suffix(".html")
         if not needs_generation(md_file, out_file):
             #print(f"Hopper over {out_file}")
             continue
 
+        out_file.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
             [
                 "pandoc",
