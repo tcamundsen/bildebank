@@ -74,6 +74,8 @@ IMAGE_SEARCH_PROGRESS: ProgressMeter | None = None
 FACE_SCAN_PROGRESS: ProgressMeter | None = None
 FACE_SUGGEST_PROGRESS: ProgressMeter | None = None
 REFRESH_METADATA_PROGRESS: ProgressMeter | None = None
+UNIMPORT_SOURCE_PROGRESS: ProgressMeter | None = None
+UNIMPORT_TARGET_PROGRESS: ProgressMeter | None = None
 
 
 HELP_COMMAND_GROUPS = (
@@ -1034,8 +1036,8 @@ def run(args: argparse.Namespace) -> int:
                 )
             with TargetLock(target, command="unimport"):
                 plan = db.build_unimport_plan(conn, target, source)
-                validate_unimport_source_files(conn, source)
-                validate_unimport_target_files(plan)
+                validate_unimport_source_files(conn, source, progress=unimport_source_progress())
+                validate_unimport_target_files(plan, progress=unimport_target_progress())
                 print_unimport_plan(plan)
                 if args.dry_run:
                     print_unimport_dry_run_note(source)
@@ -1277,34 +1279,78 @@ def resolve_source_by_name(conn, name: str) -> db.Source:
     return source
 
 
-def validate_unimport_source_files(conn, source: db.Source) -> None:
-    for row in db.source_file_sources(conn, source.id):
-        source_path = Path(str(row["source_path"]))
-        if not source_path.exists():
-            raise ValueError(
-                f"Kildefil mangler: {source_path}\n"
-                "Sjekk at riktig mappe, USB-disk, CD eller minnekort er tilgjengelig, "
-                "og at det har samme stasjon/path som da importen ble kjørt."
-            )
-        if not source_path.is_file():
-            raise ValueError(f"Kildefil er ikke en fil: {source_path}")
-        size_bytes = source_path.stat().st_size
-        if size_bytes != int(row["size_bytes"]):
-            raise ValueError(
-                f"Kildefil har endret størrelse: {source_path} "
-                f"(nå {size_bytes}, forventet {row['size_bytes']})"
-            )
-        file_hash = sha256_file(source_path)
-        if file_hash != row["sha256"]:
-            raise ValueError(f"Kildefil har endret innhold: {source_path}")
+def validate_unimport_source_files(
+    conn,
+    source: db.Source,
+    *,
+    progress: ProgressMeter | None = None,
+) -> None:
+    rows = db.source_file_sources(conn, source.id)
+    total = len(rows)
+    if progress is not None:
+        progress.message(f"Unimport: kontrollerer {total} kildefiler.")
+        if total == 0:
+            progress.update(0, 0, action="kildefiler", eta=True)
+    try:
+        for index, row in enumerate(rows, start=1):
+            source_path = Path(str(row["source_path"]))
+            if not source_path.exists():
+                raise ValueError(
+                    f"Kildefil mangler: {source_path}\n"
+                    "Sjekk at riktig mappe, USB-disk, CD eller minnekort er tilgjengelig, "
+                    "og at det har samme stasjon/path som da importen ble kjørt."
+                )
+            if not source_path.is_file():
+                raise ValueError(f"Kildefil er ikke en fil: {source_path}")
+            size_bytes = source_path.stat().st_size
+            if size_bytes != int(row["size_bytes"]):
+                raise ValueError(
+                    f"Kildefil har endret størrelse: {source_path} "
+                    f"(nå {size_bytes}, forventet {row['size_bytes']})"
+                )
+            file_hash = sha256_file(source_path)
+            if file_hash != row["sha256"]:
+                raise ValueError(f"Kildefil har endret innhold: {source_path}")
+            if progress is not None:
+                progress.update(index, total, action="kildefiler", eta=True)
+    finally:
+        if progress is not None:
+            progress.done()
 
 
-def validate_unimport_target_files(plan: db.UnimportPlan) -> None:
-    for target_path in plan.target_paths_to_delete:
-        if not target_path.exists():
-            raise ValueError(f"Målfilen som skulle fjernes finnes ikke: {target_path}")
-        if not target_path.is_file():
-            raise ValueError(f"Målfilen som skulle fjernes er ikke en fil: {target_path}")
+def validate_unimport_target_files(
+    plan: db.UnimportPlan,
+    *,
+    progress: ProgressMeter | None = None,
+) -> None:
+    total = len(plan.target_paths_to_delete)
+    if progress is not None:
+        progress.message(f"Unimport: kontrollerer {total} målfil(er) som kan fjernes.")
+        if total == 0:
+            progress.update(0, 0, action="målfiler", eta=True)
+    try:
+        for index, target_path in enumerate(plan.target_paths_to_delete, start=1):
+            if not target_path.exists():
+                raise ValueError(f"Målfilen som skulle fjernes finnes ikke: {target_path}")
+            if not target_path.is_file():
+                raise ValueError(f"Målfilen som skulle fjernes er ikke en fil: {target_path}")
+            if progress is not None:
+                progress.update(index, total, action="målfiler", eta=True)
+    finally:
+        if progress is not None:
+            progress.done()
+
+
+def unimport_source_progress() -> ProgressMeter:
+    global UNIMPORT_SOURCE_PROGRESS
+    UNIMPORT_SOURCE_PROGRESS = ProgressMeter("Unimport")
+    return UNIMPORT_SOURCE_PROGRESS
+
+
+def unimport_target_progress() -> ProgressMeter:
+    global UNIMPORT_TARGET_PROGRESS
+    UNIMPORT_TARGET_PROGRESS = ProgressMeter("Unimport")
+    return UNIMPORT_TARGET_PROGRESS
 
 
 def print_unimport_plan(plan: db.UnimportPlan) -> None:
