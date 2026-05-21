@@ -550,6 +550,18 @@ pretrained = "laion2b_s34b_b79k"
         self.assertNotIn("--no-browser", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
+    def test_face_person_rename_help_documents_names(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["face-person-rename", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("gammelt_navn", stdout)
+        self.assertIn("nytt_navn", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
     def test_image_search_help_documents_limit_and_no_browser(self) -> None:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
@@ -4701,6 +4713,39 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 "Kari\tbekreftede_bilder=1\tbekreftede_ansikter=1\tforslag=1",
                 stdout,
             )
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-rename", "Kari", "Kari Nordmann"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Endret personnavn: Kari -> Kari Nordmann", stdout)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-list"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn(
+                "Kari Nordmann\tbekreftede_bilder=1\tbekreftede_ansikter=1\tforslag=1",
+                stdout,
+            )
+            self.assertNotIn("Kari\tbekreftede_bilder", stdout)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-rename", "Kari", "Kari Nordmann"])
+
+            self.assertEqual(code, 1)
+            self.assertIn("Fant ikke person: Kari", stderr)
+
+            self.assertEqual(run_cli(["--target", str(target), "face-person-create", "Ola"]), 0)
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-rename", "Kari Nordmann", "Ola"])
+
+            self.assertEqual(code, 1)
+            self.assertIn("Person finnes allerede: Ola", stderr)
+
+            with patch("builtins.input", return_value="slett Ola"):
+                self.assertEqual(run_cli(["--target", str(target), "face-person-delete", "Ola"]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-person-rename", "Kari Nordmann", "Kari"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Endret personnavn: Kari Nordmann -> Kari", stdout)
 
             with patch("builtins.input", return_value="slett Kari"):
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-person-delete", "Kari"])

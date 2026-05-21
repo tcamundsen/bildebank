@@ -172,6 +172,7 @@ De vanligste vedlikeholdsoppgavene er:
 
 - liste personer: `bildebank face-person-list`
 - fjerne et feil ansikt fra en person: `bildebank face-person-remove-face`
+- endre navn på en person: `bildebank face-person-rename`
 - slette en person: `bildebank face-person-delete`
 - nullstille ansiktskoblinger: se [`face-reset`](face-reset.md)
 

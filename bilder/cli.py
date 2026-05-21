@@ -22,6 +22,7 @@ from .face import (
     FaceReport,
     FaceSuggestStats,
     RemoveFaceFromPersonResult,
+    RenamePersonResult,
     add_face_to_person,
     create_person,
     delete_person,
@@ -34,6 +35,7 @@ from .face import (
     list_face_suggestions,
     list_persons,
     remove_face_from_person,
+    rename_person,
     reset_face_database,
     scan_faces,
     suggest_faces,
@@ -137,6 +139,7 @@ HELP_COMMAND_GROUPS = (
             ("face-person-add-face", "Koble ett ansikt til person"),
             ("face-person-remove-face", "Fjern ett ansikt fra person"),
             ("face-person-delete", "Slett person fra ansiktsdatabasen"),
+            ("face-person-rename", "Endre navn på person i ansiktsdatabasen"),
             ("face-person-list", "List personer i ansiktsdatabasen"),
             ("face-suggest", "Foreslå personer for ukjente ansikter"),
             ("make-face-browser", "Lag HTML-side for scannede ansikter"),
@@ -562,6 +565,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Slett person fra ansiktsdatabasen",
     )
     face_person_delete.add_argument("name", metavar="navn", help="Personnavn")
+    face_person_rename = add_command(
+        subparsers,
+        "face-person-rename",
+        usage="bildebank face-person-rename [valg] gammelt_navn nytt_navn",
+        help="Endre navn på person i ansiktsdatabasen",
+    )
+    face_person_rename.add_argument("old_name", metavar="gammelt_navn", help="Eksisterende personnavn")
+    face_person_rename.add_argument("new_name", metavar="nytt_navn", help="Nytt personnavn")
     add_command(
         subparsers,
         "face-person-list",
@@ -841,6 +852,7 @@ def run(args: argparse.Namespace) -> int:
         "face-person-add-face",
         "face-person-remove-face",
         "face-person-delete",
+        "face-person-rename",
         "face-person-list",
         "face-suggest",
         "make-face-browser",
@@ -877,6 +889,12 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "face-person-delete":
         return run_face_person_delete(target, args.name)
+
+    if args.command == "face-person-rename":
+        config = load_config(program_repo_root()).face_recognition
+        result = rename_person(target, args.old_name, args.new_name, config)
+        print_rename_person_result(result)
+        return 0
 
     if args.command == "face-person-list":
         print_persons(target)
@@ -1787,6 +1805,13 @@ def print_delete_person_result(result: DeletePersonResult) -> None:
     print(f"Fjernet bekreftede ansiktskoblinger: {result.removed_faces}")
     print(f"Fjernet ansiktsforslag: {result.removed_suggestions}")
     print("Ingen bilder eller scannede ansikter er slettet.")
+
+
+def print_rename_person_result(result: RenamePersonResult) -> None:
+    if result.old_name == result.new_name:
+        print(f"Personnavnet er uendret: {result.new_name}")
+        return
+    print(f"Endret personnavn: {result.old_name} -> {result.new_name}")
 
 
 def print_face_suggest_stats(stats: FaceSuggestStats) -> None:

@@ -58,6 +58,7 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 - [`face-person-add-face`](face-person-add-face.md)
 - [`face-person-remove-face`](face-person-remove-face.md)
 - [`face-person-delete`](face-person-delete.md)
+- [`face-person-rename`](face-person-rename.md)
 - [`face-person-list`](face-person-list.md)
 
 Generering av statiske HTML-filer:

@@ -85,6 +85,12 @@ class DeletePersonResult:
 
 
 @dataclass(frozen=True)
+class RenamePersonResult:
+    old_name: str
+    new_name: str
+
+
+@dataclass(frozen=True)
 class FaceResetResult:
     mode: str
     removed_persons: int
@@ -432,6 +438,32 @@ def delete_person(target: Path, person_name: str, config: FaceRecognitionConfig 
         conn.execute("DELETE FROM persons WHERE id = ?", (person_id,))
         conn.commit()
         return DeletePersonResult(clean_name, removed_faces, removed_suggestions)
+    finally:
+        conn.close()
+
+
+def rename_person(
+    target: Path,
+    old_name: str,
+    new_name: str,
+    config: FaceRecognitionConfig | None = None,
+) -> RenamePersonResult:
+    clean_old_name = normalize_person_name(old_name)
+    clean_new_name = normalize_person_name(new_name)
+    if clean_old_name == clean_new_name:
+        return RenamePersonResult(clean_old_name, clean_new_name)
+    conn = connect_face_db(target, config)
+    try:
+        person_id = require_person(conn, clean_old_name)
+        row = conn.execute("SELECT id FROM persons WHERE name = ?", (clean_new_name,)).fetchone()
+        if row is not None:
+            raise ValueError(f"Person finnes allerede: {clean_new_name}")
+        conn.execute(
+            "UPDATE persons SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (clean_new_name, person_id),
+        )
+        conn.commit()
+        return RenamePersonResult(clean_old_name, clean_new_name)
     finally:
         conn.close()
 
