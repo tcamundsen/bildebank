@@ -1761,12 +1761,12 @@ model_name = "buffalo_l"
 
         self.assertNotIn("1 filer, 1 måneder", body)
         self.assertIn(
-            'class="person-link" href="/person/Kari/item/1" data-person-name="Kari">'
+            'class="person-link" href="/person/Kari/no-faces/item/1" data-person-name="Kari">'
             'Kari<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet"> ✅</span></a>',
             body,
         )
         self.assertIn(
-            'class="person-link" href="/person/Ola%20Nordmann/item/1" data-person-name="Ola Nordmann">'
+            'class="person-link" href="/person/Ola%20Nordmann/no-faces/item/1" data-person-name="Ola Nordmann">'
             "Ola Nordmann</a>",
             body,
         )
@@ -1884,7 +1884,7 @@ model_name = "buffalo_l"
                 {
                     "ok": True,
                     "person_name": "Kari",
-                    "person_url": "/person/Kari/item/1",
+                    "person_url": "/person/Kari/no-faces/item/1",
                     "confirmed": True,
                     "face_id": 1,
                     "added": True,
@@ -1947,7 +1947,7 @@ model_name = "buffalo_l"
                 {
                     "ok": True,
                     "person_name": "Kari",
-                    "person_url": "/person/Kari/item/1",
+                    "person_url": "/person/Kari/no-faces/item/1",
                     "confirmed": True,
                     "face_id": 1,
                     "added": True,
@@ -2190,8 +2190,8 @@ model_name = "buffalo_l"
         self.assertEqual(second_file_ids, [1, 2])
         self.assertEqual(cache_after_first.misses, 1)
         self.assertEqual(cache_after_second.hits, cache_after_first.hits + 1)
-        self.assertIn('href="/person/Kari/confirmed"', body)
-        self.assertIn('href="/person/Kari"', body)
+        self.assertIn('href="/person/Kari/confirmed/no-faces"', body)
+        self.assertIn('href="/person/Kari/no-faces"', body)
         self.assertIn("Bekreftede bilder (1)", body)
         self.assertIn("Bekreftede og forslag (2)", body)
         self.assertIn("NB: 2 bekreftede ansikter i samme bilde", body)

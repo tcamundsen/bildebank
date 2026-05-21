@@ -1422,7 +1422,7 @@ def confirmed_people_for_file(
     except OSError:
         return []
     return [
-        {"name": name, "url": person_item_url(name, file_id), "confirmed": priority == 0}
+        {"name": name, "url": person_item_url(name, file_id, show_faces=False), "confirmed": priority == 0}
         for name, priority in cached_confirmed_people_for_file(str(face_db_path), mtime_ns, file_id)
     ]
 
@@ -1480,8 +1480,8 @@ def person_item_url_for_face(
     except sqlite3.Error:
         row = None
     if row is None:
-        return person_url(person_name)
-    return person_item_url(person_name, int(row[0]))
+        return person_url(person_name, show_faces=False)
+    return person_item_url(person_name, int(row[0]), show_faces=False)
 
 
 def clear_face_caches() -> None:
@@ -2349,12 +2349,13 @@ def update_face_box_media_metadata(
         conn.close()
 
 
-def person_url(person_name: str) -> str:
-    return "/person/" + urllib.parse.quote(person_name, safe="")
+def person_url(person_name: str, *, show_faces: bool = True) -> str:
+    url = "/person/" + urllib.parse.quote(person_name, safe="")
+    return url if show_faces else f"{url}/no-faces"
 
 
-def person_item_url(person_name: str, file_id: int) -> str:
-    return f"{person_url(person_name)}/item/{file_id}"
+def person_item_url(person_name: str, file_id: int, *, show_faces: bool = True) -> str:
+    return f"{person_url(person_name, show_faces=show_faces)}/item/{file_id}"
 
 
 def person_month_url(person_name: str, month_key: str) -> str:
@@ -4323,8 +4324,8 @@ def people_row_html(person: dict[str, object]) -> str:
     suggestion_count = int(person["suggestion_count"])
     duplicate_count = int(person["duplicate_confirmed_file_count"])
     max_confirmed_faces = int(person["max_confirmed_faces_per_file"])
-    confirmed_source = person_browser_source(name, include_suggestions=False)
-    all_source = person_browser_source(name, include_suggestions=True)
+    confirmed_source = person_browser_source(name, include_suggestions=False, show_faces=False)
+    all_source = person_browser_source(name, include_suggestions=True, show_faces=False)
     duplicate_warning = ""
     if duplicate_count > 0:
         duplicate_warning = (
