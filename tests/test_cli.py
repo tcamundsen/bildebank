@@ -1703,8 +1703,16 @@ model_name = "buffalo_l"
             )
 
         self.assertNotIn("1 filer, 1 måneder", body)
-        self.assertIn('class="person-link" href="/person/Kari/item/1">Kari</a>', body)
-        self.assertIn('class="person-link" href="/person/Ola%20Nordmann/item/1">Ola Nordmann</a>', body)
+        self.assertIn(
+            'class="person-link" href="/person/Kari/item/1" data-person-name="Kari">'
+            'Kari<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet">V</span></a>',
+            body,
+        )
+        self.assertIn(
+            'class="person-link" href="/person/Ola%20Nordmann/item/1" data-person-name="Ola Nordmann">'
+            "Ola Nordmann</a>",
+            body,
+        )
         self.assertIn("Ubekreftet ansikter i bildet (1)", body)
         self.assertIn('data-faces-item="1"', body)
         self.assertIn('data-face-list', body)
@@ -1816,7 +1824,14 @@ model_name = "buffalo_l"
             BildebankRequestHandler.respond_add_face_to_person(handler)  # type: ignore[arg-type]
 
             self.assertEqual(
-                {"ok": True, "person_name": "Kari", "person_url": "/person/Kari", "face_id": 1, "added": True},
+                {
+                    "ok": True,
+                    "person_name": "Kari",
+                    "person_url": "/person/Kari/item/1",
+                    "confirmed": True,
+                    "face_id": 1,
+                    "added": True,
+                },
                 handler.body,
             )
             face_conn = connect_face_db(target)
@@ -1872,7 +1887,14 @@ model_name = "buffalo_l"
             BildebankRequestHandler.respond_create_person_and_add_face(handler)  # type: ignore[arg-type]
 
             self.assertEqual(
-                {"ok": True, "person_name": "Kari", "person_url": "/person/Kari", "face_id": 1, "added": True},
+                {
+                    "ok": True,
+                    "person_name": "Kari",
+                    "person_url": "/person/Kari/item/1",
+                    "confirmed": True,
+                    "face_id": 1,
+                    "added": True,
+                },
                 handler.body,
             )
             face_conn = connect_face_db(target)

@@ -748,11 +748,13 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         clear_face_caches()
+        person_link_url = person_item_url_for_face(self.server.target, result.person_name, result.face_id, config)
         self.respond_json(
             {
                 "ok": True,
                 "person_name": result.person_name,
-                "person_url": person_url(result.person_name),
+                "person_url": person_link_url,
+                "confirmed": True,
                 "face_id": result.face_id,
                 "added": result.added,
             }
@@ -795,11 +797,13 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         clear_face_caches()
+        person_link_url = person_item_url_for_face(self.server.target, result.person_name, result.face_id, config)
         self.respond_json(
             {
                 "ok": True,
                 "person_name": result.person_name,
-                "person_url": person_url(result.person_name),
+                "person_url": person_link_url,
+                "confirmed": True,
                 "face_id": result.face_id,
                 "added": result.added,
             }
@@ -1326,20 +1330,20 @@ def confirmed_people_for_file(
     target: Path,
     file_id: int,
     face_config: FaceRecognitionConfig | None = None,
-) -> list[dict[str, str]]:
+) -> list[dict[str, object]]:
     face_db_path = current_face_db_path(target, face_config)
     try:
         mtime_ns = face_db_path.stat().st_mtime_ns
     except OSError:
         return []
     return [
-        {"name": name, "url": person_item_url(name, file_id)}
-        for name in cached_confirmed_people_for_file(str(face_db_path), mtime_ns, file_id)
+        {"name": name, "url": person_item_url(name, file_id), "confirmed": priority == 0}
+        for name, priority in cached_confirmed_people_for_file(str(face_db_path), mtime_ns, file_id)
     ]
 
 
 @lru_cache(maxsize=512)
-def cached_confirmed_people_for_file(face_db_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[str, ...]:
+def cached_confirmed_people_for_file(face_db_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[tuple[str, int], ...]:
     conn = sqlite3.connect(face_db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -1368,11 +1372,31 @@ def cached_confirmed_people_for_file(face_db_path: str, face_db_mtime_ns: int, f
             priority = int(row["priority"])
             if name not in people or priority < people[name]:
                 people[name] = priority
-        return tuple(sorted(people))
+        return tuple(sorted(people.items()))
     except sqlite3.Error:
         return ()
     finally:
         conn.close()
+
+
+def person_item_url_for_face(
+    target: Path,
+    person_name: str,
+    face_id: int,
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
+    face_db_path = current_face_db_path(target, face_config)
+    try:
+        conn = sqlite3.connect(face_db_path)
+        try:
+            row = conn.execute("SELECT file_id FROM faces WHERE id = ?", (face_id,)).fetchone()
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        row = None
+    if row is None:
+        return person_url(person_name)
+    return person_item_url(person_name, int(row[0]))
 
 
 def clear_face_caches() -> None:
@@ -3754,14 +3778,20 @@ def image_info_button_html(file_id: int | None) -> str:
     return f'<button class="nav-button" type="button" data-open-info{file_attr}>Bildeinfo</button>'
 
 
-def people_links_html(people: list[dict[str, str]]) -> str:
+def people_links_html(people: list[dict[str, object]]) -> str:
     if not people:
         return ""
-    links = "\n".join(
-        f'<a class="person-link" href="{html.escape(person["url"])}">{html.escape(person["name"])}</a>'
-        for person in people
-    )
+    links = "\n".join(people_link_html(person) for person in people)
     return f'<div class="people">{links}</div>'
+
+
+def people_link_html(person: dict[str, object]) -> str:
+    name = str(person["name"])
+    badge = '<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet">V</span>' if person.get("confirmed") else ""
+    return (
+        f'<a class="person-link" href="{html.escape(str(person["url"]))}" '
+        f'data-person-name="{html.escape(name)}">{html.escape(name)}{badge}</a>'
+    )
 
 
 def faces_button_html(face_count: int, file_id: int) -> str:
@@ -4323,6 +4353,13 @@ SERVER_CSS = r"""    :root {
       align-items: center;
     }
     .person-link { color: var(--accent); }
+    .confirmed-badge {
+      margin-left: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--ok);
+    }
     .faces-button { color: var(--accent); }
     .nav-button:hover, .server-search-link:hover, .person-link:hover, .faces-button:hover { background: #3a3a3a; text-decoration: none; }
     .danger-button { color: var(--danger); }
@@ -4676,7 +4713,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     if (!infoOverlay) return;
     infoOverlay.hidden = true;
   }
-  function ensureTopPersonLink(name, url) {
+  function ensureTopPersonLink(name, url, confirmed = false) {
     if (!name || !url) return;
     let people = document.querySelector(".topline .people");
     if (!people) {
@@ -4684,12 +4721,21 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       people.className = "people";
       document.querySelector(".topline .title")?.after(people);
     }
-    const exists = Array.from(people.querySelectorAll(".person-link")).some(link => link.textContent === name);
+    const exists = Array.from(people.querySelectorAll(".person-link")).some(link => link.dataset.personName === name);
     if (exists) return;
     const link = document.createElement("a");
     link.className = "person-link";
     link.href = url;
-    link.textContent = name;
+    link.dataset.personName = name;
+    link.append(document.createTextNode(name));
+    if (confirmed) {
+      const badge = document.createElement("span");
+      badge.className = "confirmed-badge";
+      badge.title = "Bekreftet";
+      badge.setAttribute("aria-label", "Bekreftet");
+      badge.textContent = "V";
+      link.append(badge);
+    }
     people.append(link);
   }
   openFacesButton?.addEventListener("click", openFacesOverlay);
@@ -4801,7 +4847,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       const payload = await response.json();
       if (!payload.ok) throw new Error(payload.error || "Kunne ikke lagre.");
       status.textContent = `Koblet til ${payload.person_name}.`;
-      ensureTopPersonLink(payload.person_name, payload.person_url);
+      ensureTopPersonLink(payload.person_name, payload.person_url, payload.confirmed);
       detail.remove();
       if (!document.querySelector(".face-detail")) {
         closeFacesOverlay();
