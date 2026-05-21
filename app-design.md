@@ -1,5 +1,8 @@
 # Bildesorteringsprogram
 
+Filen devel-docs/begrensninger-og-krav.md inneholder ting som vi
+ikke skal implementere, og hva vi krever at brukeren skal forstå.
+
 ## Formål
 
 Det har blitt vanskelig å holde oversikt over digitale bilder fordi de ligger
