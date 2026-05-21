@@ -2,9 +2,7 @@
 
 Litt om bildebrowseren fra run-server. Jeg vet at noen ting er litt rotete
 og preget av work-in-progress. Det er fordi det er det. Men det finpusses
-stadig. Ting går nå så greit, at det kan se ut til at de som vil kan gjøre
-all bilde-jobbingen fra nettleser etterhvert, og slippe unna PowerShell for
-alt annet enn installasjon og kanskje oppdatering.
+stadig. 
 
 ## Venstre øverste hjørne
 
