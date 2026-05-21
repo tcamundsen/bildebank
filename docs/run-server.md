@@ -19,6 +19,8 @@ HTML-filen laget av `make-browser`.
   databasen, og bildet roteres i nettleseren. Originale bildefiler endres ikke.
 - Vise bilder gruppert etter sted når GPS-data er scannet med
   `bildebank geo-scan`.
+- Vise importerte kilder og åpne en bildebrowser som bare viser bildene som
+  kom fra én bestemt kilde.
 - Holde OpenCLIP-modellen lastet i minnet mens serveren kjører, slik at
   modellen ikke må lastes inn på nytt ved hvert søk.
   Dette gjør at søkene går raskere etter første søk.
@@ -93,6 +95,11 @@ Etterpå kan `http://127.0.0.1:8765/geo` vise områder med bilder,
 `http://127.0.0.1:8765/geo/missing` vise bilder uten GPS, og `Bildeinfo`
 på bildesidene kan lenke til stedssidene bildet er del av. Serveren endrer
 ikke bildefilene og gjør ikke oppslag mot eksterne karttjenester.
+
+Lenken `Kilder` viser importene Bildebank kjenner til. Fra kildesiden kan du
+åpne en bildebrowser som bare viser aktive bilder fra én bestemt kilde. Dette er
+nyttig når du vil kontrollere bilder fra for eksempel én mobil, USB-brikke eller
+mappe.
 
 Knappen `Slett` flytter bildet til `deleted`-mappen i bildesamlingen og
 markerer filen som slettet i databasen. Dette er samme slettemekanisme

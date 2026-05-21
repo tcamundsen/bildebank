@@ -59,6 +59,7 @@ from bilder.server import (
     image_info_content_html,
     index_html,
     item_page_html,
+    imported_source_browser_source,
     month_page_html,
     person_item_by_id,
     person_item_page_html,
@@ -77,6 +78,8 @@ from bilder.server import (
     source_month_items,
     source_month_navigation,
     source_month_page_html,
+    source_summary_rows,
+    sources_page_html,
     undelete_file_from_browser,
 )
 from bilder.target_lock import LOCK_FILENAME
@@ -1615,6 +1618,58 @@ model_name = "buffalo_l"
         self.assertNotIn('href="/search"', all_month_disabled_body)
         self.assertNotIn('href="/people"', empty_source_disabled_body)
         self.assertNotIn('href="/search"', empty_source_disabled_body)
+
+    def test_run_server_source_browser_reuses_source_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source_a = Path(tmp) / "source-a"
+            source_b = Path(tmp) / "source-b"
+            source_a.mkdir()
+            source_b.mkdir()
+            (source_a / "IMG_20240102.jpg").write_bytes(b"image-a")
+            (source_b / "IMG_20240203.jpg").write_bytes(b"image-b")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-a", "--quiet", str(source_a)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-b", "--quiet", str(source_b)]), 0)
+            conn = db.connect(target)
+            try:
+                source = db.find_source_by_name(conn, "source-a")
+            finally:
+                conn.close()
+            self.assertIsNotNone(source)
+            source_browser = imported_source_browser_source(source)
+            with patch("bilder.server.source_items", side_effect=AssertionError("source_items should not be used")):
+                source_item = source_item_by_id(target, source_browser, 1)
+                source_excludes_other_item = source_item_by_id(target, source_browser, 2) is None
+                self.assertIsNotNone(source_item)
+                source_adjacent = adjacent_source_items(target, source_browser, source_item)
+                source_month_nav = source_month_navigation(target, source_browser, source_item)
+                source_month = source_month_items(target, source_browser, "2024-01")
+            self.assertIsNotNone(source_item)
+            item_body = source_item_page_html(
+                target,
+                source_browser,
+                source_item,
+                *source_adjacent,
+                source_month_nav,
+            )
+            month_body = source_month_page_html(target, source_browser, "2024-01", source_month)
+            sources_body = sources_page_html(target)
+            summaries = source_summary_rows(target)
+
+        self.assertTrue(source_excludes_other_item)
+        self.assertEqual(len(source_month), 1)
+        self.assertEqual(len(summaries), 2)
+        self.assertIn("Kilde: source-a", item_body)
+        self.assertIn('href="/item/1">Alle bilder</a>', item_body)
+        self.assertIn('href="/sources">Kilder</a>', item_body)
+        self.assertNotIn("IMG_20240203", item_body)
+        self.assertIn('href="/source/1/item/1"', month_body)
+        self.assertIn("<h1>Kilder</h1>", sources_body)
+        self.assertIn('href="/source/1">Vis bilder (1)</a>', sources_body)
+        self.assertIn("source-a", sources_body)
+        self.assertIn("source-b", sources_body)
 
     def test_run_server_month_navigation_tolerates_foreign_path_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

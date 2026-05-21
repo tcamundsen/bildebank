@@ -80,6 +80,7 @@ class BrowserSource:
     person_name: str | None = None
     include_suggestions: bool = True
     date_source: str | None = None
+    source_id: int | None = None
     show_faces: bool = True
     geo_place_slug: str | None = None
     geo_place_cells: tuple[str, ...] = ()
@@ -143,6 +144,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                     return
                 self.respond_html(people_page_html(self.server.target, self.server.config.face_recognition))
                 return
+            if parsed.path in {"/sources", "/sources/"}:
+                self.respond_html(sources_page_html(self.server.target))
+                return
             if parsed.path == "/settings":
                 self.respond_html(app_status_page_html(self.server.target, self.server.config))
                 return
@@ -187,6 +191,9 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             if parsed.path.startswith("/date-source/"):
                 self.respond_date_source(parsed.path.removeprefix("/date-source/"))
+                return
+            if parsed.path.startswith("/source/"):
+                self.respond_imported_source(parsed.path.removeprefix("/source/"))
                 return
             if parsed.path.startswith("/person/"):
                 if not self.server.face_enabled:
@@ -474,6 +481,73 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             )
             return
         self.respond_text("Ugyldig datokildeside.", status=HTTPStatus.NOT_FOUND)
+
+    def respond_imported_source(self, raw_path: str) -> None:
+        raw_source_id, page_mode, raw_value = parse_source_path(raw_path)
+        try:
+            source_id = int(urllib.parse.unquote(raw_source_id).strip())
+        except ValueError:
+            self.respond_text("Ugyldig kilde.", status=HTTPStatus.BAD_REQUEST)
+            return
+        source_row = imported_source_by_id(self.server.target, source_id)
+        if source_row is None:
+            self.respond_text("Fant ikke kilde.", status=HTTPStatus.NOT_FOUND)
+            return
+        source = imported_source_browser_source(source_row)
+        if page_mode is None:
+            item = first_source_item(self.server.target, source)
+            if item is None:
+                self.respond_html(
+                    empty_source_html(
+                        source,
+                        face_enabled=self.server.face_enabled,
+                        openclip_enabled=self.server.openclip_enabled,
+                    )
+                )
+                return
+            self.redirect(source_item_url(source, int(item["id"])))
+            return
+        if page_mode == "item":
+            file_id = parse_file_id(raw_value)
+            item = source_item_by_id(self.server.target, source, file_id)
+            if item is None:
+                self.respond_text("Filen finnes ikke for denne kilden.", status=HTTPStatus.NOT_FOUND)
+                return
+            previous_item, next_item = adjacent_source_items(self.server.target, source, item)
+            month_nav = source_month_navigation(self.server.target, source, item)
+            self.respond_html(
+                source_item_page_html(
+                    self.server.target,
+                    source,
+                    item,
+                    previous_item,
+                    next_item,
+                    month_nav,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                    face_config=self.server.config.face_recognition,
+                )
+            )
+            return
+        if page_mode == "month":
+            month_key = urllib.parse.unquote(raw_value).strip()
+            if not valid_month_key(month_key):
+                self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
+                return
+            items = source_month_items(self.server.target, source, month_key)
+            self.respond_html(
+                source_month_page_html(
+                    self.server.target,
+                    source,
+                    month_key,
+                    items,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                    face_config=self.server.config.face_recognition,
+                )
+            )
+            return
+        self.respond_text("Ugyldig kildeside.", status=HTTPStatus.NOT_FOUND)
 
     def respond_geo(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
@@ -1029,6 +1103,12 @@ def date_source_browser_source(date_source: str) -> BrowserSource:
     return BrowserSource(labels[date_source], f"/date-source/{date_source}", date_source=date_source)
 
 
+def imported_source_browser_source(source: db.Source | sqlite3.Row) -> BrowserSource:
+    source_id = int(source["id"] if isinstance(source, sqlite3.Row) else source.id)
+    name = str(source["name"] if isinstance(source, sqlite3.Row) else source.name)
+    return BrowserSource(f"Kilde: {name}", f"/source/{source_id}", source_id=source_id)
+
+
 def geo_place_browser_source(place: PredefinedGeoPlace) -> BrowserSource:
     return BrowserSource(
         place.name,
@@ -1043,18 +1123,35 @@ def valid_browser_date_source(date_source: str) -> bool:
 
 
 def is_filtered_source(source: BrowserSource) -> bool:
-    return source.person_name is not None or source.date_source is not None or source.geo_place_slug is not None
+    return (
+        source.person_name is not None
+        or source.date_source is not None
+        or source.source_id is not None
+        or source.geo_place_slug is not None
+    )
 
 
 def source_has_sql_filter(source: BrowserSource) -> bool:
-    return source.date_source is not None or source.geo_place_slug is not None
+    return source.date_source is not None or source.source_id is not None or source.geo_place_slug is not None
 
 
-def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[str, ...]]:
+def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
     if source.date_source is not None:
         if not valid_browser_date_source(source.date_source):
             raise ValueError("Ugyldig datokilde.")
         return "date_source = ?", (source.date_source,)
+    if source.source_id is not None:
+        return (
+            """
+            EXISTS (
+                SELECT 1
+                FROM file_sources
+                WHERE file_sources.file_id = files.id
+                  AND file_sources.source_id = ?
+            )
+            """,
+            (source.source_id,),
+        )
     if source.geo_place_slug is not None:
         place = PredefinedGeoPlace(source.geo_place_slug, source.title, source.geo_place_cells)
         return db.geo_place_where_clause(geo_place_cells_by_column(place))
@@ -1813,6 +1910,28 @@ def source_items(
                     ORDER BY {ITEM_ORDER_SQL}
                     """,
                     (source.date_source,),
+                )
+            )
+        finally:
+            conn.close()
+    if source.source_id is not None:
+        conn = db.connect(target)
+        try:
+            return list(
+                conn.execute(
+                    f"""
+                    SELECT {FILE_COLUMNS}
+                    FROM files
+                    WHERE deleted_at IS NULL
+                      AND EXISTS (
+                          SELECT 1
+                          FROM file_sources
+                          WHERE file_sources.file_id = files.id
+                            AND file_sources.source_id = ?
+                      )
+                    ORDER BY {ITEM_ORDER_SQL}
+                    """,
+                    (source.source_id,),
                 )
             )
         finally:
@@ -3289,10 +3408,11 @@ def confirmed_person_face_count_for_item(
 def source_top_links_html(source: BrowserSource, item: Any | None = None, *, face_enabled: bool = True) -> str:
     links = [
         '<a class="server-search-link" href="/geo">Steder</a>',
+        '<a class="server-search-link" href="/sources">Kilder</a>',
     ]
     if face_enabled:
         links.insert(0, '<a class="server-search-link" href="/people">Personer</a>')
-    if source.date_source is not None or source.geo_place_slug is not None:
+    if source.date_source is not None or source.source_id is not None or source.geo_place_slug is not None:
         all_url = source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/"
         links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">Alle bilder</a>')
     if source.person_name is not None and face_enabled:
@@ -4055,12 +4175,94 @@ def empty_source_message(source: BrowserSource) -> str:
             return "Ingen bilder med dato fra filnavn."
         if source.date_source == "mtime":
             return "Ingen bilder med dato fra mtime."
+        if source.source_id is not None:
+            return "Ingen aktive bilder for denne kilden."
         if source.geo_place_slug is not None:
             return "Ingen aktive bilder for dette stedet."
         return "Ingen filer i bildesamlingen."
     if source.include_suggestions:
         return "Ingen bekreftede ansikter eller forslag for denne personen ennå."
     return "Ingen bekreftede bilder for denne personen ennå."
+
+
+def imported_source_by_id(target: Path, source_id: int) -> db.Source | None:
+    conn = db.connect(target)
+    try:
+        try:
+            return db.get_source(conn, source_id)
+        except ValueError:
+            return None
+    finally:
+        conn.close()
+
+
+def source_summary_rows(target: Path) -> list[sqlite3.Row]:
+    conn = db.connect(target)
+    try:
+        return list(
+            conn.execute(
+                """
+                SELECT
+                    sources.id,
+                    sources.name,
+                    sources.path,
+                    sources.imported_at,
+                    sources.status,
+                    sources.superseded_by_source_id,
+                    COUNT(file_sources.id) AS source_file_count,
+                    COUNT(CASE WHEN files.deleted_at IS NULL THEN 1 END) AS active_file_count
+                FROM sources
+                LEFT JOIN file_sources ON file_sources.source_id = sources.id
+                LEFT JOIN files ON files.id = file_sources.file_id
+                GROUP BY sources.id
+                ORDER BY sources.imported_at IS NULL, sources.imported_at, sources.id
+                """
+            )
+        )
+    finally:
+        conn.close()
+
+
+def sources_page_html(target: Path) -> str:
+    sources = source_summary_rows(target)
+    rows = "\n".join(source_row_html(source) for source in sources)
+    content = (
+        f'<div class="people-table">{rows}</div>'
+        if rows
+        else '<p class="meta">Ingen importerte kilder registrert.</p>'
+    )
+    return page_html(
+        "Kilder",
+        f"""
+        <main class="shell">
+          <p><a href="/">Til bildebrowser</a></p>
+          <h1>Kilder</h1>
+          {content}
+        </main>
+        """,
+    )
+
+
+def source_row_html(source: sqlite3.Row) -> str:
+    source_id = int(source["id"])
+    name = str(source["name"])
+    status = str(source["status"])
+    active_file_count = int(source["active_file_count"])
+    source_file_count = int(source["source_file_count"])
+    imported_at = str(source["imported_at"] or "-")
+    superseded_by = source["superseded_by_source_id"]
+    superseded = f", erstattet av #{int(superseded_by)}" if superseded_by is not None else ""
+    source_browser = imported_source_browser_source(source)
+    return f"""
+    <div class="people-row">
+      <div class="people-name">{html.escape(name)}</div>
+      <a class="person-link" href="{html.escape(source_browser.root_url)}">Vis bilder ({active_file_count})</a>
+      <span class="status">filer fra kilde: {source_file_count}</span>
+      <span class="status">status: {html.escape(status)}{html.escape(superseded)}</span>
+      <span class="status">importert: {html.escape(imported_at)}</span>
+      <div class="detail">{html.escape(str(source["path"]))}</div>
+    </div>
+    """
 
 
 def person_not_found_html(person_name: str) -> str:
