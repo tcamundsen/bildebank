@@ -537,7 +537,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("--month-preview-limit", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
-    def test_face_suggest_help_documents_threshold(self) -> None:
+    def test_face_suggest_help_documents_threshold_and_model(self) -> None:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
         with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
@@ -546,6 +546,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual(raised.exception.code, 0)
         stdout = stdout_buffer.getvalue()
         self.assertIn("--threshold", stdout)
+        self.assertIn("--model", stdout)
         self.assertNotIn("--no-browser", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
@@ -4417,6 +4418,56 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 1)
             finally:
                 conn.close()
+
+    def test_face_suggest_model_uses_model_specific_database_without_changing_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            relative_image_path = Path("2021/08/IMG_20210801.jpg")
+            embedding = embedding_blob([1.0, 0.0, 0.0])
+            self.enable_face_recognition_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / relative_image_path).parent.mkdir(parents=True)
+            (target / relative_image_path).write_bytes(minimal_png(640, 480))
+
+            antelope_config = FaceRecognitionConfig(model_name="antelopev2")
+            conn = connect_face_db(target, antelope_config)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                    VALUES(1, ?, ?, 'sha', 'ok', 2)
+                    """,
+                    (relative_image_path.as_posix(), db.relative_path_key(relative_image_path)),
+                )
+                for face_id in (1, 2):
+                    conn.execute(
+                        """
+                        INSERT INTO faces(
+                            id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                            detection_score, embedding_model, embedding
+                        ) VALUES(?, 1, ?, 1, 2, 30, 40, 0.9, 'antelopev2', ?)
+                        """,
+                        (face_id, db.relative_path_key(relative_image_path), embedding),
+                    )
+                conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-suggest", "--model", "antelopev2"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Modell: antelopev2", stdout)
+            self.assertIn("forslag=1", stdout)
+            self.assertEqual(load_config(self.program_root).face_recognition.model_name, "buffalo_l")
+            conn = sqlite3.connect(face_db_path(target, antelope_config))
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 1)
+            finally:
+                conn.close()
+            self.assertFalse(face_db_path(target).exists())
 
     def test_make_face_browser_uses_relative_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -8,6 +8,7 @@ import sys
 import time
 import traceback
 import webbrowser
+from dataclasses import replace
 from pathlib import Path
 
 from . import __version__, db
@@ -580,6 +581,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=0.6,
         help="Likhetsterskel fra 0.0 til 1.0. Standard: 0.6",
     )
+    face_suggest.add_argument(
+        "--model",
+        metavar="NAVN",
+        help="Bruk face-database for denne InsightFace-modellen uten å endre config-filen",
+    )
     face_browser = add_command(
         subparsers,
         "make-face-browser",
@@ -877,7 +883,7 @@ def run(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "face-suggest":
-        return run_face_suggest(target, threshold=args.threshold)
+        return run_face_suggest(target, threshold=args.threshold, model=args.model)
 
     if args.command == "make-face-browser":
         config = load_config(program_repo_root()).face_recognition
@@ -1730,10 +1736,16 @@ def run_face_report(target: Path, *, limit: int) -> int:
     return 0
 
 
-def run_face_suggest(target: Path, *, threshold: float) -> int:
+def run_face_suggest(target: Path, *, threshold: float, model: str | None = None) -> int:
     config = load_config(program_repo_root()).face_recognition
+    if model is not None:
+        model_name = model.strip()
+        if not model_name:
+            raise ValueError("Modellnavn kan ikke være tomt.")
+        config = replace(config, model_name=model_name)
     stats = suggest_faces(target, threshold=threshold, config=config)
     print_face_suggest_stats(stats)
+    print(f"Modell: {config.model_name}")
     print("Dette er forslag basert på personer du allerede har bekreftet.")
     return 0
 
