@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 from . import db
-from .progress import ProgressLine
+from .progress import ProgressMeter
 
 
 GPS_TAGS = (
@@ -216,7 +216,7 @@ def scan_geo(
     batch_size: int = DEFAULT_EXIFTOOL_BATCH_SIZE,
 ) -> GeoScanStats:
     tool = exiftool_path or default_exiftool_path(target)
-    progress_line = ProgressLine(sys.stderr)
+    progress = ProgressMeter("geo-scan", stream=sys.stderr)
     conn = db.connect(target)
     checked = 0
     with_gps = 0
@@ -233,6 +233,8 @@ def scan_geo(
             paths.append(path)
 
         total = len(paths)
+        if total:
+            progress.message(f"geo-scan: {total} filer skal kontrolleres.")
         for batch in batched(paths, batch_size):
             existing_batch: list[Path] = []
             for path in batch:
@@ -333,9 +335,15 @@ def scan_geo(
 
             conn.commit()
             if total:
-                progress_line.write(f"geo-scan {min(checked, total)}/{total}")
+                progress.update(
+                    min(checked, total),
+                    total,
+                    action="kontrollert",
+                    details=f"med_gps={with_gps}, uten_gps={without_gps}, feil={errors}",
+                    eta=True,
+                )
     finally:
-        progress_line.finish()
+        progress.done()
         conn.close()
 
     return GeoScanStats(

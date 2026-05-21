@@ -5,7 +5,6 @@ import importlib.util
 import shutil
 import subprocess
 import sys
-import time
 import traceback
 import webbrowser
 from dataclasses import replace
@@ -62,14 +61,16 @@ from .openclip import (
     search_images,
     torch_gpu_status,
 )
+from .progress import ProgressMeter
 from .program_state import known_targets, program_db_path, record_target_best_effort
 from .server import DEFAULT_HOST, DEFAULT_PORT, run_server as run_local_server
 from .target_lock import TargetLock
 from .thumbnails import ThumbnailStats, run_make_thumbnails
 
 
-FACE_SCAN_PROGRESS_STARTED_AT: float | None = None
-IMAGE_SCAN_PROGRESS_STARTED_AT: float | None = None
+THUMBNAIL_PROGRESS: ProgressMeter | None = None
+IMAGE_SCAN_PROGRESS: ProgressMeter | None = None
+FACE_SCAN_PROGRESS: ProgressMeter | None = None
 
 
 HELP_COMMAND_GROUPS = (
@@ -1212,24 +1213,32 @@ def print_thumbnail_progress(
     stats: ThumbnailStats,
     path: Path | None,
 ) -> None:
+    global THUMBNAIL_PROGRESS
     if stage == "start":
-        print(f"Thumbnails: {total} filer skal kontrolleres.")
+        THUMBNAIL_PROGRESS = ProgressMeter("Thumbnails")
+        THUMBNAIL_PROGRESS.message(f"Thumbnails: {total} filer skal kontrolleres.")
         return
+    if THUMBNAIL_PROGRESS is None:
+        THUMBNAIL_PROGRESS = ProgressMeter("Thumbnails")
     if stage == "error":
         message = stats.last_error_message or "ukjent feil"
-        print(f"Thumbnail-feil: {path}\t{message}")
+        THUMBNAIL_PROGRESS.error(f"Thumbnail-feil: {path}\t{message}")
         return
     if stage == "check":
-        if should_print_progress(current, total):
-            print(
-                "Thumbnails: "
-                f"kontrollert={current}/{total}, "
+        THUMBNAIL_PROGRESS.update(
+            current,
+            total,
+            action="kontrollert",
+            details=(
                 f"sjekket={stats.checked}, laget={stats.created}, "
                 f"ferske={stats.skipped_current}, feil={stats.errors}"
-            )
+            ),
+            eta=True,
+        )
         return
     if stage == "done":
-        print(f"Thumbnails: ferdig kontrollert {min(current, total)}/{total} filer.")
+        THUMBNAIL_PROGRESS.done(f"Thumbnails: ferdig kontrollert {min(current, total)}/{total} filer.")
+        THUMBNAIL_PROGRESS = None
         return
 
 
@@ -1568,39 +1577,46 @@ def print_image_scan_progress(
     stats,
     path: Path | None,
 ) -> None:
-    global IMAGE_SCAN_PROGRESS_STARTED_AT
+    global IMAGE_SCAN_PROGRESS
     if stage == "start":
-        IMAGE_SCAN_PROGRESS_STARTED_AT = None
-        print(f"Image-scan: {total} bildefiler skal kontrolleres.")
+        IMAGE_SCAN_PROGRESS = ProgressMeter("Image-scan")
+        IMAGE_SCAN_PROGRESS.message(f"Image-scan: {total} bildefiler skal kontrolleres.")
         return
+    if IMAGE_SCAN_PROGRESS is None:
+        IMAGE_SCAN_PROGRESS = ProgressMeter("Image-scan")
     if stage == "load_model":
-        IMAGE_SCAN_PROGRESS_STARTED_AT = None
-        print(f"Image-scan: {stats.to_scan} nye eller endrede bilder skal scannes.")
-        print("Image-scan: laster OpenCLIP-modell. Det kan ta litt tid.")
+        IMAGE_SCAN_PROGRESS.reset_eta()
+        IMAGE_SCAN_PROGRESS.message(f"Image-scan: {stats.to_scan} nye eller endrede bilder skal scannes.")
+        IMAGE_SCAN_PROGRESS.message("Image-scan: laster OpenCLIP-modell. Det kan ta litt tid.")
         return
     if stage == "error":
         message = getattr(stats, "last_error_message", None) or "ukjent feil"
-        print(f"Image-scan-feil: {path}\t{message}")
+        IMAGE_SCAN_PROGRESS.error(f"Image-scan-feil: {path}\t{message}")
         return
     if stage == "check":
-        if should_print_progress(current, total):
-            print(
-                "Image-scan: "
-                f"kontrollert={current}/{total}, "
-                f"hoppet_over={stats.skipped}, skal_scannes={stats.to_scan}"
-            )
+        IMAGE_SCAN_PROGRESS.update(
+            current,
+            total,
+            action="kontrollert",
+            details=f"hoppet_over={stats.skipped}, skal_scannes={stats.to_scan}",
+            eta=True,
+        )
         return
     if stage == "scan":
-        if IMAGE_SCAN_PROGRESS_STARTED_AT is None and current > 0:
-            IMAGE_SCAN_PROGRESS_STARTED_AT = time.monotonic()
-        if should_print_progress(current, total):
-            eta = face_scan_eta_text(current, total, IMAGE_SCAN_PROGRESS_STARTED_AT)
-            print(
-                "Image-scan: "
+        IMAGE_SCAN_PROGRESS.update(
+            current,
+            total,
+            action="scannet",
+            details=(
                 f"behandlet={stats.skipped + current}/{stats.total}, "
-                f"scannet={current}/{total}, hoppet_over={stats.skipped}, "
-                f"feil={stats.errors}, gjenstår={eta}"
-            )
+                f"hoppet_over={stats.skipped}, feil={stats.errors}"
+            ),
+            eta=True,
+        )
+        return
+    if stage == "done":
+        IMAGE_SCAN_PROGRESS.done()
+        IMAGE_SCAN_PROGRESS = None
         return
 
 
@@ -1657,6 +1673,10 @@ def print_image_search_progress(
         return
 
 
+def should_print_progress(current: int, total: int) -> bool:
+    return total <= 20 or current == total or current % 25 == 0
+
+
 def run_face_scan(target: Path, *, limit: int | None, show_model_output: bool = False) -> int:
     config = load_config(program_repo_root()).face_recognition
     require_face_enabled(config.enabled)
@@ -1683,68 +1703,44 @@ def print_face_scan_progress(
     stats,
     path: Path | None,
 ) -> None:
-    global FACE_SCAN_PROGRESS_STARTED_AT
+    global FACE_SCAN_PROGRESS
     if stage == "start":
-        FACE_SCAN_PROGRESS_STARTED_AT = None
-        print(f"Face-scan: {total} bildefiler skal kontrolleres.")
+        FACE_SCAN_PROGRESS = ProgressMeter("Face-scan")
+        FACE_SCAN_PROGRESS.message(f"Face-scan: {total} bildefiler skal kontrolleres.")
         return
+    if FACE_SCAN_PROGRESS is None:
+        FACE_SCAN_PROGRESS = ProgressMeter("Face-scan")
     if stage == "check":
-        if should_print_progress(current, total):
-            print(
-                "Face-scan: "
-                f"kontrollert={current}/{total}, "
-                f"hoppet_over={stats.skipped}, skal_scannes={stats.checked - stats.skipped}"
-            )
+        FACE_SCAN_PROGRESS.update(
+            current,
+            total,
+            action="kontrollert",
+            details=f"hoppet_over={stats.skipped}, skal_scannes={stats.checked - stats.skipped}",
+            eta=True,
+        )
         return
     if stage == "load_model":
-        FACE_SCAN_PROGRESS_STARTED_AT = None
-        print(f"Face-scan: {total} nye eller endrede bilder skal scannes.")
-        print("           Laster ansiktsmodell. Det kan ta 20 sekunder eller mer.")
+        FACE_SCAN_PROGRESS.reset_eta()
+        FACE_SCAN_PROGRESS.message(f"Face-scan: {total} nye eller endrede bilder skal scannes.")
+        FACE_SCAN_PROGRESS.message("Face-scan: laster ansiktsmodell. Det kan ta 20 sekunder eller mer.")
         return
     if stage == "error":
         message = getattr(stats, "last_error_message", None) or "ukjent feil"
-        print(f"Face-scan-feil: {path}\t{message}")
+        FACE_SCAN_PROGRESS.error(f"Face-scan-feil: {path}\t{message}")
         return
     if stage == "scan":
-        if FACE_SCAN_PROGRESS_STARTED_AT is None:
-            FACE_SCAN_PROGRESS_STARTED_AT = time.monotonic()
-        if should_print_progress(current, total):
-            eta = face_scan_eta_text(current, total, FACE_SCAN_PROGRESS_STARTED_AT)
-            print(
-                "Face-scan: "
-                f"scannet={current}/{total}, "
-                f"ansikter={stats.faces}, feil={stats.errors}, "
-                f"gjenstår={eta}"
-            )
+        FACE_SCAN_PROGRESS.update(
+            current,
+            total,
+            action="scannet",
+            details=f"ansikter={stats.faces}, feil={stats.errors}",
+            eta=True,
+        )
         return
-
-
-def should_print_progress(current: int, total: int) -> bool:
-    return total <= 20 or current == total or current % 25 == 0
-
-
-def face_scan_eta_text(current: int, total: int, started_at: float | None) -> str:
-    if started_at is None or current <= 0:
-        return "ukjent"
-    remaining = total - current
-    if remaining <= 0:
-        return "0s"
-    elapsed = max(time.monotonic() - started_at, 0.0)
-    if current < 3 and elapsed < 5.0:
-        return "beregner"
-    seconds = elapsed * remaining / current
-    return format_duration(seconds)
-
-
-def format_duration(seconds: float) -> str:
-    seconds = max(int(round(seconds)), 0)
-    if seconds < 60:
-        return f"{seconds}s"
-    minutes, seconds = divmod(seconds, 60)
-    if minutes < 60:
-        return f"{minutes}m {seconds:02d}s"
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}t {minutes:02d}m"
+    if stage == "done":
+        FACE_SCAN_PROGRESS.done()
+        FACE_SCAN_PROGRESS = None
+        return
 
 
 def run_face_report(target: Path, *, limit: int) -> int:
