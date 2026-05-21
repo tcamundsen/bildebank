@@ -10,6 +10,7 @@ import os
 import sys
 import warnings
 import uuid
+from collections.abc import Iterable
 from contextlib import redirect_stderr, redirect_stdout
 from http import HTTPStatus
 from io import BytesIO, StringIO
@@ -3559,6 +3560,43 @@ pretrained = "laion2b_s32b_b82k"
                 self.assertEqual(commands, ["create", "import"])
             finally:
                 conn.close()
+
+    def test_unimport_plan_does_not_count_sources_per_file(self) -> None:
+        class CountingConnection:
+            def __init__(self, conn: sqlite3.Connection) -> None:
+                self.conn = conn
+                self.file_source_count_queries = 0
+
+            def execute(self, sql: str, parameters: Iterable[object] = ()):
+                normalized = " ".join(sql.split()).lower()
+                if normalized.startswith("select count(*) from file_sources where file_id"):
+                    self.file_source_count_queries += 1
+                return self.conn.execute(sql, tuple(parameters))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            for index in range(3):
+                (source / f"IMG_2024010{index + 1}.jpg").write_bytes(f"image-{index}".encode("ascii"))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            conn.row_factory = sqlite3.Row
+            try:
+                source_row = db.find_source_by_name(conn, source.name)
+                assert source_row is not None
+                counting_conn = CountingConnection(conn)
+                plan = db.build_unimport_plan(counting_conn, target, source_row)  # type: ignore[arg-type]
+            finally:
+                conn.close()
+
+        self.assertEqual(plan.source_file_count, 3)
+        self.assertEqual(plan.active_remove_count, 3)
+        self.assertEqual(counting_conn.file_source_count_queries, 0)
 
     def test_unimport_aborts_without_exact_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

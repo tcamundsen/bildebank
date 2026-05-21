@@ -1491,6 +1491,7 @@ def build_unimport_plan(conn: sqlite3.Connection, target: Path, source: Source) 
     for row in rows:
         file_id = int(row["file_id"])
         source_counts[file_id] = source_counts.get(file_id, 0) + 1
+    total_sources_by_file_id = unimport_total_sources_by_file_id(conn, source.id)
 
     active_remove_file_ids: set[int] = set()
     active_keep_file_ids: set[int] = set()
@@ -1501,12 +1502,7 @@ def build_unimport_plan(conn: sqlite3.Connection, target: Path, source: Source) 
         if row["deleted_at"] is not None:
             continue
         file_id = int(row["file_id"])
-        total_sources = int(
-            conn.execute(
-                "SELECT COUNT(*) FROM file_sources WHERE file_id = ?",
-                (file_id,),
-            ).fetchone()[0]
-        )
+        total_sources = total_sources_by_file_id[file_id]
         if total_sources == source_counts[file_id]:
             active_remove_file_ids.add(file_id)
             if file_id not in seen_delete_file_ids:
@@ -1522,6 +1518,22 @@ def build_unimport_plan(conn: sqlite3.Connection, target: Path, source: Source) 
         active_keep_count=len(active_keep_file_ids),
         target_paths_to_delete=tuple(target_paths_to_delete),
     )
+
+
+def unimport_total_sources_by_file_id(conn: sqlite3.Connection, source_id: int) -> dict[int, int]:
+    return {
+        int(row["file_id"]): int(row["total_sources"])
+        for row in conn.execute(
+            """
+            SELECT file_sources.file_id, COUNT(all_sources.id) AS total_sources
+            FROM file_sources
+            JOIN file_sources all_sources ON all_sources.file_id = file_sources.file_id
+            WHERE file_sources.source_id = ?
+            GROUP BY file_sources.file_id
+            """,
+            (source_id,),
+        )
+    }
 
 
 def apply_unimport(conn: sqlite3.Connection, plan: UnimportPlan) -> None:
