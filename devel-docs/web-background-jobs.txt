@@ -1,0 +1,222 @@
+Bakgrunnsjobber i run-server
+============================
+
+Denne planen er utarbeidet, men satt litt på vent for å vurdere risiko.
+
+Utgangspunkt
+------------
+
+Det er mulig å lage en generell bakgrunnsjobb-manager for run-server, men den
+bør innføres konservativt. CLI skal fortsatt være primær og uavhengig:
+
+- `bildebank import` skal fungere som før.
+- `bildebank geo-scan` skal fungere som før.
+- `bildebank face-scan` skal fungere som før.
+- `bildebank face-suggest` skal fungere som før.
+- Webappen skal bare være en ekstra startflate for utvalgte trygge jobber.
+
+Første versjon av webjobber bør ha:
+
+- én aktiv jobb om gangen
+- eventuelt enkel FIFO-kø senere
+- in-memory status, ikke databasepersistens
+- tydelig status: queued/running/completed/failed
+- starttid, sluttid, siste melding og enkel oppsummering
+- ingen overlevelse over restart av run-server
+- ingen generell "kjør valgfri CLI-kommando"
+
+Hvis en jobb endrer hoveddatabasen eller bildefiler, må den bruke eksisterende
+låsing som `TargetLock` der det er relevant.
+
+Anbefalt å gjøre tilgjengelig via web først
+-------------------------------------------
+
+### face-suggest
+
+Anbefaling: ja, dette er den beste første webjobben.
+
+Hvorfor:
+
+- Den bruker eksisterende face-database og lager forslag.
+- Den sletter ikke bilder.
+- Den flytter ikke filer.
+- Den er normalt kortere enn `face-scan`.
+- Den har enkel sluttstatus: personer, ukjente ansikter, forslag, threshold.
+- Den er nyttig direkte i browseren, fordi forslagene vises der etterpå.
+
+Forbehold:
+
+- Den sletter og bygger opp `face_suggestions` på nytt.
+- Den bør ikke kjøre samtidig med at brukeren endrer personkoblinger.
+- Web bør deaktivere/advare mot personredigering mens jobben kjører, eller bruke
+  en enkel face-jobb-lås.
+
+### geo-scan med forsiktige standardvalg
+
+Anbefaling: ja, men etter `face-suggest`.
+
+Hvorfor:
+
+- Den fyller ut metadata i databasen og gjør geo-sidene mer nyttige.
+- Den endrer ikke bildefilene.
+- Den er lett å forklare fra App-/geo-sidene: "Oppdater steder".
+
+Forbehold:
+
+- Den kan ta tid på store samlinger.
+- Den kan bruke exiftool/subprocess hvis konfigurert.
+- Den bør starte med konservative valg, for eksempel vanlig scan uten `--force`.
+- `--force` bør enten utelates fra web første gang eller kreve ekstra
+  bekreftelse.
+
+### make-thumbnails
+
+Anbefaling: sannsynligvis ja, hvis/ når thumbnail-generering er nyttig i
+serverflyten.
+
+Hvorfor:
+
+- Den lager avledede filer/cache, ikke endringer i originalbilder.
+- Den gjør browseren raskere og mer behagelig.
+- Den passer godt som "vedlikeholdsjobb" fra App-siden.
+
+Forbehold:
+
+- Den skriver filer i bildesamlingen/cacheområdet.
+- Den må ikke blokkere vanlig browsing unødvendig.
+- Den bør tåle avbrudd og kunne kjøres på nytt.
+
+Kan vurderes senere
+-------------------
+
+### face-scan
+
+Anbefaling: vent til jobbmanageren er prøvd med enklere jobber.
+
+Hvorfor den er nyttig:
+
+- Den gjør personfunksjonene i browseren bedre.
+- `scan_faces(...)` har allerede progress-callback, så den er teknisk egnet for
+  webstatus.
+
+Hvorfor vente:
+
+- Den er tung, laster modell og kan bruke mye minne.
+- Den kan ta lang tid.
+- Den skriver mange rader i face-databasen.
+- Den bør beskyttes mot dobbeltstart og mot samtidige face-endringer i UI.
+
+Når den blir aktuell, bør web starte med:
+
+- valgfri `limit`
+- ingen `show_model_output`
+- tydelig advarsel om at første kjøring kan ta lang tid
+- én aktiv face-jobb om gangen
+
+### image-scan
+
+Anbefaling: vent.
+
+Hvorfor:
+
+- Den ligner `face-scan`: tung modell, lang kjøretid, progressbehov.
+- Den er nyttig for tekstbasert bildesøk, men ikke like kritisk for vanlig
+  browsing.
+
+Den kan følge samme mønster som `face-scan` når jobbmanageren er moden.
+
+### backup dry-run
+
+Anbefaling: kan vurderes som read-only/planvisning.
+
+Hvorfor:
+
+- Dry-run kan hjelpe brukeren å forstå hva backup vil gjøre.
+- Faktisk backup kan være stor og treg, og bør trolig fortsatt kjøres fra CLI
+  først.
+
+Ikke anbefalt via web nå
+------------------------
+
+### import
+
+Anbefaling: nei, ikke som faktisk webjobb nå.
+
+Begrunnelse:
+
+- Import er den mest kritiske flyten for bildebanksikkerheten.
+- CLI gir bedre kontroll over kildemappe, dry-run og faktisk start.
+- Webimport krever jobbstatus, låsing, bekreftelser, progresjon og god
+  feilvisning før det føles like trygt.
+
+Anbefalt webstøtte i stedet:
+
+- Lag en read-only `Importhjelp`-side.
+- Vis eksisterende importnavn/kilder.
+- Generer PowerShell-kommando for dry-run.
+- Generer PowerShell-kommando for faktisk import.
+- La brukeren kjøre kommandoene selv i PowerShell.
+
+### unimport
+
+Anbefaling: nei.
+
+Begrunnelse:
+
+- Dette er en reverserende/muterende operasjon med høy konsekvens.
+- Den bør fortsatt gå via CLI med eksplisitt dry-run og bekreftelse.
+
+### remove / undelete som batchjobb
+
+Anbefaling: nei som bakgrunnsjobb.
+
+Begrunnelse:
+
+- Enkeltsletting finnes allerede i browseren og er konkret per bilde.
+- Batch-sletting fra web vil kreve svært gode bekreftelser og visuell kontroll.
+
+### face-reset
+
+Anbefaling: nei.
+
+Begrunnelse:
+
+- Den kan slette store deler av face-databasen.
+- Bør kreve eksplisitt CLI-bekreftelse.
+
+### migrate / vacuum
+
+Anbefaling: nei i første omgang.
+
+Begrunnelse:
+
+- Dette er databasevedlikehold.
+- Det bør kjøres kontrollert fra CLI, særlig hvis noe feiler.
+
+Foreslått rekkefølge
+--------------------
+
+1. Lag enkel jobbstatus-infrastruktur i run-server, uten kø først.
+2. Gjør `face-suggest` tilgjengelig som første webjobb.
+3. Legg til enkel App-sidevisning for aktiv/siste jobb.
+4. Legg til `geo-scan` med konservative standardvalg.
+5. Vurder FIFO-kø hvis det faktisk trengs.
+6. Vurder `face-scan` etter at enklere jobber fungerer stabilt.
+7. Hold import som CLI-assistert webside, ikke webjobb.
+
+Arkitekturnotat
+---------------
+
+Felleskoden bør være jobbmanageren, ikke jobblogikken:
+
+```text
+CLI
+  -> kaller scan/suggest/import-funksjoner direkte
+
+run-server
+  -> JobManager starter utvalgte interne funksjoner i bakgrunnstråd
+```
+
+Ikke bygg en generell subprocess-runner som tar en vilkårlig kommando fra web.
+Hver webjobb bør være eksplisitt registrert med faste parametre, tydelig navn,
+egen validering og egen oppsummering.
