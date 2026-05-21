@@ -82,77 +82,87 @@ HELP_COMMAND_GROUPS = (
         (
             ("create", "Opprett en ny bildesamlingsmappe"),
             ("import", "Importer en mappe, CD, USB eller annen kilde"),
-        ),
-    ),
-    (
-        "se og kontrollere samlingen",
-        (
-            ("status", "Vis antall importerte bilder og videoer"),
-            ("make-thumbnails", "Lag thumbnails for rask månedsvisning"),
-            ("make-browser", "Lag index.html for nettleseren"),
+            ("run-server", "Start lokal Bildebank-server"),
+            ("status", "Vis kort status for bildesamlingen"),
             ("list-sources", "Vis registrerte kilder"),
-            ("show-source", "Vis hvor en importert fil kom fra"),
         ),
     ),
     (
-        "finne ting som bør kontrolleres",
+        "kontrollere importen",
         (
+            ("report", "Vis importoppsummering"),
+            ("errors", "List registrerte feil"),
             ("conflicts", "List filer med navnekollisjon"),
             ("show-conflict", "Vis detaljer om en navnekollisjon"),
             ("non-metadata", "List filer der datoen ikke kom fra metadata"),
-            ("errors", "List registrerte feil"),
-        ),
-    ),
-    (
-        "rydde",
-        (
-            ("remove", "Flytt en importert fil til deleted/"),
-            ("undelete", "Flytt en slettet fil tilbake fra deleted/"),
-            ("unimport", "Reverser en tidligere importert kilde"),
+            ("show-source", "Vis hvor en importert fil kom fra"),
             ("list-removed", "List filer som er flyttet til deleted/"),
         ),
     ),
     (
-        "avansert kontroll",
+        "rydde trygt",
         (
-            ("explain-date", "Forklar hvilken dato Bildebank ville brukt"),
-            ("inspect-metadata", "Vis metadatafragmenter og datokandidater"),
+            ("remove", "Flytt en importert fil til deleted/"),
+            ("undelete", "Flytt en slettet fil tilbake fra deleted/"),
+            ("unimport", "Reverser en tidligere importert kilde"),
+        ),
+    ),
+    (
+        "metadata og steder",
+        (
             ("refresh-metadata", "Sjekk filer uten metadata på nytt"),
+            ("inspect-metadata", "Vis metadatafragmenter og datokandidater"),
+            ("explain-date", "Forklar hvilken dato Bildebank ville brukt"),
             ("exiftool-metadata-gaps", "Finn metadata Bildebank ikke leser ennå"),
             ("geo-scan", "Scan GPS-koordinater fra metadata"),
             ("geo-stats", "Vis GPS-status for bildesamlingen"),
             ("geo-areas", "List H3-områder med bilder"),
             ("geo-area", "List bilder i ett H3-område"),
-            ("make-conflict-browser", "Lag HTML-side for navnekollisjoner"),
-            ("report", "Vis importoppsummering"),
         ),
     ),
     (
-        "programmet",
+        "ansikter",
         (
-            ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
-            ("backup", "Lag eller oppdater backup av bildesamlingen"),
             ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
             ("face-config", "Slå ansiktsgjenkjenning på eller av"),
-            ("image-scan", "Scan bilder for tekstbasert bildesøk"),
-            ("image-search", "Søk etter bilder med tekst"),
-            ("run-server", "Start lokal Bildebank-server"),
             ("face-scan", "Scanning etter ansikter"),
+            ("face-suggest", "Foreslå personer for ukjente ansikter"),
             ("face-report", "Vis rapport for scannede ansikter"),
+            ("face-person-list", "List personer i ansiktsdatabasen"),
             ("face-person-create", "Opprett person i ansiktsdatabasen"),
             ("face-person-add-face", "Koble ett ansikt til person"),
             ("face-person-remove-face", "Fjern ett ansikt fra person"),
             ("face-person-delete", "Slett person fra ansiktsdatabasen"),
             ("face-person-rename", "Endre navn på person i ansiktsdatabasen"),
-            ("face-person-list", "List personer i ansiktsdatabasen"),
-            ("face-suggest", "Foreslå personer for ukjente ansikter"),
+            ("face-reset", "Slett ansiktsdata"),
+        ),
+    ),
+    (
+        "bildesøk",
+        (
+            ("image-scan", "Scan bilder for tekstbasert bildesøk"),
+            ("image-search", "Søk etter bilder med tekst"),
+        ),
+    ),
+    (
+        "HTML-eksport",
+        (
+            ("make-thumbnails", "Lag thumbnails for rask månedsvisning"),
+            ("make-browser", "Lag index.html for nettleseren"),
+            ("make-conflict-browser", "Lag HTML-side for navnekollisjoner"),
             ("make-face-browser", "Lag HTML-side for scannede ansikter"),
             ("make-people-browser", "Lag HTML-sider for alle personer"),
             ("make-person-browser", "Lag HTML-side for en person"),
-            ("face-reset", "Slett ansiktsdata"),
+        ),
+    ),
+    (
+        "vedlikehold",
+        (
+            ("backup", "Lag eller oppdater backup av bildesamlingen"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
             ("vacuum", "Pakk databasen så SQLite-filen krymper fysisk"),
             ("update", "Oppdater programinstallasjonen"),
+            ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
         ),
     ),
 )
@@ -743,9 +753,12 @@ def main_help_epilog() -> str:
     lines.append("Se hjelp for en kommando med:")
     lines.append("   bildebank <kommando> -h")
     lines.append("")
-    lines.append("Eksempel:")
-    lines.append("   bildebank import --name \"USB-2024\" --dry-run E:\\")
-    lines.append("   bildebank import --name \"Sommer2023\" \"C:\\Bilder\\Sommer2023\"")
+    lines.append("Vanlig start:")
+    lines.append("   bildebank create \"C:\\Users\\Tom\\Bilder samlet\"")
+    lines.append("   cd \"C:\\Users\\Tom\\Bilder samlet\"")
+    lines.append("   bildebank import --name \"Mobil 2024\" --dry-run \"E:\\DCIM\"")
+    lines.append("   bildebank import --name \"Mobil 2024\" \"E:\\DCIM\"")
+    lines.append("   bildebank run-server")
     return "\n".join(lines)
 
 
