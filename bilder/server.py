@@ -4734,7 +4734,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       badge.className = "confirmed-badge";
       badge.title = "Bekreftet";
       badge.setAttribute("aria-label", "Bekreftet");
-      badge.textContent = "V";
+      badge.textContent = " ✅";
       link.append(badge);
     }
     people.append(link);

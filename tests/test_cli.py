@@ -1705,7 +1705,7 @@ model_name = "buffalo_l"
         self.assertNotIn("1 filer, 1 måneder", body)
         self.assertIn(
             'class="person-link" href="/person/Kari/item/1" data-person-name="Kari">'
-            'Kari<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet">V</span></a>',
+            'Kari<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet"> ✅</span></a>',
             body,
         )
         self.assertIn(
