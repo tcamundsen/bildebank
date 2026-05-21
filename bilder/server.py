@@ -3345,6 +3345,7 @@ def source_action_links_html(
     <div class="top-actions">
       {source_top_links_html(source, item, face_enabled=face_enabled)}
       {search_link}
+      <a class="server-search-link" href="/help/web/bildebrowser">Hjelp</a>
       <a class="server-search-link" href="/settings">Innstillinger</a>
     </div>
     """
