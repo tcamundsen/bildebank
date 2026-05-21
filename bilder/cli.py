@@ -72,6 +72,7 @@ THUMBNAIL_PROGRESS: ProgressMeter | None = None
 IMAGE_SCAN_PROGRESS: ProgressMeter | None = None
 IMAGE_SEARCH_PROGRESS: ProgressMeter | None = None
 FACE_SCAN_PROGRESS: ProgressMeter | None = None
+FACE_SUGGEST_PROGRESS: ProgressMeter | None = None
 REFRESH_METADATA_PROGRESS: ProgressMeter | None = None
 
 
@@ -1763,7 +1764,7 @@ def run_face_suggest(target: Path, *, threshold: float, model: str | None = None
         if not model_name:
             raise ValueError("Modellnavn kan ikke være tomt.")
         config = replace(config, model_name=model_name)
-    stats = suggest_faces(target, threshold=threshold, config=config)
+    stats = suggest_faces(target, threshold=threshold, config=config, progress=print_face_suggest_progress)
     print_face_suggest_stats(stats)
     print(f"Modell: {config.model_name}")
     print("Dette er forslag basert på personer du allerede har bekreftet.")
@@ -1822,6 +1823,63 @@ def print_face_suggest_stats(stats: FaceSuggestStats) -> None:
         f"personer={stats.persons}, ukjente_ansikter={stats.unknown_faces}, "
         f"forslag={stats.suggestions}, threshold={stats.threshold:.3f}"
     )
+
+
+def print_face_suggest_progress(
+    stage: str,
+    current: int,
+    total: int,
+    stats,
+    path: Path | None,
+) -> None:
+    global FACE_SUGGEST_PROGRESS
+    if stage == "load_known_start":
+        FACE_SUGGEST_PROGRESS = ProgressMeter("Face-suggest")
+        FACE_SUGGEST_PROGRESS.message(f"Face-suggest: leser {total} bekreftede ansikter.")
+        return
+    if FACE_SUGGEST_PROGRESS is None:
+        FACE_SUGGEST_PROGRESS = ProgressMeter("Face-suggest")
+    if stage == "load_known":
+        FACE_SUGGEST_PROGRESS.update(
+            current,
+            total,
+            action="bekreftede_ansikter",
+            details=f"personer={stats.persons}",
+            eta=True,
+        )
+        return
+    if stage == "load_unknown_start":
+        FACE_SUGGEST_PROGRESS.reset_eta()
+        FACE_SUGGEST_PROGRESS.message(f"Face-suggest: leser {total} ukjente ansikter.")
+        return
+    if stage == "load_unknown":
+        FACE_SUGGEST_PROGRESS.update(
+            current,
+            total,
+            action="ukjente_ansikter",
+            details=f"personer={stats.persons}",
+            eta=True,
+        )
+        return
+    if stage == "compare_start":
+        FACE_SUGGEST_PROGRESS.reset_eta()
+        FACE_SUGGEST_PROGRESS.message(
+            f"Face-suggest: sammenligner {total} ukjente ansikter mot {stats.persons} personer."
+        )
+        return
+    if stage == "compare":
+        FACE_SUGGEST_PROGRESS.update(
+            current,
+            total,
+            action="sammenlignet",
+            details=f"forslag={stats.suggestions}, threshold={stats.threshold:.3f}",
+            eta=True,
+        )
+        return
+    if stage == "done":
+        FACE_SUGGEST_PROGRESS.done()
+        FACE_SUGGEST_PROGRESS = None
+        return
 
 
 def print_face_suggestions(target: Path) -> None:

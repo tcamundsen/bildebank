@@ -4524,6 +4524,9 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             code, stdout, stderr = capture_cli(["--target", str(target), "face-suggest"])
 
             self.assertEqual(code, 0, stderr)
+            self.assertIn("Face-suggest: leser 1 bekreftede ansikter.", stdout)
+            self.assertIn("Face-suggest: leser 1 ukjente ansikter.", stdout)
+            self.assertIn("Face-suggest: sammenlignet=1/1", stdout)
             self.assertIn("forslag=1", stdout)
             self.assertNotIn("Kari\tface-id=2", stdout)
             conn = sqlite3.connect(face_db_path(target))

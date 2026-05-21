@@ -112,6 +112,18 @@ class FaceSuggestStats:
     threshold: float
 
 
+@dataclass
+class FaceSuggestProgressStats:
+    persons: int = 0
+    known_faces: int = 0
+    unknown_faces: int = 0
+    suggestions: int = 0
+    threshold: float = 0.0
+
+
+FaceSuggestProgress = Callable[[str, int, int, FaceSuggestProgressStats, Path | None], None]
+
+
 def face_database_dir(target: Path, config: FaceRecognitionConfig | None = None) -> Path:
     database_dir = config.database_dir if config is not None else Path(FACE_DB_DIRNAME)
     if database_dir.is_absolute():
@@ -500,14 +512,28 @@ def suggest_faces(
     *,
     threshold: float = 0.6,
     config: FaceRecognitionConfig | None = None,
+    progress: FaceSuggestProgress | None = None,
 ) -> FaceSuggestStats:
     path = face_db_path(target, config)
     if not path.exists():
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target, config)
     try:
+        progress_stats = FaceSuggestProgressStats(threshold=threshold)
         person_vectors: dict[int, list[list[float]]] = {}
-        for row in conn.execute(
+        known_total = int(
+            conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM persons
+                JOIN person_faces ON person_faces.person_id = persons.id
+                JOIN faces ON faces.id = person_faces.face_id
+                """
+            ).fetchone()[0]
+        )
+        if progress is not None:
+            progress("load_known_start", 0, known_total, progress_stats, None)
+        for index, row in enumerate(conn.execute(
             """
             SELECT persons.id AS person_id, faces.embedding
             FROM persons
@@ -515,16 +541,33 @@ def suggest_faces(
             JOIN faces ON faces.id = person_faces.face_id
             ORDER BY persons.id, faces.id
             """
-        ):
+        ), start=1):
             person_vectors.setdefault(int(row["person_id"]), []).append(
                 embedding_from_blob(bytes(row["embedding"]))
             )
+            progress_stats.known_faces = index
+            progress_stats.persons = len(person_vectors)
+            if progress is not None:
+                progress("load_known", index, known_total, progress_stats, None)
         centroids = {
             person_id: average_embedding(vectors)
             for person_id, vectors in person_vectors.items()
             if vectors
         }
-        unknown_faces = list(
+        progress_stats.persons = len(centroids)
+        unknown_total = int(
+            conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM faces
+                WHERE id NOT IN (SELECT face_id FROM person_faces)
+                """
+            ).fetchone()[0]
+        )
+        if progress is not None:
+            progress("load_unknown_start", 0, unknown_total, progress_stats, None)
+        unknown_faces = []
+        for index, row in enumerate(
             conn.execute(
                 """
                 SELECT id, embedding
@@ -532,12 +575,19 @@ def suggest_faces(
                 WHERE id NOT IN (SELECT face_id FROM person_faces)
                 ORDER BY id
                 """
-            )
-        )
+            ),
+            start=1,
+        ):
+            unknown_faces.append(row)
+            progress_stats.unknown_faces = index
+            if progress is not None:
+                progress("load_unknown", index, unknown_total, progress_stats, None)
 
         conn.execute("DELETE FROM face_suggestions")
         suggestions = 0
-        for face in unknown_faces:
+        if progress is not None:
+            progress("compare_start", 0, len(unknown_faces), progress_stats, None)
+        for index, face in enumerate(unknown_faces, start=1):
             face_id = int(face["id"])
             vector = embedding_from_blob(bytes(face["embedding"]))
             best_person_id = None
@@ -556,7 +606,12 @@ def suggest_faces(
                     (best_person_id, face_id, best_score),
                 )
                 suggestions += 1
+                progress_stats.suggestions = suggestions
+            if progress is not None:
+                progress("compare", index, len(unknown_faces), progress_stats, None)
         conn.commit()
+        if progress is not None:
+            progress("done", len(unknown_faces), len(unknown_faces), progress_stats, None)
         return FaceSuggestStats(
             persons=len(centroids),
             unknown_faces=len(unknown_faces),
