@@ -34,6 +34,7 @@ PERFORMANCE_INDEX_NAMES = (
     *(f"idx_files_{column}_browser_order" for column in H3_FILE_COLUMNS),
     "idx_files_gps",
     "idx_file_sources_source_id_id",
+    "idx_file_sources_source_id_file_id",
     "idx_errors_unresolved_stage_id",
 )
 _PREPARED_TARGETS: set[str] = set()
@@ -261,6 +262,9 @@ def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
             """
         CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_id
         ON file_sources(source_id, id);
+
+        CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_file_id
+        ON file_sources(source_id, file_id);
         """
         )
     if table_exists(conn, "errors"):
@@ -422,6 +426,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_file_sources_file_id ON file_sources(file_id);
         CREATE INDEX IF NOT EXISTS idx_file_sources_sha256 ON file_sources(sha256);
         CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_id ON file_sources(source_id, id);
+        CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_file_id ON file_sources(source_id, file_id);
 
         CREATE TABLE IF NOT EXISTS errors (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -493,6 +498,7 @@ def create_file_sources_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_file_sources_file_id ON file_sources(file_id);
         CREATE INDEX IF NOT EXISTS idx_file_sources_sha256 ON file_sources(sha256);
         CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_id ON file_sources(source_id, id);
+        CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_file_id ON file_sources(source_id, file_id);
         """
     )
 
@@ -1115,6 +1121,8 @@ def rebuild_file_sources_without_kind(conn: sqlite3.Connection) -> None:
         ALTER TABLE file_sources_v4 RENAME TO file_sources;
         CREATE INDEX IF NOT EXISTS idx_file_sources_file_id ON file_sources(file_id);
         CREATE INDEX IF NOT EXISTS idx_file_sources_sha256 ON file_sources(sha256);
+        CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_id ON file_sources(source_id, id);
+        CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_file_id ON file_sources(source_id, file_id);
         """
     )
 

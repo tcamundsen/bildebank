@@ -1132,7 +1132,7 @@ def is_filtered_source(source: BrowserSource) -> bool:
 
 
 def source_has_sql_filter(source: BrowserSource) -> bool:
-    return source.date_source is not None or source.source_id is not None or source.geo_place_slug is not None
+    return source.date_source is not None or source.geo_place_slug is not None
 
 
 def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
@@ -1140,18 +1140,6 @@ def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
         if not valid_browser_date_source(source.date_source):
             raise ValueError("Ugyldig datokilde.")
         return "date_source = ?", (source.date_source,)
-    if source.source_id is not None:
-        return (
-            """
-            EXISTS (
-                SELECT 1
-                FROM file_sources
-                WHERE file_sources.file_id = files.id
-                  AND file_sources.source_id = ?
-            )
-            """,
-            (source.source_id,),
-        )
     if source.geo_place_slug is not None:
         place = PredefinedGeoPlace(source.geo_place_slug, source.title, source.geo_place_cells)
         return db.geo_place_where_clause(geo_place_cells_by_column(place))
@@ -1182,7 +1170,7 @@ def first_source_item(
 ) -> Any | None:
     if source_has_sql_filter(source):
         return first_sql_filtered_source_item(target, source)
-    if source.person_name is not None:
+    if source.person_name is not None or source.source_id is not None:
         items = source_items(target, source, face_config)
         return items[0] if items else None
     if not is_filtered_source(source):
@@ -1252,7 +1240,7 @@ def source_item_by_id(
             ).fetchone()
         finally:
             conn.close()
-    if source.person_name is not None:
+    if source.person_name is not None or source.source_id is not None:
         return next((item for item in source_items(target, source, face_config) if int(item["id"]) == file_id), None)
     conn = db.connect(target)
     try:
@@ -1280,7 +1268,7 @@ def adjacent_source_items(
 ) -> tuple[Any | None, Any | None]:
     if source_has_sql_filter(source):
         return adjacent_sql_filtered_source_items(target, source, item)
-    if source.person_name is not None:
+    if source.person_name is not None or source.source_id is not None:
         return adjacent_items_from_list(source_items(target, source, face_config), item)
     order_key = item_order_key(item)
     conn = db.connect(target)
@@ -1373,7 +1361,7 @@ def source_month_keys(
 ) -> list[str]:
     if source_has_sql_filter(source):
         return sql_filtered_source_month_keys(target, source)
-    if source.person_name is not None:
+    if source.person_name is not None or source.source_id is not None:
         keys = {month_key_for_item(target, item) for item in source_items(target, source, face_config)}
         return sorted(key for key in keys if valid_month_key(key))
     db_path = db.db_path_for_target(target)
@@ -1920,15 +1908,26 @@ def source_items(
             return list(
                 conn.execute(
                     f"""
-                    SELECT {FILE_COLUMNS}
+                    SELECT
+                        files.id,
+                        files.target_path,
+                        files.target_path_key,
+                        files.stored_filename,
+                        files.taken_date,
+                        files.date_source,
+                        files.size_bytes,
+                        files.view_rotation_degrees,
+                        files.gps_lat,
+                        files.gps_lon,
+                        files.media_width,
+                        files.media_height,
+                        files.media_orientation,
+                        files.media_metadata_mtime_ns,
+                        {db.H3_FILE_COLUMNS_SQL}
                     FROM files
-                    WHERE deleted_at IS NULL
-                      AND EXISTS (
-                          SELECT 1
-                          FROM file_sources
-                          WHERE file_sources.file_id = files.id
-                            AND file_sources.source_id = ?
-                      )
+                    JOIN file_sources ON file_sources.file_id = files.id
+                    WHERE files.deleted_at IS NULL
+                      AND file_sources.source_id = ?
                     ORDER BY {ITEM_ORDER_SQL}
                     """,
                     (source.source_id,),
@@ -2137,7 +2136,7 @@ def source_month_items(
 ) -> list[Any]:
     if source_has_sql_filter(source):
         return sql_filtered_source_month_items(target, source, month_key)
-    if source.person_name is not None:
+    if source.person_name is not None or source.source_id is not None:
         return [
             item
             for item in source_items(target, source, face_config)

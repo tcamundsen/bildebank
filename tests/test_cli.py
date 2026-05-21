@@ -1639,7 +1639,7 @@ model_name = "buffalo_l"
                 conn.close()
             self.assertIsNotNone(source)
             source_browser = imported_source_browser_source(source)
-            with patch("bilder.server.source_items", side_effect=AssertionError("source_items should not be used")):
+            with patch("bilder.server.adjacent_sql_filtered_source_items", side_effect=AssertionError("SQL filter path should not be used")):
                 source_item = source_item_by_id(target, source_browser, 1)
                 source_excludes_other_item = source_item_by_id(target, source_browser, 2) is None
                 self.assertIsNotNone(source_item)
