@@ -1,28 +1,22 @@
-# Strategier for face-suggest
+## Dette kan nå også gjøres i nettleser når du bruker `run-server`
 
-Denne siden handler om hvordan du kan hjelpe `face-suggest` med å kjenne igjen
-flest mulig ansikter.
+Selv om teksten nedenfor viser
+hvordan du jobber i PowerShell, så velger du bilder etter samme
+prinsipper.
 
-Kortversjonen er: gi Bildebank noen få, gode og varierte eksempler på hver
-person. Ikke prøv å bekrefte alt manuelt.
+Jeg jobber nå med å finjustere ting, og skal oppdatere dokumentasjonen
+når jeg har mer oversikt. Men dette er finn jeg har gjort til nå:
 
-## Start med sikre ansikter
+- Du kommer langt med et babybilde, et som 5-åring, et som 18-åring
+  og et som mer voksen, for å finne alle bilder av en person.
+- Du bør bekrefte bilder av alle søsken i en søskenflokk, ellers kan
+  programmet ta feil basert på søskenlikhet.
 
-Begynn med ansikter du er helt sikker på. Hvis du kobler feil person til et
-ansikt, lærer `face-suggest` av feilen og kan lage dårligere forslag senere.
+## Bruk tydelige, gode bilder
 
-Gode eksempler er bilder der:
+Tydelige bilder i fokus, tatt forfra fungerer best.  Uklare, mørke bilder og
+bilder i lav oppløsning kan gjøre resultatene fra `face-suggest` dårligere.
 
-- ansiktet er tydelig
-- personen ser omtrent mot kameraet
-- ansiktet ikke er veldig uskarpt
-- det ikke er tvil om hvem personen er
-
-Bruk heller fem sikre ansikter enn femti ansikter der noen kan være feil.
-
-## Bruk sikre enkeltansikter først
-
-Bruk noen få tydelige ansikter du er helt sikker på:
 
 ```powershell
 bildebank face-person-add-face "Kari" 798
@@ -30,9 +24,6 @@ bildebank face-person-add-face "Kari" 798
 
 `face-id` finner du i `faces.html`, i personsidene, eller i vanlig `index.html`
 med knappen `Ansikter i bildet`.
-
-Det er som regel bedre å legge til noen få sikre ansikter enn mange usikre.
-Da får `face-suggest` bedre grunnlag.
 
 ## Gi variasjon
 
