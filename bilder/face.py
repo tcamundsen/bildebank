@@ -28,6 +28,7 @@ FACE_DB_FILENAME = f"{FACE_DB_DIRNAME}/buffalo_l.sqlite3"
 DEFAULT_FACE_MODEL_NAME = "buffalo_l"
 FACE_SCHEMA_VERSION = 3
 FACE_MODEL_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+FACE_SUGGEST_BATCH_SIZE = 5000
 
 
 @dataclass
@@ -519,8 +520,10 @@ def suggest_faces(
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target, config)
     try:
+        import numpy as np
+
         progress_stats = FaceSuggestProgressStats(threshold=threshold)
-        person_vectors: dict[int, list[list[float]]] = {}
+        person_vectors: dict[int, list[Any]] = {}
         known_total = int(
             conn.execute(
                 """
@@ -533,28 +536,28 @@ def suggest_faces(
         )
         if progress is not None:
             progress("load_known_start", 0, known_total, progress_stats, None)
-        for index, row in enumerate(conn.execute(
-            """
-            SELECT persons.id AS person_id, faces.embedding
-            FROM persons
-            JOIN person_faces ON person_faces.person_id = persons.id
-            JOIN faces ON faces.id = person_faces.face_id
-            ORDER BY persons.id, faces.id
-            """
-        ), start=1):
+        for index, row in enumerate(
+            conn.execute(
+                """
+                SELECT persons.id AS person_id, faces.embedding
+                FROM persons
+                JOIN person_faces ON person_faces.person_id = persons.id
+                JOIN faces ON faces.id = person_faces.face_id
+                ORDER BY persons.id, faces.id
+                """
+            ),
+            start=1,
+        ):
             person_vectors.setdefault(int(row["person_id"]), []).append(
-                embedding_from_blob(bytes(row["embedding"]))
+                embedding_array_from_blob(row["embedding"], np)
             )
             progress_stats.known_faces = index
             progress_stats.persons = len(person_vectors)
             if progress is not None:
                 progress("load_known", index, known_total, progress_stats, None)
-        centroids = {
-            person_id: average_embedding(vectors)
-            for person_id, vectors in person_vectors.items()
-            if vectors
-        }
-        progress_stats.persons = len(centroids)
+        person_count = sum(1 for vectors in person_vectors.values() if vectors)
+        centroid_person_ids, centroid_matrix = normalized_centroid_matrix(person_vectors, np)
+        progress_stats.persons = person_count
         unknown_total = int(
             conn.execute(
                 """
@@ -566,60 +569,102 @@ def suggest_faces(
         )
         if progress is not None:
             progress("load_unknown_start", 0, unknown_total, progress_stats, None)
-        unknown_faces = []
-        for index, row in enumerate(
-            conn.execute(
+
+        conn.execute("DELETE FROM face_suggestions")
+        suggestions = 0
+        if progress is not None:
+            progress("compare_start", 0, unknown_total, progress_stats, None)
+        if centroid_matrix.size == 0 or unknown_total == 0:
+            progress_stats.unknown_faces = unknown_total
+            if progress is not None:
+                progress("compare", unknown_total, unknown_total, progress_stats, None)
+        else:
+            cursor = conn.execute(
                 """
                 SELECT id, embedding
                 FROM faces
                 WHERE id NOT IN (SELECT face_id FROM person_faces)
                 ORDER BY id
                 """
-            ),
-            start=1,
-        ):
-            unknown_faces.append(row)
-            progress_stats.unknown_faces = index
-            if progress is not None:
-                progress("load_unknown", index, unknown_total, progress_stats, None)
+            )
+            processed_unknown = 0
+            while True:
+                batch = cursor.fetchmany(FACE_SUGGEST_BATCH_SIZE)
+                if not batch:
+                    break
+                processed_unknown += len(batch)
+                progress_stats.unknown_faces = processed_unknown
+                if progress is not None:
+                    progress("load_unknown", processed_unknown, unknown_total, progress_stats, None)
 
-        conn.execute("DELETE FROM face_suggestions")
-        suggestions = 0
-        if progress is not None:
-            progress("compare_start", 0, len(unknown_faces), progress_stats, None)
-        for index, face in enumerate(unknown_faces, start=1):
-            face_id = int(face["id"])
-            vector = embedding_from_blob(bytes(face["embedding"]))
-            best_person_id = None
-            best_score = 0.0
-            for person_id, centroid in centroids.items():
-                score = cosine_similarity(vector, centroid)
-                if score > best_score:
-                    best_person_id = person_id
-                    best_score = score
-            if best_person_id is not None and best_score >= threshold:
-                conn.execute(
-                    """
-                    INSERT INTO face_suggestions(person_id, face_id, similarity)
-                    VALUES(?, ?, ?)
-                    """,
-                    (best_person_id, face_id, best_score),
-                )
-                suggestions += 1
-                progress_stats.suggestions = suggestions
-            if progress is not None:
-                progress("compare", index, len(unknown_faces), progress_stats, None)
+                unknown_matrix = normalized_embedding_matrix((row["embedding"] for row in batch), np)
+                scores = unknown_matrix @ centroid_matrix.T
+                best_indexes = scores.argmax(axis=1)
+                best_scores = scores[np.arange(scores.shape[0]), best_indexes]
+                rows_to_insert = [
+                    (centroid_person_ids[int(best_index)], int(face["id"]), float(best_score))
+                    for face, best_index, best_score in zip(batch, best_indexes, best_scores)
+                    if float(best_score) > 0.0 and float(best_score) >= threshold
+                ]
+                if rows_to_insert:
+                    conn.executemany(
+                        """
+                        INSERT INTO face_suggestions(person_id, face_id, similarity)
+                        VALUES(?, ?, ?)
+                        """,
+                        rows_to_insert,
+                    )
+                    suggestions += len(rows_to_insert)
+                    progress_stats.suggestions = suggestions
+                if progress is not None:
+                    progress("compare", processed_unknown, unknown_total, progress_stats, None)
+        progress_stats.suggestions = suggestions
         conn.commit()
         if progress is not None:
-            progress("done", len(unknown_faces), len(unknown_faces), progress_stats, None)
+            progress("done", unknown_total, unknown_total, progress_stats, None)
         return FaceSuggestStats(
-            persons=len(centroids),
-            unknown_faces=len(unknown_faces),
+            persons=person_count,
+            unknown_faces=unknown_total,
             suggestions=suggestions,
             threshold=threshold,
         )
     finally:
         conn.close()
+
+
+def embedding_array_from_blob(blob: bytes | memoryview, np: Any) -> Any:
+    return np.frombuffer(blob, dtype=np.float32)
+
+
+def normalized_centroid_matrix(person_vectors: dict[int, list[Any]], np: Any) -> tuple[list[int], Any]:
+    person_ids: list[int] = []
+    centroids = []
+    for person_id, vectors in person_vectors.items():
+        if not vectors:
+            continue
+        centroid = np.mean(np.vstack(vectors), axis=0, dtype=np.float32)
+        norm = np.linalg.norm(centroid)
+        if norm == 0.0:
+            continue
+        person_ids.append(person_id)
+        centroids.append(centroid / norm)
+    if not centroids:
+        return [], np.empty((0, 0), dtype=np.float32)
+    return person_ids, np.vstack(centroids).astype(np.float32, copy=False)
+
+
+def normalized_embedding_matrix(blobs, np: Any) -> Any:
+    matrix = np.vstack([embedding_array_from_blob(blob, np) for blob in blobs]).astype(
+        np.float32,
+        copy=False,
+    )
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    return np.divide(
+        matrix,
+        norms,
+        out=np.zeros_like(matrix, dtype=np.float32),
+        where=norms != 0.0,
+    )
 
 
 def list_face_suggestions(target: Path, config: FaceRecognitionConfig | None = None) -> list[sqlite3.Row]:

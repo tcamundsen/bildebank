@@ -9,13 +9,13 @@ description = "Konservativt bildesorteringsprogram for å samle bilder og videoe
 requires-python = ">=3.13"
 dependencies = [
     "h3",
+    "numpy",
     "Pillow",
 ]
 
 [project.optional-dependencies]
 face = [
     "insightface==0.7.3",
-    "numpy",
     "onnxruntime",
 ]
 openclip = [

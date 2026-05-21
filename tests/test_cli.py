@@ -4598,6 +4598,49 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
                 conn.close()
             self.assertFalse(face_db_path(target).exists())
 
+    def test_face_suggest_without_confirmed_faces_deletes_old_suggestions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            relative_image_path = Path("2021/08/IMG_20210801.jpg")
+            self.enable_face_recognition_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            conn = connect_face_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                    VALUES(1, ?, ?, 'sha', 'ok', 1)
+                    """,
+                    (relative_image_path.as_posix(), db.relative_path_key(relative_image_path)),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    ) VALUES(1, 1, ?, 1, 2, 30, 40, 0.9, 'buffalo_l', ?)
+                    """,
+                    (db.relative_path_key(relative_image_path), embedding_blob([1.0, 0.0, 0.0])),
+                )
+                conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 1, 0.95)")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-suggest"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("personer=0", stdout)
+            self.assertIn("ukjente_ansikter=1", stdout)
+            self.assertIn("forslag=0", stdout)
+            conn = connect_face_db(target)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 0)
+            finally:
+                conn.close()
+
     def test_make_face_browser_uses_relative_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
