@@ -1333,7 +1333,7 @@ def confirmed_people_for_file(
     except OSError:
         return []
     return [
-        {"name": name, "url": person_url(name)}
+        {"name": name, "url": person_item_url(name, file_id)}
         for name in cached_confirmed_people_for_file(str(face_db_path), mtime_ns, file_id)
     ]
 

@@ -1703,9 +1703,9 @@ model_name = "buffalo_l"
             )
 
         self.assertNotIn("1 filer, 1 måneder", body)
-        self.assertIn('class="person-link" href="/person/Kari">Kari</a>', body)
-        self.assertIn('class="person-link" href="/person/Ola%20Nordmann">Ola Nordmann</a>', body)
-        self.assertIn("Ansikter i bildet (1)", body)
+        self.assertIn('class="person-link" href="/person/Kari/item/1">Kari</a>', body)
+        self.assertIn('class="person-link" href="/person/Ola%20Nordmann/item/1">Ola Nordmann</a>', body)
+        self.assertIn("Ubekreftet ansikter i bildet (1)", body)
         self.assertIn('data-faces-item="1"', body)
         self.assertIn('data-face-list', body)
         self.assertNotIn("Ny person", body)
