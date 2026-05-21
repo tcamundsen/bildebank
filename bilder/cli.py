@@ -2021,7 +2021,7 @@ def run_migrate(target: Path, *, check: bool) -> int:
     print(f"Database: {db.db_path_for_target(target)}")
     print(f"Nåværende schema_version: {plan.current_version}")
     print(f"Ny schema_version: {plan.target_version}")
-    if plan.current_version == plan.target_version:
+    if plan.current_version == plan.target_version and not plan.refreshes_performance_indexes:
         print("Databasen er allerede migrert.")
         return 0
 
@@ -2044,6 +2044,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  bygge om file_sources uten kind")
     if plan.cleans_gps_errors:
         print("  rydde gamle GPS-feilmeldinger")
+    if plan.refreshes_performance_indexes:
+        print("  oppdatere manglende ytelsesindekser")
     print("Vil lage backup før endring.")
     if check:
         print("Ingen endringer er gjort (--check).")
@@ -2081,6 +2083,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Bygger om file_sources uten kind.")
     if result.cleans_gps_errors:
         print("Rydder gamle GPS-feilmeldinger.")
+    if result.refreshes_performance_indexes:
+        print("Oppdaterer manglende ytelsesindekser.")
     print(f"Setter schema_version={result.target_version}.")
     print("Ferdig. Databasen er migrert.")
     if result.cleans_gps_errors:

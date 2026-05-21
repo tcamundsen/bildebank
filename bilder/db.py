@@ -130,6 +130,7 @@ class MigrationPlan:
     rebuilds_sources_without_kind: bool = False
     rebuilds_file_sources_without_kind: bool = False
     cleans_gps_errors: bool = False
+    refreshes_performance_indexes: bool = False
 
 
 def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection:
@@ -512,13 +513,15 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 f"Databasen bruker et nyere format (schema_version={version}) enn programmet støtter."
             )
         if version == SCHEMA_VERSION:
-            validate_current_schema(conn)
+            if validate:
+                validate_current_schema(conn, require_performance_indexes=False)
             return MigrationPlan(
                 current_version=version,
                 target_version=SCHEMA_VERSION,
                 imported_files=count_rows(conn, "files"),
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
+                refreshes_performance_indexes=bool(missing_performance_indexes(conn)),
             )
         if version in {5, 6}:
             if validate:
@@ -570,15 +573,24 @@ def migrate_database(target: Path) -> MigrationPlan:
     try:
         version = schema_version(conn)
         if version == SCHEMA_VERSION:
-            validate_current_schema(conn)
-            set_collection_id(conn)
-            conn.commit()
+            refreshes_performance_indexes = bool(missing_performance_indexes(conn))
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                validate_current_schema(conn, require_performance_indexes=False)
+                ensure_performance_indexes(conn)
+                validate_current_schema(conn)
+                set_collection_id(conn)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
             return MigrationPlan(
                 current_version=version,
                 target_version=SCHEMA_VERSION,
                 imported_files=count_rows(conn, "files"),
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
+                refreshes_performance_indexes=refreshes_performance_indexes,
             )
         if version in {5, 6}:
             imported_files = count_rows(conn, "files")
@@ -796,13 +808,17 @@ def validate_current_schema(conn: sqlite3.Connection, *, require_performance_ind
 
 
 def validate_performance_indexes(conn: sqlite3.Connection) -> None:
+    missing = missing_performance_indexes(conn)
+    if missing:
+        raise ValueError(f"Databasen mangler ytelsesindeks: {missing[0]}. Kjør bildebank migrate.")
+
+
+def missing_performance_indexes(conn: sqlite3.Connection) -> list[str]:
     existing = {
         str(row["name"])
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
     }
-    missing = sorted(name for name in PERFORMANCE_INDEX_NAMES if name not in existing)
-    if missing:
-        raise ValueError(f"Databasen mangler ytelsesindeks: {missing[0]}. Kjør bildebank migrate.")
+    return sorted(name for name in PERFORMANCE_INDEX_NAMES if name not in existing)
 
 
 def validate_relative_target_paths(conn: sqlite3.Connection) -> None:

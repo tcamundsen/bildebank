@@ -6028,6 +6028,33 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             finally:
                 conn.close()
 
+    def test_migrate_current_schema_repairs_missing_performance_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute("DROP INDEX idx_file_sources_source_id_file_id")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Nåværende schema_version: 7", stdout)
+            self.assertIn("oppdatere manglende ytelsesindekser", stdout)
+            self.assertIn("Oppdaterer manglende ytelsesindekser.", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertTrue(
+                    conn.execute(
+                        "select 1 from sqlite_master where type = 'index' and name = 'idx_file_sources_source_id_file_id'"
+                    ).fetchone()
+                )
+            finally:
+                conn.close()
+
     def test_migrate_v6_to_v7_replaces_legacy_gps_error_messages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
