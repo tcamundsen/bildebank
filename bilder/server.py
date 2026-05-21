@@ -3767,7 +3767,7 @@ def people_links_html(people: list[dict[str, str]]) -> str:
 def faces_button_html(face_count: int, file_id: int) -> str:
     if face_count <= 0:
         return ""
-    return f'<button class="faces-button" type="button" data-open-faces data-faces-item="{file_id}">Ansikter i bildet ({face_count})</button>'
+    return f'<button class="faces-button" type="button" data-open-faces data-faces-item="{file_id}">Ubekreftet ansikter i bildet ({face_count})</button>'
 
 
 def faces_overlay_html(item: Any) -> str:
