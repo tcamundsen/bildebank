@@ -75,9 +75,10 @@ registrert person eller skrive inn et nytt navn under `Ny person` og trykke
 Se også den samlede innføringen: [`insightface`](insightface.md).
 
 
-Knappen `Bildeinfo` i bildebrowseren viser filnavn, filstørrelse, oppløsning,
-kamera hvis dette finnes i metadata, hvilke kilder som inkluderer bildet, og
-lenker til stedssidene for H3-nivåene bildet er del av når bildet har GPS-data.
+Knappen `Bildeinfo` i bildebrowseren viser filnavn, dato og om datoen kommer
+fra metadata, filnavn eller mtime, filstørrelse, oppløsning, kamera hvis dette
+finnes i metadata, hvilke kilder som inkluderer bildet, og lenker til
+stedssidene for H3-nivåene bildet er del av når bildet har GPS-data.
 Overlayet kan lukkes med `Lukk` eller Esc.
 
 På bildesider kan du bruke `Roter venstre` og `Roter høyre` for å rotere

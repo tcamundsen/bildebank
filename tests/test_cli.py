@@ -50,6 +50,7 @@ from bilder.server import (
     browser_month_navigation,
     cached_person_file_ids,
     date_source_browser_source,
+    date_source_text,
     empty_source_html,
     face_overlay_content_html,
     geo_area_page_html,
@@ -1245,6 +1246,8 @@ model_name = "buffalo_l"
         self.assertNotIn("<dt>Filnavn</dt>", body)
         self.assertIn("Filnavn", info_body)
         self.assertIn("IMG_20240102.png", info_body)
+        self.assertIn("<dt>Dato</dt>", info_body)
+        self.assertIn("2024-01-02 (fra filnavn)", info_body)
         self.assertIn("Filstørrelse", info_body)
         self.assertIn("Oppløsning", info_body)
         self.assertIn("100 x 80", info_body)
@@ -1260,6 +1263,11 @@ model_name = "buffalo_l"
         self.assertIn(f"H3-7: {cells['h3_res7']}", info_body)
         self.assertIn(source.name, info_body)
         self.assertIn("closeInfoOverlay", SERVER_JS)
+
+    def test_image_info_date_source_labels_are_human_readable(self) -> None:
+        self.assertEqual(date_source_text("metadata"), "fra metadata")
+        self.assertEqual(date_source_text("filename"), "fra filnavn")
+        self.assertEqual(date_source_text("mtime"), "fra mtime")
 
     def test_run_server_item_info_api_returns_lazy_panel_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

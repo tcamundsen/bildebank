@@ -3994,6 +3994,7 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
     camera = camera_info(absolute_path)
     rows = [
         info_row_html("Filnavn", display_relative_path(target, target_path)),
+        info_row_html("Dato", image_date_text(item)),
         info_row_html("Filstørrelse", f"{format_bytes(int(item['size_bytes']))} ({int(item['size_bytes'])} bytes)"),
         info_row_html("Oppløsning", f"{dimensions.width} x {dimensions.height}" if dimensions else "-"),
         info_row_html("Kamera", camera_text(camera)),
@@ -4010,6 +4011,22 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
     if geo_links:
         rows.append(info_row_html("Steder", geo_links, raw_html=True))
     return rows
+
+
+def image_date_text(item: Any) -> str:
+    taken_date = str(item["taken_date"] or "-")
+    source = str(item["date_source"] or "")
+    return f"{taken_date} ({date_source_text(source)})"
+
+
+def date_source_text(source: str) -> str:
+    labels = {
+        "metadata": "fra metadata",
+        "filename": "fra filnavn",
+        "mtime": "fra mtime",
+        "unknown": "ukjent datokilde",
+    }
+    return labels.get(source, source or "ukjent datokilde")
 
 
 def google_maps_link_html(item: Any) -> str:
