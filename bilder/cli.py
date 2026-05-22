@@ -92,7 +92,6 @@ HELP_COMMAND_GROUPS = (
     (
         "kontrollere importen",
         (
-            ("report", "Vis importoppsummering"),
             ("errors", "List registrerte feil"),
             ("conflicts", "List filer med navnekollisjon"),
             ("show-conflict", "Vis detaljer om en navnekollisjon"),
@@ -1193,7 +1192,7 @@ def run(args: argparse.Namespace) -> int:
             return 0
 
         if args.command == "report":
-            print_report(conn)
+            print("report er slått sammen med status")
             return 0
 
         raise ValueError(f"Ukjent kommando: {args.command}")
@@ -1983,18 +1982,18 @@ def print_persons(target: Path) -> None:
 
 def print_face_report(target: Path, report: FaceReport, *, config=None) -> None:
     print("Ansiktsrapport")
-    print(f"Bildesamling: {target}")
-    print(f"Face-database: {face_db_path(target, config)}")
+    print(f"  Bildesamling: {target}")
+    print(f"  Face-database: {face_db_path(target, config)}")
     if not report.database_exists:
-        print("Face-database finnes ikke.")
-        print("Kjør bildebank face-scan først.")
+        print("  Face-database finnes ikke.")
+        print("  Kjør bildebank face-scan først.")
         return
-    print(f"Scannede filer: {report.scanned_files}")
-    print(f"Ansikter funnet: {report.total_faces}")
-    print(f"Filer uten ansikter: {report.files_with_zero_faces}")
-    print(f"Filer med ett ansikt: {report.files_with_one_face}")
-    print(f"Filer med flere ansikter: {report.files_with_multiple_faces}")
-    print(f"Scan-feil: {report.scan_errors}")
+    print(f"  Scannede filer: {report.scanned_files}")
+    print(f"  Ansikter funnet: {report.total_faces}")
+    print(f"  Filer uten ansikter: {report.files_with_zero_faces}")
+    print(f"  Filer med ett ansikt: {report.files_with_one_face}")
+    print(f"  Filer med flere ansikter: {report.files_with_multiple_faces}")
+    print(f"  Scan-feil: {report.scan_errors}")
     print()
     print("Personstatus:")
     print(f"  Personer registrert: {report.persons}")
@@ -2489,27 +2488,27 @@ def print_status(conn) -> None:
     counts = db.status_counts(conn)
     media = counts["media"]
     date_sources = counts["date_sources"]
-    print(f"Totalt: {counts['total']}")
-    print(f"Bilder: {media['bilder']}")
-    print(f"Videoer: {media['videoer']}")
-    print("Datokilde:")
+    print("Bildesamling")
+    print(f"  Totalt: {counts['total']}")
+    print(f"  Bilder: {media['bilder']}")
+    print(f"  Videoer: {media['videoer']}")
+    print("\nKilder")
+    print(f"  Kilder: {db.count_rows(conn, 'sources')}")
+    print(f"  Importerte filer: {db.count_rows(conn, 'files')}")
+    print(f"  Kildefilforekomster: {db.count_rows(conn, 'file_sources')}")
+    print(f"  Duplikatkilder: {db.duplicate_source_count(conn)}")
+    print("\nKontroll")
+    print(f"  Uløste feil: {db.error_count(conn)}")
+    name_conflicts = conn.execute("SELECT COUNT(*) FROM files WHERE name_conflict = 1").fetchone()[0]
+    undated = conn.execute("SELECT COUNT(*) FROM files WHERE date_source = 'unknown'").fetchone()[0]
+    print(f"  Navnekollisjoner: {name_conflicts}")
+    print(f"  Filer uten dato: {undated}")
+    print("\nDatokilde:")
     for source in ("metadata", "filename", "mtime", "unknown"):
         print(f"  {source}: {date_sources.get(source, 0)}")
     extra_sources = sorted(set(date_sources) - {"metadata", "filename", "mtime", "unknown"})
     for source in extra_sources:
         print(f"  {source}: {date_sources[source]}")
-
-
-def print_report(conn) -> None:
-    print(f"Kilder: {db.count_rows(conn, 'sources')}")
-    print(f"Importerte filer: {db.count_rows(conn, 'files')}")
-    print(f"Kildefilforekomster: {db.count_rows(conn, 'file_sources')}")
-    print(f"Duplikatkilder: {db.duplicate_source_count(conn)}")
-    print(f"Uløste feil: {db.error_count(conn)}")
-    name_conflicts = conn.execute("SELECT COUNT(*) FROM files WHERE name_conflict = 1").fetchone()[0]
-    undated = conn.execute("SELECT COUNT(*) FROM files WHERE date_source = 'unknown'").fetchone()[0]
-    print(f"Navnekollisjoner: {name_conflicts}")
-    print(f"Filer uten dato: {undated}")
 
 
 def print_refresh_summary(stats, *, dry_run: bool) -> None:

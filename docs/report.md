@@ -1,6 +1,6 @@
 # report
 
-`report` viser en importoppsummering.
+`report` er slått sammen med `status`.
 
 ## Referanse
 
@@ -8,6 +8,10 @@
 bildebank report
 ```
 
-Kommandoen viser en kort rapport over innholdet og importstatusen i
-bildesamlingen.
+Kommandoen skriver bare:
 
+```text
+report er slått sammen med status
+```
+
+Bruk `bildebank status` for status og importoppsummering.

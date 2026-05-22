@@ -3892,6 +3892,13 @@ pretrained = "laion2b_s32b_b82k"
             self.assertIn("  metadata: 1", stdout)
             self.assertIn("  filename: 1", stdout)
             self.assertIn("  mtime: 0", stdout)
+            self.assertIn("Kilder: 1", stdout)
+            self.assertIn("Importerte filer: 2", stdout)
+            self.assertIn("Kildefilforekomster: 2", stdout)
+            self.assertIn("Duplikatkilder: 0", stdout)
+            self.assertIn("Uløste feil: 0", stdout)
+            self.assertIn("Navnekollisjoner: 0", stdout)
+            self.assertIn("Filer uten dato: 0", stdout)
 
     def test_parent_source_supersedes_imported_child_without_duplicate_findings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -6043,7 +6050,7 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             finally:
                 conn.close()
 
-    def test_migrate_backfills_file_sources_and_then_report_works(self) -> None:
+    def test_migrate_backfills_file_sources_and_then_status_works(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -6081,12 +6088,23 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             finally:
                 conn.close()
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "report"])
+            code, stdout, stderr = capture_cli(["--target", str(target), "status"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Importerte filer: 1", stdout)
             self.assertIn("Kildefilforekomster: 2", stdout)
             self.assertIn("Duplikatkilder: 1", stdout)
+
+    def test_report_prints_status_merge_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "report"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(stdout, "report er slått sammen med status\n")
 
     def test_migrate_v5_to_v7_creates_performance_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
