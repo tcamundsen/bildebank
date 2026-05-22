@@ -1,15 +1,25 @@
 # run-server
 
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank run-server [valg]
+
+options:
+  -h, --help    show this help message and exit
+  --host HOST   Adresse serveren lytter på. Standard: 127.0.0.1
+  --port PORT   Port serveren lytter på. Standard: 8765
+  --no-browser  Ikke åpne serveren automatisk i nettleser.
+```
+<!-- CLI-HELP-END -->
+
 `run-server` starter den lokale bildebrowseren for Bildebank. Dette er
 en lokal web-server som kjører på din PC, og som du ser i nettleseren.
 Dette er vanligvis den beste måten å se på bildene på egen PC.
 
 Den statiske HTML-browseren laget med [`make-browser`](make-browser.md) kan
 fortsatt brukes når bildesamlingen skal åpnes på en maskin uten installert
-Bildebank.
-
-`run-server` gir også flere funksjoner som ikke er mulig med den statiske
-HTML-filen laget av `make-browser`.
+Bildebank.  `run-server` gir også flere funksjoner som ikke er mulig med den
+statiske HTML-filen laget av `make-browser`.
 
 ## Funksjoner
 
