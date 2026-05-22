@@ -312,6 +312,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Path til exiftool.exe. Standard er exiftool.exe i bildesamlingsmappen.",
     )
+    exiftool_gaps.add_argument(
+        "--batch-size",
+        type=positive_int_arg,
+        default=DEFAULT_EXIFTOOL_BATCH_SIZE,
+        help=f"Antall filer per ExifTool-kall. Standard: {DEFAULT_EXIFTOOL_BATCH_SIZE}",
+    )
     geo_scan = add_command(
         subparsers,
         "geo-scan",
@@ -1122,7 +1128,12 @@ def run(args: argparse.Namespace) -> int:
             exiftool_path = args.exiftool.resolve() if args.exiftool else None
             conn.commit()
             conn.close()
-            gaps = exiftool_metadata_gaps(target, exiftool_path=exiftool_path, progress=True)
+            gaps = exiftool_metadata_gaps(
+                target,
+                exiftool_path=exiftool_path,
+                batch_size=args.batch_size,
+                progress=True,
+            )
             for gap in gaps:
                 print(
                     f"{gap.date}\t{gap.tag}\t{gap.value}\t"

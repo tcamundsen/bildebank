@@ -4158,6 +4158,46 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertIn("exiftool: kontrollert=1/1", stderr)
             self.assertIn("gjenstår=0s", stderr)
 
+    def test_exiftool_metadata_gaps_reads_files_in_batches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            for index, name in enumerate(("IMG_20240102.jpg", "IMG_20240103.jpg", "IMG_20240104.jpg")):
+                (source / name).write_bytes(f"image-{index}".encode("ascii"))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            calls = target / "exiftool-calls.txt"
+            exiftool = target / "exiftool.exe"
+            exiftool.write_text(
+                f"""#!/usr/bin/env python3
+import json
+import sys
+from pathlib import Path
+paths = [arg for arg in sys.argv[1:] if not arg.startswith("-")]
+with Path({str(calls)!r}).open("a", encoding="utf-8") as fh:
+    fh.write("call\\n")
+print(json.dumps([
+    {{"SourceFile": path, "DateTimeOriginal": "2024:01:02 03:04:05"}}
+    for path in paths
+]))
+""",
+                encoding="utf-8",
+                newline="\n",
+            )
+            exiftool.chmod(0o755)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "exiftool-metadata-gaps", "--batch-size", "10"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(calls.read_text(encoding="utf-8"), "call\n")
+            self.assertIn("Oppsummering: exiftool_metadata_funnet=3", stdout)
+
     def test_rejects_target_inside_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

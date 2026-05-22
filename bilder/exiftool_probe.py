@@ -6,6 +6,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from . import db
 from .progress import ProgressMeter
@@ -34,11 +35,13 @@ class ExifToolMetadataGap:
 
 
 def exiftool_metadata_gaps(
-    target: Path, *, exiftool_path: Path | None = None, progress: bool = False
+    target: Path, *, exiftool_path: Path | None = None, batch_size: int = 200, progress: bool = False
 ) -> list[ExifToolMetadataGap]:
     tool = exiftool_path or (target / "exiftool.exe")
     if not tool.exists():
         raise FileNotFoundError(f"Fant ikke exiftool: {tool}")
+    if batch_size < 1:
+        raise ValueError("batch_size må være minst 1")
 
     conn = db.connect(target)
     try:
@@ -52,50 +55,55 @@ def exiftool_metadata_gaps(
     try:
         if progress:
             progress_meter.message(f"exiftool: {total} filer skal kontrolleres.")
-        for index, row in enumerate(rows, start=1):
-            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-            found = exiftool_first_date(tool, target_path)
-            if found is None:
+        checked = 0
+        for batch in batched(rows, batch_size):
+            target_paths = [db.absolute_target_path(target, Path(str(row["target_path"]))) for row in batch]
+            found_dates = exiftool_dates_batch(tool, target_paths)
+            for row, target_path in zip(batch, target_paths, strict=True):
+                found = found_dates.get(target_path)
+                if found is not None:
+                    tag, value, date = found
+                    gaps.append(
+                        ExifToolMetadataGap(
+                            target_path=target_path,
+                            bdb_date=row["taken_date"] or "-",
+                            bdb_source=row["date_source"],
+                            tag=tag,
+                            value=value,
+                            date=date,
+                        )
+                    )
+                checked += 1
                 if progress:
                     progress_meter.update(
-                        index,
+                        checked,
                         total,
                         action="kontrollert",
                         details=f"funnet={len(gaps)}",
                         eta=True,
                     )
-                continue
-            tag, value, date = found
-            gaps.append(
-                ExifToolMetadataGap(
-                    target_path=target_path,
-                    bdb_date=row["taken_date"] or "-",
-                    bdb_source=row["date_source"],
-                    tag=tag,
-                    value=value,
-                    date=date,
-                )
-            )
-            if progress:
-                progress_meter.update(
-                    index,
-                    total,
-                    action="kontrollert",
-                    details=f"funnet={len(gaps)}",
-                    eta=True,
-                )
     finally:
         progress_meter.done()
     return gaps
 
 
+def batched(items: list[Any], batch_size: int) -> list[list[Any]]:
+    return [items[index : index + batch_size] for index in range(0, len(items), batch_size)]
+
+
 def exiftool_first_date(exiftool_path: Path, path: Path) -> tuple[str, str, str] | None:
+    return exiftool_dates_batch(exiftool_path, [path]).get(path)
+
+
+def exiftool_dates_batch(exiftool_path: Path, paths: list[Path]) -> dict[Path, tuple[str, str, str]]:
+    if not paths:
+        return {}
     result = subprocess.run(
         [
             str(exiftool_path),
             "-j",
             *[f"-{tag}" for tag in EXIFTOOL_DATE_TAGS],
-            str(path),
+            *[str(path) for path in paths],
         ],
         check=False,
         capture_output=True,
@@ -104,15 +112,28 @@ def exiftool_first_date(exiftool_path: Path, path: Path) -> tuple[str, str, str]
         errors="replace",
     )
     if result.returncode != 0:
-        raise RuntimeError(f"exiftool feilet for {path}: {result.stderr.strip()}")
+        raise RuntimeError(f"exiftool feilet: {result.stderr.strip()}")
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"exiftool ga ugyldig JSON for {path}") from exc
-    if not payload:
-        return None
+        raise RuntimeError("exiftool ga ugyldig JSON") from exc
 
-    item = payload[0]
+    path_by_source = {str(path): path for path in paths}
+    dates: dict[Path, tuple[str, str, str]] = {}
+    for index, item in enumerate(payload if isinstance(payload, list) else []):
+        source_file = item.get("SourceFile")
+        path = path_by_source.get(str(source_file)) if source_file is not None else None
+        if path is None and index < len(paths):
+            path = paths[index]
+        if path is None:
+            continue
+        found = first_date_from_exiftool_item(item)
+        if found is not None:
+            dates[path] = found
+    return dates
+
+
+def first_date_from_exiftool_item(item: dict[str, object]) -> tuple[str, str, str] | None:
     for tag in EXIFTOOL_DATE_TAGS:
         value = item.get(tag)
         if value is None:
