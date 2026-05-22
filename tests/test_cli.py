@@ -75,6 +75,7 @@ from bilder.server import (
     person_items,
     removed_files_page_html,
     search_server_images,
+    SERVER_ASSET_VERSION,
     SERVER_CSS,
     SERVER_JS,
     source_item_by_id,
@@ -1165,6 +1166,12 @@ model_name = "buffalo_l"
         self.assertIsNotNone(next_item)
         self.assertEqual(previous_item["stored_filename"], "z.jpg")
         self.assertEqual(next_item["stored_filename"], "m.jpg")
+
+    def test_server_month_thumbnails_clip_rotated_images(self) -> None:
+        self.assertIn(".thumb-link {", SERVER_CSS)
+        self.assertIn("aspect-ratio: 4 / 3;", SERVER_CSS)
+        self.assertIn("overflow: hidden;", SERVER_CSS)
+        self.assertEqual(SERVER_ASSET_VERSION, "2")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)

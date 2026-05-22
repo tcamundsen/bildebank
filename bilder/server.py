@@ -4400,7 +4400,7 @@ def thumbnail_media_html(target: Path, item: Any) -> str:
     return f'<img src="{html.escape(thumbnail_src)}" alt="{name}" loading="lazy"{rotation_style_attr(item)}>'
 
 
-SERVER_ASSET_VERSION = "1"
+SERVER_ASSET_VERSION = "2"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -4679,10 +4679,19 @@ SERVER_CSS = r"""    :root {
       padding: 12px;
       overflow: auto;
     }
-    .thumb-link { display: block; color: inherit; text-decoration: none; }
-    .thumb-link img, .video-thumb {
+    .thumb-link {
+      display: grid;
+      place-items: center;
       width: 100%;
       aspect-ratio: 4 / 3;
+      overflow: hidden;
+      color: inherit;
+      text-decoration: none;
+      background: #181818;
+    }
+    .thumb-link img, .video-thumb {
+      width: 100%;
+      height: 100%;
       object-fit: cover;
       display: grid;
       place-items: center;
