@@ -1112,13 +1112,10 @@ def run(args: argparse.Namespace) -> int:
         if args.command == "non-metadata":
             for row in db.non_metadata_files(conn):
                 taken_date = row["taken_date"] or "-"
+                print(f"{db.absolute_target_path(target, Path(str(row['target_path'])))}")
+                print(f"  dato: {row['date_source']}\t{taken_date}")
                 if args.with_source:
-                    print(
-                        f"{row['date_source']}\t{taken_date}\t"
-                        f"{db.absolute_target_path(target, Path(str(row['target_path'])))}\t{row['source_path']}"
-                    )
-                else:
-                    print(f"{row['date_source']}\t{taken_date}\t{db.absolute_target_path(target, Path(str(row['target_path'])))}")
+                    print(f"  kilde: {row['source_path']}")
             return 0
 
         if args.command == "exiftool-metadata-gaps":

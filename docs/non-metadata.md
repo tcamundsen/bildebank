@@ -1,4 +1,13 @@
 # non-metadata
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank non-metadata [valg]
+
+options:
+  -h, --help     show this help message and exit
+  --with-source  Vis kildefil i tillegg til målfil
+```
+<!-- CLI-HELP-END -->
 
 `non-metadata` lister filer der datoen ikke kom fra metadata.
 
