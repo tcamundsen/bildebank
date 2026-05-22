@@ -4552,6 +4552,22 @@ SERVER_CSS = r"""    :root {
       flex-wrap: wrap;
       justify-content: flex-end;
     }
+    .browser-header .topline {
+       padding-bottom: 0px;
+       padding-top: 0px;
+    }
+    .top-actions .server-search-link {
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      background: transparent;
+      min-height: 0;
+      color: var(--text);
+    }
+    .top-actions .server-search-link:hover {
+      background: transparent;
+      text-decoration: underline;
+    }
     .people-table { display: grid; gap: 8px; margin-top: 18px; }
     .removed-list { display: grid; gap: 6px; margin-top: 18px; }
     .removed-row {
@@ -4584,7 +4600,7 @@ SERVER_CSS = r"""    :root {
     .nav-button, .server-search-link, .person-link, .faces-button {
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 6px 9px;
+      padding: 4px 7px;
       background: #303030;
       color: var(--text);
       min-height: 32px;
