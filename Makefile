@@ -3,7 +3,7 @@
 CMDS ?= face-scan face-suggest create import status make-thumbnails \
 		list-sources show-source undelete \
 		make-browser make-people-browser make-person-browser \
-		non-metadata run-server
+		non-metadata run-server remove
 
 cli-help:
 	@for cmd in $(CMDS); do \

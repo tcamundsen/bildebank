@@ -14,6 +14,9 @@ options:
 `undelete` flytter en fil tilbake fra `deleted`-mappen til den aktive
 bildesamlingen.
 
+Dette kan du også gjøre fra nettleseren ved å trykk **Innstillinger**
+og deretter **Slettede bilder**.
+
 Eksempel:
 
 ```powershell

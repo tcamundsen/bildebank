@@ -1,26 +1,28 @@
 # Liste over alle kommandoer
 
-Dette er en kort referanse over kommandoene i Bildebank.
+Kommandoer merket **cli** ("command line interface") kan bare kjøres
+fra PowerShell. Merket **web** betyr at funksjonen kan gjøres fra
+nettleser. De som ikke er merket har jeg ikke sett over ennå.
 
 ## Kom i gang
 
-- [`create`](create.md)
-- [`import`](import.md)
+- [`create`](create.md) **`web`**
+- [`import`](import.md) **`web`**
 
 ## Se og kontrollere samlingen
 
-- [`run-server`](run-server.md)
-- [`make-thumbnails`](make-thumbnails.md)
+- [`run-server`](run-server.md) **`web`**
+- [`make-thumbnails`](make-thumbnails.md) **`web`**
 - [`status`](status.md)
 - [`list-sources`](list-sources.md)
 - [`show-source`](show-source.md)
 
 ## Rydde
 
-- [`remove`](remove.md)
-- [`undelete`](undelete.md)
-- [`unimport`](unimport.md)
-- [`list-removed`](list-removed.md)
+- [`remove`](remove.md) **`web`**
+- [`undelete`](undelete.md) **`web`**
+- [`unimport`](unimport.md) **`cli`**
+- [`list-removed`](list-removed.md) **`web`**
 
 ## Finne ting som bør kontrolleres
 
@@ -44,29 +46,30 @@ Dette er en kort referanse over kommandoene i Bildebank.
 
 - [`insightface`](insightface.md) - innføring.
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
-- [`face-config`](face-config.md)
-- [`face-scan`](face-scan.md)
-- [`face-suggest`](face-suggest.md)
-- [`face-reset`](face-reset.md)
+- [`face-config`](face-config.md) **`web`**
+- [`face-scan`](face-scan.md) **`cli`**
+- [`face-suggest`](face-suggest.md) **`cli`**
+- [`face-reset`](face-reset.md) **`cli`**
 
 Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 [`run-server`](run-server.md):
 
 - [`face-status`](face-status.md)
 - [`face-report`](face-report.md)
-- [`face-person-create`](face-person-create.md)
-- [`face-person-add-face`](face-person-add-face.md)
-- [`face-person-remove-face`](face-person-remove-face.md)
-- [`face-person-delete`](face-person-delete.md)
-- [`face-person-rename`](face-person-rename.md)
-- [`face-person-list`](face-person-list.md)
+- [`face-person-create`](face-person-create.md) **`web`**
+- [`face-person-add-face`](face-person-add-face.md) **`web`**
+- [`face-person-remove-face`](face-person-remove-face.md) **`web`**
+- [`face-person-delete`](face-person-delete.md) **`cli`**
+- [`face-person-rename`](face-person-rename.md)  **`cli`**
+- [`face-person-list`](face-person-list.md) **`cli`**
+ 
 
 Generering av statiske HTML-filer:
 
-- [`make-browser`](make-browser.md)
-- [`make-face-browser`](make-face-browser.md)
-- [`make-people-browser`](make-people-browser.md)
-- [`make-person-browser`](make-person-browser.md)
+- [`make-browser`](make-browser.md) **`cli`**
+- [`make-face-browser`](make-face-browser.md) **`cli`**
+- [`make-people-browser`](make-people-browser.md) **`cli`**
+- [`make-person-browser`](make-person-browser.md) **`cli`**
 
 ## Tekstbasert bildesøk
 
@@ -74,8 +77,8 @@ Se den samlede innføringen: [`openclip`](openclip.md).
 
 ## Programmet
 
-- [`where-is`](where-is.md)
-- [`backup`](backup.md)
-- [`migrate`](migrate.md)
-- [`vacuum`](vacuum.md)
-- [`update`](update.md)
+- [`where-is`](where-is.md) **`cli`**
+- [`backup`](backup.md) **`cli`**
+- [`migrate`](migrate.md) **`cli`**
+- [`vacuum`](vacuum.md) **`cli`**
+- [`update`](update.md) **`cli`**

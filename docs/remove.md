@@ -1,15 +1,24 @@
 # remove
 
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank remove [valg] fil
+
+positional arguments:
+  fil         Importert målfil som skal fjernes
+
+options:
+  -h, --help  show this help message and exit
+```
+<!-- CLI-HELP-END -->
+
 `remove` fjerner én importert fil fra den aktive bildesamlingen.
+
+Dette kan du også gjøre fra nettleseren ved å trykke på knappen
+**Slett** når du ser på et bilde.
 
 Bruk denne kommandoen når du har funnet et bilde eller en video som ikke skal
 være med i bildesamlingen, men der du ikke vil angre en hel import.
-
-## Referanse
-
-```powershell
-bildebank remove fil
-```
 
 Eksempel:
 
