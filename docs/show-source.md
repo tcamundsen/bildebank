@@ -20,3 +20,4 @@ bildebank show-source "2024\07\IMG_1234.jpg"
 ```
 Hvis samme fil finnes i flere kilder, viser kommandoen flere kildehenvisninger.
 
+Dette kan du også gjøre fra nettleseren ved å trykk **Bildeinfo** i bildebrowseren.

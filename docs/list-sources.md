@@ -12,3 +12,6 @@ options:
 er erstattet av, navn og path. Den er nyttig når du vil kontrollere hvilke
 importer Bildebank kjenner til.
 
+Dette kan du også gjøre fra nettleseren ved å trykk **Kilder** i bildebrowseren.
+
+

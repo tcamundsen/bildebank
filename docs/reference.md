@@ -2,7 +2,8 @@
 
 Kommandoer merket **cli** ("command line interface") kan bare kjøres
 fra PowerShell. Merket **web** betyr at funksjonen kan gjøres fra
-nettleser. De som ikke er merket har jeg ikke sett over ennå.
+nettleser. Merket **devel** betyr at kommandoen ikke er ment for
+sluttbrukere. De som ikke er merket har jeg ikke sett over ennå.
 
 ## Kom i gang
 
@@ -12,10 +13,10 @@ nettleser. De som ikke er merket har jeg ikke sett over ennå.
 ## Se og kontrollere samlingen
 
 - [`run-server`](run-server.md) **`web`**
-- [`make-thumbnails`](make-thumbnails.md) **`web`**
+- [`make-thumbnails`](make-thumbnails.md) **`cli`**
 - [`status`](status.md)
-- [`list-sources`](list-sources.md)
-- [`show-source`](show-source.md)
+- [`list-sources`](list-sources.md) **`web`**
+- [`show-source`](show-source.md) **`web`**
 
 ## Rydde
 
@@ -33,10 +34,10 @@ nettleser. De som ikke er merket har jeg ikke sett over ennå.
 
 ## Avansert kontroll
 
-- [`explain-date`](explain-date.md)
-- [`inspect-metadata`](inspect-metadata.md)
-- [`refresh-metadata`](refresh-metadata.md)
-- [`exiftool-metadata-gaps`](exiftool-metadata-gaps.md)
+- [`explain-date`](explain-date.md) **`cli`**
+- [`inspect-metadata`](inspect-metadata.md) **`cli`**
+- [`refresh-metadata`](refresh-metadata.md) **`cli`**
+- [`exiftool-metadata-gaps`](exiftool-metadata-gaps.md) **`devel`**
 - [`geo-scan`](geo-scan.md)
 - [`geo-stats`](geo-stats.md)
 - [`make-conflict-browser`](make-conflict-browser.md)

@@ -1,19 +1,19 @@
 # refresh-metadata
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank refresh-metadata [valg]
+
+options:
+  -h, --help  show this help message and exit
+  --dry-run   Vis oppsummering uten å flytte filer eller endre databasen
+  --verbose   Vis filer som flyttes, hoppes over eller feiler
+```
+<!-- CLI-HELP-END -->
 
 `refresh-metadata` sjekker filer uten metadata på nytt.
 
-## Referanse
-
-```powershell
-bildebank refresh-metadata --dry-run
-bildebank refresh-metadata
-bildebank refresh-metadata --verbose
-```
-
-## Hva kommandoen gjør
-
 Hvis Bildebank senere klarer å lese metadata som manglet da filen ble
-importert, kan filen flyttes til riktig datomappe.
+importert, vil denne kommandoen flytte filen til riktig datomappe.
 
 Start med `--dry-run` for å se hva som ville skjedd uten å endre filer eller
 database.

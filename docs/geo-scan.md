@@ -1,4 +1,22 @@
 # geo-scan
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank geo-scan [valg]
+
+options:
+  -h, --help            show this help message and exit
+  --force               Les GPS-metadata på nytt for filer som allerede er
+                        scannet
+  --only-missing        Scan bare filer uten GPS-data og uten tidligere GPS-
+                        resultat
+  --limit LIMIT         Maks antall filer som skal scannes
+  --verbose             Vis filer uten GPS eller med feil
+  --exiftool EXIFTOOL   Path til exiftool. Standard er exiftool.exe i
+                        bildesamlingsmappen, ellers exiftool fra PATH.
+  --batch-size BATCH_SIZE
+                        Antall filer per ExifTool-kall. Standard: 200
+```
+<!-- CLI-HELP-END -->
 
 `geo-scan` leser GPS-koordinater fra metadata i importerte bilder og lagrer
 resultatet i Bildebank-databasen.
