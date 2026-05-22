@@ -248,43 +248,29 @@ bilder og videoer, og hvor datoen kom fra:
 - `mtime`: dato fra filens endringstidspunkt
 - `unknown`: ingen sikker dato funnet
 
-## Lag statisk HTML-visning
+## Se på bildene dine
 
 Kjør:
 
 ```powershell
-bildebank make-browser
+bildebank run-server
 ```
 
-Bildebank lager da filen `index.html` i bildesamlingsmappen. Åpne filen ved å
-dobbeltklikke på den i Filutforsker, eller fra PowerShell:
+Programmet åpner da en bildebrowser i nettleseren på adressen
+http://127.0.0.1:8765.
 
-```powershell
-.\index.html
-```
+`run-server` overtar da den PowerShell-terminalen du jobber i, så du må åpne en
+hvis du skal jobbe mere i terminalen. Eller avbryt `run-server` med CTRL-C.
+Det er helt trygt.
 
-Når HTML-visningen er åpen, kan du bla med tastaturet:
+Når bildebrowseren kan du bla med tastaturet:
 
 - Pil venstre/høyre: forrige eller neste bilde/video
 - Pil opp/ned: forrige eller neste måned
 - Page Up/Page Down: forrige eller neste år
 
-Hvis du importerer flere filer senere, må du kjøre `make-browser` på nytt for å
-lage en oppdatert `index.html`.
-
-For å gjøre månedsoversikten lettere å laste kan du begrense antall bilder som
-vises i månedsoversikten:
-
-```powershell
-bildebank make-browser --month-preview-limit 40
-```
-
-Den statiske HTML-visningen kan fungere på andre PC-er uten at Bildebank er
-installert, så lenge `index.html` kopieres sammen med bildene i undermappene.
-
-Flere funksjoner finnes i den serverbaserte bildebrowseren som startes med
-[`run-server`](run-server.md).
-
+Bildebank kan også lage en statisk HTML-visning kan fungere på andre PC-er
+uten at Bildebank er installert. Dette gjøres med [`make-browser`](make-browser.md).
 
 ## Se registrerte kilder
 
@@ -326,149 +312,6 @@ kommandoen foreslår, for eksempel:
 ```powershell
 cd "C:\Users\Tom\BildeSamling"
 ```
-
-## Angre import av en kilde
-
-Hvis du har importert feil mappe, CD eller USB-disk, kan du bruke `unimport`
-for å angre akkurat den importen.
-
-Tørrtest først:
-
-```powershell
-bildebank unimport --dry-run --name "TestBilder"
-```
-
-Bruk samme navn som du brukte da du importerte. Ikke bruk stien til mappen,
-USB-disken eller CD-en.
-
-Med `--dry-run` kontrollerer Bildebank filene og viser hva som ville blitt
-fjernet, uten å endre databasen eller slette filer.
-
-Kjør uten `--dry-run` når du er sikker:
-
-```powershell
-bildebank unimport --name "TestBilder"
-```
-
-`unimport` er en kraftig kommando, fordi den kan fjerne filer fra den aktive
-bildesamlingen. Bruk den bare når du er sikker på at du har valgt riktig kilde.
-
-Før Bildebank endrer noe, kontrollerer programmet at alle filene fra denne
-kilden fortsatt finnes i kilden, og at de er identiske med det som ble
-importert. Hvis en fil mangler eller er endret, stopper programmet uten å gjøre
-endringer. Grunnen er at du skal kunne importere samme kilde på nytt senere.
-
-Hvis et bilde også finnes i andre kilder, blir bildet liggende i
-bildesamlingsmappen. Da fjernes bare koblingen til kilden du angrer. Hvis
-bildet bare kom fra denne ene kilden, fjernes det fra den aktive
-bildesamlingen.
-
-Før kommandoen gjennomføres, viser Bildebank en oppsummering, for eksempel:
-
-```text
-Kilde: TestBilder
-Registrerte kildefiler kontrollert: 179
-Filer som fjernes fra aktiv samling: 142
-Filer som blir liggende fordi de også finnes i andre kilder: 37
-Skriv "ja, det vil jeg" for å gjennomføre unimport:
-```
-
-Les oppsummeringen nøye. For å gjennomføre må du skrive nøyaktig:
-
-```text
-ja, det vil jeg
-```
-
-Hvis du skriver noe annet, eller bare trykker Enter, avbryter Bildebank uten å
-endre noe.
-
-Etter en `unimport` kan du lage HTML-visningen på nytt:
-
-```powershell
-bildebank make-browser
-```
-
-Når du angrer en navngitt import, fjerner Bildebank også denne kilden fra
-kildelisten.
-
-## Finn navnekollisjoner
-
-En navnekollisjon betyr at flere importerte filer ville hatt samme filnavn i
-samme mappe for en bestemt måned og år. Bildebank beholder filene, men lagrer
-noen av dem med justert navn.
-
-Dette er vanligvis ikke et problem, men det kan være nyttig å undersøke hvis du
-feilsøker, eller hvis du tror at samme bilde finnes i forskjellig oppløsning fra
-to kilder med samme filnavn.
-
-List navnekollisjoner:
-
-```powershell
-bildebank conflicts
-```
-
-Se detaljer for en bestemt importert fil i bildesamlingen:
-
-```powershell
-bildebank show-conflict "2024\01\IMG_0001.jpg"
-```
-
-Bytt ut stien med en fil fra listen. Kommandoen viser hvilke kildefiler som
-hører til samme kollisjon, hvor de ble importert fra, filstørrelse og hash.
-
-## Finn filer uten metadata-dato
-
-Kjør:
-
-```powershell
-bildebank non-metadata --with-source
-```
-
-Denne listen viser filer der datoen ikke kom fra metadata. Med `--with-source`
-viser Bildebank også hvilken original kildefil den importerte filen i
-bildesamlingen kom fra.
-
-Dette er nyttig når du vil kontrollere filer som er plassert etter filnavn,
-filens endringstidspunkt eller ukjent dato.
-
-## Se importfeil
-
-Kjør:
-
-```powershell
-bildebank errors
-```
-
-Dette viser registrerte feil som fortsatt ikke er løst.
-
-For å se både uløste og løste feil:
-
-```powershell
-bildebank errors --include-resolved
-```
-
-Løste feil kan for eksempel være feil som senere ble rettet ved en ny kontroll
-eller ny import.
-
-## Slette en importert fil
-
-Hvis du vil fjerne en importert fil fra den aktive bildebanken, bruker du
-`remove`. Kommandoen sletter ikke filen helt. Den flytter filen til
-`deleted`-mappen i bildesamlingsmappen og markerer den som slettet i databasen.
-
-Eksempel:
-
-```powershell
-bildebank remove "2024\01\IMG_0001.jpg"
-```
-
-Se filer som er markert som slettet:
-
-```powershell
-bildebank list-removed
-```
-
-Se også [`remove`](remove.md).
 
 ## Hente oppdateringer
 
@@ -521,6 +364,23 @@ Når `bildebank migrate` kjøres, lager programmet en backup av `.bilder.sqlite3
 før databasen endres. Hvis migreringen feiler, skal databasen ikke oppgraderes,
 og backupen beholdes.
 
+## Angre import av en kilde
+
+Hvis du har importert feil mappe, CD eller USB-disk, kan du bruke [`unimport`](unimport.md)
+for å angre akkurat den importen.
+
+## Finn filer uten metadata-dato
+
+Programmet sorterer bildene i mapper i mønsteret ÅR/MÅNED. Noen bilder
+mangler datoinformasjon. [`non-metadata`](non-metadata.md) lar deg finne
+de bildene.
+
+## Slette en importert fil
+
+Hvis du vil fjerne en importert fil bruker du [`remove`](remove.md). Kommandoen
+sletter ikke filen helt. Den flytter filen til `deleted`-mappen i
+bildesamlingsmappen og markerer den som slettet i databasen.
+
 ## Sikkerhet og backup
 
 Bildebank er ikke en backup-løsning. Programmet organiserer og kopierer bilder
@@ -535,3 +395,6 @@ En enkel regel er 3-2-1-regelen: ha minst 3 kopier av viktige filer, på minst
 
 Behold gamle kilder til du er sikker på at den nye samlingen er kontrollert og
 sikkerhetskopiert.
+
+Kommandoen [`backup`](backup.md) kan brukes for å lage en backup-kopi av hele
+bildesamlingen.

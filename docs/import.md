@@ -6,15 +6,15 @@ usage: bildebank import [valg] --name navn mappe
 Registrerer og importerer bildene fra en mappe, USB-brikke, CD eller disk.
 
 positional arguments:
-  mappe                Kilden som skal importeres
+  mappe        Kilden som skal importeres
 
 options:
-  -h, --help           show this help message and exit
+  -h, --help   show this help message and exit
   --quiet
-  --name NAME          Unikt navn på importen, for eksempel Sommer2023 eller
-                       Familie-CD-2004
-  --dry-run            Vis importoppsummering uten å kopiere filer eller endre
-                       databasen
+  --name NAME  Unikt navn på importen, for eksempel Sommer2023 eller Familie-
+               CD-2004
+  --dry-run    Vis importoppsummering uten å kopiere filer eller endre
+               databasen
 ```
 <!-- CLI-HELP-END -->
 

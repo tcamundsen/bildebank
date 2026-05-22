@@ -74,7 +74,6 @@ registrert person eller skrive inn et nytt navn under `Ny person` og trykke
 `Identifiser`. Da oppretter serveren personen og kobler ansiktet til personen.
 Se også den samlede innføringen: [`insightface`](insightface.md).
 
-
 Knappen `Bildeinfo` i bildebrowseren viser filnavn, dato og om datoen kommer
 fra metadata, filnavn eller mtime, filstørrelse, oppløsning, kamera hvis dette
 finnes i metadata, hvilke kilder som inkluderer bildet, og lenker til
