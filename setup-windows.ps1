@@ -6,6 +6,8 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ExifToolVersion = "13.58"
+$ExifToolUrl = "https://sourceforge.net/projects/exiftool/files/exiftool-$($ExifToolVersion)_64.zip/download"
 
 function Write-Step {
     param([string]$Message)
@@ -174,6 +176,53 @@ function Ensure-Venv {
     }
 }
 
+function Ensure-ExifTool {
+    param([string]$RepoDir)
+
+    $destination = Join-Path $RepoDir "bildebank-tools\exiftool"
+    $tool = Join-Path $destination "exiftool.exe"
+    $supportDir = Join-Path $destination "exiftool_files"
+    if ((Test-Path -LiteralPath $tool) -and (Test-Path -LiteralPath $supportDir)) {
+        Write-Host "ExifTool finnes allerede: $tool"
+        return
+    }
+
+    Write-Step "Installerer ExifTool"
+    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("bildebank-exiftool-" + [System.Guid]::NewGuid().ToString("N"))
+    $zipPath = Join-Path $tempDir "exiftool.zip"
+    $extractDir = Join-Path $tempDir "extract"
+    New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+    try {
+        Invoke-WebRequest -Uri $ExifToolUrl -OutFile $zipPath
+        Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
+        $extractedTool = Get-ChildItem -LiteralPath $extractDir -Recurse -File |
+            Where-Object { $_.Name -ieq "exiftool.exe" -or $_.Name -ieq "exiftool(-k).exe" } |
+            Select-Object -First 1
+        if ($null -eq $extractedTool) {
+            throw "ExifTool-zip mangler exiftool.exe."
+        }
+        $extractedFiles = Join-Path $extractedTool.DirectoryName "exiftool_files"
+        if (-not (Test-Path -LiteralPath $extractedFiles)) {
+            throw "ExifTool-zip mangler exiftool_files."
+        }
+
+        if (Test-Path -LiteralPath $destination) {
+            Remove-Item -LiteralPath $destination -Recurse -Force
+        }
+        New-Item -ItemType Directory -Path $destination -Force | Out-Null
+        Copy-Item -LiteralPath $extractedTool.FullName -Destination $tool -Force
+        Copy-Item -LiteralPath $extractedFiles -Destination $supportDir -Recurse -Force
+        & $tool -ver | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw "ExifTool ble installert, men versjonssjekken feilet."
+        }
+    } finally {
+        if (Test-Path -LiteralPath $tempDir) {
+            Remove-Item -LiteralPath $tempDir -Recurse -Force
+        }
+    }
+}
+
 function Ensure-CommandShim {
     param(
         [string]$BinDir,
@@ -254,6 +303,7 @@ Ensure-Python
 $repoDir = Get-RepoDir
 Ensure-Repo -RepoDir $repoDir
 Ensure-Venv -RepoDir $repoDir
+Ensure-ExifTool -RepoDir $repoDir
 
 $binDir = Join-Path $repoDir "bin"
 Ensure-CommandShim -BinDir $binDir -CommandName $CommandName

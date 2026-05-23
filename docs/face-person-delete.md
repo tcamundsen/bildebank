@@ -18,7 +18,7 @@ options:
 Eksempel:
 
 ```powershell
-bildebank face-person-delete "Krai"
+bildebank face-person-delete "Kari"
 ```
 
 Kommandoen krever bekreftelse. Den sletter personen, bekreftede

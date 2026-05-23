@@ -133,9 +133,12 @@ være nødvendige for noen funksjoner.
   - `geo-scan` til å lese GPS-metadata.
   - `exiftool-metadata-gaps` til å finne metadata-datoer som Bildebank ikke
     leser selv ennå.
-- Installeres ikke automatisk av basisoppsettet.
-- På Windows kan `exiftool.exe` ligge i bildesamlingen eller finnes i `PATH`.
-- Brukeren kan også angi sti eksplisitt, for eksempel:
+- Installeres av `setup-windows.ps1` til `bildebank-tools\exiftool` i
+  programmappen.
+- Kan repareres eller installeres på nytt med `bildebank exiftool-install`.
+- Bildebank bruker managed ExifTool først, og faller tilbake til `PATH` hvis
+  managed ExifTool ikke finnes.
+- Brukeren kan angi sti eksplisitt som nødventil, for eksempel:
 
 ```powershell
 bildebank geo-scan --exiftool "C:\Tools\exiftool.exe"

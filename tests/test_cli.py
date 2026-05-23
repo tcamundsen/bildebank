@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
 import struct
 import tempfile
@@ -10,6 +11,7 @@ import os
 import sys
 import warnings
 import uuid
+import zipfile
 from collections.abc import Iterable
 from contextlib import redirect_stderr, redirect_stdout
 from http import HTTPStatus
@@ -22,6 +24,7 @@ from bilder.cli import build_parser, main, print_image_search_progress
 from bilder.config import AppConfig, FaceRecognitionConfig, OpenClipConfig, load_config
 from bilder import db
 from bilder.db import DB_FILENAME, init_database
+from bilder.exiftool import managed_exiftool_path, resolve_exiftool_path
 from bilder.face import (
     apply_face_schema,
     connect_face_db,
@@ -114,6 +117,23 @@ def capture_cli(args: list[str]) -> tuple[int, str, str]:
     with redirect_stdout(stdout), redirect_stderr(stderr):
         code = main(args)
     return code, stdout.getvalue(), stderr.getvalue()
+
+
+def write_fake_exiftool(path: Path, body: str | None = None) -> None:
+    script_body = body or "import json\nprint(json.dumps([]))\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""#!/usr/bin/env python3
+import sys
+if "-ver" in sys.argv:
+    print("13.58")
+    raise SystemExit(0)
+{script_body}
+""",
+        encoding="utf-8",
+        newline="\n",
+    )
+    path.chmod(0o755)
 
 
 def write_test_image(path: Path, *, size: tuple[int, int] = (8, 8), color: tuple[int, int, int] = (200, 20, 20)) -> None:
@@ -604,6 +624,18 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("--host", stdout)
         self.assertIn("--port", stdout)
         self.assertIn("--no-browser", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_exiftool_install_help_documents_force(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["exiftool-install", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("usage: bildebank exiftool-install [valg]", stdout)
+        self.assertIn("--force", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_openclip_database_schema_is_separate(self) -> None:
@@ -4406,6 +4438,76 @@ pretrained = "laion2b_s32b_b82k"
             self.assertEqual(code, 0, stderr)
             self.assertIn("ikke del av en navnekollisjon", stdout)
 
+    def test_exiftool_resolver_prefers_explicit_path_then_managed_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            explicit = root / "custom-exiftool.exe"
+            managed = managed_exiftool_path(repo)
+            write_fake_exiftool(explicit)
+            write_fake_exiftool(managed)
+            (managed.parent / "exiftool_files").mkdir()
+
+            self.assertEqual(resolve_exiftool_path(repo, explicit), explicit)
+            self.assertEqual(resolve_exiftool_path(repo), managed)
+
+    def test_exiftool_resolver_falls_back_to_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path_tool = root / "exiftool"
+            write_fake_exiftool(path_tool)
+
+            with patch("bilder.exiftool.shutil.which", return_value=str(path_tool)):
+                self.assertEqual(resolve_exiftool_path(root / "repo"), str(path_tool))
+
+    def test_exiftool_resolver_requires_managed_support_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            write_fake_exiftool(managed_exiftool_path(repo))
+
+            with self.assertRaisesRegex(FileNotFoundError, "exiftool_files"):
+                resolve_exiftool_path(repo)
+
+    def test_exiftool_install_downloads_zip_to_managed_tools_folder(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            source_zip = root / "exiftool.zip"
+            script = """#!/usr/bin/env python3
+import sys
+if "-ver" in sys.argv:
+    print("13.58")
+"""
+            with zipfile.ZipFile(source_zip, "w") as archive:
+                archive.writestr("exiftool-13.58_64/exiftool(-k).exe", script)
+                archive.writestr("exiftool-13.58_64/exiftool_files/ExifTool_config", "config")
+
+            def fake_urlretrieve(url: str, filename: str | Path):
+                shutil.copyfile(source_zip, filename)
+                return (str(filename), None)
+
+            with (
+                patch("bilder.cli.sys.platform", "win32"),
+                patch("bilder.cli.program_repo_root", return_value=repo),
+                patch("bilder.exiftool.urllib.request.urlretrieve", side_effect=fake_urlretrieve),
+            ):
+                code, stdout, stderr = capture_cli(["exiftool-install"])
+
+            installed = repo / "bildebank-tools" / "exiftool"
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Installerte ExifTool 13.58", stdout)
+            self.assertTrue((installed / "exiftool.exe").exists())
+            self.assertTrue((installed / "exiftool_files").is_dir())
+
+    def test_exiftool_install_fails_on_linux(self) -> None:
+        with patch("bilder.cli.sys.platform", "linux"):
+            code, stdout, stderr = capture_cli(["exiftool-install"])
+
+        self.assertEqual(1, code)
+        self.assertEqual("", stdout)
+        self.assertIn("støttes bare på Windows", stderr)
+        self.assertIn("libimage-exiftool-perl", stderr)
+
     def test_exiftool_metadata_gaps_lists_dates_bildebank_does_not_read(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -4417,19 +4519,16 @@ pretrained = "laion2b_s32b_b82k"
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
 
-            exiftool = target / "exiftool.exe"
-            exiftool.write_text(
-                """#!/usr/bin/env python3
-import json
+            exiftool = root / "exiftool.exe"
+            write_fake_exiftool(
+                exiftool,
+                """import json
 print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}]))
 """,
-                encoding="utf-8",
-                newline="\n",
             )
-            exiftool.chmod(0o755)
 
             code, stdout, stderr = capture_cli(
-                ["--target", str(target), "exiftool-metadata-gaps"]
+                ["--target", str(target), "exiftool-metadata-gaps", "--exiftool", str(exiftool)]
             )
 
             self.assertEqual(code, 0, stderr)
@@ -4453,10 +4552,10 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
 
             calls = target / "exiftool-calls.txt"
-            exiftool = target / "exiftool.exe"
-            exiftool.write_text(
-                f"""#!/usr/bin/env python3
-import json
+            exiftool = root / "exiftool.exe"
+            write_fake_exiftool(
+                exiftool,
+                f"""import json
 import sys
 from pathlib import Path
 paths = [arg for arg in sys.argv[1:] if not arg.startswith("-")]
@@ -4467,13 +4566,10 @@ print(json.dumps([
     for path in paths
 ]))
 """,
-                encoding="utf-8",
-                newline="\n",
             )
-            exiftool.chmod(0o755)
 
             code, stdout, stderr = capture_cli(
-                ["--target", str(target), "exiftool-metadata-gaps", "--batch-size", "10"]
+                ["--target", str(target), "exiftool-metadata-gaps", "--exiftool", str(exiftool), "--batch-size", "10"]
             )
 
             self.assertEqual(code, 0, stderr)

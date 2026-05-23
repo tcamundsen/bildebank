@@ -13,6 +13,7 @@ from pathlib import Path
 from . import __version__, db
 from .backup import run_backup
 from .config import CONFIG_FILENAME, load_config, set_face_recognition_enabled
+from .exiftool import install_managed_exiftool
 from .exiftool_probe import exiftool_metadata_gaps
 from .face import (
     AddFaceToPersonResult,
@@ -114,6 +115,7 @@ HELP_COMMAND_GROUPS = (
             ("refresh-metadata", "Sjekk filer uten metadata på nytt"),
             ("inspect-metadata", "Vis metadatafragmenter og datokandidater"),
             ("explain-date", "Forklar hvilken dato Bildebank ville brukt"),
+            ("exiftool-install", "Installer ExifTool for GPS og metadata"),
             ("exiftool-metadata-gaps", "Finn metadata Bildebank ikke leser ennå"),
             ("geo-scan", "Scan GPS-koordinater fra metadata"),
             ("geo-stats", "Vis GPS-status for bildesamlingen"),
@@ -333,7 +335,7 @@ def build_parser() -> argparse.ArgumentParser:
     exiftool_gaps.add_argument(
         "--exiftool",
         type=Path,
-        help="Path til exiftool.exe. Standard er exiftool.exe i bildesamlingsmappen.",
+        help="Path til exiftool.exe. Standard er Bildebanks managed ExifTool, ellers exiftool fra PATH.",
     )
     exiftool_gaps.add_argument(
         "--batch-size",
@@ -358,7 +360,7 @@ def build_parser() -> argparse.ArgumentParser:
     geo_scan.add_argument(
         "--exiftool",
         type=Path,
-        help="Path til exiftool. Standard er exiftool.exe i bildesamlingsmappen, ellers exiftool fra PATH.",
+        help="Path til exiftool. Standard er Bildebanks managed ExifTool, ellers exiftool fra PATH.",
     )
     geo_scan.add_argument(
         "--batch-size",
@@ -738,6 +740,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_command(subparsers, "update", usage="bildebank update [valg]", help="Oppdater programinstallasjonen",
                 description="Oppdater Bildebank til siste versjon fra GitHub.")
+    exiftool_install = add_command(
+        subparsers,
+        "exiftool-install",
+        usage="bildebank exiftool-install [valg]",
+        help="Installer ExifTool for GPS og metadata",
+        description="Last ned og installer ExifTool i programmappen.",
+    )
+    exiftool_install.add_argument(
+        "--force",
+        action="store_true",
+        help="Installer ExifTool på nytt selv om den allerede finnes.",
+    )
 
     return parser
 
@@ -839,6 +853,9 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "update":
         return run_update()
+
+    if args.command == "exiftool-install":
+        return run_exiftool_install(force=args.force)
 
     if args.command == "where-is":
         return run_where_is()
@@ -1164,6 +1181,7 @@ def run(args: argparse.Namespace) -> int:
                 exiftool_path=exiftool_path,
                 batch_size=args.batch_size,
                 progress=True,
+                repo_root=program_repo_root(),
             )
             for gap in gaps:
                 print(
@@ -1420,6 +1438,20 @@ def run_update() -> int:
     return run_update_linux()
 
 
+def run_exiftool_install(*, force: bool = False) -> int:
+    if sys.platform != "win32":
+        raise ValueError(
+            "exiftool-install støttes bare på Windows. "
+            "Installer ExifTool med pakkesystemet, for eksempel: sudo apt install libimage-exiftool-perl"
+        )
+    result = install_managed_exiftool(program_repo_root(), force=force)
+    if result.installed:
+        print(f"Installerte ExifTool {result.version}: {result.path}")
+    else:
+        print(f"ExifTool er allerede installert ({result.version}): {result.path}")
+    return 0
+
+
 def run_where_is() -> int:
     repo_root = program_repo_root()
     print("Bildebank-program:")
@@ -1509,6 +1541,7 @@ def run_geo_scan(
         verbose=verbose,
         exiftool_path=exiftool_path.resolve() if exiftool_path else None,
         batch_size=batch_size,
+        repo_root=program_repo_root(),
     )
     print("Scanning GPS metadata...")
     print(f"Images checked: {stats.checked}")

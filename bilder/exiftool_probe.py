@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from . import db
+from .exiftool import resolve_exiftool_path
 from .progress import ProgressMeter
 
 
@@ -35,11 +36,14 @@ class ExifToolMetadataGap:
 
 
 def exiftool_metadata_gaps(
-    target: Path, *, exiftool_path: Path | None = None, batch_size: int = 200, progress: bool = False
+    target: Path,
+    *,
+    exiftool_path: Path | None = None,
+    batch_size: int = 200,
+    progress: bool = False,
+    repo_root: Path | None = None,
 ) -> list[ExifToolMetadataGap]:
-    tool = exiftool_path or (target / "exiftool.exe")
-    if not tool.exists():
-        raise FileNotFoundError(f"Fant ikke exiftool: {tool}")
+    tool = exiftool_path or resolve_exiftool_path(repo_root or Path(__file__).resolve().parents[1])
     if batch_size < 1:
         raise ValueError("batch_size må være minst 1")
 

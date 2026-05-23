@@ -11,8 +11,8 @@ options:
                         resultat
   --limit LIMIT         Maks antall filer som skal scannes
   --verbose             Vis filer uten GPS eller med feil
-  --exiftool EXIFTOOL   Path til exiftool. Standard er exiftool.exe i
-                        bildesamlingsmappen, ellers exiftool fra PATH.
+  --exiftool EXIFTOOL   Path til exiftool. Standard er Bildebanks managed
+                        ExifTool, ellers exiftool fra PATH.
   --batch-size BATCH_SIZE
                         Antall filer per ExifTool-kall. Standard: 200
 ```
@@ -29,8 +29,18 @@ bildebank geo-scan --limit 100
 bildebank geo-scan --force
 ```
 
-`geo-scan` bruker ExifTool til å lese metadata. På Windows kan ExifTool enten
-ligge i bildesamlingen som `exiftool.exe`, eller finnes i `PATH`.
+`geo-scan` bruker ExifTool til å lese metadata. Vanlig Windows-installasjon
+legger ExifTool i programmappen til Bildebank:
+
+```text
+C:\Users\Tom\kode\bildebank\bildebank-tools\exiftool
+```
+
+Hvis ExifTool mangler, kjør:
+
+```powershell
+bildebank exiftool-install
+```
 
 Du kan også angi plassering selv:
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 from . import db
+from .exiftool import resolve_exiftool_path
 from .progress import ProgressMeter
 
 
@@ -162,9 +163,8 @@ def batched(items: list[Path], batch_size: int) -> Iterable[list[Path]]:
         yield items[index : index + batch_size]
 
 
-def default_exiftool_path(target: Path) -> Path | str:
-    bundled = target / "exiftool.exe"
-    return bundled if bundled.exists() else "exiftool"
+def default_exiftool_path(repo_root: Path | None = None) -> Path | str:
+    return resolve_exiftool_path(repo_root or Path(__file__).resolve().parents[1])
 
 
 def read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, dict[str, object]]:
@@ -214,8 +214,9 @@ def scan_geo(
     verbose: bool = False,
     exiftool_path: Path | str | None = None,
     batch_size: int = DEFAULT_EXIFTOOL_BATCH_SIZE,
+    repo_root: Path | None = None,
 ) -> GeoScanStats:
-    tool = exiftool_path or default_exiftool_path(target)
+    tool = exiftool_path or default_exiftool_path(repo_root)
     progress = ProgressMeter("geo-scan", stream=sys.stderr)
     conn = db.connect(target)
     checked = 0

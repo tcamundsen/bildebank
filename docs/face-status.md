@@ -1,16 +1,13 @@
 # face-status
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank face-status [valg]
 
-`face-status` viser status for ansiktsgjenkjenning.
-
-## Referanse
-
-```powershell
-bildebank face-status
+options:
+  -h, --help  show this help message and exit
 ```
+<!-- CLI-HELP-END -->
 
-Kommandoen viser om ansiktsgjenkjenning er slått på i config, hvor modellene
+`face-status` viser om ansiktsgjenkjenning er slått på i config, hvor modellene
 ligger, om pakkene er installert, og status for face-databasen i aktiv
 bildesamling.
-
-Se også [`insightface`](insightface.md).
-

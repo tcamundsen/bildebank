@@ -6,8 +6,8 @@ usage: bildebank exiftool-metadata-gaps [valg]
 
 options:
   -h, --help            show this help message and exit
-  --exiftool EXIFTOOL   Path til exiftool.exe. Standard er exiftool.exe i
-                        bildesamlingsmappen.
+  --exiftool EXIFTOOL   Path til exiftool.exe. Standard er Bildebanks managed
+                        ExifTool, ellers exiftool fra PATH.
   --batch-size BATCH_SIZE
                         Antall filer per ExifTool-kall. Standard: 200
 ```
@@ -18,3 +18,10 @@ Bildebank ikke leser ennå.
 
 Dette er en feilsøkingskommando for å forbedre metadata-lesingen i
 Bildebank. Ikke ment for vanlige brukere.
+
+Kommandoen bruker ExifTool fra Bildebanks programmappe. Hvis ExifTool mangler,
+kjør:
+
+```powershell
+bildebank exiftool-install
+```
