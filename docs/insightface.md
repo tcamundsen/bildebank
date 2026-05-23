@@ -16,9 +16,9 @@ annet enn lokal testing.
 
 Arbeidet består av tre hovedtrinn:
 
-1. `face-scan` finner ansikter i bildene.
+1. [`face-scan`](face-scan.md) finner ansikter i bildene.
 2. Du knytter noen sikre ansikter manuelt til personer.
-3. `face-suggest` bruker de sikre eksemplene til å foreslå flere bilder.
+3. [`face-suggest`](face-suggest.md) bruker de sikre eksemplene til å foreslå flere bilder.
 
 ### Installer og slå på
 
@@ -90,21 +90,19 @@ Start serveren og åpne bildebrowseren i nettleseren:
 bildebank run-server
 ```
 
-Når et bilde har scannede ansikter, vises knappen "Ansikter i bildet" øverst i
-nettleservinduet.
-
-Trykk på knappen for å åpne ansiktsvisningen. For hvert ansikt i bildet viser
-Bildebank:
+Når et bilde har scannede ansikter, vises knappen **Ansikter i bildet** øverst
+i nettleservinduet. Trykk på den for å åpne ansiktsvisningen. For hvert ansikt
+i bildet viser Bildebank:
 
 - en linje med teksten `face-id 0000`, deteksjon `0.xyz`
 - bildet, med funnet ansikt markert med et rødt rektangel
 - en rad med knapper med navnene på personer som allerede er opprettet
 - en linje med teksten "Ny person", et tekstfelt og en knapp med teksten
-  "Identifiser"
+  **Identifiser**
 
 Hvis ansiktet i det røde rektangelet er en person som allerede er opprettet,
 klikker du på knappen med riktig navn. Hvis du vil opprette en ny person,
-skriver du navnet i tekstfeltet og trykker "Identifiser".
+skriver du navnet i tekstfeltet og trykker **Identifiser**.
 
 Hvis det er mange personer i bildet, vises ett utsnitt for hvert ansikt. Pass
 på at du bruker knappene under utsnittet der riktig ansikt er markert.
@@ -121,11 +119,15 @@ bedre enn mange tvilsomme.
 Når du har bekreftet noen sikre ansikter for en person, kan du kjøre:
 
 ```powershell
-bildebank face-suggest
+bildebank face-suggest  --threshold 0.45
 ```
 
-`face-suggest` sammenligner de bekreftede ansiktene med andre scannede ansikter
-og lagrer forslag til hvilke bilder som kan vise samme person.
+[`face-suggest`](face-suggest.md) sammenligner de bekreftede ansiktene med
+andre scannede ansikter og lagrer forslag til hvilke bilder som kan vise samme
+person. Du kan angi et tall mellom 0.0 og 1.0 med `--threshold` som avgjør
+hvor like bildene må være før programmet antar det er samme person. Du
+må eksperimentere med dine bilder for å se hvilken tallverdi som passer
+for dine bilder.
 
 Forslagene er ikke det samme som manuell bekreftelse. Bruk sikre, tydelige
 bilder som grunnlag, og ikke la dårlige forslag bli nye sikre eksempler.
@@ -141,13 +143,7 @@ Etter at du har kjørt `face-suggest`, vises forslagene i bildebrowseren fra
   personen.
 
 Hvis du bekrefter flere ansikter senere, må du kjøre `face-suggest` på nytt for
-å oppdatere forslagene:
-
-```powershell
-bildebank face-suggest
-```
-
-Når grunnflyten er kjent, kan du lese mer i
+å oppdatere forslagene.  Når grunnflyten er kjent, kan du lese mer i
 [face-suggest-strategier](face-suggest-strategier.md).
 
 ## Rapport
@@ -170,8 +166,10 @@ Rapporten viser blant annet:
 
 De vanligste vedlikeholdsoppgavene er:
 
-- liste personer: `bildebank face-person-list`
-- fjerne et feil ansikt fra en person: `bildebank face-person-remove-face`
+- liste personer: `bildebank face-person-list` eller klikk **Personer** i nettleseren.
+- fjerne et feil ansikt fra en person: `bildebank face-person-remove-face` eller klikk
+  **Personer**, deretter **Bekreftede bilder** på raden for personen, bla til bildet
+  og klikk **Avkreft face-id nnnn**
 - endre navn på en person: `bildebank face-person-rename`
 - slette en person: `bildebank face-person-delete`
 - nullstille ansiktskoblinger: se [`face-reset`](face-reset.md)
@@ -180,14 +178,16 @@ Se kommandosidene for detaljer og eksempler.
 
 ## Statiske HTML-filer
 
-Du kan lage en statisk bildebrowser som viser alle bildene med en person:
+Du kan lage en statisk bildebrowser som viser alle bildene med en person med
+kommandoen [`make-person-browser`](make-person-browser.md):
 
 ```powershell
 bildebank make-person-browser "Tom"
 ```
 
 Du kan også lage statiske bildebrowsere for alle personer, sammen med
-oversiktsfilen `personer.html`:
+oversiktsfilen `personer.html` med kommandoen
+[`make-people-browser`](make-people-browser.md):
 
 ```powershell
 bildebank make-people-browser

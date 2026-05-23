@@ -43,13 +43,13 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 ## Generering av statiske HTML-filer:
 
 - [`make-browser`](make-browser.md) **`cli`**
-- [`make-face-browser`](make-face-browser.md) **`cli`**
+- [`make-face-browser`](make-face-browser.md) **`cli`** **`devel`**
 - [`make-people-browser`](make-people-browser.md) **`cli`**
 - [`make-person-browser`](make-person-browser.md) **`cli`**
 
 ## Ansiktsgjenkjenning
 
-- [`insightface`](insightface.md) - innføring.
+- [`insightface`](insightface.md) - innføring
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
 - [`face-config`](face-config.md) **`web`**
 - [`face-scan`](face-scan.md) **`cli`**

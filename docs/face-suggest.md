@@ -26,7 +26,8 @@ hvordan du bør velge ansikter som skal bekreftes.
 
 ### `--threshold DESIMALTALL`
 
-Høyere `--threshold` gir strengere forslag.
+Høyere `--threshold` gir strengere forslag. Standardverdien 0.6 er basert på et forslag
+fra AI. Men det kan se ut som at helt ned mot 0.4 kan fungere.
 
 ### `--model NAVN`
 

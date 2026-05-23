@@ -3,6 +3,8 @@
 ```text
 usage: bildebank make-people-browser [valg]
 
+Lag HTML-index og personside for alle registrerte personer
+
 options:
   -h, --help            show this help message and exit
   --month-preview-limit MONTH_PREVIEW_LIMIT
@@ -11,7 +13,7 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-`make-people-browser` lager HTML-sider med `make-person-browser` for alle
+`make-people-browser` lager statiske HTML-sider med `make-person-browser` for alle
 personer som er registrert i ansiktsdatabasen samt filen `personer.html` som
 lenker alle person-sidene.
 

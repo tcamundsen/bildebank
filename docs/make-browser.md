@@ -13,7 +13,7 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-`make-browser` skriver en HTML-fil med alle aktive bilder og videoer i
+`make-browser` skriver en statisk HTML-fil med alle aktive bilder og videoer i
 bildesamlingen. Standardfilen heter `index.html` og legges i
 bildesamlingsmappen.
 
@@ -23,7 +23,10 @@ en enkel månedsoversikt.
 Hvis du importerer flere filer senere, må du kjøre `make-browser` på nytt for å
 oppdatere HTML-filen.
 
-For vanlig arbeid i bildesamlingen er [`run-server`](run-server.md) anbefalt.
+Ideen bak å lage en statistk HTML-fil er at den kan brukes hvis man har
+bildesamlingen på en ekstern disk og vil vise bildene på en PC som ikke har
+Bildebank installert.  For vanlig arbeid i bildesamlingen er
+[`run-server`](run-server.md) anbefalt.
 
 ## Valg
 

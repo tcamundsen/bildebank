@@ -503,6 +503,7 @@ def build_parser() -> argparse.ArgumentParser:
         "face-config",
         usage="bildebank face-config true|false",
         help="Slå ansiktsgjenkjenning på eller av",
+        description="Slå ansiktsgjenkjenning på eller av",
     )
     face_config.add_argument(
         "enabled",
@@ -686,6 +687,7 @@ def build_parser() -> argparse.ArgumentParser:
         "make-people-browser",
         usage="bildebank make-people-browser [valg]",
         help="Lag HTML-index og personside for alle registrerte personer",
+        description="Lag HTML-index og personside for alle registrerte personer",
     )
     people_browser.add_argument(
         "--month-preview-limit",
