@@ -1,15 +1,19 @@
-#!/bin/python3
+#!/usr/bin/env python3
+from __future__ import annotations
 
-from pathlib import Path
-import subprocess
+import argparse
 import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 
 DOCS_DIR = Path("docs")
 OUT_DIR = Path("html")
 SCRIPT_FILE = Path(__file__)
+DOC_PATTERNS = ("*.md", "web/*.md")
 
-
-HTML_TEMPLATE = """
+HTML_TEMPLATE = """\
 <!doctype html>
 <html lang="no">
 <head>
@@ -43,6 +47,7 @@ $body$
 </html>
 """
 
+
 def rewrite_md_links(html_file: Path) -> None:
     text = html_file.read_text(encoding="utf-8")
 
@@ -63,21 +68,41 @@ def needs_generation(md_file: Path, out_file: Path) -> bool:
     return md_file.stat().st_mtime > out_mtime or SCRIPT_FILE.stat().st_mtime > out_mtime
 
 
-def main() -> None:
-    OUT_DIR.mkdir(exist_ok=True)
+def find_markdown_files() -> list[Path]:
+    files: list[Path] = []
+    for pattern in DOC_PATTERNS:
+        files.extend(DOCS_DIR.glob(pattern))
+    return sorted(files)
 
-    template_file = OUT_DIR / "_template.html"
-    template_file.write_text(HTML_TEMPLATE, encoding="utf-8")
 
-    md_files = sorted(DOCS_DIR.glob("*.md")) + sorted((DOCS_DIR / "web").glob("*.md"))
-    for md_file in md_files:
-        relative_md_file = md_file.relative_to(DOCS_DIR)
-        out_file = OUT_DIR / relative_md_file.with_suffix(".html")
-        if not needs_generation(md_file, out_file):
-            #print(f"Hopper over {out_file}")
-            continue
+def output_path_for(md_file: Path) -> Path:
+    relative_md_file = md_file.relative_to(DOCS_DIR)
+    return OUT_DIR / relative_md_file.with_suffix(".html")
 
-        out_file.parent.mkdir(parents=True, exist_ok=True)
+
+def write_template_file() -> Path:
+    template = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix=".html",
+        delete=False,
+    )
+    try:
+        template.write(HTML_TEMPLATE)
+        return Path(template.name)
+    finally:
+        template.close()
+
+
+def render_markdown(md_file: Path, out_file: Path) -> None:
+    if not md_file.exists():
+        print(f"Fant ikke Markdown-fil: {md_file}", file=sys.stderr)
+        sys.exit(1)
+
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    template_file = write_template_file()
+
+    try:
         subprocess.run(
             [
                 "pandoc",
@@ -96,11 +121,35 @@ def main() -> None:
             ],
             check=True,
         )
-        rewrite_md_links(out_file)
+    finally:
+        template_file.unlink(missing_ok=True)
 
-        print(f"Laget {out_file}")
+    rewrite_md_links(out_file)
+    print(f"Laget {out_file}")
 
-    template_file.unlink(missing_ok=True)
+
+def render_all_changed_files() -> None:
+    for md_file in find_markdown_files():
+        out_file = output_path_for(md_file)
+        if needs_generation(md_file, out_file):
+            render_markdown(md_file, out_file)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("source", nargs="?", help="Markdown-fil som skal konverteres")
+    parser.add_argument("output", nargs="?", help="HTML-fil som skal skrives")
+
+    args = parser.parse_args()
+
+    if args.source is None and args.output is None:
+        render_all_changed_files()
+        return
+
+    if args.source is None or args.output is None:
+        parser.error("oppgi enten både source og output, eller ingen av dem")
+
+    render_markdown(Path(args.source), Path(args.output))
 
 
 if __name__ == "__main__":
