@@ -24,3 +24,13 @@ navnet til personen på øverste linje av skjermen.
 - **Med forslag** viser også forslagene fra `face-suggest`
 - **Bare bekreftede** viser bare bilder du har bekreftet. Dette bør ideelt
   sett bare være 1-5 gode bilder av personen.
+
+## Personer
+
+På siden **Personer** kan du trykke `endre navn` bak et personnavn for å åpne
+et lite vindu der navnet kan endres. Bekreftede ansiktskoblinger og forslag
+beholdes.
+
+Du kan også trykke `slett person` bak et personnavn. Dette sletter personen,
+bekreftede ansiktskoblinger og forslag for personen fra ansiktsdatabasen. Det
+sletter ingen bilder og ingen scannede ansikter.

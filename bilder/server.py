@@ -19,7 +19,15 @@ from typing import Any, Callable
 
 from . import __version__, db
 from .config import AppConfig, FaceRecognitionConfig, set_face_recognition_enabled, set_face_recognition_model_name
-from .face import add_face_to_person, create_person, face_db_path, normalize_person_name, remove_face_from_person, rename_person
+from .face import (
+    add_face_to_person,
+    create_person,
+    delete_person,
+    face_db_path,
+    normalize_person_name,
+    remove_face_from_person,
+    rename_person,
+)
 from .html_export import (
     browser_face_items_from_metadata,
     display_relative_path,
@@ -268,6 +276,12 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                     self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
                     return
                 self.respond_rename_person()
+                return
+            if parsed.path == "/api/face-person-delete":
+                if not self.server.face_enabled:
+                    self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
+                    return
+                self.respond_delete_person()
                 return
             if parsed.path == "/api/item-rotate":
                 self.respond_rotate_item()
@@ -912,6 +926,28 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 "old_name": result.old_name,
                 "new_name": result.new_name,
                 "person_url": f"{person_url(result.new_name)}/no-faces",
+            }
+        )
+
+    def respond_delete_person(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        person_name = str(payload.get("person_name") or "").strip()
+        if not person_name:
+            self.respond_json({"ok": False, "error": "Personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            config = self.server.config.face_recognition
+            result = delete_person(self.server.target, person_name, config)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        clear_face_caches()
+        self.respond_json(
+            {
+                "ok": True,
+                "person_name": result.person_name,
+                "removed_faces": result.removed_faces,
+                "removed_suggestions": result.removed_suggestions,
             }
         )
 
@@ -4388,6 +4424,7 @@ def people_row_html(person: dict[str, object]) -> str:
       <div class="people-name">
         <span>{html.escape(name)}</span>
         <button class="rename-person-link" type="button" data-open-person-rename data-person-name="{html.escape(name)}">endre navn</button>
+        <button class="rename-person-link delete-person-link" type="button" data-delete-person-name="{html.escape(name)}">slett person</button>
       </div>
       {duplicate_warning}
       <a class="person-link" href="{html.escape(confirmed_source.root_url)}">Bekreftede bilder ({confirmed_count})</a>
@@ -5127,6 +5164,28 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   closePersonRenameButton?.addEventListener("click", closePersonRenameDialog);
   document.querySelectorAll("[data-open-person-rename]").forEach(button => {
     button.addEventListener("click", () => openPersonRenameDialog(button.dataset.personName || ""));
+  });
+  document.querySelectorAll("[data-delete-person-name]").forEach(button => {
+    button.addEventListener("click", async () => {
+      const personName = button.dataset.deletePersonName || "";
+      if (!personName) return;
+      const command = `bildebank face-person-delete "${personName}"`;
+      if (!confirm(`Slette personen ${personName} fra ansiktsdatabasen?\\n\\nDette sletter bekreftede ansiktskoblinger og forslag for personen, men ingen bilder.\\n\\nTilsvarer:\\n${command}`)) return;
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/face-person-delete", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({person_name: personName}),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke slette person.");
+        window.location.reload();
+      } catch (error) {
+        alert(error.message || "Kunne ikke slette person.");
+        button.disabled = false;
+      }
+    });
   });
   personRenameDialog?.addEventListener("click", event => {
     if (event.target === personRenameDialog) closePersonRenameDialog();

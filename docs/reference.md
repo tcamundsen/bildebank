@@ -64,8 +64,8 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 - [`face-person-create`](face-person-create.md) **`web`**
 - [`face-person-add-face`](face-person-add-face.md) **`web`**
 - [`face-person-remove-face`](face-person-remove-face.md) **`web`**
-- [`face-person-delete`](face-person-delete.md) **`cli`**
-- [`face-person-rename`](face-person-rename.md)  **`cli`**
+- [`face-person-delete`](face-person-delete.md) **`web`**
+- [`face-person-rename`](face-person-rename.md) **`web`**
 - [`face-person-list`](face-person-list.md) **`web`**
  
 ## Finne ting som bør kontrolleres
@@ -89,5 +89,4 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 ## Tekstbasert bildesøk
 
 Se den samlede innføringen: [`openclip`](openclip.md).
-
 

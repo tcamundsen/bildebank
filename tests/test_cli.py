@@ -2183,6 +2183,95 @@ model_name = "buffalo_l"
         self.assertEqual(HTTPStatus.FORBIDDEN, handler.status)
         self.assertEqual({"ok": False, "error": "Ansiktsgjenkjenning er av."}, handler.body)
 
+    def test_run_server_api_delete_person_removes_person_links_and_suggestions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(1, 1, 'key-1', 1, 2, 10, 20, 0.9, 'test', ?)
+                    """,
+                    (b"embedding-1",),
+                )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(2, 2, 'key-2', 3, 4, 12, 22, 0.8, 'test', ?)
+                    """,
+                    (b"embedding-2",),
+                )
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            data = json.dumps({"person_name": "Kari"}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
+                body: dict[str, object] | None = None
+                status = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_delete_person(handler)  # type: ignore[arg-type]
+
+            face_conn = connect_face_db(target)
+            try:
+                person_count = face_conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0]
+                link_count = face_conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0]
+                suggestion_count = face_conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0]
+                face_count = face_conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0]
+            finally:
+                face_conn.close()
+
+        self.assertIsNone(handler.status)
+        self.assertEqual(
+            {"ok": True, "person_name": "Kari", "removed_faces": 1, "removed_suggestions": 1},
+            handler.body,
+        )
+        self.assertEqual(0, person_count)
+        self.assertEqual(0, link_count)
+        self.assertEqual(0, suggestion_count)
+        self.assertEqual(2, face_count)
+
+    def test_run_server_api_delete_person_is_disabled_when_faces_are_disabled(self) -> None:
+        class FakeHandler:
+            path = "/api/face-person-delete"
+            server = SimpleNamespace(face_enabled=False)
+            body: dict[str, object] | None = None
+            status = None
+
+            def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                self.body = content
+                self.status = status
+
+        handler = FakeHandler()
+        BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(HTTPStatus.FORBIDDEN, handler.status)
+        self.assertEqual({"ok": False, "error": "Ansiktsgjenkjenning er av."}, handler.body)
+
     def test_run_server_person_browser_filters_and_marks_faces(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -2360,6 +2449,8 @@ model_name = "buffalo_l"
         self.assertIn('data-open-person-rename', body)
         self.assertIn('data-person-name="Kari"', body)
         self.assertIn("endre navn", body)
+        self.assertIn('data-delete-person-name="Kari"', body)
+        self.assertIn("slett person", body)
         self.assertIn('id="personRenameDialog"', body)
         self.assertIn("Bekreftede bilder (1)", body)
         self.assertIn("Bekreftede og forslag (2)", body)
@@ -2371,6 +2462,7 @@ model_name = "buffalo_l"
         self.assertIn("Avbekreft face-id 1", confirmed_body)
         self.assertIn("/api/face-person-remove-face", SERVER_JS)
         self.assertIn("/api/face-person-rename", SERVER_JS)
+        self.assertIn("/api/face-person-delete", SERVER_JS)
         self.assertEqual([int(item["id"]) for item in confirmed_items], [1])
         self.assertEqual([int(item["id"]) for item in all_items], [1, 2])
 

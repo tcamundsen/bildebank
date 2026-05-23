@@ -170,7 +170,8 @@ De vanligste vedlikeholdsoppgavene er:
 - fjerne et feil ansikt fra en person: `bildebank face-person-remove-face` eller klikk
   **Personer**, deretter **Bekreftede bilder** på raden for personen, bla til bildet
   og klikk **Avkreft face-id nnnn**
-- endre navn på en person: `bildebank face-person-rename`
+- endre navn på en person: `bildebank face-person-rename` eller klikk **Personer**
+  og deretter **endre navn** bak navnet som skal endres.
 - slette en person: `bildebank face-person-delete`
 - nullstille ansiktskoblinger: se [`face-reset`](face-reset.md)
 

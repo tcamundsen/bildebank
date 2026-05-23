@@ -607,6 +607,7 @@ def build_parser() -> argparse.ArgumentParser:
         "face-person-delete",
         usage="bildebank face-person-delete [valg] navn",
         help="Slett person fra ansiktsdatabasen",
+        description="Slett person fra ansiktsdatabasen",
     )
     face_person_delete.add_argument("name", metavar="navn", help="Personnavn")
     face_person_rename = add_command(
@@ -614,6 +615,7 @@ def build_parser() -> argparse.ArgumentParser:
         "face-person-rename",
         usage="bildebank face-person-rename [valg] gammelt_navn nytt_navn",
         help="Endre navn på person i ansiktsdatabasen",
+        description="Endre navn på person i ansiktsdatabasen",
     )
     face_person_rename.add_argument("old_name", metavar="gammelt_navn", help="Eksisterende personnavn")
     face_person_rename.add_argument("new_name", metavar="nytt_navn", help="Nytt personnavn")
