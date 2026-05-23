@@ -2466,6 +2466,12 @@ model_name = "buffalo_l"
         self.assertEqual([int(item["id"]) for item in confirmed_items], [1])
         self.assertEqual([int(item["id"]) for item in all_items], [1, 2])
 
+    def test_run_server_confirm_messages_use_javascript_newlines(self) -> None:
+        self.assertIn("Tilsvarer:\\n${command}", SERVER_JS)
+        self.assertNotIn("Tilsvarer:\\\\n${command}", SERVER_JS)
+        self.assertIn("Flytte til deleted/?\\n\\n${path}", SERVER_JS)
+        self.assertNotIn("Flytte til deleted/?\\\\n\\\\n${path}", SERVER_JS)
+
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):
             build_parser().parse_args(["target", "."])

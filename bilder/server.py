@@ -5170,7 +5170,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       const personName = button.dataset.deletePersonName || "";
       if (!personName) return;
       const command = `bildebank face-person-delete "${personName}"`;
-      if (!confirm(`Slette personen ${personName} fra ansiktsdatabasen?\\n\\nDette sletter bekreftede ansiktskoblinger og forslag for personen, men ingen bilder.\\n\\nTilsvarer:\\n${command}`)) return;
+      if (!confirm(`Slette personen ${personName} fra ansiktsdatabasen?\n\nDette sletter bekreftede ansiktskoblinger og forslag for personen, men ingen bilder.\n\nTilsvarer:\n${command}`)) return;
       button.disabled = true;
       try {
         const response = await fetch("/api/face-person-delete", {
@@ -5236,7 +5236,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       const fileId = Number(button.dataset.deleteItem);
       const path = button.dataset.deletePath || "";
       const redirectUrl = button.dataset.deleteRedirect || "/";
-      if (!confirm(`Flytte til deleted/?\\n\\n${path}`)) return;
+      if (!confirm(`Flytte til deleted/?\n\n${path}`)) return;
       button.disabled = true;
       try {
         const response = await fetch("/api/item-delete", {
@@ -5257,7 +5257,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     button.addEventListener("click", async () => {
       const fileId = Number(button.dataset.undeleteItem);
       const path = button.dataset.undeletePath || "";
-      if (!confirm(`Flytte tilbake til bildesamlingen?\\n\\n${path}`)) return;
+      if (!confirm(`Flytte tilbake til bildesamlingen?\n\n${path}`)) return;
       button.disabled = true;
       try {
         const response = await fetch("/api/item-undelete", {
@@ -5280,7 +5280,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       const personName = button.dataset.unconfirmPerson || "";
       if (!faceId || !personName) return;
       const command = `bildebank face-person-remove-face "${personName}" ${faceId}`;
-      if (!confirm(`Avbekrefte face-id ${faceId} fra ${personName}?\\n\\nTilsvarer:\\n${command}`)) return;
+      if (!confirm(`Avbekrefte face-id ${faceId} fra ${personName}?\n\nTilsvarer:\n${command}`)) return;
       button.disabled = true;
       try {
         const response = await fetch("/api/face-person-remove-face", {
