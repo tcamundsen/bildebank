@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -38,6 +39,8 @@ def record_target_best_effort(program_root: Path, target: Path, *, created: bool
 
 
 def record_target(program_root: Path, target: Path, *, created: bool = False) -> None:
+    if should_ignore_temporary_target(program_root, target):
+        return
     db_path = program_db_path(program_root)
     conn = sqlite3.connect(db_path)
     try:
@@ -117,6 +120,7 @@ def known_targets(program_root: Path) -> list[KnownTarget]:
                 exists=Path(str(row["path"])).exists(),
             )
             for row in rows
+            if not should_ignore_temporary_target(program_root, Path(str(row["path"])))
         ]
     finally:
         conn.close()
@@ -187,3 +191,16 @@ def target_collection_id(target: Path) -> str | None:
         return None
     finally:
         conn.close()
+
+
+def should_ignore_temporary_target(program_root: Path, target: Path) -> bool:
+    temp_root = Path(tempfile.gettempdir())
+    return is_relative_to(target, temp_root) and not is_relative_to(program_root, temp_root)
+
+
+def is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False

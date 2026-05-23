@@ -36,7 +36,7 @@ from bilder.importer import safe_copy
 from bilder.media import ImageDimensions, sha256_file
 from bilder.media_cache import cached_image_dimensions, cached_image_orientation
 from bilder.openclip import connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
-from bilder.program_state import PROGRAM_DB_FILENAME
+from bilder.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
 from bilder.server import (
     adjacent_browser_items,
     adjacent_person_items,
@@ -2655,6 +2655,38 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn(str(target.resolve()), stdout)
+
+    def test_program_state_ignores_temporary_targets_for_real_program_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            program_root = root / "repo"
+            temp_root = root / "tmp"
+            target = temp_root / "target"
+            program_root.mkdir()
+            db.init_database(target)
+
+            with patch("bilder.program_state.tempfile.gettempdir", return_value=str(temp_root)):
+                record_target(program_root, target, created=True)
+                targets = known_targets(program_root)
+
+            self.assertEqual(targets, [])
+            self.assertFalse((program_root / PROGRAM_DB_FILENAME).exists())
+
+            conn = sqlite3.connect(program_root / PROGRAM_DB_FILENAME)
+            try:
+                ensure_schema(conn)
+                conn.execute(
+                    "INSERT INTO targets(path, path_key) VALUES(?, ?)",
+                    (str(target.resolve()), str(target.resolve())),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with patch("bilder.program_state.tempfile.gettempdir", return_value=str(temp_root)):
+                targets = known_targets(program_root)
+
+            self.assertEqual(targets, [])
 
     def test_program_state_records_collection_id_and_updates_moved_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
