@@ -476,7 +476,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("kom i gang\n   create", stdout)
         self.assertIn("import", stdout)
         self.assertIn("run-server", stdout)
-        self.assertIn("kontrollere importen\n   report", stdout)
+        self.assertIn("kontrollere importen\n   errors", stdout)
         self.assertIn("rydde trygt\n   remove", stdout)
         self.assertIn("metadata og steder\n   refresh-metadata", stdout)
         self.assertIn("ansikter\n   face-status", stdout)
