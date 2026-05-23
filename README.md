@@ -7,12 +7,11 @@ Programmet endrer ikke originalmappene.
 
 # Installasjon
 
-Hvis du allerede har installert Bildebank, så kan du fortsette til [brukermanualen](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
+Hvis du allerede har installert Bildebank, så kan du fortsette til
+[brukermanualen](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
 
-Denne oppskriften er skrevet for Windows 11 og for deg som ikke vanligvis
-bruker Git eller Python. Etter at programmet er installert skal du
-forhåpentligvis slippe å bruke Git eller Python selv. Det brukes
-bare av Bildebank.
+Denne oppskriften er skrevet for Windows 11 og for deg som ikke
+er vant til å bruke PowerShell eller andre terminalvinduer.
 
 Hvis du bruker Linux eller WSL, se [README.linux.md](README.linux.md).
 
@@ -23,7 +22,7 @@ og velg "Lagre linken som..."
 
 1. Åpne PowerShell. Det gjør du ved å åpne startmenyen og begynne å skrive "PowerShell". Klikk på
    PowerShell-logoen som dukker opp. Du skal ikke velge "Run as Administrator" eller
-   "PowerShell ISE". 
+   "PowerShell ISE".
 2. Skriv dette i PowerShell for å gå til nedlastingsmappen:
 
 ```powershell

@@ -1,13 +1,16 @@
 # where-is
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank where-is [valg]
+
+Vis hvor Bildebank og kjente bildesamlinger ligger
+
+options:
+  -h, --help  show this help message and exit
+```
+<!-- CLI-HELP-END -->
 
 `where-is` viser hvor Bildebank og kjente bildesamlinger ligger.
-
-## Referanse
-
-```powershell
-bildebank where-is
-```
-
 Kommandoen trenger ikke å kjøres fra en bildesamlingsmappe.
 
 ## Hva kommandoen viser
@@ -50,12 +53,3 @@ cd "C:\Users\Tom\BildeSamling"
 ```
 
 Kopier den linjen inn i PowerShell for å gå til bildesamlingen.
-
-## Hvordan husker Bildebank bildesamlinger?
-
-Når du oppretter en bildesamling med `create`, lagres den i en liten oversikt
-ved siden av programmet.
-
-Hvis du allerede har en bildesamling fra før, blir den lagt til automatisk
-neste gang du bruker Bildebank fra den bildesamlingsmappen.
-

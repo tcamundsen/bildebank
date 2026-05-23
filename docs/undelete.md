@@ -3,6 +3,8 @@
 ```text
 usage: bildebank undelete [valg] fil
 
+Gjenopprett et bilde du har slettet med `remove`
+
 positional arguments:
   fil         Slettet fil under deleted/
 
@@ -11,8 +13,8 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-`undelete` flytter en fil tilbake fra `deleted`-mappen til den aktive
-bildesamlingen.
+`undelete` gjenoppretter et bilde eller en video du har slettet med
+[`remove`](remove.md).
 
 Dette kan du også gjøre fra nettleseren ved å trykk **Innstillinger**
 og deretter **Slettede bilder**.
@@ -28,8 +30,8 @@ ikke peke på den opprinnelige stien, for eksempel `2024\01\IMG_0001.jpg`.
 
 ## Hva kommandoen gjør
 
-`undelete` flytter filen tilbake til stien den hadde før `remove` ble kjørt, og
-fjerner slettemarkeringen i databasen.
+`undelete` flytter filen tilbake til stien den hadde før [`remove`](remove.md)
+ble kjørt, og fjerner slettemarkeringen i databasen.
 
 Hvis målfilen allerede finnes, stopper kommandoen uten å flytte noe.
 

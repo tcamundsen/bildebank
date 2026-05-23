@@ -1,26 +1,50 @@
 # unimport
 
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank unimport [valg] --name navn
+
+Reverser en tidligere import. Kontrollerer først at alle registrerte
+kildefiler fortsatt finnes med samme innhold. Krever nøyaktig bekreftelse før
+noe endres.
+
+options:
+  -h, --help   show this help message and exit
+  --name NAME  Navn på importen som skal reverseres
+  --dry-run    Vis hva som ville blitt gjort uten å slette filer eller endre
+               databasen
+```
+<!-- CLI-HELP-END -->
+
 `unimport` angrer en tidligere import.
 
-## Referanse
-
-```powershell
-bildebank unimport --name navn
-```
-
-Vanlige valg:
+Bruk `--dry-run` først, for å se hva som vil endres:
 
 ```powershell
 bildebank unimport --dry-run --name "Sommer2023"
-bildebank unimport --name "Familie-CD-2004"
 ```
 
-Bruk samme navn som du brukte da du importerte:
+Da kontrollerer Bildebank filene og viser hva som ville blitt gjort, men endrer
+ikke databasen og sletter ingen filer.
 
-```powershell
-bildebank import --name "Sommer2023" "$HOME\Pictures\Sommer2023"
-bildebank unimport --name "Sommer2023"
+Når du kjører uten `--dry-run`, viser Bildebank en oppsummering før noe endres:
+
+```text
+Kilde: Sommer2023
+Registrerte kildefiler kontrollert: 179
+Filer som fjernes fra aktiv samling: 142
+Filer som blir liggende fordi de også finnes i andre kilder: 37
+Skriv "ja, det vil jeg" for å gjennomføre unimport:
 ```
+
+For å gjennomføre må du skrive nøyaktig:
+
+```text
+ja, det vil jeg
+```
+
+Hvis du skriver noe annet, avbryter Bildebank uten å endre noe.
+
 
 ## Hva kommandoen gjør
 
@@ -44,37 +68,6 @@ importert.
 Hvis en kildefil mangler eller er endret, stopper kommandoen uten å gjøre
 endringer.
 
-## Bruk dry-run først
-
-Start med:
-
-```powershell
-bildebank unimport --dry-run --name "Sommer2023"
-```
-
-Da kontrollerer Bildebank filene og viser hva som ville blitt gjort, men endrer
-ikke databasen og sletter ingen filer.
-
-## Bekreftelse
-
-Når du kjører uten `--dry-run`, viser Bildebank en oppsummering før noe endres:
-
-```text
-Kilde: Sommer2023
-Registrerte kildefiler kontrollert: 179
-Filer som fjernes fra aktiv samling: 142
-Filer som blir liggende fordi de også finnes i andre kilder: 37
-Skriv "ja, det vil jeg" for å gjennomføre unimport:
-```
-
-For å gjennomføre må du skrive nøyaktig:
-
-```text
-ja, det vil jeg
-```
-
-Hvis du skriver noe annet, avbryter Bildebank uten å endre noe.
-
 ## Hvis kilden mangler
 
 `unimport` må kontrollere originalfilene før noe fjernes. Hvis kilden ligger på
@@ -85,13 +78,8 @@ Hvis Bildebank sier at en kildefil mangler, sjekk at riktig USB-disk, CD eller
 minnekort er koblet til, og at den har samme stasjonsbokstav og path som da
 importen ble kjørt.
 
-## Etter unimport
-
-Når `unimport --name` er ferdig, fjernes importen også fra kildelisten. Du
-trenger ikke kjøre noen egen kommando for å fjerne kilden.
-
-Etterpå kan du lage HTML-visningen på nytt:
-
-```powershell
-bildebank make-browser
-```
+Dette er gjort omstendig med hensikt, for å unngå å miste bilder. Det er
+foreløpig ikke mulig å kjøre `unimport` hvis orginalfilene mangler. Hvis
+noen har sterkt behov for det, kan det vurderes å legge til
+`--ja-jeg-vil-miste-filer` eller lignende for å kjøre `unimport` uten
+orginalfilene.

@@ -3,6 +3,8 @@
 ```text
 usage: bildebank list-sources [valg]
 
+List registrerte kilder
+
 options:
   -h, --help  show this help message and exit
 ```

@@ -1,5 +1,21 @@
 # backup
 
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank backup [valg] plassering
+
+Lag eller oppdater backup av bildesamlingen. NB: les dokumentasjonen for denne
+kommandoen før du betror alle bildene dine til bildebank.
+
+positional arguments:
+  plassering  Eksisterende mappe der backupen skal ligge
+
+options:
+  -h, --help  show this help message and exit
+  --dry-run   Vis hva som ville blitt gjort uten å kopiere eller endre filer
+```
+<!-- CLI-HELP-END -->
+
 > [!WARNING]
 > `backup` lager en speiling av bildesamlingen.
 > Når backup oppdateres, kan filer også slettes fra backupen.

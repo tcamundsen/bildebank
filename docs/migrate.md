@@ -1,24 +1,17 @@
 # migrate
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank migrate [valg]
+
+Validerer og oppgraderer databasen etter en programoppdatering.
+
+options:
+  -h, --help  show this help message and exit
+  --check     Vis hva migreringen vil gjøre uten å endre databasen
+```
+<!-- CLI-HELP-END -->
 
 `migrate` oppgraderer Bildebank-databasen i en bildesamling til nytt format.
-
-## Referanse
-
-```powershell
-bildebank migrate [valg]
-```
-
-Vanlig kontroll først:
-
-```powershell
-bildebank migrate --check
-```
-
-Kjør migrering:
-
-```powershell
-bildebank migrate
-```
 
 ## Når trenger du migrate?
 
@@ -57,27 +50,9 @@ V7 rydder gamle GPS-feilmeldinger som tidligere kunne bli svært lange. Etter
 migreringen lagrer Bildebank bare en kort feilmarkør for filer der GPS-scanning
 feilet.
 
-Hvis databasefilen fortsatt er stor etter migreringen, kan du pakke den:
+Hvis databasefilen fortsatt er stor etter migreringen, kan du pakke den med
+[`vacuum`](vacuum.md):
 
 ```powershell
 bildebank vacuum
-```
-
-## Migrering til v4
-
-Migrering til databaseformat v4 gjelder bare brukere som har opprettet
-bildesamlingsdatabasen med en eldre versjon av Bildebank.
-
-Nye bildesamlinger som er opprettet med en nyere versjon av Bildebank bruker
-nytt databaseformat allerede, og trenger ikke denne migreringen.
-
-I v4 får alle kilder et navn. Gamle kilder som mangler navn får navn fra
-mappenavnet, for eksempel `sommer2024`. Hvis flere kilder ville fått samme
-navn, legger Bildebank til `-1`, `-2` og så videre.
-
-V4 fjerner også gamle interne kilde-typer fra databasen. For brukeren betyr det
-at alle importer behandles likt:
-
-```powershell
-bildebank import --name "Navn" "path\til\kilde"
 ```

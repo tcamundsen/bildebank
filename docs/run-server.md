@@ -4,6 +4,8 @@
 ```text
 usage: bildebank run-server [valg]
 
+Start Bildebank-server som lar deg se bildene i nettleser.
+
 options:
   -h, --help    show this help message and exit
   --host HOST   Adresse serveren lytter på. Standard: 127.0.0.1

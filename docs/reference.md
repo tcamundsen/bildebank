@@ -1,20 +1,27 @@
 # Liste over alle kommandoer
 
-Kommandoer merket **cli** ("command line interface") kan bare kjøres
-fra PowerShell. Merket **web** betyr at funksjonen kan gjøres fra
-nettleser. Merket **devel** betyr at kommandoen ikke er ment for
-sluttbrukere. De som ikke er merket har jeg ikke sett over ennå.
+Kommandoer merket **cli** ("command line interface") kan bare kjøres fra
+PowerShell.
+
+Merket **web** betyr at du kan få gjort det samme i nettleseren som det
+kommandoen gjør i powershell. Jeg anbefaler da å bruke nettleseren ved å kjøre
+`bildebank run-server` fra PowerShell.
+
+Merket **devel** betyr at kommandoen ikke er ment for sluttbrukere. De som ikke
+er merket har jeg ikke sett over ennå.
+
+Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 ## Kom i gang
 
-- [`create`](create.md) **`web`**
-- [`import`](import.md) **`web`**
+- [`create`](create.md) **`cli`**
+- [`import`](import.md) **`cli`**
 
 ## Se og kontrollere samlingen
 
-- [`run-server`](run-server.md) **`web`**
+- [`run-server`](run-server.md) **`cli`**
 - [`make-thumbnails`](make-thumbnails.md) **`cli`**
-- [`status`](status.md)
+- [`status`](status.md) **`cli`**
 - [`list-sources`](list-sources.md) **`web`**
 - [`show-source`](show-source.md) **`web`**
 
@@ -25,23 +32,20 @@ sluttbrukere. De som ikke er merket har jeg ikke sett over ennå.
 - [`unimport`](unimport.md) **`cli`**
 - [`list-removed`](list-removed.md) **`web`**
 
-## Finne ting som bør kontrolleres
+## Programmet
 
-- [`conflicts`](conflicts.md)
-- [`show-conflict`](show-conflict.md)
-- [`non-metadata`](non-metadata.md)
-- [`errors`](errors.md)
+- [`where-is`](where-is.md) **`cli`**
+- [`backup`](backup.md) **`cli`**
+- [`migrate`](migrate.md) **`cli`**
+- [`vacuum`](vacuum.md) **`cli`**
+- [`update`](update.md) **`cli`**
 
-## Avansert kontroll
+## Generering av statiske HTML-filer:
 
-- [`explain-date`](explain-date.md) **`cli`**
-- [`inspect-metadata`](inspect-metadata.md) **`cli`**
-- [`refresh-metadata`](refresh-metadata.md) **`cli`**
-- [`exiftool-metadata-gaps`](exiftool-metadata-gaps.md) **`devel`**
-- [`geo-scan`](geo-scan.md)
-- [`geo-stats`](geo-stats.md)
-- [`make-conflict-browser`](make-conflict-browser.md)
-- [`report`](report.md)
+- [`make-browser`](make-browser.md) **`cli`**
+- [`make-face-browser`](make-face-browser.md) **`cli`**
+- [`make-people-browser`](make-people-browser.md) **`cli`**
+- [`make-person-browser`](make-person-browser.md) **`cli`**
 
 ## Ansiktsgjenkjenning
 
@@ -56,30 +60,34 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 [`run-server`](run-server.md):
 
 - [`face-status`](face-status.md)
-- [`face-report`](face-report.md)
+- [`face-report`](face-report.md) **`cli`**
 - [`face-person-create`](face-person-create.md) **`web`**
 - [`face-person-add-face`](face-person-add-face.md) **`web`**
 - [`face-person-remove-face`](face-person-remove-face.md) **`web`**
 - [`face-person-delete`](face-person-delete.md) **`cli`**
 - [`face-person-rename`](face-person-rename.md)  **`cli`**
-- [`face-person-list`](face-person-list.md) **`cli`**
+- [`face-person-list`](face-person-list.md) **`web`**
  
+## Finne ting som bør kontrolleres
 
-Generering av statiske HTML-filer:
+- [`conflicts`](conflicts.md)
+- [`show-conflict`](show-conflict.md)
+- [`non-metadata`](non-metadata.md)
+- [`errors`](errors.md)
 
-- [`make-browser`](make-browser.md) **`cli`**
-- [`make-face-browser`](make-face-browser.md) **`cli`**
-- [`make-people-browser`](make-people-browser.md) **`cli`**
-- [`make-person-browser`](make-person-browser.md) **`cli`**
+## Diverse
+
+- [`explain-date`](explain-date.md) **`cli`**
+- [`inspect-metadata`](inspect-metadata.md) **`cli`**
+- [`refresh-metadata`](refresh-metadata.md) **`cli`**
+- [`exiftool-metadata-gaps`](exiftool-metadata-gaps.md) **`devel`**
+- [`geo-scan`](geo-scan.md)
+- [`geo-stats`](geo-stats.md)
+- [`make-conflict-browser`](make-conflict-browser.md)
+- [`report`](report.md)
 
 ## Tekstbasert bildesøk
 
 Se den samlede innføringen: [`openclip`](openclip.md).
 
-## Programmet
 
-- [`where-is`](where-is.md) **`cli`**
-- [`backup`](backup.md) **`cli`**
-- [`migrate`](migrate.md) **`cli`**
-- [`vacuum`](vacuum.md) **`cli`**
-- [`update`](update.md) **`cli`**

@@ -1,15 +1,15 @@
 # face-report
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank face-report [valg]
+
+options:
+  -h, --help     show this help message and exit
+  --limit LIMIT  Maks antall linjer per liste
+```
+<!-- CLI-HELP-END -->
 
 `face-report` viser rapport for scannede ansikter.
-
-## Referanse
-
-```powershell
-bildebank face-report
-bildebank face-report --limit 50
-```
-
-Rapporten viser status for ansiktsdatabasen i bildesamlingen.
 
 ## Scannede bilder
 

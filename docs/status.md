@@ -3,6 +3,8 @@
 ```text
 usage: bildebank status [valg]
 
+Vis kort status for bildesamlingen
+
 options:
   -h, --help  show this help message and exit
 ```

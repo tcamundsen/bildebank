@@ -4,6 +4,8 @@
 ```text
 usage: bildebank remove [valg] fil
 
+Flytt en importert målfil til deleted/ og marker den som slettet
+
 positional arguments:
   fil         Importert målfil som skal fjernes
 
@@ -68,23 +70,6 @@ Kort sagt:
 
 - `remove` brukes for én fil i bildesamlingen.
 - `unimport` brukes for en hel importert kilde.
-
-## Se slettede filer
-
-Du kan se filer som er markert som slettet med:
-
-```powershell
-bildebank list-removed
-```
-
-Listen viser blant annet når filen ble slettet, hvor den lå før, hvor den ligger
-nå, og hvilken kildefil den kom fra.
-
-Du kan flytte en fil tilbake fra `deleted`-mappen med:
-
-```powershell
-bildebank undelete "deleted\2024\01\IMG_0001.jpg"
-```
 
 ## Hvis kommandoen stopper
 

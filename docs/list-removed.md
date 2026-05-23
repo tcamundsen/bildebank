@@ -1,14 +1,20 @@
 # list-removed
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank list-removed [valg]
 
-`list-removed` viser filer som er flyttet til `deleted/`.
+List filener som er slettet med `remove`
 
-## Referanse
-
-```powershell
-bildebank list-removed
+options:
+  -h, --help  show this help message and exit
 ```
+<!-- CLI-HELP-END -->
 
-## Hva kommandoen gjør
+`list-removed` viser filer som er flyttet til `deleted/` med kommandoen
+[`remove`](remove.md).
+
+Du kan også se fra nettleseren ved å klikke **Innstillinger** og  **Slettede
+bilder**.
 
 Når du bruker `remove`, flyttes filen til `deleted/` og markeres som slettet i
 databasen. `list-removed` viser disse filene.

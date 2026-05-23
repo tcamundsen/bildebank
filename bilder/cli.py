@@ -97,7 +97,6 @@ HELP_COMMAND_GROUPS = (
             ("show-conflict", "Vis detaljer om en navnekollisjon"),
             ("non-metadata", "List filer der datoen ikke kom fra metadata"),
             ("show-source", "Vis hvor en importert fil kom fra"),
-            ("list-removed", "List filer som er flyttet til deleted/"),
         ),
     ),
     (
@@ -106,6 +105,7 @@ HELP_COMMAND_GROUPS = (
             ("remove", "Flytt en importert fil til deleted/"),
             ("undelete", "Flytt en slettet fil tilbake fra deleted/"),
             ("unimport", "Reverser en tidligere importert kilde"),
+            ("list-removed", "List filer som er slettet med `remove`"),
         ),
     ),
     (
@@ -216,6 +216,7 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "create",
         usage="bildebank create [valg] mappe",
+        description="Opprette en bildesamling i mappen du velger",
         help="Opprett bildesamling og database",
     )
     create.add_argument("path", metavar="mappe", type=Path, help="Mappen som skal bli bildesamling")
@@ -242,8 +243,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     imp.add_argument("path", metavar="mappe", type=Path, help="Kilden som skal importeres")
 
-    add_command(subparsers, "list-sources", usage="bildebank list-sources [valg]", help="List registrerte kilder")
-    add_command(subparsers, "status", usage="bildebank status [valg]", help="Vis antall filer fordelt på type og datokilde")
+    add_command(
+        subparsers,
+        "list-sources",
+        usage="bildebank list-sources [valg]",
+        description="List registrerte kilder",
+        help="List registrerte kilder",
+    )
+    add_command(
+        subparsers,
+        "status",
+        usage="bildebank status [valg]",
+        description="Vis kort status for bildesamlingen",
+        help="Vis kort status for bildesamlingen",
+    )
     add_command(subparsers, "conflicts", usage="bildebank conflicts [valg]", help="List importerte filer med navnekollisjon")
     show_conflict = add_command(
         subparsers,
@@ -257,6 +270,7 @@ def build_parser() -> argparse.ArgumentParser:
         "show-source",
         usage="bildebank show-source [valg] fil",
         help="Vis hvilken kilde en importert målfil kommer fra",
+        description="Vis hvilken kilde en importert målfil kommer fra",
     )
     show_source.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
     unimport = add_command(
@@ -265,6 +279,7 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank unimport [valg] --name navn",
         help="Reverser en tidligere importert kilde",
         description=(
+            "Reverser en tidligere import. "
             "Kontrollerer først at alle registrerte kildefiler fortsatt finnes "
             "med samme innhold. Krever nøyaktig bekreftelse før noe endres."
         ),
@@ -279,7 +294,8 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "remove",
         usage="bildebank remove [valg] fil",
-        help="Flytt en importert målfil til deleted/ og marker den som slettet",
+        help="Flytt en importert fil til deleted/",
+        description="Flytt en importert målfil til deleted/ og marker den som slettet",
     )
     remove.add_argument("path", metavar="fil", type=Path, help="Importert målfil som skal fjernes")
     undelete = add_command(
@@ -287,9 +303,16 @@ def build_parser() -> argparse.ArgumentParser:
         "undelete",
         usage="bildebank undelete [valg] fil",
         help="Flytt en slettet fil tilbake fra deleted/",
+        description="Gjenopprett et bilde du har slettet med `remove`",
     )
     undelete.add_argument("path", metavar="fil", type=Path, help="Slettet fil under deleted/")
-    add_command(subparsers, "list-removed", usage="bildebank list-removed [valg]", help="List filer som er markert som slettet")
+    add_command(
+        subparsers,
+        "list-removed",
+        usage="bildebank list-removed [valg]",
+        help="List filer som er slettet med `remove`",
+        description="List filener som er slettet med `remove`",
+    )
     non_metadata = add_command(
         subparsers,
         "non-metadata",
@@ -426,6 +449,7 @@ def build_parser() -> argparse.ArgumentParser:
         "make-thumbnails",
         usage="bildebank make-thumbnails [valg]",
         help="Lag thumbnails for månedsvisning",
+        description="Lag thumbnails for månedsvisning",
     )
     make_thumbnails.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
     make_thumbnails.add_argument("--verbose", action="store_true", help="Vis filer som feiler")
@@ -449,6 +473,7 @@ def build_parser() -> argparse.ArgumentParser:
         "where-is",
         usage="bildebank where-is [valg]",
         help="Vis hvor Bildebank og kjente bildesamlinger ligger",
+        description="Vis hvor Bildebank og kjente bildesamlinger ligger",
     )
     backup = add_command(
         subparsers,
@@ -456,8 +481,9 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank backup [valg] plassering",
         help="Lag eller oppdater backup av bildesamlingen",
         description=(
-            "Tolker plassering som foreldremappen der backupen skal ligge. "
-            "Backupmappen får alltid samme navn som aktiv bildesamling."
+            "Lag eller oppdater backup av bildesamlingen. "
+            "NB: les dokumentasjonen for denne kommandoen før du betror alle "
+            "bildene dine til bildebank."
         ),
     )
     backup.add_argument("destination", metavar="plassering", type=Path, help="Eksisterende mappe der backupen skal ligge")
@@ -514,6 +540,7 @@ def build_parser() -> argparse.ArgumentParser:
         "run-server",
         usage="bildebank run-server [valg]",
         help="Start lokal Bildebank-server",
+        description="Start Bildebank-server som lar deg se bildene i nettleser."
     )
     run_server_parser.add_argument(
         "--host",
@@ -690,7 +717,7 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "migrate",
         usage="bildebank migrate [valg]",
-        help="Oppgrader databasen til gjeldende format",
+        help="Oppgrader databasen etter programoppdatering",
         description="Validerer og oppgraderer databasen etter en programoppdatering.",
     )
     migrate.add_argument(
@@ -706,7 +733,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Kjører SQLite VACUUM på Bildebank-databasen. Kommandoen endrer ikke bildefiler.",
     )
     add_command(subparsers, "update", usage="bildebank update [valg]", help="Oppdater programinstallasjonen",
-                description="Laster ned aller siste versjon av programmet fra GitHub.")
+                description="Oppdater Bildebank til siste versjon fra GitHub.")
 
     return parser
 

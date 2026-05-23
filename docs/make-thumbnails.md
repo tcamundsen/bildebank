@@ -3,6 +3,8 @@
 ```text
 usage: bildebank make-thumbnails [valg]
 
+Lag thumbnails for månedsvisning
+
 options:
   -h, --help     show this help message and exit
   --limit LIMIT  Maks antall bildefiler som skal sjekkes
@@ -10,7 +12,8 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-`make-thumbnails` lager små bildefiler som brukes i månedsvisningen.
+`make-thumbnails` lager små bildefiler som brukes i månedsvisningen. Dette
+gjør at månedsvisningen laster mye lettere.
 
 Kommandoen går gjennom de importerte bildene i bildesamlingen og lager
 thumbnail-filer i mappen `thumbs`.

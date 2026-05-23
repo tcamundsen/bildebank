@@ -1,12 +1,24 @@
 # update
 
-`update` oppdaterer Bildebank-programmet.
+<!-- CLI-HELP-START -->
+```text
+usage: bildebank update [valg]
 
-## Referanse
+Oppdater Bildebank til siste versjon fra GitHub.
+
+options:
+  -h, --help  show this help message and exit
+```
+<!-- CLI-HELP-END -->
+
+`update` oppdaterer Bildebank-programmet til siste versjon fra GitHub
+og laster ned eventuelle nye biblioteker som brukes.
+
+Eksempel:
 
 ```powershell
 bildebank update
 ```
 
-Kommandoen oppdaterer Bildebank til siste versjon. Den migrerer ikke databasen
-automatisk. Hvis det trengs, så får du melding om det fra programmet.
+Etter en oppgradering kan det hende programmet ber deg kjøre
+`bildebank migrate` for å oppdatere databasen.

@@ -3,6 +3,8 @@
 ```text
 usage: bildebank create [valg] mappe
 
+Opprette en bildesamling i mappen du velger
+
 positional arguments:
   mappe       Mappen som skal bli bildesamling
 
