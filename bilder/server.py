@@ -19,7 +19,7 @@ from typing import Any, Callable
 
 from . import __version__, db
 from .config import AppConfig, FaceRecognitionConfig, set_face_recognition_enabled, set_face_recognition_model_name
-from .face import add_face_to_person, create_person, face_db_path, normalize_person_name, remove_face_from_person
+from .face import add_face_to_person, create_person, face_db_path, normalize_person_name, remove_face_from_person, rename_person
 from .html_export import (
     browser_face_items_from_metadata,
     display_relative_path,
@@ -262,6 +262,12 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                     self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
                     return
                 self.respond_create_person_and_add_face()
+                return
+            if parsed.path == "/api/face-person-rename":
+                if not self.server.face_enabled:
+                    self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
+                    return
+                self.respond_rename_person()
                 return
             if parsed.path == "/api/item-rotate":
                 self.respond_rotate_item()
@@ -880,6 +886,32 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 "confirmed": True,
                 "face_id": result.face_id,
                 "added": result.added,
+            }
+        )
+
+    def respond_rename_person(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        old_name = str(payload.get("old_name") or "").strip()
+        new_name = str(payload.get("new_name") or "").strip()
+        if not old_name:
+            self.respond_json({"ok": False, "error": "Gammelt personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if not new_name:
+            self.respond_json({"ok": False, "error": "Nytt personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            config = self.server.config.face_recognition
+            result = rename_person(self.server.target, old_name, new_name, config)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        clear_face_caches()
+        self.respond_json(
+            {
+                "ok": True,
+                "old_name": result.old_name,
+                "new_name": result.new_name,
+                "person_url": f"{person_url(result.new_name)}/no-faces",
             }
         )
 
@@ -4330,6 +4362,7 @@ def people_page_html(target: Path, face_config: FaceRecognitionConfig | None = N
           <h1>Personer</h1>
           {content}
         </main>
+        {person_rename_dialog_html()}
         """,
     )
 
@@ -4352,11 +4385,32 @@ def people_row_html(person: dict[str, object]) -> str:
         )
     return f"""
     <div class="people-row">
-      <div class="people-name">{html.escape(name)}</div>
+      <div class="people-name">
+        <span>{html.escape(name)}</span>
+        <button class="rename-person-link" type="button" data-open-person-rename data-person-name="{html.escape(name)}">endre navn</button>
+      </div>
       {duplicate_warning}
       <a class="person-link" href="{html.escape(confirmed_source.root_url)}">Bekreftede bilder ({confirmed_count})</a>
       <a class="person-link" href="{html.escape(all_source.root_url)}">Bekreftede og forslag ({all_count})</a>
       <span class="status">forslag: {suggestion_count}</span>
+    </div>
+    """
+
+
+def person_rename_dialog_html() -> str:
+    return """
+    <div id="personRenameDialog" class="modal-overlay" hidden>
+      <form class="modal-panel person-rename-form" data-person-rename-form>
+        <h2>Endre navn</h2>
+        <input type="hidden" name="old_name">
+        <label for="personRenameName">Nytt navn</label>
+        <input id="personRenameName" type="text" name="new_name" autocomplete="off" required>
+        <p class="assign-status" data-person-rename-status></p>
+        <div class="modal-actions">
+          <button class="nav-button" type="submit">Lagre</button>
+          <button class="nav-button" type="button" data-close-person-rename>Avbryt</button>
+        </div>
+      </form>
     </div>
     """
 
@@ -4400,7 +4454,7 @@ def thumbnail_media_html(target: Path, item: Any) -> str:
     return f'<img src="{html.escape(thumbnail_src)}" alt="{name}" loading="lazy"{rotation_style_attr(item)}>'
 
 
-SERVER_ASSET_VERSION = "2"
+SERVER_ASSET_VERSION = "3"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -4592,7 +4646,18 @@ SERVER_CSS = r"""    :root {
       border-radius: 6px;
       background: var(--panel);
     }
-    .people-name { font-weight: 700; overflow-wrap: anywhere; }
+    .people-name { font-weight: 700; overflow-wrap: anywhere; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+    .rename-person-link {
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 400;
+      cursor: pointer;
+    }
+    .rename-person-link:hover { color: var(--text); text-decoration: underline; }
     .people-warning { justify-self: start; }
     a, .disabled { color: var(--accent); }
     a { text-decoration: none; }
@@ -4758,6 +4823,40 @@ SERVER_CSS = r"""    :root {
       color: var(--text);
     }
     .info-panel h2 { margin: 0 0 14px; font-size: 20px; }
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      background: rgb(0 0 0 / 72%);
+    }
+    .modal-overlay[hidden] { display: none; }
+    .modal-panel {
+      width: min(420px, 100%);
+      display: grid;
+      gap: 10px;
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--text);
+    }
+    .modal-panel h2 { margin: 0; font-size: 20px; }
+    .modal-panel label { color: var(--muted); font-size: 13px; }
+    .modal-panel input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      min-height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: #181818;
+      color: var(--text);
+      font: inherit;
+    }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
     .info-list { display: grid; gap: 0; margin: 0; }
     .info-row {
       display: grid;
@@ -4908,6 +5007,12 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   const closeInfoButton = document.querySelector("[data-close-info]");
   const faceList = faceOverlay?.querySelector("[data-face-list]");
   const infoList = infoOverlay?.querySelector("[data-info-list]");
+  const personRenameDialog = document.getElementById("personRenameDialog");
+  const personRenameForm = document.querySelector("[data-person-rename-form]");
+  const personRenameStatus = document.querySelector("[data-person-rename-status]");
+  const closePersonRenameButton = document.querySelector("[data-close-person-rename]");
+  const personRenameNameInput = personRenameForm?.querySelector('input[name="new_name"]');
+  const personRenameOldNameInput = personRenameForm?.querySelector('input[name="old_name"]');
   let facesLoaded = false;
   let infoLoaded = false;
   function faceStatusMessage(message) {
@@ -4977,6 +5082,19 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     if (!infoOverlay) return;
     infoOverlay.hidden = true;
   }
+  function openPersonRenameDialog(name) {
+    if (!personRenameDialog || !personRenameForm || !personRenameNameInput || !personRenameOldNameInput) return;
+    personRenameOldNameInput.value = name || "";
+    personRenameNameInput.value = name || "";
+    if (personRenameStatus) personRenameStatus.textContent = "";
+    personRenameDialog.hidden = false;
+    personRenameNameInput.focus();
+    personRenameNameInput.select();
+  }
+  function closePersonRenameDialog() {
+    if (!personRenameDialog) return;
+    personRenameDialog.hidden = true;
+  }
   function ensureTopPersonLink(name, url, confirmed = false) {
     if (!name || !url) return;
     let people = document.querySelector(".topline .people");
@@ -5006,6 +5124,34 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   closeFacesButton?.addEventListener("click", closeFacesOverlay);
   openInfoButton?.addEventListener("click", openInfoOverlay);
   closeInfoButton?.addEventListener("click", closeInfoOverlay);
+  closePersonRenameButton?.addEventListener("click", closePersonRenameDialog);
+  document.querySelectorAll("[data-open-person-rename]").forEach(button => {
+    button.addEventListener("click", () => openPersonRenameDialog(button.dataset.personName || ""));
+  });
+  personRenameDialog?.addEventListener("click", event => {
+    if (event.target === personRenameDialog) closePersonRenameDialog();
+  });
+  personRenameForm?.addEventListener("submit", async event => {
+    event.preventDefault();
+    const oldName = personRenameOldNameInput?.value || "";
+    const newName = personRenameNameInput?.value?.trim() || "";
+    if (personRenameStatus) personRenameStatus.textContent = "Lagrer...";
+    personRenameForm.querySelectorAll("button, input").forEach(item => item.disabled = true);
+    try {
+      const response = await fetch("/api/face-person-rename", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({old_name: oldName, new_name: newName}),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke endre navn.");
+      window.location.reload();
+    } catch (error) {
+      if (personRenameStatus) personRenameStatus.textContent = error.message || "Kunne ikke endre navn.";
+      personRenameForm.querySelectorAll("button, input").forEach(item => item.disabled = false);
+      personRenameNameInput?.focus();
+    }
+  });
   document.querySelectorAll("[data-rotate-item]").forEach(button => {
     button.addEventListener("click", async () => {
       const fileId = Number(button.dataset.rotateItem);
@@ -5156,6 +5302,13 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       if (event.key === "Escape") {
         event.preventDefault();
         closeInfoOverlay();
+      }
+      return;
+    }
+    if (personRenameDialog && !personRenameDialog.hidden) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closePersonRenameDialog();
       }
       return;
     }

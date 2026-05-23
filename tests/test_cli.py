@@ -1171,7 +1171,7 @@ model_name = "buffalo_l"
         self.assertIn(".thumb-link {", SERVER_CSS)
         self.assertIn("aspect-ratio: 4 / 3;", SERVER_CSS)
         self.assertIn("overflow: hidden;", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "2")
+        self.assertEqual(SERVER_ASSET_VERSION, "3")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -2043,6 +2043,146 @@ model_name = "buffalo_l"
             finally:
                 face_conn.close()
 
+    def test_run_server_api_renames_person(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            data = json.dumps({"old_name": "Kari", "new_name": "Kari Nordmann"}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_rename_person(handler)  # type: ignore[arg-type]
+
+            self.assertEqual(
+                {
+                    "ok": True,
+                    "old_name": "Kari",
+                    "new_name": "Kari Nordmann",
+                    "person_url": "/person/Kari%20Nordmann/no-faces",
+                },
+                handler.body,
+            )
+            face_conn = connect_face_db(target)
+            try:
+                self.assertEqual(face_conn.execute("SELECT COUNT(*) FROM persons WHERE name = 'Kari'").fetchone()[0], 0)
+                self.assertEqual(face_conn.execute("SELECT COUNT(*) FROM persons WHERE name = 'Kari Nordmann'").fetchone()[0], 1)
+            finally:
+                face_conn.close()
+
+    def test_run_server_api_rename_person_reports_existing_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(2, 'Ola')")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            data = json.dumps({"old_name": "Kari", "new_name": "Ola"}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
+                body: dict[str, object] | None = None
+                status = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_rename_person(handler)  # type: ignore[arg-type]
+
+            self.assertEqual(HTTPStatus.BAD_REQUEST, handler.status)
+            self.assertEqual({"ok": False, "error": "Person finnes allerede: Ola"}, handler.body)
+
+    def test_run_server_api_rename_person_validates_name_and_accepts_noop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            def call_rename(payload: dict[str, object]):
+                data = json.dumps(payload).encode("utf-8")
+
+                class FakeHandler:
+                    headers = {
+                        "Content-Length": str(len(data)),
+                        "Content-Type": "application/json",
+                    }
+                    rfile = BytesIO(data)
+                    server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
+                    body: dict[str, object] | None = None
+                    status = None
+
+                    def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                        self.body = content
+                        self.status = status
+
+                handler = FakeHandler()
+                BildebankRequestHandler.respond_rename_person(handler)  # type: ignore[arg-type]
+                return handler
+
+            missing_name = call_rename({"old_name": "Kari", "new_name": " "})
+            same_name = call_rename({"old_name": " Kari ", "new_name": "Kari"})
+
+            self.assertEqual(HTTPStatus.BAD_REQUEST, missing_name.status)
+            self.assertEqual({"ok": False, "error": "Nytt personnavn mangler."}, missing_name.body)
+            self.assertEqual(
+                {"ok": True, "old_name": "Kari", "new_name": "Kari", "person_url": "/person/Kari/no-faces"},
+                same_name.body,
+            )
+
+    def test_run_server_api_rename_person_is_disabled_when_faces_are_disabled(self) -> None:
+        class FakeHandler:
+            path = "/api/face-person-rename"
+            server = SimpleNamespace(face_enabled=False)
+            body: dict[str, object] | None = None
+            status = None
+
+            def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                self.body = content
+                self.status = status
+
+        handler = FakeHandler()
+        BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(HTTPStatus.FORBIDDEN, handler.status)
+        self.assertEqual({"ok": False, "error": "Ansiktsgjenkjenning er av."}, handler.body)
+
     def test_run_server_person_browser_filters_and_marks_faces(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -2217,6 +2357,10 @@ model_name = "buffalo_l"
         self.assertEqual(cache_after_second.hits, cache_after_first.hits + 1)
         self.assertIn('href="/person/Kari/confirmed/no-faces"', body)
         self.assertIn('href="/person/Kari/no-faces"', body)
+        self.assertIn('data-open-person-rename', body)
+        self.assertIn('data-person-name="Kari"', body)
+        self.assertIn("endre navn", body)
+        self.assertIn('id="personRenameDialog"', body)
         self.assertIn("Bekreftede bilder (1)", body)
         self.assertIn("Bekreftede og forslag (2)", body)
         self.assertIn("NB: 2 bekreftede ansikter i samme bilde", body)
@@ -2226,6 +2370,7 @@ model_name = "buffalo_l"
         self.assertIn('data-unconfirm-person="Kari"', confirmed_body)
         self.assertIn("Avbekreft face-id 1", confirmed_body)
         self.assertIn("/api/face-person-remove-face", SERVER_JS)
+        self.assertIn("/api/face-person-rename", SERVER_JS)
         self.assertEqual([int(item["id"]) for item in confirmed_items], [1])
         self.assertEqual([int(item["id"]) for item in all_items], [1, 2])
 
