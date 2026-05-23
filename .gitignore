@@ -1,4 +1,5 @@
 .venv/
+.make/
 __pycache__/
 html/
 *.py[cod]
