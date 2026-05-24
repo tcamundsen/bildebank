@@ -37,7 +37,7 @@ bildebank config face_recognition enable
 Sjekk at funksjonen er klar:
 
 ```powershell
-bildebank face-status
+bildebank doctor
 ```
 
 ### Gå til bildesamlingen

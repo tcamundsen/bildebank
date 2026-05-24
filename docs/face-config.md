@@ -42,7 +42,7 @@ ellerpå mens `run-server` kjører, så må du avbryte med Ctrl-C og kjøre
 Se status etterpå:
 
 ```powershell
-bildebank face-status
+bildebank doctor
 ```
 
 Se også [`insightface`](insightface.md).

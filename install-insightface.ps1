@@ -34,7 +34,7 @@ try {
     }
 
     Write-Host "Ferdig. Sjekk status med:"
-    Write-Host "  bildebank face-status"
+    Write-Host "  bildebank doctor"
 } finally {
     Pop-Location
 }

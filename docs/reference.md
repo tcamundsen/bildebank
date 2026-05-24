@@ -36,6 +36,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 ## Programmet
 
 - [`where-is`](where-is.md) **`cli`**
+- [`doctor`](doctor.md) **`cli`**
 - [`backup`](backup.md) **`cli`**
 - [`migrate`](migrate.md) **`cli`**
 - [`vacuum`](vacuum.md) **`cli`**
@@ -52,8 +53,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 - [`insightface`](insightface.md) - innføring
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
-- [`config`](config.md) **`cli`** **`web`**
-- [`face-config`](face-config.md) **`web`** - gammel kompatibilitetskommando
+- [`face-config`](face-config.md) **`cli`** - gammel kompatibilitetskommando erstattet av [`config`](config.md)
 - [`face-scan`](face-scan.md) **`cli`**
 - [`face-suggest`](face-suggest.md) **`cli`**
 - [`face-reset`](face-reset.md) **`cli`**
@@ -61,7 +61,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 [`run-server`](run-server.md):
 
-- [`face-status`](face-status.md) **`cli`**
+- [`face-status`](face-status.md) **`cli`** - gammelt navn for [`doctor`](doctor.md)
 - [`face-report`](face-report.md) **`cli`**
 - [`face-person-create`](face-person-create.md) **`web`**
 - [`face-person-add-face`](face-person-add-face.md) **`web`**

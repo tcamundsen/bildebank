@@ -124,7 +124,7 @@ device = "cpu"
 Du kan se hva systemet finner med:
 
 ```powershell
-bildebank face-status
+bildebank doctor
 ```
 
 Under `Tekstbasert bildesøk` viser kommandoen blant annet `device-valg`,
@@ -135,10 +135,10 @@ om PyTorch er installert, om CUDA/GPU ble funnet, og eventuelt GPU-navn.
 Du kan se om OpenCLIP er installert med:
 
 ```powershell
-bildebank face-status
+bildebank doctor
 ```
 
-Kommandoen viser både ansiktsgjenkjenning og tekstbasert bildesøk.
+Kommandoen viser ansiktsgjenkjenning, tekstbasert bildesøk og ExifTool.
 
 ## Scan bilder
 

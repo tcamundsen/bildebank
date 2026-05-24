@@ -486,7 +486,8 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("ansikter\n   face-status", stdout)
         self.assertIn("bildesøk\n   image-scan", stdout)
         self.assertIn("HTML-eksport\n   make-thumbnails", stdout)
-        self.assertIn("vedlikehold\n   backup", stdout)
+        self.assertIn("vedlikehold\n   doctor", stdout)
+        self.assertIn("backup", stdout)
         self.assertIn("Vanlig start:", stdout)
         self.assertIn("bildebank <kommando> -h", stdout)
         self.assertNotIn("{create,add,import", stdout)
@@ -3194,13 +3195,48 @@ model_name = "buffalo_l"
         self.assertIn("Bildebank-program:", stdout)
         self.assertIn("Ingen registrert ennå.", stdout)
 
-    def test_face_status_is_disabled_by_default(self) -> None:
-        code, stdout, stderr = capture_cli(["face-status"])
+    def test_doctor_is_disabled_by_default(self) -> None:
+        code, stdout, stderr = capture_cli(["doctor"])
 
         self.assertEqual(code, 0, stderr)
         self.assertIn("Ansiktsgjenkjenning:", stdout)
         self.assertIn("konfigurert: av", stdout)
         self.assertIn("insightface installert:", stdout)
+        self.assertIn("Tekstbasert bildesøk:", stdout)
+        self.assertIn("ExifTool:", stdout)
+        self.assertEqual(stderr, "")
+
+    def test_face_status_is_doctor_alias(self) -> None:
+        code, stdout, stderr = capture_cli(["face-status"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Ansiktsgjenkjenning:", stdout)
+        self.assertIn("Tekstbasert bildesøk:", stdout)
+        self.assertIn("ExifTool:", stdout)
+        self.assertEqual(stderr, "")
+
+    def test_doctor_shows_exiftool_status(self) -> None:
+        exiftool = self.program_root / "bildebank-tools" / "exiftool" / "exiftool.exe"
+        with (
+            patch("bilder.cli.resolve_exiftool_path", return_value=exiftool),
+            patch("bilder.cli.validate_exiftool_install", return_value="13.58"),
+        ):
+            code, stdout, stderr = capture_cli(["doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("ExifTool:", stdout)
+        self.assertIn("funnet: ja", stdout)
+        self.assertIn(f"path: {exiftool}", stdout)
+        self.assertIn("versjon: 13.58", stdout)
+
+    def test_doctor_reports_missing_exiftool_without_failing(self) -> None:
+        with patch("bilder.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
+            code, stdout, stderr = capture_cli(["doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("ExifTool:", stdout)
+        self.assertIn("funnet: nei", stdout)
+        self.assertIn("feil: mangler", stdout)
         self.assertEqual(stderr, "")
 
     def test_face_config_creates_config_file(self) -> None:
@@ -3314,7 +3350,7 @@ pretrained = "laion2b_s32b_b82k"
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "face-status"])
+            code, stdout, stderr = capture_cli(["--target", str(target), "doctor"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Aktiv bildesamling:", stdout)
@@ -3375,7 +3411,7 @@ pretrained = "laion2b_s32b_b82k"
             finally:
                 conn.close()
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "face-status"])
+            code, stdout, stderr = capture_cli(["--target", str(target), "doctor"])
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("bilde-embeddings: 1", stdout)

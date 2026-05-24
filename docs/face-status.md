@@ -8,6 +8,10 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-`face-status` viser om ansiktsgjenkjenning er slått på i config, hvor modellene
-ligger, om pakkene er installert, og status for face-databasen i aktiv
-bildesamling.
+`face-status` er det gamle navnet på [`doctor`](doctor.md).
+
+Bruk helst:
+
+```powershell
+bildebank doctor
+```

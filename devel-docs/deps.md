@@ -82,7 +82,7 @@ Funksjonen er i tillegg styrt av config:
 enabled = true
 ```
 
-Status vises i dag av `bildebank face-status` og på `/app` i `run-server`.
+Status vises i dag av `bildebank doctor` og på `/app` i `run-server`.
 
 ### OpenCLIP
 

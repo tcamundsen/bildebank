@@ -13,7 +13,7 @@ from pathlib import Path
 from . import __version__, db
 from .backup import run_backup
 from .config import CONFIG_FILENAME, load_config, set_config_enabled
-from .exiftool import install_managed_exiftool
+from .exiftool import install_managed_exiftool, resolve_exiftool_path, validate_exiftool_install
 from .exiftool_probe import exiftool_metadata_gaps
 from .face import (
     AddFaceToPersonResult,
@@ -127,7 +127,7 @@ HELP_COMMAND_GROUPS = (
     (
         "ansikter",
         (
-            ("face-status", "Vis status for valgfri ansiktsgjenkjenning"),
+            ("face-status", "Gammelt navn for doctor"),
             ("face-config", "Slå ansiktsgjenkjenning på eller av"),
             ("face-scan", "Scanning etter ansikter"),
             ("face-suggest", "Foreslå personer for ukjente ansikter"),
@@ -162,6 +162,7 @@ HELP_COMMAND_GROUPS = (
     (
         "vedlikehold",
         (
+            ("doctor", "Vis diagnose for installasjon og aktiv bildesamling"),
             ("backup", "Lag eller oppdater backup av bildesamlingen"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
             ("vacuum", "Pakk databasen så SQLite-filen krymper fysisk"),
@@ -497,9 +498,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_command(
         subparsers,
+        "doctor",
+        usage="bildebank doctor [valg]",
+        help="Vis diagnose for installasjon og aktiv bildesamling",
+    )
+    add_command(
+        subparsers,
         "face-status",
         usage="bildebank face-status [valg]",
-        help="Vis status for valgfri ansiktsgjenkjenning",
+        help="Gammelt navn for doctor",
     )
     config_parser = add_command(
         subparsers,
@@ -881,8 +888,8 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "where-is":
         return run_where_is()
 
-    if args.command == "face-status":
-        return run_face_status(args.target)
+    if args.command in {"doctor", "face-status"}:
+        return run_doctor(args.target)
 
     if args.command == "config":
         return run_config(args.section, enabled=args.action == "enable")
@@ -1653,7 +1660,7 @@ def run_geo_area(
     return 0
 
 
-def run_face_status(target_arg: Path | None = None) -> int:
+def run_doctor(target_arg: Path | None = None) -> int:
     repo_root = program_repo_root()
     config = load_config(repo_root)
     face = config.face_recognition
@@ -1678,6 +1685,18 @@ def run_face_status(target_arg: Path | None = None) -> int:
     print(f"  torch installert: {gpu_status['torch']}")
     print(f"  cuda/gpu funnet: {gpu_status['cuda']}")
     print(f"  gpu-navn: {gpu_status['device']}")
+    print()
+    print("ExifTool:")
+    try:
+        exiftool_path = resolve_exiftool_path(repo_root)
+        exiftool_version = validate_exiftool_install(exiftool_path)
+    except (FileNotFoundError, OSError, RuntimeError) as exc:
+        print("  funnet: nei")
+        print(f"  feil: {exc}")
+    else:
+        print("  funnet: ja")
+        print(f"  path: {exiftool_path}")
+        print(f"  versjon: {exiftool_version}")
     target = db.find_target(target_arg)
     if target is not None:
         exists, scanned, faces = face_db_summary(target, face)
