@@ -1662,56 +1662,99 @@ def run_geo_area(
 
 def run_doctor(target_arg: Path | None = None) -> int:
     repo_root = program_repo_root()
+    config_path = repo_root / CONFIG_FILENAME
     config = load_config(repo_root)
     face = config.face_recognition
-    print("Ansiktsgjenkjenning:")
-    print(f"  konfigurert: {'på' if face.enabled else 'av'}")
-    print(f"  config-fil: {repo_root / CONFIG_FILENAME}")
-    print(f"  modellmappe: {face.model_root}")
-    print(f"  database-mappe: {face.database_dir}")
-    print(f"  modellnavn: {face.model_name}")
-    print(f"  provider: {face.provider}")
-    print(f"  insightface installert: {module_available('insightface')}")
-    print(f"  onnxruntime installert: {module_available('onnxruntime')}")
+
+    print("Bildebank doctor")
     print()
-    print("Tekstbasert bildesøk:")
-    print(f"  konfigurert: {'på' if config.openclip.enabled else 'av'}")
-    print(f"  modellmappe: {config.openclip.model_root}")
-    print(f"  modellnavn: {config.openclip.model_name}")
-    print(f"  pretrained: {config.openclip.pretrained}")
-    print(f"  device-valg: {config.openclip.device}")
-    print(f"  open_clip installert: {module_available('open_clip')}")
-    gpu_status = torch_gpu_status()
-    print(f"  torch installert: {gpu_status['torch']}")
-    print(f"  cuda/gpu funnet: {gpu_status['cuda']}")
-    print(f"  gpu-navn: {gpu_status['device']}")
-    print()
-    print("ExifTool:")
+    if config_path.exists():
+        doctor_ok(f"config-fil funnet: {config_path}")
+    else:
+        doctor_obs("config-fil ikke funnet. Bildebank bruker standardvalg.")
+        doctor_advice("Kjør `bildebank config ...` hvis du vil slå på valgfrie funksjoner.")
+
+    if python_module_available("h3"):
+        doctor_ok("h3 installert")
+    else:
+        doctor_error("h3 mangler. Geografiske funksjoner virker ikke.")
+        doctor_advice("Kjør setup-windows.ps1 på nytt, eller installer Bildebank på nytt.")
+
     try:
         exiftool_path = resolve_exiftool_path(repo_root)
         exiftool_version = validate_exiftool_install(exiftool_path)
     except (FileNotFoundError, OSError, RuntimeError) as exc:
-        print("  funnet: nei")
-        print(f"  feil: {exc}")
+        doctor_error(f"ExifTool mangler eller virker ikke: {exc}")
+        if sys.platform == "win32":
+            doctor_advice("Kjør `bildebank exiftool-install` fra programmappen.")
+        else:
+            doctor_advice("Installer ExifTool med pakkesystemet, for eksempel `sudo apt install libimage-exiftool-perl`.")
     else:
-        print("  funnet: ja")
-        print(f"  path: {exiftool_path}")
-        print(f"  versjon: {exiftool_version}")
+        doctor_ok(f"ExifTool funnet: {exiftool_path} ({exiftool_version})")
+
+    print()
+    print("Ansiktsgjenkjenning:")
+    if face.enabled:
+        doctor_ok(f"face_recognition er slått på ({face.model_name}, {face.provider})")
+        if python_module_available("insightface"):
+            doctor_ok("insightface installert")
+        else:
+            doctor_error("face_recognition er slått på, men insightface mangler.")
+            doctor_advice("Kjør `.\\install-insightface.ps1` fra programmappen.")
+        if python_module_available("onnxruntime"):
+            doctor_ok("onnxruntime installert")
+        else:
+            doctor_error("face_recognition er slått på, men onnxruntime mangler.")
+            doctor_advice("Kjør `.\\install-insightface.ps1` fra programmappen.")
+    else:
+        doctor_obs("face_recognition er slått av.")
+
+    print()
+    print("Tekstbasert bildesøk:")
+    if config.openclip.enabled:
+        doctor_ok(f"image_search er slått på ({config.openclip.model_name}, {config.openclip.device})")
+        if python_module_available("open_clip"):
+            doctor_ok("open_clip installert")
+        else:
+            doctor_error("image_search er slått på, men open_clip mangler.")
+            doctor_advice("Kjør `.\\install-openclip.ps1` fra programmappen.")
+        gpu_status = torch_gpu_status()
+        if gpu_status["torch"] == "ja":
+            doctor_ok("torch installert")
+            if gpu_status["cuda"] == "ja":
+                doctor_ok(f"CUDA/GPU funnet: {gpu_status['device']}")
+            elif config.openclip.device != "cpu":
+                doctor_obs("CUDA/GPU ikke funnet. Bildesøk kan bruke CPU, men blir tregere.")
+        else:
+            doctor_error("image_search er slått på, men torch mangler.")
+            doctor_advice("Kjør `.\\install-openclip.ps1` fra programmappen.")
+    else:
+        doctor_obs("image_search er slått av.")
+
     target = db.find_target(target_arg)
     if target is not None:
         exists, scanned, faces = face_db_summary(target, face)
         openclip_summary = openclip_db_summary(target)
         print()
         print("Aktiv bildesamling:")
-        print(f"  {target}")
-        print(f"  face-database: {face_db_path(target, face)}")
-        print(f"  face-database finnes: {'ja' if exists else 'nei'}")
-        print(f"  scannede filer: {scanned}")
-        print(f"  ansikter funnet: {faces}")
-        print(f"  openclip-database: {openclip_db_path(target)}")
-        print(f"  openclip-database finnes: {'ja' if openclip_summary.exists else 'nei'}")
-        print(f"  bilde-embeddings: {openclip_summary.embeddings}")
-        print(f"  bildesøk: {openclip_summary.search_runs}")
+        doctor_ok(f"aktiv bildesamling funnet: {target}")
+        if exists:
+            doctor_ok(f"face-database finnes: {face_db_path(target, face)}")
+            doctor_info(f"scannede filer: {scanned}")
+            doctor_info(f"ansikter funnet: {faces}")
+        else:
+            doctor_obs(f"face-database finnes ikke ennå: {face_db_path(target, face)}")
+        if openclip_summary.exists:
+            doctor_ok(f"openclip-database finnes: {openclip_db_path(target)}")
+            doctor_info(f"bilde-embeddings: {openclip_summary.embeddings}")
+            doctor_info(f"bildesøk: {openclip_summary.search_runs}")
+        else:
+            doctor_obs(f"openclip-database finnes ikke ennå: {openclip_db_path(target)}")
+    else:
+        print()
+        print("Aktiv bildesamling:")
+        doctor_obs("ingen aktiv bildesamling funnet.")
+        doctor_advice("Kjør kommandoen fra en bildesamling, eller bruk `--target`.")
     return 0
 
 
@@ -1732,8 +1775,32 @@ def _toml_bool_text(value: bool) -> str:
     return "true" if value else "false"
 
 
+def doctor_ok(message: str) -> None:
+    print(f"  OK: {message}")
+
+
+def doctor_obs(message: str) -> None:
+    print(f"  OBS: {message}")
+
+
+def doctor_error(message: str) -> None:
+    print(f"  FEIL: {message}")
+
+
+def doctor_advice(message: str) -> None:
+    print(f"  Råd: {message}")
+
+
+def doctor_info(message: str) -> None:
+    print(f"  INFO: {message}")
+
+
+def python_module_available(module_name: str) -> bool:
+    return importlib.util.find_spec(module_name) is not None
+
+
 def module_available(module_name: str) -> str:
-    return "ja" if importlib.util.find_spec(module_name) is not None else "nei"
+    return "ja" if python_module_available(module_name) else "nei"
 
 
 def run_image_scan(target: Path, *, limit: int | None) -> int:

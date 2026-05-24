@@ -11,8 +11,17 @@ options:
 `doctor` viser en read-only diagnose for Bildebank-installasjonen og aktiv
 bildesamling. Kommandoen endrer ikke config, databaser eller bildefiler.
 
-Kommandoen viser status for ansiktsgjenkjenning, tekstbasert bildesøk,
-ExifTool og, når Bildebank finner en aktiv bildesamling, status for relevante
-databaser i samlingen.
+Kommandoen skriver korte linjer:
+
+- `OK:` betyr at dette ser riktig ut.
+- `OBS:` betyr at noe er av, mangler eller ikke er gjort ennå, men at det ikke
+  nødvendigvis er en feil.
+- `FEIL:` betyr at noe brukeren har slått på eller trenger, ikke virker.
+- `Råd:` viser hva du bør gjøre videre.
+
+`doctor` sjekker blant annet config-fil, H3, ExifTool, ansiktsgjenkjenning,
+tekstbasert bildesøk og aktiv bildesamling. Hvis for eksempel
+`face_recognition` er slått på, men InsightFace mangler, viser kommandoen en
+`FEIL:`-linje og råder deg til å kjøre `.\install-insightface.ps1`.
 
 Det gamle navnet `face-status` virker fortsatt som alias.

@@ -3196,23 +3196,32 @@ model_name = "buffalo_l"
         self.assertIn("Ingen registrert ennå.", stdout)
 
     def test_doctor_is_disabled_by_default(self) -> None:
-        code, stdout, stderr = capture_cli(["doctor"])
+        exiftool = self.program_root / "bildebank-tools" / "exiftool" / "exiftool.exe"
+        with (
+            patch("bilder.cli.resolve_exiftool_path", return_value=exiftool),
+            patch("bilder.cli.validate_exiftool_install", return_value="13.58"),
+            patch("bilder.cli.python_module_available", side_effect=lambda name: name == "h3"),
+        ):
+            code, stdout, stderr = capture_cli(["doctor"])
 
         self.assertEqual(code, 0, stderr)
-        self.assertIn("Ansiktsgjenkjenning:", stdout)
-        self.assertIn("konfigurert: av", stdout)
-        self.assertIn("insightface installert:", stdout)
-        self.assertIn("Tekstbasert bildesøk:", stdout)
-        self.assertIn("ExifTool:", stdout)
+        self.assertIn("Bildebank doctor", stdout)
+        self.assertIn("  OK: h3 installert", stdout)
+        self.assertIn("  OK: ExifTool funnet:", stdout)
+        self.assertIn("  OBS: face_recognition er slått av.", stdout)
+        self.assertIn("  OBS: image_search er slått av.", stdout)
+        self.assertIn("  OBS: ingen aktiv bildesamling funnet.", stdout)
         self.assertEqual(stderr, "")
 
     def test_face_status_is_doctor_alias(self) -> None:
-        code, stdout, stderr = capture_cli(["face-status"])
+        with patch("bilder.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
+            code, stdout, stderr = capture_cli(["face-status"])
 
         self.assertEqual(code, 0, stderr)
+        self.assertIn("Bildebank doctor", stdout)
         self.assertIn("Ansiktsgjenkjenning:", stdout)
         self.assertIn("Tekstbasert bildesøk:", stdout)
-        self.assertIn("ExifTool:", stdout)
+        self.assertIn("  FEIL: ExifTool mangler eller virker ikke: mangler", stdout)
         self.assertEqual(stderr, "")
 
     def test_doctor_shows_exiftool_status(self) -> None:
@@ -3224,19 +3233,72 @@ model_name = "buffalo_l"
             code, stdout, stderr = capture_cli(["doctor"])
 
         self.assertEqual(code, 0, stderr)
-        self.assertIn("ExifTool:", stdout)
-        self.assertIn("funnet: ja", stdout)
-        self.assertIn(f"path: {exiftool}", stdout)
-        self.assertIn("versjon: 13.58", stdout)
+        self.assertIn(f"  OK: ExifTool funnet: {exiftool} (13.58)", stdout)
 
     def test_doctor_reports_missing_exiftool_without_failing(self) -> None:
         with patch("bilder.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
             code, stdout, stderr = capture_cli(["doctor"])
 
         self.assertEqual(code, 0, stderr)
-        self.assertIn("ExifTool:", stdout)
-        self.assertIn("funnet: nei", stdout)
-        self.assertIn("feil: mangler", stdout)
+        self.assertIn("  FEIL: ExifTool mangler eller virker ikke: mangler", stdout)
+        self.assertIn("  Råd:", stdout)
+        self.assertEqual(stderr, "")
+
+    def test_doctor_reports_enabled_face_recognition_missing_dependencies(self) -> None:
+        (self.program_root / "bildebank-config.toml").write_text(
+            """
+[face_recognition]
+enabled = true
+""",
+            encoding="utf-8",
+        )
+
+        with (
+            patch("bilder.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bilder.cli.python_module_available", side_effect=lambda name: name == "h3"),
+        ):
+            code, stdout, stderr = capture_cli(["doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("  OK: face_recognition er slått på", stdout)
+        self.assertIn("  FEIL: face_recognition er slått på, men insightface mangler.", stdout)
+        self.assertIn("  FEIL: face_recognition er slått på, men onnxruntime mangler.", stdout)
+        self.assertIn("install-insightface.ps1", stdout)
+        self.assertEqual(stderr, "")
+
+    def test_doctor_reports_enabled_image_search_missing_dependencies(self) -> None:
+        (self.program_root / "bildebank-config.toml").write_text(
+            """
+[image_search]
+enabled = true
+""",
+            encoding="utf-8",
+        )
+
+        with (
+            patch("bilder.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bilder.cli.python_module_available", side_effect=lambda name: name == "h3"),
+            patch("bilder.cli.torch_gpu_status", return_value={"torch": "nei", "cuda": "nei", "device": "-"}),
+        ):
+            code, stdout, stderr = capture_cli(["doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("  OK: image_search er slått på", stdout)
+        self.assertIn("  FEIL: image_search er slått på, men open_clip mangler.", stdout)
+        self.assertIn("  FEIL: image_search er slått på, men torch mangler.", stdout)
+        self.assertIn("install-openclip.ps1", stdout)
+        self.assertEqual(stderr, "")
+
+    def test_doctor_reports_missing_h3_without_failing(self) -> None:
+        with (
+            patch("bilder.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bilder.cli.python_module_available", return_value=False),
+        ):
+            code, stdout, stderr = capture_cli(["doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("  FEIL: h3 mangler. Geografiske funksjoner virker ikke.", stdout)
+        self.assertIn("  Råd: Kjør setup-windows.ps1 på nytt", stdout)
         self.assertEqual(stderr, "")
 
     def test_face_config_creates_config_file(self) -> None:
