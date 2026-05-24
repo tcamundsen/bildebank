@@ -3428,7 +3428,7 @@ def error_html(exc: Exception, *, face_enabled: bool = True, openclip_enabled: b
 def search_form(query: str, limit: int = DEFAULT_SEARCH_LIMIT, *, model_loaded: bool = False) -> str:
     model_status = "true" if model_loaded else "false"
     return f"""
-    <p class="search-note">Første søk kan ta litt tid fordi bildesøkmodellen og bildeindeksen må lastes.</p>
+    <p class="search-note">Første søk kan ta 10-20 sekunder fordi bildesøkmodellen og bildeindeksen må lastes.</p>
     <p class="search-loading" hidden data-search-loading>Laster bildesøkmodellen. Dette kan ta litt tid første gang...</p>
     <form action="/search" method="get" class="search" data-search-form data-model-loaded="{model_status}">
       <input name="q" value="{html.escape(query)}" placeholder="a photo of a beach" autofocus>
