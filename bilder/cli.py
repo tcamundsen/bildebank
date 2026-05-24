@@ -509,13 +509,13 @@ def build_parser() -> argparse.ArgumentParser:
         description="Slå valgfrie funksjoner på eller av i bildebank-config.toml.\n"
                     "Eksempel:\n\n"
                     " bildebank config face_recognition enable\n"
-                    " bildebank config openclip disable",
+                    " bildebank config image_search disable",
         formatter_class=BildebankHelpFormatter,
     )
     config_parser.add_argument(
         "section",
         metavar="seksjon",
-        choices=("face_recognition", "openclip"),
+        choices=("face_recognition", "image_search"),
         help="Config-seksjon som skal endres",
     )
     config_parser.add_argument(
@@ -2199,8 +2199,8 @@ def require_face_enabled(enabled: bool) -> None:
 def require_openclip_enabled(enabled: bool) -> None:
     if not enabled:
         raise ValueError(
-            f"Tekstbasert bildesøk er av. Sett enabled = true under [openclip] i {CONFIG_FILENAME} "
-            "hvis du vil teste."
+            f"Tekstbasert bildesøk er av. Kjør `bildebank config image_search enable` "
+            f"eller sett enabled = true under [image_search] i {CONFIG_FILENAME} hvis du vil teste."
         )
 
 

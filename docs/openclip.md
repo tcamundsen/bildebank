@@ -49,7 +49,7 @@ de underliggende kommandoene.
 Slå på tekstbasert bildesøk:
 
 ```powershell
-bildebank config openclip enable
+bildebank config image_search enable
 ```
 
 Modellfiler lagres lokalt i programmappen:
@@ -72,7 +72,7 @@ nedlastingsgrenser hvis man bruker en token.
 OpenCLIP-modellen velges i `bildebank-config.toml`:
 
 ```toml
-[openclip]
+[image_search]
 enabled = true
 model_root = ".bildebank-openclip"
 device = "auto"
@@ -83,7 +83,7 @@ pretrained = "laion2b_s34b_b79k"
 For å teste den større L/14-modellen, bytt til:
 
 ```toml
-[openclip]
+[image_search]
 enabled = true
 model_root = ".bildebank-openclip"
 device = "auto"
@@ -93,6 +93,9 @@ pretrained = "laion2b_s32b_b82k"
 
 Modellen omtales ofte som `ViT-L/14`, men i OpenCLIP-config bruker vi navnet
 `ViT-L-14`.
+
+Eldre configfiler kan ha seksjonen `[openclip]`. Bildebank leser fortsatt den
+hvis `[image_search]` mangler.
 
 `ViT-L-14` kan gi bedre treff enn `ViT-B-32`, men den er større og tregere.
 Når du bytter modell, må image-scan kjøres på nytt for å lage embeddings for

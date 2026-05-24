@@ -6,6 +6,11 @@ usage: bildebank config seksjon enable|disable
 
 Slå valgfrie funksjoner på eller av i bildebank-config.toml.
 
+Eksempel:
+
+ bildebank config face_recognition enable
+ bildebank config image_search disable
+
 positional arguments:
   seksjon         Config-seksjon som skal endres
   enable|disable  enable slår funksjonen på, disable slår den av
@@ -33,13 +38,13 @@ bildebank config face_recognition disable
 Slå på tekstbasert bildesøk:
 
 ```powershell
-bildebank config openclip enable
+bildebank config image_search enable
 ```
 
 Slå av tekstbasert bildesøk:
 
 ```powershell
-bildebank config openclip disable
+bildebank config image_search disable
 ```
 
 Dette endrer bare `enabled = true` eller `enabled = false` i den aktuelle

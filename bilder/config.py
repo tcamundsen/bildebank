@@ -7,7 +7,7 @@ from typing import Any
 
 
 CONFIG_FILENAME = "bildebank-config.toml"
-ENABLED_CONFIG_SECTIONS = frozenset({"face_recognition", "openclip"})
+ENABLED_CONFIG_SECTIONS = frozenset({"face_recognition", "image_search"})
 
 
 @dataclass(frozen=True)
@@ -49,7 +49,7 @@ def load_config(repo_root: Path) -> AppConfig:
     model_root = Path(str(face_data.get("model_root", ".bildebank-insightface")))
     if not model_root.is_absolute():
         model_root = repo_root / model_root
-    openclip_data = _section(data, "openclip")
+    openclip_data = _section_with_fallback(data, "image_search", "openclip")
     openclip_model_root = Path(str(openclip_data.get("model_root", ".bildebank-openclip")))
     if not openclip_model_root.is_absolute():
         openclip_model_root = repo_root / openclip_model_root
@@ -124,6 +124,13 @@ def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{CONFIG_FILENAME}: [{name}] må være en tabell.")
     return value
+
+
+def _section_with_fallback(data: dict[str, Any], primary: str, fallback: str) -> dict[str, Any]:
+    fallback_data = _section(data, fallback)
+    if primary not in data:
+        return fallback_data
+    return {**fallback_data, **_section(data, primary)}
 
 
 def _set_toml_bool(text: str, *, section: str, key: str, value: bool) -> str:
