@@ -424,6 +424,45 @@ Vanlig dokumentasjon.
         self.assertNotIn("CLI-HELP-START", html)
         self.assertNotIn("CLI-HELP-END", html)
 
+    def test_markdown_help_renderer_supports_numbered_lists(self) -> None:
+        html = markdown_to_html(
+            """Først:
+
+1. Les `README`
+2. Kjør **import**
+3. Se [hjelpen](help.md)
+
+- Ferdig
+"""
+        )
+
+        self.assertIn(
+            '<ol><li>Les <code>README</code></li><li>Kjør <strong>import</strong></li><li>Se <a href="help.md">hjelpen</a></li></ol>',
+            html,
+        )
+        self.assertIn("<ul><li>Ferdig</li></ul>", html)
+
+    def test_markdown_help_renderer_supports_wrapped_list_items(self) -> None:
+        html = markdown_to_html(
+            """- Første punkt går
+  over flere linjer
+- Andre punkt
+
+1. Nummerert punkt går
+   også over flere linjer
+2. Siste punkt
+"""
+        )
+
+        self.assertIn(
+            "<ul><li>Første punkt går over flere linjer</li><li>Andre punkt</li></ul>",
+            html,
+        )
+        self.assertIn(
+            "<ol><li>Nummerert punkt går også over flere linjer</li><li>Siste punkt</li></ol>",
+            html,
+        )
+
     def test_custom_geo_places_page_has_edit_forms(self) -> None:
         place = PREDEFINED_GEO_PLACES[0]
         h3_cell = place.h3_cells[0]

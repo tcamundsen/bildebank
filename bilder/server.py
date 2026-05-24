@@ -3369,6 +3369,7 @@ def markdown_to_html(markdown: str) -> str:
     html_lines: list[str] = []
     paragraph: list[str] = []
     list_items: list[str] = []
+    list_tag = "ul"
     in_code = False
     code_lines: list[str] = []
 
@@ -3378,9 +3379,13 @@ def markdown_to_html(markdown: str) -> str:
             paragraph.clear()
 
     def flush_list() -> None:
+        nonlocal list_tag
         if list_items:
-            html_lines.append("<ul>" + "".join(f"<li>{item}</li>" for item in list_items) + "</ul>")
+            html_lines.append(
+                f"<{list_tag}>" + "".join(f"<li>{item}</li>" for item in list_items) + f"</{list_tag}>"
+            )
             list_items.clear()
+            list_tag = "ul"
 
     def flush_code() -> None:
         if code_lines:
@@ -3415,7 +3420,21 @@ def markdown_to_html(markdown: str) -> str:
             continue
         if stripped.startswith(("- ", "* ")):
             flush_paragraph()
+            if list_tag != "ul":
+                flush_list()
+                list_tag = "ul"
             list_items.append(markdown_inline_html(stripped[2:].strip()))
+            continue
+        ordered_match = re.match(r"\d+\.\s+(.*)", stripped)
+        if ordered_match:
+            flush_paragraph()
+            if list_tag != "ol":
+                flush_list()
+                list_tag = "ol"
+            list_items.append(markdown_inline_html(ordered_match.group(1).strip()))
+            continue
+        if list_items:
+            list_items[-1] = f"{list_items[-1]} {markdown_inline_html(stripped)}"
             continue
         paragraph.append(stripped)
 
