@@ -931,6 +931,10 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
         params = urllib.parse.parse_qs(raw)
         try:
+            raw_original_slug = first_param(params, "original_slug")
+            original_slug = normalize_geo_place_slug(raw_original_slug) if raw_original_slug else ""
+            if predefined_geo_place(original_slug) is not None:
+                raise ValueError("Innebygde steder kan ikke endres.")
             slug = normalize_geo_place_slug(first_param(params, "slug"))
             if predefined_geo_place(slug) is not None:
                 raise ValueError("Slug er reservert for et innebygd sted.")
@@ -938,7 +942,13 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             h3_cells = parse_geo_place_cells(first_param(params, "h3_cells"))
             conn = db.connect(self.server.target)
             try:
-                db.set_custom_geo_place(conn, slug=slug, name=name, h3_cells=h3_cells)
+                db.rename_custom_geo_place(
+                    conn,
+                    old_slug=original_slug,
+                    slug=slug,
+                    name=name,
+                    h3_cells=h3_cells,
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -948,14 +958,14 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 status=HTTPStatus.BAD_REQUEST,
             )
             return
-        self.redirect("/geo/place/" + urllib.parse.quote(slug, safe=""))
+        self.redirect("/geo/custom-places")
 
     def respond_delete_custom_geo_place(self) -> None:
         length = int(self.headers.get("Content-Length") or "0")
         raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
         params = urllib.parse.parse_qs(raw)
         try:
-            slug = normalize_geo_place_slug(first_param(params, "slug"))
+            slug = normalize_geo_place_slug(first_param(params, "original_slug") or first_param(params, "slug"))
             if predefined_geo_place(slug) is not None:
                 raise ValueError("Innebygde steder kan ikke slettes.")
             conn = db.connect(self.server.target)
@@ -2853,7 +2863,7 @@ def geo_index_page_html(
         {geo_stats_summary_html(stats)}
         <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
         {geo_places_section_html(geo_places)}
-        <h2>H3-heksagoner</h2>
+        <h2>H3-heksagoner - Tom Cato-eksperiment. Bare overse</h2>
         {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
         <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder. {len(areas)} steder funnet.</p>
         {content}
@@ -2890,6 +2900,7 @@ def geo_place_rows(conn: sqlite3.Connection) -> list[dict[str, object]]:
             "slug": place.slug,
             "name": place.name,
             "kind": "system" if place in PREDEFINED_GEO_PLACES else "user",
+            "h3_cells": place.h3_cells,
             "count": db.geo_place_count(conn, cells_by_column=geo_place_cells_by_column(place)),
         }
         for place in sorted((*PREDEFINED_GEO_PLACES, *custom_geo_places(conn)), key=lambda item: (item.name, item.slug))
@@ -2913,18 +2924,24 @@ def geo_place_row_html(row: dict[str, object]) -> str:
     slug = str(row["slug"])
     name = str(row["name"])
     count = int(row["count"])
+    h3_cells = tuple(str(cell) for cell in row["h3_cells"])
     url = "/geo/place/" + urllib.parse.quote(slug, safe="")
+    h3geo_url = h3geo_place_url(h3_cells)
     if row["kind"] == 'system':
         icon = "system"
     else:
         icon = "user"
     return f"""
-    <a class="geo-row" href="{html.escape(url)}">
-      <span>{html.escape(name)}</span>
+    <div class="geo-row">
+      <span><a href="{html.escape(url)}">{html.escape(name)}</a> <a href="{html.escape(h3geo_url)}" target="_blank" rel="noopener">H3Geo</a></span>
       <span class="status">{icon}</span>
       <strong>{count} bilder</strong>
-    </a>
+    </div>
     """
+
+
+def h3geo_place_url(h3_cells: tuple[str, ...]) -> str:
+    return "https://h3geo.org/#hex=" + urllib.parse.quote_plus(", ".join(h3_cells))
 
 
 def custom_geo_places_admin_html(places: list[PredefinedGeoPlace]) -> str:
@@ -2957,8 +2974,12 @@ def custom_geo_place_form_html(place: PredefinedGeoPlace | None = None) -> str:
         if place is not None
         else ""
     )
+    original_slug_input = (
+        f'<input type="hidden" name="original_slug" value="{html.escape(slug)}">' if place is not None else ""
+    )
     return f"""
     <form action="/geo/custom-place" method="post" class="custom-place-form">
+      {original_slug_input}
       <div class="custom-place-identity">
         <label>Slug <input name="slug" value="{html.escape(slug)}" autocomplete="off"></label>
         <label>Navn <input name="name" value="{html.escape(name)}" autocomplete="off"></label>

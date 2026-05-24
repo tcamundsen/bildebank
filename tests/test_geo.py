@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import urllib.parse
 import uuid
 from contextlib import redirect_stderr, redirect_stdout
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -385,8 +386,15 @@ class GeoTests(unittest.TestCase):
         self.assertIn("<h2>Definerte steder</h2>", html)
         self.assertIn("Kreta", html)
         self.assertIn('href="/geo/place/kreta"', html)
+        self.assertIn(
+            'href="https://h3geo.org/#hex=' + urllib.parse.quote_plus(", ".join(place.h3_cells)) + '"',
+            html,
+        )
         self.assertIn("Min plass", html)
         self.assertIn('href="/geo/place/min_plass"', html)
+        self.assertIn('href="https://h3geo.org/#hex=' + urllib.parse.quote_plus(h3_cell) + '"', html)
+        self.assertIn('target="_blank"', html)
+        self.assertIn('rel="noopener"', html)
         self.assertIn('href="/geo/custom-places"', html)
         self.assertIn('href="/help/web/steder"', html)
         self.assertNotIn('action="/geo/custom-place"', html)
@@ -482,9 +490,64 @@ Vanlig dokumentasjon.
         self.assertIn("<h1>Egne steder</h1>", html)
         self.assertIn('action="/geo/custom-place"', html)
         self.assertIn('action="/geo/custom-place-delete"', html)
+        self.assertIn('name="original_slug" value="min_plass"', html)
         self.assertIn('name="slug" value="min_plass"', html)
         self.assertIn('name="name" value="Min plass"', html)
         self.assertIn(h3_cell, html)
+
+    def test_custom_geo_place_slug_change_renames_existing_place(self) -> None:
+        place = PREDEFINED_GEO_PLACES[0]
+        old_cell = place.h3_cells[0]
+        new_cell = place.h3_cells[1]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                db.set_custom_geo_place(conn, slug="gammel_plass", name="Gammel plass", h3_cells=[old_cell])
+                conn.commit()
+            finally:
+                conn.close()
+
+            body = urllib.parse.urlencode(
+                {
+                    "original_slug": "gammel_plass",
+                    "slug": "ny_plass",
+                    "name": "Ny plass",
+                    "h3_cells": new_cell,
+                }
+            ).encode("utf-8")
+            handler = object.__new__(BildebankRequestHandler)
+            handler.headers = {"Content-Length": str(len(body))}  # type: ignore[assignment]
+            handler.rfile = BytesIO(body)  # type: ignore[assignment]
+            handler.server = type(
+                "Server",
+                (),
+                {"target": target, "face_enabled": True, "openclip_enabled": True},
+            )()  # type: ignore[attr-defined]
+            redirect: dict[str, str] = {}
+
+            def fake_redirect(url: str) -> None:
+                redirect["url"] = url
+
+            handler.redirect = fake_redirect  # type: ignore[method-assign]
+
+            handler.respond_set_custom_geo_place()
+
+            conn = db.connect(target)
+            try:
+                old_place = db.custom_geo_place(conn, "gammel_plass")
+                new_place = db.custom_geo_place(conn, "ny_plass")
+            finally:
+                conn.close()
+
+        self.assertIsNone(old_place)
+        self.assertIsNotNone(new_place)
+        assert new_place is not None
+        self.assertEqual(new_place["name"], "Ny plass")
+        self.assertEqual(new_place["h3_cells"], (new_cell,))
+        self.assertEqual(redirect["url"], "/geo/custom-places")
 
     def test_geo_place_item_and_month_pages_use_browser_source_urls(self) -> None:
         place = PREDEFINED_GEO_PLACES[0]

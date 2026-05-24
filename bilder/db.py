@@ -2230,6 +2230,30 @@ def set_custom_geo_place(conn: sqlite3.Connection, *, slug: str, name: str, h3_c
     )
 
 
+def rename_custom_geo_place(
+    conn: sqlite3.Connection,
+    *,
+    old_slug: str,
+    slug: str,
+    name: str,
+    h3_cells: list[str],
+) -> None:
+    clean_old_slug = old_slug.strip().lower()
+    clean_slug = slug.strip().lower()
+    if not clean_old_slug:
+        set_custom_geo_place(conn, slug=slug, name=name, h3_cells=h3_cells)
+        return
+    if clean_old_slug == clean_slug:
+        set_custom_geo_place(conn, slug=slug, name=name, h3_cells=h3_cells)
+        return
+    if conn.execute("SELECT 1 FROM geo_places WHERE slug = ?", (clean_slug,)).fetchone() is not None:
+        raise ValueError("Slug er allerede i bruk.")
+    if conn.execute("SELECT 1 FROM geo_places WHERE slug = ?", (clean_old_slug,)).fetchone() is None:
+        raise ValueError("Stedet som skulle oppdateres finnes ikke.")
+    conn.execute("DELETE FROM geo_places WHERE slug = ?", (clean_old_slug,))
+    set_custom_geo_place(conn, slug=slug, name=name, h3_cells=h3_cells)
+
+
 def delete_custom_geo_place(conn: sqlite3.Connection, slug: str) -> None:
     conn.execute("DELETE FROM geo_places WHERE slug = ?", (slug.strip().lower(),))
 
