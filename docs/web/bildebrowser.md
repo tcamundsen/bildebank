@@ -1,4 +1,6 @@
-# Bildebrowser
+Litt skriblerier om programmet [kan du lese her](om-bildebank.md).
+Oversikt over alle kommandoer [finner du her](../reference.md).
+# Bildebrowseren
 
 Litt om bildebrowseren fra run-server. Jeg vet at noen ting er litt rotete
 og preget av work-in-progress. Det er fordi det er det. Men det finpusses
@@ -7,6 +9,11 @@ stadig.
 ## Venstre øverste hjørne
 
 Her står det **Bildebrowser** når du starter. Det betyr at du ser alle bildene i samlingen.
+
+Den øverste linjen vises også når du går videre til andre sider i lokalserveren,
+for eksempel Personer, Kilder, Steder, Bildesøk, Hjelp og Innstillinger. Bruk
+denne linjen som hovednavigasjon tilbake til de viktigste delene av
+bildebanken.
 
 Knappene med navn til venstre for **Bildebrowser** lenker til personbrowseren
 for denne personen. Hvis knappen har en markering som dette, ✅, så har du

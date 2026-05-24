@@ -150,16 +150,34 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 if not self.server.face_enabled:
                     self.respond_text("Ansiktsgjenkjenning er av.", status=HTTPStatus.NOT_FOUND)
                     return
-                self.respond_html(people_page_html(self.server.target, self.server.config.face_recognition))
+                self.respond_html(
+                    people_page_html(
+                        self.server.target,
+                        self.server.config.face_recognition,
+                        openclip_enabled=self.server.openclip_enabled,
+                    )
+                )
                 return
             if parsed.path in {"/sources", "/sources/"}:
-                self.respond_html(sources_page_html(self.server.target))
+                self.respond_html(
+                    sources_page_html(
+                        self.server.target,
+                        face_enabled=self.server.face_enabled,
+                        openclip_enabled=self.server.openclip_enabled,
+                    )
+                )
                 return
             if parsed.path == "/settings":
                 self.respond_html(app_status_page_html(self.server.target, self.server.config))
                 return
             if parsed.path in {"/settings/removed", "/settings/removed/"}:
-                self.respond_html(removed_files_page_html(self.server.target))
+                self.respond_html(
+                    removed_files_page_html(
+                        self.server.target,
+                        face_enabled=self.server.face_enabled,
+                        openclip_enabled=self.server.openclip_enabled,
+                    )
+                )
                 return
             if parsed.path == "/static/server.css":
                 self.respond_static_asset(SERVER_CSS, "text/css; charset=utf-8")
@@ -177,13 +195,25 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 self.respond_geo_map(parsed.query)
                 return
             if parsed.path == "/geo/stats":
-                self.respond_html(geo_stats_page_html(self.server.target))
+                self.respond_html(
+                    geo_stats_page_html(
+                        self.server.target,
+                        face_enabled=self.server.face_enabled,
+                        openclip_enabled=self.server.openclip_enabled,
+                    )
+                )
                 return
             if parsed.path == "/geo/missing":
                 self.respond_geo_missing(parsed.query)
                 return
             if parsed.path == "/geo/custom-places":
-                self.respond_html(custom_geo_places_page_html(self.server.target))
+                self.respond_html(
+                    custom_geo_places_page_html(
+                        self.server.target,
+                        face_enabled=self.server.face_enabled,
+                        openclip_enabled=self.server.openclip_enabled,
+                    )
+                )
                 return
             if parsed.path.startswith("/geo/place/"):
                 self.respond_geo_place(parsed.path.removeprefix("/geo/place/"))
@@ -233,7 +263,10 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
                 return
             self.respond_file(parsed.path.lstrip("/"))
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
-            self.respond_html(error_html(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
 
     def do_POST(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
@@ -333,7 +366,12 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         source = all_browser_source()
         item = first_source_item(self.server.target, source)
         if item is None:
-            self.respond_html(empty_browser_html(openclip_enabled=self.server.openclip_enabled))
+            self.respond_html(
+                empty_browser_html(
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                )
+            )
             return
         self.redirect(source_item_url(source, int(item["id"])))
 
@@ -387,7 +425,14 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             return
         person = person_by_name(self.server.target, person_name, self.server.config.face_recognition)
         if person is None:
-            self.respond_html(person_not_found_html(person_name), status=HTTPStatus.NOT_FOUND)
+            self.respond_html(
+                person_not_found_html(
+                    person_name,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                ),
+                status=HTTPStatus.NOT_FOUND,
+            )
             return
         canonical_name = str(person["name"])
         source = person_browser_source(canonical_name, include_suggestions=person_mode != "confirmed", show_faces=show_faces)
@@ -577,7 +622,16 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         if resolution not in H3_COLUMNS:
             self.respond_text("H3-oppløsning må være mellom 0 og 9.", status=HTTPStatus.BAD_REQUEST)
             return
-        self.respond_html(geo_index_page_html(self.server.target, resolution=resolution, min_count=min_count, limit=limit))
+        self.respond_html(
+            geo_index_page_html(
+                self.server.target,
+                resolution=resolution,
+                min_count=min_count,
+                limit=limit,
+                face_enabled=self.server.face_enabled,
+                openclip_enabled=self.server.openclip_enabled,
+            )
+        )
 
     def respond_geo_map(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
@@ -587,7 +641,16 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         if resolution not in H3_COLUMNS:
             self.respond_text("H3-oppløsning må være mellom 0 og 9.", status=HTTPStatus.BAD_REQUEST)
             return
-        self.respond_html(geo_map_page_html(self.server.target, resolution=resolution, min_count=min_count, limit=limit))
+        self.respond_html(
+            geo_map_page_html(
+                self.server.target,
+                resolution=resolution,
+                min_count=min_count,
+                limit=limit,
+                face_enabled=self.server.face_enabled,
+                openclip_enabled=self.server.openclip_enabled,
+            )
+        )
 
     def respond_geo_area(self, raw_cell: str, query: str) -> None:
         h3_cell = urllib.parse.unquote(raw_cell).strip()
@@ -598,7 +661,16 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         except ValueError as exc:
             self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
             return
-        self.respond_html(geo_area_page_html(self.server.target, h3_cell, resolution=resolution, limit=limit))
+        self.respond_html(
+            geo_area_page_html(
+                self.server.target,
+                h3_cell,
+                resolution=resolution,
+                limit=limit,
+                face_enabled=self.server.face_enabled,
+                openclip_enabled=self.server.openclip_enabled,
+            )
+        )
 
     def respond_geo_place(self, raw_path: str) -> None:
         raw_slug, page_mode, raw_value = parse_source_path(raw_path)
@@ -667,7 +739,15 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         params = urllib.parse.parse_qs(query)
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
         offset = nonnegative_int_param(params, "offset", 0)
-        self.respond_html(geo_missing_page_html(self.server.target, limit=limit, offset=offset))
+        self.respond_html(
+            geo_missing_page_html(
+                self.server.target,
+                limit=limit,
+                offset=offset,
+                face_enabled=self.server.face_enabled,
+                openclip_enabled=self.server.openclip_enabled,
+            )
+        )
 
     def respond_set_geo_place_name(self) -> None:
         length = int(self.headers.get("Content-Length") or "0")
@@ -707,7 +787,10 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             finally:
                 conn.close()
         except ValueError as exc:
-            self.respond_html(error_html(exc), status=HTTPStatus.BAD_REQUEST)
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.BAD_REQUEST,
+            )
             return
         self.redirect("/geo/place/" + urllib.parse.quote(slug, safe=""))
 
@@ -726,7 +809,10 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             finally:
                 conn.close()
         except ValueError as exc:
-            self.respond_html(error_html(exc), status=HTTPStatus.BAD_REQUEST)
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.BAD_REQUEST,
+            )
             return
         self.redirect("/geo")
 
@@ -798,7 +884,14 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         except OSError as exc:
             self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
-        self.respond_html(markdown_doc_page_html(doc_path, markdown))
+        self.respond_html(
+            markdown_doc_page_html(
+                doc_path,
+                markdown,
+                face_enabled=self.server.face_enabled,
+                openclip_enabled=self.server.openclip_enabled,
+            )
+        )
 
     def respond_item_info(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
@@ -2571,7 +2664,7 @@ def index_html(server: BildebankServer, *, message: str = "") -> str:
         return search_start_html(server, message=message)
     item = first_browser_item(server.target)
     if item is None:
-        return empty_browser_html(openclip_enabled=server.openclip_enabled)
+        return empty_browser_html(face_enabled=server.face_enabled, openclip_enabled=server.openclip_enabled)
     previous_item, next_item = adjacent_browser_items(server.target, item)
     month_nav = browser_month_navigation(server.target, item)
     return item_page_html(
@@ -2587,35 +2680,33 @@ def index_html(server: BildebankServer, *, message: str = "") -> str:
 
 def search_start_html(server: BildebankServer, *, message: str = "") -> str:
     openclip_config = server.config.openclip
-    return page_html(
+    return shell_page_html(
         "Bildesøk",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a></p>
-          <h1>Bildesøk</h1>
-          <p class="meta">OpenCLIP {html.escape(openclip_config.model_name)} ({html.escape(openclip_config.pretrained)})</p>
-          {message_html(message)}
-          {search_form("")}
-        </main>
+        <h1>Bildesøk</h1>
+        <p class="meta">OpenCLIP {html.escape(openclip_config.model_name)} ({html.escape(openclip_config.pretrained)})</p>
+        {message_html(message)}
+        {search_form("")}
         """,
+        face_enabled=server.face_enabled,
+        openclip_enabled=server.openclip_enabled,
     )
 
 
 def search_html(server: BildebankServer, stats: ServerSearchStats, limit: int) -> str:
     items = "\n".join(result_html(server.target, result) for result in stats.results)
-    return page_html(
+    return shell_page_html(
         f"Bildesøk: {stats.query}",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a></p>
-          <h1>Bildesøk</h1>
-          {search_form(stats.query, limit)}
-          <p class="meta">{len(stats.results)} treff. Sortert med beste match først. Modell lastet: {'ja' if server.search_cache.loaded else 'nei'}.</p>
-          <div class="grid">
-            {items}
-          </div>
-        </main>
+        <h1>Bildesøk</h1>
+        {search_form(stats.query, limit)}
+        <p class="meta">{len(stats.results)} treff. Sortert med beste match først. Modell lastet: {'ja' if server.search_cache.loaded else 'nei'}.</p>
+        <div class="grid">
+          {items}
+        </div>
         """,
+        face_enabled=server.face_enabled,
+        openclip_enabled=server.openclip_enabled,
     )
 
 
@@ -2625,6 +2716,8 @@ def geo_index_page_html(
     resolution: int = DEFAULT_GEO_RESOLUTION,
     min_count: int = DEFAULT_GEO_MIN_COUNT,
     limit: int = DEFAULT_GEO_LIMIT,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
 ) -> str:
     column = h3_column_for_resolution(resolution)
     conn = db.connect(target)
@@ -2640,46 +2733,47 @@ def geo_index_page_html(
         if area_links
         else '<p class="meta">Ingen steder med nok bilder. Kjør bildebank geo-scan, eller senk min_count.</p>'
     )
-    return page_html(
+    return shell_page_html(
         "Steder",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a>
-           · <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a>
-           · <a href="/geo/stats">Geo-statistikk</a>
-           · <a href="/geo/missing">Bilder uten GPS</a>
-           · <a href="/help/web/steder">Hjelp</a></p>
-          <h2>Statistikk over bilder med GPS-posisjon</h2>
-          {geo_stats_summary_html(stats)}
-          <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
-          {geo_places_section_html(geo_places)}
-          <h2>H3-heksagoner</h2>
-          {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
-          <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder. {len(areas)} steder funnet.</p>
-          {content}
-        </main>
+        <nav class="subnav">
+          <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a>
+          <a href="/geo/stats">Geo-statistikk</a>
+          <a href="/geo/missing">Bilder uten GPS</a>
+          <a href="/help/web/steder">Hjelp</a>
+        </nav>
+        <h2>Statistikk over bilder med GPS-posisjon</h2>
+        {geo_stats_summary_html(stats)}
+        <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
+        {geo_places_section_html(geo_places)}
+        <h2>H3-heksagoner</h2>
+        {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
+        <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder. {len(areas)} steder funnet.</p>
+        {content}
         """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
-def custom_geo_places_page_html(target: Path) -> str:
+def custom_geo_places_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
     conn = db.connect(target)
     try:
         places = custom_geo_places(conn)
     finally:
         conn.close()
-    return page_html(
+    return shell_page_html(
         "Egendefinerte steder",
         f"""
-        <main class="shell">
-          <p><a href="/geo">Til steder</a>
-           · <a href="/">Til bildebrowser</a>
-           · <a href="/help/web/egendefinerte-steder.md">Hjelp</a>
-          </p>
-          <h1>Egne steder</h1>
-          {custom_geo_places_admin_html(places)}
-        </main>
+        <nav class="subnav">
+          <a href="/geo">Steder</a>
+          <a href="/help/web/egendefinerte-steder.md">Hjelp</a>
+        </nav>
+        <h1>Egne steder</h1>
+        {custom_geo_places_admin_html(places)}
         """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
@@ -2794,6 +2888,8 @@ def geo_map_page_html(
     resolution: int = DEFAULT_GEO_RESOLUTION,
     min_count: int = DEFAULT_GEO_MIN_COUNT,
     limit: int = DEFAULT_GEO_LIMIT,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
 ) -> str:
     column = h3_column_for_resolution(resolution)
     conn = db.connect(target)
@@ -2803,17 +2899,19 @@ def geo_map_page_html(
         conn.close()
     cells = geo_map_layout(areas)
     content = geo_map_svg_html(cells) if cells else '<p class="meta">Ingen steder med nok bilder. Kjør bildebank geo-scan, eller senk min_count.</p>'
-    return page_html(
+    return shell_page_html(
         "Heksagonkart",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/geo?resolution={resolution}&min_count={min_count}&limit={limit}">Steder</a></p>
-          <h1>Heksagonkart</h1>
-          {geo_filter_form_html("/geo/map", resolution=resolution, min_count=min_count, limit=limit)}
-          <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Heksagoner som er H3-naboer legges sammen i klynger. Hver klynge orienteres etter faktiske GPS-retninger, men klyngene er ikke plassert med geografisk avstand.</p>
-          {content}
-        </main>
+        <nav class="subnav">
+          <a href="/geo?resolution={resolution}&min_count={min_count}&limit={limit}">Steder</a>
+        </nav>
+        <h1>Heksagonkart</h1>
+        {geo_filter_form_html("/geo/map", resolution=resolution, min_count=min_count, limit=limit)}
+        <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Heksagoner som er H3-naboer legges sammen i klynger. Hver klynge orienteres etter faktiske GPS-retninger, men klyngene er ikke plassert med geografisk avstand.</p>
+        {content}
         """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
@@ -3021,26 +3119,37 @@ def geo_map_cell_svg(cell: GeoMapCell, *, size: float) -> str:
     """
 
 
-def geo_stats_page_html(target: Path) -> str:
+def geo_stats_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
     conn = db.connect(target)
     try:
         stats = db.geo_stats(conn)
     finally:
         conn.close()
-    return page_html(
+    return shell_page_html(
         "Geo-statistikk",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a> · <a href="/geo/missing">Bilder uten GPS</a></p>
-          <h1>Geo-statistikk</h1>
-          {geo_stats_summary_html(stats)}
-          <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
-        </main>
+        <nav class="subnav">
+          <a href="/geo">Steder</a>
+          <a href="/geo/missing">Bilder uten GPS</a>
+        </nav>
+        <h1>Geo-statistikk</h1>
+        {geo_stats_summary_html(stats)}
+        <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
         """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
-def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: int = DEFAULT_GEO_LIMIT) -> str:
+def geo_area_page_html(
+    target: Path,
+    h3_cell: str,
+    *,
+    resolution: int,
+    limit: int = DEFAULT_GEO_LIMIT,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
     conn = db.connect(target)
     try:
         place_name = db.geo_place_name(conn, h3_cell)
@@ -3061,28 +3170,28 @@ def geo_area_page_html(target: Path, h3_cell: str, *, resolution: int, limit: in
         resolution=resolution + 1,
         inherited_name=place_name,
     )
-    return page_html(
+    return shell_page_html(
         f"{title} {h3_cell}",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a></p>
-          <h1>{html.escape(title)}</h1>
-          <p class="meta">H3-celle {html.escape(h3_cell)}, {h3_resolution_label(resolution)}. Viser opptil {limit} bilder.{parent_link}</p>
-          {maps_paragraph}
-          <form action="/geo/place-name" method="post" class="geo-filter geo-name-form">
-            <input type="hidden" name="h3_cell" value="{html.escape(h3_cell)}">
-            <input type="hidden" name="limit" value="{limit}">
-            <label>Stedsnavn <input name="name" value="{escaped_name}" autocomplete="off"></label>
-            <button type="submit">Lagre navn</button>
-          </form>
-          {child_area_section}
-          <form action="/geo/area/{html.escape(quoted)}" method="get" class="geo-filter">
-            <label>Maks bilder <input name="limit" value="{limit}" inputmode="numeric"></label>
-            <button type="submit">Vis</button>
-          </form>
-          <section class="month-grid-server">{content}</section>
-        </main>
+        <nav class="subnav"><a href="/geo">Steder</a></nav>
+        <h1>{html.escape(title)}</h1>
+        <p class="meta">H3-celle {html.escape(h3_cell)}, {h3_resolution_label(resolution)}. Viser opptil {limit} bilder.{parent_link}</p>
+        {maps_paragraph}
+        <form action="/geo/place-name" method="post" class="geo-filter geo-name-form">
+          <input type="hidden" name="h3_cell" value="{html.escape(h3_cell)}">
+          <input type="hidden" name="limit" value="{limit}">
+          <label>Stedsnavn <input name="name" value="{escaped_name}" autocomplete="off"></label>
+          <button type="submit">Lagre navn</button>
+        </form>
+        {child_area_section}
+        <form action="/geo/area/{html.escape(quoted)}" method="get" class="geo-filter">
+          <label>Maks bilder <input name="limit" value="{limit}" inputmode="numeric"></label>
+          <button type="submit">Vis</button>
+        </form>
+        <section class="month-grid-server">{content}</section>
         """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
@@ -3120,7 +3229,14 @@ def geo_child_areas_section_html(rows: list[Any], *, resolution: int, inherited_
     """
 
 
-def geo_missing_page_html(target: Path, *, limit: int = DEFAULT_GEO_LIMIT, offset: int = 0) -> str:
+def geo_missing_page_html(
+    target: Path,
+    *,
+    limit: int = DEFAULT_GEO_LIMIT,
+    offset: int = 0,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
     items = geo_missing_items(target, limit=limit, offset=offset)
     cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
     previous_offset = max(0, offset - limit)
@@ -3136,17 +3252,20 @@ def geo_missing_page_html(target: Path, *, limit: int = DEFAULT_GEO_LIMIT, offse
         else '<span class="nav-button disabled">Neste side</span>'
     )
     content = cards if cards else '<p class="meta">Ingen aktive bilder mangler GPS.</p>'
-    return page_html(
+    return shell_page_html(
         "Bilder uten GPS",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a> · <a href="/geo/stats">Geo-statistikk</a></p>
-          <h1>Bilder uten GPS</h1>
-          <p class="meta">Viser {len(items)} bilder fra offset {offset}.</p>
-          <nav class="controls">{previous_link}{next_link}</nav>
-          <section class="month-grid-server">{content}</section>
-        </main>
+        <nav class="subnav">
+          <a href="/geo">Steder</a>
+          <a href="/geo/stats">Geo-statistikk</a>
+        </nav>
+        <h1>Bilder uten GPS</h1>
+        <p class="meta">Viser {len(items)} bilder fra offset {offset}.</p>
+        <nav class="controls">{previous_link}{next_link}</nav>
+        <section class="month-grid-server">{content}</section>
         """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
@@ -3187,16 +3306,15 @@ def geo_area_row_html(row: Any, *, resolution: int, inherited_name: str | None =
     """
 
 
-def error_html(exc: Exception) -> str:
-    return page_html(
+def error_html(exc: Exception, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
+    return shell_page_html(
         "Feil",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/geo">Steder</a> · <a href="/settings">Innstillinger</a></p>
-          <h1>Feil</h1>
-          <p class="error">{html.escape(str(exc))}</p>
-        </main>
+        <h1>Feil</h1>
+        <p class="error">{html.escape(str(exc))}</p>
         """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
@@ -3216,19 +3334,25 @@ def message_html(message: str) -> str:
     return f'<p class="message">{html.escape(message)}</p>'
 
 
-def markdown_doc_page_html(doc_path: Path, markdown: str) -> str:
+def markdown_doc_page_html(
+    doc_path: Path,
+    markdown: str,
+    *,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
     title = markdown_doc_title(markdown, doc_path)
     body = markdown_to_html(markdown)
-    return page_html(
+    return shell_page_html(
         title,
         f"""
-        <main class="shell doc-page">
-          <p><a href="/">Til bildebrowser</a></p>
-          <article class="doc-content">
-            {body}
-          </article>
-        </main>
+        <article class="doc-content">
+          {body}
+        </article>
         """,
+        main_class="shell doc-page",
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
@@ -3349,17 +3473,17 @@ def result_html(target: Path, result: ImageSearchResult) -> str:
     """
 
 
-def empty_browser_html(*, openclip_enabled: bool = True) -> str:
+def empty_browser_html(*, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
     search_link = '<p><a href="/search">Bildesøk</a></p>' if openclip_enabled else ""
-    return page_html(
+    return shell_page_html(
         "Bildebrowser",
         f"""
-        <main class="shell">
-          <h1>Bildebrowser</h1>
-          <p class="meta">Ingen filer i bildesamlingen.</p>
-          {search_link}
-        </main>
+        <h1>Bildebrowser</h1>
+        <p class="meta">Ingen filer i bildesamlingen.</p>
+        {search_link}
         """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
@@ -3418,23 +3542,22 @@ def source_item_page_html(
     unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
     faces_button = faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
     faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
-    action_links = source_action_links_html(source, item, face_enabled=face_enabled, openclip_enabled=openclip_enabled)
     info_overlay = image_info_overlay_html()
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config) if face_enabled else ""
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
         <main class="server-browser">
-          <header class="browser-header">
-            <div class="topline">
-              <div class="title">{html.escape(source.title)}</div>
-              {people}
-              {faces_button}
-              {action_links}
-            </div>
-            {controls}
-            {duplicate_warning}
-          </header>
+          {app_header_html(
+              source.title,
+              source=source,
+              item=item,
+              extra_html=people + faces_button,
+              controls=controls,
+              message_html=duplicate_warning,
+              face_enabled=face_enabled,
+              openclip_enabled=openclip_enabled,
+          )}
           <section class="stage">{media}</section>
           <footer class="browser-footer">
             <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
@@ -3558,6 +3681,78 @@ def source_action_links_html(
     """
 
 
+def app_topline_html(
+    title: str,
+    *,
+    source: BrowserSource | None = None,
+    item: Any | None = None,
+    extra_html: str = "",
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    return f"""
+    <div class="topline">
+      <div class="title">{html.escape(title)}</div>
+      {extra_html}
+      {source_action_links_html(source or all_browser_source(), item, face_enabled=face_enabled, openclip_enabled=openclip_enabled)}
+    </div>
+    """
+
+
+def app_header_html(
+    title: str,
+    *,
+    source: BrowserSource | None = None,
+    item: Any | None = None,
+    extra_html: str = "",
+    controls: str = "",
+    message_html: str = "",
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    return f"""
+    <header class="browser-header">
+      {app_topline_html(
+          title,
+          source=source,
+          item=item,
+          extra_html=extra_html,
+          face_enabled=face_enabled,
+          openclip_enabled=openclip_enabled,
+      )}
+      {controls}
+      {message_html}
+    </header>
+    """
+
+
+def shell_page_html(
+    title: str,
+    content: str,
+    *,
+    main_class: str = "shell",
+    source: BrowserSource | None = None,
+    item: Any | None = None,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    return page_html(
+        title,
+        f"""
+        {app_header_html(
+            title,
+            source=source,
+            item=item,
+            face_enabled=face_enabled,
+            openclip_enabled=openclip_enabled,
+        )}
+        <main class="{html.escape(main_class)}">
+          {content}
+        </main>
+        """,
+    )
+
+
 def app_status_page_html(target: Path, config: AppConfig | None = None) -> str:
     if config is None:
         config = AppConfig()
@@ -3576,21 +3771,25 @@ def app_status_page_html(target: Path, config: AppConfig | None = None) -> str:
             app_status_row_html("OpenCLIP-device", config.openclip.device),
         )
     )
-    return page_html(
+    return shell_page_html(
         "Innstillinger",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a> · <a href="/settings/removed">Slettede bilder</a> · <a href="/date-source/filename">Dato fra filnavn</a> · <a href="/date-source/mtime">Dato fra mtime</a></p>
-          <h1>Innstillinger</h1>
-          <dl class="info-list app-status">
-            {rows}
-          </dl>
-        </main>
+        <nav class="subnav">
+          <a href="/settings/removed">Slettede bilder</a>
+          <a href="/date-source/filename">Dato fra filnavn</a>
+          <a href="/date-source/mtime">Dato fra mtime</a>
+        </nav>
+        <h1>Innstillinger</h1>
+        <dl class="info-list app-status">
+          {rows}
+        </dl>
         """,
+        face_enabled=config.face_recognition.enabled,
+        openclip_enabled=config.openclip.enabled,
     )
 
 
-def removed_files_page_html(target: Path) -> str:
+def removed_files_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
     conn = db.connect(target)
     try:
         rows = list(db.deleted_files(conn))
@@ -3602,16 +3801,16 @@ def removed_files_page_html(target: Path) -> str:
         if items
         else '<p class="meta">Ingen bilder er flyttet til deleted/.</p>'
     )
-    return page_html(
+    return shell_page_html(
         "Slettede bilder",
         f"""
-        <main class="shell">
-          <p><a href="/settings">Til innstillinger</a> · <a href="/">Til bildebrowser</a></p>
-          <h1>Slettede bilder</h1>
-          <p class="meta">{len(rows)} bilder flyttet til deleted/.</p>
-          {content}
-        </main>
+        <nav class="subnav"><a href="/settings">Innstillinger</a></nav>
+        <h1>Slettede bilder</h1>
+        <p class="meta">{len(rows)} bilder flyttet til deleted/.</p>
+        {content}
         """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
@@ -4228,19 +4427,18 @@ def source_month_page_html(
         previous_item,
         next_item,
     )
-    action_links = source_action_links_html(source, face_enabled=face_enabled, openclip_enabled=openclip_enabled)
     return page_html(
         f"{source.title}: {month_key}",
         f"""
         <main class="server-browser">
-          <header class="browser-header">
-            <div class="topline">
-              <div class="title">{html.escape(source.title)}</div>
-              <span class="status">Månedsoversikt: {html.escape(month_key)}</span>
-              {action_links}
-            </div>
-            {controls}
-          </header>
+          {app_header_html(
+              source.title,
+              source=source,
+              extra_html=f'<span class="status">Månedsoversikt: {html.escape(month_key)}</span>',
+              controls=controls,
+              face_enabled=face_enabled,
+              openclip_enabled=openclip_enabled,
+          )}
           <section class="month-grid-server">{cards}</section>
           <footer class="browser-footer">
             <span class="filename">Månedsoversikt: {html.escape(month_key)}</span>
@@ -4256,20 +4454,15 @@ def empty_person_browser_html(person: str | BrowserSource, *, openclip_enabled: 
 
 
 def empty_source_html(source: BrowserSource, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
-    links = ['<a href="/">Til bildebrowser</a>']
-    if face_enabled:
-        links.append('<a href="/people">Personer</a>')
-    if openclip_enabled:
-        links.append('<a href="/search">Bildesøk</a>')
-    return page_html(
+    return shell_page_html(
         source.title,
         f"""
-        <main class="shell">
-          <p>{" · ".join(links)}</p>
-          <h1>{html.escape(source.title)}</h1>
-          <p class="meta">{html.escape(empty_source_message(source))}</p>
-        </main>
+        <h1>{html.escape(source.title)}</h1>
+        <p class="meta">{html.escape(empty_source_message(source))}</p>
         """,
+        source=source,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
@@ -4327,7 +4520,7 @@ def source_summary_rows(target: Path) -> list[sqlite3.Row]:
         conn.close()
 
 
-def sources_page_html(target: Path) -> str:
+def sources_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
     sources = source_summary_rows(target)
     rows = "\n".join(source_row_html(source) for source in sources)
     content = (
@@ -4335,15 +4528,14 @@ def sources_page_html(target: Path) -> str:
         if rows
         else '<p class="meta">Ingen importerte kilder registrert.</p>'
     )
-    return page_html(
+    return shell_page_html(
         "Kilder",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a></p>
-          <h1>Kilder</h1>
-          {content}
-        </main>
+        <h1>Kilder</h1>
+        {content}
         """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
@@ -4369,20 +4561,29 @@ def source_row_html(source: sqlite3.Row) -> str:
     """
 
 
-def person_not_found_html(person_name: str) -> str:
-    return page_html(
+def person_not_found_html(
+    person_name: str,
+    *,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    return shell_page_html(
         "Fant ikke person",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a></p>
-          <h1>Fant ikke person</h1>
-          <p class="error">{html.escape(person_name)}</p>
-        </main>
+        <h1>Fant ikke person</h1>
+        <p class="error">{html.escape(person_name)}</p>
         """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 
-def people_page_html(target: Path, face_config: FaceRecognitionConfig | None = None) -> str:
+def people_page_html(
+    target: Path,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    openclip_enabled: bool = True,
+) -> str:
     people = registered_people_rows(target, face_config)
     rows = "\n".join(people_row_html(person) for person in people)
     content = (
@@ -4390,16 +4591,15 @@ def people_page_html(target: Path, face_config: FaceRecognitionConfig | None = N
         if rows
         else '<p class="meta">Ingen personer registrert.</p>'
     )
-    return page_html(
+    return shell_page_html(
         "Personer",
         f"""
-        <main class="shell">
-          <p><a href="/">Til bildebrowser</a></p>
-          <h1>Personer</h1>
-          {content}
-        </main>
+        <h1>Personer</h1>
+        {content}
         {person_rename_dialog_html()}
         """,
+        face_enabled=True,
+        openclip_enabled=openclip_enabled,
     )
 
 
@@ -4658,6 +4858,13 @@ SERVER_CSS = r"""    :root {
     .top-actions .server-search-link:hover {
       background: transparent;
       text-decoration: underline;
+    }
+    .subnav {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
     }
     .people-table { display: grid; gap: 8px; margin-top: 18px; }
     .removed-list { display: grid; gap: 6px; margin-top: 18px; }

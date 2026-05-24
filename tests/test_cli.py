@@ -54,6 +54,7 @@ from bilder.server import (
     cached_person_file_ids,
     date_source_browser_source,
     date_source_text,
+    DEFAULT_SEARCH_LIMIT,
     empty_source_html,
     face_overlay_content_html,
     geo_area_page_html,
@@ -66,6 +67,7 @@ from bilder.server import (
     index_html,
     item_page_html,
     imported_source_browser_source,
+    markdown_doc_page_html,
     month_page_html,
     person_item_by_id,
     person_item_page_html,
@@ -77,7 +79,9 @@ from bilder.server import (
     person_month_page_html,
     person_items,
     removed_files_page_html,
+    search_html,
     search_server_images,
+    ServerSearchStats,
     SERVER_ASSET_VERSION,
     SERVER_CSS,
     SERVER_JS,
@@ -706,6 +710,44 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Bildesøk", body)
         self.assertIn("Ingen filer i bildesamlingen", body)
         self.assertNotIn("Bildesøk", disabled_body)
+
+    def test_run_server_shell_pages_use_common_topline(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            init_database(target)
+            config = AppConfig(openclip=OpenClipConfig(enabled=True))
+            server = SimpleNamespace(
+                target=target,
+                config=config,
+                face_enabled=True,
+                openclip_enabled=True,
+                search_cache=SimpleNamespace(loaded=False),
+            )
+            pages = [
+                sources_page_html(target),
+                app_status_page_html(target, config),
+                geo_stats_page_html(target),
+                markdown_doc_page_html(Path("bildebrowser.md"), "# Hjelp\n\nTekst."),
+                search_html(server, ServerSearchStats("strand", ()), DEFAULT_SEARCH_LIMIT),
+            ]
+
+        for body in pages:
+            self.assertIn('<header class="browser-header">', body)
+            self.assertIn('<div class="topline">', body)
+            self.assertIn('href="/settings">Innstillinger</a>', body)
+            self.assertIn('href="/help/web/bildebrowser">Hjelp</a>', body)
+
+    def test_run_server_common_topline_respects_feature_flags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            init_database(target)
+            body = sources_page_html(target, face_enabled=False, openclip_enabled=False)
+
+        self.assertIn('<header class="browser-header">', body)
+        self.assertIn('href="/geo">Steder</a>', body)
+        self.assertIn('href="/sources">Kilder</a>', body)
+        self.assertNotIn('href="/people">Personer</a>', body)
+        self.assertNotIn('href="/search">Bildesøk</a>', body)
 
     def test_run_server_image_search_stores_relative_result_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1675,6 +1717,7 @@ model_name = "buffalo_l"
         self.assertNotIn("/date-source/mtime/item/1", mtime_month_body)
         self.assertNotIn('href="/people"', all_month_disabled_body)
         self.assertNotIn('href="/search"', all_month_disabled_body)
+        self.assertIn('href="/">Alle bilder</a>', empty_source_disabled_body)
         self.assertNotIn('href="/people"', empty_source_disabled_body)
         self.assertNotIn('href="/search"', empty_source_disabled_body)
 
