@@ -1755,6 +1755,7 @@ def run_doctor(target_arg: Path | None = None) -> int:
         print("Aktiv bildesamling:")
         doctor_obs("ingen aktiv bildesamling funnet.")
         doctor_advice("Kjør kommandoen fra en bildesamling, eller bruk `--target`.")
+        doctor_advice('Eksempel: "bildebank --target C:\\bildesamling doctor"')
     return 0
 
 
