@@ -67,8 +67,10 @@ from bilder.server import (
     index_html,
     item_page_html,
     imported_source_browser_source,
+    load_search_embedding_cache,
     markdown_doc_page_html,
     month_page_html,
+    OpenClipSearchCache,
     person_item_by_id,
     person_item_page_html,
     person_browser_source,
@@ -794,10 +796,14 @@ pretrained = "laion2b_s34b_b79k"
             server = SimpleNamespace(
                 target=target,
                 config=AppConfig(openclip=config),
-                search_cache=SimpleNamespace(text_vector=lambda query: [1.0, 0.0]),
+                search_cache=OpenClipSearchCache(AppConfig(openclip=config)),
             )
 
-            stats = search_server_images(server, query="test", limit=10)
+            with (
+                patch("bilder.server.load_text_model", return_value=(object(), object())),
+                patch("bilder.server.text_embedding", return_value=[1.0, 0.0]),
+            ):
+                stats = search_server_images(server, query="test", limit=10)
 
             self.assertEqual(len(stats.results), 1)
             conn = sqlite3.connect(openclip_db_path(target))
@@ -808,6 +814,143 @@ pretrained = "laion2b_s34b_b79k"
                 )
             finally:
                 conn.close()
+
+    def test_run_server_image_search_reuses_embedding_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            config = OpenClipConfig()
+            conn = connect_openclip_db(target)
+            try:
+                conn.executemany(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256, model_name, pretrained, embedding
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (1, "2024/01/a.jpg", "2024/01/a.jpg", "sha1", config.model_name, config.pretrained, embedding_blob([1.0, 0.0])),
+                        (2, "2024/01/b.jpg", "2024/01/b.jpg", "sha2", config.model_name, config.pretrained, embedding_blob([0.0, 1.0])),
+                    ],
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            server = SimpleNamespace(
+                target=target,
+                config=AppConfig(openclip=config),
+                search_cache=OpenClipSearchCache(AppConfig(openclip=config)),
+            )
+
+            with (
+                patch("bilder.server.load_text_model", return_value=(object(), object())),
+                patch("bilder.server.text_embedding", return_value=[1.0, 0.0]),
+                patch("bilder.server.load_search_embedding_cache", wraps=load_search_embedding_cache) as load_cache,
+            ):
+                first = search_server_images(server, query="test", limit=1)
+                second = search_server_images(server, query="test igjen", limit=1)
+
+        self.assertEqual(load_cache.call_count, 1)
+        self.assertEqual(first.results[0].file_id, 1)
+        self.assertEqual(second.results[0].file_id, 1)
+
+    def test_run_server_image_search_reloads_embedding_cache_when_database_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            config = OpenClipConfig()
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256, model_name, pretrained, embedding
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (1, "2024/01/a.jpg", "2024/01/a.jpg", "sha1", config.model_name, config.pretrained, embedding_blob([1.0, 0.0])),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            server = SimpleNamespace(
+                target=target,
+                config=AppConfig(openclip=config),
+                search_cache=OpenClipSearchCache(AppConfig(openclip=config)),
+            )
+
+            with (
+                patch("bilder.server.load_text_model", return_value=(object(), object())),
+                patch("bilder.server.text_embedding", return_value=[0.0, 1.0]),
+                patch("bilder.server.load_search_embedding_cache", wraps=load_search_embedding_cache) as load_cache,
+            ):
+                first = search_server_images(server, query="test", limit=10)
+                conn = connect_openclip_db(target)
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO image_embeddings(
+                            file_id, target_path, target_path_key, sha256, model_name, pretrained, embedding
+                        )
+                        VALUES(?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            2,
+                            "2024/01/b.jpg",
+                            "2024/01/b.jpg",
+                            "sha2",
+                            config.model_name,
+                            config.pretrained,
+                            embedding_blob([0.0, 1.0]),
+                        ),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+                second = search_server_images(server, query="test igjen", limit=10)
+
+        self.assertEqual(load_cache.call_count, 2)
+        self.assertEqual([result.file_id for result in first.results], [1])
+        self.assertEqual([result.file_id for result in second.results], [2, 1])
+
+    def test_run_server_image_search_numpy_ranking_matches_cosine_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            config = OpenClipConfig()
+            conn = connect_openclip_db(target)
+            try:
+                conn.executemany(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256, model_name, pretrained, embedding
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (1, "2024/01/a.jpg", "2024/01/a.jpg", "sha1", config.model_name, config.pretrained, embedding_blob([1.0, 0.0])),
+                        (2, "2024/01/b.jpg", "2024/01/b.jpg", "sha2", config.model_name, config.pretrained, embedding_blob([0.8, 0.6])),
+                        (3, "2024/01/c.jpg", "2024/01/c.jpg", "sha3", config.model_name, config.pretrained, embedding_blob([0.0, 1.0])),
+                    ],
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            server = SimpleNamespace(
+                target=target,
+                config=AppConfig(openclip=config),
+                search_cache=OpenClipSearchCache(AppConfig(openclip=config)),
+            )
+
+            with (
+                patch("bilder.server.load_text_model", return_value=(object(), object())),
+                patch("bilder.server.text_embedding", return_value=[1.0, 0.0]),
+            ):
+                stats = search_server_images(server, query="test", limit=2)
+
+        self.assertEqual([result.file_id for result in stats.results], [1, 2])
+        self.assertGreater(stats.results[0].similarity, stats.results[1].similarity)
 
     def test_run_server_image_search_uses_target_path_for_image_url(self) -> None:
         target = Path("/tmp/target")
