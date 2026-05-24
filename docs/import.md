@@ -26,7 +26,7 @@ Bildene kopieres inn i bildesamlingen og plasseres etter dato, for eksempel:
 ```text
 2024\01
 2024\02
-unknown-date
+udatert
 ```
 
 Bildebank prøver først å finne dato i metadata. Hvis det ikke går, kan programmet
