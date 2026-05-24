@@ -1,3 +1,42 @@
+<#
+.SYNOPSIS
+Installerer Bildebank på Windows.
+
+.DESCRIPTION
+Scriptet installerer nødvendige avhengigheter, kloner Bildebank fra GitHub,
+setter opp Python-miljø og lager kommandoen bildebank.
+
+.PARAMETER InstallDir
+Mappen der Bildebank skal installeres.
+Standard er ~/kode/bildebank.
+
+.PARAMETER CommandName
+Navnet på kommandoen som skal lages.
+Standard er bildebank.
+
+.PARAMETER RepoUrl
+Git-repoet som skal klones.
+Vanligvis trenger du ikke endre dette.
+
+.PARAMETER SkipInstall
+Ikke installer Git eller Python automatisk.
+Scriptet stopper i stedet hvis noe mangler.
+
+.EXAMPLE
+.\setup-windows.ps1
+
+Kjører installasjonen med standardvalg.
+
+.EXAMPLE
+.\setup-windows.ps1 -InstallDir "$HOME\programmer\bildebank"
+
+Installerer Bildebank i en annen mappe.
+
+.EXAMPLE
+.\setup-windows.ps1 -SkipInstall
+
+Kjører uten automatisk installasjon av Git eller Python.
+#>
 param(
     [string]$RepoUrl = "https://github.com/tcamundsen/bildebank.git",
     [string]$InstallDir = (Join-Path $HOME "kode\bildebank"),
