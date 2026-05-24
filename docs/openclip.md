@@ -94,8 +94,8 @@ pretrained = "laion2b_s32b_b82k"
 Modellen omtales ofte som `ViT-L/14`, men i OpenCLIP-config bruker vi navnet
 `ViT-L-14`.
 
-Eldre configfiler kan ha seksjonen `[openclip]`. Bildebank leser fortsatt den
-hvis `[image_search]` mangler.
+Eldre configfiler kan ha seksjonen `[openclip]`. Bildebank gir den automatisk
+nytt navn til `[image_search]` når configfilen leses.
 
 `ViT-L-14` kan gi bedre treff enn `ViT-B-32`, men den er større og tregere.
 Når du bytter modell, må image-scan kjøres på nytt for å lage embeddings for

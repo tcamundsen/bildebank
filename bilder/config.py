@@ -44,6 +44,7 @@ def load_config(repo_root: Path) -> AppConfig:
             ),
             openclip=OpenClipConfig(model_root=repo_root / ".bildebank-openclip"),
         )
+    migrate_legacy_openclip_section(config_path)
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     face_data = _section(data, "face_recognition")
     model_root = Path(str(face_data.get("model_root", ".bildebank-insightface")))
@@ -88,6 +89,7 @@ def set_config_enabled(repo_root: Path, section: str, enabled: bool) -> Path:
         )
         return config_path
 
+    migrate_legacy_openclip_section(config_path)
     text = config_path.read_text(encoding="utf-8")
     _section(tomllib.loads(text), section)
     config_path.write_text(
@@ -95,6 +97,14 @@ def set_config_enabled(repo_root: Path, section: str, enabled: bool) -> Path:
         encoding="utf-8",
     )
     return config_path
+
+
+def migrate_legacy_openclip_section(config_path: Path) -> None:
+    text = config_path.read_text(encoding="utf-8")
+    data = tomllib.loads(text)
+    if "openclip" not in data or "image_search" in data:
+        return
+    config_path.write_text(_rename_toml_section(text, old="openclip", new="image_search"), encoding="utf-8")
 
 
 def set_face_recognition_model_name(repo_root: Path, model_name: str) -> Path:
@@ -110,6 +120,7 @@ def set_face_recognition_model_name(repo_root: Path, model_name: str) -> Path:
         )
         return config_path
 
+    migrate_legacy_openclip_section(config_path)
     text = config_path.read_text(encoding="utf-8")
     _section(tomllib.loads(text), "face_recognition")
     config_path.write_text(
@@ -131,6 +142,22 @@ def _section_with_fallback(data: dict[str, Any], primary: str, fallback: str) ->
     if primary not in data:
         return fallback_data
     return {**fallback_data, **_section(data, primary)}
+
+
+def _rename_toml_section(text: str, *, old: str, new: str) -> str:
+    lines = text.splitlines(keepends=True)
+    old_header = f"[{old}]"
+    new_header = f"[{new}]"
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        suffix_start = len(old_header)
+        suffix_after_header = stripped[suffix_start:].lstrip()
+        if stripped.startswith(old_header) and (not suffix_after_header or suffix_after_header.startswith("#")):
+            prefix_length = len(line) - len(line.lstrip())
+            suffix = line[line.index("]") + 1 :]
+            lines[index] = f"{line[:prefix_length]}{new_header}{suffix}"
+            return "".join(lines)
+    return text
 
 
 def _set_toml_bool(text: str, *, section: str, key: str, value: bool) -> str:

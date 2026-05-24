@@ -3252,6 +3252,9 @@ pretrained = "laion2b_s32b_b82k"
         self.assertEqual(config.openclip.device, "cpu")
         self.assertEqual(config.openclip.model_name, "ViT-L-14")
         self.assertEqual(config.openclip.pretrained, "laion2b_s32b_b82k")
+        config_text = (self.program_root / "bildebank-config.toml").read_text(encoding="utf-8")
+        self.assertIn("[image_search]", config_text)
+        self.assertNotIn("[openclip]", config_text)
 
         code, stdout, stderr = capture_cli(["config", "image_search", "enable"])
 
@@ -3423,6 +3426,9 @@ pretrained = "laion2b_s32b_b82k"
             self.assertEqual(config.openclip.device, "cpu")
             self.assertEqual(config.openclip.model_name, "ViT-L-14")
             self.assertEqual(config.openclip.pretrained, "laion2b_s32b_b82k")
+            config_text = (root / "bildebank-config.toml").read_text(encoding="utf-8")
+            self.assertIn("[image_search]", config_text)
+            self.assertNotIn("[openclip]", config_text)
 
     def test_load_config_prefers_image_search_over_openclip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
