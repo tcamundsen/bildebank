@@ -2793,7 +2793,7 @@ def search_start_html(server: BildebankServer, *, message: str = "") -> str:
         <h1>Bildesøk</h1>
         <p class="meta">OpenCLIP {html.escape(openclip_config.model_name)} ({html.escape(openclip_config.pretrained)})</p>
         {message_html(message)}
-        {search_form("")}
+        {search_form("", model_loaded=server.search_cache.loaded)}
         """,
         face_enabled=server.face_enabled,
         openclip_enabled=server.openclip_enabled,
@@ -2806,7 +2806,7 @@ def search_html(server: BildebankServer, stats: ServerSearchStats, limit: int) -
         f"Bildesøk: {stats.query}",
         f"""
         <h1>Bildesøk</h1>
-        {search_form(stats.query, limit)}
+        {search_form(stats.query, limit, model_loaded=server.search_cache.loaded)}
         <p class="meta">{len(stats.results)} treff. Sortert med beste match først. Modell lastet: {'ja' if server.search_cache.loaded else 'nei'}.</p>
         <div class="grid">
           {items}
@@ -3425,9 +3425,12 @@ def error_html(exc: Exception, *, face_enabled: bool = True, openclip_enabled: b
     )
 
 
-def search_form(query: str, limit: int = DEFAULT_SEARCH_LIMIT) -> str:
+def search_form(query: str, limit: int = DEFAULT_SEARCH_LIMIT, *, model_loaded: bool = False) -> str:
+    model_status = "true" if model_loaded else "false"
     return f"""
-    <form action="/search" method="get" class="search">
+    <p class="search-note">Første søk kan ta litt tid fordi bildesøkmodellen og bildeindeksen må lastes.</p>
+    <p class="search-loading" hidden data-search-loading>Laster bildesøkmodellen. Dette kan ta litt tid første gang...</p>
+    <form action="/search" method="get" class="search" data-search-form data-model-loaded="{model_status}">
       <input name="q" value="{html.escape(query)}" placeholder="a photo of a beach" autofocus>
       <input name="limit" value="{limit}" inputmode="numeric" aria-label="Antall treff">
       <button type="submit">Søk</button>
@@ -4844,6 +4847,15 @@ SERVER_CSS = r"""    :root {
     .shell { max-width: 1200px; margin: 0 auto; padding: 24px; }
     h1 { margin: 0 0 8px; font-size: 28px; }
     .meta { color: var(--muted); margin: 0 0 18px; }
+    .search-note { color: var(--muted); margin: 12px 0 0; font-size: 14px; }
+    .search-loading {
+      margin: 12px 0 0;
+      padding: 10px 12px;
+      border: 1px solid #4b6b8d;
+      border-radius: 6px;
+      background: #1d2a38;
+      color: #d8ecff;
+    }
     .search { display: grid; grid-template-columns: minmax(0, 1fr) 90px auto; gap: 8px; margin: 18px 0; }
     input, select, button {
       font: inherit;
@@ -5387,6 +5399,8 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   const closePersonRenameButton = document.querySelector("[data-close-person-rename]");
   const personRenameNameInput = personRenameForm?.querySelector('input[name="new_name"]');
   const personRenameOldNameInput = personRenameForm?.querySelector('input[name="old_name"]');
+  const searchForm = document.querySelector("[data-search-form]");
+  const searchLoading = document.querySelector("[data-search-loading]");
   let facesLoaded = false;
   let infoLoaded = false;
   function faceStatusMessage(message) {
@@ -5498,6 +5512,10 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   closeFacesButton?.addEventListener("click", closeFacesOverlay);
   openInfoButton?.addEventListener("click", openInfoOverlay);
   closeInfoButton?.addEventListener("click", closeInfoOverlay);
+  searchForm?.addEventListener("submit", () => {
+    if (searchForm.dataset.modelLoaded === "true") return;
+    if (searchLoading) searchLoading.hidden = false;
+  });
   closePersonRenameButton?.addEventListener("click", closePersonRenameDialog);
   document.querySelectorAll("[data-open-person-rename]").forEach(button => {
     button.addEventListener("click", () => openPersonRenameDialog(button.dataset.personName || ""));

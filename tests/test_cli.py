@@ -83,6 +83,7 @@ from bilder.server import (
     removed_files_page_html,
     search_html,
     search_server_images,
+    search_start_html,
     ServerSearchStats,
     SERVER_ASSET_VERSION,
     SERVER_CSS,
@@ -752,6 +753,35 @@ pretrained = "laion2b_s34b_b79k"
             self.assertIn('<div class="topline">', body)
             self.assertIn('href="/settings">Innstillinger</a>', body)
             self.assertIn('href="/help/web/bildebrowser">Hjelp</a>', body)
+
+    def test_run_server_search_page_warns_when_model_is_not_loaded(self) -> None:
+        server = SimpleNamespace(
+            config=AppConfig(openclip=OpenClipConfig(enabled=True)),
+            face_enabled=True,
+            openclip_enabled=True,
+            search_cache=SimpleNamespace(loaded=False),
+        )
+
+        body = search_start_html(server)
+
+        self.assertIn("Første søk kan ta litt tid", body)
+        self.assertIn("Laster bildesøkmodellen", body)
+        self.assertIn('data-model-loaded="false"', body)
+        self.assertIn("data-search-loading", body)
+
+    def test_run_server_search_results_marks_model_loaded(self) -> None:
+        server = SimpleNamespace(
+            target=Path("/tmp/target"),
+            config=AppConfig(openclip=OpenClipConfig(enabled=True)),
+            face_enabled=True,
+            openclip_enabled=True,
+            search_cache=SimpleNamespace(loaded=True),
+        )
+
+        body = search_html(server, ServerSearchStats("strand", ()), DEFAULT_SEARCH_LIMIT)
+
+        self.assertIn("Første søk kan ta litt tid", body)
+        self.assertIn('data-model-loaded="true"', body)
 
     def test_run_server_common_topline_respects_feature_flags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
