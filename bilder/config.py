@@ -7,6 +7,7 @@ from typing import Any
 
 
 CONFIG_FILENAME = "bildebank-config.toml"
+ENABLED_CONFIG_SECTIONS = frozenset({"face_recognition", "openclip"})
 
 
 @dataclass(frozen=True)
@@ -71,19 +72,26 @@ def load_config(repo_root: Path) -> AppConfig:
 
 
 def set_face_recognition_enabled(repo_root: Path, enabled: bool) -> Path:
+    return set_config_enabled(repo_root, "face_recognition", enabled)
+
+
+def set_config_enabled(repo_root: Path, section: str, enabled: bool) -> Path:
+    if section not in ENABLED_CONFIG_SECTIONS:
+        allowed = ", ".join(sorted(ENABLED_CONFIG_SECTIONS))
+        raise ValueError(f"Ukjent config-seksjon: {section}. Gyldige seksjoner: {allowed}.")
     config_path = repo_root / CONFIG_FILENAME
     if not config_path.exists():
         config_path.write_text(
-            "[face_recognition]\n"
+            f"[{section}]\n"
             f"enabled = {_toml_bool(enabled)}\n",
             encoding="utf-8",
         )
         return config_path
 
     text = config_path.read_text(encoding="utf-8")
-    _section(tomllib.loads(text), "face_recognition")
+    _section(tomllib.loads(text), section)
     config_path.write_text(
-        _set_toml_bool(text, section="face_recognition", key="enabled", value=enabled),
+        _set_toml_bool(text, section=section, key="enabled", value=enabled),
         encoding="utf-8",
     )
     return config_path

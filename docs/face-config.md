@@ -15,15 +15,23 @@ options:
 <!-- CLI-HELP-END -->
 
 `face-config` slår ansiktsgjenkjenning på eller av i `bildebank-config.toml`.
+Kommandoen beholdes for kompatibilitet. For ny bruk anbefales den generelle
+[`config`](config.md)-kommandoen.
 
 Eksempel:
+
+```powershell
+bildebank config face_recognition enable
+bildebank config face_recognition disable
+```
+
+Den gamle formen fungerer fortsatt:
 
 ```powershell
 bildebank face-config true
 bildebank face-config false
 ```
 
-Bruk `true` for å slå på ansiktsgjenkjenning og `false` for å slå den av.
 Kommandoen oppretter `bildebank-config.toml` hvis filen mangler.
 
 Når `bildebank run-server` kjører, kan du også slå dette på og av fra

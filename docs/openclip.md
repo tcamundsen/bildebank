@@ -46,6 +46,12 @@ Dette fikses etter hvert når jeg vet hvilken som fungerer best.
 Søk er tilgjengelig i bildebrowseren. I dette dokumentet vises
 de underliggende kommandoene.
 
+Slå på tekstbasert bildesøk:
+
+```powershell
+bildebank config openclip enable
+```
+
 Modellfiler lagres lokalt i programmappen:
 
 ```text

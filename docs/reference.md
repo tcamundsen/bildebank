@@ -16,6 +16,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 - [`create`](create.md) **`cli`**
 - [`import`](import.md) **`cli`**
+- [`config`](config.md) **`cli`**
 
 ## Se og kontrollere samlingen
 
@@ -51,7 +52,8 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 - [`insightface`](insightface.md) - innføring
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
-- [`face-config`](face-config.md) **`web`**
+- [`config`](config.md) **`cli`** **`web`**
+- [`face-config`](face-config.md) **`web`** - gammel kompatibilitetskommando
 - [`face-scan`](face-scan.md) **`cli`**
 - [`face-suggest`](face-suggest.md) **`cli`**
 - [`face-reset`](face-reset.md) **`cli`**

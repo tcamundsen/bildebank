@@ -31,7 +31,7 @@ Kjør dette fra programmappen til Bildebank:
 Slå på ansiktsgjenkjenning:
 
 ```powershell
-bildebank face-config true
+bildebank config face_recognition enable
 ```
 
 Sjekk at funksjonen er klar:

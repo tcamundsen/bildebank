@@ -524,6 +524,19 @@ pretrained = "laion2b_s34b_b79k"
         self.assertNotIn("<kommando> [<args>] create", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
+    def test_config_help_preserves_description_examples(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["config", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("Slå valgfrie funksjoner på eller av i bildebank-config.toml.\nEksempel:\n\n", stdout)
+        self.assertIn(" bildebank config face_recognition enable\n", stdout)
+        self.assertIn(" bildebank config openclip disable\n", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
     def test_face_reset_help_documents_reset_levels(self) -> None:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
@@ -3197,6 +3210,66 @@ model_name = "buffalo_l"
         self.assertIn("Ansiktsgjenkjenning er satt til på.", stdout)
         config = load_config(self.program_root)
         self.assertTrue(config.face_recognition.enabled)
+
+    def test_config_enables_face_recognition(self) -> None:
+        code, stdout, stderr = capture_cli(["config", "face_recognition", "enable"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("face_recognition.enabled er satt til true.", stdout)
+        self.assertIn("Config-fil:", stdout)
+        config = load_config(self.program_root)
+        self.assertTrue(config.face_recognition.enabled)
+
+    def test_config_updates_openclip_without_changing_other_fields(self) -> None:
+        (self.program_root / "bildebank-config.toml").write_text(
+            """
+[face_recognition]
+enabled = true
+provider = "cpu"
+model_root = "models/insightface"
+database_dir = ".faces-by-model"
+model_name = "buffalo_s"
+
+[openclip]
+enabled = true
+model_root = "models/openclip"
+device = "cpu"
+model_name = "ViT-L-14"
+pretrained = "laion2b_s32b_b82k"
+""",
+            encoding="utf-8",
+        )
+
+        code, stdout, stderr = capture_cli(["config", "openclip", "disable"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("openclip.enabled er satt til false.", stdout)
+        config = load_config(self.program_root)
+        self.assertTrue(config.face_recognition.enabled)
+        self.assertEqual(config.face_recognition.model_name, "buffalo_s")
+        self.assertFalse(config.openclip.enabled)
+        self.assertEqual(config.openclip.model_root, self.program_root / "models" / "openclip")
+        self.assertEqual(config.openclip.device, "cpu")
+        self.assertEqual(config.openclip.model_name, "ViT-L-14")
+        self.assertEqual(config.openclip.pretrained, "laion2b_s32b_b82k")
+
+        code, stdout, stderr = capture_cli(["config", "openclip", "enable"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("openclip.enabled er satt til true.", stdout)
+        self.assertTrue(load_config(self.program_root).openclip.enabled)
+
+    def test_config_rejects_unknown_section_without_writing_file(self) -> None:
+        stdout = StringIO()
+        stderr = StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            with self.assertRaises(SystemExit) as raised:
+                main(["config", "unknown", "enable"])
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("invalid choice", stderr.getvalue())
+        self.assertFalse((self.program_root / "bildebank-config.toml").exists())
 
     def test_face_config_updates_existing_config_file(self) -> None:
         (self.program_root / "bildebank-config.toml").write_text(

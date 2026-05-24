@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import __version__, db
 from .backup import run_backup
-from .config import CONFIG_FILENAME, load_config, set_face_recognition_enabled
+from .config import CONFIG_FILENAME, load_config, set_config_enabled
 from .exiftool import install_managed_exiftool
 from .exiftool_probe import exiftool_metadata_gaps
 from .face import (
@@ -85,6 +85,7 @@ HELP_COMMAND_GROUPS = (
         (
             ("create", "Opprett en ny bildesamlingsmappe"),
             ("import", "Importer en mappe, CD, USB eller annen kilde"),
+            ("config", "Slå valgfrie funksjoner på eller av"),
             ("run-server", "Start lokal Bildebank-server"),
             ("status", "Vis kort status for bildesamlingen"),
             ("list-sources", "Vis registrerte kilder"),
@@ -500,6 +501,29 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank face-status [valg]",
         help="Vis status for valgfri ansiktsgjenkjenning",
     )
+    config_parser = add_command(
+        subparsers,
+        "config",
+        usage="bildebank config seksjon enable|disable",
+        help="Slå valgfrie funksjoner på eller av",
+        description="Slå valgfrie funksjoner på eller av i bildebank-config.toml.\n"
+                    "Eksempel:\n\n"
+                    " bildebank config face_recognition enable\n"
+                    " bildebank config openclip disable",
+        formatter_class=BildebankHelpFormatter,
+    )
+    config_parser.add_argument(
+        "section",
+        metavar="seksjon",
+        choices=("face_recognition", "openclip"),
+        help="Config-seksjon som skal endres",
+    )
+    config_parser.add_argument(
+        "action",
+        metavar="enable|disable",
+        choices=("enable", "disable"),
+        help="enable slår funksjonen på, disable slår den av",
+    )
     face_config = add_command(
         subparsers,
         "face-config",
@@ -771,13 +795,10 @@ def add_command(
     usage: str,
     help: str,
     description: str | None = None,
+    formatter_class: type[argparse.HelpFormatter] | None = None,
 ) -> argparse.ArgumentParser:
-    return subparsers.add_parser(
-        name,
-        help=help,
-        description=description,
-        usage=usage,
-    )
+    kwargs = {"formatter_class": formatter_class} if formatter_class is not None else {}
+    return subparsers.add_parser(name, help=help, description=description, usage=usage, **kwargs)
 
 
 def bool_arg(value: str) -> bool:
@@ -862,6 +883,9 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "face-status":
         return run_face_status(args.target)
+
+    if args.command == "config":
+        return run_config(args.section, enabled=args.action == "enable")
 
     if args.command == "face-config":
         return run_face_config(args.enabled)
@@ -1673,11 +1697,20 @@ def run_face_status(target_arg: Path | None = None) -> int:
 
 
 def run_face_config(enabled: bool) -> int:
-    repo_root = program_repo_root()
-    config_path = set_face_recognition_enabled(repo_root, enabled)
     print(f"Ansiktsgjenkjenning er satt til {'på' if enabled else 'av'}.")
+    return run_config("face_recognition", enabled=enabled)
+
+
+def run_config(section: str, *, enabled: bool) -> int:
+    repo_root = program_repo_root()
+    config_path = set_config_enabled(repo_root, section, enabled)
+    print(f"{section}.enabled er satt til {_toml_bool_text(enabled)}.")
     print(f"Config-fil: {config_path}")
     return 0
+
+
+def _toml_bool_text(value: bool) -> str:
+    return "true" if value else "false"
 
 
 def module_available(module_name: str) -> str:
