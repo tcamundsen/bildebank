@@ -38,7 +38,7 @@ from bilder.html_export import render_html
 from bilder.importer import safe_copy
 from bilder.media import ImageDimensions, sha256_file
 from bilder.media_cache import cached_image_dimensions, cached_image_orientation
-from bilder.openclip import connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
+from bilder.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
 from bilder.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
 from bilder.server import (
     adjacent_browser_items,
@@ -808,6 +808,28 @@ pretrained = "laion2b_s34b_b79k"
                 )
             finally:
                 conn.close()
+
+    def test_run_server_image_search_uses_target_path_for_image_url(self) -> None:
+        target = Path("/tmp/target")
+        server = SimpleNamespace(
+            target=target,
+            config=AppConfig(openclip=OpenClipConfig(enabled=True)),
+            face_enabled=False,
+            openclip_enabled=True,
+            search_cache=SimpleNamespace(loaded=True),
+        )
+        result = ImageSearchResult(
+            rank=1,
+            file_id=999,
+            target_path=Path("2025/07/PXL 20250709_193516074.jpg"),
+            similarity=0.301,
+        )
+
+        body = search_html(server, ServerSearchStats("red wine", (result,)), DEFAULT_SEARCH_LIMIT)
+
+        self.assertIn('src="/file/2025/07/PXL%2020250709_193516074.jpg"', body)
+        self.assertIn('href="/file/2025/07/PXL%2020250709_193516074.jpg"', body)
+        self.assertNotIn('src="/file/999"', body)
 
     def test_openclip_database_rejects_absolute_target_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

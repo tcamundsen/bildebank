@@ -3479,7 +3479,7 @@ def safe_markdown_link(url: str) -> bool:
 
 def result_html(target: Path, result: ImageSearchResult) -> str:
     relative = relative_to_target(target, result.target_path)
-    url = f"/file/{result.file_id}"
+    url = "/file/" + relative_path_url(relative)
     path_text = str(relative).replace("\\", "/")
     return f"""
     <article class="item">
@@ -3490,6 +3490,10 @@ def result_html(target: Path, result: ImageSearchResult) -> str:
       </div>
     </article>
     """
+
+
+def relative_path_url(path: Path) -> str:
+    return urllib.parse.quote(str(path).replace("\\", "/"))
 
 
 def empty_browser_html(*, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
