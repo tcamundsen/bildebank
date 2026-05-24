@@ -84,6 +84,13 @@ PREDEFINED_GEO_PLACES: tuple[PredefinedGeoPlace, ...] = (
             "860958287ffffff",
         ),
     ),
+    PredefinedGeoPlace(
+        slug="byske",
+        name="Byske",
+        h3_cells=(
+            "8608f1417ffffff",
+        ),
+    ),
 )
 
 
