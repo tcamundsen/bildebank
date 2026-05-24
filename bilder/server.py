@@ -3755,6 +3755,8 @@ def source_top_links_html(source: BrowserSource, item: Any | None = None, *, fac
     ]
     if face_enabled:
         links.insert(0, '<a class="server-search-link" href="/people">Personer</a>')
+    if source == all_browser_source() and item is None:
+        links.insert(0, '<a class="server-search-link" href="/">Alle bilder</a>')
     if source.date_source is not None or source.source_id is not None or source.geo_place_slug is not None:
         all_url = source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/"
         links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">Alle bilder</a>')

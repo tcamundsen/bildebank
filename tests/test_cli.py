@@ -751,6 +751,7 @@ pretrained = "laion2b_s34b_b79k"
         for body in pages:
             self.assertIn('<header class="browser-header">', body)
             self.assertIn('<div class="topline">', body)
+            self.assertIn('href="/">Alle bilder</a>', body)
             self.assertIn('href="/settings">Innstillinger</a>', body)
             self.assertIn('href="/help/web/bildebrowser">Hjelp</a>', body)
 
@@ -790,6 +791,7 @@ pretrained = "laion2b_s34b_b79k"
             body = sources_page_html(target, face_enabled=False, openclip_enabled=False)
 
         self.assertIn('<header class="browser-header">', body)
+        self.assertIn('href="/">Alle bilder</a>', body)
         self.assertIn('href="/geo">Steder</a>', body)
         self.assertIn('href="/sources">Kilder</a>', body)
         self.assertNotIn('href="/people">Personer</a>', body)
