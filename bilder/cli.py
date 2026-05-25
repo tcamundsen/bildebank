@@ -2473,7 +2473,9 @@ def print_check_source_report(source: Path, stats: CheckSourceStats, problems: l
     print("  Alle støttede bilde- og videofiler finnes i bildesamlingen og er validert med SHA-256.")
     print("  Bildebank sletter ikke kildemapper.")
     print("  Hvis du vil slette mappen selv i PowerShell:")
+    print()
     print(f"  Remove-Item -LiteralPath {powershell_literal(str(source))}")
+    print()
     print("  Hvis mappen inneholder filer, spør PowerShell før den sletter.")
 
 

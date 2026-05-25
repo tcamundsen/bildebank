@@ -35,7 +35,8 @@ Remove-Item -LiteralPath 'C:\Users\Tom\Pictures\Gamle bilder'
 ```
 
 Les linjen før du bruker den. Det er du som sletter mappen, ikke Bildebank. Hvis
-mappen inneholder filer, spør PowerShell før den sletter.
+mappen inneholder filer, spør PowerShell før den sletter. Du kan markere teksten
+fra kommandoen, trykke Ctrl-C for å kopiere, og så Ctrl-V for å lime inn.
 
 Hvis Bildebank finner filer som mangler, eller hvis en målfil i bildesamlingen
 ikke kan valideres med SHA-256, skriver kommandoen at det ikke er trygt å slette
