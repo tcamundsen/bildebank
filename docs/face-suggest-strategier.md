@@ -7,10 +7,12 @@ prinsipper.
 Jeg jobber nå med å finjustere ting, og skal oppdatere dokumentasjonen
 når jeg har mer oversikt. Men dette er finn jeg har gjort til nå:
 
-- Du kommer langt med et babybilde, et som 5-åring, et som 18-åring
+- Du kommer langt med et babybilde, et som 3-åring, et som 6-åring, som 18-åring
   og et som mer voksen, for å finne alle bilder av en person.
 - Du bør bekrefte bilder av alle søsken i en søskenflokk, ellers kan
   programmet ta feil basert på søskenlikhet.
+- Generelt kan man vel si at desto flere personer som har et bekreftet
+  bilde, desto mindre sjanse er det for feilidentifikasjoner.
 
 ## Bruk tydelige, gode bilder
 
