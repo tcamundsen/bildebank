@@ -7,7 +7,7 @@ import subprocess
 import sys
 import traceback
 import webbrowser
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from . import __version__, db
@@ -47,8 +47,10 @@ from .geo import (
     scan_geo,
 )
 from .importer import (
+    WalkError,
     import_source,
     import_source_dry_run,
+    iter_media_files,
     refresh_non_metadata_files,
     validate_source_target,
 )
@@ -77,6 +79,7 @@ FACE_SUGGEST_PROGRESS: ProgressMeter | None = None
 REFRESH_METADATA_PROGRESS: ProgressMeter | None = None
 UNIMPORT_SOURCE_PROGRESS: ProgressMeter | None = None
 UNIMPORT_TARGET_PROGRESS: ProgressMeter | None = None
+CHECK_SOURCE_PROGRESS: ProgressMeter | None = None
 
 
 HELP_COMMAND_GROUPS = (
@@ -99,6 +102,7 @@ HELP_COMMAND_GROUPS = (
             ("show-conflict", "Vis detaljer om en navnekollisjon"),
             ("non-metadata", "List filer der datoen ikke kom fra metadata"),
             ("show-source", "Vis hvor en importert fil kom fra"),
+            ("check-source", "Kontroller at en kildemappe er importert"),
         ),
     ),
     (
@@ -277,6 +281,18 @@ def build_parser() -> argparse.ArgumentParser:
         description="Vis hvilken kilde en importert målfil kommer fra",
     )
     show_source.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    check_source = add_command(
+        subparsers,
+        "check-source",
+        usage="bildebank check-source [valg] mappe",
+        help="Kontroller at en kildemappe er importert",
+        description=(
+            "Scanner en kildemappe og kontrollerer at alle støttede bilde- og videofiler "
+            "finnes i bildesamlingen med samme SHA-256. Kommandoen sletter ingenting."
+        ),
+    )
+    check_source.add_argument("--quiet", action="store_true", help="Ikke vis fremdrift under kontrollen")
+    check_source.add_argument("path", metavar="mappe", type=Path, help="Kildemappen som skal kontrolleres")
     unimport = add_command(
         subparsers,
         "unimport",
@@ -1038,6 +1054,9 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "import" and args.dry_run:
         return run_named_import_dry_run(target, args)
+
+    if args.command == "check-source":
+        return run_check_source(target, args.path, verbose=not args.quiet)
 
     conn = db.connect(target)
     try:
@@ -2328,6 +2347,138 @@ def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
         return 0 if stats.errors == 0 else 2
     finally:
         conn.close()
+
+
+@dataclass
+class CheckSourceStats:
+    scanned: int = 0
+    covered: int = 0
+    missing: int = 0
+    source_errors: int = 0
+    target_errors: int = 0
+
+
+@dataclass(frozen=True)
+class CheckSourceProblem:
+    path: Path
+    reason: str
+
+
+def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) -> int:
+    source = existing_path_arg(source_arg).resolve()
+    if not source.exists() or not source.is_dir():
+        raise ValueError(f"Kilden finnes ikke som mappe: {source}")
+    validate_source_target(source, target)
+
+    conn = db.connect(target)
+    progress = check_source_progress() if verbose else None
+    stats = CheckSourceStats()
+    problems: list[CheckSourceProblem] = []
+    target_hash_cache: dict[int, bool] = {}
+    try:
+        if progress is not None:
+            progress.message(f"Check-source: scanner {source}.")
+        for item in iter_media_files(source):
+            if isinstance(item, WalkError):
+                stats.source_errors += 1
+                problems.append(CheckSourceProblem(item.path, item.message))
+                continue
+            stats.scanned += 1
+            path = item
+            try:
+                file_hash = sha256_file(path)
+            except OSError as exc:
+                stats.source_errors += 1
+                problems.append(CheckSourceProblem(path, f"kan ikke lese kildefil: {exc}"))
+                continue
+
+            rows = db.active_files_by_hash(conn, file_hash)
+            if not rows:
+                stats.missing += 1
+                problems.append(CheckSourceProblem(path, "finnes ikke i aktiv bildesamling med samme SHA-256"))
+            elif check_source_hash_is_validated(target, rows, target_hash_cache):
+                stats.covered += 1
+            else:
+                stats.target_errors += 1
+                problems.append(CheckSourceProblem(path, "matchende målfil mangler eller har endret innhold"))
+
+            if progress is not None:
+                progress.update_count(
+                    stats.scanned,
+                    action="kontrollert",
+                    details=check_source_progress_details(stats),
+                )
+        if progress is not None:
+            progress.done()
+    finally:
+        conn.close()
+
+    print_check_source_report(source, stats, problems)
+    return 0 if check_source_is_safe(stats) else 2
+
+
+def check_source_hash_is_validated(target: Path, rows: list, target_hash_cache: dict[int, bool]) -> bool:
+    valid = False
+    for row in rows:
+        file_id = int(row["id"])
+        if file_id not in target_hash_cache:
+            target_hash_cache[file_id] = validate_check_source_target_file(target, row)
+        valid = valid or target_hash_cache[file_id]
+    return valid
+
+
+def validate_check_source_target_file(target: Path, row) -> bool:
+    target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+    if not target_path.exists() or not target_path.is_file():
+        return False
+    try:
+        return sha256_file(target_path) == row["sha256"]
+    except OSError:
+        return False
+
+
+def check_source_progress() -> ProgressMeter:
+    global CHECK_SOURCE_PROGRESS
+    CHECK_SOURCE_PROGRESS = ProgressMeter("Check-source", stream=sys.stderr)
+    return CHECK_SOURCE_PROGRESS
+
+
+def check_source_progress_details(stats: CheckSourceStats) -> str:
+    return (
+        f"dekket={stats.covered}, mangler={stats.missing}, "
+        f"kildefeil={stats.source_errors}, målfeil={stats.target_errors}"
+    )
+
+
+def check_source_is_safe(stats: CheckSourceStats) -> bool:
+    return stats.missing == 0 and stats.source_errors == 0 and stats.target_errors == 0
+
+
+def print_check_source_report(source: Path, stats: CheckSourceStats, problems: list[CheckSourceProblem]) -> None:
+    print("Check-source")
+    print(f"  Kildemappe: {source}")
+    print(
+        "  Oppsummering: "
+        f"scannet={stats.scanned}, dekket={stats.covered}, mangler={stats.missing}, "
+        f"kildefeil={stats.source_errors}, målfeil={stats.target_errors}"
+    )
+    if problems:
+        print("  Ikke trygt å slette kildemappen ennå.")
+        print("Problemer:")
+        for problem in problems:
+            print(f"- {problem.path}")
+            print(f"  {problem.reason}")
+        return
+
+    print("  Alle støttede bilde- og videofiler finnes i bildesamlingen og er validert med SHA-256.")
+    print("  Bildebank sletter ikke kildemapper.")
+    print("  Hvis du vil slette mappen selv i PowerShell:")
+    print(f"  Remove-Item -LiteralPath {powershell_literal(str(source))}")
+    print("  Hvis mappen inneholder filer, spør PowerShell før den sletter.")
+
+
+def powershell_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
 
 def run_migrate(target: Path, *, check: bool) -> int:

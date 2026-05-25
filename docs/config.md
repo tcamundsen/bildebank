@@ -5,7 +5,6 @@
 usage: bildebank config seksjon enable|disable
 
 Slå valgfrie funksjoner på eller av i bildebank-config.toml.
-
 Eksempel:
 
  bildebank config face_recognition enable

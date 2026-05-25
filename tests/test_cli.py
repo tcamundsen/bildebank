@@ -3967,6 +3967,117 @@ enabled = false
             self.assertIn(f"Målfil: {imported.resolve()}", stdout)
             self.assertIn(f"Kildefil: {source_file.resolve()}", stdout)
 
+    def test_check_source_reports_imported_folder_as_safe_without_logging_command(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                commands_before = conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0]
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("scannet=1, dekket=1, mangler=0", stdout)
+            self.assertIn("validert med SHA-256", stdout)
+            self.assertIn("Bildebank sletter ikke kildemapper.", stdout)
+            self.assertIn("Remove-Item -LiteralPath", stdout)
+            self.assertNotIn("-Recurse", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                commands_after = conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0]
+            finally:
+                conn.close()
+            self.assertEqual(commands_after, commands_before)
+
+    def test_check_source_reports_missing_hash_as_unsafe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            imported = source / "IMG_20240102.jpg"
+            missing = source / "IMG_20240103.jpg"
+            imported.write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            missing.write_bytes(b"not-imported")
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("scannet=2, dekket=1, mangler=1", stdout)
+            self.assertIn(str(missing), stdout)
+            self.assertIn("Ikke trygt å slette", stdout)
+            self.assertNotIn("Remove-Item", stdout)
+
+    def test_check_source_accepts_duplicate_source_file_when_hash_exists_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source1 = root / "source1"
+            source2 = root / "source2"
+            source1.mkdir()
+            source2.mkdir()
+            (source1 / "IMG_20240102.jpg").write_bytes(b"same")
+            (source2 / "COPY_20240203.jpg").write_bytes(b"same")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source1.name, "--quiet", str(source1)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source2)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("scannet=1, dekket=1, mangler=0", stdout)
+
+    def test_check_source_does_not_count_deleted_file_as_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            self.assertEqual(run_cli(["--target", str(target), "remove", str(imported)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("scannet=1, dekket=0, mangler=1", stdout)
+
+    def test_check_source_reports_corrupt_target_file_as_unsafe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            imported.write_bytes(b"changed")
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("scannet=1, dekket=0, mangler=0", stdout)
+            self.assertIn("målfeil=1", stdout)
+            self.assertIn("matchende målfil mangler eller har endret innhold", stdout)
+
     def test_remove_moves_file_marks_database_and_hides_from_export(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

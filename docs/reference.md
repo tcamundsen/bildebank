@@ -25,6 +25,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 - [`status`](status.md) **`cli`**
 - [`list-sources`](list-sources.md) **`web`**
 - [`show-source`](show-source.md) **`web`**
+- [`check-source`](check-source.md) **`cli`**
 
 ## Rydde
 
