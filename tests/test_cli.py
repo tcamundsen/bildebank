@@ -2700,9 +2700,31 @@ model_name = "buffalo_l"
                     """,
                     (b"embedding-3",),
                 )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(4, 999, 'stale-confirmed', 5, 6, 14, 24, 0.7, 'test', ?)
+                    """,
+                    (b"embedding-4",),
+                )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(5, 1000, 'stale-suggested', 5, 6, 14, 24, 0.7, 'test', ?)
+                    """,
+                    (b"embedding-5",),
+                )
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 3)")
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 4)")
                 face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)")
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 5, 0.92)")
                 face_conn.commit()
             finally:
                 face_conn.close()

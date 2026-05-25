@@ -1941,76 +1941,77 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
     face_db_path = current_face_db_path(target, face_config)
     if not face_db_path.exists():
         return []
-    conn = sqlite3.connect(face_db_path)
-    conn.row_factory = sqlite3.Row
+    face_conn = sqlite3.connect(face_db_path)
+    face_conn.row_factory = sqlite3.Row
     try:
-        if not face_tables_exist(conn):
+        if not face_tables_exist(face_conn):
             return []
-        rows = conn.execute(
-            """
-            SELECT
-                persons.name,
-                (
-                    SELECT COUNT(DISTINCT faces.file_id)
+        rows: list[dict[str, object]] = []
+        for person in face_conn.execute("SELECT id, name FROM persons ORDER BY name"):
+            person_id = int(person["id"])
+            confirmed_file_ids = [
+                int(row["file_id"])
+                for row in face_conn.execute(
+                    """
+                    SELECT faces.file_id
                     FROM person_faces
                     JOIN faces ON faces.id = person_faces.face_id
-                    WHERE person_faces.person_id = persons.id
-                ) AS confirmed_file_count,
-                (
-                    SELECT COUNT(DISTINCT file_id)
-                    FROM (
-                        SELECT faces.file_id
-                        FROM person_faces
-                        JOIN faces ON faces.id = person_faces.face_id
-                        WHERE person_faces.person_id = persons.id
-                        UNION
-                        SELECT faces.file_id
-                        FROM face_suggestions
-                        JOIN faces ON faces.id = face_suggestions.face_id
-                        WHERE face_suggestions.person_id = persons.id
-                    )
-                ) AS all_file_count,
-                (
-                    SELECT COUNT(*)
+                    WHERE person_faces.person_id = ?
+                    """,
+                    (person_id,),
+                )
+            ]
+            suggested_file_ids = [
+                int(row["file_id"])
+                for row in face_conn.execute(
+                    """
+                    SELECT faces.file_id
                     FROM face_suggestions
-                    WHERE face_suggestions.person_id = persons.id
-                ) AS suggestion_count,
-                (
-                    SELECT COUNT(*)
-                    FROM (
-                        SELECT faces.file_id
-                        FROM person_faces
-                        JOIN faces ON faces.id = person_faces.face_id
-                        WHERE person_faces.person_id = persons.id
-                        GROUP BY faces.file_id
-                        HAVING COUNT(*) > 1
-                    )
-                ) AS duplicate_confirmed_file_count,
-                (
-                    SELECT COALESCE(MAX(confirmed_face_count), 0)
-                    FROM (
-                        SELECT COUNT(*) AS confirmed_face_count
-                        FROM person_faces
-                        JOIN faces ON faces.id = person_faces.face_id
-                        WHERE person_faces.person_id = persons.id
-                        GROUP BY faces.file_id
-                    )
-                ) AS max_confirmed_faces_per_file
-            FROM persons
-            ORDER BY persons.name
-            """
+                    JOIN faces ON faces.id = face_suggestions.face_id
+                    WHERE face_suggestions.person_id = ?
+                    """,
+                    (person_id,),
+                )
+            ]
+            active_file_ids = active_file_id_set(target, [*confirmed_file_ids, *suggested_file_ids])
+            active_confirmed_file_ids = [file_id for file_id in confirmed_file_ids if file_id in active_file_ids]
+            active_suggested_file_ids = [file_id for file_id in suggested_file_ids if file_id in active_file_ids]
+            confirmed_counts_by_file: dict[int, int] = {}
+            for file_id in active_confirmed_file_ids:
+                confirmed_counts_by_file[file_id] = confirmed_counts_by_file.get(file_id, 0) + 1
+            duplicate_counts = [count for count in confirmed_counts_by_file.values() if count > 1]
+            rows.append(
+                {
+                    "name": str(person["name"]),
+                    "confirmed_file_count": len(confirmed_counts_by_file),
+                    "all_file_count": len(set(active_confirmed_file_ids) | set(active_suggested_file_ids)),
+                    "suggestion_count": len(active_suggested_file_ids),
+                    "duplicate_confirmed_file_count": len(duplicate_counts),
+                    "max_confirmed_faces_per_file": max(duplicate_counts, default=0),
+                }
+            )
+        return rows
+    finally:
+        face_conn.close()
+
+
+def active_file_id_set(target: Path, file_ids: list[int]) -> set[int]:
+    unique_ids = sorted(set(file_ids))
+    if not unique_ids:
+        return set()
+    placeholders = ",".join("?" for _ in unique_ids)
+    conn = db.connect(target)
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT id
+            FROM files
+            WHERE deleted_at IS NULL
+              AND id IN ({placeholders})
+            """,
+            tuple(unique_ids),
         )
-        return [
-            {
-                "name": str(row["name"]),
-                "confirmed_file_count": int(row["confirmed_file_count"]),
-                "all_file_count": int(row["all_file_count"]),
-                "suggestion_count": int(row["suggestion_count"]),
-                "duplicate_confirmed_file_count": int(row["duplicate_confirmed_file_count"]),
-                "max_confirmed_faces_per_file": int(row["max_confirmed_faces_per_file"]),
-            }
-            for row in rows
-        ]
+        return {int(row["id"]) for row in rows}
     finally:
         conn.close()
 
@@ -2151,7 +2152,9 @@ def person_file_ids(
     except OSError:
         return []
     clean_name = normalize_person_name(person_name)
-    return list(cached_person_file_ids(str(face_db_path), mtime_ns, clean_name, include_suggestions))
+    file_ids = list(cached_person_file_ids(str(face_db_path), mtime_ns, clean_name, include_suggestions))
+    active_file_ids = active_file_id_set(target, file_ids)
+    return [file_id for file_id in file_ids if file_id in active_file_ids]
 
 
 @lru_cache(maxsize=256)

@@ -22,6 +22,9 @@ Forslagene bygger på ansikter du allerede har bekreftet med
 Se også [`Strategier for face-suggest`](face-suggest-strategier.md) for råd om
 hvordan du bør velge ansikter som skal bekreftes.
 
+Du trenger ikke å restarter `run-server` etter å ha kjørt `face-suggest`. Forslagene
+brukes så snart du blar videre til neste bilde eller laster siden på nytt med Ctrl-R eller F5.
+
 ## Valg
 
 ### `--threshold DESIMALTALL`
