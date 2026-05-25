@@ -217,7 +217,10 @@ function Ensure-Repo {
             throw "Installasjonsmappen finnes, men er ikke et tomt git-repo: $RepoDir"
         }
     } else {
-        New-Item -ItemType Directory -Path (Split-Path -Parent $RepoDir) -Force | Out-Null
+        $parentDir = Split-Path -Parent $RepoDir
+        if (-not [string]::IsNullOrWhiteSpace($parentDir)) {
+            New-Item -ItemType Directory -Path $parentDir -Force | Out-Null
+        }
     }
 
     Write-Step "Laster ned bildebank fra GitHub ($Branch)"
