@@ -1976,8 +1976,8 @@ def print_face_scan_progress(
         return
     if stage == "download_model":
         FACE_SCAN_PROGRESS.message(
-            "Face-scan: ansiktsmodellen finnes ikke lokalt. InsightFace kan laste den ned nå, "
-            "så første kjøring kan ta ekstra lang tid."
+            "Face-scan: ansiktsmodellen finnes ikke lokalt. InsightFace vil laste den ned nå (ca 700 MB), "
+            "så første kjøring kan ta ekstra lang tid"
         )
         return
     if stage == "error":
