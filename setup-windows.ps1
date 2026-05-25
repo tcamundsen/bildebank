@@ -18,6 +18,10 @@ Standard er bildebank.
 Git-repoet som skal klones.
 Vanligvis trenger du ikke endre dette.
 
+.PARAMETER Branch
+Git-branchen som skal installeres eller oppdateres fra.
+Standard er main.
+
 .PARAMETER SkipInstall
 Ikke installer Git eller Python automatisk.
 Scriptet stopper i stedet hvis noe mangler.
@@ -36,9 +40,20 @@ Installerer Bildebank i en annen mappe.
 .\setup-windows.ps1 -SkipInstall
 
 Kjører uten automatisk installasjon av Git eller Python.
+
+.EXAMPLE
+.\setup-windows.ps1 -Branch devel
+
+Installerer eller oppdaterer fra devel-branchen.
+
+.EXAMPLE
+.\setup-windows.ps1 -InstallDir "$HOME\kode\bildebank-test" -CommandName bb2
+
+Installerer Bildebank i en testmappe og lager kommandoen bb2.
 #>
 param(
     [string]$RepoUrl = "https://github.com/tcamundsen/bildebank.git",
+    [string]$Branch = "main",
     [string]$InstallDir = (Join-Path $HOME "kode\bildebank"),
     [string]$CommandName = "bildebank",
     [switch]$SkipInstall
@@ -139,14 +154,6 @@ function Ensure-Python {
     }
 }
 
-function Get-RepoDir {
-    $scriptDir = $PSScriptRoot
-    if ($scriptDir -and (Test-Path -LiteralPath (Join-Path $scriptDir "pyproject.toml"))) {
-        return (Resolve-Path -LiteralPath $scriptDir).Path
-    }
-    return $InstallDir
-}
-
 function Get-ValidatedCommandName {
     param([string]$Name)
 
@@ -165,13 +172,38 @@ function Get-ValidatedCommandName {
     return $Name
 }
 
+function Get-ValidatedBranchName {
+    param([string]$Name)
+
+    if ([string]::IsNullOrWhiteSpace($Name)) {
+        throw "Branch kan ikke være tom."
+    }
+    if ($Name -notmatch '^[A-Za-z0-9._/-]+$') {
+        throw "Branch kan bare inneholde bokstaver, tall, punktum, understrek, bindestrek og skråstrek: $Name"
+    }
+    if ($Name.StartsWith("/") -or $Name.EndsWith("/") -or $Name.Contains("//")) {
+        throw "Branch har ugyldig format: $Name"
+    }
+    return $Name
+}
+
 function Ensure-Repo {
-    param([string]$RepoDir)
+    param(
+        [string]$RepoDir,
+        [string]$Branch
+    )
 
     if (Test-Path -LiteralPath (Join-Path $RepoDir ".git")) {
-        Write-Step "Oppdaterer eksisterende repo"
+        Write-Step "Oppdaterer eksisterende repo fra $Branch"
         Push-Location $RepoDir
         try {
+            Invoke-Native -FilePath "git" -ArgumentList @("fetch", "origin")
+            & git rev-parse --verify --quiet "refs/heads/$Branch" *> $null
+            if ($LASTEXITCODE -eq 0) {
+                Invoke-Native -FilePath "git" -ArgumentList @("switch", $Branch)
+            } else {
+                Invoke-Native -FilePath "git" -ArgumentList @("switch", "--track", "origin/$Branch")
+            }
             Invoke-Native -FilePath "git" -ArgumentList @("pull", "--ff-only")
         } finally {
             Pop-Location
@@ -188,8 +220,8 @@ function Ensure-Repo {
         New-Item -ItemType Directory -Path (Split-Path -Parent $RepoDir) -Force | Out-Null
     }
 
-    Write-Step "Laster ned bildebank fra GitHub"
-    Invoke-Native -FilePath "git" -ArgumentList @("clone", $RepoUrl, $RepoDir)
+    Write-Step "Laster ned bildebank fra GitHub ($Branch)"
+    Invoke-Native -FilePath "git" -ArgumentList @("clone", "--branch", $Branch, $RepoUrl, $RepoDir)
 }
 
 function Ensure-Venv {
@@ -334,13 +366,14 @@ function Warn-CommandCollision {
 }
 
 $CommandName = Get-ValidatedCommandName -Name $CommandName
+$Branch = Get-ValidatedBranchName -Name $Branch
 
 Write-Step "Sjekker Git og Python"
 Ensure-Git
 Ensure-Python
 
-$repoDir = Get-RepoDir
-Ensure-Repo -RepoDir $repoDir
+$repoDir = $InstallDir
+Ensure-Repo -RepoDir $repoDir -Branch $Branch
 Ensure-Venv -RepoDir $repoDir
 Ensure-ExifTool -RepoDir $repoDir
 
