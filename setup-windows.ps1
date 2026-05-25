@@ -87,6 +87,11 @@ function Invoke-Native {
     }
 }
 
+function ConvertTo-AbsolutePath {
+    param([string]$Path)
+    return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
+}
+
 function Refresh-ProcessPath {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -187,6 +192,48 @@ function Get-ValidatedBranchName {
     return $Name
 }
 
+function Test-ZipFileHeader {
+    param([string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $false
+    }
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        if ($stream.Length -lt 4) {
+            return $false
+        }
+        $buffer = New-Object byte[] 4
+        [void]$stream.Read($buffer, 0, 4)
+        return $buffer[0] -eq 0x50 -and $buffer[1] -eq 0x4B
+    } finally {
+        $stream.Dispose()
+    }
+}
+
+function Save-ExifToolZip {
+    param([string]$Destination)
+
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        if (Test-Path -LiteralPath $Destination) {
+            Remove-Item -LiteralPath $Destination -Force
+        }
+        try {
+            Invoke-WebRequest -Uri $ExifToolUrl -OutFile $Destination -UseBasicParsing
+            if (-not (Test-ZipFileHeader -Path $Destination)) {
+                throw "Nedlastingen var ikke en zip-fil."
+            }
+            return
+        } catch {
+            if ($attempt -ge 3) {
+                throw "Kunne ikke laste ned gyldig ExifTool-zip etter $attempt forsøk. Siste feil: $($_.Exception.Message)"
+            }
+            Write-Host "ExifTool-nedlasting feilet, prøver igjen ($attempt/3): $($_.Exception.Message)"
+            Start-Sleep -Seconds 2
+        }
+    }
+}
+
 function Ensure-Repo {
     param(
         [string]$RepoDir,
@@ -267,7 +314,7 @@ function Ensure-ExifTool {
     $extractDir = Join-Path $tempDir "extract"
     New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
     try {
-        Invoke-WebRequest -Uri $ExifToolUrl -OutFile $zipPath
+        Save-ExifToolZip -Destination $zipPath
         Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
         $extractedTool = Get-ChildItem -LiteralPath $extractDir -Recurse -File |
             Where-Object { $_.Name -ieq "exiftool.exe" -or $_.Name -ieq "exiftool(-k).exe" } |
@@ -370,7 +417,7 @@ function Warn-CommandCollision {
 
 $CommandName = Get-ValidatedCommandName -Name $CommandName
 $Branch = Get-ValidatedBranchName -Name $Branch
-$InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
+$InstallDir = ConvertTo-AbsolutePath -Path $InstallDir
 
 Write-Step "Sjekker Git og Python"
 Ensure-Git
