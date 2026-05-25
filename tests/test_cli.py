@@ -765,7 +765,7 @@ pretrained = "laion2b_s34b_b79k"
 
         body = search_start_html(server)
 
-        self.assertIn("Første søk kan ta 10-20 sekunder", body)
+        self.assertIn("Dette kan ta 10-20 sekunder", body)
         self.assertIn("Laster bildesøkmodellen", body)
         self.assertIn('data-model-loaded="false"', body)
         self.assertIn("data-search-loading", body)
@@ -781,7 +781,7 @@ pretrained = "laion2b_s34b_b79k"
 
         body = search_html(server, ServerSearchStats("strand", ()), DEFAULT_SEARCH_LIMIT)
 
-        self.assertIn("Første søk kan ta 10-20 sekunder", body)
+        self.assertIn("Dette kan ta 10-20 sekunder", body)
         self.assertIn('data-model-loaded="true"', body)
 
     def test_run_server_common_topline_respects_feature_flags(self) -> None:
