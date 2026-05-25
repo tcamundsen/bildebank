@@ -60,9 +60,6 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ExifToolVersion = "13.58"
-$ExifToolUrl = "https://sourceforge.net/projects/exiftool/files/exiftool-$($ExifToolVersion)_64.zip/download"
-
 function Write-Step {
     param([string]$Message)
     Write-Host ""
@@ -192,48 +189,6 @@ function Get-ValidatedBranchName {
     return $Name
 }
 
-function Test-ZipFileHeader {
-    param([string]$Path)
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return $false
-    }
-    $stream = [System.IO.File]::OpenRead($Path)
-    try {
-        if ($stream.Length -lt 4) {
-            return $false
-        }
-        $buffer = New-Object byte[] 4
-        [void]$stream.Read($buffer, 0, 4)
-        return $buffer[0] -eq 0x50 -and $buffer[1] -eq 0x4B
-    } finally {
-        $stream.Dispose()
-    }
-}
-
-function Save-ExifToolZip {
-    param([string]$Destination)
-
-    for ($attempt = 1; $attempt -le 3; $attempt++) {
-        if (Test-Path -LiteralPath $Destination) {
-            Remove-Item -LiteralPath $Destination -Force
-        }
-        try {
-            Invoke-WebRequest -Uri $ExifToolUrl -OutFile $Destination -UseBasicParsing
-            if (-not (Test-ZipFileHeader -Path $Destination)) {
-                throw "Nedlastingen var ikke en zip-fil."
-            }
-            return
-        } catch {
-            if ($attempt -ge 3) {
-                throw "Kunne ikke laste ned gyldig ExifTool-zip etter $attempt forsøk. Siste feil: $($_.Exception.Message)"
-            }
-            Write-Host "ExifTool-nedlasting feilet, prøver igjen ($attempt/3): $($_.Exception.Message)"
-            Start-Sleep -Seconds 2
-        }
-    }
-}
-
 function Ensure-Repo {
     param(
         [string]$RepoDir,
@@ -300,47 +255,14 @@ function Ensure-Venv {
 function Ensure-ExifTool {
     param([string]$RepoDir)
 
-    $destination = Join-Path $RepoDir "bildebank-tools\exiftool"
-    $tool = Join-Path $destination "exiftool.exe"
-    $supportDir = Join-Path $destination "exiftool_files"
-    if ((Test-Path -LiteralPath $tool) -and (Test-Path -LiteralPath $supportDir)) {
-        Write-Host "ExifTool finnes allerede: $tool"
-        return
-    }
-
     Write-Step "Installerer ExifTool"
-    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("bildebank-exiftool-" + [System.Guid]::NewGuid().ToString("N"))
-    $zipPath = Join-Path $tempDir "exiftool.zip"
-    $extractDir = Join-Path $tempDir "extract"
-    New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+    $venvPython = Join-Path $RepoDir ".venv\Scripts\python.exe"
     try {
-        Save-ExifToolZip -Destination $zipPath
-        Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force
-        $extractedTool = Get-ChildItem -LiteralPath $extractDir -Recurse -File |
-            Where-Object { $_.Name -ieq "exiftool.exe" -or $_.Name -ieq "exiftool(-k).exe" } |
-            Select-Object -First 1
-        if ($null -eq $extractedTool) {
-            throw "ExifTool-zip mangler exiftool.exe."
-        }
-        $extractedFiles = Join-Path $extractedTool.DirectoryName "exiftool_files"
-        if (-not (Test-Path -LiteralPath $extractedFiles)) {
-            throw "ExifTool-zip mangler exiftool_files."
-        }
-
-        if (Test-Path -LiteralPath $destination) {
-            Remove-Item -LiteralPath $destination -Recurse -Force
-        }
-        New-Item -ItemType Directory -Path $destination -Force | Out-Null
-        Copy-Item -LiteralPath $extractedTool.FullName -Destination $tool -Force
-        Copy-Item -LiteralPath $extractedFiles -Destination $supportDir -Recurse -Force
-        & $tool -ver | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw "ExifTool ble installert, men versjonssjekken feilet."
-        }
-    } finally {
-        if (Test-Path -LiteralPath $tempDir) {
-            Remove-Item -LiteralPath $tempDir -Recurse -Force
-        }
+        Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "bilder.cli", "exiftool-install")
+    } catch {
+        Write-Host "Kunne ikke installere ExifTool automatisk: $($_.Exception.Message)"
+        Write-Host "Du kan prøve igjen etter setup med:"
+        Write-Host "  $CommandName exiftool-install"
     }
 }
 
