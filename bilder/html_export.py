@@ -17,7 +17,6 @@ from .thumbnails import existing_thumbnail_url
 
 IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "webp", "tif", "tiff", "heic", "heif"}
 VIDEO_EXTENSIONS = {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}
-FACE_DB_FILENAME = ".bilder-faces.sqlite3"
 
 
 @dataclass

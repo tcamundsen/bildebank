@@ -24,7 +24,6 @@ from .thumbnails import existing_thumbnail_url
 
 LEGACY_FACE_DB_FILENAME = ".bilder-faces.sqlite3"
 FACE_DB_DIRNAME = ".bildebank-faces"
-FACE_DB_FILENAME = f"{FACE_DB_DIRNAME}/buffalo_l.sqlite3"
 DEFAULT_FACE_MODEL_NAME = "buffalo_l"
 FACE_SCHEMA_VERSION = 3
 FACE_MODEL_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
