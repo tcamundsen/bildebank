@@ -1830,12 +1830,24 @@ def load_face_app(config: FaceRecognitionConfig):
                 f"{config.model_name!r}. Modellen mangler detection-del eller har feil mappestruktur."
             ) from exc
     app.prepare(ctx_id=-1 if config.provider == "cpu" else 0, det_size=(640, 640))
+    remove_insightface_model_zip(config)
     return app
 
 
 def insightface_model_files_exist(config: FaceRecognitionConfig) -> bool:
     model_dir = config.model_root / "models" / config.model_name
     return model_dir.is_dir() and any(model_dir.rglob("*.onnx"))
+
+
+def remove_insightface_model_zip(config: FaceRecognitionConfig) -> bool:
+    zip_path = config.model_root / "models" / f"{config.model_name}.zip"
+    try:
+        if not zip_path.is_file():
+            return False
+        zip_path.unlink()
+        return True
+    except OSError:
+        return False
 
 
 def normalize_insightface_model_layout(config: FaceRecognitionConfig) -> bool:

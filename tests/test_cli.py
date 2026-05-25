@@ -32,6 +32,7 @@ from bilder.face import (
     face_db_path,
     normalize_insightface_model_layout,
     read_image,
+    remove_insightface_model_zip,
 )
 from bilder.geo import h3_cells_for_point
 from bilder.html_export import render_html
@@ -5189,7 +5190,7 @@ print(json.dumps([
             self.assertNotIn("internal model", stdout)
             self.assertNotIn("internal model", stderr)
             self.assertIn("ansikter=1", stdout)
-            face_db = face_db_path(target)
+            face_db = face_db_path(target, load_config(self.program_root).face_recognition)
             self.assertTrue(face_db.exists())
             conn = sqlite3.connect(face_db)
             try:
@@ -5400,6 +5401,22 @@ print(json.dumps([
             self.assertTrue((model_dir / "scrfd_10g_bnkps.onnx").exists())
             self.assertTrue((model_dir / "glintr100.onnx").exists())
             self.assertFalse(nested.exists())
+
+    def test_remove_insightface_model_zip_removes_only_active_model_zip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            models_dir = root / ".bildebank-insightface" / "models"
+            models_dir.mkdir(parents=True)
+            active_zip = models_dir / "antelopev2.zip"
+            other_zip = models_dir / "buffalo_l.zip"
+            active_zip.write_bytes(b"zip")
+            other_zip.write_bytes(b"zip")
+            config = FaceRecognitionConfig(model_root=root / ".bildebank-insightface", model_name="antelopev2")
+
+            self.assertTrue(remove_insightface_model_zip(config))
+            self.assertFalse(active_zip.exists())
+            self.assertTrue(other_zip.exists())
+            self.assertFalse(remove_insightface_model_zip(config))
 
     def test_face_suggest_uses_relative_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
