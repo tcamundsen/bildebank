@@ -370,6 +370,7 @@ function Warn-CommandCollision {
 
 $CommandName = Get-ValidatedCommandName -Name $CommandName
 $Branch = Get-ValidatedBranchName -Name $Branch
+$InstallDir = [System.IO.Path]::GetFullPath($InstallDir)
 
 Write-Step "Sjekker Git og Python"
 Ensure-Git
