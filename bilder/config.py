@@ -8,7 +8,7 @@ from typing import Any
 
 CONFIG_FILENAME = "bildebank-config.toml"
 ENABLED_CONFIG_SECTIONS = frozenset({"face_recognition", "image_search"})
-DEFAULT_FACE_MODEL_NAME = "buffalo_l"
+DEFAULT_FACE_MODEL_NAME = "antelopev2"
 
 
 @dataclass(frozen=True)
