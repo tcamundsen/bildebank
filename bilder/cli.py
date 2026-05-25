@@ -1974,6 +1974,12 @@ def print_face_scan_progress(
         FACE_SCAN_PROGRESS.message(f"Face-scan: {total} nye eller endrede bilder skal scannes.")
         FACE_SCAN_PROGRESS.message("Face-scan: laster ansiktsmodell. Det kan ta 20 sekunder eller mer.")
         return
+    if stage == "download_model":
+        FACE_SCAN_PROGRESS.message(
+            "Face-scan: ansiktsmodellen finnes ikke lokalt. InsightFace kan laste den ned nå, "
+            "så første kjøring kan ta ekstra lang tid."
+        )
+        return
     if stage == "error":
         message = getattr(stats, "last_error_message", None) or "ukjent feil"
         FACE_SCAN_PROGRESS.error(f"Face-scan-feil: {path}\t{message}")

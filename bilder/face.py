@@ -1643,6 +1643,8 @@ def scan_faces(
 
         if progress is not None:
             progress("load_model", 0, len(rows_to_scan), stats, None)
+            if not insightface_model_files_exist(config):
+                progress("download_model", 0, len(rows_to_scan), stats, None)
         with suppress_model_output(enabled=not show_model_output):
             app = load_face_app(config)
         for scan_index, row in enumerate(rows_to_scan, start=1):
@@ -1830,6 +1832,11 @@ def load_face_app(config: FaceRecognitionConfig):
             ) from exc
     app.prepare(ctx_id=-1 if config.provider == "cpu" else 0, det_size=(640, 640))
     return app
+
+
+def insightface_model_files_exist(config: FaceRecognitionConfig) -> bool:
+    model_dir = config.model_root / "models" / config.model_name
+    return model_dir.is_dir() and any(model_dir.rglob("*.onnx"))
 
 
 def normalize_insightface_model_layout(config: FaceRecognitionConfig) -> bool:

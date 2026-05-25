@@ -5183,6 +5183,7 @@ print(json.dumps([
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-scan: 1 bildefiler skal kontrolleres.", stdout)
             self.assertIn("Face-scan: 1 nye eller endrede bilder skal scannes.", stdout)
+            self.assertIn("Face-scan: ansiktsmodellen finnes ikke lokalt.", stdout)
             self.assertIn("Face-scan: scannet=1/1", stdout)
             self.assertIn("gjenstår=0s", stdout)
             self.assertNotIn("internal model", stdout)
