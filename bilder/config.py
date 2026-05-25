@@ -8,6 +8,7 @@ from typing import Any
 
 CONFIG_FILENAME = "bildebank-config.toml"
 ENABLED_CONFIG_SECTIONS = frozenset({"face_recognition", "image_search"})
+DEFAULT_FACE_MODEL_NAME = "buffalo_l"
 
 
 @dataclass(frozen=True)
@@ -16,7 +17,7 @@ class FaceRecognitionConfig:
     provider: str = "cpu"
     model_root: Path = Path(".bildebank-insightface")
     database_dir: Path = Path(".bildebank-faces")
-    model_name: str = "buffalo_l"
+    model_name: str = DEFAULT_FACE_MODEL_NAME
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,7 @@ def load_config(repo_root: Path) -> AppConfig:
             provider=str(face_data.get("provider", "cpu")),
             model_root=model_root,
             database_dir=Path(str(face_data.get("database_dir", ".bildebank-faces"))),
-            model_name=str(face_data.get("model_name", "buffalo_l")),
+            model_name=str(face_data.get("model_name", DEFAULT_FACE_MODEL_NAME)),
         ),
         openclip=OpenClipConfig(
             enabled=bool(openclip_data.get("enabled", False)),

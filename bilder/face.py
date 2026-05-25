@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import quote
 
 from . import db
-from .config import FaceRecognitionConfig
+from .config import DEFAULT_FACE_MODEL_NAME, FaceRecognitionConfig
 from .html_export import render_html
 from .media import IMAGE_EXTENSIONS
 from .media_cache import MediaMetadataCache
@@ -23,8 +23,8 @@ from .thumbnails import existing_thumbnail_url
 
 
 LEGACY_FACE_DB_FILENAME = ".bilder-faces.sqlite3"
+LEGACY_FACE_DB_MODEL_NAME = "buffalo_l"
 FACE_DB_DIRNAME = ".bildebank-faces"
-DEFAULT_FACE_MODEL_NAME = "buffalo_l"
 FACE_SCHEMA_VERSION = 3
 FACE_MODEL_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 FACE_SUGGEST_BATCH_SIZE = 5000
@@ -149,13 +149,13 @@ def face_db_path(target: Path, config: FaceRecognitionConfig | None = None) -> P
 
 
 def move_legacy_face_db_if_needed(target: Path, new_path: Path, model_name: str) -> None:
-    if model_name != DEFAULT_FACE_MODEL_NAME:
+    if model_name != LEGACY_FACE_DB_MODEL_NAME:
         return
     legacy_path = target / LEGACY_FACE_DB_FILENAME
     if not legacy_path.exists() or new_path.exists():
         return
     new_path.parent.mkdir(parents=True, exist_ok=True)
-    # KOMPATIBILITET: flytt gammel face-database til modellspesifikk buffalo_l-database.
+    # KOMPATIBILITET: den gamle face-databasen ble laget før modellvalg og regnes som buffalo_l.
     shutil.move(str(legacy_path), str(new_path))
 
 
