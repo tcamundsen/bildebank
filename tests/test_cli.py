@@ -5398,8 +5398,9 @@ print(json.dumps([
             self.assertEqual(run_cli(["create", str(target)]), 0)
             image_path.parent.mkdir(parents=True)
             image_path.write_bytes(b"image")
+            config = load_config(self.program_root).face_recognition
 
-            conn = sqlite3.connect(face_db_path(target))
+            conn = sqlite3.connect(face_db_path(target, config))
             try:
                 apply_face_schema(conn)
                 conn.execute(
@@ -5540,8 +5541,9 @@ print(json.dumps([
             self.assertEqual(run_cli(["create", str(target)]), 0)
             image_path.parent.mkdir(parents=True)
             image_path.write_bytes(minimal_png(640, 480))
+            config = load_config(self.program_root).face_recognition
 
-            conn = sqlite3.connect(face_db_path(target))
+            conn = sqlite3.connect(face_db_path(target, config))
             try:
                 apply_face_schema(conn)
                 embedding = struct.pack("ff", 1.0, 0.0)
@@ -5576,7 +5578,7 @@ print(json.dumps([
             self.assertIn("Face-suggest: sammenlignet=1/1", stdout)
             self.assertIn("forslag=1", stdout)
             self.assertNotIn("Kari\tface-id=2", stdout)
-            conn = sqlite3.connect(face_db_path(target))
+            conn = sqlite3.connect(face_db_path(target, config))
             try:
                 self.assertEqual(
                     conn.execute("SELECT target_path FROM scanned_files WHERE file_id = 1").fetchone()[0],
@@ -5634,7 +5636,8 @@ print(json.dumps([
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 1)
             finally:
                 conn.close()
-            self.assertFalse(face_db_path(target).exists())
+            buffalo_config = load_config(self.program_root).face_recognition
+            self.assertFalse(face_db_path(target, buffalo_config).exists())
 
     def test_face_suggest_without_confirmed_faces_deletes_old_suggestions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5643,7 +5646,8 @@ print(json.dumps([
             self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
-            conn = connect_face_db(target)
+            config = load_config(self.program_root).face_recognition
+            conn = connect_face_db(target, config)
             try:
                 conn.execute(
                     """
@@ -5673,7 +5677,7 @@ print(json.dumps([
             self.assertIn("personer=0", stdout)
             self.assertIn("ukjente_ansikter=1", stdout)
             self.assertIn("forslag=0", stdout)
-            conn = connect_face_db(target)
+            conn = connect_face_db(target, config)
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 0)
             finally:
@@ -5690,8 +5694,9 @@ print(json.dumps([
             self.assertEqual(run_cli(["create", str(target)]), 0)
             image_path.parent.mkdir(parents=True)
             image_path.write_bytes(minimal_png(640, 480))
+            config = load_config(self.program_root).face_recognition
 
-            conn = sqlite3.connect(face_db_path(target))
+            conn = sqlite3.connect(face_db_path(target, config))
             try:
                 apply_face_schema(conn)
                 conn.execute(
@@ -5730,7 +5735,8 @@ print(json.dumps([
             second = target / "second.jpg"
             first.write_bytes(b"first")
             second.write_bytes(b"second")
-            conn = connect_face_db(target)
+            config = load_config(self.program_root).face_recognition
+            conn = connect_face_db(target, config)
             try:
                 for file_id, path in ((1, first), (2, second)):
                     relative_path = path.relative_to(target)
@@ -5991,7 +5997,8 @@ print(json.dumps([
             self.assertIn("1 bilder", index_html)
             self.assertIn("1 bekreftet, 1 forslag", index_html)
 
-            conn = sqlite3.connect(face_db_path(target))
+            config = load_config(self.program_root).face_recognition
+            conn = sqlite3.connect(face_db_path(target, config))
             try:
                 suggestion = conn.execute(
                     """
@@ -6010,7 +6017,8 @@ print(json.dumps([
             target = root / "target"
             self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            face_db = face_db_path(target)
+            config = load_config(self.program_root).face_recognition
+            face_db = face_db_path(target, config)
             face_db.write_bytes(b"face-data")
 
             with patch("builtins.input", return_value="nei"):
@@ -6033,7 +6041,8 @@ print(json.dumps([
             target = root / "target"
             self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            conn = sqlite3.connect(face_db_path(target))
+            config = load_config(self.program_root).face_recognition
+            conn = sqlite3.connect(face_db_path(target, config))
             try:
                 conn.executescript(
                     """
@@ -6123,7 +6132,7 @@ print(json.dumps([
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-scan-resultater er beholdt", stdout)
-            conn = sqlite3.connect(face_db_path(target))
+            conn = sqlite3.connect(face_db_path(target, config))
             try:
                 self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "3")
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
@@ -6144,7 +6153,7 @@ print(json.dumps([
             finally:
                 conn.close()
 
-            conn = sqlite3.connect(face_db_path(target))
+            conn = sqlite3.connect(face_db_path(target, config))
             try:
                 conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
                 conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
@@ -6158,7 +6167,7 @@ print(json.dumps([
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-scan-resultater er beholdt", stdout)
-            conn = sqlite3.connect(face_db_path(target))
+            conn = sqlite3.connect(face_db_path(target, config))
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0], 1)
