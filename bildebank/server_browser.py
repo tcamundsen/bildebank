@@ -315,3 +315,96 @@ def sql_filtered_source_month_keys(target: Path, source: BrowserSource) -> list[
         return [str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"]))]
     finally:
         conn.close()
+
+
+def date_source_items(target: Path, date_source: str) -> list[Any]:
+    conn = db.connect(target)
+    try:
+        return list(
+            conn.execute(
+                f"""
+                SELECT {FILE_COLUMNS}
+                FROM files
+                WHERE deleted_at IS NULL
+                  AND date_source = ?
+                ORDER BY {ITEM_ORDER_SQL}
+                """,
+                (date_source,),
+            )
+        )
+    finally:
+        conn.close()
+
+
+def imported_source_items(target: Path, source_id: int) -> list[Any]:
+    conn = db.connect(target)
+    try:
+        return list(
+            conn.execute(
+                f"""
+                SELECT
+                    files.id,
+                    files.target_path,
+                    files.target_path_key,
+                    files.stored_filename,
+                    files.taken_date,
+                    files.date_source,
+                    files.size_bytes,
+                    files.view_rotation_degrees,
+                    files.gps_lat,
+                    files.gps_lon,
+                    files.media_width,
+                    files.media_height,
+                    files.media_orientation,
+                    files.media_metadata_mtime_ns,
+                    {db.H3_FILE_COLUMNS_SQL}
+                FROM files
+                JOIN file_sources ON file_sources.file_id = files.id
+                WHERE files.deleted_at IS NULL
+                  AND file_sources.source_id = ?
+                ORDER BY {ITEM_ORDER_SQL}
+                """,
+                (source_id,),
+            )
+        )
+    finally:
+        conn.close()
+
+
+def all_source_items(target: Path) -> list[Any]:
+    conn = db.connect(target)
+    try:
+        return list(
+            conn.execute(
+                f"""
+                SELECT {FILE_COLUMNS}
+                FROM files
+                WHERE deleted_at IS NULL
+                ORDER BY {ITEM_ORDER_SQL}
+                """
+            )
+        )
+    finally:
+        conn.close()
+
+
+def items_by_file_ids(target: Path, file_ids: list[int]) -> list[Any]:
+    if not file_ids:
+        return []
+    placeholders = ",".join("?" for _ in file_ids)
+    conn = db.connect(target)
+    try:
+        return list(
+            conn.execute(
+                f"""
+                SELECT {FILE_COLUMNS}
+                FROM files
+                WHERE deleted_at IS NULL
+                  AND id IN ({placeholders})
+                ORDER BY {ITEM_ORDER_SQL}
+                """,
+                tuple(file_ids),
+            )
+        )
+    finally:
+        conn.close()

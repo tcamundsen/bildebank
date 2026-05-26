@@ -278,6 +278,8 @@ Notes:
 - Adjacent item DB lookups and list-based adjacent helper have been moved.
 - Month-key validation, cached unfiltered month-key lookup, and SQL-filtered
   month-key lookup have been moved.
+- Date-source item lookup, imported-source item lookup, all-browser item
+  lookup, and item-by-id-list lookup have been moved.
 - Browser dispatchers that depend on `source_items()`, month navigation, and
   HTML rendering remain in `server.py` for now.
 

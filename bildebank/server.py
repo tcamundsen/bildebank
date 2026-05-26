@@ -51,14 +51,18 @@ from .server_browser import (
     adjacent_items_from_list,
     adjacent_sql_filtered_source_items,
     adjacent_unfiltered_source_items,
+    all_source_items,
     all_browser_source,
     cached_browser_month_keys,
     date_source_browser_source,
+    date_source_items,
     first_sql_filtered_source_item,
     first_unfiltered_source_item,
     geo_place_browser_source,
+    imported_source_items,
     imported_source_browser_source,
     is_filtered_source,
+    items_by_file_ids,
     person_browser_source,
     person_item_url,
     person_url,
@@ -1814,91 +1818,10 @@ def source_items(
     if source.geo_place_slug is not None:
         return geo_place_items(target, source.geo_place_slug)
     if source.date_source is not None:
-        conn = db.connect(target)
-        try:
-            return list(
-                conn.execute(
-                    f"""
-                    SELECT {FILE_COLUMNS}
-                    FROM files
-                    WHERE deleted_at IS NULL
-                      AND date_source = ?
-                    ORDER BY {ITEM_ORDER_SQL}
-                    """,
-                    (source.date_source,),
-                )
-            )
-        finally:
-            conn.close()
+        return date_source_items(target, source.date_source)
     if source.source_id is not None:
-        conn = db.connect(target)
-        try:
-            return list(
-                conn.execute(
-                    f"""
-                    SELECT
-                        files.id,
-                        files.target_path,
-                        files.target_path_key,
-                        files.stored_filename,
-                        files.taken_date,
-                        files.date_source,
-                        files.size_bytes,
-                        files.view_rotation_degrees,
-                        files.gps_lat,
-                        files.gps_lon,
-                        files.media_width,
-                        files.media_height,
-                        files.media_orientation,
-                        files.media_metadata_mtime_ns,
-                        {db.H3_FILE_COLUMNS_SQL}
-                    FROM files
-                    JOIN file_sources ON file_sources.file_id = files.id
-                    WHERE files.deleted_at IS NULL
-                      AND file_sources.source_id = ?
-                    ORDER BY {ITEM_ORDER_SQL}
-                    """,
-                    (source.source_id,),
-                )
-            )
-        finally:
-            conn.close()
-    conn = db.connect(target)
-    try:
-        return list(
-            conn.execute(
-                f"""
-                SELECT {FILE_COLUMNS}
-                FROM files
-                WHERE deleted_at IS NULL
-                ORDER BY {ITEM_ORDER_SQL}
-                """
-            )
-        )
-    finally:
-        conn.close()
-
-
-def items_by_file_ids(target: Path, file_ids: list[int]) -> list[Any]:
-    if not file_ids:
-        return []
-    placeholders = ",".join("?" for _ in file_ids)
-    conn = db.connect(target)
-    try:
-        return list(
-            conn.execute(
-                f"""
-                SELECT {FILE_COLUMNS}
-                FROM files
-                WHERE deleted_at IS NULL
-                  AND id IN ({placeholders})
-                ORDER BY {ITEM_ORDER_SQL}
-                """,
-                tuple(file_ids),
-            )
-        )
-    finally:
-        conn.close()
+        return imported_source_items(target, source.source_id)
+    return all_source_items(target)
 
 
 def person_item_by_id(target: Path, person_name: str, file_id: int) -> Any | None:
