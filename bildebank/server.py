@@ -21,8 +21,6 @@ from .face import (
     add_face_to_person,
     create_person,
     delete_person,
-    face_db_path,
-    normalize_person_name,
     remove_face_from_person,
     rename_person,
 )
@@ -62,7 +60,6 @@ from .server_browser import (
     imported_source_items,
     imported_source_browser_source,
     is_filtered_source,
-    items_by_file_ids,
     person_browser_source,
     person_item_url,
     person_url,
@@ -75,6 +72,16 @@ from .server_browser import (
     unfiltered_source_item_by_id,
     valid_browser_date_source,
     valid_month_key,
+)
+from .server_faces import (
+    active_file_id_set,
+    cached_confirmed_people_for_file,
+    cached_person_file_ids,
+    confirmed_people_for_file,
+    current_face_db_path,
+    person_by_name,
+    person_items,
+    unconfirmed_face_count_for_item,
 )
 from .server_geo import (
     custom_geo_places_admin_html,
@@ -113,12 +120,6 @@ DEFAULT_PORT = 8765
 DEFAULT_GEO_RESOLUTION = 7
 DEFAULT_GEO_MIN_COUNT = 2
 DEFAULT_GEO_LIMIT = 100
-
-
-def current_face_db_path(target: Path, face_config: FaceRecognitionConfig | None = None) -> Path:
-    if face_config is None:
-        face_config = FaceRecognitionConfig()
-    return face_db_path(target, face_config)
 
 
 class BildebankServer(ThreadingHTTPServer):
@@ -1321,59 +1322,6 @@ def source_month_keys(
     return list(cached_browser_month_keys(str(target.resolve()), mtime_ns))
 
 
-def confirmed_people_for_file(
-    target: Path,
-    file_id: int,
-    face_config: FaceRecognitionConfig | None = None,
-) -> list[dict[str, object]]:
-    face_db_path = current_face_db_path(target, face_config)
-    try:
-        mtime_ns = face_db_path.stat().st_mtime_ns
-    except OSError:
-        return []
-    return [
-        {"name": name, "url": person_item_url(name, file_id, show_faces=False), "confirmed": priority == 0}
-        for name, priority in cached_confirmed_people_for_file(str(face_db_path), mtime_ns, file_id)
-    ]
-
-
-@lru_cache(maxsize=512)
-def cached_confirmed_people_for_file(face_db_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[tuple[str, int], ...]:
-    conn = sqlite3.connect(face_db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        if not face_tables_exist(conn):
-            return ()
-        rows = conn.execute(
-            """
-            SELECT persons.name, 0 AS priority
-            FROM person_faces
-            JOIN persons ON persons.id = person_faces.person_id
-            JOIN faces ON faces.id = person_faces.face_id
-            WHERE faces.file_id = ?
-            UNION ALL
-            SELECT persons.name, 1 AS priority
-            FROM face_suggestions
-            JOIN persons ON persons.id = face_suggestions.person_id
-            JOIN faces ON faces.id = face_suggestions.face_id
-            WHERE faces.file_id = ?
-            ORDER BY name, priority
-            """,
-            (file_id, file_id),
-        )
-        people: dict[str, int] = {}
-        for row in rows:
-            name = str(row["name"])
-            priority = int(row["priority"])
-            if name not in people or priority < people[name]:
-                people[name] = priority
-        return tuple(sorted(people.items()))
-    except sqlite3.Error:
-        return ()
-    finally:
-        conn.close()
-
-
 def person_item_url_for_face(
     target: Path,
     person_name: str,
@@ -1578,27 +1526,6 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
         face_conn.close()
 
 
-def active_file_id_set(target: Path, file_ids: list[int]) -> set[int]:
-    unique_ids = sorted(set(file_ids))
-    if not unique_ids:
-        return set()
-    placeholders = ",".join("?" for _ in unique_ids)
-    conn = db.connect(target)
-    try:
-        rows = conn.execute(
-            f"""
-            SELECT id
-            FROM files
-            WHERE deleted_at IS NULL
-              AND id IN ({placeholders})
-            """,
-            tuple(unique_ids),
-        )
-        return {int(row["id"]) for row in rows}
-    finally:
-        conn.close()
-
-
 def unconfirmed_faces_for_item(
     target: Path,
     item: Any,
@@ -1650,39 +1577,6 @@ def unconfirmed_faces_for_item(
     return cached_face_box_items_for_item(target, item, faces)
 
 
-def unconfirmed_face_count_for_item(
-    target: Path,
-    file_id: int,
-    face_config: FaceRecognitionConfig | None = None,
-) -> int:
-    face_db_path = current_face_db_path(target, face_config)
-    if not face_db_path.exists():
-        return 0
-    conn = sqlite3.connect(face_db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        if not face_tables_exist(conn):
-            return 0
-        row = conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM faces
-            WHERE faces.file_id = ?
-              AND NOT EXISTS (
-                SELECT 1
-                FROM person_faces
-                WHERE person_faces.face_id = faces.id
-              )
-            """,
-            (file_id,),
-        ).fetchone()
-        return int(row[0] or 0) if row is not None else 0
-    except sqlite3.Error:
-        return 0
-    finally:
-        conn.close()
-
-
 def browser_month_navigation(target: Path, item: Any) -> dict[str, str | None]:
     current_key = month_key_for_item(target, item)
     return browser_month_navigation_for_key(target, current_key)
@@ -1701,106 +1595,6 @@ def month_key_from_stored_path(path: str) -> str | None:
         return None
     month_key = f"{match.group('year')}-{match.group('month')}"
     return month_key if valid_month_key(month_key) else None
-
-
-def person_by_name(
-    target: Path,
-    person_name: str,
-    face_config: FaceRecognitionConfig | None = None,
-) -> sqlite3.Row | None:
-    face_db_path = current_face_db_path(target, face_config)
-    if not face_db_path.exists():
-        return None
-    clean_name = normalize_person_name(person_name)
-    conn = sqlite3.connect(face_db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        if not face_tables_exist(conn):
-            return None
-        return conn.execute("SELECT id, name FROM persons WHERE name = ?", (clean_name,)).fetchone()
-    finally:
-        conn.close()
-
-
-def person_file_ids(
-    target: Path,
-    person_name: str,
-    *,
-    include_suggestions: bool = True,
-    face_config: FaceRecognitionConfig | None = None,
-) -> list[int]:
-    face_db_path = current_face_db_path(target, face_config)
-    try:
-        mtime_ns = face_db_path.stat().st_mtime_ns
-    except OSError:
-        return []
-    clean_name = normalize_person_name(person_name)
-    file_ids = list(cached_person_file_ids(str(face_db_path), mtime_ns, clean_name, include_suggestions))
-    active_file_ids = active_file_id_set(target, file_ids)
-    return [file_id for file_id in file_ids if file_id in active_file_ids]
-
-
-@lru_cache(maxsize=256)
-def cached_person_file_ids(
-    face_db_path: str,
-    face_db_mtime_ns: int,
-    person_name: str,
-    include_suggestions: bool,
-) -> tuple[int, ...]:
-    conn = sqlite3.connect(face_db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        if not face_tables_exist(conn):
-            return ()
-        person = conn.execute("SELECT id FROM persons WHERE name = ?", (person_name,)).fetchone()
-        if person is None:
-            return ()
-        if include_suggestions:
-            rows = conn.execute(
-                """
-                SELECT DISTINCT faces.file_id
-                FROM person_faces
-                JOIN faces ON faces.id = person_faces.face_id
-                WHERE person_faces.person_id = ?
-                UNION
-                SELECT DISTINCT faces.file_id
-                FROM face_suggestions
-                JOIN faces ON faces.id = face_suggestions.face_id
-                WHERE face_suggestions.person_id = ?
-                ORDER BY file_id
-                """,
-                (int(person["id"]), int(person["id"])),
-            )
-        else:
-            rows = conn.execute(
-                """
-                SELECT DISTINCT faces.file_id
-                FROM person_faces
-                JOIN faces ON faces.id = person_faces.face_id
-                WHERE person_faces.person_id = ?
-                ORDER BY faces.file_id
-                """,
-                (int(person["id"]),),
-            )
-        return tuple(int(row["file_id"]) for row in rows)
-    finally:
-        conn.close()
-
-
-def person_items(
-    target: Path,
-    person_name: str,
-    *,
-    include_suggestions: bool = True,
-    face_config: FaceRecognitionConfig | None = None,
-) -> list[Any]:
-    file_ids = person_file_ids(
-        target,
-        person_name,
-        include_suggestions=include_suggestions,
-        face_config=face_config,
-    )
-    return items_by_file_ids(target, file_ids)
 
 
 def source_items(

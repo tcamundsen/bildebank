@@ -51,7 +51,6 @@ from bildebank.server import (
     browser_item_by_id,
     browser_month_items,
     browser_month_navigation,
-    cached_person_file_ids,
     date_source_text,
     DEFAULT_SEARCH_LIMIT,
     empty_source_html,
@@ -69,12 +68,10 @@ from bildebank.server import (
     OpenClipSearchCache,
     person_item_by_id,
     person_item_page_html,
-    person_file_ids,
     people_page_html,
     person_month_items,
     person_month_navigation,
     person_month_page_html,
-    person_items,
     removed_files_page_html,
     search_html,
     search_server_images,
@@ -98,6 +95,7 @@ from bildebank.server_browser import (
     imported_source_browser_source,
     person_browser_source,
 )
+from bildebank.server_faces import cached_person_file_ids, person_file_ids, person_items
 from bildebank.server_geo import geo_component_pixel_coordinates
 from bildebank.server_search import load_search_embedding_cache
 from bildebank.target_lock import LOCK_FILENAME

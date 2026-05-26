@@ -343,7 +343,15 @@ Likely functions/classes:
 - `people_row_html`
 - `person_rename_dialog_html`
 
-Status: pending.
+Status: started.
+
+Notes:
+
+- Current face DB path resolution, confirmed-people lookup/cache, active file
+  id filtering, unconfirmed face count, person lookup, person file id
+  lookup/cache, and person item lookup have been moved.
+- Face overlay rendering, face-box metadata helpers, people page helpers, and
+  mutation/cache orchestration remain in `server.py` for now.
 
 ### `bildebank/server_app.py`
 
