@@ -2416,10 +2416,6 @@ def geo_missing_items(target: Path, *, limit: int, offset: int) -> list[Any]:
         conn.close()
 
 
-def first_person_item(target: Path, person_name: str) -> Any | None:
-    return first_source_item(target, person_browser_source(person_name, include_suggestions=True))
-
-
 def person_item_by_id(target: Path, person_name: str, file_id: int) -> Any | None:
     return source_item_by_id(target, person_browser_source(person_name, include_suggestions=True), file_id)
 
@@ -2428,16 +2424,8 @@ def adjacent_person_items(target: Path, person_name: str, item: Any) -> tuple[An
     return adjacent_source_items(target, person_browser_source(person_name, include_suggestions=True), item)
 
 
-def person_month_keys(target: Path, person_name: str) -> list[str]:
-    return source_month_keys(target, person_browser_source(person_name, include_suggestions=True))
-
-
 def person_month_navigation(target: Path, person_name: str, item: Any) -> dict[str, str | None]:
     return source_month_navigation(target, person_browser_source(person_name, include_suggestions=True), item)
-
-
-def person_month_navigation_for_key(target: Path, person_name: str, current_key: str) -> dict[str, str | None]:
-    return source_month_navigation_for_key(target, person_browser_source(person_name, include_suggestions=True), current_key)
 
 
 def source_month_navigation(
@@ -4166,32 +4154,12 @@ def person_face_box_html(face: dict[str, object]) -> str:
     )
 
 
-def nav_link(item: Any | None, label: str, key_nav: str) -> str:
-    if item is None:
-        return nav_disabled(label)
-    return nav_button(f"/item/{int(item['id'])}", label, key_nav)
-
-
-def month_nav_link(month_key: str | None, label: str, key_nav: str) -> str:
-    if month_key is None:
-        return nav_disabled(label)
-    return nav_button(f"/month/{html.escape(month_key)}", label, key_nav)
-
-
 def nav_button(href: str, label: str, key_nav: str) -> str:
     return f'<a class="nav-button" href="{href}" data-key-nav="{html.escape(key_nav)}">{html.escape(label)}</a>'
 
 
 def nav_disabled(label: str) -> str:
     return f'<span class="nav-button disabled">{html.escape(label)}</span>'
-
-
-def browser_controls_html(
-    month_nav: dict[str, str | None],
-    previous_item: Any | None,
-    next_item: Any | None,
-) -> str:
-    return source_controls_html(all_browser_source(), month_nav, previous_item, next_item)
 
 
 def source_controls_html(
@@ -4250,24 +4218,6 @@ def unconfirm_face_buttons_html(
             "</button>"
         )
     return "\n".join(buttons)
-
-
-def person_controls_html(
-    person_name: str,
-    month_nav: dict[str, str | None],
-    previous_item: Any | None,
-    next_item: Any | None,
-) -> str:
-    return f"""
-    <nav class="controls" aria-label="Navigering">
-      {person_month_nav_link(person_name, month_nav["previous_year"], "Forrige år", "previous-year")}
-      {person_month_nav_link(person_name, month_nav["next_year"], "Neste år", "next-year")}
-      {person_month_nav_link(person_name, month_nav["previous_month"], "Forrige måned", "previous-month")}
-      {person_month_nav_link(person_name, month_nav["next_month"], "Neste måned", "next-month")}
-      {person_nav_link(person_name, previous_item, "Forrige bilde", "previous")}
-      {person_nav_link(person_name, next_item, "Neste bilde", "next")}
-    </nav>
-    """
 
 
 def person_nav_link(person_name: str, item: Any | None, label: str, key_nav: str) -> str:
@@ -4813,10 +4763,6 @@ def person_month_page_html(target: Path, person_name: str, month_key: str, items
     return source_month_page_html(target, person_browser_source(person_name, include_suggestions=True), month_key, items)
 
 
-def person_month_item_html(target: Path, person_name: str, item: Any) -> str:
-    return source_month_item_html(target, person_browser_source(person_name, include_suggestions=True), item)
-
-
 def source_month_item_html(target: Path, source: BrowserSource, item: Any) -> str:
     target_path = Path(str(item["target_path"]))
     label = html.escape(display_relative_path(target, target_path))
@@ -4830,10 +4776,6 @@ def source_month_item_html(target: Path, source: BrowserSource, item: Any) -> st
       </div>
     </article>
     """
-
-
-def month_item_html(target: Path, item: Any) -> str:
-    return source_month_item_html(target, all_browser_source(), item)
 
 
 def thumbnail_media_html(target: Path, item: Any) -> str:
