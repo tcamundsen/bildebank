@@ -1718,7 +1718,6 @@ def file_sources_by_target_path(conn: sqlite3.Connection, target: Path, target_p
 def file_source_by_target_path(conn: sqlite3.Connection, target: Path, target_path: Path) -> sqlite3.Row | None:
     rows = file_sources_by_target_path(conn, target, target_path)
     return rows[0] if rows else None
-    return rows[0] if rows else None
 
 
 def files_by_original_filename(

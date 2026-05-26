@@ -95,10 +95,6 @@ def batched(items: list[Any], batch_size: int) -> list[list[Any]]:
     return [items[index : index + batch_size] for index in range(0, len(items), batch_size)]
 
 
-def exiftool_first_date(exiftool_path: Path, path: Path) -> tuple[str, str, str] | None:
-    return exiftool_dates_batch(exiftool_path, [path]).get(path)
-
-
 def exiftool_dates_batch(exiftool_path: Path, paths: list[Path]) -> dict[Path, tuple[str, str, str]]:
     if not paths:
         return {}

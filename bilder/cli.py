@@ -2150,22 +2150,6 @@ def print_face_suggest_progress(
         return
 
 
-def print_face_suggestions(target: Path) -> None:
-    config = load_config(program_repo_root()).face_recognition
-    rows = list_face_suggestions(target, config)
-    if not rows:
-        print("Ingen forslag.")
-        return
-    print("Forslag:")
-    for row in rows:
-        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-        relative_path = db.target_relative_path(target, target_path).as_posix()
-        print(
-            f"  {row['name']}\tface-id={row['face_id']}\t"
-            f"score={float(row['similarity']):.3f}\t{relative_path}"
-        )
-
-
 def print_persons(target: Path) -> None:
     config = load_config(program_repo_root()).face_recognition
     rows = list_persons(target, config)
@@ -2778,16 +2762,6 @@ def positive_int_arg(value: str) -> int:
         raise argparse.ArgumentTypeError("må være et heltall") from exc
     if number < 1:
         raise argparse.ArgumentTypeError("må være minst 1")
-    return number
-
-
-def non_negative_int_arg(value: str) -> int:
-    try:
-        number = int(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError("må være et heltall") from exc
-    if number < 0:
-        raise argparse.ArgumentTypeError("må være minst 0")
     return number
 
 
