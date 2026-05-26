@@ -267,7 +267,14 @@ Likely functions/classes:
 - `source_month_items`
 - `sql_filtered_source_month_items`
 
-Status: pending.
+Status: started.
+
+Notes:
+
+- Browser source model, person/source/geo source constructors, browser URL
+  constructors, and SQL-filter helpers have been moved.
+- Browser item lookup, adjacent navigation, month navigation, and HTML
+  rendering remain in `server.py` for now.
 
 ### `bildebank/server_faces.py`
 
@@ -390,8 +397,10 @@ Status: postponed.
 4. Move geo page/render helpers to `server_geo.py`. Started: layout/SVG,
    page leaf helpers, custom place forms, and geo data helpers moved; page
    wrappers remain in `server.py`.
-5. Reassess dependencies before moving browser/navigation helpers.
-6. Move browser/navigation helpers if the dependency graph is clear.
+5. Reassess dependencies before moving browser/navigation helpers. Started:
+   browser source and URL helpers moved.
+6. Move browser/navigation helpers if the dependency graph is clear. Started:
+   source model and filter helpers moved; item/month data access remains.
 7. Move face/person helpers after browser boundaries are stable.
 8. Move app/status helpers if still useful.
 9. Consider action/mutation helpers last.
@@ -415,3 +424,5 @@ Status: postponed.
 - done: moved custom geo place data helpers such as `geo_place_rows`,
   `geo_place_by_slug`, and `geo_place_cells_by_column` to
   `bildebank/server_geo.py`.
+- done: moved browser source model, source constructors, browser URL helpers,
+  and SQL-filter helpers to `bildebank/server_browser.py`.

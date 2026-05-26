@@ -8,7 +8,7 @@ import re
 import shutil
 import sqlite3
 import urllib.parse
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from functools import lru_cache
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,7 +35,6 @@ from .html_export import (
 )
 from .geo import (
     H3_COLUMNS,
-    PredefinedGeoPlace,
     h3_area_label,
     h3_column_for_resolution,
     h3_resolution,
@@ -45,6 +44,22 @@ from .geo import (
 from .media import ImageDimensions, camera_info, image_dimensions, image_orientation
 from .media_cache import cached_image_dimensions
 from .openclip import relative_to_target
+from .server_browser import (
+    BrowserSource,
+    all_browser_source,
+    date_source_browser_source,
+    geo_place_browser_source,
+    imported_source_browser_source,
+    is_filtered_source,
+    person_browser_source,
+    person_item_url,
+    person_url,
+    source_has_sql_filter,
+    source_item_url,
+    source_month_url,
+    source_sql_filter,
+    valid_browser_date_source,
+)
 from .server_geo import (
     custom_geo_places_admin_html,
     custom_geo_places,
@@ -58,7 +73,6 @@ from .server_geo import (
     geo_missing_items,
     geo_parent_area_link_html,
     geo_place_by_slug,
-    geo_place_cells_by_column,
     geo_place_items,
     geo_place_rows,
     geo_places_section_html,
@@ -89,19 +103,6 @@ def current_face_db_path(target: Path, face_config: FaceRecognitionConfig | None
     if face_config is None:
         face_config = FaceRecognitionConfig()
     return face_db_path(target, face_config)
-
-
-@dataclass(frozen=True)
-class BrowserSource:
-    title: str
-    root_url: str
-    person_name: str | None = None
-    include_suggestions: bool = True
-    date_source: str | None = None
-    source_id: int | None = None
-    show_faces: bool = True
-    geo_place_slug: str | None = None
-    geo_place_cells: tuple[str, ...] = ()
 
 
 class BildebankServer(ThreadingHTTPServer):
@@ -1236,83 +1237,6 @@ ITEM_ORDER_SQL = f"{ITEM_DATE_ORDER_SQL}, target_path_key"
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 
 
-def all_browser_source() -> BrowserSource:
-    return BrowserSource("Bildebrowser", "/")
-
-
-def person_browser_source(person_name: str, *, include_suggestions: bool, show_faces: bool = True) -> BrowserSource:
-    title = person_name if include_suggestions else f"{person_name} - bekreftet"
-    root_url = person_url(person_name) if include_suggestions else f"{person_url(person_name)}/confirmed"
-    if not show_faces:
-        title = f"{title} - uten ansiktsmarkering"
-        root_url = f"{root_url}/no-faces"
-    return BrowserSource(title, root_url, person_name, include_suggestions, show_faces=show_faces)
-
-
-def date_source_browser_source(date_source: str) -> BrowserSource:
-    labels = {
-        "filename": "Dato fra filnavn",
-        "mtime": "Dato fra mtime",
-    }
-    return BrowserSource(labels[date_source], f"/date-source/{date_source}", date_source=date_source)
-
-
-def imported_source_browser_source(source: db.Source | sqlite3.Row) -> BrowserSource:
-    source_id = int(source["id"] if isinstance(source, sqlite3.Row) else source.id)
-    name = str(source["name"] if isinstance(source, sqlite3.Row) else source.name)
-    return BrowserSource(f"Kilde: {name}", f"/source/{source_id}", source_id=source_id)
-
-
-def geo_place_browser_source(place: PredefinedGeoPlace) -> BrowserSource:
-    return BrowserSource(
-        place.name,
-        "/geo/place/" + urllib.parse.quote(place.slug, safe=""),
-        geo_place_slug=place.slug,
-        geo_place_cells=place.h3_cells,
-    )
-
-
-def valid_browser_date_source(date_source: str) -> bool:
-    return date_source in {"filename", "mtime"}
-
-
-def is_filtered_source(source: BrowserSource) -> bool:
-    return (
-        source.person_name is not None
-        or source.date_source is not None
-        or source.source_id is not None
-        or source.geo_place_slug is not None
-    )
-
-
-def source_has_sql_filter(source: BrowserSource) -> bool:
-    return source.date_source is not None or source.geo_place_slug is not None
-
-
-def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
-    if source.date_source is not None:
-        if not valid_browser_date_source(source.date_source):
-            raise ValueError("Ugyldig datokilde.")
-        return "date_source = ?", (source.date_source,)
-    if source.geo_place_slug is not None:
-        place = PredefinedGeoPlace(source.geo_place_slug, source.title, source.geo_place_cells)
-        return db.geo_place_where_clause(geo_place_cells_by_column(place))
-    raise ValueError("Kilden har ikke SQL-filter.")
-
-
-def source_item_url(source: BrowserSource, file_id: int) -> str:
-    if is_filtered_source(source):
-        return f"{source.root_url}/item/{file_id}"
-    return f"/item/{file_id}"
-
-
-def source_month_url(source: BrowserSource, month_key: str) -> str:
-    quoted = urllib.parse.quote(month_key)
-    if is_filtered_source(source):
-        return f"{source.root_url}/month/{quoted}"
-    return f"/month/{quoted}"
-
-
 def first_browser_item(target: Path) -> Any | None:
     return first_source_item(target, all_browser_source())
 
@@ -2398,15 +2322,6 @@ def update_face_box_media_metadata(
         conn.commit()
     finally:
         conn.close()
-
-
-def person_url(person_name: str, *, show_faces: bool = True) -> str:
-    url = "/person/" + urllib.parse.quote(person_name, safe="")
-    return url if show_faces else f"{url}/no-faces"
-
-
-def person_item_url(person_name: str, file_id: int, *, show_faces: bool = True) -> str:
-    return f"{person_url(person_name, show_faces=show_faces)}/item/{file_id}"
 
 
 def browser_month_navigation_for_key(target: Path, current_key: str) -> dict[str, str | None]:

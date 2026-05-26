@@ -45,7 +45,6 @@ from bildebank.server import (
     adjacent_browser_items,
     adjacent_person_items,
     adjacent_source_items,
-    all_browser_source,
     app_status_page_html,
     BildebankServer,
     BildebankRequestHandler,
@@ -53,7 +52,6 @@ from bildebank.server import (
     browser_month_items,
     browser_month_navigation,
     cached_person_file_ids,
-    date_source_browser_source,
     date_source_text,
     DEFAULT_SEARCH_LIMIT,
     empty_source_html,
@@ -66,13 +64,11 @@ from bildebank.server import (
     image_info_content_html,
     index_html,
     item_page_html,
-    imported_source_browser_source,
     markdown_doc_page_html,
     month_page_html,
     OpenClipSearchCache,
     person_item_by_id,
     person_item_page_html,
-    person_browser_source,
     person_file_ids,
     people_page_html,
     person_month_items,
@@ -95,6 +91,12 @@ from bildebank.server import (
     source_summary_rows,
     sources_page_html,
     undelete_file_from_browser,
+)
+from bildebank.server_browser import (
+    all_browser_source,
+    date_source_browser_source,
+    imported_source_browser_source,
+    person_browser_source,
 )
 from bildebank.server_geo import geo_component_pixel_coordinates
 from bildebank.server_search import load_search_embedding_cache
