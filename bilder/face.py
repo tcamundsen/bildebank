@@ -665,32 +665,6 @@ def normalized_embedding_matrix(blobs, np: Any) -> Any:
     )
 
 
-def list_face_suggestions(target: Path, config: FaceRecognitionConfig | None = None) -> list[sqlite3.Row]:
-    path = face_db_path(target, config)
-    if not path.exists():
-        return []
-    conn = connect_face_db(target, config)
-    try:
-        return list(
-            conn.execute(
-                """
-                SELECT
-                    persons.name,
-                    face_suggestions.face_id,
-                    face_suggestions.similarity,
-                    scanned_files.target_path
-                FROM face_suggestions
-                JOIN persons ON persons.id = face_suggestions.person_id
-                JOIN faces ON faces.id = face_suggestions.face_id
-                JOIN scanned_files ON scanned_files.file_id = faces.file_id
-                ORDER BY persons.name, face_suggestions.similarity DESC, face_suggestions.face_id
-                """
-            )
-        )
-    finally:
-        conn.close()
-
-
 def list_persons(target: Path, config: FaceRecognitionConfig | None = None) -> list[sqlite3.Row]:
     path = face_db_path(target, config)
     if not path.exists():
@@ -1346,28 +1320,6 @@ def render_face_card(item: dict[str, Any]) -> str:
 </article>"""
 
 
-def render_person_card(item: dict[str, Any]) -> str:
-    orientation = int(item.get("orientation", 1))
-    boxes = "\n".join(render_person_box(face, item["dimensions"], orientation) for face in item["faces"])
-    confirmed = sum(1 for face in item["faces"] if face["status"] == "bekreftet")
-    suggested = sum(1 for face in item["faces"] if face["status"] == "forslag")
-    details = "<br>".join(
-        f"{html_escape(face['status'])}: face-id {face['faceId']}, score {float(face['similarity']):.3f}"
-        for face in item["faces"]
-    )
-    return f"""<article class="card">
-  <div class="media">
-    <img src="{html_escape(item['url'])}" alt="">
-    {boxes}
-  </div>
-  <div class="meta">
-    <div class="path">{html_escape(item['path'])}</div>
-    <div>{confirmed} bekreftet, {suggested} forslag</div>
-    <div class="muted">{details}</div>
-  </div>
-</article>"""
-
-
 def render_face_box(face: dict[str, Any], dimensions, orientation: int = 1) -> str:
     percent = face_box_percent(face, dimensions, orientation)
     if percent is None:
@@ -1926,16 +1878,3 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
     if left_norm == 0.0 or right_norm == 0.0:
         return 0.0
     return dot / (left_norm * right_norm)
-
-
-def average_embedding(vectors: list[list[float]]) -> list[float]:
-    if not vectors:
-        return []
-    length = len(vectors[0])
-    same_length_vectors = [vector for vector in vectors if len(vector) == length]
-    if not same_length_vectors:
-        return []
-    return [
-        sum(vector[index] for vector in same_length_vectors) / len(same_length_vectors)
-        for index in range(length)
-    ]

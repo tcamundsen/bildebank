@@ -32,7 +32,6 @@ from .face import (
     face_db_path,
     face_db_summary,
     face_report,
-    list_face_suggestions,
     list_persons,
     remove_face_from_person,
     rename_person,

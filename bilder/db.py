@@ -1258,19 +1258,6 @@ def source_file_sources(conn: sqlite3.Connection, source_id: int) -> list[sqlite
     )
 
 
-def active_file_source_count(conn: sqlite3.Connection, source_id: int) -> int:
-    return int(
-        conn.execute(
-            """
-            SELECT COUNT(*)
-            FROM file_sources
-            WHERE file_sources.source_id = ?
-            """,
-            (source_id,),
-        ).fetchone()[0]
-    )
-
-
 def add_named_source(conn: sqlite3.Connection, path: Path, name: str) -> int:
     existing = conn.execute(
         "SELECT id, path, imported_at FROM sources WHERE name = ?",
@@ -1713,11 +1700,6 @@ def file_sources_by_target_path(conn: sqlite3.Connection, target: Path, target_p
         (target_relative_path_key(target, target_path),),
         )
     )
-
-
-def file_source_by_target_path(conn: sqlite3.Connection, target: Path, target_path: Path) -> sqlite3.Row | None:
-    rows = file_sources_by_target_path(conn, target, target_path)
-    return rows[0] if rows else None
 
 
 def files_by_original_filename(

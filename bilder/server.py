@@ -4698,7 +4698,6 @@ def sources_page_html(target: Path, *, face_enabled: bool = True, openclip_enabl
 
 
 def source_row_html(source: sqlite3.Row) -> str:
-    source_id = int(source["id"])
     name = str(source["name"])
     status = str(source["status"])
     active_file_count = int(source["active_file_count"])
@@ -4840,7 +4839,6 @@ def month_item_html(target: Path, item: Any) -> str:
 def thumbnail_media_html(target: Path, item: Any) -> str:
     file_id = int(item["id"])
     target_path = Path(str(item["target_path"]))
-    url = f"/file/{file_id}"
     name = html.escape(str(item["stored_filename"]))
     if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
         return f'<div class="video-thumb">Video<br>{name}</div>'

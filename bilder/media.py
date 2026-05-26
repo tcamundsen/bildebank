@@ -88,7 +88,6 @@ def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
 
 
 def image_dimensions(path: Path) -> ImageDimensions | None:
-    suffix = path.suffix.lower()
     try:
         with path.open("rb") as fh:
             header = fh.read(64)
