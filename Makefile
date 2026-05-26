@@ -1,4 +1,4 @@
-.PHONY: html cli-help clean-html clean-doc-stamps
+.PHONY: html cli-help dead-code clean-html clean-doc-stamps
 
 DOCS_DIR := docs
 HTML_DIR := html
@@ -15,6 +15,10 @@ CLI_HELP_STAMPS := $(patsubst $(DOCS_DIR)/%.md,$(STAMP_DIR)/%.stamp,$(DOC_SOURCE
 html: $(HTML_FILES)
 
 cli-help: $(CLI_HELP_STAMPS)
+
+dead-code:
+	python -m vulture bildebank tests tools --min-confidence 60
+
 $(HTML_DIR)/%.html: $(DOCS_DIR)/%.md $(TOOLS_DIR)/gen-html-docs.py $(STAMP_DIR)/%.stamp
 	@mkdir -p $(@D)
 	python $(TOOLS_DIR)/gen-html-docs.py $< $@
