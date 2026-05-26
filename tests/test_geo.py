@@ -30,10 +30,7 @@ from bildebank.server import (
     custom_geo_places_page_html,
     geo_area_page_html,
     geo_index_page_html,
-    geo_place_by_slug,
     geo_place_browser_source,
-    geo_place_cells_by_column,
-    geo_place_items,
     markdown_doc_page_html,
     markdown_to_html,
     resolve_doc_path,
@@ -43,6 +40,7 @@ from bildebank.server import (
     source_month_navigation,
     source_month_page_html,
 )
+from bildebank.server_geo import geo_place_by_slug, geo_place_cells_by_column, geo_place_items
 
 
 def capture_cli(args: list[str]) -> tuple[int, str, str]:

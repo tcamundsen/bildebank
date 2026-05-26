@@ -2,13 +2,22 @@ from __future__ import annotations
 
 import html
 import math
+import sqlite3
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from . import db
-from .geo import H3_COLUMNS, PredefinedGeoPlace, h3_area_label, h3_resolution_label
+from .geo import (
+    H3_COLUMNS,
+    PREDEFINED_GEO_PLACES,
+    PredefinedGeoPlace,
+    h3_area_label,
+    h3_column_for_resolution,
+    h3_resolution_label,
+    predefined_geo_place,
+)
 
 
 @dataclass(frozen=True)
@@ -396,3 +405,110 @@ def custom_geo_place_edit_html(place: PredefinedGeoPlace) -> str:
       </div>
     </details>
     """
+
+
+def geo_area_items(target: Path, *, h3_cell: str, resolution: int, limit: int) -> list[Any]:
+    column = h3_column_for_resolution(resolution)
+    conn = db.connect(target)
+    try:
+        return db.geo_area_files(conn, column=column, h3_cell=h3_cell, limit=limit)
+    finally:
+        conn.close()
+
+
+def geo_place_items(target: Path, slug: str, *, limit: int | None = None) -> list[Any]:
+    place = geo_place_by_slug(target, slug)
+    if place is None:
+        return []
+    conn = db.connect(target)
+    try:
+        return db.geo_place_files(conn, cells_by_column=geo_place_cells_by_column(place), limit=limit)
+    finally:
+        conn.close()
+
+
+def geo_place_by_slug(target: Path, slug: str) -> PredefinedGeoPlace | None:
+    clean_slug = slug.strip().lower()
+    place = predefined_geo_place(clean_slug)
+    if place is not None:
+        return place
+    conn = db.connect(target)
+    try:
+        custom = db.custom_geo_place(conn, clean_slug)
+    finally:
+        conn.close()
+    return geo_place_from_row(custom) if custom is not None else None
+
+
+def geo_place_from_row(row: dict[str, object]) -> PredefinedGeoPlace:
+    return PredefinedGeoPlace(
+        slug=str(row["slug"]),
+        name=str(row["name"]),
+        h3_cells=tuple(str(cell) for cell in row["h3_cells"]),
+    )
+
+
+def custom_geo_places(conn: sqlite3.Connection) -> list[PredefinedGeoPlace]:
+    return [geo_place_from_row(row) for row in db.custom_geo_places(conn)]
+
+
+def geo_place_cells_by_column(place: PredefinedGeoPlace) -> list[tuple[str, str]]:
+    import h3
+
+    cells_by_column: list[tuple[str, str]] = []
+    max_resolution = max(H3_COLUMNS)
+    for cell in place.h3_cells:
+        resolution = h3_resolution_any(cell)
+        query_cell = h3.cell_to_parent(cell, max_resolution) if resolution > max_resolution else cell
+        query_resolution = min(resolution, max_resolution)
+        cells_by_column.append((h3_column_for_resolution(query_resolution), query_cell))
+    return cells_by_column
+
+
+def h3_resolution_any(h3_cell: str) -> int:
+    import h3
+
+    if hasattr(h3, "is_valid_cell") and not h3.is_valid_cell(h3_cell):
+        raise ValueError(f"Ugyldig H3-celle: {h3_cell}")
+    try:
+        return int(h3.get_resolution(h3_cell))
+    except Exception as exc:  # noqa: BLE001 - h3 raises library-specific exceptions
+        raise ValueError(f"Ugyldig H3-celle: {h3_cell}") from exc
+
+
+def geo_child_area_items(target: Path, *, h3_cell: str, resolution: int) -> list[Any]:
+    if resolution >= max(H3_COLUMNS):
+        return []
+    parent_column = h3_column_for_resolution(resolution)
+    child_column = h3_column_for_resolution(resolution + 1)
+    conn = db.connect(target)
+    try:
+        return db.geo_child_areas(
+            conn,
+            parent_column=parent_column,
+            parent_h3_cell=h3_cell,
+            child_column=child_column,
+        )
+    finally:
+        conn.close()
+
+
+def geo_missing_items(target: Path, *, limit: int, offset: int) -> list[Any]:
+    conn = db.connect(target)
+    try:
+        return db.geo_missing_files(conn, limit=limit, offset=offset)
+    finally:
+        conn.close()
+
+
+def geo_place_rows(conn: sqlite3.Connection) -> list[dict[str, object]]:
+    return [
+        {
+            "slug": place.slug,
+            "name": place.name,
+            "kind": "system" if place in PREDEFINED_GEO_PLACES else "user",
+            "h3_cells": place.h3_cells,
+            "count": db.geo_place_count(conn, cells_by_column=geo_place_cells_by_column(place)),
+        }
+        for place in sorted((*PREDEFINED_GEO_PLACES, *custom_geo_places(conn)), key=lambda item: (item.name, item.slug))
+    ]

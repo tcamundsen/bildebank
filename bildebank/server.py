@@ -35,7 +35,6 @@ from .html_export import (
 )
 from .geo import (
     H3_COLUMNS,
-    PREDEFINED_GEO_PLACES,
     PredefinedGeoPlace,
     h3_area_label,
     h3_column_for_resolution,
@@ -48,14 +47,23 @@ from .media_cache import cached_image_dimensions
 from .openclip import relative_to_target
 from .server_geo import (
     custom_geo_places_admin_html,
+    custom_geo_places,
+    geo_area_items,
     geo_area_row_html,
+    geo_child_area_items,
     geo_child_areas_section_html,
     geo_filter_form_html,
     geo_map_layout,
     geo_map_svg_html,
+    geo_missing_items,
     geo_parent_area_link_html,
+    geo_place_by_slug,
+    geo_place_cells_by_column,
+    geo_place_items,
+    geo_place_rows,
     geo_places_section_html,
     geo_stats_summary_html,
+    h3_resolution_any,
 )
 from .server_markdown import markdown_doc_title, markdown_to_html
 from .server_search import (
@@ -2141,100 +2149,6 @@ def items_by_file_ids(target: Path, file_ids: list[int]) -> list[Any]:
         conn.close()
 
 
-def geo_area_items(target: Path, *, h3_cell: str, resolution: int, limit: int) -> list[Any]:
-    column = h3_column_for_resolution(resolution)
-    conn = db.connect(target)
-    try:
-        return db.geo_area_files(conn, column=column, h3_cell=h3_cell, limit=limit)
-    finally:
-        conn.close()
-
-
-def geo_place_items(target: Path, slug: str, *, limit: int | None = None) -> list[Any]:
-    place = geo_place_by_slug(target, slug)
-    if place is None:
-        return []
-    conn = db.connect(target)
-    try:
-        return db.geo_place_files(conn, cells_by_column=geo_place_cells_by_column(place), limit=limit)
-    finally:
-        conn.close()
-
-
-def geo_place_by_slug(target: Path, slug: str) -> PredefinedGeoPlace | None:
-    clean_slug = slug.strip().lower()
-    place = predefined_geo_place(clean_slug)
-    if place is not None:
-        return place
-    conn = db.connect(target)
-    try:
-        custom = db.custom_geo_place(conn, clean_slug)
-    finally:
-        conn.close()
-    return geo_place_from_row(custom) if custom is not None else None
-
-
-def geo_place_from_row(row: dict[str, object]) -> PredefinedGeoPlace:
-    return PredefinedGeoPlace(
-        slug=str(row["slug"]),
-        name=str(row["name"]),
-        h3_cells=tuple(str(cell) for cell in row["h3_cells"]),
-    )
-
-
-def custom_geo_places(conn: sqlite3.Connection) -> list[PredefinedGeoPlace]:
-    return [geo_place_from_row(row) for row in db.custom_geo_places(conn)]
-
-
-def geo_place_cells_by_column(place: PredefinedGeoPlace) -> list[tuple[str, str]]:
-    import h3
-
-    cells_by_column: list[tuple[str, str]] = []
-    max_resolution = max(H3_COLUMNS)
-    for cell in place.h3_cells:
-        resolution = h3_resolution_any(cell)
-        query_cell = h3.cell_to_parent(cell, max_resolution) if resolution > max_resolution else cell
-        query_resolution = min(resolution, max_resolution)
-        cells_by_column.append((h3_column_for_resolution(query_resolution), query_cell))
-    return cells_by_column
-
-
-def h3_resolution_any(h3_cell: str) -> int:
-    import h3
-
-    if hasattr(h3, "is_valid_cell") and not h3.is_valid_cell(h3_cell):
-        raise ValueError(f"Ugyldig H3-celle: {h3_cell}")
-    try:
-        return int(h3.get_resolution(h3_cell))
-    except Exception as exc:  # noqa: BLE001 - h3 raises library-specific exceptions
-        raise ValueError(f"Ugyldig H3-celle: {h3_cell}") from exc
-
-
-def geo_child_area_items(target: Path, *, h3_cell: str, resolution: int) -> list[Any]:
-    if resolution >= max(H3_COLUMNS):
-        return []
-    parent_column = h3_column_for_resolution(resolution)
-    child_column = h3_column_for_resolution(resolution + 1)
-    conn = db.connect(target)
-    try:
-        return db.geo_child_areas(
-            conn,
-            parent_column=parent_column,
-            parent_h3_cell=h3_cell,
-            child_column=child_column,
-        )
-    finally:
-        conn.close()
-
-
-def geo_missing_items(target: Path, *, limit: int, offset: int) -> list[Any]:
-    conn = db.connect(target)
-    try:
-        return db.geo_missing_files(conn, limit=limit, offset=offset)
-    finally:
-        conn.close()
-
-
 def person_item_by_id(target: Path, person_name: str, file_id: int) -> Any | None:
     return source_item_by_id(target, person_browser_source(person_name, include_suggestions=True), file_id)
 
@@ -2690,19 +2604,6 @@ def custom_geo_places_page_html(target: Path, *, face_enabled: bool = True, open
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
     )
-
-
-def geo_place_rows(conn: sqlite3.Connection) -> list[dict[str, object]]:
-    return [
-        {
-            "slug": place.slug,
-            "name": place.name,
-            "kind": "system" if place in PREDEFINED_GEO_PLACES else "user",
-            "h3_cells": place.h3_cells,
-            "count": db.geo_place_count(conn, cells_by_column=geo_place_cells_by_column(place)),
-        }
-        for place in sorted((*PREDEFINED_GEO_PLACES, *custom_geo_places(conn)), key=lambda item: (item.name, item.slug))
-    ]
 
 
 def geo_map_page_html(

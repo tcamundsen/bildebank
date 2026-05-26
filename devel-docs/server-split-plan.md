@@ -207,7 +207,12 @@ Notes:
 - Geo page leaf helpers such as filter forms, stats summary, area rows, and
   parent/child-area sections have been moved.
 - Custom geo place HTML helpers have been moved.
-- Geo page rendering and custom geo place data helpers remain in `server.py`.
+- Geo place data helpers such as `geo_place_by_slug`,
+  `geo_place_cells_by_column`, `geo_place_items`, `geo_area_items`,
+  `geo_child_area_items`, `geo_missing_items`, and `geo_place_rows` have been
+  moved.
+- Geo page rendering remains in `server.py` while `shell_page_html` and shared
+  browser helpers still live there.
 
 ### `bildebank/server_browser.py`
 
@@ -382,9 +387,9 @@ Status: postponed.
 3. Move OpenCLIP search helpers/pages to `server_search.py`. Started: cache,
    scoring, result rendering, and form rendering moved; page wrappers remain in
    `server.py`.
-4. Move geo page/render helpers to `server_geo.py`. Started: layout/SVG and
-   page leaf helpers moved; page wrappers and custom place forms remain in
-   `server.py`.
+4. Move geo page/render helpers to `server_geo.py`. Started: layout/SVG,
+   page leaf helpers, custom place forms, and geo data helpers moved; page
+   wrappers remain in `server.py`.
 5. Reassess dependencies before moving browser/navigation helpers.
 6. Move browser/navigation helpers if the dependency graph is clear.
 7. Move face/person helpers after browser boundaries are stable.
@@ -407,5 +412,6 @@ Status: postponed.
 - postponed: moving geo page wrappers such as `geo_map_page_html` and
   `geo_stats_page_html`, because they currently depend on `shell_page_html`.
 - done: moved custom geo place HTML helpers to `bildebank/server_geo.py`.
-- postponed: moving custom geo place data helpers such as `geo_place_rows`,
-  because they still depend on server-local geo data helpers.
+- done: moved custom geo place data helpers such as `geo_place_rows`,
+  `geo_place_by_slug`, and `geo_place_cells_by_column` to
+  `bildebank/server_geo.py`.
