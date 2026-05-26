@@ -273,8 +273,10 @@ Notes:
 
 - Browser source model, person/source/geo source constructors, browser URL
   constructors, and SQL-filter helpers have been moved.
-- Browser item lookup, adjacent navigation, month navigation, and HTML
-  rendering remain in `server.py` for now.
+- Shared browser SQL column/order constants, first-item DB lookups, and direct
+  SQL-filtered/unfiltered item-by-id DB lookups have been moved.
+- Browser dispatchers that depend on `source_items()`, adjacent navigation,
+  month navigation, and HTML rendering remain in `server.py` for now.
 
 ### `bildebank/server_faces.py`
 

@@ -46,8 +46,13 @@ from .media_cache import cached_image_dimensions
 from .openclip import relative_to_target
 from .server_browser import (
     BrowserSource,
+    FILE_COLUMNS,
+    ITEM_DATE_ORDER_SQL,
+    ITEM_ORDER_SQL,
     all_browser_source,
     date_source_browser_source,
+    first_sql_filtered_source_item,
+    first_unfiltered_source_item,
     geo_place_browser_source,
     imported_source_browser_source,
     is_filtered_source,
@@ -58,6 +63,8 @@ from .server_browser import (
     source_item_url,
     source_month_url,
     source_sql_filter,
+    sql_filtered_source_item_by_id,
+    unfiltered_source_item_by_id,
     valid_browser_date_source,
 )
 from .server_geo import (
@@ -1226,14 +1233,6 @@ def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
     return source_part.strip("/"), page_mode, raw_value
 
 
-FILE_COLUMNS = (
-    "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
-    "size_bytes, view_rotation_degrees, gps_lat, gps_lon, "
-    "media_width, media_height, media_orientation, media_metadata_mtime_ns, "
-    f"{db.H3_FILE_COLUMNS_SQL}"
-)
-ITEM_DATE_ORDER_SQL = db.BROWSER_DATE_ORDER_SQL
-ITEM_ORDER_SQL = f"{ITEM_DATE_ORDER_SQL}, target_path_key"
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 
 
@@ -1257,41 +1256,6 @@ def first_source_item(
     return items[0] if items else None
 
 
-def first_sql_filtered_source_item(target: Path, source: BrowserSource) -> Any | None:
-    where_sql, params = source_sql_filter(source)
-    conn = db.connect(target)
-    try:
-        return conn.execute(
-            f"""
-            SELECT {FILE_COLUMNS}
-            FROM files
-            WHERE deleted_at IS NULL
-              AND ({where_sql})
-            ORDER BY {ITEM_ORDER_SQL}
-            LIMIT 1
-            """,
-            params,
-        ).fetchone()
-    finally:
-        conn.close()
-
-
-def first_unfiltered_source_item(target: Path) -> Any | None:
-    conn = db.connect(target)
-    try:
-        return conn.execute(
-            f"""
-            SELECT {FILE_COLUMNS}
-            FROM files
-            WHERE deleted_at IS NULL
-            ORDER BY {ITEM_ORDER_SQL}
-            LIMIT 1
-            """
-        ).fetchone()
-    finally:
-        conn.close()
-
-
 def browser_item_by_id(target: Path, file_id: int) -> Any | None:
     return source_item_by_id(target, all_browser_source(), file_id)
 
@@ -1303,35 +1267,10 @@ def source_item_by_id(
     face_config: FaceRecognitionConfig | None = None,
 ) -> Any | None:
     if source_has_sql_filter(source):
-        where_sql, params = source_sql_filter(source)
-        conn = db.connect(target)
-        try:
-            return conn.execute(
-                f"""
-                SELECT {FILE_COLUMNS}
-                FROM files
-                WHERE deleted_at IS NULL
-                  AND id = ?
-                  AND ({where_sql})
-                """,
-                (file_id, *params),
-            ).fetchone()
-        finally:
-            conn.close()
+        return sql_filtered_source_item_by_id(target, source, file_id)
     if source.person_name is not None or source.source_id is not None:
         return next((item for item in source_items(target, source, face_config) if int(item["id"]) == file_id), None)
-    conn = db.connect(target)
-    try:
-        return conn.execute(
-            f"""
-            SELECT {FILE_COLUMNS}
-            FROM files
-            WHERE deleted_at IS NULL AND id = ?
-            """,
-            (file_id,),
-        ).fetchone()
-    finally:
-        conn.close()
+    return unfiltered_source_item_by_id(target, file_id)
 
 
 def adjacent_browser_items(target: Path, item: Any) -> tuple[Any | None, Any | None]:

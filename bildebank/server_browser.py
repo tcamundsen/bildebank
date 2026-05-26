@@ -3,10 +3,22 @@ from __future__ import annotations
 import sqlite3
 import urllib.parse
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 from . import db
 from .geo import PredefinedGeoPlace
 from .server_geo import geo_place_cells_by_column
+
+
+FILE_COLUMNS = (
+    "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
+    "size_bytes, view_rotation_degrees, gps_lat, gps_lon, "
+    "media_width, media_height, media_orientation, media_metadata_mtime_ns, "
+    f"{db.H3_FILE_COLUMNS_SQL}"
+)
+ITEM_DATE_ORDER_SQL = db.BROWSER_DATE_ORDER_SQL
+ITEM_ORDER_SQL = f"{ITEM_DATE_ORDER_SQL}, target_path_key"
 
 
 @dataclass(frozen=True)
@@ -106,3 +118,71 @@ def source_month_url(source: BrowserSource, month_key: str) -> str:
     if is_filtered_source(source):
         return f"{source.root_url}/month/{quoted}"
     return f"/month/{quoted}"
+
+
+def first_sql_filtered_source_item(target: Path, source: BrowserSource) -> Any | None:
+    where_sql, params = source_sql_filter(source)
+    conn = db.connect(target)
+    try:
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND ({where_sql})
+            ORDER BY {ITEM_ORDER_SQL}
+            LIMIT 1
+            """,
+            params,
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+def first_unfiltered_source_item(target: Path) -> Any | None:
+    conn = db.connect(target)
+    try:
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+            ORDER BY {ITEM_ORDER_SQL}
+            LIMIT 1
+            """
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+def sql_filtered_source_item_by_id(target: Path, source: BrowserSource, file_id: int) -> Any | None:
+    where_sql, params = source_sql_filter(source)
+    conn = db.connect(target)
+    try:
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND id = ?
+              AND ({where_sql})
+            """,
+            (file_id, *params),
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+def unfiltered_source_item_by_id(target: Path, file_id: int) -> Any | None:
+    conn = db.connect(target)
+    try:
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL AND id = ?
+            """,
+            (file_id,),
+        ).fetchone()
+    finally:
+        conn.close()
