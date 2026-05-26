@@ -2622,8 +2622,8 @@ model_name = "buffalo_l"
             item = person_item_by_id(target, "Kari", 1)
             self.assertIsNotNone(item)
             with (
-                patch("bildebank.server.image_dimensions", side_effect=AssertionError("cached dimensions should be used")),
-                patch("bildebank.server.image_orientation", side_effect=AssertionError("cached orientation should be used")),
+                patch("bildebank.server_faces.image_dimensions", side_effect=AssertionError("cached dimensions should be used")),
+                patch("bildebank.server_faces.image_orientation", side_effect=AssertionError("cached orientation should be used")),
             ):
                 body = person_item_page_html(target, "Kari", item, *adjacent_person_items(target, "Kari", item), person_month_navigation(target, "Kari", item))
             plain_source = person_browser_source("Kari", include_suggestions=True, show_faces=False)

@@ -25,7 +25,6 @@ from .face import (
     rename_person,
 )
 from .html_export import (
-    browser_face_items_from_metadata,
     display_relative_path,
     face_tables_exist,
     format_bytes,
@@ -39,7 +38,7 @@ from .geo import (
     h3_resolution_label,
     predefined_geo_place,
 )
-from .media import ImageDimensions, camera_info, image_dimensions, image_orientation
+from .media import camera_info
 from .media_cache import cached_image_dimensions
 from .openclip import relative_to_target
 from .server_browser import (
@@ -61,7 +60,6 @@ from .server_browser import (
     imported_source_browser_source,
     is_filtered_source,
     person_browser_source,
-    person_item_url,
     person_url,
     source_has_sql_filter,
     source_item_url,
@@ -80,7 +78,10 @@ from .server_faces import (
     confirmed_people_for_file,
     current_face_db_path,
     person_by_name,
+    person_faces_for_item,
+    person_item_url_for_face,
     person_items,
+    unconfirmed_faces_for_item,
     unconfirmed_face_count_for_item,
 )
 from .server_geo import (
@@ -1322,26 +1323,6 @@ def source_month_keys(
     return list(cached_browser_month_keys(str(target.resolve()), mtime_ns))
 
 
-def person_item_url_for_face(
-    target: Path,
-    person_name: str,
-    face_id: int,
-    face_config: FaceRecognitionConfig | None = None,
-) -> str:
-    face_db_path = current_face_db_path(target, face_config)
-    try:
-        conn = sqlite3.connect(face_db_path)
-        try:
-            row = conn.execute("SELECT file_id FROM faces WHERE id = ?", (face_id,)).fetchone()
-        finally:
-            conn.close()
-    except sqlite3.Error:
-        row = None
-    if row is None:
-        return person_url(person_name, show_faces=False)
-    return person_item_url(person_name, int(row[0]), show_faces=False)
-
-
 def clear_face_caches() -> None:
     cached_confirmed_people_for_file.cache_clear()
     cached_person_file_ids.cache_clear()
@@ -1526,57 +1507,6 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
         face_conn.close()
 
 
-def unconfirmed_faces_for_item(
-    target: Path,
-    item: Any,
-    face_config: FaceRecognitionConfig | None = None,
-) -> list[dict[str, object]]:
-    face_db_path = current_face_db_path(target, face_config)
-    if not face_db_path.exists():
-        return []
-    conn = sqlite3.connect(face_db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        if not face_tables_exist(conn):
-            return []
-        rows = conn.execute(
-            """
-            SELECT
-                faces.id,
-                faces.bbox_x,
-                faces.bbox_y,
-                faces.bbox_width,
-                faces.bbox_height,
-                faces.detection_score
-            FROM faces
-            WHERE faces.file_id = ?
-              AND NOT EXISTS (
-                SELECT 1
-                FROM person_faces
-                WHERE person_faces.face_id = faces.id
-              )
-            ORDER BY faces.id
-            """,
-            (int(item["id"]),),
-        )
-        faces = [
-            {
-                "faceId": int(row["id"]),
-                "score": float(row["detection_score"]),
-                "x": float(row["bbox_x"]),
-                "y": float(row["bbox_y"]),
-                "width": float(row["bbox_width"]),
-                "height": float(row["bbox_height"]),
-            }
-            for row in rows
-        ]
-    except sqlite3.Error:
-        return []
-    finally:
-        conn.close()
-    return cached_face_box_items_for_item(target, item, faces)
-
-
 def browser_month_navigation(target: Path, item: Any) -> dict[str, str | None]:
     current_key = month_key_for_item(target, item)
     return browser_month_navigation_for_key(target, current_key)
@@ -1705,166 +1635,6 @@ def sql_filtered_source_month_items(target: Path, source: BrowserSource, month_k
                 (*params, path_glob),
             )
         )
-    finally:
-        conn.close()
-
-
-def person_faces_for_item(
-    target: Path,
-    person_name: str,
-    item: Any,
-    *,
-    include_suggestions: bool = True,
-    face_config: FaceRecognitionConfig | None = None,
-) -> list[dict[str, object]]:
-    person = person_by_name(target, person_name, face_config)
-    if person is None:
-        return []
-    conn = sqlite3.connect(current_face_db_path(target, face_config))
-    conn.row_factory = sqlite3.Row
-    try:
-        rows = conn.execute(
-            """
-            SELECT
-                'bekreftet' AS status,
-                faces.id,
-                1.0 AS similarity,
-                faces.bbox_x,
-                faces.bbox_y,
-                faces.bbox_width,
-                faces.bbox_height,
-                faces.detection_score
-            FROM person_faces
-            JOIN faces ON faces.id = person_faces.face_id
-            WHERE person_faces.person_id = ?
-              AND faces.file_id = ?
-            """ + (
-                """
-                UNION ALL
-                SELECT
-                    'forslag' AS status,
-                    faces.id,
-                    face_suggestions.similarity,
-                    faces.bbox_x,
-                    faces.bbox_y,
-                    faces.bbox_width,
-                    faces.bbox_height,
-                    faces.detection_score
-                FROM face_suggestions
-                JOIN faces ON faces.id = face_suggestions.face_id
-                WHERE face_suggestions.person_id = ?
-                  AND faces.file_id = ?
-                """
-                if include_suggestions
-                else ""
-            ) + """
-            ORDER BY status, id
-            """,
-            (
-                (int(person["id"]), int(item["id"]), int(person["id"]), int(item["id"]))
-                if include_suggestions
-                else (int(person["id"]), int(item["id"]))
-            ),
-        )
-        faces = [
-            {
-                "faceId": int(row["id"]),
-                "status": str(row["status"]),
-                "similarity": float(row["similarity"]),
-                "score": float(row["detection_score"]),
-                "x": float(row["bbox_x"]),
-                "y": float(row["bbox_y"]),
-                "width": float(row["bbox_width"]),
-                "height": float(row["bbox_height"]),
-            }
-            for row in rows
-        ]
-    finally:
-        conn.close()
-    face_meta = {int(face["faceId"]): face for face in faces}
-    rendered = cached_face_box_items_for_item(target, item, faces)
-    for face in rendered:
-        meta = face_meta.get(int(face["faceId"]))
-        if meta is not None:
-            face["status"] = meta["status"]
-            face["similarity"] = meta["similarity"]
-    return rendered
-
-
-def cached_face_box_items_for_item(target: Path, item: Any, faces: list[dict[str, object]]) -> list[dict[str, object]]:
-    dimensions, orientation = cached_face_box_media_metadata(target, item)
-    return browser_face_items_from_metadata(faces, dimensions, orientation)
-
-
-def cached_face_box_media_metadata(target: Path, item: Any) -> tuple[ImageDimensions | None, int]:
-    target_path = db.absolute_target_path(target, Path(str(item["target_path"])))
-    mtime_ns = file_mtime_ns(target_path)
-    cached_dimensions, cached_orientation = face_box_media_metadata_from_item(item, mtime_ns)
-    if cached_orientation is not None:
-        return cached_dimensions, cached_orientation
-
-    dimensions = image_dimensions(target_path)
-    orientation = image_orientation(target_path)
-    update_face_box_media_metadata(target, int(item["id"]), dimensions, orientation, mtime_ns)
-    return dimensions, orientation
-
-
-def face_box_media_metadata_from_item(item: Any, mtime_ns: int | None) -> tuple[ImageDimensions | None, int | None]:
-    cached_mtime = item_field(item, "media_metadata_mtime_ns")
-    if cached_mtime is None or mtime_ns is None or int(cached_mtime) != mtime_ns:
-        return None, None
-    orientation = item_field(item, "media_orientation")
-    if orientation is None:
-        return None, None
-    width = item_field(item, "media_width")
-    height = item_field(item, "media_height")
-    dimensions = None
-    if width is not None and height is not None and int(width) > 0 and int(height) > 0:
-        dimensions = ImageDimensions(int(width), int(height))
-    return dimensions, int(orientation)
-
-
-def item_field(item: Any, key: str) -> Any | None:
-    try:
-        return item[key]
-    except (KeyError, IndexError):
-        return None
-
-
-def file_mtime_ns(path: Path) -> int | None:
-    try:
-        return path.stat().st_mtime_ns
-    except OSError:
-        return None
-
-
-def update_face_box_media_metadata(
-    target: Path,
-    file_id: int,
-    dimensions: ImageDimensions | None,
-    orientation: int,
-    mtime_ns: int | None,
-) -> None:
-    conn = db.connect(target)
-    try:
-        conn.execute(
-            """
-            UPDATE files
-            SET media_width = ?,
-                media_height = ?,
-                media_orientation = ?,
-                media_metadata_mtime_ns = ?
-            WHERE id = ?
-            """,
-            (
-                dimensions.width if dimensions is not None else None,
-                dimensions.height if dimensions is not None else None,
-                orientation,
-                mtime_ns,
-                file_id,
-            ),
-        )
-        conn.commit()
     finally:
         conn.close()
 
