@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from . import db
-from .geo import H3_COLUMNS, h3_area_label, h3_resolution_label
+from .geo import H3_COLUMNS, PredefinedGeoPlace, h3_area_label, h3_resolution_label
 
 
 @dataclass(frozen=True)
@@ -292,4 +292,107 @@ def geo_area_row_html(row: Any, *, resolution: int, inherited_name: str | None =
       <span>{html.escape(detail)}</span>
       <strong>{count} bilder</strong>
     </a>
+    """
+
+
+def geo_places_section_html(rows: list[dict[str, object]]) -> str:
+    if not rows:
+        return ""
+    links = "\n".join(geo_place_row_html(row) for row in rows)
+    return f"""
+          <section class="geo-predefined">
+            <h2>Definerte steder</h2>
+            <a href="/geo/custom-places">Rediger egendefinerte steder</a>
+            <div class="geo-list">{links}</div>
+          </section>
+    """
+
+
+def geo_place_row_html(row: dict[str, object]) -> str:
+    slug = str(row["slug"])
+    name = str(row["name"])
+    count = int(row["count"])
+    h3_cells = tuple(str(cell) for cell in row["h3_cells"])
+    url = "/geo/place/" + urllib.parse.quote(slug, safe="")
+    h3geo_url = h3geo_place_url(h3_cells)
+    if row["kind"] == 'system':
+        icon = "system"
+    else:
+        icon = "user"
+    return f"""
+    <div class="geo-row">
+      <span><a href="{html.escape(url)}">{html.escape(name)}</a> <a href="{html.escape(h3geo_url)}" target="_blank" rel="noopener">H3Geo</a></span>
+      <span class="status">{icon}</span>
+      <strong>{count} bilder</strong>
+    </div>
+    """
+
+
+def h3geo_place_url(h3_cells: tuple[str, ...]) -> str:
+    return "https://h3geo.org/#hex=" + urllib.parse.quote_plus(", ".join(h3_cells))
+
+
+def custom_geo_places_admin_html(places: list[PredefinedGeoPlace]) -> str:
+    existing = "\n".join(custom_geo_place_edit_html(place) for place in places)
+    existing_section = (
+        f"""
+            <h2>Lagrede steder</h2>
+            <div class="custom-place-list">{existing}</div>
+        """
+        if existing
+        else '<p class="meta">Ingen egne steder er lagret ennå.</p>'
+    )
+    return f"""
+          <section class="custom-geo-places">
+            <h2>Legg til sted</h2>
+            {custom_geo_place_form_html()}
+            {existing_section}
+          </section>
+    """
+
+
+def custom_geo_place_form_html(place: PredefinedGeoPlace | None = None) -> str:
+    slug = place.slug if place is not None else ""
+    name = place.name if place is not None else ""
+    cells = "\n".join(place.h3_cells) if place is not None else ""
+    button_text = "Oppdater sted" if place is not None else "Legg til sted"
+    delete_button = (
+        '<button class="danger-button" type="submit" '
+        'formaction="/geo/custom-place-delete" formmethod="post">Slett sted</button>'
+        if place is not None
+        else ""
+    )
+    original_slug_input = (
+        f'<input type="hidden" name="original_slug" value="{html.escape(slug)}">' if place is not None else ""
+    )
+    return f"""
+    <form action="/geo/custom-place" method="post" class="custom-place-form">
+      {original_slug_input}
+      <div class="custom-place-identity">
+        <label>Slug <input name="slug" value="{html.escape(slug)}" autocomplete="off"></label>
+        <label>Navn <input name="name" value="{html.escape(name)}" autocomplete="off"></label>
+      </div>
+      <label class="custom-place-cells">H3-celler <textarea name="h3_cells" rows="4">{html.escape(cells)}</textarea></label>
+      <div class="custom-place-actions">
+        <button type="submit">{button_text}</button>
+        {delete_button}
+      </div>
+    </form>
+    """
+
+
+def custom_geo_place_edit_html(place: PredefinedGeoPlace) -> str:
+    cell_count = len(place.h3_cells)
+    cell_label = "1 H3-celle" if cell_count == 1 else f"{cell_count} H3-celler"
+    return f"""
+    <details class="custom-place-edit">
+      <summary>
+        <span class="custom-place-name">{html.escape(place.name)}</span>
+        <span class="status">{html.escape(place.slug)}</span>
+        <span class="status">{cell_label}</span>
+      </summary>
+      <div class="custom-place-edit-body">
+        {custom_geo_place_form_html(place)}
+      </div>
+    </details>
     """

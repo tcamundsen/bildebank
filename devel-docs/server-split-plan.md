@@ -206,7 +206,8 @@ Notes:
   coordinate helpers, and SVG rendering have been moved.
 - Geo page leaf helpers such as filter forms, stats summary, area rows, and
   parent/child-area sections have been moved.
-- Geo page rendering and custom geo place forms remain in `server.py`.
+- Custom geo place HTML helpers have been moved.
+- Geo page rendering and custom geo place data helpers remain in `server.py`.
 
 ### `bildebank/server_browser.py`
 
@@ -405,3 +406,6 @@ Status: postponed.
 - done: moved geo page leaf helpers to `bildebank/server_geo.py`.
 - postponed: moving geo page wrappers such as `geo_map_page_html` and
   `geo_stats_page_html`, because they currently depend on `shell_page_html`.
+- done: moved custom geo place HTML helpers to `bildebank/server_geo.py`.
+- postponed: moving custom geo place data helpers such as `geo_place_rows`,
+  because they still depend on server-local geo data helpers.
