@@ -258,7 +258,7 @@ function Ensure-ExifTool {
     Write-Step "Installerer ExifTool"
     $venvPython = Join-Path $RepoDir ".venv\Scripts\python.exe"
     try {
-        Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "bilder.cli", "exiftool-install")
+        Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "bildebank.cli", "exiftool-install")
     } catch {
         Write-Host "Kunne ikke installere ExifTool automatisk: $($_.Exception.Message)"
         Write-Host "Du kan prøve igjen etter setup med:"

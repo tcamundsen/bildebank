@@ -37,7 +37,7 @@ Du kan alltid kjøre programmet med Python fra `.venv`:
 
 ```bash
 cd ~/kode/bildebank
-./.venv/bin/python -m bilder --help
+./.venv/bin/python -m bildebank --help
 ```
 
 For å kunne skrive bare `bildebank`, legg programmets `.venv/bin` i `PATH`:
@@ -81,7 +81,7 @@ Hvis `bildebank` ikke ligger i `PATH`, bruk den lange kommandoen:
 
 ```bash
 cd ~/kode/bildebank
-./.venv/bin/python -m bilder update
+./.venv/bin/python -m bildebank update
 ```
 
 Hvis det heller ikke virker, kan du gjøre det samme manuelt:

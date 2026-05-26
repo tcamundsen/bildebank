@@ -23,7 +23,7 @@ openclip = [
 ]
 
 [project.scripts]
-bildebank = "bilder.cli:main"
+bildebank = "bildebank.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["bilder*"]
+include = ["bildebank*"]

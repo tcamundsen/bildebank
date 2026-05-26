@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from io import StringIO
 
-from bilder.progress import ProgressLine, ProgressMeter, format_duration
+from bildebank.progress import ProgressLine, ProgressMeter, format_duration
 
 
 class TtyStringIO(StringIO):

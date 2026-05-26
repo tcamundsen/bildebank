@@ -9,10 +9,10 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from bilder import db
-from bilder.cli import main
-from bilder.db import init_database
-from bilder.geo import (
+from bildebank import db
+from bildebank.cli import main
+from bildebank.db import init_database
+from bildebank.geo import (
     PREDEFINED_GEO_PLACES,
     PredefinedGeoPlace,
     extract_gps_from_metadata,
@@ -23,8 +23,8 @@ from bilder.geo import (
     h3_resolution_label,
     scan_geo,
 )
-from bilder.media import sha256_file
-from bilder.server import (
+from bildebank.media import sha256_file
+from bildebank.server import (
     BildebankRequestHandler,
     adjacent_source_items,
     custom_geo_places_page_html,
@@ -340,7 +340,7 @@ class GeoTests(unittest.TestCase):
             place = geo_place_by_slug(target, "hytta")
             assert place is not None
             source = geo_place_browser_source(place)
-            with patch("bilder.server.source_items", side_effect=AssertionError("source_items should not be used")):
+            with patch("bildebank.server.source_items", side_effect=AssertionError("source_items should not be used")):
                 items = geo_place_items(target, "hytta")
                 item = source_item_by_id(target, source, parent_id)
                 assert item is not None
@@ -562,7 +562,7 @@ Vanlig dokumentasjon.
             set_file_h3_cells(target, first_id, {column: h3_cell})
             set_file_h3_cells(target, second_id, {column: h3_cell})
             source = geo_place_browser_source(place)
-            with patch("bilder.server.source_items", side_effect=AssertionError("source_items should not be used")):
+            with patch("bildebank.server.source_items", side_effect=AssertionError("source_items should not be used")):
                 item = source_item_by_id(target, source, first_id)
                 assert item is not None
                 previous_item, next_item = adjacent_source_items(target, source, item)
@@ -680,7 +680,7 @@ Vanlig dokumentasjon.
                     }
                 }
 
-            with patch("bilder.geo.read_gps_metadata_batch", fake_read_gps_metadata_batch):
+            with patch("bildebank.geo.read_gps_metadata_batch", fake_read_gps_metadata_batch):
                 with redirect_stderr(StringIO()):
                     stats = scan_geo(target, exiftool_path="exiftool", batch_size=1)
 
@@ -708,7 +708,7 @@ Vanlig dokumentasjon.
             def fake_read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, dict[str, object]]:
                 raise RuntimeError(long_error)
 
-            with patch("bilder.geo.read_gps_metadata_batch", fake_read_gps_metadata_batch):
+            with patch("bildebank.geo.read_gps_metadata_batch", fake_read_gps_metadata_batch):
                 with redirect_stderr(StringIO()):
                     stats = scan_geo(target, exiftool_path="exiftool", batch_size=1)
 
@@ -732,7 +732,7 @@ Vanlig dokumentasjon.
             def fake_read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, dict[str, object]]:
                 return {expected_path: {"SourceFile": str(expected_path), "Error": "unsupported file type with long details"}}
 
-            with patch("bilder.geo.read_gps_metadata_batch", fake_read_gps_metadata_batch):
+            with patch("bildebank.geo.read_gps_metadata_batch", fake_read_gps_metadata_batch):
                 with redirect_stderr(StringIO()):
                     stats = scan_geo(target, exiftool_path="exiftool", batch_size=1)
 

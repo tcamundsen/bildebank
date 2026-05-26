@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bilder.media import camera_info, image_dimensions, image_orientation, media_date
+from bildebank.media import camera_info, image_dimensions, image_orientation, media_date
 
 
 def atom(atom_type: bytes, payload: bytes) -> bytes:

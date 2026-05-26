@@ -2,7 +2,7 @@
 
 Dette dokumentet beskriver den separate face-databasen `.bilder-faces.sqlite3`.
 Den vanlige bildesamlingsdatabasen er `.bilder.sqlite3` og har egen
-schema-versjon i `bilder/db.py`.
+schema-versjon i `bildebank/db.py`.
 
 Face-databasen brukes for data som kan gjenskapes fra bildene, men som kan være
 tidkrevende å bygge på nytt:
@@ -14,7 +14,7 @@ tidkrevende å bygge på nytt:
 
 ## Dagens versjon
 
-Dagens face-schema er `FACE_SCHEMA_VERSION = 3` i `bilder/face.py`.
+Dagens face-schema er `FACE_SCHEMA_VERSION = 3` i `bildebank/face.py`.
 
 Face-schema-versjonen lagres i:
 

@@ -6,7 +6,7 @@ TOOLS_DIR := tools
 STAMP_DIR := .make/cli-help
 
 # Utvid denne hvis flere Python-filer påvirker teksten i `bildebank <kommando> --help`.
-CLI_DEPS ?= bilder/cli.py
+CLI_DEPS ?= bildebank/cli.py
 
 DOC_SOURCES := $(wildcard $(DOCS_DIR)/*.md $(DOCS_DIR)/web/*.md)
 HTML_FILES := $(patsubst $(DOCS_DIR)/%.md,$(HTML_DIR)/%.html,$(DOC_SOURCES))

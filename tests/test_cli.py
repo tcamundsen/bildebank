@@ -20,12 +20,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from bilder.cli import build_parser, main, print_image_search_progress
-from bilder.config import AppConfig, FaceRecognitionConfig, OpenClipConfig, load_config
-from bilder import db
-from bilder.db import DB_FILENAME, init_database
-from bilder.exiftool import managed_exiftool_path, resolve_exiftool_path
-from bilder.face import (
+from bildebank.cli import build_parser, main, print_image_search_progress
+from bildebank.config import AppConfig, FaceRecognitionConfig, OpenClipConfig, load_config
+from bildebank import db
+from bildebank.db import DB_FILENAME, init_database
+from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
+from bildebank.face import (
     apply_face_schema,
     connect_face_db,
     face_box_percent,
@@ -34,14 +34,14 @@ from bilder.face import (
     read_image,
     remove_insightface_model_zip,
 )
-from bilder.geo import h3_cells_for_point
-from bilder.html_export import render_html
-from bilder.importer import safe_copy
-from bilder.media import ImageDimensions, sha256_file
-from bilder.media_cache import cached_image_dimensions, cached_image_orientation
-from bilder.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
-from bilder.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
-from bilder.server import (
+from bildebank.geo import h3_cells_for_point
+from bildebank.html_export import render_html
+from bildebank.importer import safe_copy
+from bildebank.media import ImageDimensions, sha256_file
+from bildebank.media_cache import cached_image_dimensions, cached_image_orientation
+from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
+from bildebank.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
+from bildebank.server import (
     adjacent_browser_items,
     adjacent_person_items,
     adjacent_source_items,
@@ -98,8 +98,8 @@ from bilder.server import (
     sources_page_html,
     undelete_file_from_browser,
 )
-from bilder.target_lock import LOCK_FILENAME
-from bilder.thumbnails import (
+from bildebank.target_lock import LOCK_FILENAME
+from bildebank.thumbnails import (
     existing_thumbnail_url,
     thumbnail_absolute_path,
     thumbnail_is_current,
@@ -424,7 +424,7 @@ class CliTests(unittest.TestCase):
     def setUp(self) -> None:
         self.program_root_tempdir = tempfile.TemporaryDirectory()
         self.program_root = Path(self.program_root_tempdir.name)
-        self.program_root_patcher = patch("bilder.cli.program_repo_root", return_value=self.program_root)
+        self.program_root_patcher = patch("bildebank.cli.program_repo_root", return_value=self.program_root)
         self.program_root_patcher.start()
 
     def tearDown(self) -> None:
@@ -500,7 +500,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_debug_shows_traceback_for_unhandled_errors(self) -> None:
-        with patch("bilder.cli.run", side_effect=RuntimeError("boom")):
+        with patch("bildebank.cli.run", side_effect=RuntimeError("boom")):
             code, stdout, stderr = capture_cli(["--debug", "status"])
 
         self.assertEqual(code, 1)
@@ -509,7 +509,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("RuntimeError: boom", stderr)
 
     def test_errors_are_short_without_debug(self) -> None:
-        with patch("bilder.cli.run", side_effect=RuntimeError("boom")):
+        with patch("bildebank.cli.run", side_effect=RuntimeError("boom")):
             code, stdout, stderr = capture_cli(["status"])
 
         self.assertEqual(code, 1)
@@ -833,8 +833,8 @@ pretrained = "laion2b_s34b_b79k"
             )
 
             with (
-                patch("bilder.server.load_text_model", return_value=(object(), object())),
-                patch("bilder.server.text_embedding", return_value=[1.0, 0.0]),
+                patch("bildebank.server.load_text_model", return_value=(object(), object())),
+                patch("bildebank.server.text_embedding", return_value=[1.0, 0.0]),
             ):
                 stats = search_server_images(server, query="test", limit=10)
 
@@ -877,9 +877,9 @@ pretrained = "laion2b_s34b_b79k"
             )
 
             with (
-                patch("bilder.server.load_text_model", return_value=(object(), object())),
-                patch("bilder.server.text_embedding", return_value=[1.0, 0.0]),
-                patch("bilder.server.load_search_embedding_cache", wraps=load_search_embedding_cache) as load_cache,
+                patch("bildebank.server.load_text_model", return_value=(object(), object())),
+                patch("bildebank.server.text_embedding", return_value=[1.0, 0.0]),
+                patch("bildebank.server.load_search_embedding_cache", wraps=load_search_embedding_cache) as load_cache,
             ):
                 first = search_server_images(server, query="test", limit=1)
                 second = search_server_images(server, query="test igjen", limit=1)
@@ -914,9 +914,9 @@ pretrained = "laion2b_s34b_b79k"
             )
 
             with (
-                patch("bilder.server.load_text_model", return_value=(object(), object())),
-                patch("bilder.server.text_embedding", return_value=[0.0, 1.0]),
-                patch("bilder.server.load_search_embedding_cache", wraps=load_search_embedding_cache) as load_cache,
+                patch("bildebank.server.load_text_model", return_value=(object(), object())),
+                patch("bildebank.server.text_embedding", return_value=[0.0, 1.0]),
+                patch("bildebank.server.load_search_embedding_cache", wraps=load_search_embedding_cache) as load_cache,
             ):
                 first = search_server_images(server, query="test", limit=10)
                 conn = connect_openclip_db(target)
@@ -977,8 +977,8 @@ pretrained = "laion2b_s34b_b79k"
             )
 
             with (
-                patch("bilder.server.load_text_model", return_value=(object(), object())),
-                patch("bilder.server.text_embedding", return_value=[1.0, 0.0]),
+                patch("bildebank.server.load_text_model", return_value=(object(), object())),
+                patch("bildebank.server.text_embedding", return_value=[1.0, 0.0]),
             ):
                 stats = search_server_images(server, query="test", limit=2)
 
@@ -1054,7 +1054,7 @@ pretrained = "laion2b_s34b_b79k"
             )
 
             with (
-                patch("bilder.server.module_available", side_effect=lambda name: name == "open_clip"),
+                patch("bildebank.server.module_available", side_effect=lambda name: name == "open_clip"),
             ):
                 body = app_status_page_html(target, config)
 
@@ -1113,7 +1113,7 @@ pretrained = "laion2b_s34b_b79k"
                     self.location = location
 
             handler = FakeHandler()
-            with patch("bilder.server.server_program_repo_root", return_value=root):
+            with patch("bildebank.server.server_program_repo_root", return_value=root):
                 BildebankRequestHandler.respond_set_face_config(handler)  # type: ignore[arg-type]
 
             config = load_config(root)
@@ -1148,7 +1148,7 @@ model_name = "buffalo_l"
                     self.location = location
 
             handler = FakeHandler()
-            with patch("bilder.server.server_program_repo_root", return_value=root):
+            with patch("bildebank.server.server_program_repo_root", return_value=root):
                 BildebankRequestHandler.respond_set_face_model(handler)  # type: ignore[arg-type]
 
             config = load_config(root)
@@ -1176,7 +1176,7 @@ model_name = "buffalo_l"
                 server = SimpleNamespace(config=load_config(root))
 
             handler = FakeHandler()
-            with patch("bilder.server.server_program_repo_root", return_value=root):
+            with patch("bildebank.server.server_program_repo_root", return_value=root):
                 with self.assertRaisesRegex(ValueError, "ikke installert"):
                     BildebankRequestHandler.respond_set_face_model(handler)  # type: ignore[arg-type]
 
@@ -1886,7 +1886,7 @@ model_name = "buffalo_l"
 
             filename_source = date_source_browser_source("filename")
             mtime_source = date_source_browser_source("mtime")
-            with patch("bilder.server.source_items", side_effect=AssertionError("source_items should not be used")):
+            with patch("bildebank.server.source_items", side_effect=AssertionError("source_items should not be used")):
                 filename_item = source_item_by_id(target, filename_source, 1)
                 mtime_item = source_item_by_id(target, mtime_source, 2)
                 self.assertIsNotNone(filename_item)
@@ -1953,7 +1953,7 @@ model_name = "buffalo_l"
                 conn.close()
             self.assertIsNotNone(source)
             source_browser = imported_source_browser_source(source)
-            with patch("bilder.server.adjacent_sql_filtered_source_items", side_effect=AssertionError("SQL filter path should not be used")):
+            with patch("bildebank.server.adjacent_sql_filtered_source_items", side_effect=AssertionError("SQL filter path should not be used")):
                 source_item = source_item_by_id(target, source_browser, 1)
                 source_excludes_other_item = source_item_by_id(target, source_browser, 2) is None
                 self.assertIsNotNone(source_item)
@@ -2622,8 +2622,8 @@ model_name = "buffalo_l"
             item = person_item_by_id(target, "Kari", 1)
             self.assertIsNotNone(item)
             with (
-                patch("bilder.server.image_dimensions", side_effect=AssertionError("cached dimensions should be used")),
-                patch("bilder.server.image_orientation", side_effect=AssertionError("cached orientation should be used")),
+                patch("bildebank.server.image_dimensions", side_effect=AssertionError("cached dimensions should be used")),
+                patch("bildebank.server.image_orientation", side_effect=AssertionError("cached orientation should be used")),
             ):
                 body = person_item_page_html(target, "Kari", item, *adjacent_person_items(target, "Kari", item), person_month_navigation(target, "Kari", item))
             plain_source = person_browser_source("Kari", include_suggestions=True, show_faces=False)
@@ -2857,7 +2857,7 @@ model_name = "buffalo_l"
             image.write_bytes(b"image")
             removed.write_bytes(b"removed")
 
-            with patch("bilder.backup.select_backup_engine", return_value=None):
+            with patch("bildebank.backup.select_backup_engine", return_value=None):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
 
             self.assertEqual(code, 0, stderr)
@@ -2885,7 +2885,7 @@ model_name = "buffalo_l"
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
-            with patch("bilder.backup.select_backup_engine", return_value=None):
+            with patch("bildebank.backup.select_backup_engine", return_value=None):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--dry-run", str(backup_parent)])
 
             self.assertEqual(code, 0, stderr)
@@ -2905,9 +2905,9 @@ model_name = "buffalo_l"
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
             with (
-                patch("bilder.backup.sys.platform", "linux"),
-                patch("bilder.backup.shutil.which", return_value="/usr/bin/rsync"),
-                patch("bilder.backup.subprocess.run", return_value=SimpleNamespace(returncode=0)) as subprocess_run,
+                patch("bildebank.backup.sys.platform", "linux"),
+                patch("bildebank.backup.shutil.which", return_value="/usr/bin/rsync"),
+                patch("bildebank.backup.subprocess.run", return_value=SimpleNamespace(returncode=0)) as subprocess_run,
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--dry-run", str(backup_parent)])
 
@@ -2933,9 +2933,9 @@ model_name = "buffalo_l"
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
             with (
-                patch("bilder.backup.sys.platform", "win32"),
-                patch("bilder.backup.shutil.which", return_value="robocopy"),
-                patch("bilder.backup.subprocess.run", return_value=SimpleNamespace(returncode=3)) as subprocess_run,
+                patch("bildebank.backup.sys.platform", "win32"),
+                patch("bildebank.backup.shutil.which", return_value="robocopy"),
+                patch("bildebank.backup.subprocess.run", return_value=SimpleNamespace(returncode=3)) as subprocess_run,
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--dry-run", str(backup_parent)])
 
@@ -2980,7 +2980,7 @@ model_name = "buffalo_l"
             lock_path = target / LOCK_FILENAME
             lock_path.write_text("command=import\npid=123\n", encoding="utf-8")
 
-            with patch("bilder.backup.select_backup_engine", return_value=None):
+            with patch("bildebank.backup.select_backup_engine", return_value=None):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--dry-run", str(backup_parent)])
 
             self.assertEqual(code, 0, stderr)
@@ -3004,8 +3004,8 @@ model_name = "buffalo_l"
                 return SimpleNamespace(files_copied=0, files_deleted=0, dirs_created=0, dirs_deleted=0)
 
             with (
-                patch("bilder.backup.select_backup_engine", return_value=None),
-                patch("bilder.backup.mirror_directory", side_effect=mirror_with_lock_check),
+                patch("bildebank.backup.select_backup_engine", return_value=None),
+                patch("bildebank.backup.mirror_directory", side_effect=mirror_with_lock_check),
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
 
@@ -3024,8 +3024,8 @@ model_name = "buffalo_l"
             lock_path = target / LOCK_FILENAME
 
             with (
-                patch("bilder.backup.select_backup_engine", return_value=None),
-                patch("bilder.backup.mirror_directory", side_effect=KeyboardInterrupt),
+                patch("bildebank.backup.select_backup_engine", return_value=None),
+                patch("bildebank.backup.mirror_directory", side_effect=KeyboardInterrupt),
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
 
@@ -3046,14 +3046,14 @@ model_name = "buffalo_l"
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             (target / "first.txt").write_text("first\n", encoding="utf-8")
-            with patch("bilder.backup.select_backup_engine", return_value=None):
+            with patch("bildebank.backup.select_backup_engine", return_value=None):
                 self.assertEqual(run_cli(["--target", str(target), "backup", str(backup_parent)]), 0)
             backup_dir = backup_parent / target.name
             extra = backup_dir / "extra.txt"
             extra.write_text("extra\n", encoding="utf-8")
             (target / "first.txt").write_text("changed\n", encoding="utf-8")
 
-            with patch("bilder.backup.select_backup_engine", return_value=None):
+            with patch("bildebank.backup.select_backup_engine", return_value=None):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
 
             self.assertEqual(code, 0, stderr)
@@ -3087,7 +3087,7 @@ model_name = "buffalo_l"
             backup_parent.mkdir()
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            with patch("bilder.backup.select_backup_engine", return_value=None):
+            with patch("bildebank.backup.select_backup_engine", return_value=None):
                 self.assertEqual(run_cli(["--target", str(target), "backup", str(backup_parent)]), 0)
             nested_parent.mkdir(parents=True)
 
@@ -3107,9 +3107,9 @@ model_name = "buffalo_l"
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
             with (
-                patch("bilder.backup.sys.platform", "linux"),
-                patch("bilder.backup.shutil.which", return_value="/usr/bin/rsync"),
-                patch("bilder.backup.subprocess.run", return_value=SimpleNamespace(returncode=0)) as subprocess_run,
+                patch("bildebank.backup.sys.platform", "linux"),
+                patch("bildebank.backup.shutil.which", return_value="/usr/bin/rsync"),
+                patch("bildebank.backup.subprocess.run", return_value=SimpleNamespace(returncode=0)) as subprocess_run,
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
 
@@ -3138,9 +3138,9 @@ model_name = "buffalo_l"
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
             with (
-                patch("bilder.backup.sys.platform", "linux"),
-                patch("bilder.backup.shutil.which", return_value="/usr/bin/rsync"),
-                patch("bilder.backup.subprocess.run", return_value=SimpleNamespace(returncode=23)),
+                patch("bildebank.backup.sys.platform", "linux"),
+                patch("bildebank.backup.shutil.which", return_value="/usr/bin/rsync"),
+                patch("bildebank.backup.subprocess.run", return_value=SimpleNamespace(returncode=23)),
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
 
@@ -3161,9 +3161,9 @@ model_name = "buffalo_l"
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
             with (
-                patch("bilder.backup.sys.platform", "win32"),
-                patch("bilder.backup.shutil.which", return_value="robocopy"),
-                patch("bilder.backup.subprocess.run", return_value=SimpleNamespace(returncode=3)) as subprocess_run,
+                patch("bildebank.backup.sys.platform", "win32"),
+                patch("bildebank.backup.shutil.which", return_value="robocopy"),
+                patch("bildebank.backup.subprocess.run", return_value=SimpleNamespace(returncode=3)) as subprocess_run,
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
 
@@ -3217,7 +3217,7 @@ model_name = "buffalo_l"
             program_root.mkdir()
             db.init_database(target)
 
-            with patch("bilder.program_state.tempfile.gettempdir", return_value=str(temp_root)):
+            with patch("bildebank.program_state.tempfile.gettempdir", return_value=str(temp_root)):
                 record_target(program_root, target, created=True)
                 targets = known_targets(program_root)
 
@@ -3235,7 +3235,7 @@ model_name = "buffalo_l"
             finally:
                 conn.close()
 
-            with patch("bilder.program_state.tempfile.gettempdir", return_value=str(temp_root)):
+            with patch("bildebank.program_state.tempfile.gettempdir", return_value=str(temp_root)):
                 targets = known_targets(program_root)
 
             self.assertEqual(targets, [])
@@ -3418,9 +3418,9 @@ model_name = "buffalo_l"
     def test_doctor_is_disabled_by_default(self) -> None:
         exiftool = self.program_root / "bildebank-tools" / "exiftool" / "exiftool.exe"
         with (
-            patch("bilder.cli.resolve_exiftool_path", return_value=exiftool),
-            patch("bilder.cli.validate_exiftool_install", return_value="13.58"),
-            patch("bilder.cli.python_module_available", side_effect=lambda name: name == "h3"),
+            patch("bildebank.cli.resolve_exiftool_path", return_value=exiftool),
+            patch("bildebank.cli.validate_exiftool_install", return_value="13.58"),
+            patch("bildebank.cli.python_module_available", side_effect=lambda name: name == "h3"),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
 
@@ -3434,7 +3434,7 @@ model_name = "buffalo_l"
         self.assertEqual(stderr, "")
 
     def test_face_status_is_doctor_alias(self) -> None:
-        with patch("bilder.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
+        with patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
             code, stdout, stderr = capture_cli(["face-status"])
 
         self.assertEqual(code, 0, stderr)
@@ -3447,8 +3447,8 @@ model_name = "buffalo_l"
     def test_doctor_shows_exiftool_status(self) -> None:
         exiftool = self.program_root / "bildebank-tools" / "exiftool" / "exiftool.exe"
         with (
-            patch("bilder.cli.resolve_exiftool_path", return_value=exiftool),
-            patch("bilder.cli.validate_exiftool_install", return_value="13.58"),
+            patch("bildebank.cli.resolve_exiftool_path", return_value=exiftool),
+            patch("bildebank.cli.validate_exiftool_install", return_value="13.58"),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
 
@@ -3456,7 +3456,7 @@ model_name = "buffalo_l"
         self.assertIn(f"  OK: ExifTool funnet: {exiftool} (13.58)", stdout)
 
     def test_doctor_reports_missing_exiftool_without_failing(self) -> None:
-        with patch("bilder.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
+        with patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
             code, stdout, stderr = capture_cli(["doctor"])
 
         self.assertEqual(code, 0, stderr)
@@ -3474,8 +3474,8 @@ enabled = true
         )
 
         with (
-            patch("bilder.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-            patch("bilder.cli.python_module_available", side_effect=lambda name: name == "h3"),
+            patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli.python_module_available", side_effect=lambda name: name == "h3"),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
 
@@ -3496,9 +3496,9 @@ enabled = true
         )
 
         with (
-            patch("bilder.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-            patch("bilder.cli.python_module_available", side_effect=lambda name: name == "h3"),
-            patch("bilder.cli.torch_gpu_status", return_value={"torch": "nei", "cuda": "nei", "device": "-"}),
+            patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli.python_module_available", side_effect=lambda name: name == "h3"),
+            patch("bildebank.cli.torch_gpu_status", return_value={"torch": "nei", "cuda": "nei", "device": "-"}),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
 
@@ -3511,8 +3511,8 @@ enabled = true
 
     def test_doctor_reports_missing_h3_without_failing(self) -> None:
         with (
-            patch("bilder.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-            patch("bilder.cli.python_module_available", return_value=False),
+            patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli.python_module_available", return_value=False),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
 
@@ -3781,7 +3781,7 @@ enabled = false
             target = repo / "samling"
             repo.mkdir()
 
-            with patch("bilder.cli.program_repo_root", return_value=repo.resolve()):
+            with patch("bildebank.cli.program_repo_root", return_value=repo.resolve()):
                 code, stdout, stderr = capture_cli(["create", str(target)])
 
             self.assertEqual(code, 1)
@@ -3795,9 +3795,9 @@ enabled = false
             update_script.write_text("# update\n", encoding="utf-8")
 
             with (
-                patch("bilder.cli.sys.platform", "win32"),
-                patch("bilder.cli.program_repo_root", return_value=repo),
-                patch("bilder.cli.subprocess.run") as subprocess_run,
+                patch("bildebank.cli.sys.platform", "win32"),
+                patch("bildebank.cli.program_repo_root", return_value=repo),
+                patch("bildebank.cli.subprocess.run") as subprocess_run,
             ):
                 subprocess_run.return_value.returncode = 7
 
@@ -3827,9 +3827,9 @@ enabled = false
             venv_python.write_text("# python\n", encoding="utf-8")
 
             with (
-                patch("bilder.cli.sys.platform", "linux"),
-                patch("bilder.cli.program_repo_root", return_value=repo),
-                patch("bilder.cli.subprocess.run") as subprocess_run,
+                patch("bildebank.cli.sys.platform", "linux"),
+                patch("bildebank.cli.program_repo_root", return_value=repo),
+                patch("bildebank.cli.subprocess.run") as subprocess_run,
             ):
                 subprocess_run.return_value.returncode = 0
                 code, stdout, stderr = capture_cli(["update"])
@@ -3852,10 +3852,10 @@ enabled = false
             (repo / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
 
             with (
-                patch("bilder.cli.sys.platform", "linux"),
-                patch("bilder.cli.program_repo_root", return_value=repo),
-                patch("bilder.cli.shutil.which", return_value="/usr/bin/python3.13"),
-                patch("bilder.cli.subprocess.run") as subprocess_run,
+                patch("bildebank.cli.sys.platform", "linux"),
+                patch("bildebank.cli.program_repo_root", return_value=repo),
+                patch("bildebank.cli.shutil.which", return_value="/usr/bin/python3.13"),
+                patch("bildebank.cli.subprocess.run") as subprocess_run,
             ):
                 subprocess_run.return_value.returncode = 0
                 code, stdout, stderr = capture_cli(["update"])
@@ -3874,8 +3874,8 @@ enabled = false
             repo = Path(tmp)
 
             with (
-                patch("bilder.cli.sys.platform", "win32"),
-                patch("bilder.cli.program_repo_root", return_value=repo),
+                patch("bildebank.cli.sys.platform", "win32"),
+                patch("bildebank.cli.program_repo_root", return_value=repo),
             ):
                 code, stdout, stderr = capture_cli(["update"])
 
@@ -3889,9 +3889,9 @@ enabled = false
             (repo / "update.ps1").write_text("# update\n", encoding="utf-8")
 
             with (
-                patch("bilder.cli.sys.platform", "win32"),
-                patch("bilder.cli.program_repo_root", return_value=repo),
-                patch("bilder.cli.subprocess.run", side_effect=FileNotFoundError),
+                patch("bildebank.cli.sys.platform", "win32"),
+                patch("bildebank.cli.program_repo_root", return_value=repo),
+                patch("bildebank.cli.subprocess.run", side_effect=FileNotFoundError),
             ):
                 code, stdout, stderr = capture_cli(["update"])
 
@@ -5034,7 +5034,7 @@ enabled = false
             path_tool = root / "exiftool"
             write_fake_exiftool(path_tool)
 
-            with patch("bilder.exiftool.shutil.which", return_value=str(path_tool)):
+            with patch("bildebank.exiftool.shutil.which", return_value=str(path_tool)):
                 self.assertEqual(resolve_exiftool_path(root / "repo"), str(path_tool))
 
     def test_exiftool_resolver_requires_managed_support_folder(self) -> None:
@@ -5064,9 +5064,9 @@ if "-ver" in sys.argv:
                 return (str(filename), None)
 
             with (
-                patch("bilder.cli.sys.platform", "win32"),
-                patch("bilder.cli.program_repo_root", return_value=repo),
-                patch("bilder.exiftool.urllib.request.urlretrieve", side_effect=fake_urlretrieve),
+                patch("bildebank.cli.sys.platform", "win32"),
+                patch("bildebank.cli.program_repo_root", return_value=repo),
+                patch("bildebank.exiftool.urllib.request.urlretrieve", side_effect=fake_urlretrieve),
             ):
                 code, stdout, stderr = capture_cli(["exiftool-install"])
 
@@ -5077,7 +5077,7 @@ if "-ver" in sys.argv:
             self.assertTrue((installed / "exiftool_files").is_dir())
 
     def test_exiftool_install_fails_on_linux(self) -> None:
-        with patch("bilder.cli.sys.platform", "linux"):
+        with patch("bildebank.cli.sys.platform", "linux"):
             code, stdout, stderr = capture_cli(["exiftool-install"])
 
         self.assertEqual(1, code)
@@ -5181,7 +5181,7 @@ print(json.dumps([
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
-            with patch("bilder.importer.os.walk", fake_walk):
+            with patch("bildebank.importer.os.walk", fake_walk):
                 self.assertEqual(
                     run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
                     2,
@@ -5287,8 +5287,8 @@ print(json.dumps([
             )
 
             with (
-                patch("bilder.face.load_face_app", side_effect=fake_load_face_app),
-                patch("bilder.face.read_image", return_value=object()),
+                patch("bildebank.face.load_face_app", side_effect=fake_load_face_app),
+                patch("bildebank.face.read_image", return_value=object()),
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
 
@@ -5314,8 +5314,8 @@ print(json.dumps([
                 conn.close()
 
             with (
-                patch("bilder.face.load_face_app", side_effect=AssertionError("should not load model")),
-                patch("bilder.face.read_image", side_effect=AssertionError("should not read image")),
+                patch("bildebank.face.load_face_app", side_effect=AssertionError("should not load model")),
+                patch("bildebank.face.read_image", side_effect=AssertionError("should not read image")),
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
 
@@ -5369,8 +5369,8 @@ print(json.dumps([
             )
 
             with (
-                patch("bilder.face.load_face_app", return_value=FakeApp()),
-                patch("bilder.face.read_image", side_effect=ValueError("Kunne ikke lese testbildet")),
+                patch("bildebank.face.load_face_app", return_value=FakeApp()),
+                patch("bildebank.face.read_image", side_effect=ValueError("Kunne ikke lese testbildet")),
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
 
@@ -5850,8 +5850,8 @@ print(json.dumps([
                 0,
             )
             with (
-                patch("bilder.face.load_face_app", return_value=FakeApp()),
-                patch("bilder.face.read_image", return_value=object()),
+                patch("bildebank.face.load_face_app", return_value=FakeApp()),
+                patch("bildebank.face.read_image", return_value=object()),
             ):
                 self.assertEqual(run_cli(["--target", str(target), "face-scan", "--limit", "1"]), 0)
 
@@ -6261,7 +6261,7 @@ print(json.dumps([
             destination = root / "destination.jpg"
             source.write_bytes(b"image")
 
-            with patch("bilder.importer.os.link", side_effect=OSError("hardlink unsupported")):
+            with patch("bildebank.importer.os.link", side_effect=OSError("hardlink unsupported")):
                 safe_copy(source, destination, sha256_file(source))
 
             self.assertEqual(destination.read_bytes(), b"image")

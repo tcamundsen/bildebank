@@ -13,4 +13,4 @@ if not exist "%PYTHON%" (
     exit /b 1
 )
 
-"%PYTHON%" -m bilder %*
+"%PYTHON%" -m bildebank %*
