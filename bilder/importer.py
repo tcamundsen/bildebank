@@ -510,13 +510,3 @@ def find_file_in_target_by_hash(target: Path, expected_hash: str) -> Path | None
                 continue
     return None
 
-
-def _merge_stats(total: ImportStats, item: ImportStats) -> None:
-    total.scanned += item.scanned
-    total.imported += item.imported
-    total.duplicates += item.duplicates
-    total.skipped_existing += item.skipped_existing
-    total.skipped_covered += item.skipped_covered
-    total.name_conflicts += item.name_conflicts
-    total.errors += item.errors
-    total.stopped = total.stopped or item.stopped

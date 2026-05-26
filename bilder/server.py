@@ -2676,10 +2676,6 @@ def person_item_url(person_name: str, file_id: int, *, show_faces: bool = True) 
     return f"{person_url(person_name, show_faces=show_faces)}/item/{file_id}"
 
 
-def person_month_url(person_name: str, month_key: str) -> str:
-    return f"{person_url(person_name)}/month/{urllib.parse.quote(month_key)}"
-
-
 def browser_month_navigation_for_key(target: Path, current_key: str) -> dict[str, str | None]:
     if not valid_month_key(current_key):
         return {
@@ -4220,18 +4216,6 @@ def unconfirm_face_buttons_html(
     return "\n".join(buttons)
 
 
-def person_nav_link(person_name: str, item: Any | None, label: str, key_nav: str) -> str:
-    if item is None:
-        return nav_disabled(label)
-    return nav_button(person_item_url(person_name, int(item["id"])), label, key_nav)
-
-
-def person_month_nav_link(person_name: str, month_key: str | None, label: str, key_nav: str) -> str:
-    if month_key is None:
-        return nav_disabled(label)
-    return nav_button(person_month_url(person_name, month_key), label, key_nav)
-
-
 def source_nav_link(source: BrowserSource, item: Any | None, label: str, key_nav: str) -> str:
     if item is None:
         return nav_disabled(label)
@@ -4344,7 +4328,7 @@ def face_overlay_content_html(
 
 
 def image_info_overlay_html() -> str:
-    return f"""
+    return """
     <div id="infoOverlay" class="info-overlay" hidden>
       <div class="lightbox-bar">
         <div class="lightbox-title">Bildeinfo</div>
@@ -4779,7 +4763,6 @@ def source_month_item_html(target: Path, source: BrowserSource, item: Any) -> st
 
 
 def thumbnail_media_html(target: Path, item: Any) -> str:
-    file_id = int(item["id"])
     target_path = Path(str(item["target_path"]))
     name = html.escape(str(item["stored_filename"]))
     if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:

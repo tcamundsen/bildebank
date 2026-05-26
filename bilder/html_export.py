@@ -10,7 +10,7 @@ from time import perf_counter
 from urllib.parse import quote
 
 from . import db
-from .media import image_dimensions, image_orientation
+from .media import image_dimensions
 from .media_cache import MediaMetadataCache
 from .thumbnails import existing_thumbnail_url
 
@@ -69,10 +69,7 @@ def browser_items(
     conn = db.connect(target)
     try:
         start = perf_counter()
-        items = [
-            row_to_item(target, row, include_face_boxes=False)
-            for row in db.browser_files(conn)
-        ]
+        items = [row_to_item(target, row) for row in db.browser_files(conn)]
         if timing is not None:
             timing.measure("rows_to_items", start)
     finally:
@@ -104,9 +101,7 @@ def row_to_item(
     target: Path,
     row,
     *,
-    face_data_by_file_id: dict[int, dict[str, object]] | None = None,
     media_cache: MediaMetadataCache | None = None,
-    include_face_boxes: bool = True,
 ) -> dict[str, object]:
     stored_path = Path(str(row["target_path"]))
     relative_path = relative_to_target(target, stored_path)
@@ -127,23 +122,6 @@ def row_to_item(
         "name": row["stored_filename"],
         "sizeText": format_bytes(int(row["size_bytes"])),
     }
-
-
-def browser_face_items(
-    target_path: Path,
-    faces: object,
-    *,
-    media_cache: MediaMetadataCache | None = None,
-    include_boxes: bool = True,
-) -> list[dict[str, object]]:
-    if not isinstance(faces, list) or not faces:
-        return []
-    dimensions = None
-    orientation = 1
-    if include_boxes:
-        dimensions = media_cache.image_dimensions(target_path) if media_cache is not None else image_dimensions(target_path)
-        orientation = media_cache.image_orientation(target_path) if media_cache is not None else image_orientation(target_path)
-    return browser_face_items_from_metadata(faces, dimensions, orientation, include_boxes=include_boxes)
 
 
 def browser_face_items_from_metadata(

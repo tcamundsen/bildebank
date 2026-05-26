@@ -1338,25 +1338,6 @@ def render_face_box(face: dict[str, Any], dimensions, orientation: int = 1) -> s
     )
 
 
-def render_person_box(face: dict[str, Any], dimensions, orientation: int = 1) -> str:
-    percent = face_box_percent(face, dimensions, orientation)
-    if percent is None:
-        left = top = width = height = 0.0
-    else:
-        left, top, width, height = percent
-    css_class = "box suggested" if face["status"] == "forslag" else "box"
-    return (
-        f'<div class="{css_class}" '
-        f'title="{html_escape(face["status"])} face-id {face["faceId"]} score {float(face["similarity"]):.3f}" '
-        'style="'
-        f'left: {left:.4f}%; '
-        f'top: {top:.4f}%; '
-        f'width: {width:.4f}%; '
-        f'height: {height:.4f}%;'
-        '"></div>'
-    )
-
-
 def face_box_percent(
     face: dict[str, Any],
     dimensions,
