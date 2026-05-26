@@ -275,8 +275,9 @@ Notes:
   constructors, and SQL-filter helpers have been moved.
 - Shared browser SQL column/order constants, first-item DB lookups, and direct
   SQL-filtered/unfiltered item-by-id DB lookups have been moved.
-- Browser dispatchers that depend on `source_items()`, adjacent navigation,
-  month navigation, and HTML rendering remain in `server.py` for now.
+- Adjacent item DB lookups and list-based adjacent helper have been moved.
+- Browser dispatchers that depend on `source_items()`, month navigation, and
+  HTML rendering remain in `server.py` for now.
 
 ### `bildebank/server_faces.py`
 

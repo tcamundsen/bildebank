@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import urllib.parse
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -184,5 +185,86 @@ def unfiltered_source_item_by_id(target: Path, file_id: int) -> Any | None:
             """,
             (file_id,),
         ).fetchone()
+    finally:
+        conn.close()
+
+
+def item_order_key(item: Any) -> tuple[str, str]:
+    taken_date = str(item["taken_date"] or "")
+    if not re.match(r"^\d{4}-\d{2}-\d{2}", taken_date):
+        taken_date = "9999-99-99"
+    return taken_date, str(item["target_path_key"])
+
+
+def adjacent_items_from_list(items: list[Any], item: Any) -> tuple[Any | None, Any | None]:
+    index = next((idx for idx, candidate in enumerate(items) if int(candidate["id"]) == int(item["id"])), -1)
+    if index < 0:
+        return None, None
+    previous_item = items[index - 1] if index > 0 else None
+    next_item = items[index + 1] if index < len(items) - 1 else None
+    return previous_item, next_item
+
+
+def adjacent_unfiltered_source_items(target: Path, item: Any) -> tuple[Any | None, Any | None]:
+    order_key = item_order_key(item)
+    conn = db.connect(target)
+    try:
+        previous_item = conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND ({ITEM_DATE_ORDER_SQL}, target_path_key) < (?, ?)
+            ORDER BY {ITEM_DATE_ORDER_SQL} DESC, target_path_key DESC
+            LIMIT 1
+            """,
+            order_key,
+        ).fetchone()
+        next_item = conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND ({ITEM_DATE_ORDER_SQL}, target_path_key) > (?, ?)
+            ORDER BY {ITEM_ORDER_SQL}
+            LIMIT 1
+            """,
+            order_key,
+        ).fetchone()
+        return previous_item, next_item
+    finally:
+        conn.close()
+
+
+def adjacent_sql_filtered_source_items(target: Path, source: BrowserSource, item: Any) -> tuple[Any | None, Any | None]:
+    where_sql, params = source_sql_filter(source)
+    order_key = item_order_key(item)
+    conn = db.connect(target)
+    try:
+        previous_item = conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND ({where_sql})
+              AND ({ITEM_DATE_ORDER_SQL}, target_path_key) < (?, ?)
+            ORDER BY {ITEM_DATE_ORDER_SQL} DESC, target_path_key DESC
+            LIMIT 1
+            """,
+            (*params, *order_key),
+        ).fetchone()
+        next_item = conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND ({where_sql})
+              AND ({ITEM_DATE_ORDER_SQL}, target_path_key) > (?, ?)
+            ORDER BY {ITEM_ORDER_SQL}
+            LIMIT 1
+            """,
+            (*params, *order_key),
+        ).fetchone()
+        return previous_item, next_item
     finally:
         conn.close()

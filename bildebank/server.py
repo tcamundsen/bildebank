@@ -47,8 +47,10 @@ from .openclip import relative_to_target
 from .server_browser import (
     BrowserSource,
     FILE_COLUMNS,
-    ITEM_DATE_ORDER_SQL,
     ITEM_ORDER_SQL,
+    adjacent_items_from_list,
+    adjacent_sql_filtered_source_items,
+    adjacent_unfiltered_source_items,
     all_browser_source,
     date_source_browser_source,
     first_sql_filtered_source_item,
@@ -1287,84 +1289,7 @@ def adjacent_source_items(
         return adjacent_sql_filtered_source_items(target, source, item)
     if source.person_name is not None or source.source_id is not None:
         return adjacent_items_from_list(source_items(target, source, face_config), item)
-    order_key = item_order_key(item)
-    conn = db.connect(target)
-    try:
-        previous_item = conn.execute(
-            f"""
-            SELECT {FILE_COLUMNS}
-            FROM files
-            WHERE deleted_at IS NULL
-              AND ({ITEM_DATE_ORDER_SQL}, target_path_key) < (?, ?)
-            ORDER BY {ITEM_DATE_ORDER_SQL} DESC, target_path_key DESC
-            LIMIT 1
-            """,
-            order_key,
-        ).fetchone()
-        next_item = conn.execute(
-            f"""
-            SELECT {FILE_COLUMNS}
-            FROM files
-            WHERE deleted_at IS NULL
-              AND ({ITEM_DATE_ORDER_SQL}, target_path_key) > (?, ?)
-            ORDER BY {ITEM_ORDER_SQL}
-            LIMIT 1
-            """,
-            order_key,
-        ).fetchone()
-        return previous_item, next_item
-    finally:
-        conn.close()
-
-
-def adjacent_sql_filtered_source_items(target: Path, source: BrowserSource, item: Any) -> tuple[Any | None, Any | None]:
-    where_sql, params = source_sql_filter(source)
-    order_key = item_order_key(item)
-    conn = db.connect(target)
-    try:
-        previous_item = conn.execute(
-            f"""
-            SELECT {FILE_COLUMNS}
-            FROM files
-            WHERE deleted_at IS NULL
-              AND ({where_sql})
-              AND ({ITEM_DATE_ORDER_SQL}, target_path_key) < (?, ?)
-            ORDER BY {ITEM_DATE_ORDER_SQL} DESC, target_path_key DESC
-            LIMIT 1
-            """,
-            (*params, *order_key),
-        ).fetchone()
-        next_item = conn.execute(
-            f"""
-            SELECT {FILE_COLUMNS}
-            FROM files
-            WHERE deleted_at IS NULL
-              AND ({where_sql})
-              AND ({ITEM_DATE_ORDER_SQL}, target_path_key) > (?, ?)
-            ORDER BY {ITEM_ORDER_SQL}
-            LIMIT 1
-            """,
-            (*params, *order_key),
-        ).fetchone()
-        return previous_item, next_item
-    finally:
-        conn.close()
-
-
-def item_order_key(item: Any) -> tuple[str, str]:
-    taken_date = str(item["taken_date"] or "")
-    if not re.match(r"^\d{4}-\d{2}-\d{2}", taken_date):
-        taken_date = "9999-99-99"
-    return taken_date, str(item["target_path_key"])
-
-
-def adjacent_items_from_list(items: list[Any], item: Any) -> tuple[Any | None, Any | None]:
-    index = next((idx for idx, candidate in enumerate(items) if int(candidate["id"]) == int(item["id"])), -1)
-    if index < 0:
-        return None, None
-    previous_item = items[index - 1] if index > 0 else None
-    next_item = items[index + 1] if index < len(items) - 1 else None
-    return previous_item, next_item
+    return adjacent_unfiltered_source_items(target, item)
 
 
 def browser_month_keys(target: Path) -> list[str]:
