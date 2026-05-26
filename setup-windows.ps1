@@ -89,6 +89,12 @@ function ConvertTo-AbsolutePath {
     return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
 }
 
+function Remove-LegacyPythonMetadata {
+    param([string]$RepoDir)
+
+    Remove-Item -LiteralPath (Join-Path $RepoDir "bilder.egg-info") -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function Refresh-ProcessPath {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -246,6 +252,7 @@ function Ensure-Venv {
     Write-Step "Installerer bildebank i Python-miljoet"
     Push-Location $RepoDir
     try {
+        Remove-LegacyPythonMetadata -RepoDir $RepoDir
         Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "pip", "install", "-e", ".")
     } finally {
         Pop-Location

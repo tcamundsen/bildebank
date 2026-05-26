@@ -23,6 +23,12 @@ function Invoke-Native {
     }
 }
 
+function Remove-LegacyPythonMetadata {
+    param([string]$RepoDir)
+
+    Remove-Item -LiteralPath (Join-Path $RepoDir "bilder.egg-info") -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if (-not (Test-Path -LiteralPath (Join-Path $RepoDir ".git"))) {
     throw "Fant ikke git-repo: $RepoDir"
 }
@@ -53,6 +59,7 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
 Write-Step "Oppdaterer Python-installasjon"
 Push-Location $RepoDir
 try {
+    Remove-LegacyPythonMetadata -RepoDir $RepoDir
     Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "pip", "install", "-e", ".")
 } finally {
     Pop-Location
