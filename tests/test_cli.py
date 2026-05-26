@@ -68,7 +68,6 @@ from bildebank.server import (
     index_html,
     item_page_html,
     imported_source_browser_source,
-    load_search_embedding_cache,
     markdown_doc_page_html,
     month_page_html,
     OpenClipSearchCache,
@@ -98,6 +97,7 @@ from bildebank.server import (
     sources_page_html,
     undelete_file_from_browser,
 )
+from bildebank.server_search import load_search_embedding_cache
 from bildebank.target_lock import LOCK_FILENAME
 from bildebank.thumbnails import (
     existing_thumbnail_url,
@@ -833,8 +833,8 @@ pretrained = "laion2b_s34b_b79k"
             )
 
             with (
-                patch("bildebank.server.load_text_model", return_value=(object(), object())),
-                patch("bildebank.server.text_embedding", return_value=[1.0, 0.0]),
+                patch("bildebank.server_search.load_text_model", return_value=(object(), object())),
+                patch("bildebank.server_search.text_embedding", return_value=[1.0, 0.0]),
             ):
                 stats = search_server_images(server, query="test", limit=10)
 
@@ -877,9 +877,9 @@ pretrained = "laion2b_s34b_b79k"
             )
 
             with (
-                patch("bildebank.server.load_text_model", return_value=(object(), object())),
-                patch("bildebank.server.text_embedding", return_value=[1.0, 0.0]),
-                patch("bildebank.server.load_search_embedding_cache", wraps=load_search_embedding_cache) as load_cache,
+                patch("bildebank.server_search.load_text_model", return_value=(object(), object())),
+                patch("bildebank.server_search.text_embedding", return_value=[1.0, 0.0]),
+                patch("bildebank.server_search.load_search_embedding_cache", wraps=load_search_embedding_cache) as load_cache,
             ):
                 first = search_server_images(server, query="test", limit=1)
                 second = search_server_images(server, query="test igjen", limit=1)
@@ -914,9 +914,9 @@ pretrained = "laion2b_s34b_b79k"
             )
 
             with (
-                patch("bildebank.server.load_text_model", return_value=(object(), object())),
-                patch("bildebank.server.text_embedding", return_value=[0.0, 1.0]),
-                patch("bildebank.server.load_search_embedding_cache", wraps=load_search_embedding_cache) as load_cache,
+                patch("bildebank.server_search.load_text_model", return_value=(object(), object())),
+                patch("bildebank.server_search.text_embedding", return_value=[0.0, 1.0]),
+                patch("bildebank.server_search.load_search_embedding_cache", wraps=load_search_embedding_cache) as load_cache,
             ):
                 first = search_server_images(server, query="test", limit=10)
                 conn = connect_openclip_db(target)
@@ -977,8 +977,8 @@ pretrained = "laion2b_s34b_b79k"
             )
 
             with (
-                patch("bildebank.server.load_text_model", return_value=(object(), object())),
-                patch("bildebank.server.text_embedding", return_value=[1.0, 0.0]),
+                patch("bildebank.server_search.load_text_model", return_value=(object(), object())),
+                patch("bildebank.server_search.text_embedding", return_value=[1.0, 0.0]),
             ):
                 stats = search_server_images(server, query="test", limit=2)
 
