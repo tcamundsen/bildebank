@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import re
 import sqlite3
 import urllib.parse
-import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -266,5 +267,51 @@ def adjacent_sql_filtered_source_items(target: Path, source: BrowserSource, item
             (*params, *order_key),
         ).fetchone()
         return previous_item, next_item
+    finally:
+        conn.close()
+
+
+def valid_month_key(value: str) -> bool:
+    if len(value) != 7 or value[4] != "-":
+        return False
+    year, month = value.split("-", 1)
+    return year.isdigit() and month.isdigit() and 1 <= int(month) <= 12
+
+
+@lru_cache(maxsize=8)
+def cached_browser_month_keys(target_path: str, db_mtime_ns: int) -> tuple[str, ...]:
+    target = Path(target_path)
+    conn = db.connect(target)
+    try:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT substr(target_path, 1, 4) || '-' || substr(target_path, 6, 2) AS month_key
+            FROM files
+            WHERE deleted_at IS NULL
+              AND target_path GLOB '[0-9][0-9][0-9][0-9]/[0-9][0-9]/*'
+            ORDER BY month_key
+            """
+        )
+        return tuple(str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"])))
+    finally:
+        conn.close()
+
+
+def sql_filtered_source_month_keys(target: Path, source: BrowserSource) -> list[str]:
+    where_sql, params = source_sql_filter(source)
+    conn = db.connect(target)
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT DISTINCT substr(target_path, 1, 4) || '-' || substr(target_path, 6, 2) AS month_key
+            FROM files
+            WHERE deleted_at IS NULL
+              AND ({where_sql})
+              AND target_path GLOB '[0-9][0-9][0-9][0-9]/[0-9][0-9]/*'
+            ORDER BY month_key
+            """,
+            params,
+        )
+        return [str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"]))]
     finally:
         conn.close()

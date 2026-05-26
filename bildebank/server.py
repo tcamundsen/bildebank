@@ -52,6 +52,7 @@ from .server_browser import (
     adjacent_sql_filtered_source_items,
     adjacent_unfiltered_source_items,
     all_browser_source,
+    cached_browser_month_keys,
     date_source_browser_source,
     first_sql_filtered_source_item,
     first_unfiltered_source_item,
@@ -65,9 +66,11 @@ from .server_browser import (
     source_item_url,
     source_month_url,
     source_sql_filter,
+    sql_filtered_source_month_keys,
     sql_filtered_source_item_by_id,
     unfiltered_source_item_by_id,
     valid_browser_date_source,
+    valid_month_key,
 )
 from .server_geo import (
     custom_geo_places_admin_html,
@@ -1314,45 +1317,6 @@ def source_month_keys(
     return list(cached_browser_month_keys(str(target.resolve()), mtime_ns))
 
 
-@lru_cache(maxsize=8)
-def cached_browser_month_keys(target_path: str, db_mtime_ns: int) -> tuple[str, ...]:
-    target = Path(target_path)
-    conn = db.connect(target)
-    try:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT substr(target_path, 1, 4) || '-' || substr(target_path, 6, 2) AS month_key
-            FROM files
-            WHERE deleted_at IS NULL
-              AND target_path GLOB '[0-9][0-9][0-9][0-9]/[0-9][0-9]/*'
-            ORDER BY month_key
-            """
-        )
-        return tuple(str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"])))
-    finally:
-        conn.close()
-
-
-def sql_filtered_source_month_keys(target: Path, source: BrowserSource) -> list[str]:
-    where_sql, params = source_sql_filter(source)
-    conn = db.connect(target)
-    try:
-        rows = conn.execute(
-            f"""
-            SELECT DISTINCT substr(target_path, 1, 4) || '-' || substr(target_path, 6, 2) AS month_key
-            FROM files
-            WHERE deleted_at IS NULL
-              AND ({where_sql})
-              AND target_path GLOB '[0-9][0-9][0-9][0-9]/[0-9][0-9]/*'
-            ORDER BY month_key
-            """,
-            params,
-        )
-        return [str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"]))]
-    finally:
-        conn.close()
-
-
 def confirmed_people_for_file(
     target: Path,
     file_id: int,
@@ -2258,13 +2222,6 @@ def browser_month_items(target: Path, month_key: str) -> list[Any]:
         ]
     finally:
         conn.close()
-
-
-def valid_month_key(value: str) -> bool:
-    if len(value) != 7 or value[4] != "-":
-        return False
-    year, month = value.split("-", 1)
-    return year.isdigit() and month.isdigit() and 1 <= int(month) <= 12
 
 
 def index_html(server: BildebankServer, *, message: str = "") -> str:

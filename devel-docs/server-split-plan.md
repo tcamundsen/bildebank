@@ -276,6 +276,8 @@ Notes:
 - Shared browser SQL column/order constants, first-item DB lookups, and direct
   SQL-filtered/unfiltered item-by-id DB lookups have been moved.
 - Adjacent item DB lookups and list-based adjacent helper have been moved.
+- Month-key validation, cached unfiltered month-key lookup, and SQL-filtered
+  month-key lookup have been moved.
 - Browser dispatchers that depend on `source_items()`, month navigation, and
   HTML rendering remain in `server.py` for now.
 
