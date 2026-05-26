@@ -59,7 +59,6 @@ from bildebank.server import (
     empty_source_html,
     face_overlay_content_html,
     geo_area_page_html,
-    geo_component_pixel_coordinates,
     geo_index_page_html,
     geo_map_page_html,
     geo_missing_page_html,
@@ -97,6 +96,7 @@ from bildebank.server import (
     sources_page_html,
     undelete_file_from_browser,
 )
+from bildebank.server_geo import geo_component_pixel_coordinates
 from bildebank.server_search import load_search_embedding_cache
 from bildebank.target_lock import LOCK_FILENAME
 from bildebank.thumbnails import (
