@@ -121,6 +121,10 @@ HELP_COMMAND_GROUPS = (
             ("explain-date", "Forklar hvilken dato Bildebank ville brukt"),
             ("exiftool-install", "Installer ExifTool for GPS og metadata"),
             ("exiftool-metadata-gaps", "Finn metadata Bildebank ikke leser ennå"),
+            ("tag-list", "List tagger eller tagger for én fil"),
+            ("tag-add", "Legg tagg på en importert fil"),
+            ("tag-remove", "Fjern tagg fra en importert fil"),
+            ("tag-files", "List filer med en tagg"),
             ("geo-scan", "Scan GPS-koordinater fra metadata"),
             ("geo-stats", "Vis GPS-status for bildesamlingen"),
             ("geo-areas", "List H3-områder med bilder"),
@@ -343,6 +347,36 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Vis kildefil i tillegg til målfil",
     )
+    tag_list = add_command(
+        subparsers,
+        "tag-list",
+        usage="bildebank tag-list [valg] [fil]",
+        help="List tagger eller tagger for én fil",
+    )
+    tag_list.add_argument("path", metavar="fil", type=Path, nargs="?", help="Importer målfil")
+    tag_add = add_command(
+        subparsers,
+        "tag-add",
+        usage="bildebank tag-add [valg] fil tagg",
+        help="Legg tagg på en importert fil",
+    )
+    tag_add.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    tag_add.add_argument("tag", metavar="tagg", help="Taggnavn")
+    tag_remove = add_command(
+        subparsers,
+        "tag-remove",
+        usage="bildebank tag-remove [valg] fil tagg",
+        help="Fjern tagg fra en importert fil",
+    )
+    tag_remove.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    tag_remove.add_argument("tag", metavar="tagg", help="Taggnavn")
+    tag_files = add_command(
+        subparsers,
+        "tag-files",
+        usage="bildebank tag-files [valg] tagg",
+        help="List filer med en tagg",
+    )
+    tag_files.add_argument("tag", metavar="tagg", help="Taggnavn")
     exiftool_gaps = add_command(
         subparsers,
         "exiftool-metadata-gaps",
@@ -1219,6 +1253,38 @@ def run(args: argparse.Namespace) -> int:
                 print(f"  dato: {row['date_source']}\t{taken_date}")
                 if args.with_source:
                     print(f"  kilde: {row['source_path']}")
+            return 0
+
+        if args.command == "tag-list":
+            if args.path is None:
+                for row in db.tags(conn):
+                    print(f"{row['name']}\t{row['file_count']}")
+                return 0
+            row = resolve_db_file_for_tag_command(conn, target, args.path)
+            for tag in db.tags_for_file(conn, int(row["id"])):
+                print(tag["name"])
+            return 0
+
+        if args.command == "tag-add":
+            row = resolve_db_file_for_tag_command(conn, target, args.path)
+            added = db.tag_file(conn, file_id=int(row["id"]), tag_name=args.tag)
+            conn.commit()
+            action = "La til" if added else "Fantes allerede"
+            print(f"{action}: {db.normalize_tag_name(args.tag)} -> {db.absolute_target_path(target, Path(str(row['target_path'])))}")
+            return 0
+
+        if args.command == "tag-remove":
+            row = resolve_db_file_for_tag_command(conn, target, args.path)
+            removed = db.untag_file(conn, file_id=int(row["id"]), tag_name=args.tag)
+            conn.commit()
+            action = "Fjernet" if removed else "Fant ikke"
+            print(f"{action}: {db.normalize_tag_name(args.tag)} -> {db.absolute_target_path(target, Path(str(row['target_path'])))}")
+            return 0
+
+        if args.command == "tag-files":
+            for row in db.tagged_files(conn, args.tag):
+                taken_date = row["taken_date"] or "-"
+                print(f"{taken_date}\t{db.absolute_target_path(target, Path(str(row['target_path'])))}")
             return 0
 
         if args.command == "exiftool-metadata-gaps":
@@ -2630,6 +2696,16 @@ def resolve_deleted_file_arg(target: Path, path: Path) -> Path:
     if len(relative_path.parts) < 2 or relative_path.parts[0] != "deleted":
         raise ValueError(f"Undelete krever sti under deleted/: {path}")
     return resolved
+
+
+def resolve_db_file_for_tag_command(conn, target: Path, path: Path):
+    resolved = resolve_target_file_arg(target, path)
+    row = db.file_by_target_path(conn, target, resolved)
+    if row is None:
+        raise ValueError(f"Filen finnes ikke i importdatabasen: {resolved}")
+    if row["deleted_at"] is not None:
+        raise ValueError(f"Filen er markert som slettet: {resolved}")
+    return row
 
 
 def relative_collection_path(target: Path, path: Path) -> Path:

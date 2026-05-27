@@ -350,6 +350,15 @@ def sources_page_html(target: Path, *, face_enabled: bool = True, openclip_enabl
     )
 
 
+def tags_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
+    return server_browser.tags_page_html(
+        target,
+        shell_page_html=shell_page_html,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
 def person_not_found_html(
     person_name: str,
     *,

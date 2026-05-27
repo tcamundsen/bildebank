@@ -20,6 +20,7 @@ class BrowserSource:
     show_faces: bool = True
     geo_place_slug: str | None = None
     geo_place_cells: tuple[str, ...] = ()
+    tag_name: str | None = None
 
 
 def person_url(person_name: str, *, show_faces: bool = True) -> str:
@@ -96,6 +97,15 @@ def geo_place_browser_source(place: PredefinedGeoPlace) -> BrowserSource:
     )
 
 
+def tag_browser_source(tag_name: str) -> BrowserSource:
+    name = db.normalize_tag_name(tag_name)
+    return BrowserSource(
+        f"Tagg: {name}",
+        "/tag/" + urllib.parse.quote(name, safe=""),
+        tag_name=name,
+    )
+
+
 def valid_browser_date_source(date_source: str) -> bool:
     return date_source in {"filename", "mtime"}
 
@@ -106,6 +116,7 @@ def is_filtered_source(source: BrowserSource) -> bool:
         or source.date_source is not None
         or source.source_id is not None
         or source.geo_place_slug is not None
+        or source.tag_name is not None
     )
 
 

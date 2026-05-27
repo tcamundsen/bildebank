@@ -68,6 +68,7 @@ from bildebank.server_pages import (
     source_item_page_html,
     source_month_page_html,
     sources_page_html,
+    tags_page_html,
 )
 from bildebank.server_browser import (
     adjacent_browser_items,
@@ -91,6 +92,7 @@ from bildebank.server_browser_sources import (
     date_source_browser_source,
     imported_source_browser_source,
     person_browser_source,
+    tag_browser_source,
 )
 from bildebank.server_faces import cached_person_file_ids, face_overlay_content_html, person_file_ids, person_items
 from bildebank.server_geo import geo_component_pixel_coordinates
@@ -1990,6 +1992,59 @@ model_name = "buffalo_l"
         self.assertIn('href="/source/1">Vis bilder (1)</a>', sources_body)
         self.assertIn("source-a", sources_body)
         self.assertIn("source-b", sources_body)
+
+    def test_tag_cli_and_server_browser(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-a")
+            (source / "IMG_20240203.jpg").write_bytes(b"image-b")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]), 0)
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            item_path = target / str(item["target_path"])
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "tag-add", str(item_path), "Familie"])
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("La til: Familie", stdout)
+            code, stdout, stderr = capture_cli(["--target", str(target), "tag-list"])
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Familie\t1", stdout)
+            code, stdout, stderr = capture_cli(["--target", str(target), "tag-files", "familie"])
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("IMG_20240102.jpg", stdout)
+
+            tag_source = tag_browser_source("familie")
+            tag_item = source_item_by_id(target, tag_source, 1)
+            self.assertIsNotNone(tag_item)
+            self.assertIsNone(source_item_by_id(target, tag_source, 2))
+            item_body = source_item_page_html(
+                target,
+                tag_source,
+                tag_item,
+                *adjacent_source_items(target, tag_source, tag_item),
+                source_month_navigation(target, tag_source, tag_item),
+            )
+            tag_month = source_month_items(target, tag_source, "2024-01")
+            month_body = source_month_page_html(target, tag_source, "2024-01", tag_month)
+            tags_body = tags_page_html(target)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "tag-remove", str(item_path), "familie"])
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Fjernet: familie", stdout)
+            code, stdout, stderr = capture_cli(["--target", str(target), "tag-list"])
+            self.assertEqual(code, 0, stderr)
+            self.assertNotIn("Familie", stdout)
+
+        self.assertIn("Tagg: familie", item_body)
+        self.assertIn('href="/item/1">Alle bilder</a>', item_body)
+        self.assertIn('href="/tag/familie/item/1"', month_body)
+        self.assertEqual(len(tag_month), 1)
+        self.assertIn("<h1>Tagger</h1>", tags_body)
+        self.assertIn('href="/tag/Familie">Vis bilder (1)</a>', tags_body)
 
     def test_run_server_month_navigation_tolerates_foreign_path_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

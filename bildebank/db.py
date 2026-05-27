@@ -213,6 +213,7 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
     )
     create_geo_place_names_schema(conn)
     create_geo_places_schema(conn)
+    create_tags_schema(conn)
     if table_exists(conn, "errors"):
         ensure_column(conn, "errors", "resolved_at", "TEXT")
     if table_exists(conn, "files"):
@@ -477,6 +478,29 @@ def create_geo_places_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_geo_place_cells_slug_position
         ON geo_place_cells(slug, position);
+        """
+    )
+
+
+def create_tags_schema(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS tags (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            name_key TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS file_tags (
+            file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(file_id, tag_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_file_tags_tag_id_file_id
+        ON file_tags(tag_id, file_id);
         """
     )
 
@@ -1844,6 +1868,115 @@ def browser_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
         WHERE deleted_at IS NULL
         ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path
         """
+    )
+
+
+def normalize_tag_name(name: str) -> str:
+    normalized = " ".join(name.strip().split())
+    if not normalized:
+        raise ValueError("Taggnavn kan ikke være tomt.")
+    if len(normalized) > 80:
+        raise ValueError("Taggnavn kan være maks 80 tegn.")
+    return normalized
+
+
+def tag_name_key(name: str) -> str:
+    return normalize_tag_name(name).casefold()
+
+
+def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
+    create_tags_schema(conn)
+    clean_name = normalize_tag_name(name)
+    name_key = clean_name.casefold()
+    row = conn.execute("SELECT id FROM tags WHERE name_key = ?", (name_key,)).fetchone()
+    if row is not None:
+        return int(row["id"])
+    cursor = conn.execute(
+        "INSERT INTO tags(name, name_key) VALUES(?, ?)",
+        (clean_name, name_key),
+    )
+    return int(cursor.lastrowid)
+
+
+def tag_file(conn: sqlite3.Connection, *, file_id: int, tag_name: str) -> bool:
+    create_tags_schema(conn)
+    if conn.execute("SELECT 1 FROM files WHERE id = ?", (file_id,)).fetchone() is None:
+        raise ValueError(f"Filen finnes ikke i importdatabasen: #{file_id}")
+    tag_id = ensure_tag(conn, tag_name)
+    cursor = conn.execute(
+        "INSERT OR IGNORE INTO file_tags(file_id, tag_id) VALUES(?, ?)",
+        (file_id, tag_id),
+    )
+    return cursor.rowcount > 0
+
+
+def untag_file(conn: sqlite3.Connection, *, file_id: int, tag_name: str) -> bool:
+    create_tags_schema(conn)
+    row = conn.execute("SELECT id FROM tags WHERE name_key = ?", (tag_name_key(tag_name),)).fetchone()
+    if row is None:
+        return False
+    cursor = conn.execute(
+        "DELETE FROM file_tags WHERE file_id = ? AND tag_id = ?",
+        (file_id, int(row["id"])),
+    )
+    conn.execute(
+        """
+        DELETE FROM tags
+        WHERE id = ?
+          AND NOT EXISTS (SELECT 1 FROM file_tags WHERE tag_id = ?)
+        """,
+        (int(row["id"]), int(row["id"])),
+    )
+    return cursor.rowcount > 0
+
+
+def tags(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
+    create_tags_schema(conn)
+    return conn.execute(
+        """
+        SELECT tags.id, tags.name, tags.created_at, COUNT(file_tags.file_id) AS file_count
+        FROM tags
+        LEFT JOIN file_tags ON file_tags.tag_id = tags.id
+        GROUP BY tags.id
+        ORDER BY tags.name_key
+        """
+    )
+
+
+def tags_for_file(conn: sqlite3.Connection, file_id: int) -> list[sqlite3.Row]:
+    create_tags_schema(conn)
+    return list(
+        conn.execute(
+            """
+            SELECT tags.id, tags.name, tags.name_key
+            FROM tags
+            JOIN file_tags ON file_tags.tag_id = tags.id
+            WHERE file_tags.file_id = ?
+            ORDER BY tags.name_key
+            """,
+            (file_id,),
+        )
+    )
+
+
+def tagged_files(conn: sqlite3.Connection, tag_name: str) -> list[sqlite3.Row]:
+    create_tags_schema(conn)
+    return list(
+        conn.execute(
+            f"""
+            SELECT files.id, files.target_path, files.target_path_key, files.stored_filename,
+                   files.taken_date, files.date_source, files.size_bytes, files.view_rotation_degrees,
+                   files.gps_lat, files.gps_lon, files.media_width, files.media_height,
+                   files.media_orientation, files.media_metadata_mtime_ns, {H3_FILE_COLUMNS_SQL}
+            FROM files
+            JOIN file_tags ON file_tags.file_id = files.id
+            JOIN tags ON tags.id = file_tags.tag_id
+            WHERE files.deleted_at IS NULL
+              AND tags.name_key = ?
+            ORDER BY {BROWSER_DATE_ORDER_SQL}, files.target_path
+            """,
+            (tag_name_key(tag_name),),
+        )
     )
 
 

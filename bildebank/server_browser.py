@@ -71,7 +71,7 @@ def first_source_item(
 ) -> Any | None:
     if source_has_sql_filter(source):
         return first_sql_filtered_source_item(target, source)
-    if source.person_name is not None or source.source_id is not None:
+    if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
         items = source_items(target, source, face_config)
         return items[0] if items else None
     if not is_filtered_source(source):
@@ -160,7 +160,7 @@ def source_item_by_id(
 ) -> Any | None:
     if source_has_sql_filter(source):
         return sql_filtered_source_item_by_id(target, source, file_id)
-    if source.person_name is not None or source.source_id is not None:
+    if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
         return next((item for item in source_items(target, source, face_config) if int(item["id"]) == file_id), None)
     return unfiltered_source_item_by_id(target, file_id)
 
@@ -258,7 +258,7 @@ def adjacent_source_items(
 ) -> tuple[Any | None, Any | None]:
     if source_has_sql_filter(source):
         return adjacent_sql_filtered_source_items(target, source, item)
-    if source.person_name is not None or source.source_id is not None:
+    if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
         return adjacent_items_from_list(source_items(target, source, face_config), item)
     return adjacent_unfiltered_source_items(target, item)
 
@@ -320,7 +320,7 @@ def source_month_keys(
 ) -> list[str]:
     if source_has_sql_filter(source):
         return sql_filtered_source_month_keys(target, source)
-    if source.person_name is not None or source.source_id is not None:
+    if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
         keys = {month_key_for_item(target, item) for item in source_items(target, source, face_config)}
         return sorted(key for key in keys if valid_month_key(key))
     db_path = db.db_path_for_target(target)
@@ -381,6 +381,14 @@ def imported_source_items(target: Path, source_id: int) -> list[Any]:
                 (source_id,),
             )
         )
+    finally:
+        conn.close()
+
+
+def tagged_items(target: Path, tag_name: str) -> list[Any]:
+    conn = db.connect(target)
+    try:
+        return db.tagged_files(conn, tag_name)
     finally:
         conn.close()
 
@@ -446,6 +454,43 @@ def sources_page_html(
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
     )
+
+
+def tags_page_html(
+    target: Path,
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    conn = db.connect(target)
+    try:
+        rows = list(db.tags(conn))
+    finally:
+        conn.close()
+    items = "\n".join(tag_row_html(row) for row in rows)
+    content = f'<div class="people-table">{items}</div>' if items else '<p class="meta">Ingen tagger registrert.</p>'
+    return shell_page_html(
+        "Tagger",
+        f"""
+        <h1>Tagger</h1>
+        {content}
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def tag_row_html(row: sqlite3.Row) -> str:
+    name = str(row["name"])
+    url = "/tag/" + urllib.parse.quote(name, safe="")
+    return f"""
+    <div class="people-row">
+      <div class="people-name">{html.escape(name)}</div>
+      <a class="person-link" href="{html.escape(url)}">Vis bilder ({int(row["file_count"])})</a>
+      <span class="status">opprettet: {html.escape(str(row["created_at"]))}</span>
+    </div>
+    """
 
 
 def source_row_html(source: sqlite3.Row) -> str:
@@ -703,6 +748,9 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
         rows.append(info_row_html("Kilder", "\n\n".join(sources), multiline=True))
     else:
         rows.append(info_row_html("Kilder", "-"))
+    tags = image_tag_links_html(target, int(item["id"]))
+    if tags:
+        rows.append(info_row_html("Tagger", tags, raw_html=True))
     maps_link = google_maps_link_html(item)
     if maps_link:
         rows.append(info_row_html("Kart", maps_link, raw_html=True))
@@ -710,6 +758,20 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
     if geo_links:
         rows.append(info_row_html("Steder", geo_links, raw_html=True))
     return rows
+
+
+def image_tag_links_html(target: Path, file_id: int) -> str:
+    conn = db.connect(target)
+    try:
+        rows = db.tags_for_file(conn, file_id)
+    finally:
+        conn.close()
+    links = []
+    for row in rows:
+        name = str(row["name"])
+        url = "/tag/" + urllib.parse.quote(name, safe="")
+        links.append(f'<a href="{html.escape(url)}">{html.escape(name)}</a>')
+    return ", ".join(links)
 
 
 def image_date_text(item: Any) -> str:
@@ -1031,6 +1093,8 @@ def source_items(
         return date_source_items(target, source.date_source)
     if source.source_id is not None:
         return imported_source_items(target, source.source_id)
+    if source.tag_name is not None:
+        return tagged_items(target, source.tag_name)
     return all_source_items(target)
 
 
@@ -1091,7 +1155,7 @@ def source_month_items(
 ) -> list[Any]:
     if source_has_sql_filter(source):
         return sql_filtered_source_month_items(target, source, month_key)
-    if source.person_name is not None or source.source_id is not None:
+    if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
         return [
             item
             for item in source_items(target, source, face_config)

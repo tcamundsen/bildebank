@@ -42,6 +42,7 @@ from .server_pages import (
     source_item_page_html,
     source_month_page_html,
     sources_page_html,
+    tags_page_html,
 )
 from .server_browser import (
     adjacent_source_items,
@@ -65,6 +66,7 @@ from .server_browser_sources import (
     person_browser_source,
     person_url,
     source_item_url,
+    tag_browser_source,
     valid_browser_date_source,
 )
 from .server_faces import (
@@ -136,6 +138,15 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     )
                 )
                 return
+            if parsed.path in {"/tags", "/tags/"}:
+                self.respond_html(
+                    tags_page_html(
+                        self.server.target,
+                        face_enabled=self.server.face_enabled,
+                        openclip_enabled=self.server.openclip_enabled,
+                    )
+                )
+                return
             if parsed.path == "/settings":
                 self.respond_html(app_status_page_html(self.server.target, self.server.config))
                 return
@@ -201,6 +212,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path.startswith("/source/"):
                 self.respond_imported_source(parsed.path.removeprefix("/source/"))
+                return
+            if parsed.path.startswith("/tag/"):
+                self.respond_tag(parsed.path.removeprefix("/tag/"))
                 return
             if parsed.path.startswith("/person/"):
                 if not self.server.face_enabled:
@@ -417,6 +431,22 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             raw_value,
             item_not_found_message="Filen finnes ikke for denne kilden.",
             invalid_page_message="Ugyldig kildeside.",
+        )
+
+    def respond_tag(self, raw_path: str) -> None:
+        raw_tag_name, page_mode, raw_value = parse_source_path(raw_path)
+        tag_name = urllib.parse.unquote(raw_tag_name).strip()
+        try:
+            source = tag_browser_source(tag_name)
+        except ValueError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_browser_source(
+            source,
+            page_mode,
+            raw_value,
+            item_not_found_message="Filen finnes ikke for denne taggen.",
+            invalid_page_message="Ugyldig taggside.",
         )
 
     def respond_geo(self, query: str) -> None:
