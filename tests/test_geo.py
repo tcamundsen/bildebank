@@ -26,11 +26,13 @@ from bildebank.geo import (
 from bildebank.media import sha256_file
 from bildebank.server import (
     BildebankRequestHandler,
+    resolve_doc_path,
+)
+from bildebank.server_pages import (
     custom_geo_places_page_html,
     geo_area_page_html,
     geo_index_page_html,
     markdown_doc_page_html,
-    resolve_doc_path,
     source_month_page_html,
 )
 from bildebank.server_browser import (

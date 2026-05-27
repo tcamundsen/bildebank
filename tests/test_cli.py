@@ -44,9 +44,11 @@ from bildebank.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_ta
 from bildebank.server_actions import undelete_file_from_browser
 from bildebank.server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS
 from bildebank.server import (
-    app_status_page_html,
     BildebankServer,
     BildebankRequestHandler,
+)
+from bildebank.server_pages import (
+    app_status_page_html,
     empty_source_html,
     geo_area_page_html,
     geo_index_page_html,
