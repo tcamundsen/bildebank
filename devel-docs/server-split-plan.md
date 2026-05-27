@@ -459,6 +459,8 @@ Notes:
 
 - `SERVER_ASSET_VERSION`, `SERVER_CSS`, and `SERVER_JS` have been moved.
   `server.py` imports the constants directly so existing imports keep working.
+- `page_html` has been moved here as the static asset page wrapper.
+  `server.py` imports it directly so existing imports keep working.
 
 ### `bildebank/server_actions.py`
 
@@ -533,6 +535,25 @@ Notes:
 
 - File path resolution and file reading for `/file/...` have been moved.
   `server.py` keeps endpoint routing and HTTP error/status mapping.
+
+### `bildebank/server_response.py`
+
+Scope:
+
+- Low-level HTTP response helpers used by `BildebankRequestHandler`.
+
+Reason:
+
+- Pure request-handler utility methods.
+- Keeps route methods in `server.py` while moving repeated response-building
+  mechanics out.
+
+Status: started.
+
+Notes:
+
+- HTML/text/JSON/static/bytes response helpers and redirects have been moved
+  to `ServerResponseMixin`, which `BildebankRequestHandler` now inherits.
 
 ## Suggested Order
 
@@ -631,3 +652,7 @@ Notes:
 - done: moved request body/form/JSON/face-person payload parsing helpers to
   `bildebank/server_request.py`; request-handler methods now delegate to
   those helpers.
+- done: moved `page_html` to `bildebank/server_assets.py`; `server.py` imports
+  it directly for compatibility.
+- done: moved low-level response helpers to `bildebank/server_response.py`;
+  `BildebankRequestHandler` now inherits `ServerResponseMixin`.

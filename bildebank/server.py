@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import html
-import json
 import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -99,9 +97,10 @@ from .server_search import (
     ServerSearchStats,
     search_server_images,
 )
+from .server_response import ServerResponseMixin
 from . import server_request
 from .server_request import first_param, nonnegative_int_param, parse_file_id, positive_int_param
-from .server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS
+from .server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS, page_html
 from . import server_shell
 
 
@@ -140,6 +139,9 @@ __all__ = [
     "person_month_navigation",
     "remove_file_from_browser",
     "rotation_buttons_html",
+    "SERVER_ASSET_VERSION",
+    "SERVER_CSS",
+    "SERVER_JS",
     "source_item_media_html",
     "source_items",
     "source_month_item_html",
@@ -165,7 +167,7 @@ class BildebankServer(ThreadingHTTPServer):
         return self.config.openclip.enabled
 
 
-class BildebankRequestHandler(BaseHTTPRequestHandler):
+class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     server: BildebankServer
 
     def do_GET(self) -> None:
@@ -359,36 +361,6 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: Any) -> None:
         return
-
-    def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
-        self.respond_bytes(content.encode("utf-8"), "text/html; charset=utf-8", status=status)
-
-    def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
-        self.respond_bytes(content.encode("utf-8"), "text/plain; charset=utf-8", status=status)
-
-    def respond_json(self, content: dict[str, Any], *, status: HTTPStatus = HTTPStatus.OK) -> None:
-        self.respond_bytes(json.dumps(content).encode("utf-8"), "application/json; charset=utf-8", status=status)
-
-    def respond_static_asset(self, content: str, content_type: str) -> None:
-        encoded = content.encode("utf-8")
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Cache-Control", "public, max-age=3600")
-        self.send_header("Content-Length", str(len(encoded)))
-        self.end_headers()
-        self.wfile.write(encoded)
-
-    def respond_bytes(self, content: bytes, content_type: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(content)))
-        self.end_headers()
-        self.wfile.write(content)
-
-    def redirect(self, location: str) -> None:
-        self.send_response(HTTPStatus.FOUND)
-        self.send_header("Location", location)
-        self.end_headers()
 
     def respond_browser_root(self) -> None:
         source = all_browser_source()
@@ -1446,24 +1418,6 @@ def people_page_html(
 
 def person_month_page_html(target: Path, person_name: str, month_key: str, items: list[Any]) -> str:
     return server_browser.person_month_page_html(target, person_name, month_key, items, page_html=page_html)
-
-
-def page_html(title: str, body: str) -> str:
-    asset_version = urllib.parse.quote(SERVER_ASSET_VERSION, safe="")
-    return f"""<!doctype html>
-<html lang="no">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{html.escape(title)}</title>
-  <link rel="stylesheet" href="/static/server.css?v={asset_version}">
-</head>
-<body>
-{body}
-<script src="/static/server.js?v={asset_version}"></script>
-</body>
-</html>
-"""
 
 
 def run_server(

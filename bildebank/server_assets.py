@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import html
+import urllib.parse
+
 
 SERVER_ASSET_VERSION = "3"
 SERVER_CSS = r"""    :root {
@@ -926,4 +929,22 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     event.preventDefault();
     window.location.href = link.href;
   });
+"""
+
+
+def page_html(title: str, body: str) -> str:
+    asset_version = urllib.parse.quote(SERVER_ASSET_VERSION, safe="")
+    return f"""<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{html.escape(title)}</title>
+  <link rel="stylesheet" href="/static/server.css?v={asset_version}">
+</head>
+<body>
+{body}
+<script src="/static/server.js?v={asset_version}"></script>
+</body>
+</html>
 """
