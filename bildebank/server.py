@@ -54,6 +54,7 @@ from .server_browser import (
     geo_place_browser_source,
     imported_source_browser_source,
     imported_source_by_id,
+    is_image_item,
     person_item_by_id,
     person_browser_source,
     person_month_items,
@@ -69,24 +70,24 @@ from .server_browser import (
     source_month_url,
     valid_browser_date_source,
     valid_month_key,
+    rotation_style_attr,
 )
 from .server_faces import (
     confirmed_people_for_file,
     clear_face_caches,
     faces_button_html,
     faces_overlay_html,
+    face_overlay_content_html,
     people_links_html,
     people_row_html,
     person_by_name,
     person_faces_for_item,
-    person_assignment_buttons_html,
+    person_item_media_html,
     person_item_url_for_face,
     person_rename_dialog_html,
-    registered_people,
     registered_people_rows,
     source_duplicate_confirmed_faces_warning_html,
     unconfirm_face_buttons_html,
-    unconfirmed_faces_for_item,
     unconfirmed_face_count_for_item,
 )
 from .server_geo import (
@@ -1961,38 +1962,6 @@ def person_item_page_html(
     )
 
 
-def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
-    file_id = int(item["id"])
-    target_path = Path(str(item["target_path"]))
-    url = f"/file/{file_id}"
-    name = html.escape(str(item["stored_filename"]))
-    if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
-        return f'<video src="{url}" controls></video>'
-    boxes = "\n".join(person_face_box_html(face) for face in faces)
-    return f"""
-    <div class="person-media"{rotation_style_attr(item)}>
-      <a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>
-      {boxes}
-    </div>
-    """
-
-
-def person_face_box_html(face: dict[str, object]) -> str:
-    if not {"left", "top", "boxWidth", "boxHeight"} <= face.keys():
-        return ""
-    css_class = "person-face-box suggested" if face.get("status") == "forslag" else "person-face-box"
-    title = f'{face.get("status", "")} face-id {face["faceId"]} score {float(face.get("similarity", 0.0)):.3f}'
-    label = f'face-id {face["faceId"]}'
-    return (
-        f'<div class="{css_class}" title="{html.escape(title)}" style="'
-        f'left: {float(face["left"]):.4f}%; '
-        f'top: {float(face["top"]):.4f}%; '
-        f'width: {float(face["boxWidth"]):.4f}%; '
-        f'height: {float(face["boxHeight"]):.4f}%;'
-        f'"><span class="person-face-label">{html.escape(label)}</span></div>'
-    )
-
-
 def nav_button(href: str, label: str, key_nav: str) -> str:
     return f'<a class="nav-button" href="{href}" data-key-nav="{html.escape(key_nav)}">{html.escape(label)}</a>'
 
@@ -2067,41 +2036,9 @@ def delete_button_html(source: BrowserSource, item: Any, previous_item: Any | No
     )
 
 
-def is_image_item(item: Any) -> bool:
-    target_path = Path(str(item["target_path"]))
-    return target_path.suffix.lower().lstrip(".") not in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}
-
-
-def item_view_rotation(item: Any) -> int:
-    try:
-        return db.normalize_view_rotation(item["view_rotation_degrees"])
-    except (KeyError, IndexError):
-        return 0
-
-
-def rotation_style_attr(item: Any) -> str:
-    rotation = item_view_rotation(item)
-    if rotation == 0:
-        return ""
-    return f' style="transform: rotate({rotation}deg);" data-view-rotation="{rotation}"'
-
-
 def image_info_button_html(file_id: int | None) -> str:
     file_attr = f' data-info-item="{file_id}"' if file_id is not None else ""
     return f'<button class="nav-button" type="button" data-open-info{file_attr}>Bildeinfo</button>'
-
-
-def face_overlay_content_html(
-    target: Path,
-    item: Any,
-    face_config: FaceRecognitionConfig | None = None,
-) -> str:
-    faces = unconfirmed_faces_for_item(target, item, face_config)
-    if not faces:
-        return '<p class="empty">Ingen ubekreftede ansikter i bildet.</p>'
-    people = registered_people(target, face_config)
-    image_url = f"/file/{int(item['id'])}"
-    return "\n".join(face_overlay_item_html(item, image_url, face, people) for face in faces)
 
 
 def image_info_overlay_html() -> str:
@@ -2225,38 +2162,6 @@ def info_row_html(label: str, value: str, *, multiline: bool = False, raw_html: 
       <dt>{html.escape(label)}</dt>
       <dd>{escaped_value}</dd>
     </div>
-    """
-
-
-def face_overlay_item_html(item: Any, image_url: str, face: dict[str, object], people: list[dict[str, str]]) -> str:
-    face_id = int(face["faceId"])
-    people_buttons = person_assignment_buttons_html(face_id, people)
-    box = ""
-    if {"left", "top", "boxWidth", "boxHeight"} <= face.keys():
-        box = (
-            '<div class="face-box" style="'
-            f'left: {float(face["left"]):.4f}%; '
-            f'top: {float(face["top"]):.4f}%; '
-            f'width: {float(face["boxWidth"]):.4f}%; '
-            f'height: {float(face["boxHeight"]):.4f}%;'
-            '"></div>'
-        )
-    return f"""
-    <section class="face-detail" data-face-detail="{face_id}">
-      <div class="face-detail-title">face-id {face_id}, deteksjon {float(face["score"]):.3f}</div>
-      <div class="lightbox-media"{rotation_style_attr(item)}>
-        <img src="{html.escape(image_url)}" alt="">
-        {box}
-      </div>
-      <div class="assign-row">{people_buttons}</div>
-      <form class="new-person-form" data-new-person-form>
-        <input type="hidden" name="face_id" value="{face_id}">
-        <label for="new-person-{face_id}">Ny person</label>
-        <input id="new-person-{face_id}" name="person_name" autocomplete="off">
-        <button type="submit">Identifiser</button>
-      </form>
-      <div class="assign-status" aria-live="polite"></div>
-    </section>
     """
 
 

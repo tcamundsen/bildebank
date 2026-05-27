@@ -359,8 +359,9 @@ Notes:
   clearing, duplicate confirmed-face warning helpers, unconfirm buttons,
   people links, face overlay shell, assignment buttons, people rows, and person
   rename dialog rendering have been moved.
-- People page shell wrappers and face overlay item rendering remain in
-  `server.py` for now.
+- Person media rendering, person face box rendering, face overlay content, and
+  face overlay item rendering have been moved.
+- People page shell wrappers remain in `server.py` for now.
 
 ### `bildebank/server_app.py`
 
@@ -470,3 +471,6 @@ Status: postponed.
 - done: moved additional face/person data and leaf HTML helpers to
   `bildebank/server_faces.py`; `server.py` keeps page shell wrappers and
   shared browser/media composition.
+- done: moved face/person media rendering and face overlay content rendering to
+  `bildebank/server_faces.py`, and generic rotation/media-type helpers to
+  `bildebank/server_browser.py`.

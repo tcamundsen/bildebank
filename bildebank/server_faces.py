@@ -11,7 +11,7 @@ from .config import FaceRecognitionConfig
 from .face import face_db_path, normalize_person_name
 from .html_export import browser_face_items_from_metadata, face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation
-from .server_browser import BrowserSource, items_by_file_ids, person_browser_source, person_item_url, person_url
+from .server_browser import BrowserSource, items_by_file_ids, person_browser_source, person_item_url, person_url, rotation_style_attr
 
 
 def current_face_db_path(target: Path, face_config: FaceRecognitionConfig | None = None) -> Path:
@@ -642,6 +642,83 @@ def person_rename_dialog_html() -> str:
         </div>
       </form>
     </div>
+    """
+
+
+def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
+    file_id = int(item["id"])
+    target_path = Path(str(item["target_path"]))
+    url = f"/file/{file_id}"
+    name = html.escape(str(item["stored_filename"]))
+    if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
+        return f'<video src="{url}" controls></video>'
+    boxes = "\n".join(person_face_box_html(face) for face in faces)
+    return f"""
+    <div class="person-media"{rotation_style_attr(item)}>
+      <a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>
+      {boxes}
+    </div>
+    """
+
+
+def person_face_box_html(face: dict[str, object]) -> str:
+    if not {"left", "top", "boxWidth", "boxHeight"} <= face.keys():
+        return ""
+    css_class = "person-face-box suggested" if face.get("status") == "forslag" else "person-face-box"
+    title = f'{face.get("status", "")} face-id {face["faceId"]} score {float(face.get("similarity", 0.0)):.3f}'
+    label = f'face-id {face["faceId"]}'
+    return (
+        f'<div class="{css_class}" title="{html.escape(title)}" style="'
+        f'left: {float(face["left"]):.4f}%; '
+        f'top: {float(face["top"]):.4f}%; '
+        f'width: {float(face["boxWidth"]):.4f}%; '
+        f'height: {float(face["boxHeight"]):.4f}%;'
+        f'"><span class="person-face-label">{html.escape(label)}</span></div>'
+    )
+
+
+def face_overlay_content_html(
+    target: Path,
+    item: Any,
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
+    faces = unconfirmed_faces_for_item(target, item, face_config)
+    if not faces:
+        return '<p class="empty">Ingen ubekreftede ansikter i bildet.</p>'
+    people = registered_people(target, face_config)
+    image_url = f"/file/{int(item['id'])}"
+    return "\n".join(face_overlay_item_html(item, image_url, face, people) for face in faces)
+
+
+def face_overlay_item_html(item: Any, image_url: str, face: dict[str, object], people: list[dict[str, str]]) -> str:
+    face_id = int(face["faceId"])
+    people_buttons = person_assignment_buttons_html(face_id, people)
+    box = ""
+    if {"left", "top", "boxWidth", "boxHeight"} <= face.keys():
+        box = (
+            '<div class="face-box" style="'
+            f'left: {float(face["left"]):.4f}%; '
+            f'top: {float(face["top"]):.4f}%; '
+            f'width: {float(face["boxWidth"]):.4f}%; '
+            f'height: {float(face["boxHeight"]):.4f}%;'
+            '"></div>'
+        )
+    return f"""
+    <section class="face-detail" data-face-detail="{face_id}">
+      <div class="face-detail-title">face-id {face_id}, deteksjon {float(face["score"]):.3f}</div>
+      <div class="lightbox-media"{rotation_style_attr(item)}>
+        <img src="{html.escape(image_url)}" alt="">
+        {box}
+      </div>
+      <div class="assign-row">{people_buttons}</div>
+      <form class="new-person-form" data-new-person-form>
+        <input type="hidden" name="face_id" value="{face_id}">
+        <label for="new-person-{face_id}">Ny person</label>
+        <input id="new-person-{face_id}" name="person_name" autocomplete="off">
+        <button type="submit">Identifiser</button>
+      </form>
+      <div class="assign-status" aria-live="polite"></div>
+    </section>
     """
 
 

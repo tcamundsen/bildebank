@@ -128,6 +128,25 @@ def source_month_url(source: BrowserSource, month_key: str) -> str:
     return f"/month/{quoted}"
 
 
+def is_image_item(item: Any) -> bool:
+    target_path = Path(str(item["target_path"]))
+    return target_path.suffix.lower().lstrip(".") not in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}
+
+
+def item_view_rotation(item: Any) -> int:
+    try:
+        return db.normalize_view_rotation(item["view_rotation_degrees"])
+    except (KeyError, IndexError):
+        return 0
+
+
+def rotation_style_attr(item: Any) -> str:
+    rotation = item_view_rotation(item)
+    if rotation == 0:
+        return ""
+    return f' style="transform: rotate({rotation}deg);" data-view-rotation="{rotation}"'
+
+
 def first_browser_item(target: Path) -> Any | None:
     return first_source_item(target, all_browser_source())
 
