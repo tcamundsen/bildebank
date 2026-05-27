@@ -399,6 +399,30 @@ Notes:
 - `server.py` keeps thin wrapper functions for app/status pages so
   `server_app.py` does not import `server.py` for `shell_page_html`.
 
+### `bildebank/server_shell.py`
+
+Scope:
+
+- Shared browser top navigation.
+- Shared browser header shell pieces.
+- Browser control/navigation button rendering.
+
+Reason:
+
+- Gives page wrapper modules a common shell helper that does not import
+  `server.py`.
+- Makes later page-wrapper moves smaller because they can import a shared shell
+  module instead of depending on server composition internals.
+
+Status: started.
+
+Notes:
+
+- Browser top links, action links, header/topline rendering, nav buttons, and
+  source controls have been moved.
+- `shell_page_html` remains in `server.py` for now because it calls
+  `page_html`, which still owns static asset wiring.
+
 ### `bildebank/server_actions.py`
 
 Scope:
@@ -474,3 +498,6 @@ Status: postponed.
 - done: moved face/person media rendering and face overlay content rendering to
   `bildebank/server_faces.py`, and generic rotation/media-type helpers to
   `bildebank/server_browser.py`.
+- done: moved shared browser shell/header/control helpers to
+  `bildebank/server_shell.py`; `shell_page_html` remains in `server.py` for
+  static asset composition.
