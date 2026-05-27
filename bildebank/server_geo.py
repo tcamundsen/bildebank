@@ -559,7 +559,8 @@ def geo_area_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
-    from .server_browser import all_browser_source, google_maps_link_html, source_month_item_html
+    from .server_browser import google_maps_link_html, source_month_item_html
+    from .server_browser_sources import all_browser_source
 
     conn = db.connect(target)
     try:
@@ -615,7 +616,8 @@ def geo_missing_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
-    from .server_browser import all_browser_source, source_month_item_html
+    from .server_browser import source_month_item_html
+    from .server_browser_sources import all_browser_source
 
     items = geo_missing_items(target, limit=limit, offset=offset)
     cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)

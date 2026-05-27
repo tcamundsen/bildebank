@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 from typing import Any, Callable
 
-from .server_browser import (
+from .server_browser_sources import (
     BrowserSource,
     all_browser_source,
     person_browser_source,

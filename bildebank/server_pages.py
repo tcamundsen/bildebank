@@ -6,7 +6,8 @@ from typing import Any
 from .config import AppConfig, FaceRecognitionConfig
 from . import server_app
 from . import server_browser
-from .server_browser import BrowserSource, adjacent_browser_items, browser_month_navigation, first_browser_item
+from .server_browser import adjacent_browser_items, browser_month_navigation, first_browser_item
+from .server_browser_sources import BrowserSource
 from . import server_faces
 from . import server_geo
 from .server_geo import DEFAULT_GEO_LIMIT, DEFAULT_GEO_MIN_COUNT, DEFAULT_GEO_RESOLUTION

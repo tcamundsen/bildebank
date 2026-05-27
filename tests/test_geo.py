@@ -37,12 +37,11 @@ from bildebank.server_pages import (
 )
 from bildebank.server_browser import (
     adjacent_source_items,
-    geo_place_browser_source,
     source_item_by_id,
-    source_item_url,
     source_month_items,
     source_month_navigation,
 )
+from bildebank.server_browser_sources import geo_place_browser_source, source_item_url
 from bildebank.server_geo import geo_place_by_slug, geo_place_cells_by_column, geo_place_items
 from bildebank.server_markdown import markdown_to_html
 

@@ -44,26 +44,28 @@ from .server_pages import (
     sources_page_html,
 )
 from .server_browser import (
-    BrowserSource,
     adjacent_source_items,
-    all_browser_source,
     browser_item_by_id,
-    date_source_browser_source,
     first_source_item,
-    geo_place_browser_source,
     image_info_content_html,
-    imported_source_browser_source,
     imported_source_by_id,
-    person_browser_source,
-    person_url,
-    parse_person_path,
-    parse_source_path,
     source_item_by_id,
-    source_item_url,
     source_month_items,
     source_month_navigation,
-    valid_browser_date_source,
     valid_month_key,
+)
+from .server_browser_sources import (
+    BrowserSource,
+    all_browser_source,
+    date_source_browser_source,
+    geo_place_browser_source,
+    imported_source_browser_source,
+    parse_person_path,
+    parse_source_path,
+    person_browser_source,
+    person_url,
+    source_item_url,
+    valid_browser_date_source,
 )
 from .server_faces import (
     clear_face_caches,
@@ -72,7 +74,7 @@ from .server_faces import (
     person_item_url_for_face,
 )
 from . import server_geo
-from .server_geo import geo_place_by_slug
+from .server_geo import DEFAULT_GEO_LIMIT, DEFAULT_GEO_MIN_COUNT, DEFAULT_GEO_RESOLUTION, geo_place_by_slug
 from . import server_markdown
 from . import server_files
 from .server_search import (
@@ -88,11 +90,6 @@ from .server_assets import SERVER_CSS, SERVER_JS
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
-DEFAULT_GEO_RESOLUTION = 7
-DEFAULT_GEO_MIN_COUNT = 2
-DEFAULT_GEO_LIMIT = 100
-
-
 class BildebankServer(ThreadingHTTPServer):
     def __init__(self, address: tuple[str, int], target: Path, config: AppConfig) -> None:
         super().__init__(address, BildebankRequestHandler)

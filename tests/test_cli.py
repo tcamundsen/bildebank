@@ -73,15 +73,11 @@ from bildebank.server_browser import (
     adjacent_browser_items,
     adjacent_person_items,
     adjacent_source_items,
-    all_browser_source,
     browser_item_by_id,
     browser_month_items,
     browser_month_navigation,
     date_source_text,
-    date_source_browser_source,
-    imported_source_browser_source,
     image_info_content_html,
-    person_browser_source,
     person_item_by_id,
     person_month_items,
     person_month_navigation,
@@ -89,6 +85,12 @@ from bildebank.server_browser import (
     source_month_items,
     source_month_navigation,
     source_summary_rows,
+)
+from bildebank.server_browser_sources import (
+    all_browser_source,
+    date_source_browser_source,
+    imported_source_browser_source,
+    person_browser_source,
 )
 from bildebank.server_faces import cached_person_file_ids, face_overlay_content_html, person_file_ids, person_items
 from bildebank.server_geo import geo_component_pixel_coordinates

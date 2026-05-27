@@ -11,7 +11,8 @@ from .config import FaceRecognitionConfig
 from .face import face_db_path, normalize_person_name
 from .html_export import browser_face_items_from_metadata, face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation
-from .server_browser import BrowserSource, items_by_file_ids, person_browser_source, person_item_url, person_url, rotation_style_attr
+from .server_browser import items_by_file_ids, rotation_style_attr
+from .server_browser_sources import BrowserSource, person_browser_source, person_item_url, person_url
 
 
 ShellPageRenderer = Callable[..., str]
