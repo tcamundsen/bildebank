@@ -6,7 +6,7 @@ import sqlite3
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import db
 from .geo import (
@@ -18,6 +18,11 @@ from .geo import (
     h3_resolution_label,
     predefined_geo_place,
 )
+
+DEFAULT_GEO_RESOLUTION = 7
+DEFAULT_GEO_MIN_COUNT = 2
+DEFAULT_GEO_LIMIT = 100
+ShellPageRenderer = Callable[..., str]
 
 
 @dataclass(frozen=True)
@@ -405,6 +410,242 @@ def custom_geo_place_edit_html(place: PredefinedGeoPlace) -> str:
       </div>
     </details>
     """
+
+
+def geo_index_page_html(
+    target: Path,
+    *,
+    shell_page_html: ShellPageRenderer,
+    resolution: int = DEFAULT_GEO_RESOLUTION,
+    min_count: int = DEFAULT_GEO_MIN_COUNT,
+    limit: int = DEFAULT_GEO_LIMIT,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    column = h3_column_for_resolution(resolution)
+    conn = db.connect(target)
+    try:
+        stats = db.geo_stats(conn)
+        areas = db.geo_areas(conn, column=column, min_count=min_count, limit=limit)
+        geo_places = geo_place_rows(conn)
+    finally:
+        conn.close()
+    area_links = "\n".join(geo_area_row_html(row, resolution=resolution) for row in areas)
+    content = (
+        f'<div class="geo-list">{area_links}</div>'
+        if area_links
+        else '<p class="meta">Ingen steder med nok bilder. Kjør bildebank geo-scan, eller senk min_count.</p>'
+    )
+    return shell_page_html(
+        "Steder",
+        f"""
+        <nav class="subnav">
+          <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a>
+          <a href="/geo/stats">Geo-statistikk</a>
+          <a href="/geo/missing">Bilder uten GPS</a>
+          <a href="/help/web/steder">Hjelp</a>
+        </nav>
+        <h2>Statistikk over bilder med GPS-posisjon</h2>
+        {geo_stats_summary_html(stats)}
+        <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
+        {geo_places_section_html(geo_places)}
+        <h2>H3-heksagoner - Tom Cato-eksperiment. Bare overse</h2>
+        {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
+        <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder. {len(areas)} steder funnet.</p>
+        {content}
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def custom_geo_places_page_html(
+    target: Path,
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    conn = db.connect(target)
+    try:
+        places = custom_geo_places(conn)
+    finally:
+        conn.close()
+    return shell_page_html(
+        "Egendefinerte steder",
+        f"""
+        <nav class="subnav">
+          <a href="/geo">Steder</a>
+          <a href="/help/web/egendefinerte-steder.md">Hjelp</a>
+        </nav>
+        <h1>Egne steder</h1>
+        {custom_geo_places_admin_html(places)}
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def geo_map_page_html(
+    target: Path,
+    *,
+    shell_page_html: ShellPageRenderer,
+    resolution: int = DEFAULT_GEO_RESOLUTION,
+    min_count: int = DEFAULT_GEO_MIN_COUNT,
+    limit: int = DEFAULT_GEO_LIMIT,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    column = h3_column_for_resolution(resolution)
+    conn = db.connect(target)
+    try:
+        areas = db.geo_areas(conn, column=column, min_count=min_count, limit=limit)
+    finally:
+        conn.close()
+    cells = geo_map_layout(areas)
+    content = geo_map_svg_html(cells) if cells else '<p class="meta">Ingen steder med nok bilder. Kjør bildebank geo-scan, eller senk min_count.</p>'
+    return shell_page_html(
+        "Heksagonkart",
+        f"""
+        <nav class="subnav">
+          <a href="/geo?resolution={resolution}&min_count={min_count}&limit={limit}">Steder</a>
+        </nav>
+        <h1>Heksagonkart</h1>
+        {geo_filter_form_html("/geo/map", resolution=resolution, min_count=min_count, limit=limit)}
+        <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Heksagoner som er H3-naboer legges sammen i klynger. Hver klynge orienteres etter faktiske GPS-retninger, men klyngene er ikke plassert med geografisk avstand.</p>
+        {content}
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def geo_stats_page_html(
+    target: Path,
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    conn = db.connect(target)
+    try:
+        stats = db.geo_stats(conn)
+    finally:
+        conn.close()
+    return shell_page_html(
+        "Geo-statistikk",
+        f"""
+        <nav class="subnav">
+          <a href="/geo">Steder</a>
+          <a href="/geo/missing">Bilder uten GPS</a>
+        </nav>
+        <h1>Geo-statistikk</h1>
+        {geo_stats_summary_html(stats)}
+        <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def geo_area_page_html(
+    target: Path,
+    h3_cell: str,
+    *,
+    shell_page_html: ShellPageRenderer,
+    resolution: int,
+    limit: int = DEFAULT_GEO_LIMIT,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    from .server_browser import all_browser_source, google_maps_link_html, source_month_item_html
+
+    conn = db.connect(target)
+    try:
+        place_name = db.geo_place_name(conn, h3_cell)
+    finally:
+        conn.close()
+    items = geo_area_items(target, h3_cell=h3_cell, resolution=resolution, limit=limit)
+    child_areas = geo_child_area_items(target, h3_cell=h3_cell, resolution=resolution)
+    cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
+    content = cards if cards else '<p class="meta">Ingen aktive bilder i dette området.</p>'
+    maps_link = google_maps_link_html(items[0]) if items else ""
+    maps_paragraph = f'<p class="meta">{maps_link}</p>' if maps_link else ""
+    parent_link = geo_parent_area_link_html(target, h3_cell, resolution)
+    quoted = urllib.parse.quote(h3_cell, safe="")
+    title = place_name or "Sted"
+    escaped_name = html.escape(place_name or "")
+    child_area_section = geo_child_areas_section_html(
+        child_areas,
+        resolution=resolution + 1,
+        inherited_name=place_name,
+    )
+    return shell_page_html(
+        f"{title} {h3_cell}",
+        f"""
+        <nav class="subnav"><a href="/geo">Steder</a></nav>
+        <h1>{html.escape(title)}</h1>
+        <p class="meta">H3-celle {html.escape(h3_cell)}, {h3_resolution_label(resolution)}. Viser opptil {limit} bilder.{parent_link}</p>
+        {maps_paragraph}
+        <form action="/geo/place-name" method="post" class="geo-filter geo-name-form">
+          <input type="hidden" name="h3_cell" value="{html.escape(h3_cell)}">
+          <input type="hidden" name="limit" value="{limit}">
+          <label>Stedsnavn <input name="name" value="{escaped_name}" autocomplete="off"></label>
+          <button type="submit">Lagre navn</button>
+        </form>
+        {child_area_section}
+        <form action="/geo/area/{html.escape(quoted)}" method="get" class="geo-filter">
+          <label>Maks bilder <input name="limit" value="{limit}" inputmode="numeric"></label>
+          <button type="submit">Vis</button>
+        </form>
+        <section class="month-grid-server">{content}</section>
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def geo_missing_page_html(
+    target: Path,
+    *,
+    shell_page_html: ShellPageRenderer,
+    limit: int = DEFAULT_GEO_LIMIT,
+    offset: int = 0,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    from .server_browser import all_browser_source, source_month_item_html
+
+    items = geo_missing_items(target, limit=limit, offset=offset)
+    cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
+    previous_offset = max(0, offset - limit)
+    next_offset = offset + limit
+    previous_link = (
+        f'<a class="server-search-link" href="/geo/missing?limit={limit}&offset={previous_offset}">Forrige side</a>'
+        if offset > 0
+        else '<span class="nav-button disabled">Forrige side</span>'
+    )
+    next_link = (
+        f'<a class="server-search-link" href="/geo/missing?limit={limit}&offset={next_offset}">Neste side</a>'
+        if len(items) == limit
+        else '<span class="nav-button disabled">Neste side</span>'
+    )
+    content = cards if cards else '<p class="meta">Ingen aktive bilder mangler GPS.</p>'
+    return shell_page_html(
+        "Bilder uten GPS",
+        f"""
+        <nav class="subnav">
+          <a href="/geo">Steder</a>
+          <a href="/geo/stats">Geo-statistikk</a>
+        </nav>
+        <h1>Bilder uten GPS</h1>
+        <p class="meta">Viser {len(items)} bilder fra offset {offset}.</p>
+        <nav class="controls">{previous_link}{next_link}</nav>
+        <section class="month-grid-server">{content}</section>
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
 
 
 def geo_area_items(target: Path, *, h3_cell: str, resolution: int, limit: int) -> list[Any]:

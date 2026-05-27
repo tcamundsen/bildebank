@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 
+from .config import OpenClipConfig
 from .openclip import (
     ImageSearchResult,
     connect_openclip_db,
@@ -21,6 +22,7 @@ from .openclip import (
 
 
 DEFAULT_SEARCH_LIMIT = 100
+ShellPageRenderer = Any
 
 
 @dataclass(frozen=True)
@@ -209,6 +211,60 @@ def search_server_images(server: Any, *, query: str, limit: int) -> ServerSearch
         raise ValueError("Søketekst kan ikke være tom.")
     results = server.search_cache.search(server.target, clean_query, limit)
     return ServerSearchStats(clean_query, results)
+
+
+def search_start_html(
+    openclip_config: OpenClipConfig,
+    *,
+    shell_page_html: ShellPageRenderer,
+    model_loaded: bool = False,
+    message: str = "",
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    return shell_page_html(
+        "Bildesøk",
+        f"""
+        <h1>Bildesøk</h1>
+        <p class="meta">OpenCLIP {html.escape(openclip_config.model_name)} ({html.escape(openclip_config.pretrained)})</p>
+        {message_html(message)}
+        {search_form("", model_loaded=model_loaded)}
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def search_html(
+    target: Path,
+    stats: ServerSearchStats,
+    limit: int,
+    *,
+    shell_page_html: ShellPageRenderer,
+    model_loaded: bool = False,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    items = "\n".join(result_html(target, result) for result in stats.results)
+    return shell_page_html(
+        f"Bildesøk: {stats.query}",
+        f"""
+        <h1>Bildesøk</h1>
+        {search_form(stats.query, limit, model_loaded=model_loaded)}
+        <p class="meta">{len(stats.results)} treff. Sortert med beste match først. Modell lastet: {'ja' if model_loaded else 'nei'}.</p>
+        <div class="grid">
+          {items}
+        </div>
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def message_html(message: str) -> str:
+    if not message:
+        return ""
+    return f'<p class="message">{html.escape(message)}</p>'
 
 
 def search_form(query: str, limit: int = DEFAULT_SEARCH_LIMIT, *, model_loaded: bool = False) -> str:

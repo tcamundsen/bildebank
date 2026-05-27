@@ -147,8 +147,9 @@ Notes:
 
 - Search cache, embedding-cache loading, scoring, result rendering, and search
   form rendering have been moved.
-- `search_start_html` and `search_html` remain in `server.py` for now because
-  they use `shell_page_html` and server feature flags.
+- `search_start_html` and `search_html` have been moved to
+  `server_search.py`. `server.py` keeps compatibility wrappers that pass
+  target/config/cache state and `shell_page_html` explicitly.
 - Tests that patch OpenCLIP model/search internals should patch
   `bildebank.server_search`.
 
@@ -211,8 +212,9 @@ Notes:
   `geo_place_cells_by_column`, `geo_place_items`, `geo_area_items`,
   `geo_child_area_items`, `geo_missing_items`, and `geo_place_rows` have been
   moved.
-- Geo page rendering remains in `server.py` while `shell_page_html` and shared
-  browser helpers still live there.
+- Geo page rendering has been moved to `server_geo.py`. `server.py` keeps
+  compatibility wrappers that pass `shell_page_html`; geo pages use local
+  imports for shared browser thumbnail/link helpers to avoid circular imports.
 
 ### `bildebank/server_browser.py`
 
@@ -421,10 +423,10 @@ Status: started.
 
 Notes:
 
-- Browser top links, action links, header/topline rendering, nav buttons, and
-  source controls have been moved.
-- `shell_page_html` remains in `server.py` for now because it calls
-  `page_html`, which still owns static asset wiring.
+- Browser top links, action links, header/topline rendering, nav buttons,
+  source controls, and `shell_page_html` have been moved.
+- `server.py` remains the `page_html`/static asset composition root and keeps a
+  thin `shell_page_html` wrapper that injects `page_html`.
 
 ### `bildebank/server_actions.py`
 
@@ -449,14 +451,11 @@ Status: postponed.
 ## Suggested Order
 
 1. Create this plan. Done.
-2. Move markdown/help rendering to `server_markdown.py`. Started: pure
-   markdown helpers moved; page wrapper remains in `server.py`.
-3. Move OpenCLIP search helpers/pages to `server_search.py`. Started: cache,
-   scoring, result rendering, and form rendering moved; page wrappers remain in
-   `server.py`.
+2. Move markdown/help rendering to `server_markdown.py`. Done.
+3. Move OpenCLIP search helpers/pages to `server_search.py`. Done.
 4. Move geo page/render helpers to `server_geo.py`. Started: layout/SVG,
-   page leaf helpers, custom place forms, and geo data helpers moved; page
-   wrappers remain in `server.py`.
+   page leaf helpers, custom place forms, geo data helpers, and page wrappers
+   moved.
 5. Reassess dependencies before moving browser/navigation helpers. Started:
    browser source and URL helpers moved.
 6. Move browser/navigation helpers if the dependency graph is clear. Started:
@@ -469,17 +468,16 @@ Status: postponed.
 
 - done: created initial split plan.
 - done: moved pure markdown rendering helpers to `bildebank/server_markdown.py`.
-- postponed: moving `markdown_doc_page_html`, because it currently depends on
-  `shell_page_html` in `server.py`.
+- done: moved `markdown_doc_page_html` to `bildebank/server_markdown.py`.
 - done: moved OpenCLIP search cache/scoring helpers and result/form rendering
   to `bildebank/server_search.py`.
-- postponed: moving `search_start_html` and `search_html`, because they
-  currently depend on `shell_page_html` and server feature flags in `server.py`.
+- done: moved `search_start_html` and `search_html` to
+  `bildebank/server_search.py`.
 - done: moved geo map layout/orientation/SVG helpers to
   `bildebank/server_geo.py`.
 - done: moved geo page leaf helpers to `bildebank/server_geo.py`.
-- postponed: moving geo page wrappers such as `geo_map_page_html` and
-  `geo_stats_page_html`, because they currently depend on `shell_page_html`.
+- done: moved geo page wrappers such as `geo_map_page_html` and
+  `geo_stats_page_html` to `bildebank/server_geo.py`.
 - done: moved custom geo place HTML helpers to `bildebank/server_geo.py`.
 - done: moved custom geo place data helpers such as `geo_place_rows`,
   `geo_place_by_slug`, and `geo_place_cells_by_column` to
@@ -512,3 +510,9 @@ Status: postponed.
   while keeping `server.py` as the `page_html`/static asset composition root.
 - done: moved `markdown_doc_page_html` to `bildebank/server_markdown.py`;
   `server.py` keeps thin compatibility wrappers for existing imports.
+- done: moved search start/results page wrappers to
+  `bildebank/server_search.py`; `server.py` keeps thin compatibility wrappers.
+- done: moved geo page wrappers such as `geo_index_page_html`,
+  `geo_map_page_html`, `geo_stats_page_html`, `geo_area_page_html`,
+  `geo_missing_page_html`, and `custom_geo_places_page_html` to
+  `bildebank/server_geo.py`; `server.py` keeps thin compatibility wrappers.
