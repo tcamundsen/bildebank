@@ -382,7 +382,15 @@ Likely functions:
 - `module_available`
 - `server_program_repo_root`
 
-Status: pending.
+Status: started.
+
+Notes:
+
+- App/status page rendering, removed-files page rendering, status row helpers,
+  installed-model lookup, module availability, and repository-root lookup have
+  been moved.
+- `server.py` keeps thin wrapper functions for app/status pages so
+  `server_app.py` does not import `server.py` for `shell_page_html`.
 
 ### `bildebank/server_actions.py`
 
@@ -447,3 +455,6 @@ Status: postponed.
 - done: moved browser first/item/adjacent dispatchers, source item list
   dispatching, and month navigation/item helpers to
   `bildebank/server_browser.py`.
+- done: moved app/status and removed-files rendering helpers to
+  `bildebank/server_app.py`; `server.py` keeps thin wrappers for page shell
+  composition.
