@@ -3,7 +3,6 @@ from __future__ import annotations
 import html
 import json
 import mimetypes
-import re
 import shutil
 import urllib.parse
 from dataclasses import replace
@@ -69,7 +68,6 @@ from .server_faces import (
 from . import server_geo
 from .server_geo import (
     geo_place_by_slug,
-    h3_resolution_any,
 )
 from . import server_markdown
 from . import server_search
@@ -1151,75 +1149,23 @@ def parse_file_id(value: str) -> int:
 
 
 def normalize_geo_place_slug(value: str) -> str:
-    slug = re.sub(r"\s+", "_", value.strip().lower())
-    if not slug:
-        raise ValueError("Slug mangler.")
-    if any(char in slug for char in "/?#"):
-        raise ValueError("Slug kan ikke inneholde /, ? eller #.")
-    if len(slug) > 120:
-        raise ValueError("Slug er for lang.")
-    return slug
+    return server_geo.normalize_geo_place_slug(value)
 
 
 def parse_geo_place_cells(value: str) -> list[str]:
-    cells = [cell.strip() for cell in re.split(r"[\s,]+", value) if cell.strip()]
-    clean_cells: list[str] = []
-    seen: set[str] = set()
-    for cell in cells:
-        h3_resolution_any(cell)
-        if cell not in seen:
-            clean_cells.append(cell)
-            seen.add(cell)
-    if not clean_cells:
-        raise ValueError("Stedet må ha minst én H3-celle.")
-    return clean_cells
+    return server_geo.parse_geo_place_cells(value)
 
 
 def resolve_doc_path(raw_doc_path: str) -> Path | None:
-    raw_path = urllib.parse.unquote(raw_doc_path).strip("/")
-    if not raw_path:
-        return None
-    relative = Path(raw_path)
-    if relative.is_absolute() or any(part == ".." for part in relative.parts):
-        return None
-    if relative.suffix != ".md":
-        relative = relative.with_suffix(".md")
-    docs_root = (server_program_repo_root() / "docs").resolve()
-    candidate = (docs_root / relative).resolve()
-    try:
-        candidate.relative_to(docs_root)
-    except ValueError:
-        return None
-    return candidate
+    return server_markdown.resolve_doc_path(raw_doc_path, server_program_repo_root() / "docs")
 
 
 def parse_person_path(raw_path: str) -> tuple[str, str, bool, str | None, str]:
-    person_part, page_mode, raw_value = parse_source_path(raw_path)
-    person_mode = "all"
-    show_faces = True
-    if person_part.endswith("/no-faces"):
-        person_part = person_part.removesuffix("/no-faces")
-        show_faces = False
-    if person_part.endswith("/confirmed"):
-        person_part = person_part.removesuffix("/confirmed")
-        person_mode = "confirmed"
-    elif person_part.endswith("/all"):
-        person_part = person_part.removesuffix("/all")
-        person_mode = "all"
-    return person_part.strip("/"), person_mode, show_faces, page_mode, raw_value
+    return server_browser.parse_person_path(raw_path)
 
 
 def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
-    source_part = raw_path.strip("/")
-    page_mode = None
-    raw_value = ""
-    if "/item/" in source_part:
-        source_part, raw_value = source_part.split("/item/", 1)
-        page_mode = "item"
-    elif "/month/" in source_part:
-        source_part, raw_value = source_part.split("/month/", 1)
-        page_mode = "month"
-    return source_part.strip("/"), page_mode, raw_value
+    return server_browser.parse_source_path(raw_path)
 
 
 def remove_file_from_browser(target: Path, file_id: int) -> Path:

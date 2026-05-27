@@ -51,6 +51,35 @@ def person_url(person_name: str, *, show_faces: bool = True) -> str:
     return url if show_faces else f"{url}/no-faces"
 
 
+def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
+    source_part = raw_path.strip("/")
+    page_mode = None
+    raw_value = ""
+    if "/item/" in source_part:
+        source_part, raw_value = source_part.split("/item/", 1)
+        page_mode = "item"
+    elif "/month/" in source_part:
+        source_part, raw_value = source_part.split("/month/", 1)
+        page_mode = "month"
+    return source_part.strip("/"), page_mode, raw_value
+
+
+def parse_person_path(raw_path: str) -> tuple[str, str, bool, str | None, str]:
+    person_part, page_mode, raw_value = parse_source_path(raw_path)
+    person_mode = "all"
+    show_faces = True
+    if person_part.endswith("/no-faces"):
+        person_part = person_part.removesuffix("/no-faces")
+        show_faces = False
+    if person_part.endswith("/confirmed"):
+        person_part = person_part.removesuffix("/confirmed")
+        person_mode = "confirmed"
+    elif person_part.endswith("/all"):
+        person_part = person_part.removesuffix("/all")
+        person_mode = "all"
+    return person_part.strip("/"), person_mode, show_faces, page_mode, raw_value
+
+
 def person_item_url(person_name: str, file_id: int, *, show_faces: bool = True) -> str:
     return f"{person_url(person_name, show_faces=show_faces)}/item/{file_id}"
 

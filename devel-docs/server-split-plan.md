@@ -113,6 +113,7 @@ Notes:
   `shell_page_html` was moved to `server_shell.py`. `server.py` keeps
   compatibility wrappers for markdown helpers that tests and callers import
   from `bildebank.server`.
+- Help/document path resolution has been moved to `server_markdown.py`.
 
 ### `bildebank/server_search.py`
 
@@ -215,6 +216,7 @@ Notes:
 - Geo page rendering has been moved to `server_geo.py`. `server.py` keeps
   compatibility wrappers that pass `shell_page_html`; geo pages use local
   imports for shared browser thumbnail/link helpers to avoid circular imports.
+- Custom geo place form validation helpers have been moved to `server_geo.py`.
 
 ### `bildebank/server_browser.py`
 
@@ -290,6 +292,7 @@ Notes:
   `server_browser.py`. `server.py` keeps compatibility wrappers that pass in
   `page_html` and `shell_page_html` so static asset composition remains in
   `server.py`.
+- Browser/person source path parsing has been moved to `server_browser.py`.
 
 ### `bildebank/server_faces.py`
 
@@ -521,3 +524,8 @@ Status: postponed.
   `bildebank/server_geo.py`; `server.py` keeps thin compatibility wrappers.
 - done: moved generic error/message HTML helpers to `bildebank/server_shell.py`;
   `server.py` keeps thin compatibility wrappers.
+- done: moved custom geo place slug/cell validation helpers to
+  `bildebank/server_geo.py`.
+- done: moved help/document path resolution to `bildebank/server_markdown.py`.
+- done: moved browser/person source path parsing to
+  `bildebank/server_browser.py`.

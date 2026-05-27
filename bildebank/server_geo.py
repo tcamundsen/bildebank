@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import math
+import re
 import sqlite3
 import urllib.parse
 from dataclasses import dataclass
@@ -715,6 +716,31 @@ def h3_resolution_any(h3_cell: str) -> int:
         return int(h3.get_resolution(h3_cell))
     except Exception as exc:  # noqa: BLE001 - h3 raises library-specific exceptions
         raise ValueError(f"Ugyldig H3-celle: {h3_cell}") from exc
+
+
+def normalize_geo_place_slug(value: str) -> str:
+    slug = re.sub(r"\s+", "_", value.strip().lower())
+    if not slug:
+        raise ValueError("Slug mangler.")
+    if any(char in slug for char in "/?#"):
+        raise ValueError("Slug kan ikke inneholde /, ? eller #.")
+    if len(slug) > 120:
+        raise ValueError("Slug er for lang.")
+    return slug
+
+
+def parse_geo_place_cells(value: str) -> list[str]:
+    cells = [cell.strip() for cell in re.split(r"[\s,]+", value) if cell.strip()]
+    clean_cells: list[str] = []
+    seen: set[str] = set()
+    for cell in cells:
+        h3_resolution_any(cell)
+        if cell not in seen:
+            clean_cells.append(cell)
+            seen.add(cell)
+    if not clean_cells:
+        raise ValueError("Stedet må ha minst én H3-celle.")
+    return clean_cells
 
 
 def geo_child_area_items(target: Path, *, h3_cell: str, resolution: int) -> list[Any]:

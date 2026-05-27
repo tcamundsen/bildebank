@@ -10,6 +10,24 @@ from typing import Callable
 ShellPageRenderer = Callable[..., str]
 
 
+def resolve_doc_path(raw_doc_path: str, docs_root: Path) -> Path | None:
+    raw_path = urllib.parse.unquote(raw_doc_path).strip("/")
+    if not raw_path:
+        return None
+    relative = Path(raw_path)
+    if relative.is_absolute() or any(part == ".." for part in relative.parts):
+        return None
+    if relative.suffix != ".md":
+        relative = relative.with_suffix(".md")
+    clean_docs_root = docs_root.resolve()
+    candidate = (clean_docs_root / relative).resolve()
+    try:
+        candidate.relative_to(clean_docs_root)
+    except ValueError:
+        return None
+    return candidate
+
+
 def markdown_doc_page_html(
     doc_path: Path,
     markdown: str,
