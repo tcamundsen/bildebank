@@ -21,11 +21,19 @@ from . import server_shell
 def index_html(server: Any, *, message: str = "") -> str:
     if message:
         return search_start_html(server, message=message)
-    item = first_browser_item(server.target)
+    item = first_browser_item(server.target, hide_out_of_focus=server.config.browser.hide_out_of_focus)
     if item is None:
         return empty_browser_html(face_enabled=server.face_enabled, openclip_enabled=server.openclip_enabled)
-    previous_item, next_item = adjacent_browser_items(server.target, item)
-    month_nav = browser_month_navigation(server.target, item)
+    previous_item, next_item = adjacent_browser_items(
+        server.target,
+        item,
+        hide_out_of_focus=server.config.browser.hide_out_of_focus,
+    )
+    month_nav = browser_month_navigation(
+        server.target,
+        item,
+        hide_out_of_focus=server.config.browser.hide_out_of_focus,
+    )
     return item_page_html(
         server.target,
         item,
@@ -126,6 +134,7 @@ def geo_area_page_html(
     limit: int = DEFAULT_GEO_LIMIT,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    hide_out_of_focus: bool = False,
 ) -> str:
     return server_geo.geo_area_page_html(
         target,
@@ -135,6 +144,7 @@ def geo_area_page_html(
         limit=limit,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        hide_out_of_focus=hide_out_of_focus,
     )
 
 
@@ -145,6 +155,7 @@ def geo_missing_page_html(
     offset: int = 0,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    hide_out_of_focus: bool = False,
 ) -> str:
     return server_geo.geo_missing_page_html(
         target,
@@ -153,6 +164,7 @@ def geo_missing_page_html(
         offset=offset,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        hide_out_of_focus=hide_out_of_focus,
     )
 
 

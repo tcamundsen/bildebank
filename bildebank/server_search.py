@@ -67,7 +67,14 @@ class OpenClipSearchCache:
                 self._model, self._tokenizer = load_text_model(self.config.openclip)
             return text_embedding(self._model, self._tokenizer, query)
 
-    def search(self, target: Path, query: str, limit: int) -> tuple[ImageSearchResult, ...]:
+    def search(
+        self,
+        target: Path,
+        query: str,
+        limit: int,
+        *,
+        hidden_file_ids: set[int] | None = None,
+    ) -> tuple[ImageSearchResult, ...]:
         with self._lock:
             if self._model is None or self._tokenizer is None:
                 self._model, self._tokenizer = load_text_model(self.config.openclip)
@@ -78,12 +85,16 @@ class OpenClipSearchCache:
                 if embeddings.matrix.size == 0:
                     raise ValueError("Fant ingen bilde-embeddings. Kjør bildebank image-scan først.")
                 scores = search_scores(embeddings.matrix, text_vector)
-                top_indexes = top_score_indexes(scores, limit)
+                hidden_file_ids = hidden_file_ids or set()
+                top_indexes = top_score_indexes(scores, scores.shape[0] if hidden_file_ids else limit)
                 run_id = create_search_run(conn, query, self.config.openclip, limit)
                 results: list[ImageSearchResult] = []
-                for rank, item_index in enumerate(top_indexes, start=1):
+                for item_index in top_indexes:
                     row = embeddings.rows[int(item_index)]
+                    if row.file_id in hidden_file_ids:
+                        continue
                     score = float(scores[int(item_index)])
+                    rank = len(results) + 1
                     conn.execute(
                         """
                         INSERT INTO image_search_results(run_id, file_id, target_path, target_path_key, similarity, rank)
@@ -99,6 +110,8 @@ class OpenClipSearchCache:
                         ),
                     )
                     results.append(ImageSearchResult(rank, row.file_id, row.target_path, score))
+                    if len(results) >= limit:
+                        break
                 conn.commit()
                 return tuple(results)
             finally:
@@ -209,7 +222,12 @@ def search_server_images(server: Any, *, query: str, limit: int) -> ServerSearch
     clean_query = query.strip()
     if not clean_query:
         raise ValueError("Søketekst kan ikke være tom.")
-    results = server.search_cache.search(server.target, clean_query, limit)
+    hidden_file_ids = None
+    if server.config.browser.hide_out_of_focus:
+        from .server_browser import out_of_focus_file_ids
+
+        hidden_file_ids = out_of_focus_file_ids(server.target)
+    results = server.search_cache.search(server.target, clean_query, limit, hidden_file_ids=hidden_file_ids)
     return ServerSearchStats(clean_query, results)
 
 

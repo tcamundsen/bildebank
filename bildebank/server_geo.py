@@ -558,6 +558,7 @@ def geo_area_page_html(
     limit: int = DEFAULT_GEO_LIMIT,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    hide_out_of_focus: bool = False,
 ) -> str:
     from .server_browser import google_maps_link_html, source_month_item_html
     from .server_browser_sources import all_browser_source
@@ -568,6 +569,10 @@ def geo_area_page_html(
     finally:
         conn.close()
     items = geo_area_items(target, h3_cell=h3_cell, resolution=resolution, limit=limit)
+    if hide_out_of_focus:
+        from .server_browser import filter_out_of_focus_items
+
+        items = filter_out_of_focus_items(target, all_browser_source(), items, hide_out_of_focus)
     child_areas = geo_child_area_items(target, h3_cell=h3_cell, resolution=resolution)
     cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
     content = cards if cards else '<p class="meta">Ingen aktive bilder i dette området.</p>'
@@ -615,11 +620,14 @@ def geo_missing_page_html(
     offset: int = 0,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    hide_out_of_focus: bool = False,
 ) -> str:
-    from .server_browser import source_month_item_html
+    from .server_browser import filter_out_of_focus_items, source_month_item_html
     from .server_browser_sources import all_browser_source
 
     items = geo_missing_items(target, limit=limit, offset=offset)
+    if hide_out_of_focus:
+        items = filter_out_of_focus_items(target, all_browser_source(), items, hide_out_of_focus)
     cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
     previous_offset = max(0, offset - limit)
     next_offset = offset + limit

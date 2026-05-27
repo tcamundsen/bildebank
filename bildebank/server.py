@@ -107,6 +107,10 @@ class BildebankServer(ThreadingHTTPServer):
     def openclip_enabled(self) -> bool:
         return self.config.openclip.enabled
 
+    @property
+    def hide_out_of_focus(self) -> bool:
+        return self.config.browser.hide_out_of_focus
+
 
 class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     server: BildebankServer
@@ -266,6 +270,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/settings/face-config":
                 self.respond_set_face_config()
                 return
+            if parsed.path == "/settings/hide-out-of-focus":
+                self.respond_set_hide_out_of_focus()
+                return
             if parsed.path == "/settings/face-model":
                 self.respond_set_face_model()
                 return
@@ -320,7 +327,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
 
     def respond_browser_root(self) -> None:
         source = all_browser_source()
-        item = first_source_item(self.server.target, source)
+        item = first_source_item(self.server.target, source, hide_out_of_focus=self.server.hide_out_of_focus)
         if item is None:
             self.respond_html(
                 empty_browser_html(
@@ -334,12 +341,22 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_item(self, raw_file_id: str) -> None:
         file_id = parse_file_id(raw_file_id)
         source = all_browser_source()
-        item = source_item_by_id(self.server.target, source, file_id)
+        item = source_item_by_id(self.server.target, source, file_id, hide_out_of_focus=self.server.hide_out_of_focus)
         if item is None:
             self.respond_text("Filen finnes ikke i bildesamlingen.", status=HTTPStatus.NOT_FOUND)
             return
-        previous_item, next_item = adjacent_source_items(self.server.target, source, item)
-        month_nav = source_month_navigation(self.server.target, source, item)
+        previous_item, next_item = adjacent_source_items(
+            self.server.target,
+            source,
+            item,
+            hide_out_of_focus=self.server.hide_out_of_focus,
+        )
+        month_nav = source_month_navigation(
+            self.server.target,
+            source,
+            item,
+            hide_out_of_focus=self.server.hide_out_of_focus,
+        )
         self.respond_html(
             source_item_page_html(
                 self.server.target,
@@ -360,7 +377,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
             return
         source = all_browser_source()
-        items = source_month_items(self.server.target, source, month_key)
+        items = source_month_items(self.server.target, source, month_key, hide_out_of_focus=self.server.hide_out_of_focus)
         self.respond_html(
             source_month_page_html(
                 self.server.target,
@@ -397,6 +414,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             page_mode,
             raw_value,
             face_config=self.server.config.face_recognition,
+            hide_out_of_focus=self.server.hide_out_of_focus,
             item_not_found_message="Filen finnes ikke for denne personen.",
             invalid_page_message="Ugyldig personside.",
         )
@@ -412,6 +430,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             source,
             page_mode,
             raw_value,
+            hide_out_of_focus=self.server.hide_out_of_focus,
             item_not_found_message="Filen finnes ikke for denne datokilden.",
             invalid_page_message="Ugyldig datokildeside.",
         )
@@ -432,6 +451,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             source,
             page_mode,
             raw_value,
+            hide_out_of_focus=self.server.hide_out_of_focus,
             item_not_found_message="Filen finnes ikke for denne kilden.",
             invalid_page_message="Ugyldig kildeside.",
         )
@@ -448,6 +468,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             source,
             page_mode,
             raw_value,
+            hide_out_of_focus=self.server.hide_out_of_focus,
             item_not_found_message="Filen finnes ikke for denne taggen.",
             invalid_page_message="Ugyldig taggside.",
         )
@@ -507,6 +528,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 limit=limit,
                 face_enabled=self.server.face_enabled,
                 openclip_enabled=self.server.openclip_enabled,
+                hide_out_of_focus=self.server.hide_out_of_focus,
             )
         )
 
@@ -522,6 +544,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             source,
             page_mode,
             raw_value,
+            hide_out_of_focus=self.server.hide_out_of_focus,
             item_not_found_message="Filen finnes ikke for dette stedet.",
             invalid_page_message="Ugyldig stedsside.",
         )
@@ -535,9 +558,15 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         item_not_found_message: str,
         invalid_page_message: str,
         face_config: FaceRecognitionConfig | None = None,
+        hide_out_of_focus: bool = False,
     ) -> None:
         if page_mode is None:
-            item = first_source_item(self.server.target, source, face_config)
+            item = first_source_item(
+                self.server.target,
+                source,
+                face_config,
+                hide_out_of_focus=hide_out_of_focus,
+            )
             if item is None:
                 if source.person_name is None:
                     self.respond_html(
@@ -554,12 +583,30 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         if page_mode == "item":
             file_id = parse_file_id(raw_value)
-            item = source_item_by_id(self.server.target, source, file_id, face_config)
+            item = source_item_by_id(
+                self.server.target,
+                source,
+                file_id,
+                face_config,
+                hide_out_of_focus=hide_out_of_focus,
+            )
             if item is None:
                 self.respond_text(item_not_found_message, status=HTTPStatus.NOT_FOUND)
                 return
-            previous_item, next_item = adjacent_source_items(self.server.target, source, item, face_config)
-            month_nav = source_month_navigation(self.server.target, source, item, face_config)
+            previous_item, next_item = adjacent_source_items(
+                self.server.target,
+                source,
+                item,
+                face_config,
+                hide_out_of_focus=hide_out_of_focus,
+            )
+            month_nav = source_month_navigation(
+                self.server.target,
+                source,
+                item,
+                face_config,
+                hide_out_of_focus=hide_out_of_focus,
+            )
             self.respond_html(
                 source_item_page_html(
                     self.server.target,
@@ -579,7 +626,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if not valid_month_key(month_key):
                 self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
                 return
-            items = source_month_items(self.server.target, source, month_key, face_config)
+            items = source_month_items(
+                self.server.target,
+                source,
+                month_key,
+                face_config,
+                hide_out_of_focus=hide_out_of_focus,
+            )
             self.respond_html(
                 source_month_page_html(
                     self.server.target,
@@ -605,6 +658,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 offset=offset,
                 face_enabled=self.server.face_enabled,
                 openclip_enabled=self.server.openclip_enabled,
+                hide_out_of_focus=self.server.hide_out_of_focus,
             )
         )
 
@@ -658,6 +712,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         params = server_request.read_form_params(self.headers, self.rfile)
         enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
         self.server.config = server_app.update_face_enabled_config(
+            self.server.config,
+            server_app.server_program_repo_root(),
+            enabled,
+        )
+        self.redirect("/settings")
+
+    def respond_set_hide_out_of_focus(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
+        self.server.config = server_app.update_hide_out_of_focus_config(
             self.server.config,
             server_app.server_program_repo_root(),
             enabled,

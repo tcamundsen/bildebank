@@ -11,6 +11,9 @@ model_root = ".bildebank-insightface"
 database_dir = ".bildebank-faces"
 model_name = "buffalo_l"
 
+[browser]
+hide_out_of_focus = false
+
 [openclip]
 # OpenCLIP brukes til tekstbasert bildesøk, for eksempel "strand".
 # Dette er separat fra ansiktsgjenkjenning.

@@ -30,9 +30,15 @@ class OpenClipConfig:
 
 
 @dataclass(frozen=True)
+class BrowserConfig:
+    hide_out_of_focus: bool = False
+
+
+@dataclass(frozen=True)
 class AppConfig:
     face_recognition: FaceRecognitionConfig = FaceRecognitionConfig()
     openclip: OpenClipConfig = OpenClipConfig()
+    browser: BrowserConfig = BrowserConfig()
 
 
 def load_config(repo_root: Path) -> AppConfig:
@@ -55,6 +61,7 @@ def load_config(repo_root: Path) -> AppConfig:
     openclip_model_root = Path(str(openclip_data.get("model_root", ".bildebank-openclip")))
     if not openclip_model_root.is_absolute():
         openclip_model_root = repo_root / openclip_model_root
+    browser_data = _section(data, "browser")
     return AppConfig(
         face_recognition=FaceRecognitionConfig(
             enabled=bool(face_data.get("enabled", False)),
@@ -70,11 +77,34 @@ def load_config(repo_root: Path) -> AppConfig:
             pretrained=str(openclip_data.get("pretrained", "laion2b_s34b_b79k")),
             device=str(openclip_data.get("device", "auto")),
         ),
+        browser=BrowserConfig(
+            hide_out_of_focus=bool(browser_data.get("hide_out_of_focus", False)),
+        ),
     )
 
 
 def set_face_recognition_enabled(repo_root: Path, enabled: bool) -> Path:
     return set_config_enabled(repo_root, "face_recognition", enabled)
+
+
+def set_browser_hide_out_of_focus(repo_root: Path, enabled: bool) -> Path:
+    config_path = repo_root / CONFIG_FILENAME
+    if not config_path.exists():
+        config_path.write_text(
+            "[browser]\n"
+            f"hide_out_of_focus = {_toml_bool(enabled)}\n",
+            encoding="utf-8",
+        )
+        return config_path
+
+    migrate_legacy_openclip_section(config_path)
+    text = config_path.read_text(encoding="utf-8")
+    _section(tomllib.loads(text), "browser")
+    config_path.write_text(
+        _set_toml_bool(text, section="browser", key="hide_out_of_focus", value=enabled),
+        encoding="utf-8",
+    )
+    return config_path
 
 
 def set_config_enabled(repo_root: Path, section: str, enabled: bool) -> Path:

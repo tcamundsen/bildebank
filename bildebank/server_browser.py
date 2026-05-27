@@ -39,6 +39,16 @@ FILE_COLUMNS = (
 )
 ITEM_DATE_ORDER_SQL = db.BROWSER_DATE_ORDER_SQL
 ITEM_ORDER_SQL = f"{ITEM_DATE_ORDER_SQL}, target_path_key"
+OUT_OF_FOCUS_FILTER_SQL = """
+NOT EXISTS (
+    SELECT 1
+    FROM file_tags hidden_file_tags
+    JOIN tags hidden_tags ON hidden_tags.id = hidden_file_tags.tag_id
+    WHERE hidden_file_tags.file_id = files.id
+      AND hidden_tags.name_key = ?
+)
+"""
+OUT_OF_FOCUS_FILTER_PARAMS = (db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS),)
 
 
 def is_image_item(item: Any) -> bool:
@@ -60,28 +70,31 @@ def rotation_style_attr(item: Any) -> str:
     return f' style="transform: rotate({rotation}deg);" data-view-rotation="{rotation}"'
 
 
-def first_browser_item(target: Path) -> Any | None:
-    return first_source_item(target, all_browser_source())
+def first_browser_item(target: Path, *, hide_out_of_focus: bool = False) -> Any | None:
+    return first_source_item(target, all_browser_source(), hide_out_of_focus=hide_out_of_focus)
 
 
 def first_source_item(
     target: Path,
     source: BrowserSource,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
 ) -> Any | None:
     if source_has_sql_filter(source):
-        return first_sql_filtered_source_item(target, source)
+        return first_sql_filtered_source_item(target, source, hide_out_of_focus=hide_out_of_focus)
     if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
-        items = source_items(target, source, face_config)
+        items = source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
         return items[0] if items else None
     if not is_filtered_source(source):
-        return first_unfiltered_source_item(target)
-    items = source_items(target, source, face_config)
+        return first_unfiltered_source_item(target, hide_out_of_focus=hide_out_of_focus)
+    items = source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
     return items[0] if items else None
 
 
-def first_sql_filtered_source_item(target: Path, source: BrowserSource) -> Any | None:
+def first_sql_filtered_source_item(target: Path, source: BrowserSource, *, hide_out_of_focus: bool = False) -> Any | None:
     where_sql, params = source_sql_filter(source)
+    where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     conn = db.connect(target)
     try:
         return conn.execute(
@@ -99,24 +112,33 @@ def first_sql_filtered_source_item(target: Path, source: BrowserSource) -> Any |
         conn.close()
 
 
-def first_unfiltered_source_item(target: Path) -> Any | None:
+def first_unfiltered_source_item(target: Path, *, hide_out_of_focus: bool = False) -> Any | None:
+    where_sql, params = all_source_where(hide_out_of_focus=hide_out_of_focus)
     conn = db.connect(target)
     try:
         return conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
             FROM files
-            WHERE deleted_at IS NULL
+            WHERE {where_sql}
             ORDER BY {ITEM_ORDER_SQL}
             LIMIT 1
-            """
+            """,
+            params,
         ).fetchone()
     finally:
         conn.close()
 
 
-def sql_filtered_source_item_by_id(target: Path, source: BrowserSource, file_id: int) -> Any | None:
+def sql_filtered_source_item_by_id(
+    target: Path,
+    source: BrowserSource,
+    file_id: int,
+    *,
+    hide_out_of_focus: bool = False,
+) -> Any | None:
     where_sql, params = source_sql_filter(source)
+    where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     conn = db.connect(target)
     try:
         return conn.execute(
@@ -133,23 +155,24 @@ def sql_filtered_source_item_by_id(target: Path, source: BrowserSource, file_id:
         conn.close()
 
 
-def unfiltered_source_item_by_id(target: Path, file_id: int) -> Any | None:
+def unfiltered_source_item_by_id(target: Path, file_id: int, *, hide_out_of_focus: bool = False) -> Any | None:
+    where_sql, params = all_source_where(hide_out_of_focus=hide_out_of_focus)
     conn = db.connect(target)
     try:
         return conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
             FROM files
-            WHERE deleted_at IS NULL AND id = ?
+            WHERE {where_sql} AND id = ?
             """,
-            (file_id,),
+            (*params, file_id),
         ).fetchone()
     finally:
         conn.close()
 
 
-def browser_item_by_id(target: Path, file_id: int) -> Any | None:
-    return source_item_by_id(target, all_browser_source(), file_id)
+def browser_item_by_id(target: Path, file_id: int, *, hide_out_of_focus: bool = False) -> Any | None:
+    return source_item_by_id(target, all_browser_source(), file_id, hide_out_of_focus=hide_out_of_focus)
 
 
 def source_item_by_id(
@@ -157,12 +180,21 @@ def source_item_by_id(
     source: BrowserSource,
     file_id: int,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
 ) -> Any | None:
     if source_has_sql_filter(source):
-        return sql_filtered_source_item_by_id(target, source, file_id)
+        return sql_filtered_source_item_by_id(target, source, file_id, hide_out_of_focus=hide_out_of_focus)
     if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
-        return next((item for item in source_items(target, source, face_config) if int(item["id"]) == file_id), None)
-    return unfiltered_source_item_by_id(target, file_id)
+        return next(
+            (
+                item
+                for item in source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
+                if int(item["id"]) == file_id
+            ),
+            None,
+        )
+    return unfiltered_source_item_by_id(target, file_id, hide_out_of_focus=hide_out_of_focus)
 
 
 def item_order_key(item: Any) -> tuple[str, str]:
@@ -170,6 +202,52 @@ def item_order_key(item: Any) -> tuple[str, str]:
     if not re.match(r"^\d{4}-\d{2}-\d{2}", taken_date):
         taken_date = "9999-99-99"
     return taken_date, str(item["target_path_key"])
+
+
+def should_filter_out_of_focus(source: BrowserSource, hide_out_of_focus: bool) -> bool:
+    return hide_out_of_focus and db.tag_name_key(source.tag_name or "") != db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS)
+
+
+def all_source_where(*, hide_out_of_focus: bool = False) -> tuple[str, tuple[object, ...]]:
+    if not hide_out_of_focus:
+        return "deleted_at IS NULL", ()
+    return f"deleted_at IS NULL AND {OUT_OF_FOCUS_FILTER_SQL}", OUT_OF_FOCUS_FILTER_PARAMS
+
+
+def with_out_of_focus_filter(
+    source: BrowserSource,
+    where_sql: str,
+    params: tuple[object, ...],
+    hide_out_of_focus: bool,
+) -> tuple[str, tuple[object, ...]]:
+    if not should_filter_out_of_focus(source, hide_out_of_focus):
+        return where_sql, params
+    return f"({where_sql}) AND {OUT_OF_FOCUS_FILTER_SQL}", (*params, *OUT_OF_FOCUS_FILTER_PARAMS)
+
+
+def filter_out_of_focus_items(target: Path, source: BrowserSource, items: list[Any], hide_out_of_focus: bool) -> list[Any]:
+    if not should_filter_out_of_focus(source, hide_out_of_focus) or not items:
+        return items
+    hidden_ids = out_of_focus_file_ids(target)
+    return [item for item in items if int(item["id"]) not in hidden_ids]
+
+
+def out_of_focus_file_ids(target: Path) -> set[int]:
+    conn = db.connect(target)
+    try:
+        db.create_tags_schema(conn)
+        rows = conn.execute(
+            """
+            SELECT file_tags.file_id
+            FROM file_tags
+            JOIN tags ON tags.id = file_tags.tag_id
+            WHERE tags.name_key = ?
+            """,
+            OUT_OF_FOCUS_FILTER_PARAMS,
+        )
+        return {int(row["file_id"]) for row in rows}
+    finally:
+        conn.close()
 
 
 def adjacent_items_from_list(items: list[Any], item: Any) -> tuple[Any | None, Any | None]:
@@ -181,39 +259,52 @@ def adjacent_items_from_list(items: list[Any], item: Any) -> tuple[Any | None, A
     return previous_item, next_item
 
 
-def adjacent_unfiltered_source_items(target: Path, item: Any) -> tuple[Any | None, Any | None]:
+def adjacent_unfiltered_source_items(
+    target: Path,
+    item: Any,
+    *,
+    hide_out_of_focus: bool = False,
+) -> tuple[Any | None, Any | None]:
     order_key = item_order_key(item)
+    where_sql, params = all_source_where(hide_out_of_focus=hide_out_of_focus)
     conn = db.connect(target)
     try:
         previous_item = conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
             FROM files
-            WHERE deleted_at IS NULL
+            WHERE {where_sql}
               AND ({ITEM_DATE_ORDER_SQL}, target_path_key) < (?, ?)
             ORDER BY {ITEM_DATE_ORDER_SQL} DESC, target_path_key DESC
             LIMIT 1
             """,
-            order_key,
+            (*params, *order_key),
         ).fetchone()
         next_item = conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
             FROM files
-            WHERE deleted_at IS NULL
+            WHERE {where_sql}
               AND ({ITEM_DATE_ORDER_SQL}, target_path_key) > (?, ?)
             ORDER BY {ITEM_ORDER_SQL}
             LIMIT 1
             """,
-            order_key,
+            (*params, *order_key),
         ).fetchone()
         return previous_item, next_item
     finally:
         conn.close()
 
 
-def adjacent_sql_filtered_source_items(target: Path, source: BrowserSource, item: Any) -> tuple[Any | None, Any | None]:
+def adjacent_sql_filtered_source_items(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    *,
+    hide_out_of_focus: bool = False,
+) -> tuple[Any | None, Any | None]:
     where_sql, params = source_sql_filter(source)
+    where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     order_key = item_order_key(item)
     conn = db.connect(target)
     try:
@@ -246,8 +337,13 @@ def adjacent_sql_filtered_source_items(target: Path, source: BrowserSource, item
         conn.close()
 
 
-def adjacent_browser_items(target: Path, item: Any) -> tuple[Any | None, Any | None]:
-    return adjacent_source_items(target, all_browser_source(), item)
+def adjacent_browser_items(
+    target: Path,
+    item: Any,
+    *,
+    hide_out_of_focus: bool = False,
+) -> tuple[Any | None, Any | None]:
+    return adjacent_source_items(target, all_browser_source(), item, hide_out_of_focus=hide_out_of_focus)
 
 
 def adjacent_source_items(
@@ -255,12 +351,17 @@ def adjacent_source_items(
     source: BrowserSource,
     item: Any,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
 ) -> tuple[Any | None, Any | None]:
     if source_has_sql_filter(source):
-        return adjacent_sql_filtered_source_items(target, source, item)
+        return adjacent_sql_filtered_source_items(target, source, item, hide_out_of_focus=hide_out_of_focus)
     if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
-        return adjacent_items_from_list(source_items(target, source, face_config), item)
-    return adjacent_unfiltered_source_items(target, item)
+        return adjacent_items_from_list(
+            source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus),
+            item,
+        )
+    return adjacent_unfiltered_source_items(target, item, hide_out_of_focus=hide_out_of_focus)
 
 
 def valid_month_key(value: str) -> bool:
@@ -271,26 +372,34 @@ def valid_month_key(value: str) -> bool:
 
 
 @lru_cache(maxsize=8)
-def cached_browser_month_keys(target_path: str, db_mtime_ns: int) -> tuple[str, ...]:
+def cached_browser_month_keys(target_path: str, db_mtime_ns: int, hide_out_of_focus: bool) -> tuple[str, ...]:
     target = Path(target_path)
+    where_sql, params = all_source_where(hide_out_of_focus=hide_out_of_focus)
     conn = db.connect(target)
     try:
         rows = conn.execute(
-            """
+            f"""
             SELECT DISTINCT substr(target_path, 1, 4) || '-' || substr(target_path, 6, 2) AS month_key
             FROM files
-            WHERE deleted_at IS NULL
+            WHERE {where_sql}
               AND target_path GLOB '[0-9][0-9][0-9][0-9]/[0-9][0-9]/*'
             ORDER BY month_key
-            """
+            """,
+            params,
         )
         return tuple(str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"])))
     finally:
         conn.close()
 
 
-def sql_filtered_source_month_keys(target: Path, source: BrowserSource) -> list[str]:
+def sql_filtered_source_month_keys(
+    target: Path,
+    source: BrowserSource,
+    *,
+    hide_out_of_focus: bool = False,
+) -> list[str]:
     where_sql, params = source_sql_filter(source)
+    where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     conn = db.connect(target)
     try:
         rows = conn.execute(
@@ -309,29 +418,35 @@ def sql_filtered_source_month_keys(target: Path, source: BrowserSource) -> list[
         conn.close()
 
 
-def browser_month_keys(target: Path) -> list[str]:
-    return source_month_keys(target, all_browser_source())
+def browser_month_keys(target: Path, *, hide_out_of_focus: bool = False) -> list[str]:
+    return source_month_keys(target, all_browser_source(), hide_out_of_focus=hide_out_of_focus)
 
 
 def source_month_keys(
     target: Path,
     source: BrowserSource,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
 ) -> list[str]:
     if source_has_sql_filter(source):
-        return sql_filtered_source_month_keys(target, source)
+        return sql_filtered_source_month_keys(target, source, hide_out_of_focus=hide_out_of_focus)
     if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
-        keys = {month_key_for_item(target, item) for item in source_items(target, source, face_config)}
+        keys = {
+            month_key_for_item(target, item)
+            for item in source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
+        }
         return sorted(key for key in keys if valid_month_key(key))
     db_path = db.db_path_for_target(target)
     try:
         mtime_ns = db_path.stat().st_mtime_ns
     except OSError:
         mtime_ns = 0
-    return list(cached_browser_month_keys(str(target.resolve()), mtime_ns))
+    return list(cached_browser_month_keys(str(target.resolve()), mtime_ns, hide_out_of_focus))
 
 
-def date_source_items(target: Path, date_source: str) -> list[Any]:
+def date_source_items(target: Path, date_source: str, *, hide_out_of_focus: bool = False) -> list[Any]:
+    where_sql, params = all_source_where(hide_out_of_focus=hide_out_of_focus)
     conn = db.connect(target)
     try:
         return list(
@@ -339,18 +454,20 @@ def date_source_items(target: Path, date_source: str) -> list[Any]:
                 f"""
                 SELECT {FILE_COLUMNS}
                 FROM files
-                WHERE deleted_at IS NULL
+                WHERE {where_sql}
                   AND date_source = ?
                 ORDER BY {ITEM_ORDER_SQL}
                 """,
-                (date_source,),
+                (*params, date_source),
             )
         )
     finally:
         conn.close()
 
 
-def imported_source_items(target: Path, source_id: int) -> list[Any]:
+def imported_source_items(target: Path, source_id: int, *, hide_out_of_focus: bool = False) -> list[Any]:
+    filter_sql = f"AND {OUT_OF_FOCUS_FILTER_SQL}" if hide_out_of_focus else ""
+    filter_params = OUT_OF_FOCUS_FILTER_PARAMS if hide_out_of_focus else ()
     conn = db.connect(target)
     try:
         return list(
@@ -376,9 +493,10 @@ def imported_source_items(target: Path, source_id: int) -> list[Any]:
                 JOIN file_sources ON file_sources.file_id = files.id
                 WHERE files.deleted_at IS NULL
                   AND file_sources.source_id = ?
+                  {filter_sql}
                 ORDER BY {ITEM_ORDER_SQL}
                 """,
-                (source_id,),
+                (source_id, *filter_params),
             )
         )
     finally:
@@ -1039,7 +1157,8 @@ def thumbnail_media_html(target: Path, item: Any) -> str:
     return f'<img src="{html.escape(thumbnail_src)}" alt="{name}" loading="lazy"{rotation_style_attr(item)}>'
 
 
-def all_source_items(target: Path) -> list[Any]:
+def all_source_items(target: Path, *, hide_out_of_focus: bool = False) -> list[Any]:
+    where_sql, params = all_source_where(hide_out_of_focus=hide_out_of_focus)
     conn = db.connect(target)
     try:
         return list(
@@ -1047,19 +1166,21 @@ def all_source_items(target: Path) -> list[Any]:
                 f"""
                 SELECT {FILE_COLUMNS}
                 FROM files
-                WHERE deleted_at IS NULL
+                WHERE {where_sql}
                 ORDER BY {ITEM_ORDER_SQL}
-                """
+                """,
+                params,
             )
         )
     finally:
         conn.close()
 
 
-def items_by_file_ids(target: Path, file_ids: list[int]) -> list[Any]:
+def items_by_file_ids(target: Path, file_ids: list[int], *, hide_out_of_focus: bool = False) -> list[Any]:
     if not file_ids:
         return []
     placeholders = ",".join("?" for _ in file_ids)
+    where_sql, params = all_source_where(hide_out_of_focus=hide_out_of_focus)
     conn = db.connect(target)
     try:
         return list(
@@ -1067,20 +1188,20 @@ def items_by_file_ids(target: Path, file_ids: list[int]) -> list[Any]:
                 f"""
                 SELECT {FILE_COLUMNS}
                 FROM files
-                WHERE deleted_at IS NULL
+                WHERE {where_sql}
                   AND id IN ({placeholders})
                 ORDER BY {ITEM_ORDER_SQL}
                 """,
-                tuple(file_ids),
+                (*params, *file_ids),
             )
         )
     finally:
         conn.close()
 
 
-def browser_month_navigation(target: Path, item: Any) -> dict[str, str | None]:
+def browser_month_navigation(target: Path, item: Any, *, hide_out_of_focus: bool = False) -> dict[str, str | None]:
     current_key = month_key_for_item(target, item)
-    return browser_month_navigation_for_key(target, current_key)
+    return browser_month_navigation_for_key(target, current_key, hide_out_of_focus=hide_out_of_focus)
 
 
 def month_key_for_item(target: Path, item: Any) -> str:
@@ -1102,27 +1223,30 @@ def source_items(
     target: Path,
     source: BrowserSource,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
 ) -> list[Any]:
     if source.person_name is not None:
         from .server_faces import person_items
 
-        return person_items(
+        items = person_items(
             target,
             source.person_name,
             include_suggestions=source.include_suggestions,
             face_config=face_config,
         )
+        return filter_out_of_focus_items(target, source, items, hide_out_of_focus)
     if source.geo_place_slug is not None:
         from .server_geo import geo_place_items
 
-        return geo_place_items(target, source.geo_place_slug)
+        return filter_out_of_focus_items(target, source, geo_place_items(target, source.geo_place_slug), hide_out_of_focus)
     if source.date_source is not None:
-        return date_source_items(target, source.date_source)
+        return date_source_items(target, source.date_source, hide_out_of_focus=hide_out_of_focus)
     if source.source_id is not None:
-        return imported_source_items(target, source.source_id)
+        return imported_source_items(target, source.source_id, hide_out_of_focus=hide_out_of_focus)
     if source.tag_name is not None:
-        return tagged_items(target, source.tag_name)
-    return all_source_items(target)
+        return filter_out_of_focus_items(target, source, tagged_items(target, source.tag_name), hide_out_of_focus)
+    return all_source_items(target, hide_out_of_focus=hide_out_of_focus)
 
 
 def person_item_by_id(target: Path, person_name: str, file_id: int) -> Any | None:
@@ -1142,8 +1266,16 @@ def source_month_navigation(
     source: BrowserSource,
     item: Any,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
 ) -> dict[str, str | None]:
-    return source_month_navigation_for_key(target, source, month_key_for_item(target, item), face_config)
+    return source_month_navigation_for_key(
+        target,
+        source,
+        month_key_for_item(target, item),
+        face_config,
+        hide_out_of_focus=hide_out_of_focus,
+    )
 
 
 def source_month_navigation_for_key(
@@ -1151,10 +1283,12 @@ def source_month_navigation_for_key(
     source: BrowserSource,
     current_key: str,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
 ) -> dict[str, str | None]:
     if not valid_month_key(current_key):
         return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
-    keys = source_month_keys(target, source, face_config)
+    keys = source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
     if not keys:
         return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
     years = sorted({key[:4] for key in keys})
@@ -1179,22 +1313,31 @@ def source_month_items(
     source: BrowserSource,
     month_key: str,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
 ) -> list[Any]:
     if source_has_sql_filter(source):
-        return sql_filtered_source_month_items(target, source, month_key)
+        return sql_filtered_source_month_items(target, source, month_key, hide_out_of_focus=hide_out_of_focus)
     if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
         return [
             item
-            for item in source_items(target, source, face_config)
+            for item in source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
             if month_key_for_item(target, item) == month_key
         ]
-    return browser_month_items(target, month_key)
+    return browser_month_items(target, month_key, hide_out_of_focus=hide_out_of_focus)
 
 
-def sql_filtered_source_month_items(target: Path, source: BrowserSource, month_key: str) -> list[Any]:
+def sql_filtered_source_month_items(
+    target: Path,
+    source: BrowserSource,
+    month_key: str,
+    *,
+    hide_out_of_focus: bool = False,
+) -> list[Any]:
     if not valid_month_key(month_key):
         return []
     where_sql, params = source_sql_filter(source)
+    where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     year, month = month_key.split("-", 1)
     path_glob = f"{year}/{month}/*"
     conn = db.connect(target)
@@ -1216,7 +1359,12 @@ def sql_filtered_source_month_items(target: Path, source: BrowserSource, month_k
         conn.close()
 
 
-def browser_month_navigation_for_key(target: Path, current_key: str) -> dict[str, str | None]:
+def browser_month_navigation_for_key(
+    target: Path,
+    current_key: str,
+    *,
+    hide_out_of_focus: bool = False,
+) -> dict[str, str | None]:
     if not valid_month_key(current_key):
         return {
             "previous_year": None,
@@ -1224,7 +1372,7 @@ def browser_month_navigation_for_key(target: Path, current_key: str) -> dict[str
             "previous_month": None,
             "next_month": None,
         }
-    keys = browser_month_keys(target)
+    keys = browser_month_keys(target, hide_out_of_focus=hide_out_of_focus)
     if not keys:
         return {
             "previous_year": None,
@@ -1253,9 +1401,10 @@ def first_month_in_year(keys: list[str], year: str | None) -> str | None:
     return next((key for key in keys if key.startswith(year)), None)
 
 
-def browser_month_items(target: Path, month_key: str) -> list[Any]:
+def browser_month_items(target: Path, month_key: str, *, hide_out_of_focus: bool = False) -> list[Any]:
     year, month = month_key.split("-", 1)
     prefix = db.relative_path_key(Path(year) / month) + "/"
+    where_sql, params = all_source_where(hide_out_of_focus=hide_out_of_focus)
     conn = db.connect(target)
     try:
         rows = list(
@@ -1263,11 +1412,11 @@ def browser_month_items(target: Path, month_key: str) -> list[Any]:
                 f"""
                 SELECT {FILE_COLUMNS}
                 FROM files
-                WHERE deleted_at IS NULL
+                WHERE {where_sql}
                   AND target_path_key LIKE ?
                 ORDER BY {ITEM_ORDER_SQL}
                 """,
-                (prefix + "%",),
+                (*params, prefix + "%"),
             )
         )
         if rows:
@@ -1278,9 +1427,10 @@ def browser_month_items(target: Path, month_key: str) -> list[Any]:
                 f"""
                 SELECT {FILE_COLUMNS}
                 FROM files
-                WHERE deleted_at IS NULL
+                WHERE {where_sql}
                 ORDER BY {ITEM_ORDER_SQL}
-                """
+                """,
+                params,
             )
             if month_key_from_stored_path(str(row["target_path"])) == month_key
         ]

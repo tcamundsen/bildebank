@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import __version__, db
-from .config import AppConfig, FaceRecognitionConfig, set_face_recognition_enabled, set_face_recognition_model_name
+from .config import (
+    AppConfig,
+    FaceRecognitionConfig,
+    set_browser_hide_out_of_focus,
+    set_face_recognition_enabled,
+    set_face_recognition_model_name,
+)
 from .html_export import format_bytes
 
 
@@ -31,6 +37,7 @@ def app_status_page_html(
     rows = "\n".join(
         (
             app_status_row_html("Bildesamling", str(target)),
+            app_status_hide_out_of_focus_row_html(config.browser.hide_out_of_focus),
             app_status_row_html("Bildebank-versjon", __version__),
             app_status_face_config_row_html(config.face_recognition.enabled, insightface_installed=insightface_installed),
             app_status_face_model_row_html(config.face_recognition),
@@ -99,6 +106,14 @@ def update_face_enabled_config(config: AppConfig, repo_root: Path, enabled: bool
     )
 
 
+def update_hide_out_of_focus_config(config: AppConfig, repo_root: Path, enabled: bool) -> AppConfig:
+    set_browser_hide_out_of_focus(repo_root, enabled)
+    return replace(
+        config,
+        browser=replace(config.browser, hide_out_of_focus=enabled),
+    )
+
+
 def update_face_model_config(config: AppConfig, repo_root: Path, model_name: str) -> AppConfig:
     face_config = config.face_recognition
     installed_models = installed_insightface_models(face_config)
@@ -160,6 +175,26 @@ def app_status_face_config_row_html(enabled: bool, *, insightface_installed: boo
             <span class="app-toggle-status">{status}</span>
           </label>
           {install_note}
+        </form>
+      </dd>
+    </div>
+    """
+
+
+def app_status_hide_out_of_focus_row_html(enabled: bool) -> str:
+    checked = " checked" if enabled else ""
+    status = "På" if enabled else "Av"
+    return f"""
+    <div class="info-row">
+      <dt>Skjul Ute av fokus</dt>
+      <dd>
+        <form action="/settings/hide-out-of-focus" method="post" class="app-toggle-form">
+          <input type="hidden" name="enabled" value="false">
+          <label class="app-toggle">
+            <input type="checkbox" name="enabled" value="true"{checked} onchange="this.form.submit()">
+            <span class="app-toggle-track" aria-hidden="true"><span></span></span>
+            <span class="app-toggle-status">{status}</span>
+          </label>
         </form>
       </dd>
     </div>

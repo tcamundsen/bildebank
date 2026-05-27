@@ -21,7 +21,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bildebank.cli import build_parser, main, print_image_search_progress
-from bildebank.config import AppConfig, FaceRecognitionConfig, OpenClipConfig, load_config
+from bildebank.config import AppConfig, BrowserConfig, FaceRecognitionConfig, OpenClipConfig, load_config
 from bildebank import db
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
@@ -990,6 +990,58 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual([result.file_id for result in stats.results], [1, 2])
         self.assertGreater(stats.results[0].similarity, stats.results[1].similarity)
 
+    def test_run_server_image_search_filters_out_of_focus_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            first_path = target / "2024" / "01" / "a.jpg"
+            second_path = target / "2024" / "01" / "b.jpg"
+            first_path.parent.mkdir(parents=True, exist_ok=True)
+            first_path.write_bytes(b"image-a")
+            second_path.write_bytes(b"image-b")
+            register_target_file(target, Path("2024/01/a.jpg"))
+            register_target_file(target, Path("2024/01/b.jpg"))
+            conn = db.connect(target)
+            try:
+                db.tag_file(conn, file_id=1, tag_name=db.SYSTEM_TAG_OUT_OF_FOCUS)
+                conn.commit()
+            finally:
+                conn.close()
+
+            config = OpenClipConfig()
+            conn = connect_openclip_db(target)
+            try:
+                conn.executemany(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256, model_name, pretrained, embedding
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (1, "2024/01/a.jpg", "2024/01/a.jpg", "sha1", config.model_name, config.pretrained, embedding_blob([1.0, 0.0])),
+                        (2, "2024/01/b.jpg", "2024/01/b.jpg", "sha2", config.model_name, config.pretrained, embedding_blob([0.9, 0.1])),
+                    ],
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            app_config = AppConfig(openclip=config, browser=BrowserConfig(hide_out_of_focus=True))
+            server = SimpleNamespace(
+                target=target,
+                config=app_config,
+                search_cache=OpenClipSearchCache(app_config),
+            )
+
+            with (
+                patch("bildebank.server_search.load_text_model", return_value=(object(), object())),
+                patch("bildebank.server_search.text_embedding", return_value=[1.0, 0.0]),
+            ):
+                stats = search_server_images(server, query="test", limit=2)
+
+        self.assertEqual([result.file_id for result in stats.results], [2])
+
     def test_run_server_image_search_uses_target_path_for_image_url(self) -> None:
         target = Path("/tmp/target")
         server = SimpleNamespace(
@@ -1056,6 +1108,7 @@ pretrained = "laion2b_s34b_b79k"
             config = AppConfig(
                 face_recognition=FaceRecognitionConfig(enabled=True, model_root=model_root, model_name="buffalo_l"),
                 openclip=OpenClipConfig(enabled=True, model_name="Test-Model", pretrained="test-weights", device="cpu"),
+                browser=BrowserConfig(hide_out_of_focus=True),
             )
 
             with (
@@ -1066,6 +1119,10 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("<h1>Innstillinger</h1>", body)
         self.assertIn("Bildebank-versjon", body)
         self.assertIn("Bildesamling", body)
+        self.assertLess(body.index("Bildesamling"), body.index("Skjul Ute av fokus"))
+        self.assertLess(body.index("Skjul Ute av fokus"), body.index("Bildebank-versjon"))
+        self.assertIn('action="/settings/hide-out-of-focus"', body)
+        self.assertIn('<span class="app-toggle-status">På</span>', body)
         self.assertIn(str(target), body)
         self.assertIn("InsightFace aktivert", body)
         self.assertIn('action="/settings/face-config"', body)
@@ -1125,6 +1182,30 @@ pretrained = "laion2b_s34b_b79k"
 
         self.assertTrue(config.face_recognition.enabled)
         self.assertTrue(handler.server.config.face_recognition.enabled)
+        self.assertEqual(handler.location, "/settings")
+
+    def test_run_server_hide_out_of_focus_post_updates_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = b"enabled=false&enabled=true"
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig())
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_hide_out_of_focus(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+
+        self.assertTrue(config.browser.hide_out_of_focus)
+        self.assertTrue(handler.server.config.browser.hide_out_of_focus)
         self.assertEqual(handler.location, "/settings")
 
     def test_run_server_face_model_post_updates_config(self) -> None:
@@ -2147,6 +2228,65 @@ model_name = "buffalo_l"
         self.assertIn('href="/tag/Familie">Vis bilder (1)</a>', tags_body)
         self.assertIn("brukertagg", tags_body)
         self.assertIn("systemtagg", tags_body)
+
+    def test_run_server_hide_out_of_focus_filters_browser_sources_but_not_tag_view(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-a")
+            (source / "IMG_20240103.jpg").write_bytes(b"image-b")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                db.tag_file(conn, file_id=1, tag_name=db.SYSTEM_TAG_OUT_OF_FOCUS)
+                imported = db.find_source_by_name(conn, "source")
+                conn.commit()
+            finally:
+                conn.close()
+            self.assertIsNotNone(imported)
+            imported_source = imported_source_browser_source(imported)
+            tag_source = tag_browser_source(db.SYSTEM_TAG_OUT_OF_FOCUS)
+
+            hidden_browser_item = source_item_by_id(
+                target,
+                all_browser_source(),
+                1,
+                hide_out_of_focus=True,
+            )
+            visible_browser_item = source_item_by_id(
+                target,
+                all_browser_source(),
+                2,
+                hide_out_of_focus=True,
+            )
+            unfiltered_month_items = browser_month_items(target, "2024-01")
+            filtered_month_items = browser_month_items(target, "2024-01", hide_out_of_focus=True)
+            filtered_source_month_items = source_month_items(
+                target,
+                imported_source,
+                "2024-01",
+                hide_out_of_focus=True,
+            )
+            filtered_source_item = source_item_by_id(
+                target,
+                imported_source,
+                1,
+                hide_out_of_focus=True,
+            )
+            tag_item = source_item_by_id(target, tag_source, 1, hide_out_of_focus=True)
+            tag_month_items = source_month_items(target, tag_source, "2024-01", hide_out_of_focus=True)
+
+        self.assertIsNone(hidden_browser_item)
+        self.assertIsNotNone(visible_browser_item)
+        self.assertEqual([int(item["id"]) for item in unfiltered_month_items], [1, 2])
+        self.assertEqual([int(item["id"]) for item in filtered_month_items], [2])
+        self.assertEqual([int(item["id"]) for item in filtered_source_month_items], [2])
+        self.assertIsNone(filtered_source_item)
+        self.assertIsNotNone(tag_item)
+        self.assertEqual([int(item["id"]) for item in tag_month_items], [1])
 
     def test_system_tag_promotes_existing_user_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
