@@ -43,6 +43,30 @@ def shell_page_html(
     )
 
 
+def error_html(
+    exc: Exception,
+    *,
+    shell_page_html: Callable[..., str],
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    return shell_page_html(
+        "Feil",
+        f"""
+        <h1>Feil</h1>
+        <p class="error">{html.escape(str(exc))}</p>
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def message_html(message: str) -> str:
+    if not message:
+        return ""
+    return f'<p class="message">{html.escape(message)}</p>'
+
+
 def source_top_links_html(source: BrowserSource, item: Any | None = None, *, face_enabled: bool = True) -> str:
     links = [
         '<a class="server-search-link" href="/geo">Steder</a>',

@@ -4,7 +4,7 @@ import html
 import sqlite3
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import db
 from .config import FaceRecognitionConfig
@@ -12,6 +12,9 @@ from .face import face_db_path, normalize_person_name
 from .html_export import browser_face_items_from_metadata, face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation
 from .server_browser import BrowserSource, items_by_file_ids, person_browser_source, person_item_url, person_url, rotation_style_attr
+
+
+ShellPageRenderer = Callable[..., str]
 
 
 def current_face_db_path(target: Path, face_config: FaceRecognitionConfig | None = None) -> Path:
@@ -625,6 +628,32 @@ def people_row_html(person: dict[str, object]) -> str:
       <span class="status">forslag: {suggestion_count}</span>
     </div>
     """
+
+
+def people_page_html(
+    target: Path,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    shell_page_html: ShellPageRenderer,
+    openclip_enabled: bool = True,
+) -> str:
+    people = registered_people_rows(target, face_config)
+    rows = "\n".join(people_row_html(person) for person in people)
+    content = (
+        f'<div class="people-table">{rows}</div>'
+        if rows
+        else '<p class="meta">Ingen personer registrert.</p>'
+    )
+    return shell_page_html(
+        "Personer",
+        f"""
+        <h1>Personer</h1>
+        {content}
+        {person_rename_dialog_html()}
+        """,
+        face_enabled=True,
+        openclip_enabled=openclip_enabled,
+    )
 
 
 def person_rename_dialog_html() -> str:

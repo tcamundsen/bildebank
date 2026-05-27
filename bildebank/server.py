@@ -59,14 +59,12 @@ from .server_browser import (
     valid_browser_date_source,
     valid_month_key,
 )
+from . import server_faces
 from .server_faces import (
     clear_face_caches,
     face_overlay_content_html,
-    people_row_html,
     person_by_name,
     person_item_url_for_face,
-    person_rename_dialog_html,
-    registered_people_rows,
 )
 from . import server_geo
 from .server_geo import (
@@ -1456,21 +1454,16 @@ def geo_missing_page_html(
 
 
 def error_html(exc: Exception, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
-    return shell_page_html(
-        "Feil",
-        f"""
-        <h1>Feil</h1>
-        <p class="error">{html.escape(str(exc))}</p>
-        """,
+    return server_shell.error_html(
+        exc,
+        shell_page_html=shell_page_html,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
     )
 
 
 def message_html(message: str) -> str:
-    if not message:
-        return ""
-    return f'<p class="message">{html.escape(message)}</p>'
+    return server_shell.message_html(message)
 
 
 def markdown_doc_title(markdown: str, doc_path: Path) -> str:
@@ -1754,21 +1747,10 @@ def people_page_html(
     *,
     openclip_enabled: bool = True,
 ) -> str:
-    people = registered_people_rows(target, face_config)
-    rows = "\n".join(people_row_html(person) for person in people)
-    content = (
-        f'<div class="people-table">{rows}</div>'
-        if rows
-        else '<p class="meta">Ingen personer registrert.</p>'
-    )
-    return shell_page_html(
-        "Personer",
-        f"""
-        <h1>Personer</h1>
-        {content}
-        {person_rename_dialog_html()}
-        """,
-        face_enabled=True,
+    return server_faces.people_page_html(
+        target,
+        face_config,
+        shell_page_html=shell_page_html,
         openclip_enabled=openclip_enabled,
     )
 

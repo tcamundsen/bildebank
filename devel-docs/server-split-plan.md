@@ -366,7 +366,8 @@ Notes:
   rename dialog rendering have been moved.
 - Person media rendering, person face box rendering, face overlay content, and
   face overlay item rendering have been moved.
-- People page shell wrappers remain in `server.py` for now.
+- People page shell rendering has been moved. `server.py` keeps a thin
+  compatibility wrapper that passes `shell_page_html`.
 
 ### `bildebank/server_app.py`
 
@@ -424,7 +425,8 @@ Status: started.
 Notes:
 
 - Browser top links, action links, header/topline rendering, nav buttons,
-  source controls, and `shell_page_html` have been moved.
+  source controls, `shell_page_html`, and generic error/message rendering have
+  been moved.
 - `server.py` remains the `page_html`/static asset composition root and keeps a
   thin `shell_page_html` wrapper that injects `page_html`.
 
@@ -499,9 +501,10 @@ Status: postponed.
 - done: moved face/person media rendering and face overlay content rendering to
   `bildebank/server_faces.py`, and generic rotation/media-type helpers to
   `bildebank/server_browser.py`.
+- done: moved people page shell rendering to `bildebank/server_faces.py`;
+  `server.py` keeps a thin compatibility wrapper.
 - done: moved shared browser shell/header/control helpers to
-  `bildebank/server_shell.py`; `shell_page_html` remains in `server.py` for
-  static asset composition.
+  `bildebank/server_shell.py`.
 - done: moved browser item pages, month pages, empty browser/source pages, and
   image-info rendering helpers to `bildebank/server_browser.py`; `server.py`
   keeps thin wrappers for the existing public helper API and page/static
@@ -516,3 +519,5 @@ Status: postponed.
   `geo_map_page_html`, `geo_stats_page_html`, `geo_area_page_html`,
   `geo_missing_page_html`, and `custom_geo_places_page_html` to
   `bildebank/server_geo.py`; `server.py` keeps thin compatibility wrappers.
+- done: moved generic error/message HTML helpers to `bildebank/server_shell.py`;
+  `server.py` keeps thin compatibility wrappers.
