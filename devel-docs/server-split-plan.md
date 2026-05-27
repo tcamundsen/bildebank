@@ -284,7 +284,10 @@ Notes:
   source month keys, month navigation, and month item lists have been moved.
 - Imported-source lookup, source summary rows, source row rendering, and
   source overview rendering have been moved.
-- Browser HTML rendering remains in `server.py` for now.
+- Browser item/month/empty-state HTML rendering has been moved to
+  `server_browser.py`. `server.py` keeps compatibility wrappers that pass in
+  `page_html` and `shell_page_html` so static asset composition remains in
+  `server.py`.
 
 ### `bildebank/server_faces.py`
 
@@ -501,3 +504,7 @@ Status: postponed.
 - done: moved shared browser shell/header/control helpers to
   `bildebank/server_shell.py`; `shell_page_html` remains in `server.py` for
   static asset composition.
+- done: moved browser item pages, month pages, empty browser/source pages, and
+  image-info rendering helpers to `bildebank/server_browser.py`; `server.py`
+  keeps thin wrappers for the existing public helper API and page/static
+  composition.

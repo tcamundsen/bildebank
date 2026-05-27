@@ -11,13 +11,17 @@ from typing import Any, Callable
 
 from . import db
 from .config import FaceRecognitionConfig
-from .geo import PredefinedGeoPlace
-from .html_export import month_key_from_path
+from .geo import H3_COLUMNS, PredefinedGeoPlace, h3_area_label
+from .html_export import display_relative_path, format_bytes, month_key_from_path
+from .media import camera_info
+from .media_cache import cached_image_dimensions
 from .openclip import relative_to_target
 from .server_geo import geo_place_cells_by_column
+from .thumbnails import existing_thumbnail_url
 
 
 ShellPageRenderer = Callable[..., str]
+PageRenderer = Callable[[str, str], str]
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
@@ -554,6 +558,487 @@ def source_row_html(source: sqlite3.Row) -> str:
       <div class="detail">{html.escape(str(source["path"]))}</div>
     </div>
     """
+
+
+def empty_browser_html(
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    search_link = '<p><a href="/search">Bildesøk</a></p>' if openclip_enabled else ""
+    return shell_page_html(
+        "Bildebrowser",
+        f"""
+        <h1>Bildebrowser</h1>
+        <p class="meta">Ingen filer i bildesamlingen.</p>
+        {search_link}
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def item_page_html(
+    target: Path,
+    item: Any,
+    previous_item: Any | None,
+    next_item: Any | None,
+    month_nav: dict[str, str | None],
+    *,
+    page_html: PageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
+    return source_item_page_html(
+        target,
+        all_browser_source(),
+        item,
+        previous_item,
+        next_item,
+        month_nav,
+        page_html=page_html,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+        face_config=face_config,
+    )
+
+
+def source_item_page_html(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    previous_item: Any | None,
+    next_item: Any | None,
+    month_nav: dict[str, str | None],
+    *,
+    page_html: PageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
+    from .server_faces import (
+        confirmed_people_for_file,
+        faces_button_html,
+        faces_overlay_html,
+        people_links_html,
+        source_duplicate_confirmed_faces_warning_html,
+        unconfirm_face_buttons_html,
+        unconfirmed_face_count_for_item,
+    )
+    from .server_shell import app_header_html, source_controls_html
+
+    target_path = Path(str(item["target_path"]))
+    relative = display_relative_path(target, target_path)
+    media = source_item_media_html(target, source, item, face_config)
+    controls = source_controls_html(
+        source,
+        month_nav,
+        previous_item,
+        next_item,
+        include_info_button=True,
+        info_button=image_info_button_html(int(item["id"])),
+        rotation_buttons=rotation_buttons_html(source, item),
+        unconfirm_buttons=unconfirm_face_buttons_html(target, source, item, face_config) if face_enabled else "",
+        delete_button=delete_button_html(source, item, previous_item, next_item),
+    )
+    people = people_links_html(confirmed_people_for_file(target, int(item["id"]), face_config)) if face_enabled else ""
+    show_unconfirmed_faces = face_enabled and source.person_name is None
+    unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
+    faces_button = faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
+    faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
+    info_overlay = image_info_overlay_html()
+    duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config) if face_enabled else ""
+    return page_html(
+        f"{source.title}: {target_path.name}",
+        f"""
+        <main class="server-browser">
+          {app_header_html(
+              source.title,
+              source=source,
+              item=item,
+              extra_html=people + faces_button,
+              controls=controls,
+              message_html=duplicate_warning,
+              face_enabled=face_enabled,
+              openclip_enabled=openclip_enabled,
+          )}
+          <section class="stage">{media}</section>
+          <footer class="browser-footer">
+            <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
+          </footer>
+        </main>
+        {faces_overlay}
+        {info_overlay}
+        """,
+    )
+
+
+def source_item_media_html(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
+    if source.person_name is not None:
+        if not source.show_faces:
+            return item_media_html(item)
+        from .server_faces import person_faces_for_item, person_item_media_html
+
+        faces = person_faces_for_item(
+            target,
+            source.person_name,
+            item,
+            include_suggestions=source.include_suggestions,
+            face_config=face_config,
+        )
+        return person_item_media_html(item, faces)
+    return item_media_html(item)
+
+
+def item_media_html(item: Any) -> str:
+    file_id = int(item["id"])
+    target_path = Path(str(item["target_path"]))
+    url = f"/file/{file_id}"
+    name = html.escape(str(item["stored_filename"]))
+    if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
+        return f'<video src="{url}" controls></video>'
+    return f'<a href="{url}" target="_blank"><img src="{url}" alt="{name}"{rotation_style_attr(item)}></a>'
+
+
+def person_item_page_html(
+    target: Path,
+    person_name: str,
+    item: Any,
+    previous_item: Any | None,
+    next_item: Any | None,
+    month_nav: dict[str, str | None],
+    *,
+    page_html: PageRenderer,
+) -> str:
+    return source_item_page_html(
+        target,
+        person_browser_source(person_name, include_suggestions=True),
+        item,
+        previous_item,
+        next_item,
+        month_nav,
+        page_html=page_html,
+    )
+
+
+def rotation_buttons_html(source: BrowserSource, item: Any) -> str:
+    if not is_image_item(item):
+        return ""
+    file_id = int(item["id"])
+    return f"""
+      <button class="nav-button" type="button" data-rotate-item="{file_id}" data-rotate-direction="left">Roter venstre</button>
+      <button class="nav-button" type="button" data-rotate-item="{file_id}" data-rotate-direction="right">Roter høyre</button>
+    """
+
+
+def delete_button_html(source: BrowserSource, item: Any, previous_item: Any | None, next_item: Any | None) -> str:
+    redirect_url = source_item_url(source, int(next_item["id"])) if next_item is not None else ""
+    if not redirect_url and previous_item is not None:
+        redirect_url = source_item_url(source, int(previous_item["id"]))
+    if not redirect_url:
+        redirect_url = source.root_url
+    relative = display_relative_path(Path("."), Path(str(item["target_path"])))
+    return (
+        f'<button class="nav-button danger-button" type="button" '
+        f'data-delete-item="{int(item["id"])}" '
+        f'data-delete-path="{html.escape(relative)}" '
+        f'data-delete-redirect="{html.escape(redirect_url)}">Slett</button>'
+    )
+
+
+def image_info_button_html(file_id: int | None) -> str:
+    file_attr = f' data-info-item="{file_id}"' if file_id is not None else ""
+    return f'<button class="nav-button" type="button" data-open-info{file_attr}>Bildeinfo</button>'
+
+
+def image_info_overlay_html() -> str:
+    return """
+    <div id="infoOverlay" class="info-overlay" hidden>
+      <div class="lightbox-bar">
+        <div class="lightbox-title">Bildeinfo</div>
+        <button class="lightbox-close" type="button" data-close-info>Lukk</button>
+      </div>
+      <div class="info-panel">
+        <h2>Bildeinfo</h2>
+        <dl class="info-list" data-info-list></dl>
+      </div>
+    </div>
+    """
+
+
+def image_info_content_html(target: Path, item: Any) -> str:
+    return "\n".join(image_info_rows(target, item))
+
+
+def image_info_rows(target: Path, item: Any) -> list[str]:
+    target_path = Path(str(item["target_path"]))
+    absolute_path = db.absolute_target_path(target, target_path)
+    dimensions = cached_image_dimensions(target, absolute_path)
+    camera = camera_info(absolute_path)
+    rows = [
+        info_row_html("Filnavn", display_relative_path(target, target_path)),
+        info_row_html("Dato", image_date_text(item)),
+        info_row_html("Filstørrelse", f"{format_bytes(int(item['size_bytes']))} ({int(item['size_bytes'])} bytes)"),
+        info_row_html("Oppløsning", f"{dimensions.width} x {dimensions.height}" if dimensions else "-"),
+        info_row_html("Kamera", camera_text(camera)),
+    ]
+    sources = image_source_rows(target, target_path)
+    if sources:
+        rows.append(info_row_html("Kilder", "\n\n".join(sources), multiline=True))
+    else:
+        rows.append(info_row_html("Kilder", "-"))
+    maps_link = google_maps_link_html(item)
+    if maps_link:
+        rows.append(info_row_html("Kart", maps_link, raw_html=True))
+    geo_links = image_geo_area_links_html(target, item)
+    if geo_links:
+        rows.append(info_row_html("Steder", geo_links, raw_html=True))
+    return rows
+
+
+def image_date_text(item: Any) -> str:
+    taken_date = str(item["taken_date"] or "-")
+    source = str(item["date_source"] or "")
+    return f"{taken_date} ({date_source_text(source)})"
+
+
+def date_source_text(source: str) -> str:
+    labels = {
+        "metadata": "fra metadata",
+        "filename": "fra filnavn",
+        "mtime": "fra mtime",
+        "unknown": "ukjent datokilde",
+    }
+    return labels.get(source, source or "ukjent datokilde")
+
+
+def google_maps_link_html(item: Any) -> str:
+    lat = item["gps_lat"]
+    lon = item["gps_lon"]
+    if lat is None or lon is None:
+        return ""
+    latitude = float(lat)
+    longitude = float(lon)
+    query = urllib.parse.quote(f"{latitude:.7f},{longitude:.7f}", safe=",")
+    url = f"https://www.google.com/maps/search/?api=1&query={query}"
+    label = f"Åpne i Google Maps ({latitude:.7f}, {longitude:.7f})"
+    return f'<a href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
+
+
+def camera_text(camera: Any | None) -> str:
+    if camera is None:
+        return "-"
+    parts = [part for part in (camera.make, camera.model) if part]
+    return " ".join(parts) if parts else "-"
+
+
+def image_source_rows(target: Path, target_path: Path) -> list[str]:
+    conn = db.connect(target)
+    try:
+        rows = db.file_sources_by_target_path(conn, target, db.absolute_target_path(target, target_path))
+    finally:
+        conn.close()
+    result = []
+    for row in rows:
+        source_name = str(row["source_name"] or row["source_root"] or f"Kilde #{row['source_id']}")
+        result.append(f"{source_name}: {row['source_path']}")
+    return result
+
+
+def image_geo_area_links_html(target: Path, item: Any) -> str:
+    conn = db.connect(target)
+    try:
+        links = []
+        for resolution, column in H3_COLUMNS.items():
+            h3_cell = item[column]
+            if not h3_cell:
+                continue
+            place_name = db.geo_place_name(conn, str(h3_cell))
+            label = f"H3-{resolution}: {h3_cell} ({h3_area_label(resolution)})"
+            if place_name:
+                label += f" {place_name}"
+            url = "/geo/area/" + urllib.parse.quote(str(h3_cell), safe="")
+            links.append(f'<a href="{html.escape(url)}">{html.escape(label)}</a>')
+        return "<br>".join(links)
+    finally:
+        conn.close()
+
+
+def info_row_html(label: str, value: str, *, multiline: bool = False, raw_html: bool = False) -> str:
+    escaped_value = value if raw_html else html.escape(value)
+    if multiline and not raw_html:
+        escaped_value = "<br>".join(escaped_value.splitlines())
+    return f"""
+    <div class="info-row">
+      <dt>{html.escape(label)}</dt>
+      <dd>{escaped_value}</dd>
+    </div>
+    """
+
+
+def month_page_html(
+    target: Path,
+    month_key: str,
+    items: list[Any],
+    *,
+    page_html: PageRenderer,
+) -> str:
+    return source_month_page_html(target, all_browser_source(), month_key, items, page_html=page_html)
+
+
+def source_month_page_html(
+    target: Path,
+    source: BrowserSource,
+    month_key: str,
+    items: list[Any],
+    *,
+    page_html: PageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
+    from .server_shell import app_header_html, source_controls_html
+
+    cards = "\n".join(source_month_item_html(target, source, item) for item in items)
+    previous_item = items[-1] if items else None
+    next_item = items[0] if items else None
+    controls = source_controls_html(
+        source,
+        source_month_navigation_for_key(target, source, month_key, face_config),
+        previous_item,
+        next_item,
+    )
+    return page_html(
+        f"{source.title}: {month_key}",
+        f"""
+        <main class="server-browser">
+          {app_header_html(
+              source.title,
+              source=source,
+              extra_html=f'<span class="status">Månedsoversikt: {html.escape(month_key)}</span>',
+              controls=controls,
+              face_enabled=face_enabled,
+              openclip_enabled=openclip_enabled,
+          )}
+          <section class="month-grid-server">{cards}</section>
+          <footer class="browser-footer">
+            <span class="filename">Månedsoversikt: {html.escape(month_key)}</span>
+          </footer>
+        </main>
+        """,
+    )
+
+
+def empty_person_browser_html(
+    person: str | BrowserSource,
+    *,
+    shell_page_html: ShellPageRenderer,
+    openclip_enabled: bool = True,
+) -> str:
+    source = person if isinstance(person, BrowserSource) else person_browser_source(person, include_suggestions=True)
+    return empty_source_html(source, shell_page_html=shell_page_html, openclip_enabled=openclip_enabled)
+
+
+def empty_source_html(
+    source: BrowserSource,
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    return shell_page_html(
+        source.title,
+        f"""
+        <h1>{html.escape(source.title)}</h1>
+        <p class="meta">{html.escape(empty_source_message(source))}</p>
+        """,
+        source=source,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def empty_source_message(source: BrowserSource) -> str:
+    if source.person_name is None:
+        if source.date_source == "filename":
+            return "Ingen bilder med dato fra filnavn."
+        if source.date_source == "mtime":
+            return "Ingen bilder med dato fra mtime."
+        if source.source_id is not None:
+            return "Ingen aktive bilder for denne kilden."
+        if source.geo_place_slug is not None:
+            return "Ingen aktive bilder for dette stedet."
+        return "Ingen filer i bildesamlingen."
+    if source.include_suggestions:
+        return "Ingen bekreftede ansikter eller forslag for denne personen ennå."
+    return "Ingen bekreftede bilder for denne personen ennå."
+
+
+def person_not_found_html(
+    person_name: str,
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    return shell_page_html(
+        "Fant ikke person",
+        f"""
+        <h1>Fant ikke person</h1>
+        <p class="error">{html.escape(person_name)}</p>
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def person_month_page_html(
+    target: Path,
+    person_name: str,
+    month_key: str,
+    items: list[Any],
+    *,
+    page_html: PageRenderer,
+) -> str:
+    return source_month_page_html(
+        target,
+        person_browser_source(person_name, include_suggestions=True),
+        month_key,
+        items,
+        page_html=page_html,
+    )
+
+
+def source_month_item_html(target: Path, source: BrowserSource, item: Any) -> str:
+    target_path = Path(str(item["target_path"]))
+    label = html.escape(display_relative_path(target, target_path))
+    media = thumbnail_media_html(target, item)
+    return f"""
+    <article class="item">
+      <a class="thumb-link" href="{source_item_url(source, int(item["id"]))}">{media}</a>
+      <div class="text">
+        <div class="path">{label}</div>
+        <div class="score">{html.escape(format_bytes(int(item["size_bytes"])))}</div>
+      </div>
+    </article>
+    """
+
+
+def thumbnail_media_html(target: Path, item: Any) -> str:
+    target_path = Path(str(item["target_path"]))
+    name = html.escape(str(item["stored_filename"]))
+    if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
+        return f'<div class="video-thumb">Video<br>{name}</div>'
+    relative_path = db.target_relative_path(target, target_path)
+    thumbnail_src = "/file/" + existing_thumbnail_url(target, relative_path)
+    return f'<img src="{html.escape(thumbnail_src)}" alt="{name}" loading="lazy"{rotation_style_attr(item)}>'
 
 
 def all_source_items(target: Path) -> list[Any]:
