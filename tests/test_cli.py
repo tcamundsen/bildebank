@@ -1692,6 +1692,7 @@ model_name = "buffalo_l"
         self.assertIn("<dt>Steder</dt>", info_body)
         self.assertIn(f'href="/geo/area/{cells["h3_res5"]}"', info_body)
         self.assertIn(f'href="/geo/area/{cells["h3_res9"]}"', info_body)
+        self.assertIn(f'href="/geo/area/{cells["h3_res11"]}"', info_body)
         self.assertIn(f"H3-7: {cells['h3_res7']}", info_body)
         self.assertIn(source.name, info_body)
         self.assertIn("closeInfoOverlay", SERVER_JS)
@@ -1794,7 +1795,7 @@ model_name = "buffalo_l"
     def test_run_server_item_manual_location_endpoint_sets_h3_location(self) -> None:
         import h3
 
-        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 6)
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 11)
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -1825,7 +1826,7 @@ model_name = "buffalo_l"
             info_body = image_info_content_html(target, item)
             conn = db.connect(target)
             try:
-                row = conn.execute("SELECT gps_lat, gps_lon, gps_alt, gps_source, gps_error, h3_res0, h3_res9 FROM files WHERE id = 1").fetchone()
+                row = conn.execute("SELECT gps_lat, gps_lon, gps_alt, gps_source, gps_error, h3_res0, h3_res9, h3_res10, h3_res11 FROM files WHERE id = 1").fetchone()
             finally:
                 conn.close()
 
@@ -1837,6 +1838,8 @@ model_name = "buffalo_l"
         self.assertIsNotNone(row["gps_lon"])
         self.assertTrue(row["h3_res0"])
         self.assertTrue(row["h3_res9"])
+        self.assertTrue(row["h3_res10"])
+        self.assertTrue(row["h3_res11"])
         self.assertIn("<dt>GPS-kilde</dt>", info_body)
         self.assertIn("satt manuelt", info_body)
 
@@ -3436,7 +3439,7 @@ model_name = "buffalo_l"
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "7",
+                    "8",
                 )
                 file_columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 self.assertNotIn("source_id", file_columns)
@@ -5335,12 +5338,12 @@ enabled = false
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 2", stdout)
-            self.assertIn("Ny schema_version: 7", stdout)
+            self.assertIn("Ny schema_version: 8", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "7",
+                    "8",
                 )
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
                 source_columns = {row[1] for row in conn.execute("pragma table_info(sources)")}
@@ -7669,14 +7672,14 @@ print(json.dumps([
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 1", stdout)
-            self.assertIn("Ny schema_version: 7", stdout)
+            self.assertIn("Ny schema_version: 8", stdout)
             self.assertIn("Vil opprette tabellen file_sources.", stdout)
             self.assertIn("  importerte filer: 1", stdout)
             self.assertIn("  duplikatfunn: 1", stdout)
             self.assertIn("  bygge om files uten gamle v1-kildekolonner", stdout)
             self.assertIn("  fjerne legacy-tabellen duplicate_findings", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
-            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-7-*")))
+            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-8-*")))
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertFalse(
@@ -7699,13 +7702,13 @@ print(json.dumps([
             self.assertEqual(code, 0, stderr)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Ferdig. Databasen er migrert.", stdout)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-7-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-8-*"))), 1)
 
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "7",
+                    "8",
                 )
                 self.assertEqual(conn.execute("select count(*) from file_sources").fetchone()[0], 2)
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
@@ -7743,7 +7746,7 @@ print(json.dumps([
         self.assertEqual(code, 0, stderr)
         self.assertEqual(stdout, "report er slått sammen med status\n")
 
-    def test_migrate_v5_to_v7_creates_performance_indexes(self) -> None:
+    def test_migrate_v5_to_v8_creates_performance_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             self.assertEqual(run_cli(["create", str(target)]), 0)
@@ -7759,12 +7762,12 @@ print(json.dumps([
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 5", stdout)
-            self.assertIn("Ny schema_version: 7", stdout)
+            self.assertIn("Ny schema_version: 8", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "7",
+                    "8",
                 )
                 self.assertTrue(
                     conn.execute(
@@ -7788,7 +7791,7 @@ print(json.dumps([
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Nåværende schema_version: 7", stdout)
+            self.assertIn("Nåværende schema_version: 8", stdout)
             self.assertIn("oppdatere manglende ytelsesindekser", stdout)
             self.assertIn("Oppdaterer manglende ytelsesindekser.", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
@@ -7801,7 +7804,63 @@ print(json.dumps([
             finally:
                 conn.close()
 
-    def test_migrate_v6_to_v7_replaces_legacy_gps_error_messages(self) -> None:
+    def test_migrate_v7_to_v8_adds_h3_10_11_and_backfills_existing_gps(self) -> None:
+        cells = h3_cells_for_point(59.91273, 10.74609)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename, stored_filename,
+                        sha256, size_bytes, date_source, gps_lat, gps_lon, gps_source
+                    )
+                    VALUES('2024/01/image.jpg', '2024/01/image.jpg', 'image.jpg', 'image.jpg',
+                           'abc', 3, 'filename', 59.91273, 10.74609, 'exiftool')
+                    """
+                )
+                for index_name in (
+                    "idx_files_h3_res10",
+                    "idx_files_h3_res10_browser_order",
+                    "idx_files_h3_res11",
+                    "idx_files_h3_res11_browser_order",
+                ):
+                    conn.execute(f"DROP INDEX {index_name}")
+                conn.execute("ALTER TABLE files DROP COLUMN h3_res10")
+                conn.execute("ALTER TABLE files DROP COLUMN h3_res11")
+                conn.execute("UPDATE meta SET value = '7' WHERE key = 'schema_version'")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Nåværende schema_version: 7", stdout)
+            self.assertIn("Ny schema_version: 8", stdout)
+            self.assertIn("Fyller h3_res10 og h3_res11", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
+                    "8",
+                )
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
+                indexes = {row[1] for row in conn.execute("PRAGMA index_list(files)")}
+                row = conn.execute("SELECT h3_res10, h3_res11 FROM files").fetchone()
+            finally:
+                conn.close()
+
+        self.assertIn("h3_res10", columns)
+        self.assertIn("h3_res11", columns)
+        self.assertIn("idx_files_h3_res10", indexes)
+        self.assertIn("idx_files_h3_res11", indexes)
+        self.assertEqual(row[0], cells["h3_res10"])
+        self.assertEqual(row[1], cells["h3_res11"])
+
+    def test_migrate_v6_to_v8_replaces_legacy_gps_error_messages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             self.assertEqual(run_cli(["create", str(target)]), 0)
@@ -7827,14 +7886,14 @@ print(json.dumps([
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 6", stdout)
-            self.assertIn("Ny schema_version: 7", stdout)
+            self.assertIn("Ny schema_version: 8", stdout)
             self.assertIn("Rydder gamle GPS-feilmeldinger.", stdout)
             self.assertIn("bildebank vacuum", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "7",
+                    "8",
                 )
                 self.assertEqual(
                     conn.execute("SELECT gps_error FROM files").fetchone()[0],
@@ -7843,7 +7902,7 @@ print(json.dumps([
             finally:
                 conn.close()
 
-    def test_migrate_v6_to_v7_keeps_missing_file_as_short_marker(self) -> None:
+    def test_migrate_v6_to_v8_keeps_missing_file_as_short_marker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             self.assertEqual(run_cli(["create", str(target)]), 0)
@@ -7890,7 +7949,7 @@ print(json.dumps([
             self.assertIn("Størrelse etter:", stdout)
             self.assertIn("Ferdig. Databasen er pakket.", stdout)
 
-    def test_current_schema_rejects_v7_database_with_absolute_target_path(self) -> None:
+    def test_current_schema_rejects_v8_database_with_absolute_target_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -7899,7 +7958,7 @@ print(json.dumps([
             create_v4_database(target, source, imported=imported)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
-                conn.execute("UPDATE meta SET value = '7' WHERE key = 'schema_version'")
+                conn.execute("UPDATE meta SET value = '8' WHERE key = 'schema_version'")
                 conn.commit()
             finally:
                 conn.close()
@@ -7997,7 +8056,7 @@ print(json.dumps([
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Ny schema_version: 7", stdout)
+            self.assertIn("Ny schema_version: 8", stdout)
             conn = sqlite3.connect(db_path)
             try:
                 names = [row[0] for row in conn.execute("SELECT name FROM sources ORDER BY id")]
@@ -8025,7 +8084,7 @@ print(json.dumps([
             self.assertEqual(code, 1)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Databasen ble ikke migrert", stderr)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-7-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-8-*"))), 1)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
@@ -8060,7 +8119,7 @@ print(json.dumps([
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
-            self.assertIn("schema_version=7", stderr)
+            self.assertIn("schema_version=8", stderr)
             self.assertIn("bildebank migrate", stderr)
 
 

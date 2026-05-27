@@ -120,19 +120,21 @@ class GeoTests(unittest.TestCase):
     def test_h3_cells_for_point_returns_supported_resolutions(self) -> None:
         cells = h3_cells_for_point(59.91273, 10.74609)
 
-        self.assertEqual(set(cells), {f"h3_res{resolution}" for resolution in range(10)})
+        self.assertEqual(set(cells), {f"h3_res{resolution}" for resolution in range(12)})
         self.assertTrue(all(cells.values()))
 
     def test_h3_column_for_resolution_rejects_unsupported_resolution(self) -> None:
+        self.assertEqual(h3_column_for_resolution(11), "h3_res11")
         with self.assertRaises(ValueError):
-            h3_column_for_resolution(10)
+            h3_column_for_resolution(12)
 
     def test_h3_area_labels_are_available_for_supported_resolutions(self) -> None:
         self.assertEqual(h3_area_label(0), "ca. 4 357 450 km²")
         self.assertEqual(h3_area_label(7), "ca. 5 km²")
         self.assertEqual(h3_resolution_label(8), "oppløsning 8, ca. 0,7 km²")
+        self.assertEqual(h3_resolution_label(11), "oppløsning 11, ca. 0,002 km²")
         with self.assertRaises(ValueError):
-            h3_area_label(10)
+            h3_area_label(12)
 
     def test_geo_columns_are_added_to_new_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -149,9 +151,13 @@ class GeoTests(unittest.TestCase):
         self.assertIn("h3_res0", columns)
         self.assertIn("h3_res7", columns)
         self.assertIn("h3_res9", columns)
+        self.assertIn("h3_res10", columns)
+        self.assertIn("h3_res11", columns)
         self.assertIn("gps_scanned_at", columns)
         self.assertIn("idx_files_h3_res7", indexes)
         self.assertIn("idx_files_h3_res7_browser_order", indexes)
+        self.assertIn("idx_files_h3_res11", indexes)
+        self.assertIn("idx_files_h3_res11_browser_order", indexes)
 
     def test_custom_geo_place_tables_are_added_to_new_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -356,14 +362,14 @@ class GeoTests(unittest.TestCase):
         self.assertEqual([int(item["id"]) for item in month_items], [parent_id, child_id, duplicate_id])
         self.assertEqual(source_item_url(source, parent_id), f"/geo/place/hytta/item/{parent_id}")
 
-    def test_geo_place_cells_above_stored_resolution_match_h3_res9_parent(self) -> None:
+    def test_geo_place_cells_above_stored_resolution_match_h3_res11_parent(self) -> None:
         import h3
 
-        high_resolution_cell = h3.latlng_to_cell(59.91273, 10.74609, 11)
+        high_resolution_cell = h3.latlng_to_cell(59.91273, 10.74609, 12)
         place = PredefinedGeoPlace("test", "Test", (high_resolution_cell,))
-        parent = h3.cell_to_parent(high_resolution_cell, 9)
+        parent = h3.cell_to_parent(high_resolution_cell, 11)
 
-        self.assertEqual(geo_place_cells_by_column(place), [("h3_res9", parent)])
+        self.assertEqual(geo_place_cells_by_column(place), [("h3_res11", parent)])
 
     def test_geo_index_page_lists_predefined_and_custom_places_with_count(self) -> None:
         place = PREDEFINED_GEO_PLACES[0]
@@ -691,13 +697,14 @@ Vanlig dokumentasjon.
 
             conn = db.connect(target)
             try:
-                row = conn.execute("SELECT gps_lat, gps_lon, h3_res7 FROM files").fetchone()
+                row = conn.execute("SELECT gps_lat, gps_lon, h3_res7, h3_res11 FROM files").fetchone()
             finally:
                 conn.close()
 
         self.assertEqual(float(row["gps_lat"]), 59.91273)
         self.assertEqual(float(row["gps_lon"]), 10.74609)
         self.assertTrue(row["h3_res7"])
+        self.assertTrue(row["h3_res11"])
 
     def test_geo_scan_does_not_update_files_when_batch_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -799,7 +806,7 @@ Vanlig dokumentasjon.
 
             conn = db.connect(target)
             try:
-                row = conn.execute("SELECT gps_source, gps_lat, gps_lon, h3_res9 FROM files WHERE id = ?", (file_id,)).fetchone()
+                row = conn.execute("SELECT gps_source, gps_lat, gps_lon, h3_res11 FROM files WHERE id = ?", (file_id,)).fetchone()
             finally:
                 conn.close()
 
@@ -808,7 +815,7 @@ Vanlig dokumentasjon.
         self.assertEqual(row["gps_source"], "manual-h3")
         self.assertEqual(float(row["gps_lat"]), 59.91273)
         self.assertEqual(float(row["gps_lon"]), 10.74609)
-        self.assertEqual(row["h3_res9"], cells["h3_res9"])
+        self.assertEqual(row["h3_res11"], cells["h3_res11"])
         self.assertEqual([int(row["id"]) for row in area_files], [file_id])
         self.assertEqual([int(row["id"]) for row in place_items], [file_id])
 

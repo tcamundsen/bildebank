@@ -17,7 +17,7 @@ GPS_TAGS = (
     "GPSLongitude",
     "GPSAltitude",
 )
-H3_COLUMNS = {resolution: f"h3_res{resolution}" for resolution in range(10)}
+H3_COLUMNS = {resolution: f"h3_res{resolution}" for resolution in range(12)}
 H3_AREA_LABELS_KM2 = {
     0: "ca. 4 357 450 km²",
     1: "ca. 609 790 km²",
@@ -29,6 +29,8 @@ H3_AREA_LABELS_KM2 = {
     7: "ca. 5 km²",
     8: "ca. 0,7 km²",
     9: "ca. 0,1 km²",
+    10: "ca. 0,015 km²",
+    11: "ca. 0,002 km²",
 }
 DEFAULT_EXIFTOOL_BATCH_SIZE = 200
 
@@ -138,7 +140,7 @@ def h3_column_for_resolution(resolution: int) -> str:
     try:
         return H3_COLUMNS[resolution]
     except KeyError as exc:
-        raise ValueError("H3-oppløsning må være mellom 0 og 9.") from exc
+        raise ValueError("H3-oppløsning må være mellom 0 og 11.") from exc
 
 
 def h3_area_label(resolution: int) -> str:

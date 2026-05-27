@@ -487,7 +487,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         min_count = positive_int_param(params, "min_count", DEFAULT_GEO_MIN_COUNT)
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
         if resolution not in H3_COLUMNS:
-            self.respond_text("H3-oppløsning må være mellom 0 og 9.", status=HTTPStatus.BAD_REQUEST)
+            self.respond_text("H3-oppløsning må være mellom 0 og 11.", status=HTTPStatus.BAD_REQUEST)
             return
         self.respond_html(
             geo_index_page_html(
@@ -506,7 +506,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         min_count = positive_int_param(params, "min_count", DEFAULT_GEO_MIN_COUNT)
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
         if resolution not in H3_COLUMNS:
-            self.respond_text("H3-oppløsning må være mellom 0 og 9.", status=HTTPStatus.BAD_REQUEST)
+            self.respond_text("H3-oppløsning må være mellom 0 og 11.", status=HTTPStatus.BAD_REQUEST)
             return
         self.respond_html(
             geo_map_page_html(

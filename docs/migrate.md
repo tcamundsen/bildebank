@@ -44,6 +44,15 @@ databasen først.
 
 Hvis migreringen feiler, skal databasen ikke oppgraderes, og backupen beholdes.
 
+## Migrering til v8
+
+V8 legger til finere H3-oppløsning for GPS-steder. Etter migreringen kan
+Bildebank bruke H3-oppløsning 10 og 11, blant annet for manuell plassering av
+bilder.
+
+Eksisterende bilder med GPS-posisjon får de nye H3-feltene fylt ut fra
+koordinatene som allerede ligger i databasen.
+
 ## Migrering til v7
 
 V7 rydder gamle GPS-feilmeldinger som tidligere kunne bli svært lange. Etter

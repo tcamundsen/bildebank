@@ -431,7 +431,7 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank geo-areas [valg]",
         help="List H3-områder med bilder",
     )
-    geo_areas.add_argument("--resolution", type=h3_resolution_arg, default=7, help="H3-oppløsning 0-9. Standard: 7")
+    geo_areas.add_argument("--resolution", type=h3_resolution_arg, default=7, help="H3-oppløsning 0-11. Standard: 7")
     geo_areas.add_argument("--min-count", type=positive_int_arg, default=2, help="Vis områder med minst N bilder. Standard: 2")
     geo_areas.add_argument("--limit", type=positive_int_arg, default=50, help="Maks antall områder. Standard: 50")
     geo_area = add_command(
@@ -2561,6 +2561,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  bygge om file_sources uten kind")
     if plan.cleans_gps_errors:
         print("  rydde gamle GPS-feilmeldinger")
+    if plan.backfills_h3_10_11:
+        print("  fylle h3_res10 og h3_res11 for eksisterende GPS-posisjoner")
     if plan.refreshes_performance_indexes:
         print("  oppdatere manglende ytelsesindekser")
     print("Vil lage backup før endring.")
@@ -2600,6 +2602,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Bygger om file_sources uten kind.")
     if result.cleans_gps_errors:
         print("Rydder gamle GPS-feilmeldinger.")
+    if result.backfills_h3_10_11:
+        print("Fyller h3_res10 og h3_res11 for eksisterende GPS-posisjoner.")
     if result.refreshes_performance_indexes:
         print("Oppdaterer manglende ytelsesindekser.")
     print(f"Setter schema_version={result.target_version}.")
@@ -2845,8 +2849,8 @@ def h3_resolution_arg(value: str) -> int:
         number = int(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError("må være et heltall") from exc
-    if not 0 <= number <= 9:
-        raise argparse.ArgumentTypeError("må være mellom 0 og 9")
+    if not 0 <= number <= 11:
+        raise argparse.ArgumentTypeError("må være mellom 0 og 11")
     return number
 
 

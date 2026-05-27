@@ -10,7 +10,7 @@ bildebank geo-areas --resolution 8 --min-count 5
 
 Vanlige valg:
 
-- `--resolution N` velger H3-oppløsning. Tillatte verdier er 0 til 9.
+- `--resolution N` velger H3-oppløsning. Tillatte verdier er 0 til 11.
   Standard er 7.
 - `--min-count N` viser bare områder med minst N bilder. Standard er 2.
 - `--limit N` begrenser hvor mange områder som vises. Standard er 50.

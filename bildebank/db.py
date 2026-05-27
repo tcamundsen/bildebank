@@ -14,7 +14,7 @@ from typing import Any, Iterable
 
 
 DB_FILENAME = ".bilder.sqlite3"
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 GPS_ERROR_EXIFTOOL = "exiftool_error"
 GPS_ERROR_FILE_MISSING = "file_missing"
 TAG_KIND_USER = "user"
@@ -27,7 +27,7 @@ BROWSER_DATE_ORDER_SQL = (
     "CASE WHEN taken_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' "
     "THEN taken_date ELSE '9999-99-99' END"
 )
-H3_FILE_COLUMNS = tuple(f"h3_res{resolution}" for resolution in range(10))
+H3_FILE_COLUMNS = tuple(f"h3_res{resolution}" for resolution in range(12))
 H3_FILE_COLUMN_SET = set(H3_FILE_COLUMNS)
 H3_FILE_COLUMNS_SQL = ", ".join(H3_FILE_COLUMNS)
 PERFORMANCE_INDEX_NAMES = (
@@ -128,6 +128,7 @@ class MigrationPlan:
     imported_files: int
     duplicate_findings: int
     creates_file_sources: bool
+    backfills_h3_10_11: bool = False
     rebuilds_files_without_legacy_source_columns: bool = False
     drops_duplicate_findings: bool = False
     rebuilds_errors_without_source_fk: bool = False
@@ -186,7 +187,7 @@ def require_current_schema(conn: sqlite3.Connection, *, full: bool = True) -> No
                 validate_current_schema(conn)
             except ValueError as exc:
                 raise SchemaMigrationRequired(
-                    f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v7-struktur.\n"
+                    f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v8-struktur.\n"
                     f"{exc}\n"
                     "Kjør bildebank migrate før du gjør endringer."
                 ) from exc
@@ -571,7 +572,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 creates_file_sources=False,
                 refreshes_performance_indexes=bool(missing_performance_indexes(conn)),
             )
-        if version in {5, 6}:
+        if version in {5, 6, 7}:
             if validate:
                 validate_current_schema(conn, require_performance_indexes=False)
             return MigrationPlan(
@@ -581,6 +582,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
                 cleans_gps_errors=has_legacy_gps_errors(conn),
+                backfills_h3_10_11=needs_h3_10_11_backfill(conn),
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -603,6 +605,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             or not source_name_is_not_null(conn),
             rebuilds_file_sources_without_kind=bool("kind" in file_source_columns),
             cleans_gps_errors=has_legacy_gps_errors(conn),
+            backfills_h3_10_11=needs_h3_10_11_backfill(conn),
         )
     finally:
         conn.close()
@@ -640,16 +643,18 @@ def migrate_database(target: Path) -> MigrationPlan:
                 creates_file_sources=False,
                 refreshes_performance_indexes=refreshes_performance_indexes,
             )
-        if version in {5, 6}:
+        if version in {5, 6, 7}:
             imported_files = count_rows(conn, "files")
             duplicate_findings = count_rows(conn, "duplicate_findings")
             cleans_gps_errors = has_legacy_gps_errors(conn)
+            backfills_h3_10_11 = needs_h3_10_11_backfill(conn)
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 validate_current_schema(conn, require_performance_indexes=False)
                 ensure_compatible_columns(conn)
                 ensure_performance_indexes(conn)
                 cleanup_legacy_gps_errors(conn)
+                backfill_h3_10_11(conn)
                 set_meta(conn, "schema_version", str(SCHEMA_VERSION))
                 log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
                 validate_current_schema(conn)
@@ -671,6 +676,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 duplicate_findings=duplicate_findings,
                 creates_file_sources=False,
                 cleans_gps_errors=cleans_gps_errors,
+                backfills_h3_10_11=backfills_h3_10_11,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -687,6 +693,7 @@ def migrate_database(target: Path) -> MigrationPlan:
         rebuilds_sources = bool("kind" in source_columns) or not source_name_is_not_null(conn)
         rebuilds_file_sources = bool("kind" in file_source_columns)
         cleans_gps_errors = has_legacy_gps_errors(conn)
+        backfills_h3_10_11 = needs_h3_10_11_backfill(conn)
         try:
             conn.execute("PRAGMA foreign_keys = OFF")
             conn.execute("BEGIN IMMEDIATE")
@@ -707,6 +714,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             ensure_compatible_columns(conn)
             ensure_performance_indexes(conn)
             cleanup_legacy_gps_errors(conn)
+            backfill_h3_10_11(conn)
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
             validate_current_schema(conn)
@@ -735,6 +743,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             rebuilds_sources_without_kind=rebuilds_sources,
             rebuilds_file_sources_without_kind=rebuilds_file_sources,
             cleans_gps_errors=cleans_gps_errors,
+            backfills_h3_10_11=backfills_h3_10_11,
         )
     finally:
         conn.close()
@@ -2157,6 +2166,71 @@ def cleanup_legacy_gps_errors(conn: sqlite3.Connection) -> int:
         (GPS_ERROR_FILE_MISSING, GPS_ERROR_EXIFTOOL, GPS_ERROR_EXIFTOOL, GPS_ERROR_FILE_MISSING),
     )
     return int(cursor.rowcount or 0)
+
+
+def needs_h3_10_11_backfill(conn: sqlite3.Connection) -> bool:
+    if not table_exists(conn, "files"):
+        return False
+    columns = table_columns(conn, "files")
+    if "gps_lat" not in columns or "gps_lon" not in columns:
+        return False
+    if {"h3_res10", "h3_res11"} - columns:
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM files
+            WHERE gps_lat IS NOT NULL
+              AND gps_lon IS NOT NULL
+            LIMIT 1
+            """
+        ).fetchone()
+        return row is not None
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM files
+        WHERE gps_lat IS NOT NULL
+          AND gps_lon IS NOT NULL
+          AND (h3_res10 IS NULL OR h3_res11 IS NULL)
+        LIMIT 1
+        """
+    ).fetchone()
+    return row is not None
+
+
+def backfill_h3_10_11(conn: sqlite3.Connection) -> int:
+    if not table_exists(conn, "files"):
+        return 0
+    columns = table_columns(conn, "files")
+    required = {"gps_lat", "gps_lon", "h3_res10", "h3_res11"}
+    if not required <= columns:
+        return 0
+    import h3
+
+    rows = list(
+        conn.execute(
+            """
+            SELECT id, gps_lat, gps_lon
+            FROM files
+            WHERE gps_lat IS NOT NULL
+              AND gps_lon IS NOT NULL
+              AND (h3_res10 IS NULL OR h3_res11 IS NULL)
+            """
+        )
+    )
+    for row in rows:
+        lat = float(row["gps_lat"])
+        lon = float(row["gps_lon"])
+        conn.execute(
+            """
+            UPDATE files
+            SET h3_res10 = ?,
+                h3_res11 = ?
+            WHERE id = ?
+            """,
+            (h3.latlng_to_cell(lat, lon, 10), h3.latlng_to_cell(lat, lon, 11), int(row["id"])),
+        )
+    return len(rows)
 
 
 def geo_stats(conn: sqlite3.Connection) -> dict[str, int]:
