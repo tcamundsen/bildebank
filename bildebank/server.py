@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import html
 import json
-import mimetypes
 import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -91,6 +90,7 @@ from .server_geo import (
     parse_geo_place_cells,
 )
 from . import server_markdown
+from . import server_files
 from .server_markdown import markdown_doc_title, markdown_to_html
 from . import server_search
 from .server_search import (
@@ -99,6 +99,7 @@ from .server_search import (
     ServerSearchStats,
     search_server_images,
 )
+from . import server_request
 from .server_request import first_param, nonnegative_int_param, parse_file_id, positive_int_param
 from .server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS
 from . import server_shell
@@ -777,9 +778,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         )
 
     def respond_set_geo_place_name(self) -> None:
-        length = int(self.headers.get("Content-Length") or "0")
-        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
-        params = urllib.parse.parse_qs(raw)
+        params = server_request.read_form_params(self.headers, self.rfile)
         h3_cell = first_param(params, "h3_cell").strip()
         name = first_param(params, "name")
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
@@ -792,9 +791,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         self.redirect(url)
 
     def respond_set_custom_geo_place(self) -> None:
-        length = int(self.headers.get("Content-Length") or "0")
-        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
-        params = urllib.parse.parse_qs(raw)
+        params = server_request.read_form_params(self.headers, self.rfile)
         try:
             server_geo.save_custom_geo_place(
                 self.server.target,
@@ -812,9 +809,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         self.redirect("/geo/custom-places")
 
     def respond_delete_custom_geo_place(self) -> None:
-        length = int(self.headers.get("Content-Length") or "0")
-        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
-        params = urllib.parse.parse_qs(raw)
+        params = server_request.read_form_params(self.headers, self.rfile)
         try:
             server_geo.delete_custom_geo_place(
                 self.server.target,
@@ -829,47 +824,30 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         self.redirect("/geo")
 
     def respond_set_face_config(self) -> None:
-        length = int(self.headers.get("Content-Length") or "0")
-        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
-        params = urllib.parse.parse_qs(raw)
+        params = server_request.read_form_params(self.headers, self.rfile)
         enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
         self.server.config = server_app.update_face_enabled_config(self.server.config, server_program_repo_root(), enabled)
         self.redirect("/settings")
 
     def respond_set_face_model(self) -> None:
-        length = int(self.headers.get("Content-Length") or "0")
-        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
-        params = urllib.parse.parse_qs(raw)
+        params = server_request.read_form_params(self.headers, self.rfile)
         model_name = (params.get("model_name") or [""])[0].strip()
         self.server.config = server_app.update_face_model_config(self.server.config, server_program_repo_root(), model_name)
         self.redirect("/settings")
 
     def respond_file(self, encoded_relative_path: str) -> None:
-        raw_path = urllib.parse.unquote(encoded_relative_path).strip("/")
-        if raw_path.isdigit():
-            row = browser_item_by_id(self.server.target, int(raw_path))
-            if row is None:
-                self.respond_text("Filen finnes ikke.", status=HTTPStatus.NOT_FOUND)
-                return
-            path = db.absolute_target_path(self.server.target, Path(str(row["target_path"])))
-        else:
-            relative = Path(raw_path)
-            path = (self.server.target / relative).resolve()
-            try:
-                path.relative_to(self.server.target.resolve())
-            except ValueError:
-                self.respond_text("Ugyldig filsti.", status=HTTPStatus.FORBIDDEN)
-                return
-        if not path.is_file():
-            self.respond_text("Filen finnes ikke.", status=HTTPStatus.NOT_FOUND)
-            return
-        content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         try:
-            content = path.read_bytes()
+            served_file = server_files.read_server_file(self.server.target, encoded_relative_path)
+        except PermissionError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            return
+        except FileNotFoundError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            return
         except OSError as exc:
             self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
-        self.respond_bytes(content, content_type)
+        self.respond_bytes(served_file.content, served_file.content_type)
 
     def respond_help(self, raw_help_path: str) -> None:
         doc_path = resolve_doc_path(raw_help_path)
@@ -1088,34 +1066,10 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         self.respond_json({"ok": True, "file_id": file_id, "restored_path": restored_path.as_posix()})
 
     def read_json_payload(self) -> dict[str, object]:
-        length = int(self.headers.get("Content-Length") or "0")
-        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
-        if not raw:
-            return {}
-        payload = json.loads(raw)
-        if not isinstance(payload, dict):
-            raise ValueError("Ugyldig JSON.")
-        return payload
+        return server_request.read_json_payload(self.headers, self.rfile)
 
     def read_face_person_payload(self) -> tuple[str, int] | tuple[dict[str, object], HTTPStatus]:
-        length = int(self.headers.get("Content-Length") or "0")
-        raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
-        content_type = self.headers.get("Content-Type", "")
-        if "application/json" in content_type:
-            payload = json.loads(raw or "{}")
-            person_name = str(payload.get("person_name") or "").strip()
-            face_id_raw = payload.get("face_id")
-        else:
-            params = urllib.parse.parse_qs(raw)
-            person_name = first_param(params, "person_name").strip()
-            face_id_raw = first_param(params, "face_id")
-        try:
-            face_id = int(face_id_raw)
-        except (TypeError, ValueError):
-            return {"ok": False, "error": "Ugyldig face_id."}, HTTPStatus.BAD_REQUEST
-        if not person_name:
-            return {"ok": False, "error": "Personnavn mangler."}, HTTPStatus.BAD_REQUEST
-        return person_name, face_id
+        return server_request.read_face_person_payload(self.headers, self.rfile)
 
 
 def resolve_doc_path(raw_doc_path: str) -> Path | None:

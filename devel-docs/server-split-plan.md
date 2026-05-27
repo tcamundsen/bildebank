@@ -511,6 +511,28 @@ Notes:
 - Query parameter helpers and file-id parsing have been moved.
   `server.py` imports the names directly for compatibility with existing
   imports.
+- Request body, form, JSON, and face-person payload parsing helpers have been
+  moved. `server.py` keeps thin request-handler methods for compatibility.
+
+### `bildebank/server_files.py`
+
+Scope:
+
+- Server-side resolution and reading of files served through `/file/...`.
+
+Reason:
+
+- Leaf helper with no dependency on `server.py`.
+- Keeps HTTP response/status handling in the request handler while moving path
+  validation, DB lookup, content-type guessing, and file reading out of
+  `server.py`.
+
+Status: started.
+
+Notes:
+
+- File path resolution and file reading for `/file/...` have been moved.
+  `server.py` keeps endpoint routing and HTTP error/status mapping.
 
 ## Suggested Order
 
@@ -604,3 +626,8 @@ Notes:
   `bildebank/server_app.py`; `server.py` keeps request parsing and redirects.
 - done: replaced several pure pass-through compatibility wrappers in
   `server.py` with direct imports from split modules.
+- done: moved `/file/...` path resolution and file reading to
+  `bildebank/server_files.py`; `server.py` keeps HTTP status mapping.
+- done: moved request body/form/JSON/face-person payload parsing helpers to
+  `bildebank/server_request.py`; request-handler methods now delegate to
+  those helpers.
