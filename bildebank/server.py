@@ -364,54 +364,14 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         canonical_name = str(person["name"])
         source = person_browser_source(canonical_name, include_suggestions=person_mode != "confirmed", show_faces=show_faces)
-        if page_mode is None:
-            item = first_source_item(self.server.target, source, self.server.config.face_recognition)
-            if item is None:
-                self.respond_html(empty_person_browser_html(source, openclip_enabled=self.server.openclip_enabled))
-                return
-            self.redirect(source_item_url(source, int(item["id"])))
-            return
-        if page_mode == "item":
-            file_id = parse_file_id(raw_value)
-            item = source_item_by_id(self.server.target, source, file_id, self.server.config.face_recognition)
-            if item is None:
-                self.respond_text("Filen finnes ikke for denne personen.", status=HTTPStatus.NOT_FOUND)
-                return
-            previous_item, next_item = adjacent_source_items(self.server.target, source, item, self.server.config.face_recognition)
-            month_nav = source_month_navigation(self.server.target, source, item, self.server.config.face_recognition)
-            self.respond_html(
-                source_item_page_html(
-                    self.server.target,
-                    source,
-                    item,
-                    previous_item,
-                    next_item,
-                    month_nav,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                    face_config=self.server.config.face_recognition,
-                )
-            )
-            return
-        if page_mode == "month":
-            month_key = urllib.parse.unquote(raw_value).strip()
-            if not valid_month_key(month_key):
-                self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
-                return
-            items = source_month_items(self.server.target, source, month_key, self.server.config.face_recognition)
-            self.respond_html(
-                source_month_page_html(
-                    self.server.target,
-                    source,
-                    month_key,
-                    items,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                    face_config=self.server.config.face_recognition,
-                )
-            )
-            return
-        self.respond_text("Ugyldig personside.", status=HTTPStatus.NOT_FOUND)
+        self.respond_browser_source(
+            source,
+            page_mode,
+            raw_value,
+            face_config=self.server.config.face_recognition,
+            item_not_found_message="Filen finnes ikke for denne personen.",
+            invalid_page_message="Ugyldig personside.",
+        )
 
     def respond_date_source(self, raw_path: str) -> None:
         raw_date_source, page_mode, raw_value = parse_source_path(raw_path)
@@ -420,60 +380,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_text("Ugyldig datokilde.", status=HTTPStatus.BAD_REQUEST)
             return
         source = date_source_browser_source(date_source)
-        if page_mode is None:
-            item = first_source_item(self.server.target, source)
-            if item is None:
-                self.respond_html(
-                    empty_source_html(
-                        source,
-                        face_enabled=self.server.face_enabled,
-                        openclip_enabled=self.server.openclip_enabled,
-                    )
-                )
-                return
-            self.redirect(source_item_url(source, int(item["id"])))
-            return
-        if page_mode == "item":
-            file_id = parse_file_id(raw_value)
-            item = source_item_by_id(self.server.target, source, file_id)
-            if item is None:
-                self.respond_text("Filen finnes ikke for denne datokilden.", status=HTTPStatus.NOT_FOUND)
-                return
-            previous_item, next_item = adjacent_source_items(self.server.target, source, item)
-            month_nav = source_month_navigation(self.server.target, source, item)
-            self.respond_html(
-                source_item_page_html(
-                    self.server.target,
-                    source,
-                    item,
-                    previous_item,
-                    next_item,
-                    month_nav,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                    face_config=self.server.config.face_recognition,
-                )
-            )
-            return
-        if page_mode == "month":
-            month_key = urllib.parse.unquote(raw_value).strip()
-            if not valid_month_key(month_key):
-                self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
-                return
-            items = source_month_items(self.server.target, source, month_key)
-            self.respond_html(
-                source_month_page_html(
-                    self.server.target,
-                    source,
-                    month_key,
-                    items,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                    face_config=self.server.config.face_recognition,
-                )
-            )
-            return
-        self.respond_text("Ugyldig datokildeside.", status=HTTPStatus.NOT_FOUND)
+        self.respond_browser_source(
+            source,
+            page_mode,
+            raw_value,
+            item_not_found_message="Filen finnes ikke for denne datokilden.",
+            invalid_page_message="Ugyldig datokildeside.",
+        )
 
     def respond_imported_source(self, raw_path: str) -> None:
         raw_source_id, page_mode, raw_value = parse_source_path(raw_path)
@@ -487,60 +400,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_text("Fant ikke kilde.", status=HTTPStatus.NOT_FOUND)
             return
         source = imported_source_browser_source(source_row)
-        if page_mode is None:
-            item = first_source_item(self.server.target, source)
-            if item is None:
-                self.respond_html(
-                    empty_source_html(
-                        source,
-                        face_enabled=self.server.face_enabled,
-                        openclip_enabled=self.server.openclip_enabled,
-                    )
-                )
-                return
-            self.redirect(source_item_url(source, int(item["id"])))
-            return
-        if page_mode == "item":
-            file_id = parse_file_id(raw_value)
-            item = source_item_by_id(self.server.target, source, file_id)
-            if item is None:
-                self.respond_text("Filen finnes ikke for denne kilden.", status=HTTPStatus.NOT_FOUND)
-                return
-            previous_item, next_item = adjacent_source_items(self.server.target, source, item)
-            month_nav = source_month_navigation(self.server.target, source, item)
-            self.respond_html(
-                source_item_page_html(
-                    self.server.target,
-                    source,
-                    item,
-                    previous_item,
-                    next_item,
-                    month_nav,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                    face_config=self.server.config.face_recognition,
-                )
-            )
-            return
-        if page_mode == "month":
-            month_key = urllib.parse.unquote(raw_value).strip()
-            if not valid_month_key(month_key):
-                self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
-                return
-            items = source_month_items(self.server.target, source, month_key)
-            self.respond_html(
-                source_month_page_html(
-                    self.server.target,
-                    source,
-                    month_key,
-                    items,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                    face_config=self.server.config.face_recognition,
-                )
-            )
-            return
-        self.respond_text("Ugyldig kildeside.", status=HTTPStatus.NOT_FOUND)
+        self.respond_browser_source(
+            source,
+            page_mode,
+            raw_value,
+            item_not_found_message="Filen finnes ikke for denne kilden.",
+            invalid_page_message="Ugyldig kildeside.",
+        )
 
     def respond_geo(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
@@ -608,27 +474,48 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_text("Ukjent sted.", status=HTTPStatus.NOT_FOUND)
             return
         source = geo_place_browser_source(place)
+        self.respond_browser_source(
+            source,
+            page_mode,
+            raw_value,
+            item_not_found_message="Filen finnes ikke for dette stedet.",
+            invalid_page_message="Ugyldig stedsside.",
+        )
+
+    def respond_browser_source(
+        self,
+        source: BrowserSource,
+        page_mode: str | None,
+        raw_value: str,
+        *,
+        item_not_found_message: str,
+        invalid_page_message: str,
+        face_config: FaceRecognitionConfig | None = None,
+    ) -> None:
         if page_mode is None:
-            item = first_source_item(self.server.target, source)
+            item = first_source_item(self.server.target, source, face_config)
             if item is None:
-                self.respond_html(
-                    empty_source_html(
-                        source,
-                        face_enabled=self.server.face_enabled,
-                        openclip_enabled=self.server.openclip_enabled,
+                if source.person_name is None:
+                    self.respond_html(
+                        empty_source_html(
+                            source,
+                            face_enabled=self.server.face_enabled,
+                            openclip_enabled=self.server.openclip_enabled,
+                        )
                     )
-                )
+                else:
+                    self.respond_html(empty_person_browser_html(source, openclip_enabled=self.server.openclip_enabled))
                 return
             self.redirect(source_item_url(source, int(item["id"])))
             return
         if page_mode == "item":
             file_id = parse_file_id(raw_value)
-            item = source_item_by_id(self.server.target, source, file_id)
+            item = source_item_by_id(self.server.target, source, file_id, face_config)
             if item is None:
-                self.respond_text("Filen finnes ikke for dette stedet.", status=HTTPStatus.NOT_FOUND)
+                self.respond_text(item_not_found_message, status=HTTPStatus.NOT_FOUND)
                 return
-            previous_item, next_item = adjacent_source_items(self.server.target, source, item)
-            month_nav = source_month_navigation(self.server.target, source, item)
+            previous_item, next_item = adjacent_source_items(self.server.target, source, item, face_config)
+            month_nav = source_month_navigation(self.server.target, source, item, face_config)
             self.respond_html(
                 source_item_page_html(
                     self.server.target,
@@ -648,7 +535,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if not valid_month_key(month_key):
                 self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
                 return
-            items = source_month_items(self.server.target, source, month_key)
+            items = source_month_items(self.server.target, source, month_key, face_config)
             self.respond_html(
                 source_month_page_html(
                     self.server.target,
@@ -661,7 +548,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 )
             )
             return
-        self.respond_text("Ugyldig stedsside.", status=HTTPStatus.NOT_FOUND)
+        self.respond_text(invalid_page_message, status=HTTPStatus.NOT_FOUND)
 
     def respond_geo_missing(self, query: str) -> None:
         params = urllib.parse.parse_qs(query)
