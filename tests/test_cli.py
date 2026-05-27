@@ -41,63 +41,62 @@ from bildebank.media import ImageDimensions, sha256_file
 from bildebank.media_cache import cached_image_dimensions, cached_image_orientation
 from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
 from bildebank.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
+from bildebank.server_actions import undelete_file_from_browser
+from bildebank.server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS
 from bildebank.server import (
-    adjacent_browser_items,
-    adjacent_person_items,
-    adjacent_source_items,
     app_status_page_html,
     BildebankServer,
     BildebankRequestHandler,
-    browser_item_by_id,
-    browser_month_items,
-    browser_month_navigation,
-    date_source_text,
-    DEFAULT_SEARCH_LIMIT,
     empty_source_html,
-    face_overlay_content_html,
     geo_area_page_html,
     geo_index_page_html,
     geo_map_page_html,
     geo_missing_page_html,
     geo_stats_page_html,
-    image_info_content_html,
     index_html,
     item_page_html,
     markdown_doc_page_html,
     month_page_html,
-    OpenClipSearchCache,
-    person_item_by_id,
     person_item_page_html,
     people_page_html,
-    person_month_items,
-    person_month_navigation,
     person_month_page_html,
     removed_files_page_html,
     search_html,
-    search_server_images,
     search_start_html,
-    ServerSearchStats,
-    SERVER_ASSET_VERSION,
-    SERVER_CSS,
-    SERVER_JS,
-    source_item_by_id,
     source_item_page_html,
-    source_month_items,
-    source_month_navigation,
     source_month_page_html,
-    source_summary_rows,
     sources_page_html,
-    undelete_file_from_browser,
 )
 from bildebank.server_browser import (
+    adjacent_browser_items,
+    adjacent_person_items,
+    adjacent_source_items,
     all_browser_source,
+    browser_item_by_id,
+    browser_month_items,
+    browser_month_navigation,
+    date_source_text,
     date_source_browser_source,
     imported_source_browser_source,
+    image_info_content_html,
     person_browser_source,
+    person_item_by_id,
+    person_month_items,
+    person_month_navigation,
+    source_item_by_id,
+    source_month_items,
+    source_month_navigation,
+    source_summary_rows,
 )
-from bildebank.server_faces import cached_person_file_ids, person_file_ids, person_items
+from bildebank.server_faces import cached_person_file_ids, face_overlay_content_html, person_file_ids, person_items
 from bildebank.server_geo import geo_component_pixel_coordinates
-from bildebank.server_search import load_search_embedding_cache
+from bildebank.server_search import (
+    DEFAULT_SEARCH_LIMIT,
+    OpenClipSearchCache,
+    ServerSearchStats,
+    load_search_embedding_cache,
+    search_server_images,
+)
 from bildebank.target_lock import LOCK_FILENAME
 from bildebank.thumbnails import (
     existing_thumbnail_url,
@@ -1054,7 +1053,7 @@ pretrained = "laion2b_s34b_b79k"
             )
 
             with (
-                patch("bildebank.server.module_available", side_effect=lambda name: name == "open_clip"),
+                patch("bildebank.server_app.module_available", side_effect=lambda name: name == "open_clip"),
             ):
                 body = app_status_page_html(target, config)
 
@@ -1113,7 +1112,7 @@ pretrained = "laion2b_s34b_b79k"
                     self.location = location
 
             handler = FakeHandler()
-            with patch("bildebank.server.server_program_repo_root", return_value=root):
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
                 BildebankRequestHandler.respond_set_face_config(handler)  # type: ignore[arg-type]
 
             config = load_config(root)
@@ -1148,7 +1147,7 @@ model_name = "buffalo_l"
                     self.location = location
 
             handler = FakeHandler()
-            with patch("bildebank.server.server_program_repo_root", return_value=root):
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
                 BildebankRequestHandler.respond_set_face_model(handler)  # type: ignore[arg-type]
 
             config = load_config(root)
@@ -1176,7 +1175,7 @@ model_name = "buffalo_l"
                 server = SimpleNamespace(config=load_config(root))
 
             handler = FakeHandler()
-            with patch("bildebank.server.server_program_repo_root", return_value=root):
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
                 with self.assertRaisesRegex(ValueError, "ikke installert"):
                     BildebankRequestHandler.respond_set_face_model(handler)  # type: ignore[arg-type]
 
@@ -1886,7 +1885,7 @@ model_name = "buffalo_l"
 
             filename_source = date_source_browser_source("filename")
             mtime_source = date_source_browser_source("mtime")
-            with patch("bildebank.server.source_items", side_effect=AssertionError("source_items should not be used")):
+            with patch("bildebank.server_browser.source_items", side_effect=AssertionError("source_items should not be used")):
                 filename_item = source_item_by_id(target, filename_source, 1)
                 mtime_item = source_item_by_id(target, mtime_source, 2)
                 self.assertIsNotNone(filename_item)
@@ -1953,7 +1952,10 @@ model_name = "buffalo_l"
                 conn.close()
             self.assertIsNotNone(source)
             source_browser = imported_source_browser_source(source)
-            with patch("bildebank.server.adjacent_sql_filtered_source_items", side_effect=AssertionError("SQL filter path should not be used")):
+            with patch(
+                "bildebank.server_browser.adjacent_sql_filtered_source_items",
+                side_effect=AssertionError("SQL filter path should not be used"),
+            ):
                 source_item = source_item_by_id(target, source_browser, 1)
                 source_excludes_other_item = source_item_by_id(target, source_browser, 2) is None
                 self.assertIsNotNone(source_item)

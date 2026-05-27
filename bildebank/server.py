@@ -21,56 +21,29 @@ from .geo import (
 )
 from . import server_app
 from . import server_actions
-from .server_actions import remove_file_from_browser, undelete_file_from_browser
 from . import server_browser
-from .server_app import module_available, server_program_repo_root
 from .server_browser import (
     BrowserSource,
     adjacent_browser_items,
-    adjacent_person_items,
     adjacent_source_items,
-    adjacent_sql_filtered_source_items,
     all_browser_source,
     browser_item_by_id,
-    browser_month_items,
     browser_month_navigation,
     date_source_browser_source,
-    date_source_text,
-    delete_button_html,
-    empty_source_message,
     first_browser_item,
     first_source_item,
     geo_place_browser_source,
-    google_maps_link_html,
-    image_date_text,
-    image_geo_area_links_html,
-    image_info_button_html,
     image_info_content_html,
-    image_info_overlay_html,
-    image_info_rows,
-    image_source_rows,
     imported_source_browser_source,
     imported_source_by_id,
-    info_row_html,
-    item_media_html,
-    person_item_by_id,
     person_browser_source,
-    person_month_items,
-    person_month_navigation,
     person_url,
     parse_person_path,
     parse_source_path,
-    rotation_buttons_html,
-    camera_text,
-    source_item_media_html,
     source_item_by_id,
     source_item_url,
-    source_items,
-    source_summary_rows,
-    source_month_item_html,
     source_month_items,
     source_month_navigation,
-    thumbnail_media_html,
     valid_browser_date_source,
     valid_month_key,
 )
@@ -82,14 +55,9 @@ from .server_faces import (
     person_item_url_for_face,
 )
 from . import server_geo
-from .server_geo import (
-    geo_place_by_slug,
-    normalize_geo_place_slug,
-    parse_geo_place_cells,
-)
+from .server_geo import geo_place_by_slug
 from . import server_markdown
 from . import server_files
-from .server_markdown import markdown_doc_title, markdown_to_html
 from . import server_search
 from .server_search import (
     DEFAULT_SEARCH_LIMIT,
@@ -100,7 +68,7 @@ from .server_search import (
 from .server_response import ServerResponseMixin
 from . import server_request
 from .server_request import first_param, nonnegative_int_param, parse_file_id, positive_int_param
-from .server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS, page_html
+from .server_assets import SERVER_CSS, SERVER_JS, page_html
 from . import server_shell
 
 
@@ -109,46 +77,6 @@ DEFAULT_PORT = 8765
 DEFAULT_GEO_RESOLUTION = 7
 DEFAULT_GEO_MIN_COUNT = 2
 DEFAULT_GEO_LIMIT = 100
-
-__all__ = [
-    "adjacent_person_items",
-    "adjacent_sql_filtered_source_items",
-    "browser_month_items",
-    "camera_text",
-    "date_source_text",
-    "delete_button_html",
-    "empty_source_message",
-    "google_maps_link_html",
-    "image_date_text",
-    "image_geo_area_links_html",
-    "image_info_button_html",
-    "image_info_content_html",
-    "image_info_overlay_html",
-    "image_info_rows",
-    "image_source_rows",
-    "info_row_html",
-    "item_media_html",
-    "markdown_doc_title",
-    "markdown_to_html",
-    "normalize_geo_place_slug",
-    "parse_geo_place_cells",
-    "parse_person_path",
-    "parse_source_path",
-    "person_item_by_id",
-    "person_month_items",
-    "person_month_navigation",
-    "remove_file_from_browser",
-    "rotation_buttons_html",
-    "SERVER_ASSET_VERSION",
-    "SERVER_CSS",
-    "SERVER_JS",
-    "source_item_media_html",
-    "source_items",
-    "source_month_item_html",
-    "source_summary_rows",
-    "thumbnail_media_html",
-    "undelete_file_from_browser",
-]
 
 
 class BildebankServer(ThreadingHTTPServer):
@@ -798,13 +726,21 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_set_face_config(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)
         enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
-        self.server.config = server_app.update_face_enabled_config(self.server.config, server_program_repo_root(), enabled)
+        self.server.config = server_app.update_face_enabled_config(
+            self.server.config,
+            server_app.server_program_repo_root(),
+            enabled,
+        )
         self.redirect("/settings")
 
     def respond_set_face_model(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)
         model_name = (params.get("model_name") or [""])[0].strip()
-        self.server.config = server_app.update_face_model_config(self.server.config, server_program_repo_root(), model_name)
+        self.server.config = server_app.update_face_model_config(
+            self.server.config,
+            server_app.server_program_repo_root(),
+            model_name,
+        )
         self.redirect("/settings")
 
     def respond_file(self, encoded_relative_path: str) -> None:
@@ -1017,7 +953,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
-            deleted_path = remove_file_from_browser(self.server.target, file_id)
+            deleted_path = server_actions.remove_file_from_browser(self.server.target, file_id)
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1031,7 +967,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
-            restored_path = undelete_file_from_browser(self.server.target, file_id)
+            restored_path = server_actions.undelete_file_from_browser(self.server.target, file_id)
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1045,7 +981,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
 
 
 def resolve_doc_path(raw_doc_path: str) -> Path | None:
-    return server_markdown.resolve_doc_path(raw_doc_path, server_program_repo_root() / "docs")
+    return server_markdown.resolve_doc_path(raw_doc_path, server_app.server_program_repo_root() / "docs")
 
 
 def index_html(server: BildebankServer, *, message: str = "") -> str:
@@ -1300,7 +1236,7 @@ def app_status_page_html(target: Path, config: AppConfig | None = None) -> str:
         target,
         config,
         shell_page_html=shell_page_html,
-        module_available_func=module_available,
+        module_available_func=server_app.module_available,
     )
 
 

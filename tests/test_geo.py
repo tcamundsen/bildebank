@@ -26,20 +26,23 @@ from bildebank.geo import (
 from bildebank.media import sha256_file
 from bildebank.server import (
     BildebankRequestHandler,
-    adjacent_source_items,
     custom_geo_places_page_html,
     geo_area_page_html,
     geo_index_page_html,
     markdown_doc_page_html,
-    markdown_to_html,
     resolve_doc_path,
-    source_item_by_id,
-    source_month_items,
-    source_month_navigation,
     source_month_page_html,
 )
-from bildebank.server_browser import geo_place_browser_source, source_item_url
+from bildebank.server_browser import (
+    adjacent_source_items,
+    geo_place_browser_source,
+    source_item_by_id,
+    source_item_url,
+    source_month_items,
+    source_month_navigation,
+)
 from bildebank.server_geo import geo_place_by_slug, geo_place_cells_by_column, geo_place_items
+from bildebank.server_markdown import markdown_to_html
 
 
 def capture_cli(args: list[str]) -> tuple[int, str, str]:
@@ -337,7 +340,7 @@ class GeoTests(unittest.TestCase):
             place = geo_place_by_slug(target, "hytta")
             assert place is not None
             source = geo_place_browser_source(place)
-            with patch("bildebank.server.source_items", side_effect=AssertionError("source_items should not be used")):
+            with patch("bildebank.server_browser.source_items", side_effect=AssertionError("source_items should not be used")):
                 items = geo_place_items(target, "hytta")
                 item = source_item_by_id(target, source, parent_id)
                 assert item is not None
@@ -559,7 +562,7 @@ Vanlig dokumentasjon.
             set_file_h3_cells(target, first_id, {column: h3_cell})
             set_file_h3_cells(target, second_id, {column: h3_cell})
             source = geo_place_browser_source(place)
-            with patch("bildebank.server.source_items", side_effect=AssertionError("source_items should not be used")):
+            with patch("bildebank.server_browser.source_items", side_effect=AssertionError("source_items should not be used")):
                 item = source_item_by_id(target, source, first_id)
                 assert item is not None
                 previous_item, next_item = adjacent_source_items(target, source, item)
