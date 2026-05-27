@@ -451,7 +451,13 @@ Likely functions:
 - browser mutation helpers used by `respond_delete_item`,
   `respond_undelete_item`, and `respond_rotate_item`
 
-Status: postponed.
+Status: started.
+
+Notes:
+
+- Browser action helpers for view rotation, remove, and undelete have been
+  moved to `server_actions.py`. `server.py` keeps thin compatibility wrappers
+  for remove/undelete and delegates the rotate endpoint's DB update helper.
 
 ## Suggested Order
 
@@ -529,3 +535,6 @@ Status: postponed.
 - done: moved help/document path resolution to `bildebank/server_markdown.py`.
 - done: moved browser/person source path parsing to
   `bildebank/server_browser.py`.
+- done: moved browser action helpers for view rotation, remove, and undelete
+  to `bildebank/server_actions.py`; `server.py` keeps compatibility wrappers
+  for existing remove/undelete imports.

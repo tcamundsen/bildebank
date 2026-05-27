@@ -3,7 +3,6 @@ from __future__ import annotations
 import html
 import json
 import mimetypes
-import shutil
 import urllib.parse
 from dataclasses import replace
 from http import HTTPStatus
@@ -26,6 +25,7 @@ from .geo import (
     predefined_geo_place,
 )
 from . import server_app
+from . import server_actions
 from . import server_browser
 from .server_app import installed_insightface_models, module_available, server_program_repo_root
 from .server_browser import (
@@ -78,7 +78,6 @@ from .server_search import (
     search_server_images,
 )
 from . import server_shell
-from .target_lock import TargetLock
 
 
 DEFAULT_HOST = "127.0.0.1"
@@ -1040,16 +1039,11 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         direction = str(payload.get("direction") or "")
-        conn = db.connect(self.server.target)
         try:
-            try:
-                rotation = db.rotate_file_view(conn, file_id, direction)
-            except ValueError as exc:
-                self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-                return
-            conn.commit()
-        finally:
-            conn.close()
+            rotation = server_actions.rotate_file_view(self.server.target, file_id, direction)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
         self.respond_json({"ok": True, "file_id": file_id, "rotation": rotation})
 
     def respond_delete_item(self) -> None:
@@ -1169,96 +1163,11 @@ def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
 
 
 def remove_file_from_browser(target: Path, file_id: int) -> Path:
-    with TargetLock(target, command="remove"):
-        conn = db.connect(target)
-        try:
-            row = conn.execute(
-                """
-                SELECT id, target_path, deleted_at
-                FROM files
-                WHERE id = ?
-                """,
-                (file_id,),
-            ).fetchone()
-            if row is None:
-                raise ValueError("Filen finnes ikke i importdatabasen.")
-            if row["deleted_at"] is not None:
-                raise ValueError("Filen er allerede markert som slettet.")
-
-            original_path = db.absolute_target_path(target, Path(str(row["target_path"]))).resolve()
-            if not original_path.exists():
-                raise ValueError(f"Målfilen finnes ikke på disk: {original_path}")
-            try:
-                relative_path = original_path.relative_to(target.resolve())
-            except ValueError as exc:
-                raise ValueError(f"Filen ligger ikke i bildesamlingen: {original_path}") from exc
-            if not relative_path.parts or relative_path.parts[0] == "deleted":
-                raise ValueError(f"Kan ikke slette filer fra deleted/: {original_path}")
-
-            deleted_path = target / "deleted" / relative_path
-            if deleted_path.exists():
-                raise ValueError(f"Slettemål finnes allerede: {deleted_path}")
-
-            deleted_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(original_path), str(deleted_path))
-            db.mark_file_deleted(
-                conn,
-                file_id=file_id,
-                target_root=target,
-                deleted_path=deleted_path,
-                original_target_path=original_path,
-            )
-            conn.commit()
-            return db.target_relative_path(target, deleted_path)
-        finally:
-            conn.close()
+    return server_actions.remove_file_from_browser(target, file_id)
 
 
 def undelete_file_from_browser(target: Path, file_id: int) -> Path:
-    with TargetLock(target, command="undelete"):
-        conn = db.connect(target)
-        try:
-            row = conn.execute(
-                """
-                SELECT id, target_path, deleted_at, deleted_original_target_path
-                FROM files
-                WHERE id = ?
-                """,
-                (file_id,),
-            ).fetchone()
-            if row is None:
-                raise ValueError("Filen finnes ikke i importdatabasen.")
-            if row["deleted_at"] is None:
-                raise ValueError("Filen er ikke markert som slettet.")
-            if row["deleted_original_target_path"] is None:
-                raise ValueError("Filen mangler opprinnelig målsti i databasen.")
-
-            deleted_path = db.absolute_target_path(target, Path(str(row["target_path"]))).resolve()
-            if not deleted_path.exists():
-                raise ValueError(f"Slettet fil finnes ikke på disk: {deleted_path}")
-            try:
-                deleted_relative_path = deleted_path.relative_to(target.resolve())
-            except ValueError as exc:
-                raise ValueError(f"Filen ligger ikke i bildesamlingen: {deleted_path}") from exc
-            if len(deleted_relative_path.parts) < 2 or deleted_relative_path.parts[0] != "deleted":
-                raise ValueError(f"Slettet fil ligger ikke under deleted/: {deleted_path}")
-
-            restored_path = target / Path(str(row["deleted_original_target_path"]))
-            if restored_path.exists():
-                raise ValueError(f"Målfilen finnes allerede: {restored_path}")
-
-            restored_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(deleted_path), str(restored_path))
-            db.mark_file_undeleted(
-                conn,
-                file_id=file_id,
-                target_root=target,
-                restored_path=restored_path,
-            )
-            conn.commit()
-            return db.target_relative_path(target, restored_path)
-        finally:
-            conn.close()
+    return server_actions.undelete_file_from_browser(target, file_id)
 
 
 def index_html(server: BildebankServer, *, message: str = "") -> str:
