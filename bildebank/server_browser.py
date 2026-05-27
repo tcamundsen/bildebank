@@ -483,11 +483,14 @@ def tags_page_html(
 
 def tag_row_html(row: sqlite3.Row) -> str:
     name = str(row["name"])
+    kind = str(row["kind"])
+    kind_label = "systemtagg" if kind == db.TAG_KIND_SYSTEM else "brukertagg"
     url = "/tag/" + urllib.parse.quote(name, safe="")
     return f"""
     <div class="people-row">
       <div class="people-name">{html.escape(name)}</div>
       <a class="person-link" href="{html.escape(url)}">Vis bilder ({int(row["file_count"])})</a>
+      <span class="status">{html.escape(kind_label)}</span>
       <span class="status">opprettet: {html.escape(str(row["created_at"]))}</span>
     </div>
     """
@@ -769,8 +772,9 @@ def image_tag_links_html(target: Path, file_id: int) -> str:
     links = []
     for row in rows:
         name = str(row["name"])
+        suffix = " (system)" if row["kind"] == db.TAG_KIND_SYSTEM else ""
         url = "/tag/" + urllib.parse.quote(name, safe="")
-        links.append(f'<a href="{html.escape(url)}">{html.escape(name)}</a>')
+        links.append(f'<a href="{html.escape(url)}">{html.escape(name)}</a>{html.escape(suffix)}')
     return ", ".join(links)
 
 

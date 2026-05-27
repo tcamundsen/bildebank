@@ -17,6 +17,10 @@ DB_FILENAME = ".bilder.sqlite3"
 SCHEMA_VERSION = 7
 GPS_ERROR_EXIFTOOL = "exiftool_error"
 GPS_ERROR_FILE_MISSING = "file_missing"
+TAG_KIND_USER = "user"
+TAG_KIND_SYSTEM = "system"
+SYSTEM_TAG_OUT_OF_FOCUS = "Ute av fokus"
+SYSTEM_TAG_NAMES = (SYSTEM_TAG_OUT_OF_FOCUS,)
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
 COLLECTION_ID_META_KEY = "collection_id"
 BROWSER_DATE_ORDER_SQL = (
@@ -174,6 +178,7 @@ def schema_version(conn: sqlite3.Connection) -> int:
 def require_current_schema(conn: sqlite3.Connection, *, full: bool = True) -> None:
     version = schema_version(conn)
     if version == SCHEMA_VERSION:
+        create_tags_schema(conn)
         set_collection_id(conn)
         conn.commit()
         if full:
@@ -489,6 +494,7 @@ def create_tags_schema(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             name_key TEXT NOT NULL UNIQUE,
+            kind TEXT NOT NULL DEFAULT 'user',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -503,6 +509,24 @@ def create_tags_schema(conn: sqlite3.Connection) -> None:
         ON file_tags(tag_id, file_id);
         """
     )
+    ensure_column(conn, "tags", "kind", "TEXT NOT NULL DEFAULT 'user'")
+    seed_system_tags(conn)
+
+
+def seed_system_tags(conn: sqlite3.Connection) -> None:
+    for name in SYSTEM_TAG_NAMES:
+        clean_name = normalize_tag_name(name)
+        name_key = clean_name.casefold()
+        conn.execute(
+            """
+            INSERT INTO tags(name, name_key, kind)
+            VALUES(?, ?, ?)
+            ON CONFLICT(name_key) DO UPDATE SET
+                name = excluded.name,
+                kind = ?
+            """,
+            (clean_name, name_key, TAG_KIND_SYSTEM, TAG_KIND_SYSTEM),
+        )
 
 
 def create_file_sources_schema(conn: sqlite3.Connection) -> None:
@@ -1884,16 +1908,26 @@ def tag_name_key(name: str) -> str:
     return normalize_tag_name(name).casefold()
 
 
+def tag_kind_for_name(name: str) -> str:
+    name_key = tag_name_key(name)
+    if name_key in {tag_name_key(system_name) for system_name in SYSTEM_TAG_NAMES}:
+        return TAG_KIND_SYSTEM
+    return TAG_KIND_USER
+
+
 def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
     create_tags_schema(conn)
     clean_name = normalize_tag_name(name)
     name_key = clean_name.casefold()
-    row = conn.execute("SELECT id FROM tags WHERE name_key = ?", (name_key,)).fetchone()
+    kind = tag_kind_for_name(clean_name)
+    row = conn.execute("SELECT id, kind FROM tags WHERE name_key = ?", (name_key,)).fetchone()
     if row is not None:
+        if kind == TAG_KIND_SYSTEM and row["kind"] != TAG_KIND_SYSTEM:
+            conn.execute("UPDATE tags SET name = ?, kind = ? WHERE id = ?", (clean_name, TAG_KIND_SYSTEM, int(row["id"])))
         return int(row["id"])
     cursor = conn.execute(
-        "INSERT INTO tags(name, name_key) VALUES(?, ?)",
-        (clean_name, name_key),
+        "INSERT INTO tags(name, name_key, kind) VALUES(?, ?, ?)",
+        (clean_name, name_key, kind),
     )
     return int(cursor.lastrowid)
 
@@ -1912,21 +1946,22 @@ def tag_file(conn: sqlite3.Connection, *, file_id: int, tag_name: str) -> bool:
 
 def untag_file(conn: sqlite3.Connection, *, file_id: int, tag_name: str) -> bool:
     create_tags_schema(conn)
-    row = conn.execute("SELECT id FROM tags WHERE name_key = ?", (tag_name_key(tag_name),)).fetchone()
+    row = conn.execute("SELECT id, kind FROM tags WHERE name_key = ?", (tag_name_key(tag_name),)).fetchone()
     if row is None:
         return False
     cursor = conn.execute(
         "DELETE FROM file_tags WHERE file_id = ? AND tag_id = ?",
         (file_id, int(row["id"])),
     )
-    conn.execute(
-        """
-        DELETE FROM tags
-        WHERE id = ?
-          AND NOT EXISTS (SELECT 1 FROM file_tags WHERE tag_id = ?)
-        """,
-        (int(row["id"]), int(row["id"])),
-    )
+    if row["kind"] != TAG_KIND_SYSTEM:
+        conn.execute(
+            """
+            DELETE FROM tags
+            WHERE id = ?
+              AND NOT EXISTS (SELECT 1 FROM file_tags WHERE tag_id = ?)
+            """,
+            (int(row["id"]), int(row["id"])),
+        )
     return cursor.rowcount > 0
 
 
@@ -1934,7 +1969,7 @@ def tags(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     create_tags_schema(conn)
     return conn.execute(
         """
-        SELECT tags.id, tags.name, tags.created_at, COUNT(file_tags.file_id) AS file_count
+        SELECT tags.id, tags.name, tags.kind, tags.created_at, COUNT(file_tags.file_id) AS file_count
         FROM tags
         LEFT JOIN file_tags ON file_tags.tag_id = tags.id
         GROUP BY tags.id
@@ -1948,7 +1983,7 @@ def tags_for_file(conn: sqlite3.Connection, file_id: int) -> list[sqlite3.Row]:
     return list(
         conn.execute(
             """
-            SELECT tags.id, tags.name, tags.name_key
+            SELECT tags.id, tags.name, tags.name_key, tags.kind
             FROM tags
             JOIN file_tags ON file_tags.tag_id = tags.id
             WHERE file_tags.file_id = ?

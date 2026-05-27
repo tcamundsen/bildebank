@@ -1258,11 +1258,11 @@ def run(args: argparse.Namespace) -> int:
         if args.command == "tag-list":
             if args.path is None:
                 for row in db.tags(conn):
-                    print(f"{row['name']}\t{row['file_count']}")
+                    print(f"{row['name']}\t{row['file_count']}\t{row['kind']}")
                 return 0
             row = resolve_db_file_for_tag_command(conn, target, args.path)
             for tag in db.tags_for_file(conn, int(row["id"])):
-                print(tag["name"])
+                print(f"{tag['name']}\t{tag['kind']}")
             return 0
 
         if args.command == "tag-add":

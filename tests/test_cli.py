@@ -2012,7 +2012,8 @@ model_name = "buffalo_l"
             self.assertIn("La til: Familie", stdout)
             code, stdout, stderr = capture_cli(["--target", str(target), "tag-list"])
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Familie\t1", stdout)
+            self.assertIn("Familie\t1\tuser", stdout)
+            self.assertIn("Ute av fokus\t0\tsystem", stdout)
             code, stdout, stderr = capture_cli(["--target", str(target), "tag-files", "familie"])
             self.assertEqual(code, 0, stderr)
             self.assertIn("IMG_20240102.jpg", stdout)
@@ -2035,9 +2036,19 @@ model_name = "buffalo_l"
             code, stdout, stderr = capture_cli(["--target", str(target), "tag-remove", str(item_path), "familie"])
             self.assertEqual(code, 0, stderr)
             self.assertIn("Fjernet: familie", stdout)
+            code, stdout, stderr = capture_cli(["--target", str(target), "tag-add", str(item_path), "Ute av fokus"])
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("La til: Ute av fokus", stdout)
+            code, stdout, stderr = capture_cli(["--target", str(target), "tag-list", str(item_path)])
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Ute av fokus\tsystem", stdout)
+            code, stdout, stderr = capture_cli(["--target", str(target), "tag-remove", str(item_path), "Ute av fokus"])
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Fjernet: Ute av fokus", stdout)
             code, stdout, stderr = capture_cli(["--target", str(target), "tag-list"])
             self.assertEqual(code, 0, stderr)
             self.assertNotIn("Familie", stdout)
+            self.assertIn("Ute av fokus\t0\tsystem", stdout)
 
         self.assertIn("Tagg: familie", item_body)
         self.assertIn('href="/item/1">Alle bilder</a>', item_body)
@@ -2045,6 +2056,81 @@ model_name = "buffalo_l"
         self.assertEqual(len(tag_month), 1)
         self.assertIn("<h1>Tagger</h1>", tags_body)
         self.assertIn('href="/tag/Familie">Vis bilder (1)</a>', tags_body)
+        self.assertIn("brukertagg", tags_body)
+        self.assertIn("systemtagg", tags_body)
+
+    def test_system_tag_promotes_existing_user_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-a")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                file_id = int(conn.execute("SELECT id FROM files").fetchone()["id"])
+                conn.execute("DELETE FROM file_tags")
+                conn.execute("DELETE FROM tags WHERE name_key = ?", (db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS),))
+                cursor = conn.execute(
+                    "INSERT INTO tags(name, name_key, kind) VALUES(?, ?, ?)",
+                    ("ute av fokus", db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS), db.TAG_KIND_USER),
+                )
+                conn.execute("INSERT INTO file_tags(file_id, tag_id) VALUES(?, ?)", (file_id, int(cursor.lastrowid)))
+                conn.commit()
+            finally:
+                conn.close()
+
+            conn = db.connect(target)
+            try:
+                row = conn.execute("SELECT name, kind FROM tags WHERE name_key = ?", (db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS),)).fetchone()
+                linked = conn.execute("SELECT COUNT(*) AS count FROM file_tags").fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(row["name"], db.SYSTEM_TAG_OUT_OF_FOCUS)
+        self.assertEqual(row["kind"], db.TAG_KIND_SYSTEM)
+        self.assertEqual(int(linked["count"]), 1)
+
+    def test_existing_tags_table_without_kind_gets_system_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.executescript(
+                    """
+                    DROP TABLE file_tags;
+                    DROP TABLE tags;
+                    CREATE TABLE tags (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        name_key TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE TABLE file_tags (
+                        file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                        tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY(file_id, tag_id)
+                    );
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            conn = db.connect(target)
+            try:
+                columns = db.table_columns(conn, "tags")
+                row = conn.execute("SELECT name, kind FROM tags WHERE name_key = ?", (db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS),)).fetchone()
+            finally:
+                conn.close()
+
+        self.assertIn("kind", columns)
+        self.assertEqual(row["name"], db.SYSTEM_TAG_OUT_OF_FOCUS)
+        self.assertEqual(row["kind"], db.TAG_KIND_SYSTEM)
 
     def test_run_server_month_navigation_tolerates_foreign_path_keys(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
