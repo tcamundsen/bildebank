@@ -433,6 +433,24 @@ Notes:
 - `server.py` remains the `page_html`/static asset composition root and keeps a
   thin `shell_page_html` wrapper that injects `page_html`.
 
+### `bildebank/server_assets.py`
+
+Scope:
+
+- Server CSS/JavaScript asset constants and asset version.
+
+Reason:
+
+- Large leaf constants with no runtime dependencies.
+- Keeps `server.py` focused on request handling and composition.
+
+Status: started.
+
+Notes:
+
+- `SERVER_ASSET_VERSION`, `SERVER_CSS`, and `SERVER_JS` have been moved.
+  `server.py` imports the constants directly so existing imports keep working.
+
 ### `bildebank/server_actions.py`
 
 Scope:
@@ -458,6 +476,32 @@ Notes:
 - Browser action helpers for view rotation, remove, and undelete have been
   moved to `server_actions.py`. `server.py` keeps thin compatibility wrappers
   for remove/undelete and delegates the rotate endpoint's DB update helper.
+
+### `bildebank/server_request.py`
+
+Scope:
+
+- Small request/query parsing helpers used by server route handlers.
+
+Reason:
+
+- Pure helpers with no server state.
+- Keeps route-handler code smaller without changing routing behavior.
+
+Likely functions:
+
+- `first_param`
+- `positive_int_param`
+- `nonnegative_int_param`
+- `parse_file_id`
+
+Status: started.
+
+Notes:
+
+- Query parameter helpers and file-id parsing have been moved.
+  `server.py` imports the names directly for compatibility with existing
+  imports.
 
 ## Suggested Order
 
@@ -538,3 +582,9 @@ Notes:
 - done: moved browser action helpers for view rotation, remove, and undelete
   to `bildebank/server_actions.py`; `server.py` keeps compatibility wrappers
   for existing remove/undelete imports.
+- done: moved small request/query parsing helpers to
+  `bildebank/server_request.py`; `server.py` imports the helper names directly
+  for compatibility.
+- done: moved server CSS/JavaScript asset constants to
+  `bildebank/server_assets.py`; `server.py` imports the constants directly for
+  compatibility.
