@@ -25,6 +25,8 @@ def shell_page_html(
     item: Any | None = None,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    all_items_url: str | None = None,
+    all_items_label: str = "Alle bilder",
 ) -> str:
     return page_html(
         title,
@@ -35,6 +37,8 @@ def shell_page_html(
             item=item,
             face_enabled=face_enabled,
             openclip_enabled=openclip_enabled,
+            all_items_url=all_items_url,
+            all_items_label=all_items_label,
         )}
         <main class="{html.escape(main_class)}">
           {content}
@@ -67,7 +71,14 @@ def message_html(message: str) -> str:
     return f'<p class="message">{html.escape(message)}</p>'
 
 
-def source_top_links_html(source: BrowserSource, item: Any | None = None, *, face_enabled: bool = True) -> str:
+def source_top_links_html(
+    source: BrowserSource,
+    item: Any | None = None,
+    *,
+    face_enabled: bool = True,
+    all_items_url: str | None = None,
+    all_items_label: str = "Alle bilder",
+) -> str:
     links = [
         '<a class="server-search-link" href="/geo">Steder</a>',
         '<a class="server-search-link" href="/sources">Kilder</a>',
@@ -75,14 +86,15 @@ def source_top_links_html(source: BrowserSource, item: Any | None = None, *, fac
     ]
     if face_enabled:
         links.insert(0, '<a class="server-search-link" href="/people">Personer</a>')
+    all_label = html.escape(all_items_label)
     if source == all_browser_source() and item is None:
-        links.insert(0, '<a class="server-search-link" href="/">Alle bilder</a>')
+        links.insert(0, f'<a class="server-search-link" href="/">{all_label}</a>')
     if source.date_source is not None or source.source_id is not None or source.geo_place_slug is not None or source.tag_name is not None:
-        all_url = source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/"
-        links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">Alle bilder</a>')
+        all_url = all_items_url or (source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/")
+        links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">{all_label}</a>')
     if source.person_name is not None and face_enabled:
-        all_url = source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/"
-        links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">Alle bilder</a>')
+        all_url = all_items_url or (source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/")
+        links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">{all_label}</a>')
         if source.show_faces:
             no_faces_source = person_browser_source(
                 source.person_name,
@@ -124,11 +136,19 @@ def source_action_links_html(
     *,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    all_items_url: str | None = None,
+    all_items_label: str = "Alle bilder",
 ) -> str:
     search_link = '<a class="server-search-link" href="/search">Bildesøk</a>' if openclip_enabled else ""
     return f"""
     <div class="top-actions">
-      {source_top_links_html(source, item, face_enabled=face_enabled)}
+      {source_top_links_html(
+          source,
+          item,
+          face_enabled=face_enabled,
+          all_items_url=all_items_url,
+          all_items_label=all_items_label,
+      )}
       {search_link}
       <a class="server-search-link" href="/help/web/bildebrowser">Hjelp</a>
       <a class="server-search-link" href="/settings">Innstillinger</a>
@@ -144,12 +164,21 @@ def app_topline_html(
     extra_html: str = "",
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    all_items_url: str | None = None,
+    all_items_label: str = "Alle bilder",
 ) -> str:
     return f"""
     <div class="topline">
       <div class="title">{html.escape(title)}</div>
       {extra_html}
-      {source_action_links_html(source or all_browser_source(), item, face_enabled=face_enabled, openclip_enabled=openclip_enabled)}
+      {source_action_links_html(
+          source or all_browser_source(),
+          item,
+          face_enabled=face_enabled,
+          openclip_enabled=openclip_enabled,
+          all_items_url=all_items_url,
+          all_items_label=all_items_label,
+      )}
     </div>
     """
 
@@ -164,6 +193,8 @@ def app_header_html(
     message_html: str = "",
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    all_items_url: str | None = None,
+    all_items_label: str = "Alle bilder",
 ) -> str:
     return f"""
     <header class="browser-header">
@@ -174,6 +205,8 @@ def app_header_html(
           extra_html=extra_html,
           face_enabled=face_enabled,
           openclip_enabled=openclip_enabled,
+          all_items_url=all_items_url,
+          all_items_label=all_items_label,
       )}
       {controls}
       {message_html}

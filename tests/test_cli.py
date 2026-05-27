@@ -2278,6 +2278,15 @@ model_name = "buffalo_l"
             )
             tag_item = source_item_by_id(target, tag_source, 1, hide_out_of_focus=True)
             tag_month_items = source_month_items(target, tag_source, "2024-01", hide_out_of_focus=True)
+            self.assertIsNotNone(tag_item)
+            tag_item_body = source_item_page_html(
+                target,
+                tag_source,
+                tag_item,
+                *adjacent_source_items(target, tag_source, tag_item, hide_out_of_focus=True),
+                source_month_navigation(target, tag_source, tag_item, hide_out_of_focus=True),
+                hide_out_of_focus=True,
+            )
 
         self.assertIsNone(hidden_browser_item)
         self.assertIsNotNone(visible_browser_item)
@@ -2287,6 +2296,43 @@ model_name = "buffalo_l"
         self.assertIsNone(filtered_source_item)
         self.assertIsNotNone(tag_item)
         self.assertEqual([int(item["id"]) for item in tag_month_items], [1])
+        self.assertIn('href="/">Synlige bilder</a>', tag_item_body)
+        self.assertNotIn('href="/item/1">Synlige bilder</a>', tag_item_body)
+
+    def test_run_server_out_of_focus_button_redirects_to_adjacent_visible_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-a")
+            (source / "IMG_20240103.jpg").write_bytes(b"image-b")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]), 0)
+            first_item = browser_item_by_id(target, 1, hide_out_of_focus=True)
+            second_item = browser_item_by_id(target, 2, hide_out_of_focus=True)
+            self.assertIsNotNone(first_item)
+            self.assertIsNotNone(second_item)
+            first_body = source_item_page_html(
+                target,
+                all_browser_source(),
+                first_item,
+                *adjacent_source_items(target, all_browser_source(), first_item, hide_out_of_focus=True),
+                source_month_navigation(target, all_browser_source(), first_item, hide_out_of_focus=True),
+                hide_out_of_focus=True,
+            )
+            second_body = source_item_page_html(
+                target,
+                all_browser_source(),
+                second_item,
+                *adjacent_source_items(target, all_browser_source(), second_item, hide_out_of_focus=True),
+                source_month_navigation(target, all_browser_source(), second_item, hide_out_of_focus=True),
+                hide_out_of_focus=True,
+            )
+
+        self.assertIn('data-tag-name="Ute av fokus" aria-pressed="false" data-tag-hide-redirect="/item/2"', first_body)
+        self.assertIn('data-tag-name="Ute av fokus" aria-pressed="false" data-tag-hide-redirect="/item/1"', second_body)
+        self.assertIn("tagHideRedirect", SERVER_JS)
 
     def test_system_tag_promotes_existing_user_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

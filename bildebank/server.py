@@ -368,6 +368,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 face_enabled=self.server.face_enabled,
                 openclip_enabled=self.server.openclip_enabled,
                 face_config=self.server.config.face_recognition,
+                hide_out_of_focus=self.server.hide_out_of_focus,
             )
         )
 
@@ -618,6 +619,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     face_enabled=self.server.face_enabled,
                     openclip_enabled=self.server.openclip_enabled,
                     face_config=self.server.config.face_recognition,
+                    hide_out_of_focus=hide_out_of_focus,
                 )
             )
             return

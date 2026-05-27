@@ -186,7 +186,7 @@ def app_status_hide_out_of_focus_row_html(enabled: bool) -> str:
     status = "På" if enabled else "Av"
     return f"""
     <div class="info-row">
-      <dt>Skjul Ute av fokus</dt>
+      <dt>Skjul bilder tagget “Ute av fokus”</dt>
       <dd>
         <form action="/settings/hide-out-of-focus" method="post" class="app-toggle-form">
           <input type="hidden" name="enabled" value="false">

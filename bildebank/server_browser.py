@@ -205,7 +205,11 @@ def item_order_key(item: Any) -> tuple[str, str]:
 
 
 def should_filter_out_of_focus(source: BrowserSource, hide_out_of_focus: bool) -> bool:
-    return hide_out_of_focus and db.tag_name_key(source.tag_name or "") != db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS)
+    if not hide_out_of_focus:
+        return False
+    if source.tag_name is None:
+        return True
+    return db.tag_name_key(source.tag_name) != db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS)
 
 
 def all_source_where(*, hide_out_of_focus: bool = False) -> tuple[str, tuple[object, ...]]:
@@ -692,6 +696,7 @@ def source_item_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
+    hide_out_of_focus: bool = False,
 ) -> str:
     from .server_faces import (
         confirmed_people_for_file,
@@ -724,8 +729,16 @@ def source_item_page_html(
     faces_button = faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
     faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
     info_overlay = image_info_overlay_html()
-    tag_controls = system_tag_controls_html(target, int(item["id"]))
+    out_of_focus_redirect_url = hidden_after_out_of_focus_tag_redirect_url(
+        source,
+        previous_item,
+        next_item,
+        hide_out_of_focus=hide_out_of_focus,
+    )
+    tag_controls = system_tag_controls_html(target, int(item["id"]), out_of_focus_redirect_url=out_of_focus_redirect_url)
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config) if face_enabled else ""
+    all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus)
+    all_items_label = "Synlige bilder" if hide_out_of_focus else "Alle bilder"
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
@@ -739,6 +752,8 @@ def source_item_page_html(
               message_html=duplicate_warning,
               face_enabled=face_enabled,
               openclip_enabled=openclip_enabled,
+              all_items_url=all_items_url,
+              all_items_label=all_items_label,
           )}
           <div class="stage-shell">
             {tag_controls}
@@ -754,7 +769,37 @@ def source_item_page_html(
     )
 
 
-def system_tag_controls_html(target: Path, file_id: int) -> str:
+def all_browser_item_link_url(target: Path, source: BrowserSource, item: Any, *, hide_out_of_focus: bool = False) -> str | None:
+    if source == all_browser_source() or not hide_out_of_focus:
+        return None
+    visible_item = source_item_by_id(
+        target,
+        all_browser_source(),
+        int(item["id"]),
+        hide_out_of_focus=hide_out_of_focus,
+    )
+    if visible_item is None:
+        return "/"
+    return source_item_url(all_browser_source(), int(item["id"]))
+
+
+def hidden_after_out_of_focus_tag_redirect_url(
+    source: BrowserSource,
+    previous_item: Any | None,
+    next_item: Any | None,
+    *,
+    hide_out_of_focus: bool = False,
+) -> str:
+    if not should_filter_out_of_focus(source, hide_out_of_focus):
+        return ""
+    if next_item is not None:
+        return source_item_url(source, int(next_item["id"]))
+    if previous_item is not None:
+        return source_item_url(source, int(previous_item["id"]))
+    return source.root_url
+
+
+def system_tag_controls_html(target: Path, file_id: int, *, out_of_focus_redirect_url: str = "") -> str:
     conn = db.connect(target)
     try:
         active_names = {str(row["name"]).casefold() for row in db.tags_for_file(conn, file_id)}
@@ -765,10 +810,13 @@ def system_tag_controls_html(target: Path, file_id: int) -> str:
         active = tag_name.casefold() in active_names
         pressed = "true" if active else "false"
         active_class = " active" if active else ""
+        redirect_attr = ""
+        if tag_name == db.SYSTEM_TAG_OUT_OF_FOCUS and out_of_focus_redirect_url:
+            redirect_attr = f' data-tag-hide-redirect="{html.escape(out_of_focus_redirect_url)}"'
         buttons.append(
             f'<button class="tag-toggle{active_class}" type="button" '
             f'data-tag-toggle="{file_id}" data-tag-name="{html.escape(tag_name)}" '
-            f'aria-pressed="{pressed}">{html.escape(tag_name)}</button>'
+            f'aria-pressed="{pressed}"{redirect_attr}>{html.escape(tag_name)}</button>'
         )
     return f'<aside class="tag-rail" aria-label="Systemtagger">{"".join(buttons)}</aside>'
 

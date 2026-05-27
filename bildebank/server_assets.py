@@ -817,6 +817,11 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
         const payload = await response.json();
         if (!payload.ok) throw new Error(payload.error || "Kunne ikke lagre tagg.");
         const encodedTag = encodeURIComponent(payload.tag_name || tagName);
+        const hideRedirect = button.dataset.tagHideRedirect || "";
+        if (payload.tagged && hideRedirect && (payload.tag_name || tagName) === "Ute av fokus") {
+          window.location.href = hideRedirect;
+          return;
+        }
         if (!payload.tagged && window.location.pathname.startsWith(`/tag/${encodedTag}/`)) {
           window.location.href = `/tag/${encodedTag}`;
           return;
