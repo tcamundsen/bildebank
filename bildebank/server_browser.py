@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import html
 import re
 import sqlite3
 import urllib.parse
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import db
 from .config import FaceRecognitionConfig
@@ -16,6 +17,7 @@ from .openclip import relative_to_target
 from .server_geo import geo_place_cells_by_column
 
 
+ShellPageRenderer = Callable[..., str]
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
@@ -449,6 +451,90 @@ def imported_source_items(target: Path, source_id: int) -> list[Any]:
         )
     finally:
         conn.close()
+
+
+def imported_source_by_id(target: Path, source_id: int) -> db.Source | None:
+    conn = db.connect(target)
+    try:
+        try:
+            return db.get_source(conn, source_id)
+        except ValueError:
+            return None
+    finally:
+        conn.close()
+
+
+def source_summary_rows(target: Path) -> list[sqlite3.Row]:
+    conn = db.connect(target)
+    try:
+        return list(
+            conn.execute(
+                """
+                SELECT
+                    sources.id,
+                    sources.name,
+                    sources.path,
+                    sources.imported_at,
+                    sources.status,
+                    sources.superseded_by_source_id,
+                    COUNT(file_sources.id) AS source_file_count,
+                    COUNT(CASE WHEN files.deleted_at IS NULL THEN 1 END) AS active_file_count
+                FROM sources
+                LEFT JOIN file_sources ON file_sources.source_id = sources.id
+                LEFT JOIN files ON files.id = file_sources.file_id
+                GROUP BY sources.id
+                ORDER BY sources.imported_at IS NULL, sources.imported_at, sources.id
+                """
+            )
+        )
+    finally:
+        conn.close()
+
+
+def sources_page_html(
+    target: Path,
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    sources = source_summary_rows(target)
+    rows = "\n".join(source_row_html(source) for source in sources)
+    content = (
+        f'<div class="people-table">{rows}</div>'
+        if rows
+        else '<p class="meta">Ingen importerte kilder registrert.</p>'
+    )
+    return shell_page_html(
+        "Kilder",
+        f"""
+        <h1>Kilder</h1>
+        {content}
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def source_row_html(source: sqlite3.Row) -> str:
+    name = str(source["name"])
+    status = str(source["status"])
+    active_file_count = int(source["active_file_count"])
+    source_file_count = int(source["source_file_count"])
+    imported_at = str(source["imported_at"] or "-")
+    superseded_by = source["superseded_by_source_id"]
+    superseded = f", erstattet av #{int(superseded_by)}" if superseded_by is not None else ""
+    source_browser = imported_source_browser_source(source)
+    return f"""
+    <div class="people-row">
+      <div class="people-name">{html.escape(name)}</div>
+      <a class="person-link" href="{html.escape(source_browser.root_url)}">Vis bilder ({active_file_count})</a>
+      <span class="status">filer fra kilde: {source_file_count}</span>
+      <span class="status">status: {html.escape(status)}{html.escape(superseded)}</span>
+      <span class="status">importert: {html.escape(imported_at)}</span>
+      <div class="detail">{html.escape(str(source["path"]))}</div>
+    </div>
+    """
 
 
 def all_source_items(target: Path) -> list[Any]:

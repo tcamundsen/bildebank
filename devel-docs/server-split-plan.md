@@ -282,6 +282,8 @@ Notes:
   lookup, and item-by-id-list lookup have been moved.
 - Browser dispatchers for first/item/adjacent lookups, source item lists,
   source month keys, month navigation, and month item lists have been moved.
+- Imported-source lookup, source summary rows, source row rendering, and
+  source overview rendering have been moved.
 - Browser HTML rendering remains in `server.py` for now.
 
 ### `bildebank/server_faces.py`
@@ -459,6 +461,9 @@ Status: postponed.
 - done: moved browser first/item/adjacent dispatchers, source item list
   dispatching, and month navigation/item helpers to
   `bildebank/server_browser.py`.
+- done: moved imported-source lookup and source overview helpers to
+  `bildebank/server_browser.py`; `server.py` keeps a thin wrapper for page
+  shell composition.
 - done: moved app/status and removed-files rendering helpers to
   `bildebank/server_app.py`; `server.py` keeps thin wrappers for page shell
   composition.

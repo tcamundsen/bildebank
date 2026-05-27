@@ -5,7 +5,6 @@ import json
 import mimetypes
 import re
 import shutil
-import sqlite3
 import urllib.parse
 from dataclasses import replace
 from http import HTTPStatus
@@ -37,6 +36,7 @@ from .geo import (
 from .media import camera_info
 from .media_cache import cached_image_dimensions
 from . import server_app
+from . import server_browser
 from .server_app import installed_insightface_models, module_available, server_program_repo_root
 from .server_browser import (
     BrowserSource,
@@ -53,6 +53,7 @@ from .server_browser import (
     first_source_item,
     geo_place_browser_source,
     imported_source_browser_source,
+    imported_source_by_id,
     person_item_by_id,
     person_browser_source,
     person_month_items,
@@ -61,6 +62,7 @@ from .server_browser import (
     source_item_by_id,
     source_item_url,
     source_items,
+    source_summary_rows,
     source_month_items,
     source_month_navigation,
     source_month_navigation_for_key,
@@ -132,6 +134,7 @@ __all__ = [
     "person_month_items",
     "person_month_navigation",
     "source_items",
+    "source_summary_rows",
 ]
 
 
@@ -2335,82 +2338,13 @@ def empty_source_message(source: BrowserSource) -> str:
     return "Ingen bekreftede bilder for denne personen ennå."
 
 
-def imported_source_by_id(target: Path, source_id: int) -> db.Source | None:
-    conn = db.connect(target)
-    try:
-        try:
-            return db.get_source(conn, source_id)
-        except ValueError:
-            return None
-    finally:
-        conn.close()
-
-
-def source_summary_rows(target: Path) -> list[sqlite3.Row]:
-    conn = db.connect(target)
-    try:
-        return list(
-            conn.execute(
-                """
-                SELECT
-                    sources.id,
-                    sources.name,
-                    sources.path,
-                    sources.imported_at,
-                    sources.status,
-                    sources.superseded_by_source_id,
-                    COUNT(file_sources.id) AS source_file_count,
-                    COUNT(CASE WHEN files.deleted_at IS NULL THEN 1 END) AS active_file_count
-                FROM sources
-                LEFT JOIN file_sources ON file_sources.source_id = sources.id
-                LEFT JOIN files ON files.id = file_sources.file_id
-                GROUP BY sources.id
-                ORDER BY sources.imported_at IS NULL, sources.imported_at, sources.id
-                """
-            )
-        )
-    finally:
-        conn.close()
-
-
 def sources_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
-    sources = source_summary_rows(target)
-    rows = "\n".join(source_row_html(source) for source in sources)
-    content = (
-        f'<div class="people-table">{rows}</div>'
-        if rows
-        else '<p class="meta">Ingen importerte kilder registrert.</p>'
-    )
-    return shell_page_html(
-        "Kilder",
-        f"""
-        <h1>Kilder</h1>
-        {content}
-        """,
+    return server_browser.sources_page_html(
+        target,
+        shell_page_html=shell_page_html,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
     )
-
-
-def source_row_html(source: sqlite3.Row) -> str:
-    name = str(source["name"])
-    status = str(source["status"])
-    active_file_count = int(source["active_file_count"])
-    source_file_count = int(source["source_file_count"])
-    imported_at = str(source["imported_at"] or "-")
-    superseded_by = source["superseded_by_source_id"]
-    superseded = f", erstattet av #{int(superseded_by)}" if superseded_by is not None else ""
-    source_browser = imported_source_browser_source(source)
-    return f"""
-    <div class="people-row">
-      <div class="people-name">{html.escape(name)}</div>
-      <a class="person-link" href="{html.escape(source_browser.root_url)}">Vis bilder ({active_file_count})</a>
-      <span class="status">filer fra kilde: {source_file_count}</span>
-      <span class="status">status: {html.escape(status)}{html.escape(superseded)}</span>
-      <span class="status">importert: {html.escape(imported_at)}</span>
-      <div class="detail">{html.escape(str(source["path"]))}</div>
-    </div>
-    """
 
 
 def person_not_found_html(
