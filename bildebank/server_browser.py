@@ -33,7 +33,7 @@ PageRenderer = Callable[[str, str], str]
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
-    "size_bytes, view_rotation_degrees, gps_lat, gps_lon, "
+    "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_source, "
     "media_width, media_height, media_orientation, media_metadata_mtime_ns, "
     f"{db.H3_FILE_COLUMNS_SQL}"
 )
@@ -488,6 +488,7 @@ def imported_source_items(target: Path, source_id: int, *, hide_out_of_focus: bo
                     files.view_rotation_degrees,
                     files.gps_lat,
                     files.gps_lon,
+                    files.gps_source,
                     files.media_width,
                     files.media_height,
                     files.media_orientation,
@@ -669,6 +670,7 @@ def item_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
+    manual_h3_cell: str = "",
 ) -> str:
     return source_item_page_html(
         target,
@@ -681,6 +683,7 @@ def item_page_html(
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
         face_config=face_config,
+        manual_h3_cell=manual_h3_cell,
     )
 
 
@@ -696,6 +699,7 @@ def source_item_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
+    manual_h3_cell: str = "",
     hide_out_of_focus: bool = False,
 ) -> str:
     from .server_faces import (
@@ -720,6 +724,7 @@ def source_item_page_html(
         include_info_button=True,
         info_button=image_info_button_html(int(item["id"])),
         rotation_buttons=rotation_buttons_html(source, item),
+        manual_location_button=manual_location_button_html(item, manual_h3_cell),
         unconfirm_buttons=unconfirm_face_buttons_html(target, source, item, face_config) if face_enabled else "",
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
@@ -884,6 +889,18 @@ def rotation_buttons_html(source: BrowserSource, item: Any) -> str:
     """
 
 
+def manual_location_button_html(item: Any, h3_cell: str) -> str:
+    clean_h3_cell = h3_cell.strip()
+    if not clean_h3_cell:
+        return ""
+    file_id = int(item["id"])
+    return (
+        f'<button class="nav-button" type="button" '
+        f'data-manual-location-item="{file_id}" '
+        f'data-manual-location-cell="{html.escape(clean_h3_cell)}">Sett sted</button>'
+    )
+
+
 def delete_button_html(source: BrowserSource, item: Any, previous_item: Any | None, next_item: Any | None) -> str:
     redirect_url = source_item_url(source, int(next_item["id"])) if next_item is not None else ""
     if not redirect_url and previous_item is not None:
@@ -946,6 +963,7 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
     maps_link = google_maps_link_html(item)
     if maps_link:
         rows.append(info_row_html("Kart", maps_link, raw_html=True))
+        rows.append(info_row_html("GPS-kilde", gps_source_text(item)))
     geo_links = image_geo_area_links_html(target, item)
     if geo_links:
         rows.append(info_row_html("Steder", geo_links, raw_html=True))
@@ -994,6 +1012,18 @@ def google_maps_link_html(item: Any) -> str:
     url = f"https://www.google.com/maps/search/?api=1&query={query}"
     label = f"Åpne i Google Maps ({latitude:.7f}, {longitude:.7f})"
     return f'<a href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
+
+
+def gps_source_text(item: Any) -> str:
+    try:
+        source = str(item["gps_source"] or "")
+    except (KeyError, IndexError):
+        source = ""
+    labels = {
+        "exiftool": "fra metadata",
+        "manual-h3": "satt manuelt",
+    }
+    return labels.get(source, source or "ukjent")
 
 
 def camera_text(camera: Any | None) -> str:

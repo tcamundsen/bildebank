@@ -4,6 +4,7 @@ import shutil
 from pathlib import Path
 
 from . import db
+from .geo import h3_cell_center_point, h3_cells_for_point
 from .target_lock import TargetLock
 
 
@@ -37,6 +38,27 @@ def set_system_tag_on_file(target: Path, file_id: int, tag_name: str, tagged: bo
         db.set_file_tag(conn, file_id=file_id, tag_name=tag_name, tagged=tagged)
         conn.commit()
         return tagged
+    finally:
+        conn.close()
+
+
+def set_manual_h3_location_on_file(target: Path, file_id: int, h3_cell: str) -> None:
+    clean_h3_cell = h3_cell.strip()
+    if not clean_h3_cell:
+        raise ValueError("Aktiv manuell H3-celle er ikke satt.")
+    point = h3_cell_center_point(clean_h3_cell)
+    cells = h3_cells_for_point(point.lat, point.lon)
+    conn = db.connect(target)
+    try:
+        if not db.set_file_manual_h3_location(
+            conn,
+            file_id=file_id,
+            gps_lat=point.lat,
+            gps_lon=point.lon,
+            h3_cells=cells,
+        ):
+            raise ValueError("Filen finnes ikke i importdatabasen.")
+        conn.commit()
     finally:
         conn.close()
 

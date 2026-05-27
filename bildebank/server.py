@@ -273,6 +273,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/settings/hide-out-of-focus":
                 self.respond_set_hide_out_of_focus()
                 return
+            if parsed.path == "/settings/manual-h3-cell":
+                self.respond_set_manual_h3_cell()
+                return
             if parsed.path == "/settings/face-model":
                 self.respond_set_face_model()
                 return
@@ -311,6 +314,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/item-tag":
                 self.respond_tag_item()
+                return
+            if parsed.path == "/api/item-manual-location":
+                self.respond_manual_location_item()
                 return
             if parsed.path == "/api/item-delete":
                 self.respond_delete_item()
@@ -368,6 +374,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 face_enabled=self.server.face_enabled,
                 openclip_enabled=self.server.openclip_enabled,
                 face_config=self.server.config.face_recognition,
+                manual_h3_cell=self.server.config.browser.manual_h3_cell,
                 hide_out_of_focus=self.server.hide_out_of_focus,
             )
         )
@@ -619,6 +626,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     face_enabled=self.server.face_enabled,
                     openclip_enabled=self.server.openclip_enabled,
                     face_config=self.server.config.face_recognition,
+                    manual_h3_cell=self.server.config.browser.manual_h3_cell,
                     hide_out_of_focus=hide_out_of_focus,
                 )
             )
@@ -728,6 +736,20 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             server_app.server_program_repo_root(),
             enabled,
         )
+        self.redirect("/settings")
+
+    def respond_set_manual_h3_cell(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        h3_cell = first_param(params, "h3_cell")
+        try:
+            self.server.config = server_app.update_manual_h3_cell_config(
+                self.server.config,
+                server_app.server_program_repo_root(),
+                h3_cell,
+            )
+        except ValueError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
+            return
         self.redirect("/settings")
 
     def respond_set_face_model(self) -> None:
@@ -960,6 +982,24 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         self.respond_json({"ok": True, "file_id": file_id, "tag_name": db.normalize_tag_name(tag_name), "tagged": tagged})
+
+    def respond_manual_location_item(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        try:
+            file_id = int(payload.get("file_id"))
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            server_actions.set_manual_h3_location_on_file(
+                self.server.target,
+                file_id,
+                self.server.config.browser.manual_h3_cell,
+            )
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_json({"ok": True, "file_id": file_id, "gps_source": "manual-h3"})
 
     def respond_delete_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)

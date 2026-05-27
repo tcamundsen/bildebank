@@ -163,6 +163,17 @@ def h3_resolution(h3_cell: str) -> int:
     return resolution
 
 
+def h3_cell_center_point(h3_cell: str) -> GpsData:
+    import h3
+
+    h3_resolution(h3_cell)
+    try:
+        lat, lon = h3.cell_to_latlng(h3_cell)
+    except Exception as exc:  # noqa: BLE001 - h3 raises library-specific exceptions
+        raise ValueError(f"Ugyldig H3-celle: {h3_cell}") from exc
+    return GpsData(lat=float(lat), lon=float(lon))
+
+
 def batched(items: list[Path], batch_size: int) -> Iterable[list[Path]]:
     if batch_size < 1:
         raise ValueError("batch_size må være minst 1")

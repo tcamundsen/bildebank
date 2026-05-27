@@ -2011,7 +2011,7 @@ def tagged_files(conn: sqlite3.Connection, tag_name: str) -> list[sqlite3.Row]:
             f"""
             SELECT files.id, files.target_path, files.target_path_key, files.stored_filename,
                    files.taken_date, files.date_source, files.size_bytes, files.view_rotation_degrees,
-                   files.gps_lat, files.gps_lon, files.media_width, files.media_height,
+                   files.gps_lat, files.gps_lon, files.gps_source, files.media_width, files.media_height,
                    files.media_orientation, files.media_metadata_mtime_ns, {H3_FILE_COLUMNS_SQL}
             FROM files
             JOIN file_tags ON file_tags.file_id = files.id
@@ -2032,7 +2032,7 @@ def geo_scan_files(
     only_missing: bool = False,
     limit: int | None = None,
 ) -> list[sqlite3.Row]:
-    where = ["deleted_at IS NULL"]
+    where = ["deleted_at IS NULL", "(gps_source IS NULL OR gps_source != 'manual-h3')"]
     if only_missing:
         where.append("gps_lat IS NULL")
         where.append("gps_lon IS NULL")
@@ -2088,6 +2088,39 @@ def update_file_gps(
             file_id,
         ),
     )
+
+
+def set_file_manual_h3_location(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    gps_lat: float,
+    gps_lon: float,
+    h3_cells: dict[str, str | None],
+) -> bool:
+    row = conn.execute(
+        """
+        SELECT id, deleted_at
+        FROM files
+        WHERE id = ?
+        """,
+        (file_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    if row["deleted_at"] is not None:
+        raise ValueError("Filen er markert som slettet.")
+    update_file_gps(
+        conn,
+        file_id=file_id,
+        gps_lat=gps_lat,
+        gps_lon=gps_lon,
+        gps_alt=None,
+        h3_cells=h3_cells,
+        gps_source="manual-h3",
+        gps_error=None,
+    )
+    return True
 
 
 def has_legacy_gps_errors(conn: sqlite3.Connection) -> bool:
@@ -2179,7 +2212,7 @@ def geo_areas(
 
 GEO_FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
-    "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_alt, "
+    "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_alt, gps_source, "
     f"{H3_FILE_COLUMNS_SQL}"
 )
 

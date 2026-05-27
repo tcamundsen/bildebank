@@ -1108,7 +1108,7 @@ pretrained = "laion2b_s34b_b79k"
             config = AppConfig(
                 face_recognition=FaceRecognitionConfig(enabled=True, model_root=model_root, model_name="buffalo_l"),
                 openclip=OpenClipConfig(enabled=True, model_name="Test-Model", pretrained="test-weights", device="cpu"),
-                browser=BrowserConfig(hide_out_of_focus=True),
+                browser=BrowserConfig(hide_out_of_focus=True, manual_h3_cell="872830828ffffff"),
             )
 
             with (
@@ -1119,9 +1119,12 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("<h1>Innstillinger</h1>", body)
         self.assertIn("Bildebank-versjon", body)
         self.assertIn("Bildesamling", body)
-        self.assertLess(body.index("Bildesamling"), body.index("Skjul Ute av fokus"))
-        self.assertLess(body.index("Skjul Ute av fokus"), body.index("Bildebank-versjon"))
+        self.assertLess(body.index("Bildesamling"), body.index("Skjul bilder tagget"))
+        self.assertLess(body.index("Skjul bilder tagget"), body.index("Bildebank-versjon"))
         self.assertIn('action="/settings/hide-out-of-focus"', body)
+        self.assertIn('action="/settings/manual-h3-cell"', body)
+        self.assertIn('name="h3_cell" value="872830828ffffff"', body)
+        self.assertIn("Aktiv manuell H3-celle", body)
         self.assertIn('<span class="app-toggle-status">På</span>', body)
         self.assertIn(str(target), body)
         self.assertIn("InsightFace aktivert", body)
@@ -1207,6 +1210,56 @@ pretrained = "laion2b_s34b_b79k"
         self.assertTrue(config.browser.hide_out_of_focus)
         self.assertTrue(handler.server.config.browser.hide_out_of_focus)
         self.assertEqual(handler.location, "/settings")
+
+    def test_run_server_manual_h3_cell_post_updates_config(self) -> None:
+        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = f"h3_cell={h3_cell}".encode("utf-8")
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig())
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_manual_h3_cell(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+
+        self.assertEqual(config.browser.manual_h3_cell, h3_cell)
+        self.assertEqual(handler.server.config.browser.manual_h3_cell, h3_cell)
+        self.assertEqual(handler.location, "/settings")
+
+    def test_run_server_manual_h3_cell_post_rejects_invalid_cell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = b"h3_cell=ikke-h3"
+            response: dict[str, object] = {}
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig())
+
+                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_manual_h3_cell(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
+        self.assertIn("Ugyldig H3-celle", str(response["content"]))
 
     def test_run_server_face_model_post_updates_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1711,6 +1764,137 @@ model_name = "buffalo_l"
         self.assertIn('data-delete-path="2024/01/IMG_20240102.png"', body)
         self.assertIn("/api/item-delete", SERVER_JS)
         self.assertIn("Flytte til deleted/?", SERVER_JS)
+
+    def test_run_server_item_page_has_manual_location_button_when_configured(self) -> None:
+        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+                manual_h3_cell=h3_cell,
+            )
+
+        self.assertIn("Sett sted", body)
+        self.assertIn('data-manual-location-item="1"', body)
+        self.assertIn(f'data-manual-location-cell="{h3_cell}"', body)
+        self.assertIn("/api/item-manual-location", SERVER_JS)
+        self.assertIn("Sette sted fra aktiv H3-celle?", SERVER_JS)
+
+    def test_run_server_item_manual_location_endpoint_sets_h3_location(self) -> None:
+        import h3
+
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 6)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            data = json.dumps({"file_id": 1}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target, config=AppConfig(browser=BrowserConfig(manual_h3_cell=h3_cell)))
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
+
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            info_body = image_info_content_html(target, item)
+            conn = db.connect(target)
+            try:
+                row = conn.execute("SELECT gps_lat, gps_lon, gps_alt, gps_source, gps_error, h3_res0, h3_res9 FROM files WHERE id = 1").fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(handler.body, {"ok": True, "file_id": 1, "gps_source": "manual-h3"})
+        self.assertEqual(row["gps_source"], "manual-h3")
+        self.assertIsNone(row["gps_alt"])
+        self.assertIsNone(row["gps_error"])
+        self.assertIsNotNone(row["gps_lat"])
+        self.assertIsNotNone(row["gps_lon"])
+        self.assertTrue(row["h3_res0"])
+        self.assertTrue(row["h3_res9"])
+        self.assertIn("<dt>GPS-kilde</dt>", info_body)
+        self.assertIn("satt manuelt", info_body)
+
+    def test_run_server_item_manual_location_endpoint_rejects_unknown_file(self) -> None:
+        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            data = json.dumps({"file_id": 99}).encode("utf-8")
+            response: dict[str, object] = {}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target, config=AppConfig(browser=BrowserConfig(manual_h3_cell=h3_cell)))
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
+        self.assertIn("Filen finnes ikke", str(response["content"]))
+
+    def test_run_server_item_manual_location_endpoint_rejects_invalid_h3_cell(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            data = json.dumps({"file_id": 1}).encode("utf-8")
+            response: dict[str, object] = {}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target, config=AppConfig(browser=BrowserConfig(manual_h3_cell="ikke-h3")))
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
+        self.assertIn("Ugyldig H3-celle", str(response["content"]))
 
     def test_run_server_item_page_has_system_tag_buttons(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

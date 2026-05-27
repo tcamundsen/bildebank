@@ -231,6 +231,7 @@ def source_controls_html(
     include_info_button: bool = False,
     info_button: str = "",
     rotation_buttons: str = "",
+    manual_location_button: str = "",
     unconfirm_buttons: str = "",
     delete_button: str = "",
 ) -> str:
@@ -243,6 +244,7 @@ def source_controls_html(
       {source_nav_link(source, previous_item, "Forrige bilde", "previous")}
       {source_nav_link(source, next_item, "Neste bilde", "next")}
       {rotation_buttons}
+      {manual_location_button}
       {info_button if include_info_button else ""}
       {unconfirm_buttons}
       {delete_button}

@@ -12,6 +12,7 @@ from .config import (
     AppConfig,
     FaceRecognitionConfig,
     set_browser_hide_out_of_focus,
+    set_browser_manual_h3_cell,
     set_face_recognition_enabled,
     set_face_recognition_model_name,
 )
@@ -38,6 +39,7 @@ def app_status_page_html(
         (
             app_status_row_html("Bildesamling", str(target)),
             app_status_hide_out_of_focus_row_html(config.browser.hide_out_of_focus),
+            app_status_manual_h3_cell_row_html(config.browser.manual_h3_cell),
             app_status_row_html("Bildebank-versjon", __version__),
             app_status_face_config_row_html(config.face_recognition.enabled, insightface_installed=insightface_installed),
             app_status_face_model_row_html(config.face_recognition),
@@ -111,6 +113,15 @@ def update_hide_out_of_focus_config(config: AppConfig, repo_root: Path, enabled:
     return replace(
         config,
         browser=replace(config.browser, hide_out_of_focus=enabled),
+    )
+
+
+def update_manual_h3_cell_config(config: AppConfig, repo_root: Path, h3_cell: str) -> AppConfig:
+    clean_h3_cell = h3_cell.strip()
+    set_browser_manual_h3_cell(repo_root, clean_h3_cell)
+    return replace(
+        config,
+        browser=replace(config.browser, manual_h3_cell=clean_h3_cell),
     )
 
 
@@ -195,6 +206,23 @@ def app_status_hide_out_of_focus_row_html(enabled: bool) -> str:
             <span class="app-toggle-track" aria-hidden="true"><span></span></span>
             <span class="app-toggle-status">{status}</span>
           </label>
+        </form>
+      </dd>
+    </div>
+    """
+
+
+def app_status_manual_h3_cell_row_html(h3_cell: str) -> str:
+    value = html.escape(h3_cell)
+    status = html.escape(h3_cell or "Ikke satt")
+    return f"""
+    <div class="info-row">
+      <dt>Aktiv manuell H3-celle</dt>
+      <dd>
+        <form action="/settings/manual-h3-cell" method="post" class="app-toggle-form">
+          <input type="text" name="h3_cell" value="{value}" placeholder="H3-celle">
+          <button type="submit" class="nav-button">Lagre</button>
+          <span class="app-toggle-status">{status}</span>
         </form>
       </dd>
     </div>

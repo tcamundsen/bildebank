@@ -855,6 +855,27 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       }
     });
   });
+  document.querySelectorAll("[data-manual-location-item]").forEach(button => {
+    button.addEventListener("click", async () => {
+      const fileId = Number(button.dataset.manualLocationItem);
+      const h3Cell = button.dataset.manualLocationCell || "";
+      if (!confirm(`Sette sted fra aktiv H3-celle?\n\n${h3Cell}`)) return;
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/item-manual-location", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({file_id: fileId}),
+        });
+        const payload = await response.json();
+        if (!payload.ok) throw new Error(payload.error || "Kunne ikke sette sted.");
+        window.location.reload();
+      } catch (error) {
+        alert(error.message || "Kunne ikke sette sted.");
+        button.disabled = false;
+      }
+    });
+  });
   document.querySelectorAll("[data-delete-item]").forEach(button => {
     button.addEventListener("click", async () => {
       const fileId = Number(button.dataset.deleteItem);

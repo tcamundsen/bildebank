@@ -32,6 +32,7 @@ class OpenClipConfig:
 @dataclass(frozen=True)
 class BrowserConfig:
     hide_out_of_focus: bool = False
+    manual_h3_cell: str = ""
 
 
 @dataclass(frozen=True)
@@ -79,6 +80,7 @@ def load_config(repo_root: Path) -> AppConfig:
         ),
         browser=BrowserConfig(
             hide_out_of_focus=bool(browser_data.get("hide_out_of_focus", False)),
+            manual_h3_cell=str(browser_data.get("manual_h3_cell", "")).strip(),
         ),
     )
 
@@ -102,6 +104,31 @@ def set_browser_hide_out_of_focus(repo_root: Path, enabled: bool) -> Path:
     _section(tomllib.loads(text), "browser")
     config_path.write_text(
         _set_toml_bool(text, section="browser", key="hide_out_of_focus", value=enabled),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def set_browser_manual_h3_cell(repo_root: Path, h3_cell: str) -> Path:
+    clean_h3_cell = h3_cell.strip()
+    if clean_h3_cell:
+        from .geo import h3_resolution
+
+        h3_resolution(clean_h3_cell)
+    config_path = repo_root / CONFIG_FILENAME
+    if not config_path.exists():
+        config_path.write_text(
+            "[browser]\n"
+            f'manual_h3_cell = "{_toml_string_value(clean_h3_cell)}"\n',
+            encoding="utf-8",
+        )
+        return config_path
+
+    migrate_legacy_openclip_section(config_path)
+    text = config_path.read_text(encoding="utf-8")
+    _section(tomllib.loads(text), "browser")
+    config_path.write_text(
+        _set_toml_string(text, section="browser", key="manual_h3_cell", value=clean_h3_cell),
         encoding="utf-8",
     )
     return config_path

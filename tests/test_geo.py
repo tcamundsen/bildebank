@@ -767,6 +767,51 @@ Vanlig dokumentasjon.
         self.assertEqual(stats.updated, 1)
         self.assertEqual(row["gps_error"], db.GPS_ERROR_FILE_MISSING)
 
+    def test_geo_scan_skips_manual_h3_locations_even_with_force(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = register_target_file(target, Path("2024/01/image.jpg"))
+            cells = h3_cells_for_point(59.91273, 10.74609)
+            conn = db.connect(target)
+            try:
+                db.set_file_manual_h3_location(
+                    conn,
+                    file_id=file_id,
+                    gps_lat=59.91273,
+                    gps_lon=10.74609,
+                    h3_cells=cells,
+                )
+                db.set_custom_geo_place(conn, slug="manuell", name="Manuell", h3_cells=[cells["h3_res7"]])
+                area_files = db.geo_area_files(conn, column="h3_res7", h3_cell=cells["h3_res7"])
+                conn.commit()
+            finally:
+                conn.close()
+            place_items = geo_place_items(target, "manuell")
+
+            def fail_read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, dict[str, object]]:
+                raise AssertionError("manual-h3 files should not be scanned")
+
+            with patch("bildebank.geo.read_gps_metadata_batch", fail_read_gps_metadata_batch):
+                with redirect_stderr(StringIO()):
+                    normal_stats = scan_geo(target, exiftool_path="exiftool", batch_size=1)
+                    force_stats = scan_geo(target, force=True, exiftool_path="exiftool", batch_size=1)
+
+            conn = db.connect(target)
+            try:
+                row = conn.execute("SELECT gps_source, gps_lat, gps_lon, h3_res9 FROM files WHERE id = ?", (file_id,)).fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(normal_stats.checked, 0)
+        self.assertEqual(force_stats.checked, 0)
+        self.assertEqual(row["gps_source"], "manual-h3")
+        self.assertEqual(float(row["gps_lat"]), 59.91273)
+        self.assertEqual(float(row["gps_lon"]), 10.74609)
+        self.assertEqual(row["h3_res9"], cells["h3_res9"])
+        self.assertEqual([int(row["id"]) for row in area_files], [file_id])
+        self.assertEqual([int(row["id"]) for row in place_items], [file_id])
+
     def test_geo_stats_cli_reports_active_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
