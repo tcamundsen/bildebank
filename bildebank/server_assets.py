@@ -275,14 +275,36 @@ SERVER_CSS = r"""    :root {
       border-color: rgb(255 255 255 / 20%);
       background: #242424;
       color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
       text-align: left;
       white-space: nowrap;
+    }
+    .tag-toggle::before {
+      content: "";
+      width: 14px;
+      height: 14px;
+      box-sizing: border-box;
+      border: 1px solid rgb(255 255 255 / 45%);
+      border-radius: 3px;
+      display: inline-grid;
+      place-items: center;
+      flex: 0 0 auto;
+      color: #d8ecff;
+      font-size: 12px;
+      line-height: 1;
     }
     .tag-toggle:hover { color: var(--text); }
     .tag-toggle.active {
       border-color: #7db7ff;
       background: #1d344d;
       color: #d8ecff;
+    }
+    .tag-toggle.active::before {
+      content: "✓";
+      border-color: #9bccff;
+      background: rgb(125 183 255 / 18%);
     }
     .tag-toggle:disabled { opacity: 0.65; cursor: default; }
     .stage {
@@ -591,7 +613,7 @@ SERVER_CSS = r"""    :root {
       .browser-header { align-items: stretch; }
       .stage-shell { grid-template-columns: 1fr; }
       .tag-rail { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }
-      .tag-toggle { text-align: center; flex: 1 1 auto; }
+      .tag-toggle { justify-content: center; text-align: center; flex: 1 1 auto; }
       .nav-button, .server-search-link, .person-link, .faces-button { flex: 1 1 auto; justify-content: center; text-align: center; }
       .top-actions { margin-left: 0; width: 100%; justify-content: stretch; }
       .people-row { grid-template-columns: 1fr; align-items: stretch; }

@@ -1732,6 +1732,8 @@ model_name = "buffalo_l"
         self.assertIn("/api/item-tag", SERVER_JS)
         self.assertIn("stage-shell", SERVER_CSS)
         self.assertIn("tag-rail", SERVER_CSS)
+        self.assertIn(".tag-toggle::before", SERVER_CSS)
+        self.assertIn('.tag-toggle.active::before', SERVER_CSS)
 
     def test_run_server_item_tag_endpoint_sets_system_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
