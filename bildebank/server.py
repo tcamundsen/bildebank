@@ -28,7 +28,6 @@ from .html_export import (
     display_relative_path,
     face_tables_exist,
     format_bytes,
-    month_key_from_path,
 )
 from .geo import (
     H3_COLUMNS,
@@ -40,34 +39,33 @@ from .geo import (
 )
 from .media import camera_info
 from .media_cache import cached_image_dimensions
-from .openclip import relative_to_target
 from .server_browser import (
     BrowserSource,
-    FILE_COLUMNS,
-    ITEM_ORDER_SQL,
-    adjacent_items_from_list,
+    adjacent_browser_items,
+    adjacent_person_items,
+    adjacent_source_items,
     adjacent_sql_filtered_source_items,
-    adjacent_unfiltered_source_items,
-    all_source_items,
     all_browser_source,
-    cached_browser_month_keys,
+    browser_item_by_id,
+    browser_month_items,
+    browser_month_navigation,
     date_source_browser_source,
-    date_source_items,
-    first_sql_filtered_source_item,
-    first_unfiltered_source_item,
+    first_browser_item,
+    first_source_item,
     geo_place_browser_source,
-    imported_source_items,
     imported_source_browser_source,
-    is_filtered_source,
+    person_item_by_id,
     person_browser_source,
+    person_month_items,
+    person_month_navigation,
     person_url,
-    source_has_sql_filter,
+    source_item_by_id,
     source_item_url,
+    source_items,
+    source_month_items,
+    source_month_navigation,
+    source_month_navigation_for_key,
     source_month_url,
-    source_sql_filter,
-    sql_filtered_source_month_keys,
-    sql_filtered_source_item_by_id,
-    unfiltered_source_item_by_id,
     valid_browser_date_source,
     valid_month_key,
 )
@@ -80,7 +78,6 @@ from .server_faces import (
     person_by_name,
     person_faces_for_item,
     person_item_url_for_face,
-    person_items,
     unconfirmed_faces_for_item,
     unconfirmed_face_count_for_item,
 )
@@ -97,7 +94,6 @@ from .server_geo import (
     geo_missing_items,
     geo_parent_area_link_html,
     geo_place_by_slug,
-    geo_place_items,
     geo_place_rows,
     geo_places_section_html,
     geo_stats_summary_html,
@@ -121,6 +117,16 @@ DEFAULT_PORT = 8765
 DEFAULT_GEO_RESOLUTION = 7
 DEFAULT_GEO_MIN_COUNT = 2
 DEFAULT_GEO_LIMIT = 100
+
+__all__ = [
+    "adjacent_person_items",
+    "adjacent_sql_filtered_source_items",
+    "browser_month_items",
+    "person_item_by_id",
+    "person_month_items",
+    "person_month_navigation",
+    "source_items",
+]
 
 
 class BildebankServer(ThreadingHTTPServer):
@@ -1244,85 +1250,6 @@ def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
     return source_part.strip("/"), page_mode, raw_value
 
 
-MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
-
-
-def first_browser_item(target: Path) -> Any | None:
-    return first_source_item(target, all_browser_source())
-
-
-def first_source_item(
-    target: Path,
-    source: BrowserSource,
-    face_config: FaceRecognitionConfig | None = None,
-) -> Any | None:
-    if source_has_sql_filter(source):
-        return first_sql_filtered_source_item(target, source)
-    if source.person_name is not None or source.source_id is not None:
-        items = source_items(target, source, face_config)
-        return items[0] if items else None
-    if not is_filtered_source(source):
-        return first_unfiltered_source_item(target)
-    items = source_items(target, source, face_config)
-    return items[0] if items else None
-
-
-def browser_item_by_id(target: Path, file_id: int) -> Any | None:
-    return source_item_by_id(target, all_browser_source(), file_id)
-
-
-def source_item_by_id(
-    target: Path,
-    source: BrowserSource,
-    file_id: int,
-    face_config: FaceRecognitionConfig | None = None,
-) -> Any | None:
-    if source_has_sql_filter(source):
-        return sql_filtered_source_item_by_id(target, source, file_id)
-    if source.person_name is not None or source.source_id is not None:
-        return next((item for item in source_items(target, source, face_config) if int(item["id"]) == file_id), None)
-    return unfiltered_source_item_by_id(target, file_id)
-
-
-def adjacent_browser_items(target: Path, item: Any) -> tuple[Any | None, Any | None]:
-    return adjacent_source_items(target, all_browser_source(), item)
-
-
-def adjacent_source_items(
-    target: Path,
-    source: BrowserSource,
-    item: Any,
-    face_config: FaceRecognitionConfig | None = None,
-) -> tuple[Any | None, Any | None]:
-    if source_has_sql_filter(source):
-        return adjacent_sql_filtered_source_items(target, source, item)
-    if source.person_name is not None or source.source_id is not None:
-        return adjacent_items_from_list(source_items(target, source, face_config), item)
-    return adjacent_unfiltered_source_items(target, item)
-
-
-def browser_month_keys(target: Path) -> list[str]:
-    return source_month_keys(target, all_browser_source())
-
-
-def source_month_keys(
-    target: Path,
-    source: BrowserSource,
-    face_config: FaceRecognitionConfig | None = None,
-) -> list[str]:
-    if source_has_sql_filter(source):
-        return sql_filtered_source_month_keys(target, source)
-    if source.person_name is not None or source.source_id is not None:
-        keys = {month_key_for_item(target, item) for item in source_items(target, source, face_config)}
-        return sorted(key for key in keys if valid_month_key(key))
-    db_path = db.db_path_for_target(target)
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
-        mtime_ns = 0
-    return list(cached_browser_month_keys(str(target.resolve()), mtime_ns))
-
-
 def clear_face_caches() -> None:
     cached_confirmed_people_for_file.cache_clear()
     cached_person_file_ids.cache_clear()
@@ -1505,210 +1432,6 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
         return rows
     finally:
         face_conn.close()
-
-
-def browser_month_navigation(target: Path, item: Any) -> dict[str, str | None]:
-    current_key = month_key_for_item(target, item)
-    return browser_month_navigation_for_key(target, current_key)
-
-
-def month_key_for_item(target: Path, item: Any) -> str:
-    stored_key = month_key_from_stored_path(str(item["target_path"]))
-    if stored_key is not None:
-        return stored_key
-    return month_key_from_path(relative_to_target(target, Path(str(item["target_path"]))))
-
-
-def month_key_from_stored_path(path: str) -> str | None:
-    match = MONTH_PATH_RE.search(path.replace("\\\\", "\\"))
-    if match is None:
-        return None
-    month_key = f"{match.group('year')}-{match.group('month')}"
-    return month_key if valid_month_key(month_key) else None
-
-
-def source_items(
-    target: Path,
-    source: BrowserSource,
-    face_config: FaceRecognitionConfig | None = None,
-) -> list[Any]:
-    if source.person_name is not None:
-        return person_items(
-            target,
-            source.person_name,
-            include_suggestions=source.include_suggestions,
-            face_config=face_config,
-        )
-    if source.geo_place_slug is not None:
-        return geo_place_items(target, source.geo_place_slug)
-    if source.date_source is not None:
-        return date_source_items(target, source.date_source)
-    if source.source_id is not None:
-        return imported_source_items(target, source.source_id)
-    return all_source_items(target)
-
-
-def person_item_by_id(target: Path, person_name: str, file_id: int) -> Any | None:
-    return source_item_by_id(target, person_browser_source(person_name, include_suggestions=True), file_id)
-
-
-def adjacent_person_items(target: Path, person_name: str, item: Any) -> tuple[Any | None, Any | None]:
-    return adjacent_source_items(target, person_browser_source(person_name, include_suggestions=True), item)
-
-
-def person_month_navigation(target: Path, person_name: str, item: Any) -> dict[str, str | None]:
-    return source_month_navigation(target, person_browser_source(person_name, include_suggestions=True), item)
-
-
-def source_month_navigation(
-    target: Path,
-    source: BrowserSource,
-    item: Any,
-    face_config: FaceRecognitionConfig | None = None,
-) -> dict[str, str | None]:
-    return source_month_navigation_for_key(target, source, month_key_for_item(target, item), face_config)
-
-
-def source_month_navigation_for_key(
-    target: Path,
-    source: BrowserSource,
-    current_key: str,
-    face_config: FaceRecognitionConfig | None = None,
-) -> dict[str, str | None]:
-    if not valid_month_key(current_key):
-        return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
-    keys = source_month_keys(target, source, face_config)
-    if not keys:
-        return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
-    years = sorted({key[:4] for key in keys})
-    current_year = current_key[:4]
-    current_year_index = years.index(current_year) if current_year in years else -1
-    previous_year = years[current_year_index - 1] if current_year_index > 0 else None
-    next_year = years[current_year_index + 1] if current_year_index < len(years) - 1 else None
-    return {
-        "previous_year": first_month_in_year(keys, previous_year),
-        "next_year": first_month_in_year(keys, next_year),
-        "previous_month": next((key for key in reversed(keys) if key < current_key), None),
-        "next_month": next((key for key in keys if key > current_key), None),
-    }
-
-
-def person_month_items(target: Path, person_name: str, month_key: str) -> list[Any]:
-    return source_month_items(target, person_browser_source(person_name, include_suggestions=True), month_key)
-
-
-def source_month_items(
-    target: Path,
-    source: BrowserSource,
-    month_key: str,
-    face_config: FaceRecognitionConfig | None = None,
-) -> list[Any]:
-    if source_has_sql_filter(source):
-        return sql_filtered_source_month_items(target, source, month_key)
-    if source.person_name is not None or source.source_id is not None:
-        return [
-            item
-            for item in source_items(target, source, face_config)
-            if month_key_for_item(target, item) == month_key
-        ]
-    return browser_month_items(target, month_key)
-
-
-def sql_filtered_source_month_items(target: Path, source: BrowserSource, month_key: str) -> list[Any]:
-    if not valid_month_key(month_key):
-        return []
-    where_sql, params = source_sql_filter(source)
-    year, month = month_key.split("-", 1)
-    path_glob = f"{year}/{month}/*"
-    conn = db.connect(target)
-    try:
-        return list(
-            conn.execute(
-                f"""
-                SELECT {FILE_COLUMNS}
-                FROM files
-                WHERE deleted_at IS NULL
-                  AND ({where_sql})
-                  AND target_path GLOB ?
-                ORDER BY {ITEM_ORDER_SQL}
-                """,
-                (*params, path_glob),
-            )
-        )
-    finally:
-        conn.close()
-
-
-def browser_month_navigation_for_key(target: Path, current_key: str) -> dict[str, str | None]:
-    if not valid_month_key(current_key):
-        return {
-            "previous_year": None,
-            "next_year": None,
-            "previous_month": None,
-            "next_month": None,
-        }
-    keys = browser_month_keys(target)
-    if not keys:
-        return {
-            "previous_year": None,
-            "next_year": None,
-            "previous_month": None,
-            "next_month": None,
-        }
-    years = sorted({key[:4] for key in keys})
-    current_year = current_key[:4]
-    current_year_index = years.index(current_year) if current_year in years else -1
-    previous_year = years[current_year_index - 1] if current_year_index > 0 else None
-    next_year = years[current_year_index + 1] if current_year_index < len(years) - 1 else None
-    previous_month = next((key for key in reversed(keys) if key < current_key), None)
-    next_month = next((key for key in keys if key > current_key), None)
-    return {
-        "previous_year": first_month_in_year(keys, previous_year),
-        "next_year": first_month_in_year(keys, next_year),
-        "previous_month": previous_month,
-        "next_month": next_month,
-    }
-
-
-def first_month_in_year(keys: list[str], year: str | None) -> str | None:
-    if year is None:
-        return None
-    return next((key for key in keys if key.startswith(year)), None)
-
-
-def browser_month_items(target: Path, month_key: str) -> list[Any]:
-    year, month = month_key.split("-", 1)
-    prefix = db.relative_path_key(Path(year) / month) + "/"
-    conn = db.connect(target)
-    try:
-        rows = list(
-            conn.execute(
-                f"""
-                SELECT {FILE_COLUMNS}
-                FROM files
-                WHERE deleted_at IS NULL
-                  AND target_path_key LIKE ?
-                ORDER BY {ITEM_ORDER_SQL}
-                """,
-                (prefix + "%",),
-            )
-        )
-        if rows:
-            return rows
-        return [
-            row
-            for row in conn.execute(
-                f"""
-                SELECT {FILE_COLUMNS}
-                FROM files
-                WHERE deleted_at IS NULL
-                ORDER BY {ITEM_ORDER_SQL}
-                """
-            )
-            if month_key_from_stored_path(str(row["target_path"])) == month_key
-        ]
-    finally:
-        conn.close()
 
 
 def index_html(server: BildebankServer, *, message: str = "") -> str:

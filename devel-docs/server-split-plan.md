@@ -280,8 +280,9 @@ Notes:
   month-key lookup have been moved.
 - Date-source item lookup, imported-source item lookup, all-browser item
   lookup, and item-by-id-list lookup have been moved.
-- Browser dispatchers that depend on `source_items()`, month navigation, and
-  HTML rendering remain in `server.py` for now.
+- Browser dispatchers for first/item/adjacent lookups, source item lists,
+  source month keys, month navigation, and month item lists have been moved.
+- Browser HTML rendering remains in `server.py` for now.
 
 ### `bildebank/server_faces.py`
 
@@ -443,3 +444,6 @@ Status: postponed.
   `bildebank/server_geo.py`.
 - done: moved browser source model, source constructors, browser URL helpers,
   and SQL-filter helpers to `bildebank/server_browser.py`.
+- done: moved browser first/item/adjacent dispatchers, source item list
+  dispatching, and month navigation/item helpers to
+  `bildebank/server_browser.py`.
