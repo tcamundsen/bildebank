@@ -302,6 +302,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/api/item-rotate":
                 self.respond_rotate_item()
                 return
+            if parsed.path == "/api/item-tag":
+                self.respond_tag_item()
+                return
             if parsed.path == "/api/item-delete":
                 self.respond_delete_item()
                 return
@@ -872,6 +875,25 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         self.respond_json({"ok": True, "file_id": file_id, "rotation": rotation})
+
+    def respond_tag_item(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        try:
+            file_id = int(payload.get("file_id"))
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        tag_name = str(payload.get("tag_name") or "").strip()
+        tagged = bool(payload.get("tagged"))
+        if not tag_name:
+            self.respond_json({"ok": False, "error": "Taggnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            server_actions.set_system_tag_on_file(self.server.target, file_id, tag_name, tagged)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_json({"ok": True, "file_id": file_id, "tag_name": db.normalize_tag_name(tag_name), "tagged": tagged})
 
     def respond_delete_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)

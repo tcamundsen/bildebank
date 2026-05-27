@@ -1631,6 +1631,95 @@ model_name = "buffalo_l"
         self.assertIn("/api/item-delete", SERVER_JS)
         self.assertIn("Flytte til deleted/?", SERVER_JS)
 
+    def test_run_server_item_page_has_system_tag_buttons(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+
+        self.assertIn('class="tag-rail"', body)
+        self.assertIn('data-tag-toggle="1"', body)
+        self.assertIn('data-tag-name="Ute av fokus"', body)
+        self.assertIn('aria-pressed="false"', body)
+        self.assertIn("/api/item-tag", SERVER_JS)
+        self.assertIn("stage-shell", SERVER_CSS)
+        self.assertIn("tag-rail", SERVER_CSS)
+
+    def test_run_server_item_tag_endpoint_sets_system_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            data = json.dumps({"file_id": 1, "tag_name": db.SYSTEM_TAG_OUT_OF_FOCUS, "tagged": True}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_tag_item(handler)  # type: ignore[arg-type]
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            info_body = image_info_content_html(target, item)
+
+        self.assertEqual({"ok": True, "file_id": 1, "tag_name": db.SYSTEM_TAG_OUT_OF_FOCUS, "tagged": True}, handler.body)
+        self.assertIn('class="tag-toggle active"', body)
+        self.assertIn('aria-pressed="true"', body)
+        self.assertIn("Ute av fokus", info_body)
+        self.assertIn("(system)", info_body)
+
+    def test_run_server_item_tag_endpoint_rejects_user_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            data = json.dumps({"file_id": 1, "tag_name": "Familie", "tagged": True}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
+                body: dict[str, object] | None = None
+                status = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_tag_item(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.status, HTTPStatus.BAD_REQUEST)
+        self.assertIs(handler.body["ok"], False)
+        self.assertIn("systemtagger", str(handler.body["error"]))
+
     def test_run_server_delete_button_moves_file_to_deleted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

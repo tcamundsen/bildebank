@@ -17,6 +17,30 @@ def rotate_file_view(target: Path, file_id: int, direction: str) -> int:
         conn.close()
 
 
+def set_system_tag_on_file(target: Path, file_id: int, tag_name: str, tagged: bool) -> bool:
+    if not db.is_system_tag_name(tag_name):
+        raise ValueError("Webtagging støtter foreløpig bare systemtagger.")
+    conn = db.connect(target)
+    try:
+        row = conn.execute(
+            """
+            SELECT id, deleted_at
+            FROM files
+            WHERE id = ?
+            """,
+            (file_id,),
+        ).fetchone()
+        if row is None:
+            raise ValueError("Filen finnes ikke i importdatabasen.")
+        if row["deleted_at"] is not None:
+            raise ValueError("Filen er markert som slettet.")
+        db.set_file_tag(conn, file_id=file_id, tag_name=tag_name, tagged=tagged)
+        conn.commit()
+        return tagged
+    finally:
+        conn.close()
+
+
 def remove_file_from_browser(target: Path, file_id: int) -> Path:
     with TargetLock(target, command="remove"):
         conn = db.connect(target)

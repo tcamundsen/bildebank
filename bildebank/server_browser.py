@@ -606,6 +606,7 @@ def source_item_page_html(
     faces_button = faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
     faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
     info_overlay = image_info_overlay_html()
+    tag_controls = system_tag_controls_html(target, int(item["id"]))
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config) if face_enabled else ""
     return page_html(
         f"{source.title}: {target_path.name}",
@@ -621,7 +622,10 @@ def source_item_page_html(
               face_enabled=face_enabled,
               openclip_enabled=openclip_enabled,
           )}
-          <section class="stage">{media}</section>
+          <div class="stage-shell">
+            {tag_controls}
+            <section class="stage">{media}</section>
+          </div>
           <footer class="browser-footer">
             <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
           </footer>
@@ -630,6 +634,25 @@ def source_item_page_html(
         {info_overlay}
         """,
     )
+
+
+def system_tag_controls_html(target: Path, file_id: int) -> str:
+    conn = db.connect(target)
+    try:
+        active_names = {str(row["name"]).casefold() for row in db.tags_for_file(conn, file_id)}
+    finally:
+        conn.close()
+    buttons = []
+    for tag_name in db.SYSTEM_TAG_NAMES:
+        active = tag_name.casefold() in active_names
+        pressed = "true" if active else "false"
+        active_class = " active" if active else ""
+        buttons.append(
+            f'<button class="tag-toggle{active_class}" type="button" '
+            f'data-tag-toggle="{file_id}" data-tag-name="{html.escape(tag_name)}" '
+            f'aria-pressed="{pressed}">{html.escape(tag_name)}</button>'
+        )
+    return f'<aside class="tag-rail" aria-label="Systemtagger">{"".join(buttons)}</aside>'
 
 
 def source_item_media_html(

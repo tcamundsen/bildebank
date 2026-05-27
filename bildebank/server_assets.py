@@ -251,12 +251,45 @@ SERVER_CSS = r"""    :root {
     .danger-button { color: var(--danger); }
     .danger-button:hover { background: rgb(255 138 128 / 12%); }
     .disabled { color: #777; cursor: default; }
+    .stage-shell {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(132px, auto) minmax(0, 1fr);
+      align-items: stretch;
+      background: var(--stage);
+      border-top: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .tag-rail {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: stretch;
+      padding: 14px 10px;
+      border-right: 1px solid var(--border);
+      background: #141414;
+    }
+    .tag-toggle {
+      min-height: 34px;
+      padding: 6px 9px;
+      border-color: rgb(255 255 255 / 20%);
+      background: #242424;
+      color: var(--muted);
+      text-align: left;
+      white-space: nowrap;
+    }
+    .tag-toggle:hover { color: var(--text); }
+    .tag-toggle.active {
+      border-color: #7db7ff;
+      background: #1d344d;
+      color: #d8ecff;
+    }
+    .tag-toggle:disabled { opacity: 0.65; cursor: default; }
     .stage {
       min-height: 0;
       display: grid;
       place-items: center;
       background: var(--stage);
-      border-top: 1px solid var(--border);
       overflow: hidden;
       padding: 14px;
     }
@@ -556,6 +589,9 @@ SERVER_CSS = r"""    :root {
       .shell { padding: 16px; }
       .search { grid-template-columns: 1fr; }
       .browser-header { align-items: stretch; }
+      .stage-shell { grid-template-columns: 1fr; }
+      .tag-rail { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }
+      .tag-toggle { text-align: center; flex: 1 1 auto; }
       .nav-button, .server-search-link, .person-link, .faces-button { flex: 1 1 auto; justify-content: center; text-align: center; }
       .top-actions { margin-left: 0; width: 100%; justify-content: stretch; }
       .people-row { grid-template-columns: 1fr; align-items: stretch; }
@@ -762,6 +798,32 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
         window.location.reload();
       } catch (error) {
         alert(error.message || "Kunne ikke rotere.");
+        button.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll("[data-tag-toggle]").forEach(button => {
+    button.addEventListener("click", async () => {
+      const fileId = Number(button.dataset.tagToggle);
+      const tagName = button.dataset.tagName || "";
+      const tagged = button.getAttribute("aria-pressed") !== "true";
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/item-tag", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({file_id: fileId, tag_name: tagName, tagged}),
+        });
+        const payload = await response.json();
+        if (!payload.ok) throw new Error(payload.error || "Kunne ikke lagre tagg.");
+        const encodedTag = encodeURIComponent(payload.tag_name || tagName);
+        if (!payload.tagged && window.location.pathname.startsWith(`/tag/${encodedTag}/`)) {
+          window.location.href = `/tag/${encodedTag}`;
+          return;
+        }
+        window.location.reload();
+      } catch (error) {
+        alert(error.message || "Kunne ikke lagre tagg.");
         button.disabled = false;
       }
     });

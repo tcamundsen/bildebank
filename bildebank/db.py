@@ -1915,6 +1915,10 @@ def tag_kind_for_name(name: str) -> str:
     return TAG_KIND_USER
 
 
+def is_system_tag_name(name: str) -> bool:
+    return tag_kind_for_name(name) == TAG_KIND_SYSTEM
+
+
 def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
     create_tags_schema(conn)
     clean_name = normalize_tag_name(name)
@@ -1942,6 +1946,12 @@ def tag_file(conn: sqlite3.Connection, *, file_id: int, tag_name: str) -> bool:
         (file_id, tag_id),
     )
     return cursor.rowcount > 0
+
+
+def set_file_tag(conn: sqlite3.Connection, *, file_id: int, tag_name: str, tagged: bool) -> bool:
+    if tagged:
+        return tag_file(conn, file_id=file_id, tag_name=tag_name)
+    return untag_file(conn, file_id=file_id, tag_name=tag_name)
 
 
 def untag_file(conn: sqlite3.Connection, *, file_id: int, tag_name: str) -> bool:
