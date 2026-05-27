@@ -3,11 +3,12 @@ from __future__ import annotations
 import html
 import importlib.util
 import urllib.parse
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
 
 from . import __version__, db
-from .config import AppConfig, FaceRecognitionConfig
+from .config import AppConfig, FaceRecognitionConfig, set_face_recognition_enabled, set_face_recognition_model_name
 from .html_export import format_bytes
 
 
@@ -87,6 +88,26 @@ def removed_files_page_html(
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+    )
+
+
+def update_face_enabled_config(config: AppConfig, repo_root: Path, enabled: bool) -> AppConfig:
+    set_face_recognition_enabled(repo_root, enabled)
+    return replace(
+        config,
+        face_recognition=replace(config.face_recognition, enabled=enabled),
+    )
+
+
+def update_face_model_config(config: AppConfig, repo_root: Path, model_name: str) -> AppConfig:
+    face_config = config.face_recognition
+    installed_models = installed_insightface_models(face_config)
+    if model_name not in installed_models:
+        raise ValueError(f"InsightFace-modellen er ikke installert: {model_name}")
+    set_face_recognition_model_name(repo_root, model_name)
+    return replace(
+        config,
+        face_recognition=replace(face_config, model_name=model_name),
     )
 
 

@@ -217,6 +217,9 @@ Notes:
   compatibility wrappers that pass `shell_page_html`; geo pages use local
   imports for shared browser thumbnail/link helpers to avoid circular imports.
 - Custom geo place form validation helpers have been moved to `server_geo.py`.
+- Custom geo place and geo area name mutation helpers have been moved to
+  `server_geo.py`; `server.py` keeps request parsing, error response, and
+  redirects.
 
 ### `bildebank/server_browser.py`
 
@@ -292,6 +295,9 @@ Notes:
   `server_browser.py`. `server.py` keeps compatibility wrappers that pass in
   `page_html` and `shell_page_html` so static asset composition remains in
   `server.py`.
+- Pure browser helper compatibility functions that need no `page_html` or
+  `shell_page_html` injection are now imported directly into `server.py`
+  instead of wrapped.
 - Browser/person source path parsing has been moved to `server_browser.py`.
 
 ### `bildebank/server_faces.py`
@@ -407,6 +413,9 @@ Notes:
   been moved.
 - `server.py` keeps thin wrapper functions for app/status pages so
   `server_app.py` does not import `server.py` for `shell_page_html`.
+- Face setting update helpers for enabled/model changes have been moved.
+  `server.py` keeps form parsing, redirects, and a compatibility wrapper for
+  `installed_insightface_models`.
 
 ### `bildebank/server_shell.py`
 
@@ -588,3 +597,10 @@ Notes:
 - done: moved server CSS/JavaScript asset constants to
   `bildebank/server_assets.py`; `server.py` imports the constants directly for
   compatibility.
+- done: moved geo area name and custom geo place mutation helpers to
+  `bildebank/server_geo.py`; `server.py` keeps request parsing and response
+  handling.
+- done: moved face setting update helpers for enabled/model changes to
+  `bildebank/server_app.py`; `server.py` keeps request parsing and redirects.
+- done: replaced several pure pass-through compatibility wrappers in
+  `server.py` with direct imports from split modules.

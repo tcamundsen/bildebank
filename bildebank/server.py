@@ -4,14 +4,13 @@ import html
 import json
 import mimetypes
 import urllib.parse
-from dataclasses import replace
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
 from . import db
-from .config import AppConfig, FaceRecognitionConfig, set_face_recognition_enabled, set_face_recognition_model_name
+from .config import AppConfig, FaceRecognitionConfig
 from .face import (
     add_face_to_person,
     create_person,
@@ -22,12 +21,12 @@ from .face import (
 from .geo import (
     H3_COLUMNS,
     h3_resolution,
-    predefined_geo_place,
 )
 from . import server_app
 from . import server_actions
+from .server_actions import remove_file_from_browser, undelete_file_from_browser
 from . import server_browser
-from .server_app import installed_insightface_models, module_available, server_program_repo_root
+from .server_app import module_available, server_program_repo_root
 from .server_browser import (
     BrowserSource,
     adjacent_browser_items,
@@ -39,22 +38,42 @@ from .server_browser import (
     browser_month_items,
     browser_month_navigation,
     date_source_browser_source,
+    date_source_text,
+    delete_button_html,
+    empty_source_message,
     first_browser_item,
     first_source_item,
     geo_place_browser_source,
+    google_maps_link_html,
+    image_date_text,
+    image_geo_area_links_html,
+    image_info_button_html,
+    image_info_content_html,
+    image_info_overlay_html,
+    image_info_rows,
+    image_source_rows,
     imported_source_browser_source,
     imported_source_by_id,
+    info_row_html,
+    item_media_html,
     person_item_by_id,
     person_browser_source,
     person_month_items,
     person_month_navigation,
     person_url,
+    parse_person_path,
+    parse_source_path,
+    rotation_buttons_html,
+    camera_text,
+    source_item_media_html,
     source_item_by_id,
     source_item_url,
     source_items,
     source_summary_rows,
+    source_month_item_html,
     source_month_items,
     source_month_navigation,
+    thumbnail_media_html,
     valid_browser_date_source,
     valid_month_key,
 )
@@ -68,8 +87,11 @@ from .server_faces import (
 from . import server_geo
 from .server_geo import (
     geo_place_by_slug,
+    normalize_geo_place_slug,
+    parse_geo_place_cells,
 )
 from . import server_markdown
+from .server_markdown import markdown_doc_title, markdown_to_html
 from . import server_search
 from .server_search import (
     DEFAULT_SEARCH_LIMIT,
@@ -92,11 +114,37 @@ __all__ = [
     "adjacent_person_items",
     "adjacent_sql_filtered_source_items",
     "browser_month_items",
+    "camera_text",
+    "date_source_text",
+    "delete_button_html",
+    "empty_source_message",
+    "google_maps_link_html",
+    "image_date_text",
+    "image_geo_area_links_html",
+    "image_info_button_html",
+    "image_info_content_html",
+    "image_info_overlay_html",
+    "image_info_rows",
+    "image_source_rows",
+    "info_row_html",
+    "item_media_html",
+    "markdown_doc_title",
+    "markdown_to_html",
+    "normalize_geo_place_slug",
+    "parse_geo_place_cells",
+    "parse_person_path",
+    "parse_source_path",
     "person_item_by_id",
     "person_month_items",
     "person_month_navigation",
+    "remove_file_from_browser",
+    "rotation_buttons_html",
+    "source_item_media_html",
     "source_items",
+    "source_month_item_html",
     "source_summary_rows",
+    "thumbnail_media_html",
+    "undelete_file_from_browser",
 ]
 
 
@@ -736,16 +784,10 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         name = first_param(params, "name")
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
         try:
-            h3_resolution(h3_cell)
+            server_geo.set_geo_place_name(self.server.target, h3_cell, name)
         except ValueError as exc:
             self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
             return
-        conn = db.connect(self.server.target)
-        try:
-            db.set_geo_place_name(conn, h3_cell, name)
-            conn.commit()
-        finally:
-            conn.close()
         url = "/geo/area/" + urllib.parse.quote(h3_cell, safe="") + f"?limit={limit}"
         self.redirect(url)
 
@@ -754,27 +796,13 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
         params = urllib.parse.parse_qs(raw)
         try:
-            raw_original_slug = first_param(params, "original_slug")
-            original_slug = normalize_geo_place_slug(raw_original_slug) if raw_original_slug else ""
-            if predefined_geo_place(original_slug) is not None:
-                raise ValueError("Innebygde steder kan ikke endres.")
-            slug = normalize_geo_place_slug(first_param(params, "slug"))
-            if predefined_geo_place(slug) is not None:
-                raise ValueError("Slug er reservert for et innebygd sted.")
-            name = first_param(params, "name")
-            h3_cells = parse_geo_place_cells(first_param(params, "h3_cells"))
-            conn = db.connect(self.server.target)
-            try:
-                db.rename_custom_geo_place(
-                    conn,
-                    old_slug=original_slug,
-                    slug=slug,
-                    name=name,
-                    h3_cells=h3_cells,
-                )
-                conn.commit()
-            finally:
-                conn.close()
+            server_geo.save_custom_geo_place(
+                self.server.target,
+                raw_original_slug=first_param(params, "original_slug"),
+                raw_slug=first_param(params, "slug"),
+                name=first_param(params, "name"),
+                raw_h3_cells=first_param(params, "h3_cells"),
+            )
         except ValueError as exc:
             self.respond_html(
                 error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
@@ -788,15 +816,10 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
         params = urllib.parse.parse_qs(raw)
         try:
-            slug = normalize_geo_place_slug(first_param(params, "original_slug") or first_param(params, "slug"))
-            if predefined_geo_place(slug) is not None:
-                raise ValueError("Innebygde steder kan ikke slettes.")
-            conn = db.connect(self.server.target)
-            try:
-                db.delete_custom_geo_place(conn, slug)
-                conn.commit()
-            finally:
-                conn.close()
+            server_geo.delete_custom_geo_place(
+                self.server.target,
+                first_param(params, "original_slug") or first_param(params, "slug"),
+            )
         except ValueError as exc:
             self.respond_html(
                 error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
@@ -810,11 +833,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
         params = urllib.parse.parse_qs(raw)
         enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
-        set_face_recognition_enabled(server_program_repo_root(), enabled)
-        self.server.config = replace(
-            self.server.config,
-            face_recognition=replace(self.server.config.face_recognition, enabled=enabled),
-        )
+        self.server.config = server_app.update_face_enabled_config(self.server.config, server_program_repo_root(), enabled)
         self.redirect("/settings")
 
     def respond_set_face_model(self) -> None:
@@ -822,15 +841,7 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length).decode("utf-8") if length > 0 else ""
         params = urllib.parse.parse_qs(raw)
         model_name = (params.get("model_name") or [""])[0].strip()
-        config = self.server.config.face_recognition
-        installed_models = installed_insightface_models(config)
-        if model_name not in installed_models:
-            raise ValueError(f"InsightFace-modellen er ikke installert: {model_name}")
-        set_face_recognition_model_name(server_program_repo_root(), model_name)
-        self.server.config = replace(
-            self.server.config,
-            face_recognition=replace(self.server.config.face_recognition, model_name=model_name),
-        )
+        self.server.config = server_app.update_face_model_config(self.server.config, server_program_repo_root(), model_name)
         self.redirect("/settings")
 
     def respond_file(self, encoded_relative_path: str) -> None:
@@ -1107,32 +1118,8 @@ class BildebankRequestHandler(BaseHTTPRequestHandler):
         return person_name, face_id
 
 
-def normalize_geo_place_slug(value: str) -> str:
-    return server_geo.normalize_geo_place_slug(value)
-
-
-def parse_geo_place_cells(value: str) -> list[str]:
-    return server_geo.parse_geo_place_cells(value)
-
-
 def resolve_doc_path(raw_doc_path: str) -> Path | None:
     return server_markdown.resolve_doc_path(raw_doc_path, server_program_repo_root() / "docs")
-
-
-def parse_person_path(raw_path: str) -> tuple[str, str, bool, str | None, str]:
-    return server_browser.parse_person_path(raw_path)
-
-
-def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
-    return server_browser.parse_source_path(raw_path)
-
-
-def remove_file_from_browser(target: Path, file_id: int) -> Path:
-    return server_actions.remove_file_from_browser(target, file_id)
-
-
-def undelete_file_from_browser(target: Path, file_id: int) -> Path:
-    return server_actions.undelete_file_from_browser(target, file_id)
 
 
 def index_html(server: BildebankServer, *, message: str = "") -> str:
@@ -1286,14 +1273,6 @@ def message_html(message: str) -> str:
     return server_shell.message_html(message)
 
 
-def markdown_doc_title(markdown: str, doc_path: Path) -> str:
-    return server_markdown.markdown_doc_title(markdown, doc_path)
-
-
-def markdown_to_html(markdown: str) -> str:
-    return server_markdown.markdown_to_html(markdown)
-
-
 def markdown_doc_page_html(
     doc_path: Path,
     markdown: str,
@@ -1408,17 +1387,8 @@ def removed_files_page_html(target: Path, *, face_enabled: bool = True, openclip
     )
 
 
-def source_item_media_html(
-    target: Path,
-    source: BrowserSource,
-    item: Any,
-    face_config: FaceRecognitionConfig | None = None,
-) -> str:
-    return server_browser.source_item_media_html(target, source, item, face_config)
-
-
-def item_media_html(item: Any) -> str:
-    return server_browser.item_media_html(item)
+def installed_insightface_models(config: FaceRecognitionConfig) -> list[str]:
+    return server_app.installed_insightface_models(config)
 
 
 def person_item_page_html(
@@ -1438,57 +1408,6 @@ def person_item_page_html(
         month_nav,
         page_html=page_html,
     )
-
-
-def rotation_buttons_html(source: BrowserSource, item: Any) -> str:
-    return server_browser.rotation_buttons_html(source, item)
-
-
-def delete_button_html(source: BrowserSource, item: Any, previous_item: Any | None, next_item: Any | None) -> str:
-    return server_browser.delete_button_html(source, item, previous_item, next_item)
-
-
-def image_info_button_html(file_id: int | None) -> str:
-    return server_browser.image_info_button_html(file_id)
-
-
-def image_info_overlay_html() -> str:
-    return server_browser.image_info_overlay_html()
-
-
-def image_info_content_html(target: Path, item: Any) -> str:
-    return server_browser.image_info_content_html(target, item)
-
-
-def image_info_rows(target: Path, item: Any) -> list[str]:
-    return server_browser.image_info_rows(target, item)
-
-
-def image_date_text(item: Any) -> str:
-    return server_browser.image_date_text(item)
-
-
-def date_source_text(source: str) -> str:
-    return server_browser.date_source_text(source)
-
-
-def google_maps_link_html(item: Any) -> str:
-    return server_browser.google_maps_link_html(item)
-
-
-def camera_text(camera: Any | None) -> str:
-    return server_browser.camera_text(camera)
-
-
-def image_source_rows(target: Path, target_path: Path) -> list[str]:
-    return server_browser.image_source_rows(target, target_path)
-
-
-def image_geo_area_links_html(target: Path, item: Any) -> str:
-    return server_browser.image_geo_area_links_html(target, item)
-
-def info_row_html(label: str, value: str, *, multiline: bool = False, raw_html: bool = False) -> str:
-    return server_browser.info_row_html(label, value, multiline=multiline, raw_html=raw_html)
 
 
 def month_page_html(target: Path, month_key: str, items: list[Any]) -> str:
@@ -1534,10 +1453,6 @@ def empty_source_html(source: BrowserSource, *, face_enabled: bool = True, openc
     )
 
 
-def empty_source_message(source: BrowserSource) -> str:
-    return server_browser.empty_source_message(source)
-
-
 def sources_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
     return server_browser.sources_page_html(
         target,
@@ -1577,14 +1492,6 @@ def people_page_html(
 
 def person_month_page_html(target: Path, person_name: str, month_key: str, items: list[Any]) -> str:
     return server_browser.person_month_page_html(target, person_name, month_key, items, page_html=page_html)
-
-
-def source_month_item_html(target: Path, source: BrowserSource, item: Any) -> str:
-    return server_browser.source_month_item_html(target, source, item)
-
-
-def thumbnail_media_html(target: Path, item: Any) -> str:
-    return server_browser.thumbnail_media_html(target, item)
 
 
 def page_html(title: str, body: str) -> str:

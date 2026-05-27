@@ -743,6 +743,57 @@ def parse_geo_place_cells(value: str) -> list[str]:
     return clean_cells
 
 
+def set_geo_place_name(target: Path, h3_cell: str, name: str) -> None:
+    h3_resolution_any(h3_cell)
+    conn = db.connect(target)
+    try:
+        db.set_geo_place_name(conn, h3_cell, name)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_custom_geo_place(
+    target: Path,
+    *,
+    raw_original_slug: str,
+    raw_slug: str,
+    name: str,
+    raw_h3_cells: str,
+) -> None:
+    original_slug = normalize_geo_place_slug(raw_original_slug) if raw_original_slug else ""
+    if predefined_geo_place(original_slug) is not None:
+        raise ValueError("Innebygde steder kan ikke endres.")
+    slug = normalize_geo_place_slug(raw_slug)
+    if predefined_geo_place(slug) is not None:
+        raise ValueError("Slug er reservert for et innebygd sted.")
+    h3_cells = parse_geo_place_cells(raw_h3_cells)
+    conn = db.connect(target)
+    try:
+        db.rename_custom_geo_place(
+            conn,
+            old_slug=original_slug,
+            slug=slug,
+            name=name,
+            h3_cells=h3_cells,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_custom_geo_place(target: Path, raw_slug: str) -> None:
+    slug = normalize_geo_place_slug(raw_slug)
+    if predefined_geo_place(slug) is not None:
+        raise ValueError("Innebygde steder kan ikke slettes.")
+    conn = db.connect(target)
+    try:
+        db.delete_custom_geo_place(conn, slug)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def geo_child_area_items(target: Path, *, h3_cell: str, resolution: int) -> list[Any]:
     if resolution >= max(H3_COLUMNS):
         return []
