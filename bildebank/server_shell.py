@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import html
-from typing import Any
+from typing import Any, Callable
 
 from .server_browser import (
     BrowserSource,
@@ -10,6 +10,37 @@ from .server_browser import (
     source_item_url,
     source_month_url,
 )
+
+
+PageRenderer = Callable[[str, str], str]
+
+
+def shell_page_html(
+    title: str,
+    content: str,
+    *,
+    page_html: PageRenderer,
+    main_class: str = "shell",
+    source: BrowserSource | None = None,
+    item: Any | None = None,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    return page_html(
+        title,
+        f"""
+        {app_header_html(
+            title,
+            source=source,
+            item=item,
+            face_enabled=face_enabled,
+            openclip_enabled=openclip_enabled,
+        )}
+        <main class="{html.escape(main_class)}">
+          {content}
+        </main>
+        """,
+    )
 
 
 def source_top_links_html(source: BrowserSource, item: Any | None = None, *, face_enabled: bool = True) -> str:

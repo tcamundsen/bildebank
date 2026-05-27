@@ -109,10 +109,10 @@ Status: started.
 Notes:
 
 - Pure markdown rendering helpers have been moved.
-- `markdown_doc_page_html` remains in `server.py` for now because it uses
-  `shell_page_html`, which is still a broad server composition helper.
-- Reassess moving `markdown_doc_page_html` after generic page-shell helpers
-  have a clearer home.
+- `markdown_doc_page_html` has been moved to `server_markdown.py` after
+  `shell_page_html` was moved to `server_shell.py`. `server.py` keeps
+  compatibility wrappers for markdown helpers that tests and callers import
+  from `bildebank.server`.
 
 ### `bildebank/server_search.py`
 
@@ -508,3 +508,7 @@ Status: postponed.
   image-info rendering helpers to `bildebank/server_browser.py`; `server.py`
   keeps thin wrappers for the existing public helper API and page/static
   composition.
+- done: moved `shell_page_html` implementation to `bildebank/server_shell.py`
+  while keeping `server.py` as the `page_html`/static asset composition root.
+- done: moved `markdown_doc_page_html` to `bildebank/server_markdown.py`;
+  `server.py` keeps thin compatibility wrappers for existing imports.

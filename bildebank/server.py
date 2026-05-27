@@ -88,7 +88,7 @@ from .server_geo import (
     geo_stats_summary_html,
     h3_resolution_any,
 )
-from .server_markdown import markdown_doc_title, markdown_to_html
+from . import server_markdown
 from .server_search import (
     DEFAULT_SEARCH_LIMIT,
     OpenClipSearchCache,
@@ -97,7 +97,7 @@ from .server_search import (
     search_form,
     search_server_images,
 )
-from .server_shell import app_header_html
+from . import server_shell
 from .target_lock import TargetLock
 
 
@@ -1618,6 +1618,14 @@ def message_html(message: str) -> str:
     return f'<p class="message">{html.escape(message)}</p>'
 
 
+def markdown_doc_title(markdown: str, doc_path: Path) -> str:
+    return server_markdown.markdown_doc_title(markdown, doc_path)
+
+
+def markdown_to_html(markdown: str) -> str:
+    return server_markdown.markdown_to_html(markdown)
+
+
 def markdown_doc_page_html(
     doc_path: Path,
     markdown: str,
@@ -1625,16 +1633,10 @@ def markdown_doc_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
-    title = markdown_doc_title(markdown, doc_path)
-    body = markdown_to_html(markdown)
-    return shell_page_html(
-        title,
-        f"""
-        <article class="doc-content">
-          {body}
-        </article>
-        """,
-        main_class="shell doc-page",
+    return server_markdown.markdown_doc_page_html(
+        doc_path,
+        markdown,
+        shell_page_html=shell_page_html,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
     )
@@ -1708,20 +1710,15 @@ def shell_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
-    return page_html(
+    return server_shell.shell_page_html(
         title,
-        f"""
-        {app_header_html(
-            title,
-            source=source,
-            item=item,
-            face_enabled=face_enabled,
-            openclip_enabled=openclip_enabled,
-        )}
-        <main class="{html.escape(main_class)}">
-          {content}
-        </main>
-        """,
+        content,
+        page_html=page_html,
+        main_class=main_class,
+        source=source,
+        item=item,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
     )
 
 

@@ -4,6 +4,33 @@ import html
 import re
 import urllib.parse
 from pathlib import Path
+from typing import Callable
+
+
+ShellPageRenderer = Callable[..., str]
+
+
+def markdown_doc_page_html(
+    doc_path: Path,
+    markdown: str,
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    title = markdown_doc_title(markdown, doc_path)
+    body = markdown_to_html(markdown)
+    return shell_page_html(
+        title,
+        f"""
+        <article class="doc-content">
+          {body}
+        </article>
+        """,
+        main_class="shell doc-page",
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
 
 
 def markdown_doc_title(markdown: str, doc_path: Path) -> str:
