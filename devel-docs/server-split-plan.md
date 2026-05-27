@@ -353,8 +353,12 @@ Notes:
   lookup/cache, and person item lookup have been moved.
 - Person-face lookup, unconfirmed-face lookup, face-box metadata cache helpers,
   and face-box item projection have been moved.
-- People page helpers and mutation/cache orchestration remain in `server.py`
-  for now.
+- Registered-people lookup/cache, registered people row summaries, cache
+  clearing, duplicate confirmed-face warning helpers, unconfirm buttons,
+  people links, face overlay shell, assignment buttons, people rows, and person
+  rename dialog rendering have been moved.
+- People page shell wrappers and face overlay item rendering remain in
+  `server.py` for now.
 
 ### `bildebank/server_app.py`
 
@@ -458,3 +462,6 @@ Status: postponed.
 - done: moved app/status and removed-files rendering helpers to
   `bildebank/server_app.py`; `server.py` keeps thin wrappers for page shell
   composition.
+- done: moved additional face/person data and leaf HTML helpers to
+  `bildebank/server_faces.py`; `server.py` keeps page shell wrappers and
+  shared browser/media composition.
