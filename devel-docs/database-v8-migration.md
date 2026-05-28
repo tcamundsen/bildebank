@@ -14,8 +14,8 @@ Manuell plassering av bilder trenger finere operativ stedscelle enn
 
 - Ny database skal ha H3-kolonner fra `h3_res0` til `h3_res11`.
 - `geo-scan` skal fylle alle H3-kolonnene fra GPS-koordinater.
-- Manuell H3-lokalisering skal fylle alle H3-kolonnene fra valgt celles
-  senterpunkt.
+- Manuell H3-lokalisering skal fylle valgt H3-kolonne og grovere foreldre.
+  Finere H3-kolonner skal ikke utledes fra et senterpunkt.
 - `bildebank migrate` legger til de nye kolonnene og indeksene.
 - Under migrering fylles `h3_res10` og `h3_res11` for eksisterende filer som
   allerede har `gps_lat` og `gps_lon`.

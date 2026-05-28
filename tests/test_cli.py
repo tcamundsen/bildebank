@@ -1795,7 +1795,7 @@ model_name = "buffalo_l"
     def test_run_server_item_manual_location_endpoint_sets_h3_location(self) -> None:
         import h3
 
-        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 11)
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -1826,7 +1826,7 @@ model_name = "buffalo_l"
             info_body = image_info_content_html(target, item)
             conn = db.connect(target)
             try:
-                row = conn.execute("SELECT gps_lat, gps_lon, gps_alt, gps_source, gps_error, h3_res0, h3_res9, h3_res10, h3_res11 FROM files WHERE id = 1").fetchone()
+                row = conn.execute("SELECT gps_lat, gps_lon, gps_alt, gps_source, gps_error, h3_res0, h3_res3, h3_res4, h3_res11 FROM files WHERE id = 1").fetchone()
             finally:
                 conn.close()
 
@@ -1834,12 +1834,13 @@ model_name = "buffalo_l"
         self.assertEqual(row["gps_source"], "manual-h3")
         self.assertIsNone(row["gps_alt"])
         self.assertIsNone(row["gps_error"])
-        self.assertIsNotNone(row["gps_lat"])
-        self.assertIsNotNone(row["gps_lon"])
+        self.assertIsNone(row["gps_lat"])
+        self.assertIsNone(row["gps_lon"])
         self.assertTrue(row["h3_res0"])
-        self.assertTrue(row["h3_res9"])
-        self.assertTrue(row["h3_res10"])
-        self.assertTrue(row["h3_res11"])
+        self.assertEqual(row["h3_res3"], h3_cell)
+        self.assertIsNone(row["h3_res4"])
+        self.assertIsNone(row["h3_res11"])
+        self.assertNotIn("<dt>Kart</dt>", info_body)
         self.assertIn("<dt>GPS-kilde</dt>", info_body)
         self.assertIn("satt manuelt", info_body)
 

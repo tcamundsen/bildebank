@@ -17,6 +17,7 @@ from bildebank.geo import (
     PredefinedGeoPlace,
     extract_gps_from_metadata,
     h3_cells_for_point,
+    h3_cells_for_manual_cell,
     h3_area_label,
     h3_column_for_resolution,
     h3_resolution,
@@ -122,6 +123,18 @@ class GeoTests(unittest.TestCase):
 
         self.assertEqual(set(cells), {f"h3_res{resolution}" for resolution in range(12)})
         self.assertTrue(all(cells.values()))
+
+    def test_h3_cells_for_manual_cell_keeps_only_selected_cell_and_parents(self) -> None:
+        import h3
+
+        cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
+        cells = h3_cells_for_manual_cell(cell)
+
+        self.assertEqual(cells["h3_res0"], h3.cell_to_parent(cell, 0))
+        self.assertEqual(cells["h3_res2"], h3.cell_to_parent(cell, 2))
+        self.assertEqual(cells["h3_res3"], cell)
+        self.assertIsNone(cells["h3_res4"])
+        self.assertIsNone(cells["h3_res11"])
 
     def test_h3_column_for_resolution_rejects_unsupported_resolution(self) -> None:
         self.assertEqual(h3_column_for_resolution(11), "h3_res11")
@@ -785,8 +798,6 @@ Vanlig dokumentasjon.
                 db.set_file_manual_h3_location(
                     conn,
                     file_id=file_id,
-                    gps_lat=59.91273,
-                    gps_lon=10.74609,
                     h3_cells=cells,
                 )
                 db.set_custom_geo_place(conn, slug="manuell", name="Manuell", h3_cells=[cells["h3_res7"]])
@@ -806,15 +817,16 @@ Vanlig dokumentasjon.
 
             conn = db.connect(target)
             try:
-                row = conn.execute("SELECT gps_source, gps_lat, gps_lon, h3_res11 FROM files WHERE id = ?", (file_id,)).fetchone()
+                row = conn.execute("SELECT gps_source, gps_lat, gps_lon, gps_alt, h3_res11 FROM files WHERE id = ?", (file_id,)).fetchone()
             finally:
                 conn.close()
 
         self.assertEqual(normal_stats.checked, 0)
         self.assertEqual(force_stats.checked, 0)
         self.assertEqual(row["gps_source"], "manual-h3")
-        self.assertEqual(float(row["gps_lat"]), 59.91273)
-        self.assertEqual(float(row["gps_lon"]), 10.74609)
+        self.assertIsNone(row["gps_lat"])
+        self.assertIsNone(row["gps_lon"])
+        self.assertIsNone(row["gps_alt"])
         self.assertEqual(row["h3_res11"], cells["h3_res11"])
         self.assertEqual([int(row["id"]) for row in area_files], [file_id])
         self.assertEqual([int(row["id"]) for row in place_items], [file_id])

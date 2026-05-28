@@ -136,6 +136,21 @@ def h3_cells_for_point(lat: float, lon: float) -> dict[str, str]:
     return {column: h3.latlng_to_cell(lat, lon, resolution) for resolution, column in H3_COLUMNS.items()}
 
 
+def h3_cells_for_manual_cell(h3_cell: str) -> dict[str, str | None]:
+    import h3
+
+    resolution = h3_resolution(h3_cell)
+    cells: dict[str, str | None] = {}
+    for candidate_resolution, column in H3_COLUMNS.items():
+        if candidate_resolution < resolution:
+            cells[column] = h3.cell_to_parent(h3_cell, candidate_resolution)
+        elif candidate_resolution == resolution:
+            cells[column] = h3_cell
+        else:
+            cells[column] = None
+    return cells
+
+
 def h3_column_for_resolution(resolution: int) -> str:
     try:
         return H3_COLUMNS[resolution]
@@ -163,17 +178,6 @@ def h3_resolution(h3_cell: str) -> int:
         raise ValueError(f"Ugyldig H3-celle: {h3_cell}") from exc
     h3_column_for_resolution(resolution)
     return resolution
-
-
-def h3_cell_center_point(h3_cell: str) -> GpsData:
-    import h3
-
-    h3_resolution(h3_cell)
-    try:
-        lat, lon = h3.cell_to_latlng(h3_cell)
-    except Exception as exc:  # noqa: BLE001 - h3 raises library-specific exceptions
-        raise ValueError(f"Ugyldig H3-celle: {h3_cell}") from exc
-    return GpsData(lat=float(lat), lon=float(lon))
 
 
 def batched(items: list[Path], batch_size: int) -> Iterable[list[Path]]:

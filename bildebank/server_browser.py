@@ -963,6 +963,7 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
     maps_link = google_maps_link_html(item)
     if maps_link:
         rows.append(info_row_html("Kart", maps_link, raw_html=True))
+    if gps_source_text(item) != "ukjent":
         rows.append(info_row_html("GPS-kilde", gps_source_text(item)))
     geo_links = image_geo_area_links_html(target, item)
     if geo_links:

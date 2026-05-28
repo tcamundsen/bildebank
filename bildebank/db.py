@@ -2103,8 +2103,6 @@ def set_file_manual_h3_location(
     conn: sqlite3.Connection,
     *,
     file_id: int,
-    gps_lat: float,
-    gps_lon: float,
     h3_cells: dict[str, str | None],
 ) -> bool:
     row = conn.execute(
@@ -2122,8 +2120,8 @@ def set_file_manual_h3_location(
     update_file_gps(
         conn,
         file_id=file_id,
-        gps_lat=gps_lat,
-        gps_lon=gps_lon,
+        gps_lat=None,
+        gps_lon=None,
         gps_alt=None,
         h3_cells=h3_cells,
         gps_source="manual-h3",
