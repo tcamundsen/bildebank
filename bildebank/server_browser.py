@@ -740,7 +740,12 @@ def source_item_page_html(
         next_item,
         hide_out_of_focus=hide_out_of_focus,
     )
-    tag_controls = system_tag_controls_html(target, int(item["id"]), out_of_focus_redirect_url=out_of_focus_redirect_url)
+    tag_controls = system_tag_controls_html(
+        target,
+        int(item["id"]),
+        gps_source=str(item["gps_source"] or ""),
+        out_of_focus_redirect_url=out_of_focus_redirect_url,
+    )
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config) if face_enabled else ""
     all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus)
     all_items_label = "Synlige bilder" if hide_out_of_focus else "Alle bilder"
@@ -804,7 +809,13 @@ def hidden_after_out_of_focus_tag_redirect_url(
     return source.root_url
 
 
-def system_tag_controls_html(target: Path, file_id: int, *, out_of_focus_redirect_url: str = "") -> str:
+def system_tag_controls_html(
+    target: Path,
+    file_id: int,
+    *,
+    gps_source: str = "",
+    out_of_focus_redirect_url: str = "",
+) -> str:
     conn = db.connect(target)
     try:
         active_names = {str(row["name"]).casefold() for row in db.tags_for_file(conn, file_id)}
@@ -823,7 +834,8 @@ def system_tag_controls_html(target: Path, file_id: int, *, out_of_focus_redirec
             f'data-tag-toggle="{file_id}" data-tag-name="{html.escape(tag_name)}" '
             f'aria-pressed="{pressed}"{redirect_attr}>{html.escape(tag_name)}</button>'
         )
-    return f'<aside class="tag-rail" aria-label="Systemtagger">{"".join(buttons)}</aside>'
+    manual_h3_badge = '<div class="manual-h3-badge">Manuell H3</div>' if gps_source == "manual-h3" else ""
+    return f'<aside class="tag-rail" aria-label="Systemtagger">{"".join(buttons)}{manual_h3_badge}</aside>'
 
 
 def source_item_media_html(
@@ -960,6 +972,9 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
     tags = image_tag_links_html(target, int(item["id"]))
     if tags:
         rows.append(info_row_html("Tagger", tags, raw_html=True))
+    manual_h3_label = manual_h3_label_html(item)
+    if manual_h3_label:
+        rows.append(info_row_html("", manual_h3_label, raw_html=True))
     maps_link = google_maps_link_html(item)
     if maps_link:
         rows.append(info_row_html("Kart", maps_link, raw_html=True))
@@ -984,6 +999,16 @@ def image_tag_links_html(target: Path, file_id: int) -> str:
         url = "/tag/" + urllib.parse.quote(name, safe="")
         links.append(f'<a href="{html.escape(url)}">{html.escape(name)}</a>{html.escape(suffix)}')
     return ", ".join(links)
+
+
+def manual_h3_label_html(item: Any) -> str:
+    try:
+        source = str(item["gps_source"] or "")
+    except (KeyError, IndexError):
+        return ""
+    if source != "manual-h3":
+        return ""
+    return '<span class="status">Manuell H3</span>'
 
 
 def image_date_text(item: Any) -> str:

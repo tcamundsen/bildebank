@@ -307,6 +307,13 @@ SERVER_CSS = r"""    :root {
       background: rgb(125 183 255 / 18%);
     }
     .tag-toggle:disabled { opacity: 0.65; cursor: default; }
+    .manual-h3-badge {
+      padding: 2px 4px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.2;
+      text-align: center;
+    }
     .stage {
       min-height: 0;
       display: grid;
@@ -855,26 +862,27 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       }
     });
   });
+  async function setManualLocation(button) {
+    if (!button || button.disabled) return;
+    const fileId = Number(button.dataset.manualLocationItem);
+    if (!fileId) return;
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/item-manual-location", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({file_id: fileId}),
+      });
+      const payload = await response.json();
+      if (!payload.ok) throw new Error(payload.error || "Kunne ikke sette sted.");
+      window.location.reload();
+    } catch (error) {
+      alert(error.message || "Kunne ikke sette sted.");
+      button.disabled = false;
+    }
+  }
   document.querySelectorAll("[data-manual-location-item]").forEach(button => {
-    button.addEventListener("click", async () => {
-      const fileId = Number(button.dataset.manualLocationItem);
-      const h3Cell = button.dataset.manualLocationCell || "";
-      if (!confirm(`Sette sted fra aktiv H3-celle?\n\n${h3Cell}`)) return;
-      button.disabled = true;
-      try {
-        const response = await fetch("/api/item-manual-location", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({file_id: fileId}),
-        });
-        const payload = await response.json();
-        if (!payload.ok) throw new Error(payload.error || "Kunne ikke sette sted.");
-        window.location.reload();
-      } catch (error) {
-        alert(error.message || "Kunne ikke sette sted.");
-        button.disabled = false;
-      }
-    });
+    button.addEventListener("click", () => setManualLocation(button));
   });
   document.querySelectorAll("[data-delete-item]").forEach(button => {
     button.addEventListener("click", async () => {
@@ -1025,6 +1033,13 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       target instanceof HTMLButtonElement ||
       target?.isContentEditable
     ) return;
+    if (event.key.toLowerCase() === "g") {
+      const button = document.querySelector("[data-manual-location-item]");
+      if (!(button instanceof HTMLButtonElement)) return;
+      event.preventDefault();
+      setManualLocation(button);
+      return;
+    }
     const selector = {
       ArrowLeft: '[data-key-nav="previous"]',
       ArrowRight: '[data-key-nav="next"]',

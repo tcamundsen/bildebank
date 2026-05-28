@@ -1790,7 +1790,9 @@ model_name = "buffalo_l"
         self.assertIn('data-manual-location-item="1"', body)
         self.assertIn(f'data-manual-location-cell="{h3_cell}"', body)
         self.assertIn("/api/item-manual-location", SERVER_JS)
-        self.assertIn("Sette sted fra aktiv H3-celle?", SERVER_JS)
+        self.assertIn('event.key.toLowerCase() === "g"', SERVER_JS)
+        self.assertIn("setManualLocation(button)", SERVER_JS)
+        self.assertNotIn("Sette sted fra aktiv H3-celle?", SERVER_JS)
 
     def test_run_server_item_manual_location_endpoint_sets_h3_location(self) -> None:
         import h3
@@ -1821,8 +1823,15 @@ model_name = "buffalo_l"
             handler = FakeHandler()
             BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
 
+            conn = db.connect(target)
+            try:
+                db.set_file_tag(conn, file_id=1, tag_name=db.SYSTEM_TAG_OUT_OF_FOCUS, tagged=True)
+                conn.commit()
+            finally:
+                conn.close()
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
             info_body = image_info_content_html(target, item)
             conn = db.connect(target)
             try:
@@ -1840,7 +1849,11 @@ model_name = "buffalo_l"
         self.assertEqual(row["h3_res3"], h3_cell)
         self.assertIsNone(row["h3_res4"])
         self.assertIsNone(row["h3_res11"])
+        self.assertIn('<aside class="tag-rail"', body)
+        self.assertIn('<div class="manual-h3-badge">Manuell H3</div>', body)
         self.assertNotIn("<dt>Kart</dt>", info_body)
+        self.assertIn("Manuell H3", info_body)
+        self.assertLess(info_body.index("<dt>Tagger</dt>"), info_body.index("Manuell H3"))
         self.assertIn("<dt>GPS-kilde</dt>", info_body)
         self.assertIn("satt manuelt", info_body)
 
