@@ -2400,6 +2400,18 @@ def geo_place_name(conn: sqlite3.Connection, h3_cell: str) -> str | None:
     return None if row is None else str(row["name"])
 
 
+def geo_place_names(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT h3_cell, name
+            FROM geo_place_names
+            ORDER BY name COLLATE NOCASE, h3_cell
+            """
+        )
+    )
+
+
 def set_geo_place_name(conn: sqlite3.Connection, h3_cell: str, name: str) -> str | None:
     clean_name = name.strip()
     if not h3_cell.strip():

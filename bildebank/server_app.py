@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import __version__, db
+from .geo import h3_resolution
 from .config import (
     AppConfig,
     FaceRecognitionConfig,
@@ -35,11 +36,12 @@ def app_status_page_html(
     if module_available_func is None:
         module_available_func = module_available
     insightface_installed = module_available_func("insightface")
+    named_h3_cells = app_status_named_h3_cells(target)
     rows = "\n".join(
         (
             app_status_row_html("Bildesamling", str(target)),
             app_status_hide_out_of_focus_row_html(config.browser.hide_out_of_focus),
-            app_status_manual_h3_cell_row_html(config.browser.manual_h3_cell),
+            app_status_manual_h3_cell_row_html(config.browser.manual_h3_cell, named_h3_cells),
             app_status_row_html("Bildebank-versjon", __version__),
             app_status_face_config_row_html(config.face_recognition.enabled, insightface_installed=insightface_installed),
             app_status_face_model_row_html(config.face_recognition),
@@ -212,21 +214,56 @@ def app_status_hide_out_of_focus_row_html(enabled: bool) -> str:
     """
 
 
-def app_status_manual_h3_cell_row_html(h3_cell: str) -> str:
-    value = html.escape(h3_cell)
-    status = html.escape(h3_cell or "Ikke satt")
+def app_status_named_h3_cells(target: Path) -> list[Any]:
+    conn = db.connect(target)
+    try:
+        return db.geo_place_names(conn)
+    finally:
+        conn.close()
+
+
+def app_status_manual_h3_cell_row_html(h3_cell: str, named_h3_cells: list[Any]) -> str:
+    clean_h3_cell = h3_cell.strip()
+    has_selected_cell = False
+    options = [f'<option value=""{selected_attr(clean_h3_cell == "")}>Ingen celle valgt</option>']
+    for row in named_h3_cells:
+        cell = str(row["h3_cell"])
+        name = str(row["name"])
+        selected = cell == clean_h3_cell
+        has_selected_cell = has_selected_cell or selected
+        options.append(
+            f'<option value="{html.escape(cell)}"{selected_attr(selected)}>'
+            f'{html.escape(name)} ({html.escape(h3_resolution_option_label(cell))})'
+            "</option>"
+        )
+    if clean_h3_cell and not has_selected_cell:
+        options.append(
+            f'<option value="{html.escape(clean_h3_cell)}" selected>'
+            f'Ikke navngitt: {html.escape(clean_h3_cell)}'
+            "</option>"
+        )
+    status = html.escape(clean_h3_cell or "Ikke satt")
     return f"""
     <div class="info-row">
       <dt>Aktiv manuell H3-celle</dt>
       <dd>
         <form action="/settings/manual-h3-cell" method="post" class="app-toggle-form">
-          <input type="text" name="h3_cell" value="{value}" placeholder="H3-celle">
+          <select name="h3_cell">
+            {"".join(options)}
+          </select>
           <button type="submit" class="nav-button">Lagre</button>
           <span class="app-toggle-status">{status}</span>
         </form>
       </dd>
     </div>
     """
+
+
+def h3_resolution_option_label(h3_cell: str) -> str:
+    try:
+        return f"H3-{h3_resolution(h3_cell)}"
+    except Exception:  # noqa: BLE001 - settings page should not fail if h3 is missing or a cell is invalid
+        return "H3-?"
 
 
 def app_status_face_model_row_html(config: FaceRecognitionConfig) -> str:
