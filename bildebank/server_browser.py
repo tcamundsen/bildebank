@@ -724,7 +724,7 @@ def source_item_page_html(
         include_info_button=True,
         info_button=image_info_button_html(int(item["id"])),
         rotation_buttons=rotation_buttons_html(source, item),
-        manual_location_button=manual_location_button_html(item, manual_h3_cell),
+        manual_location_button=manual_location_button_html(target, item, manual_h3_cell),
         unconfirm_buttons=unconfirm_face_buttons_html(target, source, item, face_config) if face_enabled else "",
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
@@ -901,16 +901,26 @@ def rotation_buttons_html(source: BrowserSource, item: Any) -> str:
     """
 
 
-def manual_location_button_html(item: Any, h3_cell: str) -> str:
+def manual_location_button_html(target: Path, item: Any, h3_cell: str) -> str:
     clean_h3_cell = h3_cell.strip()
     if not clean_h3_cell:
         return ""
     file_id = int(item["id"])
+    place_name = manual_h3_cell_name(target, clean_h3_cell) or "valgt H3-celle"
     return (
         f'<button class="nav-button" type="button" '
         f'data-manual-location-item="{file_id}" '
-        f'data-manual-location-cell="{html.escape(clean_h3_cell)}">Sett sted {clean_h3_cell}</button>'
+        f'data-manual-location-cell="{html.escape(clean_h3_cell)}">'
+        f'Sett sted {html.escape(place_name)}</button>'
     )
+
+
+def manual_h3_cell_name(target: Path, h3_cell: str) -> str | None:
+    conn = db.connect(target)
+    try:
+        return db.geo_place_name(conn, h3_cell)
+    finally:
+        conn.close()
 
 
 def delete_button_html(source: BrowserSource, item: Any, previous_item: Any | None, next_item: Any | None) -> str:
