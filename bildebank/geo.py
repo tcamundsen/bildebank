@@ -241,6 +241,7 @@ def scan_geo(
     *,
     force: bool = False,
     only_missing: bool = False,
+    override_manual_h3: bool = False,
     limit: int | None = None,
     verbose: bool = False,
     exiftool_path: Path | str | None = None,
@@ -256,7 +257,13 @@ def scan_geo(
     errors = 0
     updated = 0
     try:
-        rows = db.geo_scan_files(conn, force=force, only_missing=only_missing, limit=limit)
+        rows = db.geo_scan_files(
+            conn,
+            force=force,
+            only_missing=only_missing,
+            override_manual_h3=override_manual_h3,
+            limit=limit,
+        )
         file_ids_by_path: dict[Path, int] = {}
         paths: list[Path] = []
         for row in rows:

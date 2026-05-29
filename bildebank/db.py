@@ -2039,16 +2039,23 @@ def geo_scan_files(
     *,
     force: bool = False,
     only_missing: bool = False,
+    override_manual_h3: bool = False,
     limit: int | None = None,
 ) -> list[sqlite3.Row]:
-    where = ["deleted_at IS NULL", "(gps_source IS NULL OR gps_source != 'manual-h3')"]
+    where = ["deleted_at IS NULL"]
+    if not override_manual_h3:
+        where.append("(gps_source IS NULL OR gps_source != 'manual-h3')")
     if only_missing:
         where.append("gps_lat IS NULL")
         where.append("gps_lon IS NULL")
         where.append("gps_scanned_at IS NULL")
         where.append("gps_error IS NULL")
     elif not force:
-        where.append("(gps_scanned_at IS NULL OR gps_lat IS NULL OR gps_lon IS NULL)")
+        missing_or_unscanned = "(gps_scanned_at IS NULL OR gps_lat IS NULL OR gps_lon IS NULL)"
+        if override_manual_h3:
+            where.append(f"({missing_or_unscanned} OR gps_source = 'manual-h3')")
+        else:
+            where.append(missing_or_unscanned)
     sql = """
         SELECT id, target_path
         FROM files

@@ -406,6 +406,15 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Scan bare filer uten GPS-data og uten tidligere GPS-resultat",
     )
+    geo_scan.add_argument(
+        "--override-manual-h3",
+        action="store_true",
+        help=(
+            "Ta med filer med manuell H3-lokasjon. "
+            "Den manuelle H3-lokasjonen overskrives av GPS fra metadata, "
+            "eller slettes hvis filen ikke har GPS."
+        ),
+    )
     geo_scan.add_argument("--limit", type=positive_int_arg, help="Maks antall filer som skal scannes")
     geo_scan.add_argument("--verbose", action="store_true", help="Vis filer uten GPS eller med feil")
     geo_scan.add_argument(
@@ -962,6 +971,7 @@ def run(args: argparse.Namespace) -> int:
             target,
             force=args.force,
             only_missing=args.only_missing,
+            override_manual_h3=args.override_manual_h3,
             limit=args.limit,
             verbose=args.verbose,
             exiftool_path=args.exiftool,
@@ -1641,6 +1651,7 @@ def run_geo_scan(
     *,
     force: bool,
     only_missing: bool,
+    override_manual_h3: bool,
     limit: int | None,
     verbose: bool,
     exiftool_path: Path | None,
@@ -1648,10 +1659,13 @@ def run_geo_scan(
 ) -> int:
     if force and only_missing:
         raise ValueError("--force og --only-missing kan ikke brukes samtidig.")
+    if override_manual_h3 and only_missing:
+        raise ValueError("--override-manual-h3 og --only-missing kan ikke brukes samtidig.")
     stats = scan_geo(
         target,
         force=force,
         only_missing=only_missing,
+        override_manual_h3=override_manual_h3,
         limit=limit,
         verbose=verbose,
         exiftool_path=exiftool_path.resolve() if exiftool_path else None,
