@@ -325,6 +325,11 @@ def h3_cells_page_html(
         <p class="meta">Navnene brukes blant annet i dropdownen for aktiv manuell H3-celle.</p>
         <section class="custom-geo-places">
           <h2>Legg til H3-celle</h2>
+          <p>Bruk resolution 11 (høyeste oppløsning) for å markere et enkelt hus eller
+          en veldig presis lokasjon, for de mest brukte stedene. Hvis huset ligger på
+          grensen mellom to H3-celler i resolution 11, så velger du bare den som
+          dekker mest av huset. Det er ikke så viktig. For å gjøre det enkelt
+          kan du se om du finner en større H3-celle som dekker en hel sydenferies bilder.</p>
           {h3_cell_form_html()}
         </section>
         <section class="custom-geo-places">
