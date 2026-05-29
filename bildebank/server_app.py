@@ -22,6 +22,7 @@ from .html_export import format_bytes
 
 ShellPageRenderer = Callable[..., str]
 ModuleAvailable = Callable[[str], bool]
+MAX_NAMED_H3_RESOLUTION = 11
 
 
 def app_status_page_html(
@@ -337,10 +338,11 @@ def h3_cells_page_html(
 
 
 def h3_cell_form_html() -> str:
-    return """
+    return f"""
     <form action="/settings/h3-cell" method="post" class="custom-place-form">
       <label>Navn <input name="name" autocomplete="off"></label>
       <label>H3-id <input name="h3_cell" autocomplete="off"></label>
+      <p class="meta">Bildebank bruker H3-oppløsning 0 til {MAX_NAMED_H3_RESOLUTION}.</p>
       <div class="custom-place-actions">
         <button type="submit">Legg til H3-celle</button>
       </div>
@@ -376,12 +378,26 @@ def h3_cell_row_html(row: Any) -> str:
     """
 
 
+def h3_resolution_for_named_place(h3_cell: str) -> int:
+    import h3
+
+    if hasattr(h3, "is_valid_cell") and not h3.is_valid_cell(h3_cell):
+        raise ValueError(f"Ugyldig H3-celle: {h3_cell}")
+    try:
+        resolution = int(h3.get_resolution(h3_cell))
+    except Exception as exc:  # noqa: BLE001 - h3 raises library-specific exceptions
+        raise ValueError(f"Ugyldig H3-celle: {h3_cell}") from exc
+    if resolution > MAX_NAMED_H3_RESOLUTION:
+        raise ValueError(f"Bildebank bruker bare H3-oppløsning 0 til {MAX_NAMED_H3_RESOLUTION}.")
+    return h3_resolution(h3_cell)
+
+
 def save_h3_cell_name(target: Path, *, h3_cell: str, name: str) -> None:
     clean_h3_cell = h3_cell.strip()
     clean_name = name.strip()
     if not clean_name:
         raise ValueError("Navn mangler.")
-    h3_resolution(clean_h3_cell)
+    h3_resolution_for_named_place(clean_h3_cell)
     conn = db.connect(target)
     try:
         db.set_geo_place_name(conn, clean_h3_cell, clean_name)
