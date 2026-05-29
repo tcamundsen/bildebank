@@ -331,6 +331,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/api/item-manual-location":
                 self.respond_manual_location_item()
                 return
+            if parsed.path == "/api/item-manual-location-remove":
+                self.respond_remove_manual_location_item()
+                return
             if parsed.path == "/api/item-delete":
                 self.respond_delete_item()
                 return
@@ -1029,6 +1032,20 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         self.respond_json({"ok": True, "file_id": file_id, "gps_source": "manual-h3"})
+
+    def respond_remove_manual_location_item(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        try:
+            file_id = int(payload.get("file_id"))
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            server_actions.remove_manual_h3_location_from_file(self.server.target, file_id)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_json({"ok": True, "file_id": file_id, "gps_source": None})
 
     def respond_delete_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)

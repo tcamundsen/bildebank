@@ -2148,6 +2148,43 @@ def set_file_manual_h3_location(
     return True
 
 
+def remove_file_manual_h3_location(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+) -> bool:
+    row = conn.execute(
+        """
+        SELECT id, deleted_at, gps_source
+        FROM files
+        WHERE id = ?
+        """,
+        (file_id,),
+    ).fetchone()
+    if row is None:
+        return False
+    if row["deleted_at"] is not None:
+        raise ValueError("Filen er markert som slettet.")
+    if str(row["gps_source"] or "") != "manual-h3":
+        raise ValueError("Filen har ikke manuell H3-lokasjon.")
+    assignments = ",\n            ".join(f"{column} = NULL" for column in H3_FILE_COLUMNS)
+    conn.execute(
+        f"""
+        UPDATE files
+        SET gps_lat = NULL,
+            gps_lon = NULL,
+            gps_alt = NULL,
+            {assignments},
+            gps_source = NULL,
+            gps_scanned_at = NULL,
+            gps_error = NULL
+        WHERE id = ?
+        """,
+        (file_id,),
+    )
+    return True
+
+
 def has_legacy_gps_errors(conn: sqlite3.Connection) -> bool:
     if not table_exists(conn, "files") or "gps_error" not in table_columns(conn, "files"):
         return False

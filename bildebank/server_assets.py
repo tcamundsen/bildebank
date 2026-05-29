@@ -884,6 +884,29 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   document.querySelectorAll("[data-manual-location-item]").forEach(button => {
     button.addEventListener("click", () => setManualLocation(button));
   });
+  async function removeManualLocation(button) {
+    if (!button || button.disabled) return;
+    const fileId = Number(button.dataset.removeManualLocationItem);
+    if (!fileId) return;
+    if (!confirm("Fjerne manuell H3-lokasjon fra bildet?")) return;
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/item-manual-location-remove", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({file_id: fileId}),
+      });
+      const payload = await response.json();
+      if (!payload.ok) throw new Error(payload.error || "Kunne ikke fjerne manuelt sted.");
+      window.location.reload();
+    } catch (error) {
+      alert(error.message || "Kunne ikke fjerne manuelt sted.");
+      button.disabled = false;
+    }
+  }
+  document.querySelectorAll("[data-remove-manual-location-item]").forEach(button => {
+    button.addEventListener("click", () => removeManualLocation(button));
+  });
   document.querySelectorAll("[data-delete-item]").forEach(button => {
     button.addEventListener("click", async () => {
       const fileId = Number(button.dataset.deleteItem);

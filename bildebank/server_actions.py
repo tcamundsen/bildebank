@@ -60,6 +60,16 @@ def set_manual_h3_location_on_file(target: Path, file_id: int, h3_cell: str) -> 
         conn.close()
 
 
+def remove_manual_h3_location_from_file(target: Path, file_id: int) -> None:
+    conn = db.connect(target)
+    try:
+        if not db.remove_file_manual_h3_location(conn, file_id=file_id):
+            raise ValueError("Filen finnes ikke i importdatabasen.")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def remove_file_from_browser(target: Path, file_id: int) -> Path:
     with TargetLock(target, command="remove"):
         conn = db.connect(target)

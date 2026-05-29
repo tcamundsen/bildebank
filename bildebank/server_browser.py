@@ -724,7 +724,10 @@ def source_item_page_html(
         include_info_button=True,
         info_button=image_info_button_html(int(item["id"])),
         rotation_buttons=rotation_buttons_html(source, item),
-        manual_location_button=manual_location_button_html(target, item, manual_h3_cell),
+        manual_location_button=(
+            manual_location_button_html(target, item, manual_h3_cell)
+            + remove_manual_location_button_html(item)
+        ),
         unconfirm_buttons=unconfirm_face_buttons_html(target, source, item, face_config) if face_enabled else "",
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
@@ -924,6 +927,17 @@ def item_has_gps_location(item: Any) -> bool:
         return item["gps_lat"] is not None or item["gps_lon"] is not None
     except (KeyError, IndexError):
         return False
+
+
+def remove_manual_location_button_html(item: Any) -> str:
+    if not gps_source_is_manual_h3(item):
+        return ""
+    file_id = int(item["id"])
+    return (
+        f'<button class="nav-button danger-button" type="button" '
+        f'data-remove-manual-location-item="{file_id}">'
+        f'Fjern manuelt sted</button>'
+    )
 
 
 def manual_h3_cell_name(target: Path, h3_cell: str) -> str | None:
