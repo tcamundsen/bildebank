@@ -243,6 +243,8 @@ def app_status_manual_h3_cell_row_html(h3_cell: str, named_h3_cells: list[Any]) 
             "</option>"
         )
     status = html.escape(clean_h3_cell or "Ikke satt")
+    maps_link = h3_cell_google_maps_link_html(clean_h3_cell)
+    h3geo_link = h3_cell_h3geo_link_html(clean_h3_cell)
     return f"""
     <div class="info-row">
       <dt>Aktiv manuell H3-celle</dt>
@@ -253,11 +255,42 @@ def app_status_manual_h3_cell_row_html(h3_cell: str, named_h3_cells: list[Any]) 
           </select>
           <button type="submit" class="nav-button">Lagre</button>
           <span class="app-toggle-status">{status}</span>
+          {maps_link}
+          {h3geo_link}
           <a href="/settings/h3-cells" class="app-toggle-note">Rediger H3-celler</a>
         </form>
       </dd>
     </div>
     """
+
+
+def h3_cell_google_maps_link_html(h3_cell: str) -> str:
+    if not h3_cell:
+        return ""
+    try:
+        url = h3_cell_google_maps_url(h3_cell)
+    except Exception:  # noqa: BLE001 - settings page should not fail if h3 is missing or a cell is invalid
+        return ""
+    return f'<a href="{html.escape(url)}" target="_blank" rel="noopener" class="app-toggle-note">Google Maps</a>'
+
+
+def h3_cell_google_maps_url(h3_cell: str) -> str:
+    import h3
+
+    latitude, longitude = h3.cell_to_latlng(h3_cell)
+    query = urllib.parse.quote(f"{latitude:.7f},{longitude:.7f}", safe=",")
+    return f"https://www.google.com/maps/search/?api=1&query={query}"
+
+
+def h3_cell_h3geo_link_html(h3_cell: str) -> str:
+    if not h3_cell:
+        return ""
+    url = h3_cell_h3geo_url(h3_cell)
+    return f'<a href="{html.escape(url)}" target="_blank" rel="noopener" class="app-toggle-note">h3geo.org</a>'
+
+
+def h3_cell_h3geo_url(h3_cell: str) -> str:
+    return f"https://h3geo.org/#hex={urllib.parse.quote(h3_cell, safe='')}"
 
 
 def h3_resolution_option_label(h3_cell: str) -> str:
