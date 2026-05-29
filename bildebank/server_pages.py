@@ -289,6 +289,15 @@ def app_status_page_html(target: Path, config: AppConfig | None = None) -> str:
     )
 
 
+def h3_cells_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
+    return server_app.h3_cells_page_html(
+        target,
+        shell_page_html=shell_page_html,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
 def removed_files_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
     return server_app.removed_files_page_html(
         target,

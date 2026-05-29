@@ -253,6 +253,7 @@ def app_status_manual_h3_cell_row_html(h3_cell: str, named_h3_cells: list[Any]) 
           </select>
           <button type="submit" class="nav-button">Lagre</button>
           <span class="app-toggle-status">{status}</span>
+          <a href="/settings/h3-cells" class="app-toggle-note">Rediger H3-celler</a>
         </form>
       </dd>
     </div>
@@ -264,6 +265,96 @@ def h3_resolution_option_label(h3_cell: str) -> str:
         return f"H3-{h3_resolution(h3_cell)}"
     except Exception:  # noqa: BLE001 - settings page should not fail if h3 is missing or a cell is invalid
         return "H3-?"
+
+
+
+def h3_resolution_value_label(h3_cell: str) -> str:
+    try:
+        return str(h3_resolution(h3_cell))
+    except Exception:  # noqa: BLE001 - settings page should not fail if h3 is missing or a cell is invalid
+        return "ukjent"
+
+
+def h3_cells_page_html(
+    target: Path,
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+) -> str:
+    named_h3_cells = app_status_named_h3_cells(target)
+    return shell_page_html(
+        "Rediger H3-celler",
+        f"""
+        <nav class="subnav"><a href="/settings">Innstillinger</a></nav>
+        <h1>Rediger H3-celler</h1>
+        <p class="meta">Navnene brukes blant annet i dropdownen for aktiv manuell H3-celle.</p>
+        <section class="custom-geo-places">
+          <h2>Legg til H3-celle</h2>
+          {h3_cell_form_html()}
+        </section>
+        <section class="custom-geo-places">
+          <h2>Definerte steder</h2>
+          {h3_cell_list_html(named_h3_cells)}
+        </section>
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def h3_cell_form_html() -> str:
+    return """
+    <form action="/settings/h3-cell" method="post" class="custom-place-form">
+      <label>Navn <input name="name" autocomplete="off"></label>
+      <label>H3-id <input name="h3_cell" autocomplete="off"></label>
+      <div class="custom-place-actions">
+        <button type="submit">Legg til H3-celle</button>
+      </div>
+    </form>
+    """
+
+
+def h3_cell_list_html(named_h3_cells: list[Any]) -> str:
+    if not named_h3_cells:
+        return '<p class="meta">Ingen H3-celler er navngitt ennå.</p>'
+    rows = "\n".join(h3_cell_row_html(row) for row in named_h3_cells)
+    return f"""
+    <div class="geo-list">
+      <div class="geo-row">
+        <strong>Navn</strong>
+        <strong>Resolution</strong>
+        <strong>H3 hexagon id</strong>
+      </div>
+      {rows}
+    </div>
+    """
+
+
+def h3_cell_row_html(row: Any) -> str:
+    h3_cell = str(row["h3_cell"])
+    name = str(row["name"])
+    return f"""
+    <div class="geo-row">
+      <span>{html.escape(name)}</span>
+      <span>{html.escape(h3_resolution_value_label(h3_cell))}</span>
+      <code>{html.escape(h3_cell)}</code>
+    </div>
+    """
+
+
+def save_h3_cell_name(target: Path, *, h3_cell: str, name: str) -> None:
+    clean_h3_cell = h3_cell.strip()
+    clean_name = name.strip()
+    if not clean_name:
+        raise ValueError("Navn mangler.")
+    h3_resolution(clean_h3_cell)
+    conn = db.connect(target)
+    try:
+        db.set_geo_place_name(conn, clean_h3_cell, clean_name)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def app_status_face_model_row_html(config: FaceRecognitionConfig) -> str:

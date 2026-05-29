@@ -30,6 +30,7 @@ from .server_pages import (
     error_html,
     geo_area_page_html,
     geo_index_page_html,
+    h3_cells_page_html,
     geo_map_page_html,
     geo_missing_page_html,
     geo_stats_page_html,
@@ -154,6 +155,15 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/settings":
                 self.respond_html(app_status_page_html(self.server.target, self.server.config))
                 return
+            if parsed.path in {"/settings/h3-cells", "/settings/h3-cells/"}:
+                self.respond_html(
+                    h3_cells_page_html(
+                        self.server.target,
+                        face_enabled=self.server.face_enabled,
+                        openclip_enabled=self.server.openclip_enabled,
+                    )
+                )
+                return
             if parsed.path in {"/settings/removed", "/settings/removed/"}:
                 self.respond_html(
                     removed_files_page_html(
@@ -275,6 +285,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path == "/settings/manual-h3-cell":
                 self.respond_set_manual_h3_cell()
+                return
+            if parsed.path == "/settings/h3-cell":
+                self.respond_set_h3_cell_name()
                 return
             if parsed.path == "/settings/face-model":
                 self.respond_set_face_model()
@@ -751,6 +764,22 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
             return
         self.redirect("/settings")
+
+    def respond_set_h3_cell_name(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        try:
+            server_app.save_h3_cell_name(
+                self.server.target,
+                h3_cell=first_param(params, "h3_cell"),
+                name=first_param(params, "name"),
+            )
+        except ValueError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+        self.redirect("/settings/h3-cells")
 
     def respond_set_face_model(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)
