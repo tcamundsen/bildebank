@@ -307,7 +307,7 @@ SERVER_CSS = r"""    :root {
       background: rgb(125 183 255 / 18%);
     }
     .tag-toggle:disabled { opacity: 0.65; cursor: default; }
-    .manual-h3-badge {
+    .location-status-badge {
       padding: 2px 4px;
       color: var(--muted);
       font-size: 12px;

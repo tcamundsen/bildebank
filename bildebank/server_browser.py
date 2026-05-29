@@ -834,8 +834,12 @@ def system_tag_controls_html(
             f'data-tag-toggle="{file_id}" data-tag-name="{html.escape(tag_name)}" '
             f'aria-pressed="{pressed}"{redirect_attr}>{html.escape(tag_name)}</button>'
         )
-    manual_h3_badge = manual_h3_badge_html(manual_h3_name) if gps_source_is_manual_h3(item) else ""
-    return f'<aside class="tag-rail" aria-label="Systemtagger">{"".join(buttons)}{manual_h3_badge}</aside>'
+    location_status = (
+        manual_h3_badge_html(manual_h3_name)
+        if gps_source_is_manual_h3(item)
+        else gps_location_badge_html(item)
+    )
+    return f'<aside class="tag-rail" aria-label="Systemtagger">{"".join(buttons)}{location_status}</aside>'
 
 
 def source_item_media_html(
@@ -1060,7 +1064,20 @@ def manual_h3_status_html(place_name: str | None) -> str:
 
 def manual_h3_badge_html(place_name: str | None) -> str:
     label = f"Manuell H3: {place_name}" if place_name else "Manuell H3"
-    return f'<div class="manual-h3-badge">{html.escape(label)}</div>'
+    return f'<div class="location-status-badge">{html.escape(label)}</div>'
+
+
+def gps_location_badge_html(item: Any) -> str:
+    coordinates = gps_coordinate_pair(item)
+    if coordinates is None:
+        return '<div class="location-status-badge">GPS mangler</div>'
+    latitude, longitude = coordinates
+    url = google_maps_url(latitude, longitude)
+    return (
+        '<div class="location-status-badge">'
+        f'<a href="{html.escape(url)}" target="_blank" rel="noopener">GPS-lokalisert</a>'
+        '</div>'
+    )
 
 
 def image_date_text(item: Any) -> str:
@@ -1080,16 +1097,29 @@ def date_source_text(source: str) -> str:
 
 
 def google_maps_link_html(item: Any) -> str:
-    lat = item["gps_lat"]
-    lon = item["gps_lon"]
-    if lat is None or lon is None:
+    coordinates = gps_coordinate_pair(item)
+    if coordinates is None:
         return ""
-    latitude = float(lat)
-    longitude = float(lon)
-    query = urllib.parse.quote(f"{latitude:.7f},{longitude:.7f}", safe=",")
-    url = f"https://www.google.com/maps/search/?api=1&query={query}"
+    latitude, longitude = coordinates
     label = f"Åpne i Google Maps ({latitude:.7f}, {longitude:.7f})"
+    url = google_maps_url(latitude, longitude)
     return f'<a href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
+
+
+def gps_coordinate_pair(item: Any) -> tuple[float, float] | None:
+    try:
+        lat = item["gps_lat"]
+        lon = item["gps_lon"]
+    except (KeyError, IndexError):
+        return None
+    if lat is None or lon is None:
+        return None
+    return float(lat), float(lon)
+
+
+def google_maps_url(latitude: float, longitude: float) -> str:
+    query = urllib.parse.quote(f"{latitude:.7f},{longitude:.7f}", safe=",")
+    return f"https://www.google.com/maps/search/?api=1&query={query}"
 
 
 def gps_source_text(item: Any) -> str:
