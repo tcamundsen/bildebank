@@ -29,8 +29,8 @@ H3_AREA_LABELS_KM2 = {
     7: "ca. 5 km²",
     8: "ca. 0,7 km²",
     9: "ca. 0,1 km²",
-    10: "ca. 0,015 km²",
-    11: "ca. 0,002 km²",
+    10: "ca. 15000 m²",
+    11: "ca. 2000 m²",
 }
 DEFAULT_EXIFTOOL_BATCH_SIZE = 200
 

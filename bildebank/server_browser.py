@@ -909,7 +909,7 @@ def manual_location_button_html(item: Any, h3_cell: str) -> str:
     return (
         f'<button class="nav-button" type="button" '
         f'data-manual-location-item="{file_id}" '
-        f'data-manual-location-cell="{html.escape(clean_h3_cell)}">Sett sted</button>'
+        f'data-manual-location-cell="{html.escape(clean_h3_cell)}">Sett sted {clean_h3_cell}</button>'
     )
 
 
