@@ -742,8 +742,7 @@ def source_item_page_html(
     )
     tag_controls = system_tag_controls_html(
         target,
-        int(item["id"]),
-        gps_source=str(item["gps_source"] or ""),
+        item,
         out_of_focus_redirect_url=out_of_focus_redirect_url,
     )
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config) if face_enabled else ""
@@ -811,14 +810,15 @@ def hidden_after_out_of_focus_tag_redirect_url(
 
 def system_tag_controls_html(
     target: Path,
-    file_id: int,
+    item: Any,
     *,
-    gps_source: str = "",
     out_of_focus_redirect_url: str = "",
 ) -> str:
+    file_id = int(item["id"])
     conn = db.connect(target)
     try:
         active_names = {str(row["name"]).casefold() for row in db.tags_for_file(conn, file_id)}
+        manual_h3_name = manual_h3_place_name(conn, item)
     finally:
         conn.close()
     buttons = []
@@ -834,7 +834,7 @@ def system_tag_controls_html(
             f'data-tag-toggle="{file_id}" data-tag-name="{html.escape(tag_name)}" '
             f'aria-pressed="{pressed}"{redirect_attr}>{html.escape(tag_name)}</button>'
         )
-    manual_h3_badge = '<div class="manual-h3-badge">Manuell H3</div>' if gps_source == "manual-h3" else ""
+    manual_h3_badge = manual_h3_badge_html(manual_h3_name) if gps_source_is_manual_h3(item) else ""
     return f'<aside class="tag-rail" aria-label="Systemtagger">{"".join(buttons)}{manual_h3_badge}</aside>'
 
 
@@ -982,7 +982,7 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
     tags = image_tag_links_html(target, int(item["id"]))
     if tags:
         rows.append(info_row_html("Tagger", tags, raw_html=True))
-    manual_h3_label = manual_h3_label_html(item)
+    manual_h3_label = manual_h3_label_html(target, item)
     if manual_h3_label:
         rows.append(info_row_html("", manual_h3_label, raw_html=True))
     maps_link = google_maps_link_html(item)
@@ -1011,14 +1011,49 @@ def image_tag_links_html(target: Path, file_id: int) -> str:
     return ", ".join(links)
 
 
-def manual_h3_label_html(item: Any) -> str:
+def manual_h3_label_html(target: Path, item: Any) -> str:
+    if not gps_source_is_manual_h3(item):
+        return ""
+    conn = db.connect(target)
     try:
-        source = str(item["gps_source"] or "")
+        place_name = manual_h3_place_name(conn, item)
+    finally:
+        conn.close()
+    return manual_h3_status_html(place_name)
+
+
+def gps_source_is_manual_h3(item: Any) -> bool:
+    try:
+        return str(item["gps_source"] or "") == "manual-h3"
     except (KeyError, IndexError):
-        return ""
-    if source != "manual-h3":
-        return ""
-    return '<span class="status">Manuell H3</span>'
+        return False
+
+
+def manual_h3_place_name(conn: sqlite3.Connection, item: Any) -> str | None:
+    if not gps_source_is_manual_h3(item):
+        return None
+    for resolution in sorted(H3_COLUMNS, reverse=True):
+        column = H3_COLUMNS[resolution]
+        try:
+            h3_cell = item[column]
+        except (KeyError, IndexError):
+            continue
+        if not h3_cell:
+            continue
+        place_name = db.geo_place_name(conn, str(h3_cell))
+        if place_name:
+            return place_name
+    return None
+
+
+def manual_h3_status_html(place_name: str | None) -> str:
+    label = f"Manuell H3: {place_name}" if place_name else "Manuell H3"
+    return f'<span class="status">{html.escape(label)}</span>'
+
+
+def manual_h3_badge_html(place_name: str | None) -> str:
+    label = f"Manuell H3: {place_name}" if place_name else "Manuell H3"
+    return f'<div class="manual-h3-badge">{html.escape(label)}</div>'
 
 
 def image_date_text(item: Any) -> str:
