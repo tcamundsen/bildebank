@@ -2107,7 +2107,7 @@ def set_file_manual_h3_location(
 ) -> bool:
     row = conn.execute(
         """
-        SELECT id, deleted_at
+        SELECT id, deleted_at, gps_lat, gps_lon
         FROM files
         WHERE id = ?
         """,
@@ -2117,6 +2117,8 @@ def set_file_manual_h3_location(
         return False
     if row["deleted_at"] is not None:
         raise ValueError("Filen er markert som slettet.")
+    if row["gps_lat"] is not None or row["gps_lon"] is not None:
+        raise ValueError("Filen har GPS-lokasjon og kan ikke få manuell H3-celle.")
     cells = h3_cells or {}
     assignments = ",\n            ".join(f"{column} = ?" for column in H3_FILE_COLUMNS)
     conn.execute(

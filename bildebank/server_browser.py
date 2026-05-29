@@ -903,7 +903,7 @@ def rotation_buttons_html(source: BrowserSource, item: Any) -> str:
 
 def manual_location_button_html(target: Path, item: Any, h3_cell: str) -> str:
     clean_h3_cell = h3_cell.strip()
-    if not clean_h3_cell:
+    if not clean_h3_cell or item_has_gps_location(item):
         return ""
     file_id = int(item["id"])
     place_name = manual_h3_cell_name(target, clean_h3_cell) or "valgt H3-celle"
@@ -913,6 +913,13 @@ def manual_location_button_html(target: Path, item: Any, h3_cell: str) -> str:
         f'data-manual-location-cell="{html.escape(clean_h3_cell)}">'
         f'Sett sted {html.escape(place_name)}</button>'
     )
+
+
+def item_has_gps_location(item: Any) -> bool:
+    try:
+        return item["gps_lat"] is not None or item["gps_lon"] is not None
+    except (KeyError, IndexError):
+        return False
 
 
 def manual_h3_cell_name(target: Path, h3_cell: str) -> str | None:
