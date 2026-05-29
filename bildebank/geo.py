@@ -137,6 +137,13 @@ def h3_cells_for_point(lat: float, lon: float) -> dict[str, str]:
 
 
 def h3_cells_for_manual_cell(h3_cell: str) -> dict[str, str | None]:
+    """Return H3 columns for a manually selected cell.
+
+    A manual H3 cell means "the image was taken somewhere inside this
+    cell".  It does not mean that the image was taken at the center of
+    the cell, so descendant cells at higher resolutions must remain
+    unknown.
+    """
     import h3
 
     resolution = h3_resolution(h3_cell)

@@ -2117,15 +2117,24 @@ def set_file_manual_h3_location(
         return False
     if row["deleted_at"] is not None:
         raise ValueError("Filen er markert som slettet.")
-    update_file_gps(
-        conn,
-        file_id=file_id,
-        gps_lat=None,
-        gps_lon=None,
-        gps_alt=None,
-        h3_cells=h3_cells,
-        gps_source="manual-h3",
-        gps_error=None,
+    cells = h3_cells or {}
+    assignments = ",\n            ".join(f"{column} = ?" for column in H3_FILE_COLUMNS)
+    conn.execute(
+        f"""
+        UPDATE files
+        SET gps_lat = NULL,
+            gps_lon = NULL,
+            gps_alt = NULL,
+            {assignments},
+            gps_source = 'manual-h3',
+            gps_scanned_at = CURRENT_TIMESTAMP,
+            gps_error = NULL
+        WHERE id = ?
+        """,
+        (
+            *(cells.get(column) for column in H3_FILE_COLUMNS),
+            file_id,
+        ),
     )
     return True
 
