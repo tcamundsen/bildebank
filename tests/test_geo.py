@@ -265,7 +265,7 @@ class GeoTests(unittest.TestCase):
         self.assertIn('name="name" value="Hytta"', html)
         self.assertIn(f'name="h3_cell" value="{h3_cell}"', html)
 
-    def test_geo_index_page_uses_saved_place_name(self) -> None:
+    def test_geo_area_page_uses_saved_place_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
@@ -288,7 +288,7 @@ class GeoTests(unittest.TestCase):
             finally:
                 conn.close()
 
-            html = geo_index_page_html(target, resolution=7, min_count=1, limit=10)
+            html = geo_area_page_html(target, cells["h3_res7"], resolution=7, limit=10)
 
         self.assertIn("Hytta", html)
         self.assertIn(cells["h3_res7"], html)
