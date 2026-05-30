@@ -9,6 +9,9 @@ options:
                         scannet
   --only-missing        Scan bare filer uten GPS-data og uten tidligere GPS-
                         resultat
+  --override-manual-h3  Ta med filer med manuell H3-lokasjon. Den manuelle
+                        H3-lokasjonen overskrives av GPS fra metadata, eller
+                        slettes hvis filen ikke har GPS.
   --limit LIMIT         Maks antall filer som skal scannes
   --verbose             Vis filer uten GPS eller med feil
   --exiftool EXIFTOOL   Path til exiftool. Standard er Bildebanks managed
@@ -27,6 +30,7 @@ Kommandoen endrer ikke bildefilene.
 bildebank geo-scan
 bildebank geo-scan --limit 100
 bildebank geo-scan --force
+bildebank geo-scan --override-manual-h3
 ```
 
 `geo-scan` bruker ExifTool til å lese metadata. Vanlig Windows-installasjon
@@ -54,6 +58,10 @@ Vanlige valg:
 - `--force` leser GPS-metadata på nytt også for bilder som allerede er scannet.
 - `--only-missing` scanner bare bilder uten GPS-data og uten tidligere
   GPS-resultat.
+- `--override-manual-h3` scanner også bilder der sted er satt manuelt med
+  H3-celle. Hvis metadata inneholder GPS, erstatter GPS-lokasjonen den manuelle
+  H3-lokasjonen. Hvis metadata ikke inneholder GPS, fjernes den manuelle
+  H3-lokasjonen.
 - `--verbose` viser mer informasjon om filer uten GPS eller med feil.
 
 Slettede bilder, altså bilder som er flyttet til `deleted/`, scannes ikke.

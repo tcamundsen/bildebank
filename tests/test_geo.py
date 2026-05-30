@@ -145,7 +145,7 @@ class GeoTests(unittest.TestCase):
         self.assertEqual(h3_area_label(0), "ca. 4 357 450 km²")
         self.assertEqual(h3_area_label(7), "ca. 5 km²")
         self.assertEqual(h3_resolution_label(8), "oppløsning 8, ca. 0,7 km²")
-        self.assertEqual(h3_resolution_label(11), "oppløsning 11, ca. 0,002 km²")
+        self.assertEqual(h3_resolution_label(11), "oppløsning 11, ca. 2000 m²")
         with self.assertRaises(ValueError):
             h3_area_label(12)
 
@@ -830,6 +830,58 @@ Vanlig dokumentasjon.
         self.assertEqual(row["h3_res11"], cells["h3_res11"])
         self.assertEqual([int(row["id"]) for row in area_files], [file_id])
         self.assertEqual([int(row["id"]) for row in place_items], [file_id])
+
+    def test_geo_scan_override_manual_h3_replaces_manual_location_with_metadata_gps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = register_target_file(target, Path("2024/01/image.jpg"))
+            old_cells = h3_cells_for_manual_cell(h3_cells_for_point(59.91273, 10.74609)["h3_res3"])
+            conn = db.connect(target)
+            try:
+                db.set_file_manual_h3_location(conn, file_id=file_id, h3_cells=old_cells)
+                conn.commit()
+            finally:
+                conn.close()
+            expected_path = target / "2024/01/image.jpg"
+
+            def fake_read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, dict[str, object]]:
+                self.assertEqual(paths, [expected_path])
+                return {
+                    expected_path: {
+                        "GPSLatitude": 60.39299,
+                        "GPSLongitude": 5.32415,
+                    }
+                }
+
+            with patch("bildebank.geo.read_gps_metadata_batch", fake_read_gps_metadata_batch):
+                with redirect_stderr(StringIO()):
+                    stats = scan_geo(target, override_manual_h3=True, exiftool_path="exiftool", batch_size=1)
+
+            conn = db.connect(target)
+            try:
+                row = conn.execute("SELECT gps_source, gps_lat, gps_lon, h3_res3, h3_res11 FROM files WHERE id = ?", (file_id,)).fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(stats.checked, 1)
+        self.assertEqual(stats.with_gps, 1)
+        self.assertEqual(row["gps_source"], "exiftool")
+        self.assertEqual(float(row["gps_lat"]), 60.39299)
+        self.assertEqual(float(row["gps_lon"]), 5.32415)
+        self.assertNotEqual(row["h3_res3"], old_cells["h3_res3"])
+        self.assertTrue(row["h3_res11"])
+
+    def test_geo_scan_cli_rejects_override_manual_h3_with_only_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "geo-scan", "--override-manual-h3", "--only-missing"])
+
+        self.assertEqual(code, 1)
+        self.assertEqual(stdout, "")
+        self.assertIn("--override-manual-h3 og --only-missing", stderr)
 
     def test_geo_stats_cli_reports_active_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
