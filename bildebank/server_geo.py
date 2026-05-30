@@ -431,12 +431,6 @@ def geo_index_page_html(
         geo_places = geo_place_rows(conn)
     finally:
         conn.close()
-    area_links = "\n".join(geo_area_row_html(row, resolution=resolution) for row in areas)
-    content = (
-        f'<div class="geo-list">{area_links}</div>'
-        if area_links
-        else '<p class="meta">Ingen steder med nok bilder. Kjør bildebank geo-scan, eller senk min_count.</p>'
-    )
     return shell_page_html(
         "Steder",
         f"""
@@ -450,10 +444,6 @@ def geo_index_page_html(
         {geo_stats_summary_html(stats)}
         <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
         {geo_places_section_html(geo_places)}
-        <h2>H3-heksagoner - Tom Cato-eksperiment. Bare overse</h2>
-        {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
-        <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Lavere tall gir større områder. {len(areas)} steder funnet.</p>
-        {content}
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
