@@ -1153,6 +1153,40 @@ pretrained = "laion2b_s34b_b79k"
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
+            active_path = target / "2024/01/active.png"
+            deleted_path = target / "2024/01/deleted.png"
+            active_path.parent.mkdir(parents=True)
+            active_path.write_bytes(minimal_png(100, 80))
+            deleted_path.write_bytes(minimal_png(100, 80))
+            active_id = register_target_file(target, Path("2024/01/active.png"))
+            deleted_id = register_target_file(target, Path("2024/01/deleted.png"))
+            cells = h3_cells_for_point(59.91273, 10.74609)
+            conn = db.connect(target)
+            try:
+                db.update_file_gps(
+                    conn,
+                    file_id=active_id,
+                    gps_lat=59.91273,
+                    gps_lon=10.74609,
+                    gps_alt=None,
+                    h3_cells=cells,
+                    gps_source="test",
+                    gps_error=None,
+                )
+                db.update_file_gps(
+                    conn,
+                    file_id=deleted_id,
+                    gps_lat=59.91273,
+                    gps_lon=10.74609,
+                    gps_alt=None,
+                    h3_cells=cells,
+                    gps_source="test",
+                    gps_error=None,
+                )
+                conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", (deleted_id,))
+                conn.commit()
+            finally:
+                conn.close()
 
             class FakeHandler:
                 headers = {
@@ -1183,6 +1217,12 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual([(row["h3_cell"], row["name"]) for row in rows], [(h3_cell, "Oslo")])
         self.assertIn("Oslo", body)
         self.assertIn(h3_cell, body)
+        self.assertIn('<div class="geo-list h3-cell-list">', body)
+        self.assertIn("<strong>Bilder</strong>", body)
+        self.assertLess(body.index("<strong>Navn</strong>"), body.index("<strong>Bilder</strong>"))
+        self.assertLess(body.index("<strong>Bilder</strong>"), body.index("<strong>Resolution</strong>"))
+        self.assertLess(body.index("<strong>Resolution</strong>"), body.index("<strong>H3 hexagon id</strong>"))
+        self.assertIn("<span>1</span>", body)
 
     def test_run_server_app_status_manual_h3_status_shows_named_cell(self) -> None:
         h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]

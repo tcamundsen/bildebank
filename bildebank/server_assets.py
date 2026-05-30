@@ -139,6 +139,7 @@ SERVER_CSS = r"""    :root {
     .geo-stats span { color: var(--muted); }
     .geo-list { display: grid; gap: 8px; margin-top: 18px; }
     .geo-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); }
+    .h3-cell-list .geo-row { grid-template-columns: minmax(220px, 1fr) minmax(70px, auto) minmax(90px, auto) minmax(180px, auto); }
     .geo-map-wrap { width: 100%; overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
     .geo-map { display: block; min-width: 760px; width: 100%; height: auto; }
     .geo-hex { fill: #2f6f73; stroke: #8fd8dd; stroke-width: 2; }

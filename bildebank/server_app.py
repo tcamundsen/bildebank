@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import __version__, db
-from .geo import h3_resolution
+from .geo import h3_column_for_resolution, h3_resolution
 from .config import (
     AppConfig,
     FaceRecognitionConfig,
@@ -322,6 +322,7 @@ def h3_cells_page_html(
     openclip_enabled: bool = True,
 ) -> str:
     named_h3_cells = app_status_named_h3_cells(target)
+    image_counts = h3_cell_image_counts(target, named_h3_cells)
     return shell_page_html(
         "Rediger H3-celler",
         f"""
@@ -345,7 +346,7 @@ def h3_cells_page_html(
         </section>
         <section class="custom-geo-places">
           <h2>Definerte steder</h2>
-          {h3_cell_list_html(named_h3_cells)}
+          {h3_cell_list_html(named_h3_cells, image_counts)}
         </section>
         """,
         face_enabled=face_enabled,
@@ -366,14 +367,34 @@ def h3_cell_form_html() -> str:
     """
 
 
-def h3_cell_list_html(named_h3_cells: list[Any]) -> str:
+def h3_cell_image_counts(target: Path, named_h3_cells: list[Any]) -> dict[str, int | None]:
+    if not named_h3_cells or not db.db_path_for_target(target).is_file():
+        return {}
+    conn = db.connect(target)
+    try:
+        counts: dict[str, int | None] = {}
+        for row in named_h3_cells:
+            h3_cell = str(row["h3_cell"])
+            try:
+                column = h3_column_for_resolution(h3_resolution(h3_cell))
+                counts[h3_cell] = db.geo_place_count(conn, cells_by_column=[(column, h3_cell)])
+            except Exception:  # noqa: BLE001 - settings page should still render if a saved cell is invalid
+                counts[h3_cell] = None
+        return counts
+    finally:
+        conn.close()
+
+
+def h3_cell_list_html(named_h3_cells: list[Any], image_counts: dict[str, int | None] | None = None) -> str:
     if not named_h3_cells:
         return '<p class="meta">Ingen H3-celler er navngitt ennå.</p>'
-    rows = "\n".join(h3_cell_row_html(row) for row in named_h3_cells)
+    counts = image_counts or {}
+    rows = "\n".join(h3_cell_row_html(row, counts.get(str(row["h3_cell"]))) for row in named_h3_cells)
     return f"""
-    <div class="geo-list">
+    <div class="geo-list h3-cell-list">
       <div class="geo-row">
         <strong>Navn</strong>
+        <strong>Bilder</strong>
         <strong>Resolution</strong>
         <strong>H3 hexagon id</strong>
       </div>
@@ -382,12 +403,14 @@ def h3_cell_list_html(named_h3_cells: list[Any]) -> str:
     """
 
 
-def h3_cell_row_html(row: Any) -> str:
+def h3_cell_row_html(row: Any, image_count: int | None = None) -> str:
     h3_cell = str(row["h3_cell"])
     name = str(row["name"])
+    count_text = "ukjent" if image_count is None else str(image_count)
     return f"""
     <div class="geo-row">
       <span>{html.escape(name)}</span>
+      <span>{html.escape(count_text)}</span>
       <span>{html.escape(h3_resolution_value_label(h3_cell))}</span>
       <code>{html.escape(h3_cell)}</code>
     </div>
