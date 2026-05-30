@@ -248,7 +248,7 @@ def app_status_manual_h3_cell_row_html(h3_cell: str, named_h3_cells: list[Any]) 
     h3geo_link = h3_cell_h3geo_link_html(clean_h3_cell)
     return f"""
     <div class="info-row">
-      <dt>Aktiv manuell H3-celle</dt>
+      <dt>Aktiv manuell H3-celle. Denne brukes til å sette plassering på bilder som mangler det.</dt>
       <dd>
         <form action="/settings/manual-h3-cell" method="post" class="app-toggle-form">
           <select name="h3_cell">
@@ -322,14 +322,20 @@ def h3_cells_page_html(
         f"""
         <nav class="subnav"><a href="/settings">Innstillinger</a></nav>
         <h1>Rediger H3-celler</h1>
-        <p class="meta">Navnene brukes blant annet i dropdownen for aktiv manuell H3-celle.</p>
+        <p class="meta">På denne siden gir du navn til H3-celler. Disse navnene brukes for
+        å velge på siden <a href="/settings">innstillinger</a> hvilken celle som brukes til
+        å sette sted for bilder som mangler GPS-lokasjon.
+        </p>
         <section class="custom-geo-places">
           <h2>Legg til H3-celle</h2>
           <p>Bruk resolution 11 (høyeste oppløsning) for å markere et enkelt hus eller
-          en veldig presis lokasjon, for de mest brukte stedene. Hvis huset ligger på
+          en veldig presis lokasjon, hvis du vet nøyaktig plassering. Hvis huset ligger på
           grensen mellom to H3-celler i resolution 11, så velger du bare den som
-          dekker mest av huset. Det er ikke så viktig. For å gjøre det enkelt
-          kan du se om du finner en større H3-celle som dekker en hel sydenferies bilder.</p>
+          dekker mest av huset. Det er ikke så viktig.</p>
+          <p>Hvis har mange bilder fra en gammel sydentur til Kreta, så kan du i
+          første omgang finne en H3-celle som er så stor at den dekker hele Kreta og
+          markere bildene med den. Og hvis du seinere ønsker å plassere mer presis
+          for enkle bilder, så gjør du det.</p>
           {h3_cell_form_html()}
         </section>
         <section class="custom-geo-places">
