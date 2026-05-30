@@ -348,6 +348,11 @@ def h3geo_place_url(h3_cells: tuple[str, ...]) -> str:
     return "https://h3geo.org/#hex=" + urllib.parse.quote_plus(", ".join(h3_cells))
 
 
+def h3geo_cell_link_html(h3_cell: str) -> str:
+    url = h3geo_place_url((h3_cell,))
+    return f'<a href="{html.escape(url)}" target="_blank" rel="noopener">H3Geo</a>'
+
+
 def custom_geo_places_admin_html(places: list[PredefinedGeoPlace]) -> str:
     existing = "\n".join(custom_geo_place_edit_html(place) for place in places)
     existing_section = (
@@ -502,6 +507,8 @@ def geo_map_page_html(
           <a href="/geo?resolution={resolution}&min_count={min_count}&limit={limit}">Steder</a>
         </nav>
         <h1>Heksagonkart</h1>
+          <p>Dette er eksperimentelle greier som ikke er ferdig, og som kanskje ikke gir mening.
+          Det viser klynger av bilder. Du kan klikke på heksagonenen.</p>
         {geo_filter_form_html("/geo/map", resolution=resolution, min_count=min_count, limit=limit)}
         <p class="meta">Viser H3-{h3_resolution_label(resolution)}. Heksagoner som er H3-naboer legges sammen i klynger. Hver klynge orienteres etter faktiske GPS-retninger, men klyngene er ikke plassert med geografisk avstand.</p>
         {content}
@@ -567,7 +574,8 @@ def geo_area_page_html(
     cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
     content = cards if cards else '<p class="meta">Ingen aktive bilder i dette området.</p>'
     maps_link = google_maps_link_html(items[0]) if items else ""
-    maps_paragraph = f'<p class="meta">{maps_link}</p>' if maps_link else ""
+    map_links = " ".join(link for link in (maps_link, h3geo_cell_link_html(h3_cell)) if link)
+    maps_paragraph = f'<p class="meta">{map_links}</p>' if map_links else ""
     parent_link = geo_parent_area_link_html(target, h3_cell, resolution)
     quoted = urllib.parse.quote(h3_cell, safe="")
     title = place_name or "Sted"

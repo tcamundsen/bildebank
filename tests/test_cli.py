@@ -1546,6 +1546,8 @@ model_name = "buffalo_l"
         self.assertIn("IMG_20240102.png", area_body)
         self.assertIn('href="https://www.google.com/maps/search/?api=1&amp;query=59.9127300,10.7460900"', area_body)
         self.assertIn("Åpne i Google Maps", area_body)
+        self.assertIn('href="https://h3geo.org/#hex=' + cells["h3_res7"] + '"', area_body)
+        self.assertIn(">H3Geo</a>", area_body)
         self.assertIn("oppløsning 7, ca. 5 km²", area_body)
         self.assertIn(f'href="/geo/area/{cells["h3_res6"]}"', area_body)
         self.assertIn("Større område: H3-6 Oslo-området", area_body)
