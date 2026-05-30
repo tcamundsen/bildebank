@@ -2297,6 +2297,7 @@ def geo_stats(conn: sqlite3.Connection) -> dict[str, int]:
                       AND gps_lat IS NULL
                       AND gps_lon IS NULL
                       AND gps_error IS NULL THEN 1 ELSE 0 END) AS without_gps,
+            SUM(CASE WHEN gps_source = 'manual-h3' THEN 1 ELSE 0 END) AS manual_h3,
             SUM(CASE WHEN gps_error IS NOT NULL THEN 1 ELSE 0 END) AS errors
         FROM files
         WHERE deleted_at IS NULL
@@ -2307,6 +2308,7 @@ def geo_stats(conn: sqlite3.Connection) -> dict[str, int]:
         "scanned": int(row["scanned"] or 0),
         "with_gps": int(row["with_gps"] or 0),
         "without_gps": int(row["without_gps"] or 0),
+        "manual_h3": int(row["manual_h3"] or 0),
         "errors": int(row["errors"] or 0),
     }
 

@@ -281,6 +281,7 @@ def geo_stats_summary_html(stats: dict[str, int]) -> str:
             ("Scannet", "scanned"),
             ("Med GPS", "with_gps"),
             ("Uten GPS", "without_gps"),
+            ("Manuell H3", "manual_h3"),
             ("Feil", "errors"),
         )
     )

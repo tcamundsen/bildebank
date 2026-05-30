@@ -34,7 +34,7 @@ from bildebank.face import (
     read_image,
     remove_insightface_model_zip,
 )
-from bildebank.geo import h3_cells_for_point
+from bildebank.geo import h3_cells_for_manual_cell, h3_cells_for_point
 from bildebank.html_export import render_html
 from bildebank.importer import safe_copy
 from bildebank.media import ImageDimensions, sha256_file
@@ -1516,7 +1516,7 @@ model_name = "buffalo_l"
                     gps_source="test",
                     gps_error=None,
                 )
-                conn.execute("UPDATE files SET h3_res7 = ? WHERE id = 4", (neighbor_cell,))
+                db.set_file_manual_h3_location(conn, file_id=4, h3_cells=h3_cells_for_manual_cell(neighbor_cell))
                 db.set_geo_place_name(conn, cells["h3_res6"], "Oslo-området")
                 conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 2")
                 conn.commit()
@@ -1550,6 +1550,7 @@ model_name = "buffalo_l"
         self.assertIn("geo-hex", map_body)
         self.assertIn(">1</text>", map_body)
         self.assertIn("Med GPS", stats_body)
+        self.assertIn("<div><strong>Manuell H3</strong><span>1</span></div>", stats_body)
         self.assertIn("IMG_20240102.png", area_body)
         self.assertIn('href="https://www.google.com/maps/search/?api=1&amp;query=59.9127300,10.7460900"', area_body)
         self.assertIn("Åpne i Google Maps", area_body)
