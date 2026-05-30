@@ -273,6 +273,17 @@ def geo_child_areas_section_html(rows: list[Any], *, resolution: int, inherited_
     """
 
 
+def geo_areas_section_html(rows: list[Any], *, resolution: int, min_count: int, limit: int) -> str:
+    if not rows:
+        return '<p class="meta">Ingen steder med nok bilder. Kjør bildebank geo-scan, eller senk min_count.</p>'
+    links = "\n".join(geo_area_row_html(row, resolution=resolution) for row in rows)
+    return f"""
+    {geo_filter_form_html("/geo", resolution=resolution, min_count=min_count, limit=limit)}
+    <p class="meta">Lavere tall gir større områder. {len(rows)} steder funnet.</p>
+    <div class="geo-list">{links}</div>
+    """
+
+
 def geo_stats_summary_html(stats: dict[str, int]) -> str:
     rows = "\n".join(
         f"<div><strong>{label}</strong><span>{stats[key]}</span></div>"
@@ -443,6 +454,7 @@ def geo_index_page_html(
         <h2>Statistikk over bilder med GPS-posisjon</h2>
         {geo_stats_summary_html(stats)}
         <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
+        {geo_areas_section_html(areas, resolution=resolution, min_count=min_count, limit=limit)}
         {geo_places_section_html(geo_places)}
         """,
         face_enabled=face_enabled,

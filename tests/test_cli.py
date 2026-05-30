@@ -1184,6 +1184,25 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Oslo", body)
         self.assertIn(h3_cell, body)
 
+    def test_run_server_app_status_manual_h3_status_shows_named_cell(self) -> None:
+        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                db.set_geo_place_name(conn, h3_cell, "Oslo")
+                conn.commit()
+            finally:
+                conn.close()
+            config = AppConfig(browser=BrowserConfig(manual_h3_cell=h3_cell))
+
+            body = app_status_page_html(target, config)
+
+        self.assertIn(f'<option value="{h3_cell}" selected>Oslo (H3-7)</option>', body)
+        self.assertIn('<span class="app-toggle-status">Oslo</span>', body)
+        self.assertNotIn(f'<span class="app-toggle-status">{h3_cell}</span>', body)
+
     def test_run_server_face_enabled_uses_server_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "program"

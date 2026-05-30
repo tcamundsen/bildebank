@@ -228,12 +228,15 @@ def app_status_named_h3_cells(target: Path) -> list[Any]:
 def app_status_manual_h3_cell_row_html(h3_cell: str, named_h3_cells: list[Any]) -> str:
     clean_h3_cell = h3_cell.strip()
     has_selected_cell = False
+    selected_name = ""
     options = [f'<option value=""{selected_attr(clean_h3_cell == "")}>Ingen celle valgt</option>']
     for row in named_h3_cells:
         cell = str(row["h3_cell"])
         name = str(row["name"])
         selected = cell == clean_h3_cell
         has_selected_cell = has_selected_cell or selected
+        if selected:
+            selected_name = name
         options.append(
             f'<option value="{html.escape(cell)}"{selected_attr(selected)}>'
             f'{html.escape(name)} ({html.escape(h3_resolution_option_label(cell))})'
@@ -245,7 +248,7 @@ def app_status_manual_h3_cell_row_html(h3_cell: str, named_h3_cells: list[Any]) 
             f'Ikke navngitt: {html.escape(clean_h3_cell)}'
             "</option>"
         )
-    status = html.escape(clean_h3_cell or "Ikke satt")
+    status = html.escape(selected_name or clean_h3_cell or "Ikke satt")
     maps_link = h3_cell_google_maps_link_html(clean_h3_cell)
     h3geo_link = h3_cell_h3geo_link_html(clean_h3_cell)
     return f"""
