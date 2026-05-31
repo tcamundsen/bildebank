@@ -341,6 +341,8 @@ def h3_cells_page_html(
           første omgang finne en H3-celle som er så stor at den dekker hele Kreta og
           markere bildene med den. Og hvis du seinere ønsker å plassere mer presis
           for enkelte bilder, så gjør du det.</p>
+          <p>Sletting av registrerte navn og trygt. Ingen bilder eller registreringer
+          av manuel h3-lokasjon fjernes.</p>
           {h3_cell_form_html()}
         </section>
         <section class="custom-geo-places">

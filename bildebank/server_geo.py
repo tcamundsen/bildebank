@@ -358,6 +358,8 @@ def custom_geo_places_admin_html(places: list[PredefinedGeoPlace]) -> str:
     existing_section = (
         f"""
             <h2>Lagrede steder</h2>
+            <p>Sletting av egendefinerte steder fjerner ingen bilder eller
+            andre data om bildene som ble tatt på dette stedet.</p>
             <div class="custom-place-list">{existing}</div>
         """
         if existing
@@ -475,7 +477,13 @@ def custom_geo_places_page_html(
           <a href="/geo">Steder</a>
           <a href="/help/web/egendefinerte-steder.md">Hjelp</a>
         </nav>
-        <h1>Egne steder</h1>
+        <h1>Egendefinerte steder</h1>
+        <p>Marker en eller flere steder og gi dem et navn. Du kan da se
+        alle bilder som er tatt i dette området. Du kan bruke H3-celler av forskjellig
+        oppløsning. Celler kan overlappe eller ha mellomrom. Hvis et bilde er innenfor
+        en av cellene regnes det med på dette stedet. Flere egendefinerte steder
+        kan også overlappe.
+        </p>
         {custom_geo_places_admin_html(places)}
         """,
         face_enabled=face_enabled,
