@@ -289,6 +289,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/settings/h3-cell":
                 self.respond_set_h3_cell_name()
                 return
+            if parsed.path == "/settings/h3-cell-delete":
+                self.respond_delete_h3_cell_name()
+                return
             if parsed.path == "/settings/face-model":
                 self.respond_set_face_model()
                 return
@@ -773,8 +776,24 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             server_app.save_h3_cell_name(
                 self.server.target,
+                original_h3_cell=first_param(params, "original_h3_cell"),
                 h3_cell=first_param(params, "h3_cell"),
                 name=first_param(params, "name"),
+            )
+        except ValueError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+        self.redirect("/settings/h3-cells")
+
+    def respond_delete_h3_cell_name(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        try:
+            server_app.delete_h3_cell_name(
+                self.server.target,
+                h3_cell=first_param(params, "original_h3_cell") or first_param(params, "h3_cell"),
             )
         except ValueError as exc:
             self.respond_html(

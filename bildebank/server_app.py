@@ -353,14 +353,28 @@ def h3_cells_page_html(
     )
 
 
-def h3_cell_form_html() -> str:
+def h3_cell_form_html(row: Any | None = None) -> str:
+    h3_cell = "" if row is None else str(row["h3_cell"])
+    name = "" if row is None else str(row["name"])
+    button_text = "Legg til H3-celle" if row is None else "Lagre"
+    original_h3_cell_input = (
+        f'<input type="hidden" name="original_h3_cell" value="{html.escape(h3_cell)}">' if row is not None else ""
+    )
+    delete_button = (
+        '<button class="danger-button" type="submit" '
+        'formaction="/settings/h3-cell-delete" formmethod="post">Slett</button>'
+        if row is not None
+        else ""
+    )
     return f"""
     <form action="/settings/h3-cell" method="post" class="custom-place-form">
-      <label>Navn <input name="name" autocomplete="off"></label>
-      <label>H3-id <input name="h3_cell" autocomplete="off"></label>
+      {original_h3_cell_input}
+      <label>Navn <input name="name" value="{html.escape(name)}" autocomplete="off"></label>
+      <label>H3-id <input name="h3_cell" value="{html.escape(h3_cell)}" autocomplete="off"></label>
       <p class="meta">Bildebank bruker H3-oppløsning 0 til {MAX_NAMED_H3_RESOLUTION}.</p>
       <div class="custom-place-actions">
-        <button type="submit">Legg til H3-celle</button>
+        <button type="submit">{button_text}</button>
+        {delete_button}
       </div>
     </form>
     """
@@ -388,31 +402,30 @@ def h3_cell_list_html(named_h3_cells: list[Any], image_counts: dict[str, int | N
     if not named_h3_cells:
         return '<p class="meta">Ingen H3-celler er navngitt ennå.</p>'
     counts = image_counts or {}
-    rows = "\n".join(h3_cell_row_html(row, counts.get(str(row["h3_cell"]))) for row in named_h3_cells)
+    rows = "\n".join(h3_cell_edit_html(row, counts.get(str(row["h3_cell"]))) for row in named_h3_cells)
     return f"""
-    <div class="geo-list h3-cell-list">
-      <div class="geo-row">
-        <strong>Navn</strong>
-        <strong>Bilder</strong>
-        <strong>Resolution</strong>
-        <strong>H3 hexagon id</strong>
-      </div>
+    <div class="custom-place-list h3-cell-list">
       {rows}
     </div>
     """
 
 
-def h3_cell_row_html(row: Any, image_count: int | None = None) -> str:
+def h3_cell_edit_html(row: Any, image_count: int | None = None) -> str:
     h3_cell = str(row["h3_cell"])
     name = str(row["name"])
     count_text = "ukjent" if image_count is None else str(image_count)
     return f"""
-    <div class="geo-row">
-      <span>{html.escape(name)}</span>
-      <span>{html.escape(count_text)}</span>
-      <span>{html.escape(h3_resolution_value_label(h3_cell))}</span>
-      <code>{html.escape(h3_cell)}</code>
-    </div>
+    <details class="custom-place-edit">
+      <summary>
+        <span class="custom-place-name">{html.escape(name)}</span>
+        <span class="status">{html.escape(count_text)} bilder</span>
+        <span class="status">H3-{html.escape(h3_resolution_value_label(h3_cell))}</span>
+        <span class="status">{html.escape(h3_cell)}</span>
+      </summary>
+      <div class="custom-place-edit-body">
+        {h3_cell_form_html(row)}
+      </div>
+    </details>
     """
 
 
@@ -430,15 +443,34 @@ def h3_resolution_for_named_place(h3_cell: str) -> int:
     return h3_resolution(h3_cell)
 
 
-def save_h3_cell_name(target: Path, *, h3_cell: str, name: str) -> None:
+def save_h3_cell_name(target: Path, *, h3_cell: str, name: str, original_h3_cell: str = "") -> None:
     clean_h3_cell = h3_cell.strip()
+    clean_original_h3_cell = original_h3_cell.strip()
     clean_name = name.strip()
     if not clean_name:
         raise ValueError("Navn mangler.")
     h3_resolution_for_named_place(clean_h3_cell)
     conn = db.connect(target)
     try:
+        if clean_original_h3_cell and clean_original_h3_cell != clean_h3_cell:
+            h3_resolution_for_named_place(clean_original_h3_cell)
+            if db.geo_place_name(conn, clean_original_h3_cell) is None:
+                raise ValueError("H3-cellen som skulle oppdateres finnes ikke.")
+            if db.geo_place_name(conn, clean_h3_cell) is not None:
+                raise ValueError("H3-cellen er allerede navngitt.")
+            db.set_geo_place_name(conn, clean_original_h3_cell, "")
         db.set_geo_place_name(conn, clean_h3_cell, clean_name)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_h3_cell_name(target: Path, *, h3_cell: str) -> None:
+    clean_h3_cell = h3_cell.strip()
+    h3_resolution_for_named_place(clean_h3_cell)
+    conn = db.connect(target)
+    try:
+        db.set_geo_place_name(conn, clean_h3_cell, "")
         conn.commit()
     finally:
         conn.close()

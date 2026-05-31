@@ -1217,12 +1217,67 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual([(row["h3_cell"], row["name"]) for row in rows], [(h3_cell, "Oslo")])
         self.assertIn("Oslo", body)
         self.assertIn(h3_cell, body)
-        self.assertIn('<div class="geo-list h3-cell-list">', body)
-        self.assertIn("<strong>Bilder</strong>", body)
-        self.assertLess(body.index("<strong>Navn</strong>"), body.index("<strong>Bilder</strong>"))
-        self.assertLess(body.index("<strong>Bilder</strong>"), body.index("<strong>Resolution</strong>"))
-        self.assertLess(body.index("<strong>Resolution</strong>"), body.index("<strong>H3 hexagon id</strong>"))
-        self.assertIn("<span>1</span>", body)
+        self.assertIn('<div class="custom-place-list h3-cell-list">', body)
+        self.assertIn('<details class="custom-place-edit">', body)
+        self.assertIn('<span class="status">1 bilder</span>', body)
+        self.assertIn('<span class="status">H3-7</span>', body)
+        self.assertIn(f'<input type="hidden" name="original_h3_cell" value="{h3_cell}">', body)
+        self.assertIn(f'name="h3_cell" value="{h3_cell}"', body)
+        self.assertIn('formaction="/settings/h3-cell-delete"', body)
+        self.assertIn(">Slett</button>", body)
+
+    def test_run_server_h3_cells_page_updates_and_deletes_named_cell(self) -> None:
+        original_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        updated_cell = h3_cells_for_point(60.39299, 5.32415)["h3_res7"]
+        update_form = f"original_h3_cell={original_cell}&name=Bergen&h3_cell={updated_cell}".encode("utf-8")
+        delete_form = f"original_h3_cell={updated_cell}&name=Bergen&h3_cell={updated_cell}".encode("utf-8")
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                db.set_geo_place_name(conn, original_cell, "Oslo")
+                conn.commit()
+            finally:
+                conn.close()
+
+            class FakeHandler:
+                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                redirect_url = ""
+
+                def __init__(self, data: bytes) -> None:
+                    self.headers = {
+                        "Content-Length": str(len(data)),
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    }
+                    self.rfile = BytesIO(data)
+
+                def redirect(self, url: str) -> None:
+                    self.redirect_url = url
+
+                def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    raise AssertionError(f"Unexpected error response {status}: {content}")
+
+            update_handler = FakeHandler(update_form)
+            BildebankRequestHandler.respond_set_h3_cell_name(update_handler)  # type: ignore[arg-type]
+            conn = db.connect(target)
+            try:
+                after_update = [(row["h3_cell"], row["name"]) for row in db.geo_place_names(conn)]
+            finally:
+                conn.close()
+
+            delete_handler = FakeHandler(delete_form)
+            BildebankRequestHandler.respond_delete_h3_cell_name(delete_handler)  # type: ignore[arg-type]
+            conn = db.connect(target)
+            try:
+                after_delete = [(row["h3_cell"], row["name"]) for row in db.geo_place_names(conn)]
+            finally:
+                conn.close()
+
+        self.assertEqual(update_handler.redirect_url, "/settings/h3-cells")
+        self.assertEqual(after_update, [(updated_cell, "Bergen")])
+        self.assertEqual(delete_handler.redirect_url, "/settings/h3-cells")
+        self.assertEqual(after_delete, [])
 
     def test_run_server_app_status_manual_h3_status_shows_named_cell(self) -> None:
         h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
