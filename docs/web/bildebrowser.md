@@ -6,6 +6,21 @@ Litt om bildebrowseren fra run-server. Jeg vet at noen ting er litt rotete
 og preget av work-in-progress. Det er fordi det er det. Men det finpusses
 stadig. 
 
+## Hurtigtaster
+
+Når HTML-filen er åpen i nettleseren, kan du bla med tastaturet:
+
+| Tast | Hva skjer |
+| --- | --- |
+| Pil venstre | Forrige bilde eller video |
+| Pil høyre | Neste bilde eller video |
+| Pil opp | Forrige måned |
+| Pil ned | Neste måned |
+| Page Up | Forrige år |
+| Page Down | Neste år |
+
+Hvis du har slått på manuel H3-lokalisering, så er tasten `g` hurtigtast for knappen "Sett sted XXX"
+
 ## Venstre øverste hjørne
 
 Her står det **Bildebrowser** når du starter. Det betyr at du ser alle bildene i samlingen.
