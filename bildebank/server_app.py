@@ -265,6 +265,7 @@ def app_status_manual_h3_cell_row_html(h3_cell: str, named_h3_cells: list[Any]) 
           {h3geo_link}
           <a href="/settings/h3-cells" class="app-toggle-note">Rediger H3-celler</a>
         </form>
+        <p>Hurtigtast for sette sted er <b>g</b>.</p>
       </dd>
     </div>
     """

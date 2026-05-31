@@ -2000,9 +2000,13 @@ model_name = "buffalo_l"
         self.assertIsNone(row["h3_res4"])
         self.assertIsNone(row["h3_res11"])
         self.assertIn('<aside class="tag-rail"', body)
-        self.assertIn('<div class="location-status-badge">Manuell H3</div>', body)
+        self.assertIn(
+            f'<div class="location-status-badge"><a href="https://h3geo.org/#hex={h3_cell}" target="_blank" rel="noopener">Manuell H3</a></div>',
+            body,
+        )
         self.assertNotIn("<dt>Kart</dt>", info_body)
         self.assertIn("Manuell H3", info_body)
+        self.assertIn(f'href="https://h3geo.org/#hex={h3_cell}"', info_body)
         self.assertLess(info_body.index("<dt>Tagger</dt>"), info_body.index("Manuell H3"))
         self.assertIn("<dt>GPS-kilde</dt>", info_body)
         self.assertIn("satt manuelt", info_body)

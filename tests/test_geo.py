@@ -507,7 +507,7 @@ Vanlig dokumentasjon.
 
             html = custom_geo_places_page_html(target)
 
-        self.assertIn("<h1>Egne steder</h1>", html)
+        self.assertIn("<h1>Egendefinerte steder</h1>", html)
         self.assertIn('action="/geo/custom-place"', html)
         self.assertIn('action="/geo/custom-place-delete"', html)
         self.assertIn('data-confirm-submit="Slette egendefinert sted?"', html)

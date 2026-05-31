@@ -822,6 +822,7 @@ def system_tag_controls_html(
     try:
         active_names = {str(row["name"]).casefold() for row in db.tags_for_file(conn, file_id)}
         manual_h3_name = manual_h3_place_name(conn, item)
+        manual_h3_cell_value = manual_h3_cell(item)
     finally:
         conn.close()
     buttons = []
@@ -838,7 +839,7 @@ def system_tag_controls_html(
             f'aria-pressed="{pressed}"{redirect_attr}>{html.escape(tag_name)}</button>'
         )
     location_status = (
-        manual_h3_badge_html(manual_h3_name)
+        manual_h3_badge_html(manual_h3_name, manual_h3_cell_value)
         if gps_source_is_manual_h3(item)
         else gps_location_badge_html(item)
     )
@@ -1042,9 +1043,10 @@ def manual_h3_label_html(target: Path, item: Any) -> str:
     conn = db.connect(target)
     try:
         place_name = manual_h3_place_name(conn, item)
+        h3_cell = manual_h3_cell(item)
     finally:
         conn.close()
-    return manual_h3_status_html(place_name)
+    return manual_h3_status_html(place_name, h3_cell)
 
 
 def gps_source_is_manual_h3(item: Any) -> bool:
@@ -1071,14 +1073,35 @@ def manual_h3_place_name(conn: sqlite3.Connection, item: Any) -> str | None:
     return None
 
 
-def manual_h3_status_html(place_name: str | None) -> str:
-    label = f"Manuell H3: {place_name}" if place_name else "Manuell H3"
-    return f'<span class="status">{html.escape(label)}</span>'
+def manual_h3_cell(item: Any) -> str | None:
+    if not gps_source_is_manual_h3(item):
+        return None
+    for resolution in sorted(H3_COLUMNS, reverse=True):
+        column = H3_COLUMNS[resolution]
+        try:
+            h3_cell = item[column]
+        except (KeyError, IndexError):
+            continue
+        if h3_cell:
+            return str(h3_cell)
+    return None
 
 
-def manual_h3_badge_html(place_name: str | None) -> str:
+def manual_h3_link_html(label: str, h3_cell: str | None) -> str:
+    if not h3_cell:
+        return html.escape(label)
+    url = "https://h3geo.org/#hex=" + urllib.parse.quote_plus(h3_cell)
+    return f'<a href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
+
+
+def manual_h3_status_html(place_name: str | None, h3_cell: str | None = None) -> str:
     label = f"Manuell H3: {place_name}" if place_name else "Manuell H3"
-    return f'<div class="location-status-badge">{html.escape(label)}</div>'
+    return f'<span class="status">{manual_h3_link_html(label, h3_cell)}</span>'
+
+
+def manual_h3_badge_html(place_name: str | None, h3_cell: str | None = None) -> str:
+    label = f"Manuell H3: {place_name}" if place_name else "Manuell H3"
+    return f'<div class="location-status-badge">{manual_h3_link_html(label, h3_cell)}</div>'
 
 
 def gps_location_badge_html(item: Any) -> str:
