@@ -379,7 +379,8 @@ def custom_geo_place_form_html(place: PredefinedGeoPlace | None = None) -> str:
     button_text = "Oppdater sted" if place is not None else "Legg til sted"
     delete_button = (
         '<button class="danger-button" type="submit" '
-        'formaction="/geo/custom-place-delete" formmethod="post">Slett sted</button>'
+        'formaction="/geo/custom-place-delete" formmethod="post" '
+        'data-confirm-submit="Slette egendefinert sted?">Slett sted</button>'
         if place is not None
         else ""
     )

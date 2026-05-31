@@ -510,6 +510,7 @@ Vanlig dokumentasjon.
         self.assertIn("<h1>Egne steder</h1>", html)
         self.assertIn('action="/geo/custom-place"', html)
         self.assertIn('action="/geo/custom-place-delete"', html)
+        self.assertIn('data-confirm-submit="Slette egendefinert sted?"', html)
         self.assertIn('name="original_slug" value="min_plass"', html)
         self.assertIn('name="slug" value="min_plass"', html)
         self.assertIn('name="name" value="Min plass"', html)

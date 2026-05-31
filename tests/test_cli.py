@@ -1224,7 +1224,10 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn(f'<input type="hidden" name="original_h3_cell" value="{h3_cell}">', body)
         self.assertIn(f'name="h3_cell" value="{h3_cell}"', body)
         self.assertIn('formaction="/settings/h3-cell-delete"', body)
+        self.assertIn('data-confirm-submit="Slette navn gitt til H3-celle?"', body)
         self.assertIn(">Slett</button>", body)
+        self.assertIn("event.submitter?.dataset.confirmSubmit", SERVER_JS)
+        self.assertIn("event.preventDefault()", SERVER_JS)
 
     def test_run_server_h3_cells_page_updates_and_deletes_named_cell(self) -> None:
         original_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]

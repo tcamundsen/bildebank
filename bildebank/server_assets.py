@@ -649,6 +649,10 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   const searchLoading = document.querySelector("[data-search-loading]");
   let facesLoaded = false;
   let infoLoaded = false;
+  document.addEventListener("submit", event => {
+    const message = event.submitter?.dataset.confirmSubmit;
+    if (message && !confirm(message)) event.preventDefault();
+  });
   function faceStatusMessage(message) {
     const item = document.createElement("p");
     item.className = "empty";

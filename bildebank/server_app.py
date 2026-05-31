@@ -362,7 +362,8 @@ def h3_cell_form_html(row: Any | None = None) -> str:
     )
     delete_button = (
         '<button class="danger-button" type="submit" '
-        'formaction="/settings/h3-cell-delete" formmethod="post">Slett</button>'
+        'formaction="/settings/h3-cell-delete" formmethod="post" '
+        'data-confirm-submit="Slette navn gitt til H3-celle?">Slett</button>'
         if row is not None
         else ""
     )
