@@ -3611,11 +3611,33 @@ model_name = "buffalo_l"
                     """,
                     (b"embedding-5",),
                 )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(6, 2, 'key-2-extra', 7, 8, 16, 26, 0.7, 'test', ?)
+                    """,
+                    (b"embedding-6",),
+                )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(7, 1, 'key-1-suggested', 7, 8, 16, 26, 0.7, 'test', ?)
+                    """,
+                    (b"embedding-7",),
+                )
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 3)")
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 4)")
                 face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)")
                 face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 5, 0.92)")
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 6, 0.90)")
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 7, 0.89)")
                 face_conn.commit()
             finally:
                 face_conn.close()
@@ -3646,8 +3668,8 @@ model_name = "buffalo_l"
         self.assertIn("<div><strong>Antall bilder i databasen</strong><span>2</span></div>", body)
         self.assertIn("<div><strong>Scannet av face-scan</strong><span>1</span></div>", body)
         self.assertIn("<div><strong>Ikke scannet av face-scan</strong><span>1</span></div>", body)
-        self.assertIn("<div><strong>Ansikter funnet</strong><span>3</span></div>", body)
-        self.assertIn("<div><strong>Ansikter med forslag</strong><span>1</span></div>", body)
+        self.assertIn("<div><strong>Ansikter funnet</strong><span>5</span></div>", body)
+        self.assertIn("<div><strong>Ansikter med forslag</strong><span>3</span></div>", body)
         self.assertIn('href="/person/Kari/confirmed/no-faces"', body)
         self.assertIn('href="/person/Kari/no-faces"', body)
         self.assertIn('data-open-person-rename', body)
@@ -3658,6 +3680,7 @@ model_name = "buffalo_l"
         self.assertIn('id="personRenameDialog"', body)
         self.assertIn("Bekreftede bilder (1)", body)
         self.assertIn("Bekreftede og forslag (2)", body)
+        self.assertNotIn("forslag:", body)
         self.assertIn("NB: 2 bekreftede ansikter i samme bilde", body)
         self.assertIn("NB: 2 bekreftede ansikter for Kari i dette bildet", confirmed_body)
         self.assertIn('data-unconfirm-face="1"', confirmed_body)

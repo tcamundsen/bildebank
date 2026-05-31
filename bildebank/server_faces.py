@@ -413,12 +413,13 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
             for file_id in active_confirmed_file_ids:
                 confirmed_counts_by_file[file_id] = confirmed_counts_by_file.get(file_id, 0) + 1
             duplicate_counts = [count for count in confirmed_counts_by_file.values() if count > 1]
+            active_confirmed_file_id_set = set(active_confirmed_file_ids)
+            active_suggested_file_id_set = set(active_suggested_file_ids)
             rows.append(
                 {
                     "name": str(person["name"]),
                     "confirmed_file_count": len(confirmed_counts_by_file),
-                    "all_file_count": len(set(active_confirmed_file_ids) | set(active_suggested_file_ids)),
-                    "suggestion_count": len(active_suggested_file_ids),
+                    "all_file_count": len(active_confirmed_file_id_set | active_suggested_file_id_set),
                     "duplicate_confirmed_file_count": len(duplicate_counts),
                     "max_confirmed_faces_per_file": max(duplicate_counts, default=0),
                 }
@@ -736,7 +737,6 @@ def people_row_html(person: dict[str, object]) -> str:
     name = str(person["name"])
     confirmed_count = int(person["confirmed_file_count"])
     all_count = int(person["all_file_count"])
-    suggestion_count = int(person["suggestion_count"])
     duplicate_count = int(person["duplicate_confirmed_file_count"])
     max_confirmed_faces = int(person["max_confirmed_faces_per_file"])
     confirmed_source = person_browser_source(name, include_suggestions=False, show_faces=False)
@@ -758,7 +758,6 @@ def people_row_html(person: dict[str, object]) -> str:
       {duplicate_warning}
       <a class="person-link" href="{html.escape(confirmed_source.root_url)}">Bekreftede bilder ({confirmed_count})</a>
       <a class="person-link" href="{html.escape(all_source.root_url)}">Bekreftede og forslag ({all_count})</a>
-      <span class="status">forslag: {suggestion_count}</span>
     </div>
     """
 
