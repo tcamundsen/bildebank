@@ -3,8 +3,8 @@
 ```text
 usage: bildebank check-source [valg] mappe
 
-Scanner en kildemappe og kontrollerer at alle filer i kildemappen
-finnes i bildesamlingen med samme SHA-256. Kommandoen sletter ingenting.
+Scanner en kildemappe og kontrollerer at alle filer i kildemappen finnes i
+bildesamlingen med samme SHA-256. Kommandoen sletter ingenting.
 
 positional arguments:
   mappe       Kildemappen som skal kontrolleres
