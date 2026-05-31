@@ -137,9 +137,9 @@ SERVER_CSS = r"""    :root {
     .doc-content table { border-collapse: collapse; width: 100%; }
     .doc-content th, .doc-content td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
     .doc-content th { background: var(--panel); }
-    .geo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 18px 0; }
-    .geo-stats div { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
-    .geo-stats span { color: var(--muted); }
+    .geo-stats, .people-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 18px 0; }
+    .geo-stats div, .people-summary div { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+    .geo-stats span, .people-summary span { color: var(--muted); }
     .geo-list { display: grid; gap: 8px; margin-top: 18px; }
     .geo-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); }
     .h3-cell-list .geo-row { grid-template-columns: minmax(220px, 1fr) minmax(70px, auto) minmax(90px, auto) minmax(180px, auto); }
@@ -192,14 +192,6 @@ SERVER_CSS = r"""    :root {
       flex-wrap: wrap;
       margin-bottom: 18px;
     }
-    .people-summary {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px 18px;
-      margin: 0 0 18px;
-      color: var(--muted);
-    }
-    .people-summary strong { color: var(--text); }
     .people-table { display: grid; gap: 8px; margin-top: 18px; }
     .removed-list { display: grid; gap: 6px; margin-top: 18px; }
     .removed-row {

@@ -516,11 +516,11 @@ def people_summary_tables_exist(conn: sqlite3.Connection) -> bool:
 def people_face_summary_html(summary: PeopleFaceSummary) -> str:
     return f"""
     <div class="people-summary" aria-label="Face-scan status">
-      <span><strong>Antall bilder i databasen:</strong> {summary.total_images}</span>
-      <span><strong>Scannet av face-scan:</strong> {summary.scanned_images}</span>
-      <span><strong>Ikke scannet av face-scan:</strong> {summary.unscanned_images}</span>
-      <span><strong>Ansikter funnet:</strong> {summary.total_faces}</span>
-      <span><strong>Ansikter med forslag:</strong> {summary.faces_with_suggestions}</span>
+      <div><strong>Antall bilder i databasen</strong><span>{summary.total_images}</span></div>
+      <div><strong>Scannet av face-scan</strong><span>{summary.scanned_images}</span></div>
+      <div><strong>Ikke scannet av face-scan</strong><span>{summary.unscanned_images}</span></div>
+      <div><strong>Ansikter funnet</strong><span>{summary.total_faces}</span></div>
+      <div><strong>Ansikter med forslag</strong><span>{summary.faces_with_suggestions}</span></div>
     </div>
     """
 
