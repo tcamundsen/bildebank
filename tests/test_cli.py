@@ -4,6 +4,7 @@ import json
 import shutil
 import sqlite3
 import struct
+import subprocess
 import tempfile
 import unittest
 import datetime as dt
@@ -7944,6 +7945,25 @@ print(json.dumps([
                 )
             finally:
                 conn.close()
+
+    def test_module_migrate_from_repo_parent_reports_missing_target_without_traceback(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(repo) + os.pathsep + env.get("PYTHONPATH", "")
+
+        result = subprocess.run(
+            [sys.executable, "-m", "bildebank", "migrate"],
+            cwd=repo.parent,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("Fant ingen bildesamling. Kjør kommandoen fra bildesamlingsmappen.", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 
     def test_migrate_check_reports_plan_without_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
