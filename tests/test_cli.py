@@ -2963,6 +2963,8 @@ model_name = "buffalo_l"
         self.assertIn("/api/face-person-create-and-add-face", SERVER_JS)
         self.assertIn("/api/item-faces?file_id=", SERVER_JS)
         self.assertIn("Identifiser", face_body)
+        self.assertIn("Forslag:", face_body)
+        self.assertIn("Ola Nordmann <strong>0.910</strong>", face_body)
         self.assertIn('data-face-id="2"', face_body)
         self.assertIn('data-person-name="Kari"', face_body)
         self.assertIn('data-person-name="Ola Nordmann"', face_body)
@@ -3018,6 +3020,7 @@ model_name = "buffalo_l"
         self.assertIn('data-face-detail="1"', str(content["html"]))
         self.assertIn('data-person-name="Kari"', str(content["html"]))
         self.assertIn("face-box", str(content["html"]))
+        self.assertIn("Ingen forslag for dette ansiktet.", str(content["html"]))
 
     def test_run_server_api_adds_face_to_person(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

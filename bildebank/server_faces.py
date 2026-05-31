@@ -228,6 +228,31 @@ def unconfirmed_faces_for_item(
             }
             for row in rows
         ]
+        if faces:
+            suggestions_by_face_id: dict[int, list[dict[str, object]]] = {int(face["faceId"]): [] for face in faces}
+            placeholders = ",".join("?" for _ in suggestions_by_face_id)
+            suggestion_rows = conn.execute(
+                f"""
+                SELECT
+                    face_suggestions.face_id,
+                    persons.name,
+                    face_suggestions.similarity
+                FROM face_suggestions
+                JOIN persons ON persons.id = face_suggestions.person_id
+                WHERE face_suggestions.face_id IN ({placeholders})
+                ORDER BY face_suggestions.face_id, face_suggestions.similarity DESC, persons.name
+                """,
+                tuple(suggestions_by_face_id),
+            )
+            for row in suggestion_rows:
+                suggestions_by_face_id[int(row["face_id"])].append(
+                    {
+                        "name": str(row["name"]),
+                        "similarity": float(row["similarity"]),
+                    }
+                )
+            for face in faces:
+                face["suggestions"] = suggestions_by_face_id[int(face["faceId"])]
     except sqlite3.Error:
         return []
     finally:
@@ -723,6 +748,8 @@ def face_overlay_content_html(
 def face_overlay_item_html(item: Any, image_url: str, face: dict[str, object], people: list[dict[str, str]]) -> str:
     face_id = int(face["faceId"])
     people_buttons = person_assignment_buttons_html(face_id, people)
+    suggestions = face.get("suggestions", [])
+    suggestion_html = face_suggestion_summary_html(suggestions if isinstance(suggestions, list) else [])
     box = ""
     if {"left", "top", "boxWidth", "boxHeight"} <= face.keys():
         box = (
@@ -736,6 +763,7 @@ def face_overlay_item_html(item: Any, image_url: str, face: dict[str, object], p
     return f"""
     <section class="face-detail" data-face-detail="{face_id}">
       <div class="face-detail-title">face-id {face_id}, deteksjon {float(face["score"]):.3f}</div>
+      {suggestion_html}
       <div class="lightbox-media"{rotation_style_attr(item)}>
         <img src="{html.escape(image_url)}" alt="">
         {box}
@@ -752,9 +780,35 @@ def face_overlay_item_html(item: Any, image_url: str, face: dict[str, object], p
     """
 
 
+def face_suggestion_summary_html(suggestions: list[object]) -> str:
+    if not suggestions:
+        return '<p class="face-suggestion-summary no-suggestion">Ingen forslag for dette ansiktet.</p>'
+    parts = []
+    for suggestion in suggestions:
+        if not isinstance(suggestion, dict):
+            continue
+        name = html.escape(str(suggestion.get("name") or ""))
+        if not name:
+            continue
+        try:
+            similarity = float(suggestion.get("similarity", 0.0))
+        except (TypeError, ValueError):
+            similarity = 0.0
+        parts.append(f"<span>{name} <strong>{similarity:.3f}</strong></span>")
+    if not parts:
+        return '<p class="face-suggestion-summary no-suggestion">Ingen forslag for dette ansiktet.</p>'
+    return '<p class="face-suggestion-summary">Forslag: ' + ", ".join(parts) + "</p>"
+
+
 def cached_face_box_items_for_item(target: Path, item: Any, faces: list[dict[str, object]]) -> list[dict[str, object]]:
     dimensions, orientation = cached_face_box_media_metadata(target, item)
-    return browser_face_items_from_metadata(faces, dimensions, orientation)
+    items = browser_face_items_from_metadata(faces, dimensions, orientation)
+    extra_by_face_id = {int(face["faceId"]): face for face in faces}
+    for item in items:
+        face = extra_by_face_id.get(int(item["faceId"]))
+        if face is not None and "suggestions" in face:
+            item["suggestions"] = face["suggestions"]
+    return items
 
 
 def cached_face_box_media_metadata(target: Path, item: Any) -> tuple[ImageDimensions | None, int]:
