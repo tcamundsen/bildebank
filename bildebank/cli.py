@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -290,7 +291,7 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank check-source [valg] mappe",
         help="Kontroller at en kildemappe er importert",
         description=(
-            "Scanner en kildemappe og kontrollerer at alle støttede bilde- og videofiler "
+            "Scanner en kildemappe og kontrollerer at alle filer i kildemappen "
             "finnes i bildesamlingen med samme SHA-256. Kommandoen sletter ingenting."
         ),
     )
@@ -2441,7 +2442,7 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) ->
     try:
         if progress is not None:
             progress.message(f"Check-source: scanner {source}.")
-        for item in iter_media_files(source):
+        for item in iter_check_source_files(source):
             if isinstance(item, WalkError):
                 stats.source_errors += 1
                 problems.append(CheckSourceProblem(item.path, item.message))
@@ -2458,7 +2459,9 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) ->
             rows = db.active_files_by_hash(conn, file_hash)
             if not rows:
                 stats.missing += 1
-                problems.append(CheckSourceProblem(path, "finnes ikke i aktiv bildesamling med samme SHA-256"))
+                problems.append(
+                    CheckSourceProblem(path, "filen er ikke importert i bildesamlingen med samme SHA-256")
+                )
             elif check_source_hash_is_validated(target, rows, target_hash_cache):
                 stats.covered += 1
             else:
@@ -2478,6 +2481,28 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) ->
 
     print_check_source_report(source, stats, problems)
     return 0 if check_source_is_safe(stats) else 2
+
+
+def iter_check_source_files(root: Path):
+    walk_errors: list[WalkError] = []
+
+    def onerror(exc: OSError) -> None:
+        path = Path(exc.filename) if exc.filename else root
+        walk_errors.append(WalkError(path=path, message=str(exc)))
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=onerror):
+        while walk_errors:
+            yield walk_errors.pop(0)
+        dirnames.sort()
+        for filename in sorted(filenames):
+            path = Path(dirpath) / filename
+            try:
+                if path.is_file():
+                    yield path
+            except OSError as exc:
+                yield WalkError(path=path, message=str(exc))
+    while walk_errors:
+        yield walk_errors.pop(0)
 
 
 def check_source_hash_is_validated(target: Path, rows: list, target_hash_cache: dict[int, bool]) -> bool:
@@ -2526,14 +2551,15 @@ def print_check_source_report(source: Path, stats: CheckSourceStats, problems: l
         f"kildefeil={stats.source_errors}, målfeil={stats.target_errors}"
     )
     if problems:
-        print("  Ikke trygt å slette kildemappen ennå.")
+        print("  Det finnes filer som ikke er importert i bildesamlingen, eller som ikke kan valideres.")
+        print("  Kildemappen er derfor ikke trygg å slette.")
         print("Problemer:")
         for problem in problems:
             print(f"- {problem.path}")
             print(f"  {problem.reason}")
         return
 
-    print("  Alle støttede bilde- og videofiler finnes i bildesamlingen og er validert med SHA-256.")
+    print("  Alle filer i kildemappen finnes i bildesamlingen og er validert med SHA-256.")
     print("  Bildebank sletter ikke kildemapper.")
     print("  Hvis du vil slette mappen selv i PowerShell:")
     print()

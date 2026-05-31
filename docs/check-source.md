@@ -3,7 +3,7 @@
 ```text
 usage: bildebank check-source [valg] mappe
 
-Scanner en kildemappe og kontrollerer at alle støttede bilde- og videofiler
+Scanner en kildemappe og kontrollerer at alle filer i kildemappen
 finnes i bildesamlingen med samme SHA-256. Kommandoen sletter ingenting.
 
 positional arguments:
@@ -16,8 +16,8 @@ options:
 <!-- CLI-HELP-END -->
 
 `check-source` kontrollerer om en gammel kildemappe kan ryddes bort manuelt.
-Kommandoen scanner mappen på nytt, regner ut SHA-256 for hver støttede bilde- og
-videofil, og sjekker at samme innhold finnes i bildesamlingen.
+Kommandoen scanner mappen på nytt, regner ut SHA-256 for alle filer i
+kildemappen, og sjekker at samme innhold finnes i bildesamlingen.
 
 Bildebank sletter aldri kildemappen. Hvis kontrollen er trygg, viser kommandoen
 en PowerShell-kommando du kan velge å kjøre selv.
@@ -38,6 +38,6 @@ Les linjen før du bruker den. Det er du som sletter mappen, ikke Bildebank. Hvi
 mappen inneholder filer, spør PowerShell før den sletter. Du kan markere teksten
 fra kommandoen, trykke Ctrl-C for å kopiere, og så Ctrl-V for å lime inn.
 
-Hvis Bildebank finner filer som mangler, eller hvis en målfil i bildesamlingen
-ikke kan valideres med SHA-256, skriver kommandoen at det ikke er trygt å slette
-kildemappen ennå.
+Hvis Bildebank finner filer som ikke er importert i bildesamlingen, eller hvis
+en målfil i bildesamlingen ikke kan valideres med SHA-256, skriver kommandoen at
+kildemappen ikke er trygg å slette.
