@@ -374,8 +374,7 @@ def h3_cell_form_html(row: Any | None = None) -> str:
     <form action="/settings/h3-cell" method="post" class="custom-place-form">
       {original_h3_cell_input}
       <label>Navn <input name="name" value="{html.escape(name)}" autocomplete="off"></label>
-      <label>H3-id <input name="h3_cell" value="{html.escape(h3_cell)}" autocomplete="off"></label>
-      <p class="meta">Bildebank bruker H3-oppløsning 0 til {MAX_NAMED_H3_RESOLUTION}.</p>
+      <label>H3-id. Bildebank bruker H3-oppløsning 0 til {MAX_NAMED_H3_RESOLUTION}. <input name="h3_cell" value="{html.escape(h3_cell)}" autocomplete="off"></label>
       <div class="custom-place-actions">
         <button type="submit">{button_text}</button>
         {delete_button}
