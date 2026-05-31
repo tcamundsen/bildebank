@@ -3543,8 +3543,23 @@ model_name = "buffalo_l"
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            main_conn = db.connect(target)
+            try:
+                file_rows = {
+                    int(row["id"]): row
+                    for row in main_conn.execute("SELECT id, target_path, target_path_key, sha256 FROM files")
+                }
+            finally:
+                main_conn.close()
             face_conn = connect_face_db(target)
             try:
+                face_conn.execute(
+                    """
+                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                    VALUES(1, ?, ?, ?, 'ok', 2)
+                    """,
+                    (file_rows[1]["target_path"], file_rows[1]["target_path_key"], file_rows[1]["sha256"]),
+                )
                 face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
                 face_conn.execute(
                     """
@@ -3628,6 +3643,11 @@ model_name = "buffalo_l"
         self.assertEqual(second_file_ids, [1, 2])
         self.assertEqual(cache_after_first.misses, 1)
         self.assertEqual(cache_after_second.hits, cache_after_first.hits + 1)
+        self.assertIn("Antall bilder i databasen:</strong> 2", body)
+        self.assertIn("Scannet av face-scan:</strong> 1", body)
+        self.assertIn("Ikke scannet av face-scan:</strong> 1", body)
+        self.assertIn("Ansikter funnet:</strong> 3", body)
+        self.assertIn("Ansikter med forslag:</strong> 1", body)
         self.assertIn('href="/person/Kari/confirmed/no-faces"', body)
         self.assertIn('href="/person/Kari/no-faces"', body)
         self.assertIn('data-open-person-rename', body)

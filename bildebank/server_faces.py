@@ -3,12 +3,13 @@ from __future__ import annotations
 import html
 import sqlite3
 from functools import lru_cache
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from . import db
 from .config import FaceRecognitionConfig
-from .face import face_db_path, normalize_person_name
+from .face import active_image_files, face_db_path, normalize_person_name
 from .html_export import browser_face_items_from_metadata, face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation
 from .server_browser import items_by_file_ids, rotation_style_attr
@@ -16,6 +17,15 @@ from .server_browser_sources import BrowserSource, person_browser_source, person
 
 
 ShellPageRenderer = Callable[..., str]
+
+
+@dataclass(frozen=True)
+class PeopleFaceSummary:
+    total_images: int
+    scanned_images: int
+    unscanned_images: int
+    total_faces: int
+    faces_with_suggestions: int
 
 
 def current_face_db_path(target: Path, face_config: FaceRecognitionConfig | None = None) -> Path:
@@ -418,6 +428,103 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
         face_conn.close()
 
 
+def people_face_summary(target: Path, face_config: FaceRecognitionConfig | None = None) -> PeopleFaceSummary:
+    main_conn = db.connect(target)
+    try:
+        active_rows = active_image_files(main_conn)
+    finally:
+        main_conn.close()
+    total_images = len(active_rows)
+    db_path = current_face_db_path(target, face_config)
+    if not db_path.exists() or total_images == 0:
+        return PeopleFaceSummary(
+            total_images=total_images,
+            scanned_images=0,
+            unscanned_images=total_images,
+            total_faces=0,
+            faces_with_suggestions=0,
+        )
+
+    face_conn = sqlite3.connect(db_path)
+    face_conn.row_factory = sqlite3.Row
+    try:
+        if not people_summary_tables_exist(face_conn):
+            return PeopleFaceSummary(
+                total_images=total_images,
+                scanned_images=0,
+                unscanned_images=total_images,
+                total_faces=0,
+                faces_with_suggestions=0,
+            )
+        face_conn.execute("CREATE TEMP TABLE active_people_summary_images(file_id INTEGER PRIMARY KEY, sha256 TEXT)")
+        face_conn.executemany(
+            "INSERT INTO active_people_summary_images(file_id, sha256) VALUES(?, ?)",
+            [(int(row["id"]), str(row["sha256"])) for row in active_rows],
+        )
+        scanned_images = int(
+            face_conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM active_people_summary_images
+                JOIN scanned_files ON scanned_files.file_id = active_people_summary_images.file_id
+                 AND scanned_files.sha256 = active_people_summary_images.sha256
+                """
+            ).fetchone()[0]
+        )
+        total_faces = int(
+            face_conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM faces
+                JOIN active_people_summary_images ON active_people_summary_images.file_id = faces.file_id
+                """
+            ).fetchone()[0]
+        )
+        faces_with_suggestions = int(
+            face_conn.execute(
+                """
+                SELECT COUNT(DISTINCT face_suggestions.face_id)
+                FROM face_suggestions
+                JOIN faces ON faces.id = face_suggestions.face_id
+                JOIN active_people_summary_images ON active_people_summary_images.file_id = faces.file_id
+                """
+            ).fetchone()[0]
+        )
+        return PeopleFaceSummary(
+            total_images=total_images,
+            scanned_images=scanned_images,
+            unscanned_images=max(total_images - scanned_images, 0),
+            total_faces=total_faces,
+            faces_with_suggestions=faces_with_suggestions,
+        )
+    finally:
+        face_conn.close()
+
+
+def people_summary_tables_exist(conn: sqlite3.Connection) -> bool:
+    rows = conn.execute(
+        """
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name IN ('scanned_files', 'faces', 'face_suggestions')
+        """
+    )
+    return {str(row["name"]) for row in rows} == {"scanned_files", "faces", "face_suggestions"}
+
+
+def people_face_summary_html(summary: PeopleFaceSummary) -> str:
+    return f"""
+    <div class="people-summary" aria-label="Face-scan status">
+      <span><strong>Antall bilder i databasen:</strong> {summary.total_images}</span>
+      <span><strong>Scannet av face-scan:</strong> {summary.scanned_images}</span>
+      <span><strong>Ikke scannet av face-scan:</strong> {summary.unscanned_images}</span>
+      <span><strong>Ansikter funnet:</strong> {summary.total_faces}</span>
+      <span><strong>Ansikter med forslag:</strong> {summary.faces_with_suggestions}</span>
+    </div>
+    """
+
+
 def person_faces_for_item(
     target: Path,
     person_name: str,
@@ -664,6 +771,7 @@ def people_page_html(
     openclip_enabled: bool = True,
 ) -> str:
     people = registered_people_rows(target, face_config)
+    summary = people_face_summary(target, face_config)
     rows = "\n".join(people_row_html(person) for person in people)
     content = (
         f'<div class="people-table">{rows}</div>'
@@ -674,6 +782,7 @@ def people_page_html(
         "Personer",
         f"""
         <h1>Personer</h1>
+        {people_face_summary_html(summary)}
         {content}
         {person_rename_dialog_html()}
         """,

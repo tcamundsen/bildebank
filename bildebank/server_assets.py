@@ -192,6 +192,14 @@ SERVER_CSS = r"""    :root {
       flex-wrap: wrap;
       margin-bottom: 18px;
     }
+    .people-summary {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      margin: 0 0 18px;
+      color: var(--muted);
+    }
+    .people-summary strong { color: var(--text); }
     .people-table { display: grid; gap: 8px; margin-top: 18px; }
     .removed-list { display: grid; gap: 6px; margin-top: 18px; }
     .removed-row {
