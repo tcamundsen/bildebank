@@ -87,7 +87,9 @@ def markdown_to_html(markdown: str) -> str:
             html_lines.append("<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>")
             code_lines.clear()
 
-    for line in lines:
+    line_index = 0
+    while line_index < len(lines):
+        line = lines[line_index]
         stripped = line.strip()
         if stripped.startswith("```"):
             if in_code:
@@ -97,13 +99,23 @@ def markdown_to_html(markdown: str) -> str:
                 flush_paragraph()
                 flush_list()
                 in_code = True
+            line_index += 1
             continue
         if in_code:
             code_lines.append(line)
+            line_index += 1
             continue
         if not stripped:
             flush_paragraph()
             flush_list()
+            line_index += 1
+            continue
+        table = markdown_table_html(lines, line_index)
+        if table is not None:
+            table_html, line_index = table
+            flush_paragraph()
+            flush_list()
+            html_lines.append(table_html)
             continue
         if stripped.startswith("#"):
             flush_paragraph()
@@ -112,6 +124,7 @@ def markdown_to_html(markdown: str) -> str:
             text = stripped[level:].strip()
             if text:
                 html_lines.append(f"<h{level}>{markdown_inline_html(text)}</h{level}>")
+            line_index += 1
             continue
         if stripped.startswith(("- ", "* ")):
             flush_paragraph()
@@ -119,6 +132,7 @@ def markdown_to_html(markdown: str) -> str:
                 flush_list()
                 list_tag = "ul"
             list_items.append(markdown_inline_html(stripped[2:].strip()))
+            line_index += 1
             continue
         ordered_match = re.match(r"\d+\.\s+(.*)", stripped)
         if ordered_match:
@@ -127,17 +141,64 @@ def markdown_to_html(markdown: str) -> str:
                 flush_list()
                 list_tag = "ol"
             list_items.append(markdown_inline_html(ordered_match.group(1).strip()))
+            line_index += 1
             continue
         if list_items:
             list_items[-1] = f"{list_items[-1]} {markdown_inline_html(stripped)}"
+            line_index += 1
             continue
         paragraph.append(stripped)
+        line_index += 1
 
     flush_paragraph()
     flush_list()
     if in_code:
         flush_code()
     return "\n".join(html_lines)
+
+
+def markdown_table_html(lines: list[str], start_index: int) -> tuple[str, int] | None:
+    if start_index + 1 >= len(lines):
+        return None
+    header = markdown_table_row(lines[start_index])
+    separator = markdown_table_row(lines[start_index + 1])
+    if header is None or separator is None:
+        return None
+    if len(header) != len(separator) or not all(markdown_table_separator_cell(cell) for cell in separator):
+        return None
+
+    rows: list[list[str]] = []
+    index = start_index + 2
+    while index < len(lines):
+        row = markdown_table_row(lines[index])
+        if row is None or len(row) != len(header):
+            break
+        rows.append(row)
+        index += 1
+
+    head_html = "".join(f"<th>{markdown_inline_html(cell)}</th>" for cell in header)
+    body_html = "".join(
+        "<tr>" + "".join(f"<td>{markdown_inline_html(cell)}</td>" for cell in row) + "</tr>" for row in rows
+    )
+    return f"<table><thead><tr>{head_html}</tr></thead><tbody>{body_html}</tbody></table>", index
+
+
+def markdown_table_row(line: str) -> list[str] | None:
+    stripped = line.strip()
+    if "|" not in stripped:
+        return None
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|"):
+        stripped = stripped[:-1]
+    cells = [cell.strip() for cell in stripped.split("|")]
+    if len(cells) < 2:
+        return None
+    return cells
+
+
+def markdown_table_separator_cell(cell: str) -> bool:
+    return re.fullmatch(r":?-{3,}:?", cell.strip()) is not None
 
 
 def strip_markdown_cli_help_markers(markdown: str) -> str:

@@ -118,7 +118,7 @@ SERVER_CSS = r"""    :root {
     .doc-page { max-width: 860px; }
     .doc-content { line-height: 1.6; }
     .doc-content h1, .doc-content h2, .doc-content h3 { margin: 1.2em 0 0.45em; }
-    .doc-content p, .doc-content ul, .doc-content pre { margin: 0 0 1em; }
+    .doc-content p, .doc-content ul, .doc-content pre, .doc-content table { margin: 0 0 1em; }
     .doc-content code {
       font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
       background: #303030;
@@ -134,6 +134,9 @@ SERVER_CSS = r"""    :root {
       padding: 12px;
     }
     .doc-content pre code { background: transparent; border: 0; padding: 0; }
+    .doc-content table { border-collapse: collapse; width: 100%; }
+    .doc-content th, .doc-content td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
+    .doc-content th { background: var(--panel); }
     .geo-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 18px 0; }
     .geo-stats div { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
     .geo-stats span { color: var(--muted); }
