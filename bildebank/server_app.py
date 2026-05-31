@@ -327,13 +327,12 @@ def h3_cells_page_html(
         "Rediger H3-celler",
         f"""
         <nav class="subnav"><a href="/settings">Innstillinger</a></nav>
-        <h1>Rediger H3-celler</h1>
-        <p class="meta">På denne siden gir du navn til H3-celler. Disse navnene brukes for
+        <h1>Navngi H3-celler</h1>
+        <section class="custom-geo-places">
+        <p>På denne siden gir du navn til H3-celler. Disse navnene brukes for
         å velge på siden <a href="/settings">innstillinger</a> hvilken celle som brukes til
         å sette sted for bilder som mangler GPS-lokasjon.
         </p>
-        <section class="custom-geo-places">
-          <h2>Legg til H3-celle</h2>
           <p>Bruk oppløsning 11 (høyeste oppløsning) for å markere et enkelt hus eller
           en veldig presis lokasjon, hvis du vet nøyaktig plassering. Hvis huset ligger på
           grensen mellom to H3-celler i oppløsning 11, så velger du bare den som
@@ -345,7 +344,7 @@ def h3_cells_page_html(
           {h3_cell_form_html()}
         </section>
         <section class="custom-geo-places">
-          <h2>Definerte steder</h2>
+          <h2>Registrerte navn</h2>
           {h3_cell_list_html(named_h3_cells, image_counts)}
         </section>
         """,
