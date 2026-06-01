@@ -997,7 +997,24 @@ def system_tag_controls_html(
         if gps_source_is_manual_h3(item)
         else gps_location_badge_html(item)
     )
-    return f'<aside class="tag-rail" aria-label="Systemtagger">{"".join(buttons)}{location_status}</aside>'
+    date_status = date_status_badge_html(item)
+    return f'<aside class="tag-rail" aria-label="Systemtagger">{date_status}{"".join(buttons)}{location_status}</aside>'
+
+
+def date_status_badge_html(item: Any) -> str:
+    date_text = image_date_text(item)
+    manual_text = manual_date_text(item)
+    original = ""
+    if manual_text:
+        original_date = str(item["taken_date"] or "-")
+        original_source = date_source_text(str(item["date_source"] or ""))
+        original = f'<span class="date-status-original">Opprinnelig: {html.escape(original_date)} ({html.escape(original_source)})</span>'
+    return (
+        '<div class="date-status-badge">'
+        f'<span class="date-status-main">{html.escape(date_text)}</span>'
+        f'{original}'
+        '</div>'
+    )
 
 
 def source_item_media_html(

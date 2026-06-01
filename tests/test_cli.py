@@ -1890,6 +1890,10 @@ model_name = "buffalo_l"
                 browser_month_navigation(target, manual_items[0]),
             )
             info_body = image_info_content_html(target, manual_items[0])
+            self.assertIn("date-status-badge", body)
+            self.assertIn("ca. 2004-07-15", body)
+            self.assertIn("Opprinnelig: 2026-01-02", body)
+            self.assertLess(body.index("date-status-badge"), body.index("tag-toggle"))
             self.assertIn("ca. 2004-07-15", info_body)
             self.assertIn("Kamera hadde feil dato", info_body)
             self.assertIn("Opprinnelig dato", info_body)
