@@ -1225,6 +1225,10 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual([(row["h3_cell"], row["name"]) for row in rows], [(h3_cell, "Oslo")])
         self.assertIn("Oslo", body)
         self.assertIn(h3_cell, body)
+        self.assertIn(
+            f'<a href="https://h3geo.org/#hex={h3_cell}" target="_blank" rel="noopener">{h3_cell}</a>',
+            body,
+        )
         self.assertIn('<div class="custom-place-list h3-cell-list">', body)
         self.assertIn('<details class="custom-place-edit">', body)
         self.assertIn('<span class="status">1 bilder</span>', body)

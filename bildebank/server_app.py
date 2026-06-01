@@ -423,7 +423,7 @@ def h3_cell_edit_html(row: Any, image_count: int | None = None) -> str:
         <span class="custom-place-name">{html.escape(name)}</span>
         <span class="status">{html.escape(count_text)} bilder</span>
         <span class="status">H3-{html.escape(h3_resolution_value_label(h3_cell))}</span>
-        <span class="status">{html.escape(h3_cell)}</span>
+        <span class="status"><a href="{html.escape(h3_cell_h3geo_url(h3_cell))}" target="_blank" rel="noopener">{html.escape(h3_cell)}</a></span>
       </summary>
       <div class="custom-place-edit-body">
         {h3_cell_form_html(row)}
