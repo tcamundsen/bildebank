@@ -19,6 +19,7 @@ class BrowserTextFilter:
     query: str
     after: dt.date | None = None
     before: dt.date | None = None
+    date_source: str | None = None
     location: str | None = None
     size_gt: int | None = None
     size_lt: int | None = None
@@ -30,6 +31,7 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
         raise ValueError("Filtersøk kan ikke være tomt.")
     after = None
     before = None
+    date_source = None
     location = None
     size_gt = None
     size_lt = None
@@ -67,12 +69,19 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
             if value not in {"gps", "manual"}:
                 raise ValueError("location må være gps eller manual.")
             location = value
+        elif key == "date":
+            if date_source is not None:
+                raise ValueError("date kan bare brukes én gang.")
+            if value not in {"manual", "metadata", "filename", "mtime"}:
+                raise ValueError("date må være manual, metadata, filename eller mtime.")
+            date_source = value
         else:
             raise ValueError(f"Ukjent filter: {key}")
     return BrowserTextFilter(
         clean_query,
         after=after,
         before=before,
+        date_source=date_source,
         location=location,
         size_gt=size_gt,
         size_lt=size_lt,
@@ -130,6 +139,10 @@ def text_filter_browser_source(query: str) -> Any:
 def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple[object, ...]]:
     where: list[str] = []
     params: list[object] = []
+    manual_date_sql = (
+        f"COALESCE(manual_date_from GLOB {db.DATE_GLOB_SQL}, 0) "
+        f"AND COALESCE(manual_date_to GLOB {db.DATE_GLOB_SQL}, 0)"
+    )
     if text_filter.after is not None or text_filter.before is not None:
         where.append(f"{db.BROWSER_DATE_ORDER_SQL} GLOB {db.DATE_GLOB_SQL}")
     if text_filter.after is not None:
@@ -144,6 +157,12 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     if text_filter.size_lt is not None:
         where.append("size_bytes < ?")
         params.append(text_filter.size_lt)
+    if text_filter.date_source == "manual":
+        where.append(f"({manual_date_sql})")
+    elif text_filter.date_source in {"metadata", "filename", "mtime"}:
+        where.append(f"NOT ({manual_date_sql})")
+        where.append("date_source = ?")
+        params.append(text_filter.date_source)
     if text_filter.location == "gps":
         where.append("gps_lat IS NOT NULL")
         where.append("gps_lon IS NOT NULL")
@@ -169,7 +188,7 @@ def filter_start_html(
         <h1>Filtersøk</h1>
         {message_html(message)}
         {filter_form(query)}
-        <p class="meta">Eksempler: after:2023-12-01 before:2024-12-12, location:gps, location:manual, size&lt;300KB, size&gt;2MB.</p>
+        <p class="meta">Eksempler: after:2023-12-01 before:2024-12-12, date:manual, date:metadata, date:filename, date:mtime, location:gps, location:manual, size&lt;300KB, size&gt;2MB.</p>
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
@@ -179,7 +198,7 @@ def filter_start_html(
 def filter_form(query: str) -> str:
     return f"""
     <form action="/filter" method="get" class="search">
-      <input name="q" value="{html.escape(query)}" placeholder="after:2023-12-01 size&gt;2MB" autofocus>
+      <input name="q" value="{html.escape(query)}" placeholder="date:manual size&gt;2MB" autofocus>
       <button type="submit">Søk</button>
     </form>
     """

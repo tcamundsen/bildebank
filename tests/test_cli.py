@@ -2985,6 +2985,17 @@ model_name = "buffalo_l"
                 conn.execute(
                     """
                     UPDATE files
+                    SET date_source = CASE id
+                        WHEN 1 THEN 'filename'
+                        WHEN 2 THEN 'metadata'
+                        WHEN 3 THEN 'mtime'
+                        WHEN 4 THEN 'filename'
+                    END
+                    """
+                )
+                conn.execute(
+                    """
+                    UPDATE files
                     SET size_bytes = CASE id
                         WHEN 1 THEN 100
                         WHEN 2 THEN 409600
@@ -3013,6 +3024,10 @@ model_name = "buffalo_l"
             small_filter = text_filter_browser_source("size<300KB")
             large_filter = text_filter_browser_source("size>2MB")
             combined_size_filter = text_filter_browser_source("after:2023-12-01 before:2024-12-12 size>300KB")
+            manual_date_filter = text_filter_browser_source("date:manual")
+            metadata_date_filter = text_filter_browser_source("date:metadata")
+            filename_date_filter = text_filter_browser_source("date:filename")
+            mtime_date_filter = text_filter_browser_source("date:mtime")
             first_item = source_item_by_id(target, source_filter, 2)
             manual_item = source_item_by_id(target, manual_filter, 4)
             self.assertIsNotNone(first_item)
@@ -3024,6 +3039,10 @@ model_name = "buffalo_l"
             small_month = source_month_items(target, small_filter, "2023-12")
             large_month = source_month_items(target, large_filter, "2024-12")
             combined_size_month = source_month_items(target, combined_size_filter, "2024-06")
+            manual_date_month = source_month_items(target, manual_date_filter, "2024-06")
+            metadata_date_month = source_month_items(target, metadata_date_filter, "2024-01")
+            filename_date_month = source_month_items(target, filename_date_filter, "2023-12")
+            mtime_date_month = source_month_items(target, mtime_date_filter, "2024-12")
             date_body = source_item_page_html(
                 target,
                 source_filter,
@@ -3044,20 +3063,27 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in small_month], [1])
         self.assertEqual([item["id"] for item in large_month], [3])
         self.assertEqual([item["id"] for item in combined_size_month], [4])
+        self.assertEqual([item["id"] for item in manual_date_month], [4])
+        self.assertEqual([item["id"] for item in metadata_date_month], [2])
+        self.assertEqual([item["id"] for item in filename_date_month], [1])
+        self.assertEqual([item["id"] for item in mtime_date_month], [3])
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
         self.assertIn("/filter/after%3A2023-12-01%20before%3A2024-12-12/item/4", date_body)
         self.assertIn('href="/filter">Filtersøk</a>', date_body)
         self.assertIn("Ingen aktive bilder matcher filtersøket.", empty_body)
 
     def test_run_server_filter_parser_rejects_invalid_queries(self) -> None:
-        text_filter = parse_text_filter("  after:2023-12-01   location:gps size>2MB size<2.5GB ")
-        self.assertEqual(text_filter.query, "after:2023-12-01 location:gps size>2MB size<2.5GB")
+        text_filter = parse_text_filter("  after:2023-12-01   date:metadata location:gps size>2MB size<2.5GB ")
+        self.assertEqual(text_filter.query, "after:2023-12-01 date:metadata location:gps size>2MB size<2.5GB")
+        self.assertEqual(text_filter.date_source, "metadata")
         self.assertEqual(text_filter.size_gt, 2 * 1024 * 1024)
         self.assertEqual(text_filter.size_lt, int(2.5 * 1024 * 1024 * 1024))
         for query, message in (
             ("after:2023-02-30", "after må være en dato på formen YYYY-MM-DD."),
             ("before:", "Filteret mangler verdi: before:"),
             ("location:geo", "location må være gps eller manual."),
+            ("date:gps", "date må være manual, metadata, filename eller mtime."),
+            ("date:manual date:metadata", "date kan bare brukes én gang."),
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
             ("size>2MB size>3MB", "size> kan bare brukes én gang."),
             ("size>stor", "size må skrives som for eksempel size<300KB eller size>2MB."),
