@@ -25,7 +25,7 @@ Arbeidet består av tre hovedtrinn:
 Kjør dette fra programmappen til Bildebank:
 
 ```powershell
-.\install-insightface.ps1
+powershell.exe -ExecutionPolicy Bypass -File .\install-insightface.ps1
 ```
 
 Slå på ansiktsgjenkjenning:
