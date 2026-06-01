@@ -360,17 +360,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         return
 
     def respond_browser_root(self) -> None:
-        source = all_browser_source()
-        item = first_source_item(self.server.target, source, hide_out_of_focus=self.server.hide_out_of_focus)
-        if item is None:
-            self.respond_html(
-                empty_browser_html(
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                )
-            )
-            return
-        self.redirect(source_item_url(source, int(item["id"])))
+        self.respond_years()
 
     def respond_item(self, raw_file_id: str) -> None:
         file_id = parse_file_id(raw_file_id)
