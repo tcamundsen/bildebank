@@ -128,13 +128,17 @@ en vanlig bildebrowser. Første versjon støtter:
 after:2023-12-01 before:2024-12-12
 location:gps
 location:manual
+size<300KB
+size>2MB
 after:2023-12-01 location:manual
 ```
 
 `after:` og `before:` bruker datoen Bildebank bruker i browseren. Grensene er
 ikke inkludert, så `after:2023-12-01` betyr etter 1. desember 2023.
 `location:gps` viser bilder med GPS-koordinater, mens `location:manual` viser
-bilder der du har satt manuell H3-lokasjon.
+bilder der du har satt manuell H3-lokasjon. `size<300KB` viser filer mindre
+enn 300 KB, og `size>2MB` viser filer større enn 2 MB. Størrelsene regnes med
+1024 bytes per KB.
 
 Knappen `Slett` flytter bildet til `deleted`-mappen i bildesamlingen og
 markerer filen som slettet i databasen. Dette er samme slettemekanisme

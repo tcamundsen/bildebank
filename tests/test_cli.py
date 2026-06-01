@@ -2985,6 +2985,17 @@ model_name = "buffalo_l"
                 conn.execute(
                     """
                     UPDATE files
+                    SET size_bytes = CASE id
+                        WHEN 1 THEN 100
+                        WHEN 2 THEN 409600
+                        WHEN 3 THEN 3145728
+                        WHEN 4 THEN 2097152
+                    END
+                    """
+                )
+                conn.execute(
+                    """
+                    UPDATE files
                     SET manual_date_from = '2024-06-15',
                         manual_date_to = '2024-06-15',
                         gps_source = 'manual-h3',
@@ -2999,6 +3010,9 @@ model_name = "buffalo_l"
             source_filter = text_filter_browser_source("after:2023-12-01 before:2024-12-12")
             gps_filter = text_filter_browser_source("location:gps")
             manual_filter = text_filter_browser_source("after:2023-12-01 before:2024-12-12 location:manual")
+            small_filter = text_filter_browser_source("size<300KB")
+            large_filter = text_filter_browser_source("size>2MB")
+            combined_size_filter = text_filter_browser_source("after:2023-12-01 before:2024-12-12 size>300KB")
             first_item = source_item_by_id(target, source_filter, 2)
             manual_item = source_item_by_id(target, manual_filter, 4)
             self.assertIsNotNone(first_item)
@@ -3007,6 +3021,9 @@ model_name = "buffalo_l"
             date_month_nav = source_month_navigation(target, source_filter, first_item)
             gps_month = source_month_items(target, gps_filter, "2024-12")
             manual_month = source_month_items(target, manual_filter, "2024-06")
+            small_month = source_month_items(target, small_filter, "2023-12")
+            large_month = source_month_items(target, large_filter, "2024-12")
+            combined_size_month = source_month_items(target, combined_size_filter, "2024-06")
             date_body = source_item_page_html(
                 target,
                 source_filter,
@@ -3024,18 +3041,26 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in date_month], [2])
         self.assertEqual([item["id"] for item in gps_month], [3])
         self.assertEqual([item["id"] for item in manual_month], [4])
+        self.assertEqual([item["id"] for item in small_month], [1])
+        self.assertEqual([item["id"] for item in large_month], [3])
+        self.assertEqual([item["id"] for item in combined_size_month], [4])
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
         self.assertIn("/filter/after%3A2023-12-01%20before%3A2024-12-12/item/4", date_body)
         self.assertIn('href="/filter">Filtersøk</a>', date_body)
         self.assertIn("Ingen aktive bilder matcher filtersøket.", empty_body)
 
     def test_run_server_filter_parser_rejects_invalid_queries(self) -> None:
-        self.assertEqual(parse_text_filter("  after:2023-12-01   location:gps ").query, "after:2023-12-01 location:gps")
+        text_filter = parse_text_filter("  after:2023-12-01   location:gps size>2MB size<2.5GB ")
+        self.assertEqual(text_filter.query, "after:2023-12-01 location:gps size>2MB size<2.5GB")
+        self.assertEqual(text_filter.size_gt, 2 * 1024 * 1024)
+        self.assertEqual(text_filter.size_lt, int(2.5 * 1024 * 1024 * 1024))
         for query, message in (
             ("after:2023-02-30", "after må være en dato på formen YYYY-MM-DD."),
             ("before:", "Filteret mangler verdi: before:"),
             ("location:geo", "location må være gps eller manual."),
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
+            ("size>2MB size>3MB", "size> kan bare brukes én gang."),
+            ("size>stor", "size må skrives som for eksempel size<300KB eller size>2MB."),
             ("camera:canon", "Ukjent filter: camera"),
         ):
             with self.subTest(query=query):
@@ -3056,8 +3081,8 @@ model_name = "buffalo_l"
         handler.redirect = fake_redirect  # type: ignore[method-assign]
         handler.respond_html = fake_respond_html  # type: ignore[method-assign]
 
-        BildebankRequestHandler.respond_filter(handler, "q=after%3A2023-12-01+location%3Agps")  # type: ignore[arg-type]
-        self.assertEqual(response["location"], "/filter/after%3A2023-12-01%20location%3Agps")
+        BildebankRequestHandler.respond_filter(handler, "q=after%3A2023-12-01+location%3Agps+size%3E2MB")  # type: ignore[arg-type]
+        self.assertEqual(response["location"], "/filter/after%3A2023-12-01%20location%3Agps%20size%3E2MB")
 
         BildebankRequestHandler.respond_filter(handler, "q=location%3Ageo")  # type: ignore[arg-type]
         self.assertIn("location må være gps eller manual.", str(response["html"]))
