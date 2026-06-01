@@ -633,7 +633,6 @@ def geo_area_page_html(
     parent_link = geo_parent_area_link_html(target, h3_cell, resolution)
     quoted = urllib.parse.quote(h3_cell, safe="")
     title = place_name or "Sted"
-    escaped_name = html.escape(place_name or "")
     child_area_section = geo_child_areas_section_html(
         child_areas,
         resolution=resolution + 1,
@@ -646,12 +645,6 @@ def geo_area_page_html(
         <h1>{html.escape(title)}</h1>
         <p class="meta">H3-celle {html.escape(h3_cell)}, {h3_resolution_label(resolution)}. Viser opptil {limit} bilder.{parent_link}</p>
         {maps_paragraph}
-        <form action="/geo/place-name" method="post" class="geo-filter geo-name-form">
-          <input type="hidden" name="h3_cell" value="{html.escape(h3_cell)}">
-          <input type="hidden" name="limit" value="{limit}">
-          <label>Stedsnavn <input name="name" value="{escaped_name}" autocomplete="off"></label>
-          <button type="submit">Lagre navn</button>
-        </form>
         {child_area_section}
         <form action="/geo/area/{html.escape(quoted)}" method="get" class="geo-filter">
           <label>Maks bilder <input name="limit" value="{limit}" inputmode="numeric"></label>

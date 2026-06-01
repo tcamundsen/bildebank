@@ -243,25 +243,6 @@ class GeoTests(unittest.TestCase):
             finally:
                 conn.close()
 
-    def test_geo_area_page_shows_place_name_form(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            init_database(target)
-            h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
-            conn = db.connect(target)
-            try:
-                db.set_geo_place_name(conn, h3_cell, "Hytta")
-                conn.commit()
-            finally:
-                conn.close()
-
-            html = geo_area_page_html(target, h3_cell, resolution=7, limit=25)
-
-        self.assertIn("<h1>Hytta</h1>", html)
-        self.assertIn('action="/geo/place-name"', html)
-        self.assertIn('name="name" value="Hytta"', html)
-        self.assertIn(f'name="h3_cell" value="{h3_cell}"', html)
-
     def test_geo_area_page_uses_saved_place_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
