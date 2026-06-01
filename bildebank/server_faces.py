@@ -11,7 +11,7 @@ from . import db
 from .config import FaceRecognitionConfig
 from .face import active_image_files, face_db_path, normalize_person_name
 from .html_export import browser_face_items_from_metadata, face_tables_exist
-from .media import ImageDimensions, image_dimensions, image_orientation
+from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
 from .server_browser import items_by_file_ids, rotation_style_attr
 from .server_browser_sources import BrowserSource, person_browser_source, person_item_url, person_url
 
@@ -813,8 +813,11 @@ def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
     target_path = Path(str(item["target_path"]))
     url = f"/file/{file_id}"
     name = html.escape(str(item["stored_filename"]))
-    if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
+    kind = media_kind(target_path)
+    if kind == "video":
         return f'<video src="{url}" controls></video>'
+    if kind != "image":
+        return f'<a class="file-card" href="{url}" target="_blank">Fil<br>{name}</a>'
     boxes = "\n".join(person_face_box_html(face) for face in faces)
     return f"""
     <div class="person-media"{rotation_style_attr(item)}>

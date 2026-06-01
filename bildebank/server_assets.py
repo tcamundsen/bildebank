@@ -399,6 +399,22 @@ SERVER_CSS = r"""    :root {
       background: #181818;
       text-align: center;
     }
+    .file-card {
+      min-width: min(100%, 520px);
+      max-width: min(100%, 720px);
+      min-height: 180px;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      color: var(--muted);
+      background: #181818;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      text-align: center;
+      text-decoration: none;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
     .item { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
     .item img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; background: #181818; transform-origin: center center; }
     .text { padding: 10px; font-size: 14px; }

@@ -21,6 +21,11 @@ IMAGE_EXTENSIONS = {
     ".heif",
     ".webp",
 }
+ARCHIVE_IMAGE_EXTENSIONS = {
+    ".nef",
+    ".psd",
+    ".raw",
+}
 VIDEO_EXTENSIONS = {
     ".mp4",
     ".mov",
@@ -33,7 +38,7 @@ VIDEO_EXTENSIONS = {
     ".3gp",
     ".wmv",
 }
-SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
+SUPPORTED_EXTENSIONS = IMAGE_EXTENSIONS | ARCHIVE_IMAGE_EXTENSIONS | VIDEO_EXTENSIONS
 
 
 @dataclass(frozen=True)
@@ -77,6 +82,17 @@ class CameraInfo:
 
 def is_supported_media(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+
+
+def media_kind(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in VIDEO_EXTENSIONS:
+        return "video"
+    if suffix in IMAGE_EXTENSIONS:
+        return "image"
+    if suffix in ARCHIVE_IMAGE_EXTENSIONS:
+        return "file"
+    return "file"
 
 
 def sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:

@@ -12,7 +12,7 @@ from . import db
 from .config import FaceRecognitionConfig
 from .geo import H3_COLUMNS, h3_area_label
 from .html_export import display_relative_path, format_bytes, month_key_from_path
-from .media import camera_info
+from .media import camera_info, media_kind
 from .media_cache import cached_image_dimensions
 from .openclip import relative_to_target
 from .server_browser_sources import (
@@ -69,7 +69,7 @@ OUT_OF_FOCUS_FILTER_PARAMS = (db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS),)
 
 def is_image_item(item: Any) -> bool:
     target_path = Path(str(item["target_path"]))
-    return target_path.suffix.lower().lstrip(".") not in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}
+    return media_kind(target_path) == "image"
 
 
 def item_view_rotation(item: Any) -> int:
@@ -1000,8 +1000,11 @@ def item_media_html(item: Any) -> str:
     target_path = Path(str(item["target_path"]))
     url = f"/file/{file_id}"
     name = html.escape(str(item["stored_filename"]))
-    if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
+    kind = media_kind(target_path)
+    if kind == "video":
         return f'<video src="{url}" controls></video>'
+    if kind != "image":
+        return f'<a class="file-card" href="{url}" target="_blank">Fil<br>{name}</a>'
     return f'<a href="{url}" target="_blank"><img src="{url}" alt="{name}"{rotation_style_attr(item)}></a>'
 
 
@@ -1651,8 +1654,11 @@ def source_month_item_html(target: Path, source: BrowserSource, item: Any) -> st
 def thumbnail_media_html(target: Path, item: Any) -> str:
     target_path = Path(str(item["target_path"]))
     name = html.escape(str(item["stored_filename"]))
-    if target_path.suffix.lower().lstrip(".") in {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}:
+    kind = media_kind(target_path)
+    if kind == "video":
         return f'<div class="video-thumb">Video<br>{name}</div>'
+    if kind != "image":
+        return f'<div class="video-thumb">Fil<br>{name}</div>'
     relative_path = db.target_relative_path(target, target_path)
     thumbnail_src = "/file/" + existing_thumbnail_url(target, relative_path)
     return f'<img src="{html.escape(thumbnail_src)}" alt="{name}" loading="lazy"{rotation_style_attr(item)}>'

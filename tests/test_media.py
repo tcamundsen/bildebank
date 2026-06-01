@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bildebank.media import camera_info, image_dimensions, image_orientation, media_date
+from bildebank.media import camera_info, image_dimensions, image_orientation, is_supported_media, media_date, media_kind
 
 
 def atom(atom_type: bytes, payload: bytes) -> bytes:
@@ -175,6 +175,16 @@ def minimal_png(width: int, height: int) -> bytes:
 
 
 class MediaDateTests(unittest.TestCase):
+    def test_raw_nef_and_psd_are_supported_archive_images(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("photo.raw", "photo.nef", "edited.psd"):
+                path = root / name
+                path.write_bytes(b"archive-image")
+
+                self.assertTrue(is_supported_media(path))
+                self.assertEqual(media_kind(path), "file")
+
     def test_mp4_creation_date_is_used_as_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "video_without_date_in_name.mp4"

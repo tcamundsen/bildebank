@@ -10,13 +10,9 @@ from time import perf_counter
 from urllib.parse import quote
 
 from . import db
-from .media import image_dimensions
+from .media import image_dimensions, media_kind
 from .media_cache import MediaMetadataCache
 from .thumbnails import existing_thumbnail_url
-
-
-IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "gif", "bmp", "webp", "tif", "tiff", "heic", "heif"}
-VIDEO_EXTENSIONS = {"mp4", "mov", "m4v", "avi", "mpg", "mpeg", "mts", "m2ts", "3gp", "wmv"}
 
 
 @dataclass
@@ -106,8 +102,7 @@ def row_to_item(
     stored_path = Path(str(row["target_path"]))
     relative_path = relative_to_target(target, stored_path)
     path = relative_path.as_posix()
-    ext = relative_path.suffix.lower().lstrip(".")
-    kind = "video" if ext in VIDEO_EXTENSIONS else "image"
+    kind = media_kind(relative_path)
     month_key = month_key_from_path(relative_path)
     file_id = int(row["id"])
     return {
@@ -245,7 +240,6 @@ def conflict_row_to_item(
 ) -> dict[str, object]:
     target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
     relative_path = relative_to_target(target, target_path)
-    ext = target_path.suffix.lower().lstrip(".")
     dimensions = media_cache.image_dimensions(target_path) if media_cache is not None else image_dimensions(target_path)
     return {
         "storedFilename": row["stored_filename"],
@@ -261,7 +255,7 @@ def conflict_row_to_item(
         "sha256": row["sha256"],
         "sourceExists": Path(str(row["source_path"])).exists(),
         "url": path_to_url(relative_path),
-        "kind": "video" if ext in VIDEO_EXTENSIONS else "image",
+        "kind": media_kind(target_path),
     }
 
 
@@ -454,6 +448,13 @@ def render_html(
     .thumb-video {{
       padding: 10px;
       line-height: 1.35;
+      overflow-wrap: anywhere;
+    }}
+    .file-card {{
+      padding: 16px;
+      color: var(--muted);
+      line-height: 1.35;
+      text-align: center;
       overflow-wrap: anywhere;
     }}
     .empty {{
@@ -654,7 +655,7 @@ def render_html(
         video.src = item.url;
         video.controls = true;
         viewer.replaceChildren(video);
-      }} else {{
+      }} else if (item.kind === "image") {{
         const link = document.createElement("a");
         link.className = "media-link";
         link.href = item.url;
@@ -663,6 +664,13 @@ def render_html(
         img.src = item.url;
         img.alt = item.name;
         link.append(img);
+        viewer.replaceChildren(link);
+      }} else {{
+        const link = document.createElement("a");
+        link.className = "media-link file-card";
+        link.href = item.url;
+        link.target = "_blank";
+        link.textContent = `Fil\\n${{item.name}}`;
         viewer.replaceChildren(link);
       }}
       const month = currentMonth();
@@ -697,7 +705,7 @@ def render_html(
         }} else {{
           const label = document.createElement("span");
           label.className = "thumb-video";
-          label.textContent = `Video\\n${{item.name}}`;
+          label.textContent = `${{item.kind === "video" ? "Video" : "Fil"}}\\n${{item.name}}`;
           button.append(label);
         }}
         grid.append(button);
@@ -890,6 +898,17 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
       object-position: center center;
       display: block;
     }}
+    .file-card {{
+      width: 100%;
+      height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+      color: var(--muted);
+      line-height: 1.35;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }}
     .meta {{
       display: grid;
       gap: 7px;
@@ -1002,7 +1021,7 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
         video.src = item.url;
         video.controls = true;
         media.append(video);
-      }} else {{
+      }} else if (item.kind === "image") {{
         const link = document.createElement("a");
         link.className = "media-link";
         link.href = item.url;
@@ -1011,6 +1030,13 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
         img.src = item.url;
         img.alt = item.storedFilename;
         link.append(img);
+        media.append(link);
+      }} else {{
+        const link = document.createElement("a");
+        link.className = "media-link file-card";
+        link.href = item.url;
+        link.target = "_blank";
+        link.textContent = `Fil\\n${{item.storedFilename}}`;
         media.append(link);
       }}
       const meta = document.createElement("div");

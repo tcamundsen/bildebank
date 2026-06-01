@@ -2599,6 +2599,25 @@ model_name = "buffalo_l"
         self.assertNotIn("Roter venstre", body)
         self.assertNotIn("Roter høyre", body)
 
+    def test_run_server_archive_image_page_links_file_without_image_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.nef").write_bytes(b"raw-photo")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            month_body = month_page_html(target, "2024-01", browser_month_items(target, "2024-01"))
+
+        self.assertIn('<a class="file-card" href="/file/1" target="_blank">Fil<br>IMG_20240102.nef</a>', body)
+        self.assertNotIn('<img src="/file/1"', body)
+        self.assertNotIn("Roter venstre", body)
+        self.assertIn("Fil<br>IMG_20240102.nef", month_body)
+
     def test_run_server_date_source_browser_reuses_source_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -3878,6 +3897,29 @@ model_name = "buffalo_l"
                 self.assertNotIn("kind", source_columns)
                 self.assertNotIn("kind", file_source_columns)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources WHERE name IS NULL").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_import_accepts_raw_nef_and_psd_archive_images(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.raw").write_bytes(b"raw")
+            (source / "IMG_20240103.nef").write_bytes(b"nef")
+            (source / "edited_20240104.psd").write_bytes(b"psd")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            self.assertEqual((target / "2024" / "01" / "IMG_20240102.raw").read_bytes(), b"raw")
+            self.assertEqual((target / "2024" / "01" / "IMG_20240103.nef").read_bytes(), b"nef")
+            self.assertEqual((target / "2024" / "01" / "edited_20240104.psd").read_bytes(), b"psd")
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 3)
             finally:
                 conn.close()
 
@@ -7972,6 +8014,7 @@ print(json.dumps([
             source.mkdir()
             (source / "IMG_20240102.jpg").write_bytes(b"image-one")
             (source / "video.mp4").write_bytes(minimal_mp4_with_creation_date(dt.date(2010, 7, 8)))
+            (source / "IMG_20240103.nef").write_bytes(b"raw-photo")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
@@ -7993,6 +8036,9 @@ print(json.dumps([
             html = custom_output.read_text(encoding="utf-8")
             self.assertIn('"path": "2010/07/video.mp4"', html)
             self.assertIn('"path": "2024/01/IMG_20240102.jpg"', html)
+            self.assertIn('"path": "2024/01/IMG_20240103.nef"', html)
+            self.assertIn('"kind": "file"', html)
+            self.assertIn('item.kind === "image"', html)
 
     def test_make_browser_help_omits_filters(self) -> None:
         stdout_buffer = StringIO()

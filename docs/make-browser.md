@@ -13,12 +13,12 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-`make-browser` skriver en statisk HTML-fil med alle aktive bilder og videoer i
-bildesamlingen. Standardfilen heter `index.html` og legges i
+`make-browser` skriver en statisk HTML-fil med alle aktive bilder, videoer og
+andre importerte bildefiler i bildesamlingen. Standardfilen heter `index.html` og legges i
 bildesamlingsmappen.
 
-Browseren kan bla mellom bilder og videoer, hoppe mellom måneder og år, og vise
-en enkel månedsoversikt.
+Browseren kan bla mellom filer, hoppe mellom måneder og år, og vise en enkel
+månedsoversikt. RAW/NEF og PSD vises som fil-lenker, ikke som bildevisning.
 
 Hvis du importerer flere filer senere, må du kjøre `make-browser` på nytt for å
 oppdatere HTML-filen.

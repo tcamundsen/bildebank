@@ -18,8 +18,11 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-`import` registrerer en kilde og importerer bildene derfra til bildesamlingen.
-Kilden kan være en mappe, USB-brikke, CD eller disk.
+`import` registrerer en kilde og importerer støttede bilder og videoer derfra
+til bildesamlingen. Kilden kan være en mappe, USB-brikke, CD eller disk.
+
+Bildebank kan også importere RAW/NEF og PSD-filer. De brukes i duplikatsjekk og
+sortering, men vises ikke som vanlige bilder i nettleseren.
 
 Bildene kopieres inn i bildesamlingen og plasseres etter dato, for eksempel:
 
