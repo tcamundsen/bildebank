@@ -23,6 +23,7 @@ from .server_browser_sources import (
     person_browser_source,
     source_has_sql_filter,
     source_item_url,
+    source_month_url,
     source_sql_filter,
 )
 from .thumbnails import existing_thumbnail_url
@@ -31,6 +32,20 @@ from .thumbnails import existing_thumbnail_url
 ShellPageRenderer = Callable[..., str]
 PageRenderer = Callable[[str, str], str]
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
+MONTH_NAMES = {
+    "01": "Januar",
+    "02": "Februar",
+    "03": "Mars",
+    "04": "April",
+    "05": "Mai",
+    "06": "Juni",
+    "07": "Juli",
+    "08": "August",
+    "09": "September",
+    "10": "Oktober",
+    "11": "November",
+    "12": "Desember",
+}
 FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
     "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_source, "
@@ -799,6 +814,7 @@ def source_item_page_html(
               source.title,
               source=source,
               item=item,
+              title_html=source_item_breadcrumb_html(target, source, item),
               extra_html=people + faces_button,
               controls=controls,
               message_html=duplicate_warning,
@@ -819,6 +835,46 @@ def source_item_page_html(
         {info_overlay}
         """,
     )
+
+
+def source_item_breadcrumb_html(target: Path, source: BrowserSource, item: Any) -> str:
+    month_key = month_key_for_item(target, item)
+    filename = html.escape(str(item["stored_filename"]))
+    file_id = int(item["id"])
+    filename_link = (
+        f'<a href="#" data-open-info data-info-item="{file_id}" '
+        f'aria-label="Åpne bildeinfo for {filename}">{filename}</a>'
+    )
+    if not valid_month_key(month_key):
+        return breadcrumb_html([(source.title, source.root_url)], filename_link)
+    year, month = month_key.split("-", 1)
+    month_name = MONTH_NAMES.get(month, month_key)
+    if source == all_browser_source():
+        crumbs = [
+            ("År", "/years"),
+            (year, f"/years/{urllib.parse.quote(year)}"),
+            (month_name, source_month_url(source, month_key)),
+        ]
+    else:
+        crumbs = [
+            (source.title, source.root_url),
+            (year, f"/years/{urllib.parse.quote(year)}"),
+            (month_name, source_month_url(source, month_key)),
+        ]
+    return breadcrumb_html(crumbs, filename_link)
+
+
+def breadcrumb_html(crumbs: list[tuple[str, str | None]], final_html: str) -> str:
+    parts = [
+        (
+            f'<a href="{html.escape(url)}">{html.escape(label)}</a>'
+            if url is not None
+            else html.escape(label)
+        )
+        for label, url in crumbs
+    ]
+    parts.append(final_html)
+    return '<nav class="breadcrumb" aria-label="Plassering">' + '<span class="sep">/</span>'.join(parts) + "</nav>"
 
 
 def all_browser_item_link_url(target: Path, source: BrowserSource, item: Any, *, hide_out_of_focus: bool = False) -> str | None:

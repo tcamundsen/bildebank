@@ -158,6 +158,10 @@ SERVER_CSS = r"""    :root {
     }
     .topline, .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .title { font-weight: 700; margin-right: 8px; line-height: 1.2; }
+    .breadcrumb { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .breadcrumb a { color: var(--text); text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .breadcrumb .sep { color: var(--muted); font-weight: 400; }
     .status { color: var(--muted); font-size: 13px; line-height: 1.2; }
     .warning { color: #ffd166; font-size: 13px; line-height: 1.2; font-weight: 700; }
     .people { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -638,7 +642,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   const infoOverlay = document.getElementById("infoOverlay");
   const openFacesButton = document.querySelector("[data-open-faces]");
   const closeFacesButton = document.querySelector("[data-close-faces]");
-  const openInfoButton = document.querySelector("[data-open-info]");
+  const openInfoButtons = document.querySelectorAll("[data-open-info]");
   const closeInfoButton = document.querySelector("[data-close-info]");
   const faceList = faceOverlay?.querySelector("[data-face-list]");
   const infoList = infoOverlay?.querySelector("[data-info-list]");
@@ -652,6 +656,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   const searchLoading = document.querySelector("[data-search-loading]");
   let facesLoaded = false;
   let infoLoaded = false;
+  let infoFileId = "";
   document.addEventListener("submit", event => {
     const message = event.submitter?.dataset.confirmSubmit;
     if (message && !confirm(message)) event.preventDefault();
@@ -698,10 +703,12 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     row.append(label, value);
     return row;
   }
-  async function loadInfoOverlay() {
-    if (!infoList || infoLoaded) return;
-    const fileId = openInfoButton?.dataset.infoItem || "";
+  async function loadInfoOverlay(fileId) {
+    if (!infoList) return;
+    if (infoLoaded && infoFileId === fileId) return;
     if (!fileId) return;
+    infoLoaded = false;
+    infoFileId = fileId;
     infoList.replaceChildren(infoStatusRow("Laster..."));
     try {
       const response = await fetch(`/api/item-info?file_id=${encodeURIComponent(fileId)}`);
@@ -713,10 +720,11 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       infoList.replaceChildren(infoStatusRow(error.message || "Kunne ikke laste bildeinfo."));
     }
   }
-  async function openInfoOverlay() {
+  async function openInfoOverlay(opener) {
     if (!infoOverlay) return;
     infoOverlay.hidden = false;
-    await loadInfoOverlay();
+    const fileId = opener?.dataset.infoItem || openInfoButtons[0]?.dataset.infoItem || "";
+    await loadInfoOverlay(fileId);
     closeInfoButton?.focus();
   }
   function closeInfoOverlay() {
@@ -763,7 +771,12 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   }
   openFacesButton?.addEventListener("click", openFacesOverlay);
   closeFacesButton?.addEventListener("click", closeFacesOverlay);
-  openInfoButton?.addEventListener("click", openInfoOverlay);
+  openInfoButtons.forEach(button => {
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      openInfoOverlay(button);
+    });
+  });
   closeInfoButton?.addEventListener("click", closeInfoOverlay);
   searchForm?.addEventListener("submit", () => {
     if (searchForm.dataset.modelLoaded === "true") return;

@@ -162,14 +162,16 @@ def app_topline_html(
     source: BrowserSource | None = None,
     item: Any | None = None,
     extra_html: str = "",
+    title_html: str | None = None,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     all_items_url: str | None = None,
     all_items_label: str = "Alle bilder",
 ) -> str:
+    rendered_title = title_html if title_html is not None else html.escape(title)
     return f"""
     <div class="topline">
-      <div class="title">{html.escape(title)}</div>
+      <div class="title">{rendered_title}</div>
       {extra_html}
       {source_action_links_html(
           source or all_browser_source(),
@@ -189,6 +191,7 @@ def app_header_html(
     source: BrowserSource | None = None,
     item: Any | None = None,
     extra_html: str = "",
+    title_html: str | None = None,
     controls: str = "",
     message_html: str = "",
     face_enabled: bool = True,
@@ -203,6 +206,7 @@ def app_header_html(
           source=source,
           item=item,
           extra_html=extra_html,
+          title_html=title_html,
           face_enabled=face_enabled,
           openclip_enabled=openclip_enabled,
           all_items_url=all_items_url,
