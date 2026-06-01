@@ -1722,6 +1722,8 @@ def empty_source_message(source: BrowserSource) -> str:
             return "Ingen aktive bilder for denne kilden."
         if source.geo_place_slug is not None:
             return "Ingen aktive bilder for dette stedet."
+        if source.text_filter is not None:
+            return "Ingen aktive bilder matcher filtersøket."
         return "Ingen filer i bildesamlingen."
     if source.include_suggestions:
         return "Ingen bekreftede ansikter eller forslag for denne personen ennå."

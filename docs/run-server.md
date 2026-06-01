@@ -34,6 +34,8 @@ statiske HTML-filen laget av `make-browser`.
   `bildebank geo-scan`.
 - Vise importerte kilder og åpne en bildebrowser som bare viser bildene som
   kom fra én bestemt kilde.
+- Bruke `Filtersøk` for å åpne en bildebrowser med bilder som matcher enkle
+  tekstkriterier, for eksempel dato eller lokasjonstype.
 - Holde OpenCLIP-modellen lastet i minnet mens serveren kjører, slik at
   modellen ikke må lastes inn på nytt ved hvert søk.
   Dette gjør at søkene går raskere etter første søk.
@@ -118,6 +120,21 @@ Lenken `Kilder` viser importene Bildebank kjenner til. Fra kildesiden kan du
 åpne en bildebrowser som bare viser aktive bilder fra én bestemt kilde. Dette er
 nyttig når du vil kontrollere bilder fra for eksempel én mobil, USB-brikke eller
 mappe.
+
+Lenken `Filtersøk` lar deg skrive enkle tekstkriterier og bla i treffene som
+en vanlig bildebrowser. Første versjon støtter:
+
+```text
+after:2023-12-01 before:2024-12-12
+location:gps
+location:manual
+after:2023-12-01 location:manual
+```
+
+`after:` og `before:` bruker datoen Bildebank bruker i browseren. Grensene er
+ikke inkludert, så `after:2023-12-01` betyr etter 1. desember 2023.
+`location:gps` viser bilder med GPS-koordinater, mens `location:manual` viser
+bilder der du har satt manuell H3-lokasjon.
 
 Knappen `Slett` flytter bildet til `deleted`-mappen i bildesamlingen og
 markerer filen som slettet i databasen. Dette er samme slettemekanisme

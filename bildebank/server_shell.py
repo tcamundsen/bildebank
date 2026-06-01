@@ -82,6 +82,7 @@ def source_top_links_html(
     all_items_label: str = "Alle bilder",
 ) -> str:
     links = [
+        '<a class="server-search-link" href="/filter">Filtersøk</a>',
         '<a class="server-search-link" href="/geo">Steder</a>',
         '<a class="server-search-link" href="/sources">Kilder</a>',
         '<a class="server-search-link" href="/tags">Tagger</a>',
@@ -91,7 +92,13 @@ def source_top_links_html(
     all_label = html.escape(all_items_label)
     if source == all_browser_source() and item is None:
         links.insert(0, f'<a class="server-search-link" href="/">{all_label}</a>')
-    if source.date_source is not None or source.source_id is not None or source.geo_place_slug is not None or source.tag_name is not None:
+    if (
+        source.date_source is not None
+        or source.source_id is not None
+        or source.geo_place_slug is not None
+        or source.tag_name is not None
+        or source.text_filter is not None
+    ):
         all_url = all_items_url or (source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/")
         links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">{all_label}</a>')
     if source.person_name is not None and face_enabled:

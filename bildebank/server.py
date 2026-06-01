@@ -28,6 +28,7 @@ from .server_pages import (
     empty_person_browser_html,
     empty_source_html,
     error_html,
+    filter_start_html,
     geo_area_page_html,
     geo_index_page_html,
     h3_cells_page_html,
@@ -89,6 +90,7 @@ from .server_search import (
     OpenClipSearchCache,
     search_server_images,
 )
+from .server_filter import text_filter_browser_source, text_filter_url
 from .server_response import ServerResponseMixin
 from . import server_request
 from .server_request import first_param, nonnegative_int_param, parse_file_id, positive_int_param
@@ -233,6 +235,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path.startswith("/date-source/"):
                 self.respond_date_source(parsed.path.removeprefix("/date-source/"))
+                return
+            if parsed.path == "/filter":
+                self.respond_filter(parsed.query)
+                return
+            if parsed.path.startswith("/filter/"):
+                self.respond_filter_source(parsed.path.removeprefix("/filter/"))
                 return
             if parsed.path.startswith("/source/"):
                 self.respond_imported_source(parsed.path.removeprefix("/source/"))
@@ -491,6 +499,36 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             hide_out_of_focus=self.server.hide_out_of_focus,
             item_not_found_message="Filen finnes ikke for denne datokilden.",
             invalid_page_message="Ugyldig datokildeside.",
+        )
+
+    def respond_filter(self, query: str) -> None:
+        params = urllib.parse.parse_qs(query)
+        raw_query = first_param(params, "q").strip()
+        if not raw_query:
+            self.respond_html(filter_start_html(self.server))
+            return
+        try:
+            url = text_filter_url(raw_query)
+        except ValueError as exc:
+            self.respond_html(filter_start_html(self.server, query=raw_query, message=str(exc)))
+            return
+        self.redirect(url)
+
+    def respond_filter_source(self, raw_path: str) -> None:
+        raw_query, page_mode, raw_value = parse_source_path(raw_path)
+        query = urllib.parse.unquote(raw_query).strip()
+        try:
+            source = text_filter_browser_source(query)
+        except ValueError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_browser_source(
+            source,
+            page_mode,
+            raw_value,
+            hide_out_of_focus=self.server.hide_out_of_focus,
+            item_not_found_message="Filen finnes ikke for dette filtersøket.",
+            invalid_page_message="Ugyldig filtersøkside.",
         )
 
     def respond_imported_source(self, raw_path: str) -> None:

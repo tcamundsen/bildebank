@@ -104,6 +104,7 @@ from bildebank.server_browser_sources import (
     person_browser_source,
     tag_browser_source,
 )
+from bildebank.server_filter import parse_text_filter, text_filter_browser_source
 from bildebank.server_faces import cached_person_file_ids, face_overlay_content_html, person_file_ids, person_items
 from bildebank.server_geo import geo_component_pixel_coordinates
 from bildebank.server_search import (
@@ -2960,6 +2961,106 @@ model_name = "buffalo_l"
         self.assertIn('href="/">Alle bilder</a>', empty_source_disabled_body)
         self.assertNotIn('href="/people"', empty_source_disabled_body)
         self.assertNotIn('href="/search"', empty_source_disabled_body)
+
+    def test_run_server_filter_browser_uses_exclusive_dates_and_location_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            for name, content in (
+                ("IMG_20231201.jpg", b"after-boundary"),
+                ("IMG_20240102.jpg", b"gps-match"),
+                ("IMG_20241212.jpg", b"before-boundary"),
+                ("IMG_20250101.jpg", b"manual-date-match"),
+            ):
+                (source / name).write_bytes(content)
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    "UPDATE files SET gps_lat = 59.9, gps_lon = 10.7, gps_source = 'exiftool' WHERE id IN (1, 2, 3)"
+                )
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET manual_date_from = '2024-06-15',
+                        manual_date_to = '2024-06-15',
+                        gps_source = 'manual-h3',
+                        h3_res7 = '872830828ffffff'
+                    WHERE id = 4
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            source_filter = text_filter_browser_source("after:2023-12-01 before:2024-12-12")
+            gps_filter = text_filter_browser_source("location:gps")
+            manual_filter = text_filter_browser_source("after:2023-12-01 before:2024-12-12 location:manual")
+            first_item = source_item_by_id(target, source_filter, 2)
+            manual_item = source_item_by_id(target, manual_filter, 4)
+            self.assertIsNotNone(first_item)
+            self.assertIsNotNone(manual_item)
+            date_month = source_month_items(target, source_filter, "2024-01")
+            date_month_nav = source_month_navigation(target, source_filter, first_item)
+            gps_month = source_month_items(target, gps_filter, "2024-12")
+            manual_month = source_month_items(target, manual_filter, "2024-06")
+            date_body = source_item_page_html(
+                target,
+                source_filter,
+                first_item,
+                *adjacent_source_items(target, source_filter, first_item),
+                date_month_nav,
+            )
+            date_filter_excludes_after_boundary = source_item_by_id(target, source_filter, 1) is None
+            date_filter_excludes_before_boundary = source_item_by_id(target, source_filter, 3) is None
+            empty_body = empty_source_html(text_filter_browser_source("before:1900-01-01"))
+
+        self.assertEqual(source_filter.root_url, "/filter/after%3A2023-12-01%20before%3A2024-12-12")
+        self.assertTrue(date_filter_excludes_after_boundary)
+        self.assertTrue(date_filter_excludes_before_boundary)
+        self.assertEqual([item["id"] for item in date_month], [2])
+        self.assertEqual([item["id"] for item in gps_month], [3])
+        self.assertEqual([item["id"] for item in manual_month], [4])
+        self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
+        self.assertIn("/filter/after%3A2023-12-01%20before%3A2024-12-12/item/4", date_body)
+        self.assertIn('href="/filter">Filtersøk</a>', date_body)
+        self.assertIn("Ingen aktive bilder matcher filtersøket.", empty_body)
+
+    def test_run_server_filter_parser_rejects_invalid_queries(self) -> None:
+        self.assertEqual(parse_text_filter("  after:2023-12-01   location:gps ").query, "after:2023-12-01 location:gps")
+        for query, message in (
+            ("after:2023-02-30", "after må være en dato på formen YYYY-MM-DD."),
+            ("before:", "Filteret mangler verdi: before:"),
+            ("location:geo", "location må være gps eller manual."),
+            ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
+            ("camera:canon", "Ukjent filter: camera"),
+        ):
+            with self.subTest(query=query):
+                with self.assertRaisesRegex(ValueError, message):
+                    parse_text_filter(query)
+
+    def test_run_server_filter_route_redirects_query_to_canonical_browser_source(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        response: dict[str, object] = {}
+        handler.server = SimpleNamespace(face_enabled=True, openclip_enabled=True)  # type: ignore[attr-defined]
+
+        def fake_redirect(location: str) -> None:
+            response["location"] = location
+
+        def fake_respond_html(content: str) -> None:
+            response["html"] = content
+
+        handler.redirect = fake_redirect  # type: ignore[method-assign]
+        handler.respond_html = fake_respond_html  # type: ignore[method-assign]
+
+        BildebankRequestHandler.respond_filter(handler, "q=after%3A2023-12-01+location%3Agps")  # type: ignore[arg-type]
+        self.assertEqual(response["location"], "/filter/after%3A2023-12-01%20location%3Agps")
+
+        BildebankRequestHandler.respond_filter(handler, "q=location%3Ageo")  # type: ignore[arg-type]
+        self.assertIn("location må være gps eller manual.", str(response["html"]))
 
     def test_run_server_source_browser_reuses_source_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

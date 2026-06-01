@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import urllib.parse
 from dataclasses import dataclass
+from typing import Any
 
 from . import db
 from .geo import PredefinedGeoPlace
@@ -21,6 +22,7 @@ class BrowserSource:
     geo_place_slug: str | None = None
     geo_place_cells: tuple[str, ...] = ()
     tag_name: str | None = None
+    text_filter: Any | None = None
 
 
 def person_url(person_name: str, *, show_faces: bool = True) -> str:
@@ -120,11 +122,12 @@ def is_filtered_source(source: BrowserSource) -> bool:
         or source.source_id is not None
         or source.geo_place_slug is not None
         or source.tag_name is not None
+        or source.text_filter is not None
     )
 
 
 def source_has_sql_filter(source: BrowserSource) -> bool:
-    return source.date_source is not None or source.geo_place_slug is not None
+    return source.date_source is not None or source.geo_place_slug is not None or source.text_filter is not None
 
 
 def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
@@ -135,6 +138,10 @@ def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
     if source.geo_place_slug is not None:
         place = PredefinedGeoPlace(source.geo_place_slug, source.title, source.geo_place_cells)
         return db.geo_place_where_clause(geo_place_cells_by_column(place))
+    if source.text_filter is not None:
+        from .server_filter import text_filter_where_clause
+
+        return text_filter_where_clause(source.text_filter)
     raise ValueError("Kilden har ikke SQL-filter.")
 
 

@@ -9,6 +9,7 @@ from . import server_browser
 from .server_browser import adjacent_browser_items, browser_month_navigation, first_browser_item
 from .server_browser_sources import BrowserSource
 from . import server_faces
+from . import server_filter
 from . import server_geo
 from .server_geo import DEFAULT_GEO_LIMIT, DEFAULT_GEO_MIN_COUNT, DEFAULT_GEO_RESOLUTION
 from . import server_markdown
@@ -64,6 +65,16 @@ def search_html(server: Any, stats: ServerSearchStats, limit: int) -> str:
         limit,
         shell_page_html=shell_page_html,
         model_loaded=server.search_cache.loaded,
+        face_enabled=server.face_enabled,
+        openclip_enabled=server.openclip_enabled,
+    )
+
+
+def filter_start_html(server: Any, *, query: str = "", message: str = "") -> str:
+    return server_filter.filter_start_html(
+        shell_page_html=shell_page_html,
+        query=query,
+        message=message,
         face_enabled=server.face_enabled,
         openclip_enabled=server.openclip_enabled,
     )

@@ -39,9 +39,28 @@ ved import eller metadataoppfrisking.
 Her står det **Bildebrowser** når du starter. Det betyr at du ser alle bildene i samlingen.
 
 Den øverste linjen vises også når du går videre til andre sider i lokalserveren,
-for eksempel Personer, Kilder, Steder, Bildesøk, Hjelp og Innstillinger. Bruk
-denne linjen som hovednavigasjon tilbake til de viktigste delene av
-bildebanken.
+for eksempel Personer, Filtersøk, Kilder, Steder, Bildesøk, Hjelp og
+Innstillinger. Bruk denne linjen som hovednavigasjon tilbake til de viktigste
+delene av bildebanken.
+
+## Filtersøk
+
+Filtersøk lar deg skrive enkle tekstkriterier og bla i treffene som en vanlig
+bildebrowser. Dette er nyttig når du skal håndtere spesialtilfeller.
+
+Eksempler:
+
+```text
+after:2023-12-01 before:2024-12-12
+location:gps
+location:manual
+after:2023-12-01 location:manual
+```
+
+`after:` og `before:` bruker datoen Bildebank bruker i browseren. Grensene er
+ikke inkludert, så `before:2024-12-12` betyr før 12. desember 2024.
+`location:gps` viser bilder med GPS-koordinater. `location:manual` viser bilder
+der du har satt manuell H3-lokasjon.
 
 Knappene med navn til venstre for **Bildebrowser** lenker til personbrowseren
 for denne personen. Hvis knappen har en markering som dette, ✅, så har du
