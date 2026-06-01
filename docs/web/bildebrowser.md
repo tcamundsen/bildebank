@@ -58,6 +58,7 @@ date:filename
 date:mtime
 location:gps
 location:manual
+location:slug
 size<300KB
 size>2MB
 after:2023-12-01 location:manual
@@ -69,9 +70,10 @@ ikke inkludert, så `before:2024-12-12` betyr før 12. desember 2024.
 `date:metadata`, `date:filename` og `date:mtime` viser bilder der datoen kommer
 fra henholdsvis metadata, filnavn eller filens endringstid.
 `location:gps` viser bilder med GPS-koordinater. `location:manual` viser bilder
-der du har satt manuell H3-lokasjon. `size<300KB` viser filer mindre enn 300
-KB, og `size>2MB` viser filer større enn 2 MB. Størrelsene regnes med 1024
-bytes per KB.
+der du har satt manuell H3-lokasjon. `location:slug` viser bilder for et sted
+fra `Steder`, der `slug` er den samme teksten som brukes i adressen
+`/geo/place/slug`. `size<300KB` viser filer mindre enn 300 KB, og `size>2MB`
+viser filer større enn 2 MB. Størrelsene regnes med 1024 bytes per KB.
 
 Knappene med navn til venstre for **Bildebrowser** lenker til personbrowseren
 for denne personen. Hvis knappen har en markering som dette, ✅, så har du

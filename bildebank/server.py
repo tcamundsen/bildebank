@@ -90,7 +90,7 @@ from .server_search import (
     OpenClipSearchCache,
     search_server_images,
 )
-from .server_filter import text_filter_browser_source, text_filter_url
+from .server_filter import text_filter_browser_source
 from .server_response import ServerResponseMixin
 from . import server_request
 from .server_request import first_param, nonnegative_int_param, parse_file_id, positive_int_param
@@ -508,7 +508,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_html(filter_start_html(self.server))
             return
         try:
-            url = text_filter_url(raw_query)
+            url = text_filter_browser_source(raw_query, self.server.target).root_url
         except ValueError as exc:
             self.respond_html(filter_start_html(self.server, query=raw_query, message=str(exc)))
             return
@@ -518,7 +518,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         raw_query, page_mode, raw_value = parse_source_path(raw_path)
         query = urllib.parse.unquote(raw_query).strip()
         try:
-            source = text_filter_browser_source(query)
+            source = text_filter_browser_source(query, self.server.target)
         except ValueError as exc:
             self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
             return

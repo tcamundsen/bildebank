@@ -2982,6 +2982,9 @@ model_name = "buffalo_l"
                 conn.execute(
                     "UPDATE files SET gps_lat = 59.9, gps_lon = 10.7, gps_source = 'exiftool' WHERE id IN (1, 2, 3)"
                 )
+                oslo_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+                conn.execute("UPDATE files SET h3_res7 = ? WHERE id = 2", (oslo_cell,))
+                db.set_custom_geo_place(conn, slug="oslo-test", name="Oslo test", h3_cells=[oslo_cell])
                 conn.execute(
                     """
                     UPDATE files
@@ -3028,6 +3031,7 @@ model_name = "buffalo_l"
             metadata_date_filter = text_filter_browser_source("date:metadata")
             filename_date_filter = text_filter_browser_source("date:filename")
             mtime_date_filter = text_filter_browser_source("date:mtime")
+            place_filter = text_filter_browser_source("location:oslo-test", target)
             first_item = source_item_by_id(target, source_filter, 2)
             manual_item = source_item_by_id(target, manual_filter, 4)
             self.assertIsNotNone(first_item)
@@ -3043,6 +3047,7 @@ model_name = "buffalo_l"
             metadata_date_month = source_month_items(target, metadata_date_filter, "2024-01")
             filename_date_month = source_month_items(target, filename_date_filter, "2023-12")
             mtime_date_month = source_month_items(target, mtime_date_filter, "2024-12")
+            place_month = source_month_items(target, place_filter, "2024-01")
             date_body = source_item_page_html(
                 target,
                 source_filter,
@@ -3067,6 +3072,7 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in metadata_date_month], [2])
         self.assertEqual([item["id"] for item in filename_date_month], [1])
         self.assertEqual([item["id"] for item in mtime_date_month], [3])
+        self.assertEqual([item["id"] for item in place_month], [2])
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
         self.assertIn("/filter/after%3A2023-12-01%20before%3A2024-12-12/item/4", date_body)
         self.assertIn('href="/filter">Filtersøk</a>', date_body)
@@ -3081,7 +3087,6 @@ model_name = "buffalo_l"
         for query, message in (
             ("after:2023-02-30", "after må være en dato på formen YYYY-MM-DD."),
             ("before:", "Filteret mangler verdi: before:"),
-            ("location:geo", "location må være gps eller manual."),
             ("date:gps", "date må være manual, metadata, filename eller mtime."),
             ("date:manual date:metadata", "date kan bare brukes én gang."),
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
@@ -3094,24 +3099,27 @@ model_name = "buffalo_l"
                     parse_text_filter(query)
 
     def test_run_server_filter_route_redirects_query_to_canonical_browser_source(self) -> None:
-        handler = object.__new__(BildebankRequestHandler)
-        response: dict[str, object] = {}
-        handler.server = SimpleNamespace(face_enabled=True, openclip_enabled=True)  # type: ignore[attr-defined]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            handler = object.__new__(BildebankRequestHandler)
+            response: dict[str, object] = {}
+            handler.server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)  # type: ignore[attr-defined]
 
-        def fake_redirect(location: str) -> None:
-            response["location"] = location
+            def fake_redirect(location: str) -> None:
+                response["location"] = location
 
-        def fake_respond_html(content: str) -> None:
-            response["html"] = content
+            def fake_respond_html(content: str) -> None:
+                response["html"] = content
 
-        handler.redirect = fake_redirect  # type: ignore[method-assign]
-        handler.respond_html = fake_respond_html  # type: ignore[method-assign]
+            handler.redirect = fake_redirect  # type: ignore[method-assign]
+            handler.respond_html = fake_respond_html  # type: ignore[method-assign]
 
-        BildebankRequestHandler.respond_filter(handler, "q=after%3A2023-12-01+location%3Agps+size%3E2MB")  # type: ignore[arg-type]
-        self.assertEqual(response["location"], "/filter/after%3A2023-12-01%20location%3Agps%20size%3E2MB")
+            BildebankRequestHandler.respond_filter(handler, "q=after%3A2023-12-01+location%3Agps+size%3E2MB")  # type: ignore[arg-type]
+            self.assertEqual(response["location"], "/filter/after%3A2023-12-01%20location%3Agps%20size%3E2MB")
 
-        BildebankRequestHandler.respond_filter(handler, "q=location%3Ageo")  # type: ignore[arg-type]
-        self.assertIn("location må være gps eller manual.", str(response["html"]))
+            BildebankRequestHandler.respond_filter(handler, "q=location%3Aukjent-sted")  # type: ignore[arg-type]
+            self.assertIn("Ukjent sted: ukjent-sted", str(response["html"]))
 
     def test_run_server_source_browser_reuses_source_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
