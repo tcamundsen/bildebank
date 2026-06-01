@@ -1518,7 +1518,7 @@ def source_month_page_html(
           {app_header_html(
               source.title,
               source=source,
-              extra_html=f'<span class="status">Månedsoversikt: {html.escape(month_key)}</span>',
+              title_html=source_month_breadcrumb_html(source, month_key),
               controls=controls,
               face_enabled=face_enabled,
               openclip_enabled=openclip_enabled,
@@ -1610,6 +1610,25 @@ def person_month_page_html(
         items,
         page_html=page_html,
     )
+
+
+def source_month_breadcrumb_html(source: BrowserSource, month_key: str) -> str:
+    if not valid_month_key(month_key):
+        return html.escape(source.title)
+    year, month = month_key.split("-", 1)
+    month_name = MONTH_NAMES.get(month, month_key)
+    if source == all_browser_source():
+        crumbs = [
+            ("År", "/years"),
+            (year, source_year_url(source, year)),
+        ]
+    else:
+        source_label = source.person_name if source.person_name is not None else source.title
+        crumbs = [
+            (source_label, source.root_url),
+            (year, source_year_url(source, year)),
+        ]
+    return breadcrumb_html(crumbs, html.escape(month_name))
 
 
 def source_month_item_html(target: Path, source: BrowserSource, item: Any) -> str:
