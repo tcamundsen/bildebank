@@ -44,6 +44,8 @@ from .server_pages import (
     source_month_page_html,
     sources_page_html,
     tags_page_html,
+    year_months_page_html,
+    years_page_html,
 )
 from .server_browser import (
     adjacent_source_items,
@@ -55,6 +57,7 @@ from .server_browser import (
     source_month_items,
     source_month_navigation,
     valid_month_key,
+    valid_year_key,
 )
 from .server_browser_sources import (
     BrowserSource,
@@ -220,6 +223,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path.startswith("/month/"):
                 self.respond_month(parsed.path.removeprefix("/month/"))
+                return
+            if parsed.path in {"/years", "/years/"}:
+                self.respond_years()
+                return
+            if parsed.path.startswith("/years/"):
+                self.respond_year(parsed.path.removeprefix("/years/"))
                 return
             if parsed.path.startswith("/date-source/"):
                 self.respond_date_source(parsed.path.removeprefix("/date-source/"))
@@ -414,6 +423,31 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 face_enabled=self.server.face_enabled,
                 openclip_enabled=self.server.openclip_enabled,
                 face_config=self.server.config.face_recognition,
+            )
+        )
+
+    def respond_years(self) -> None:
+        self.respond_html(
+            years_page_html(
+                self.server.target,
+                face_enabled=self.server.face_enabled,
+                openclip_enabled=self.server.openclip_enabled,
+                hide_out_of_focus=self.server.hide_out_of_focus,
+            )
+        )
+
+    def respond_year(self, raw_year: str) -> None:
+        year = urllib.parse.unquote(raw_year).strip().strip("/")
+        if not valid_year_key(year):
+            self.respond_text("Ugyldig år.", status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_html(
+            year_months_page_html(
+                self.server.target,
+                year,
+                face_enabled=self.server.face_enabled,
+                openclip_enabled=self.server.openclip_enabled,
+                hide_out_of_focus=self.server.hide_out_of_focus,
             )
         )
 

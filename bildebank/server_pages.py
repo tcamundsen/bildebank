@@ -352,6 +352,40 @@ def source_month_page_html(
     )
 
 
+def years_page_html(
+    target: Path,
+    *,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+    hide_out_of_focus: bool = False,
+) -> str:
+    return server_browser.years_page_html(
+        target,
+        shell_page_html=shell_page_html,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+        hide_out_of_focus=hide_out_of_focus,
+    )
+
+
+def year_months_page_html(
+    target: Path,
+    year: str,
+    *,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+    hide_out_of_focus: bool = False,
+) -> str:
+    return server_browser.year_months_page_html(
+        target,
+        year,
+        shell_page_html=shell_page_html,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+        hide_out_of_focus=hide_out_of_focus,
+    )
+
+
 def empty_person_browser_html(person: str | BrowserSource, *, openclip_enabled: bool = True) -> str:
     return server_browser.empty_person_browser_html(
         person,

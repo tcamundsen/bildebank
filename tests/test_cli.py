@@ -71,6 +71,8 @@ from bildebank.server_pages import (
     source_month_page_html,
     sources_page_html,
     tags_page_html,
+    year_months_page_html,
+    years_page_html,
 )
 from bildebank.server_browser import (
     adjacent_browser_items,
@@ -79,6 +81,8 @@ from bildebank.server_browser import (
     browser_item_by_id,
     browser_month_items,
     browser_month_navigation,
+    browser_year_cards,
+    browser_year_month_cards,
     date_source_text,
     image_info_content_html,
     person_item_by_id,
@@ -88,6 +92,7 @@ from bildebank.server_browser import (
     source_month_items,
     source_month_navigation,
     source_summary_rows,
+    valid_year_key,
 )
 from bildebank.server_browser_sources import (
     all_browser_source,
@@ -1706,6 +1711,76 @@ model_name = "buffalo_l"
         self.assertIn('data-key-nav="next-year"', body)
         self.assertIn('data-key-nav="previous-month"', body)
         self.assertIn('data-key-nav="next-month"', body)
+
+    def test_run_server_years_pages_link_to_years_and_months(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            for name, content in (
+                ("IMG_20050401.jpg", b"image-2005-04"),
+                ("IMG_20050501.jpg", b"image-2005-05"),
+                ("IMG_20060401.jpg", b"image-2006-04"),
+                ("IMG_20070401.jpg", b"image-2007-04"),
+            ):
+                (source / name).write_bytes(content)
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE target_path LIKE ?", ("%2006/04/%",))
+                out_of_focus_file = conn.execute(
+                    "SELECT id FROM files WHERE target_path LIKE ?",
+                    ("%2007/04/%",),
+                ).fetchone()
+                self.assertIsNotNone(out_of_focus_file)
+                db.tag_file(
+                    conn,
+                    file_id=int(out_of_focus_file["id"]),
+                    tag_name=db.SYSTEM_TAG_OUT_OF_FOCUS,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            years_body = years_page_html(target)
+            year_body = year_months_page_html(target, "2005")
+            filtered_years_body = years_page_html(target, hide_out_of_focus=True)
+            filtered_year_body = year_months_page_html(target, "2007", hide_out_of_focus=True)
+            year_cards = browser_year_cards(target, hide_out_of_focus=True)
+            month_cards = browser_year_month_cards(target, "2005")
+
+        self.assertIn('href="/years/2005"', years_body)
+        self.assertIn(">2005</div>", years_body)
+        self.assertIn(">2 måneder</div>", years_body)
+        self.assertNotIn('href="/years/2006"', years_body)
+        self.assertIn('href="/years/2007"', years_body)
+        self.assertIn('src="/file/2005/04/IMG_20050401.jpg"', years_body)
+        self.assertIn('href="/month/2005-04"', year_body)
+        self.assertIn('href="/month/2005-05"', year_body)
+        self.assertIn(">2005-04</div>", year_body)
+        self.assertIn(">1 bilde</div>", year_body)
+        self.assertNotIn('href="/years/2007"', filtered_years_body)
+        self.assertNotIn('href="/month/2007-04"', filtered_year_body)
+        self.assertEqual([card["year"] for card in year_cards], ["2005"])
+        self.assertEqual([card["month_key"] for card in month_cards], ["2005-04", "2005-05"])
+
+    def test_run_server_year_route_rejects_invalid_year(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        response: dict[str, object] = {}
+
+        def fake_respond_text(content: str, *, status: HTTPStatus) -> None:
+            response["content"] = content
+            response["status"] = status
+
+        handler.respond_text = fake_respond_text  # type: ignore[method-assign]
+
+        self.assertFalse(valid_year_key("2005-04"))
+        BildebankRequestHandler.respond_year(handler, "2005-04")  # type: ignore[arg-type]
+
+        self.assertEqual(response["content"], "Ugyldig år.")
+        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
 
     def test_run_server_month_items_use_taken_date_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

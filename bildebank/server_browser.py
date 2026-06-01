@@ -426,6 +426,42 @@ def browser_month_keys(target: Path, *, hide_out_of_focus: bool = False) -> list
     return source_month_keys(target, all_browser_source(), hide_out_of_focus=hide_out_of_focus)
 
 
+def valid_year_key(value: str) -> bool:
+    return len(value) == 4 and value.isdigit()
+
+
+def browser_year_cards(target: Path, *, hide_out_of_focus: bool = False) -> list[dict[str, Any]]:
+    month_keys = browser_month_keys(target, hide_out_of_focus=hide_out_of_focus)
+    years = sorted({key[:4] for key in month_keys})
+    cards: list[dict[str, Any]] = []
+    for year in years:
+        year_months = [key for key in month_keys if key.startswith(year)]
+        if not year_months:
+            continue
+        first_items = browser_month_items(target, year_months[0], hide_out_of_focus=hide_out_of_focus)
+        if not first_items:
+            continue
+        cards.append({"year": year, "month_count": len(year_months), "item": first_items[0]})
+    return cards
+
+
+def browser_year_month_cards(target: Path, year: str, *, hide_out_of_focus: bool = False) -> list[dict[str, Any]]:
+    if not valid_year_key(year):
+        return []
+    month_keys = [
+        key
+        for key in browser_month_keys(target, hide_out_of_focus=hide_out_of_focus)
+        if key.startswith(year)
+    ]
+    cards: list[dict[str, Any]] = []
+    for month_key in month_keys:
+        items = browser_month_items(target, month_key, hide_out_of_focus=hide_out_of_focus)
+        if not items:
+            continue
+        cards.append({"month_key": month_key, "item_count": len(items), "item": items[0]})
+    return cards
+
+
 def source_month_keys(
     target: Path,
     source: BrowserSource,
@@ -1230,6 +1266,90 @@ def month_page_html(
     page_html: PageRenderer,
 ) -> str:
     return source_month_page_html(target, all_browser_source(), month_key, items, page_html=page_html)
+
+
+def years_page_html(
+    target: Path,
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+    hide_out_of_focus: bool = False,
+) -> str:
+    cards = "\n".join(
+        year_card_html(target, card)
+        for card in browser_year_cards(target, hide_out_of_focus=hide_out_of_focus)
+    )
+    content = cards if cards else '<p class="meta">Ingen filer i bildesamlingen.</p>'
+    return shell_page_html(
+        "År",
+        f"""
+        <h1>År</h1>
+        <section class="month-grid-server">{content}</section>
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def year_months_page_html(
+    target: Path,
+    year: str,
+    *,
+    shell_page_html: ShellPageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+    hide_out_of_focus: bool = False,
+) -> str:
+    cards = "\n".join(
+        year_month_card_html(target, card)
+        for card in browser_year_month_cards(target, year, hide_out_of_focus=hide_out_of_focus)
+    )
+    content = cards if cards else '<p class="meta">Ingen bilder dette året.</p>'
+    escaped_year = html.escape(year)
+    return shell_page_html(
+        escaped_year,
+        f"""
+        <h1>{escaped_year}</h1>
+        <section class="month-grid-server">{content}</section>
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+
+
+def year_card_html(target: Path, card: dict[str, Any]) -> str:
+    year = str(card["year"])
+    month_count = int(card["month_count"])
+    item = card["item"]
+    month_label = "måned" if month_count == 1 else "måneder"
+    media = thumbnail_media_html(target, item)
+    return f"""
+    <article class="item">
+      <a class="thumb-link" href="/years/{html.escape(urllib.parse.quote(year))}">{media}</a>
+      <div class="text">
+        <div class="path">{html.escape(year)}</div>
+        <div class="score">{month_count} {month_label}</div>
+      </div>
+    </article>
+    """
+
+
+def year_month_card_html(target: Path, card: dict[str, Any]) -> str:
+    month_key = str(card["month_key"])
+    item_count = int(card["item_count"])
+    item = card["item"]
+    image_label = "bilde" if item_count == 1 else "bilder"
+    media = thumbnail_media_html(target, item)
+    return f"""
+    <article class="item">
+      <a class="thumb-link" href="/month/{html.escape(urllib.parse.quote(month_key))}">{media}</a>
+      <div class="text">
+        <div class="path">{html.escape(month_key)}</div>
+        <div class="score">{item_count} {image_label}</div>
+      </div>
+    </article>
+    """
 
 
 def source_month_page_html(
