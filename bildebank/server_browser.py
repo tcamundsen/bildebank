@@ -1407,6 +1407,7 @@ def year_months_page_html(
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        title_html=breadcrumb_html([("År", "/years")], escaped_year),
     )
 
 
@@ -1442,7 +1443,7 @@ def source_year_months_page_html(
           {app_header_html(
               source.title,
               source=source,
-              extra_html=f'<span class="status">Årsoversikt: {escaped_year}</span>',
+              title_html=source_year_breadcrumb_html(source, year),
               face_enabled=face_enabled,
               openclip_enabled=openclip_enabled,
           )}
@@ -1453,6 +1454,13 @@ def source_year_months_page_html(
         </main>
         """,
     )
+
+
+def source_year_breadcrumb_html(source: BrowserSource, year: str) -> str:
+    if not valid_year_key(year):
+        return html.escape(source.title)
+    source_label = source.person_name if source.person_name is not None else source.title
+    return breadcrumb_html([(source_label, source.root_url)], html.escape(year))
 
 
 def year_card_html(target: Path, card: dict[str, Any]) -> str:

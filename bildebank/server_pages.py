@@ -267,6 +267,7 @@ def shell_page_html(
     item: Any | None = None,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    title_html: str | None = None,
 ) -> str:
     return server_shell.shell_page_html(
         title,
@@ -277,6 +278,7 @@ def shell_page_html(
         item=item,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        title_html=title_html,
     )
 
 

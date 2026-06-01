@@ -35,6 +35,14 @@ class GeoMapCell:
     y: float
 
 
+def geo_breadcrumb_html(current_label: str) -> str:
+    return (
+        '<nav class="breadcrumb" aria-label="Plassering">'
+        '<a href="/geo">Steder</a><span class="sep">/</span>'
+        f"{html.escape(current_label)}</nav>"
+    )
+
+
 def geo_map_layout(rows: list[Any]) -> list[GeoMapCell]:
     import h3
 
@@ -488,6 +496,7 @@ def custom_geo_places_page_html(
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        title_html=geo_breadcrumb_html("Egendefinerte steder"),
     )
 
 
@@ -524,6 +533,7 @@ def geo_map_page_html(
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        title_html=geo_breadcrumb_html("Heksagonkart"),
     )
 
 
@@ -552,6 +562,7 @@ def geo_stats_page_html(
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        title_html=geo_breadcrumb_html("Geo-statistikk"),
     )
 
 
@@ -616,6 +627,7 @@ def geo_area_page_html(
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        title_html=geo_breadcrumb_html(title if place_name else h3_cell),
     )
 
 
@@ -663,6 +675,7 @@ def geo_missing_page_html(
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+        title_html=geo_breadcrumb_html("Bilder uten GPS"),
     )
 
 

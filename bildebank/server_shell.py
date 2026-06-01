@@ -27,6 +27,7 @@ def shell_page_html(
     openclip_enabled: bool = True,
     all_items_url: str | None = None,
     all_items_label: str = "Alle bilder",
+    title_html: str | None = None,
 ) -> str:
     return page_html(
         title,
@@ -35,6 +36,7 @@ def shell_page_html(
             title,
             source=source,
             item=item,
+            title_html=title_html,
             face_enabled=face_enabled,
             openclip_enabled=openclip_enabled,
             all_items_url=all_items_url,
