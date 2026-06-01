@@ -35,6 +35,9 @@ def parse_source_path(raw_path: str) -> tuple[str, str | None, str]:
     if "/item/" in source_part:
         source_part, raw_value = source_part.split("/item/", 1)
         page_mode = "item"
+    elif "/year/" in source_part:
+        source_part, raw_value = source_part.split("/year/", 1)
+        page_mode = "year"
     elif "/month/" in source_part:
         source_part, raw_value = source_part.split("/month/", 1)
         page_mode = "month"
@@ -146,3 +149,10 @@ def source_month_url(source: BrowserSource, month_key: str) -> str:
     if is_filtered_source(source):
         return f"{source.root_url}/month/{quoted}"
     return f"/month/{quoted}"
+
+
+def source_year_url(source: BrowserSource, year: str) -> str:
+    quoted = urllib.parse.quote(year)
+    if is_filtered_source(source):
+        return f"{source.root_url}/year/{quoted}"
+    return f"/years/{quoted}"

@@ -25,6 +25,7 @@ from .server_browser_sources import (
     source_item_url,
     source_month_url,
     source_sql_filter,
+    source_year_url,
 )
 from .thumbnails import existing_thumbnail_url
 
@@ -477,6 +478,36 @@ def browser_year_month_cards(target: Path, year: str, *, hide_out_of_focus: bool
     return cards
 
 
+def source_year_month_cards(
+    target: Path,
+    source: BrowserSource,
+    year: str,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+) -> list[dict[str, Any]]:
+    if not valid_year_key(year):
+        return []
+    month_keys = [
+        key
+        for key in source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
+        if key.startswith(year)
+    ]
+    cards: list[dict[str, Any]] = []
+    for month_key in month_keys:
+        items = source_month_items(
+            target,
+            source,
+            month_key,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+        )
+        if not items:
+            continue
+        cards.append({"month_key": month_key, "item_count": len(items), "item": representative_image_item(items)})
+    return cards
+
+
 def representative_image_item(items: list[Any]) -> Any:
     return next((item for item in items if is_image_item(item)), items[0])
 
@@ -852,14 +883,14 @@ def source_item_breadcrumb_html(target: Path, source: BrowserSource, item: Any) 
     if source == all_browser_source():
         crumbs = [
             ("År", "/years"),
-            (year, f"/years/{urllib.parse.quote(year)}"),
+            (year, source_year_url(source, year)),
             (month_name, source_month_url(source, month_key)),
         ]
     else:
         source_label = source.person_name if source.person_name is not None else source.title
         crumbs = [
             (source_label, source.root_url),
-            (year, f"/years/{urllib.parse.quote(year)}"),
+            (year, source_year_url(source, year)),
             (month_name, source_month_url(source, month_key)),
         ]
     return breadcrumb_html(crumbs, filename_link)
@@ -1363,7 +1394,7 @@ def year_months_page_html(
     hide_out_of_focus: bool = False,
 ) -> str:
     cards = "\n".join(
-        year_month_card_html(target, card)
+        year_month_card_html(target, all_browser_source(), card)
         for card in browser_year_month_cards(target, year, hide_out_of_focus=hide_out_of_focus)
     )
     content = cards if cards else '<p class="meta">Ingen bilder dette året.</p>'
@@ -1376,6 +1407,51 @@ def year_months_page_html(
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
+    )
+
+
+def source_year_months_page_html(
+    target: Path,
+    source: BrowserSource,
+    year: str,
+    *,
+    page_html: PageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
+    hide_out_of_focus: bool = False,
+) -> str:
+    from .server_shell import app_header_html
+
+    cards = "\n".join(
+        year_month_card_html(target, source, card)
+        for card in source_year_month_cards(
+            target,
+            source,
+            year,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+        )
+    )
+    content = cards if cards else '<p class="meta">Ingen bilder dette året.</p>'
+    escaped_year = html.escape(year)
+    return page_html(
+        f"{source.title}: {escaped_year}",
+        f"""
+        <main class="server-browser">
+          {app_header_html(
+              source.title,
+              source=source,
+              extra_html=f'<span class="status">Årsoversikt: {escaped_year}</span>',
+              face_enabled=face_enabled,
+              openclip_enabled=openclip_enabled,
+          )}
+          <section class="month-grid-server">{content}</section>
+          <footer class="browser-footer">
+            <span class="filename">Årsoversikt: {escaped_year}</span>
+          </footer>
+        </main>
+        """,
     )
 
 
@@ -1396,7 +1472,7 @@ def year_card_html(target: Path, card: dict[str, Any]) -> str:
     """
 
 
-def year_month_card_html(target: Path, card: dict[str, Any]) -> str:
+def year_month_card_html(target: Path, source: BrowserSource, card: dict[str, Any]) -> str:
     month_key = str(card["month_key"])
     item_count = int(card["item_count"])
     item = card["item"]
@@ -1404,7 +1480,7 @@ def year_month_card_html(target: Path, card: dict[str, Any]) -> str:
     media = thumbnail_media_html(target, item)
     return f"""
     <article class="item">
-      <a class="thumb-link" href="/month/{html.escape(urllib.parse.quote(month_key))}">{media}</a>
+      <a class="thumb-link" href="{html.escape(source_month_url(source, month_key))}">{media}</a>
       <div class="text">
         <div class="path">{html.escape(month_key)}</div>
         <div class="score">{item_count} {image_label}</div>

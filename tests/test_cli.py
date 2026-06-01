@@ -69,6 +69,7 @@ from bildebank.server_pages import (
     search_start_html,
     source_item_page_html,
     source_month_page_html,
+    source_year_months_page_html,
     sources_page_html,
     tags_page_html,
     year_months_page_html,
@@ -98,6 +99,7 @@ from bildebank.server_browser_sources import (
     all_browser_source,
     date_source_browser_source,
     imported_source_browser_source,
+    parse_source_path,
     person_browser_source,
     tag_browser_source,
 )
@@ -1791,6 +1793,7 @@ model_name = "buffalo_l"
 
         self.assertEqual(response["content"], "Ugyldig år.")
         self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
+        self.assertEqual(parse_source_path("bjerkvik/year/2017"), ("bjerkvik", "year", "2017"))
 
     def test_run_server_month_items_use_taken_date_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2686,6 +2689,7 @@ model_name = "buffalo_l"
                 *source_adjacent,
                 source_month_nav,
             )
+            year_body = source_year_months_page_html(target, source_browser, "2024")
             month_body = source_month_page_html(target, source_browser, "2024-01", source_month)
             sources_body = sources_page_html(target)
             summaries = source_summary_rows(target)
@@ -2695,8 +2699,11 @@ model_name = "buffalo_l"
         self.assertEqual(len(summaries), 2)
         self.assertIn("Kilde: source-a", item_body)
         self.assertIn('href="/item/1">Alle bilder</a>', item_body)
+        self.assertIn('href="/source/1/year/2024">2024</a>', item_body)
         self.assertIn('href="/sources">Kilder</a>', item_body)
         self.assertNotIn("IMG_20240203", item_body)
+        self.assertIn('href="/source/1/month/2024-01"', year_body)
+        self.assertNotIn('href="/source/1/month/2024-02"', year_body)
         self.assertIn('href="/source/1/item/1"', month_body)
         self.assertIn("<h1>Kilder</h1>", sources_body)
         self.assertIn('href="/source/1">Vis bilder (1)</a>', sources_body)
@@ -2762,6 +2769,7 @@ model_name = "buffalo_l"
 
         self.assertIn("Tagg: familie", item_body)
         self.assertIn('href="/item/1">Alle bilder</a>', item_body)
+        self.assertIn('href="/tag/familie/year/2024">2024</a>', item_body)
         self.assertIn('href="/tag/familie/item/1"', month_body)
         self.assertEqual(len(tag_month), 1)
         self.assertIn("<h1>Tagger</h1>", tags_body)
@@ -3615,6 +3623,7 @@ model_name = "buffalo_l"
         self.assertNotIn("IMG_20250104", body)
         self.assertIn("Kari - uten ansiktsmarkering", plain_body)
         self.assertIn('href="/person/Kari/no-faces">Kari</a>', plain_body)
+        self.assertIn('href="/person/Kari/no-faces/year/2024">2024</a>', plain_body)
         self.assertNotIn('Kari - uten ansiktsmarkering</a><span class="sep">/</span>', plain_body)
         self.assertIn('href="/item/1">Alle bilder</a>', plain_body)
         self.assertIn('href="/person/Kari/item/1"', plain_body)

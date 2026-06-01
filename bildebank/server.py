@@ -42,6 +42,7 @@ from .server_pages import (
     search_html,
     source_item_page_html,
     source_month_page_html,
+    source_year_months_page_html,
     sources_page_html,
     tags_page_html,
     year_months_page_html,
@@ -695,6 +696,23 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     face_enabled=self.server.face_enabled,
                     openclip_enabled=self.server.openclip_enabled,
                     face_config=self.server.config.face_recognition,
+                )
+            )
+            return
+        if page_mode == "year":
+            year = urllib.parse.unquote(raw_value).strip()
+            if not valid_year_key(year):
+                self.respond_text("Ugyldig år.", status=HTTPStatus.BAD_REQUEST)
+                return
+            self.respond_html(
+                source_year_months_page_html(
+                    self.server.target,
+                    source,
+                    year,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                    face_config=self.server.config.face_recognition,
+                    hide_out_of_focus=hide_out_of_focus,
                 )
             )
             return
