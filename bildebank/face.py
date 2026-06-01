@@ -1543,6 +1543,7 @@ def scan_faces(
     limit: int | None = None,
     progress: FaceScanProgress | None = None,
     show_model_output: bool = False,
+    force: bool = False,
 ) -> FaceScanStats:
     stats = FaceScanStats()
     main_conn = db.connect(target)
@@ -1559,7 +1560,7 @@ def scan_faces(
             file_id = int(row["id"])
             sha256 = str(row["sha256"])
             target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-            if is_file_scanned(face_conn, file_id, sha256):
+            if not force and is_file_scanned(face_conn, file_id, sha256):
                 stats.skipped += 1
                 if progress is not None:
                     progress("check", stats.checked, stats.total, stats, target_path)
@@ -1673,7 +1674,7 @@ def replace_file_faces(
     faces: list[Any],
     embedding_model: str,
 ) -> None:
-    conn.execute("DELETE FROM faces WHERE file_id = ?", (file_id,))
+    delete_file_face_data(conn, file_id)
     for face in faces:
         x1, y1, x2, y2 = face_bbox(face)
         conn.execute(
@@ -1723,7 +1724,7 @@ def mark_file_scan_error(
     sha256: str,
     message: str,
 ) -> None:
-    conn.execute("DELETE FROM faces WHERE file_id = ?", (file_id,))
+    delete_file_face_data(conn, file_id)
     conn.execute(
         """
         INSERT INTO scanned_files(
@@ -1740,6 +1741,19 @@ def mark_file_scan_error(
         """,
         (file_id, db.target_relative_path(target_root, target_path).as_posix(), target_path_key, sha256, message[:1000]),
     )
+
+
+def delete_file_face_data(conn: sqlite3.Connection, file_id: int) -> None:
+    face_ids = [
+        int(row["id"])
+        for row in conn.execute("SELECT id FROM faces WHERE file_id = ?", (file_id,))
+    ]
+    if not face_ids:
+        return
+    placeholders = ", ".join("?" for _ in face_ids)
+    conn.execute(f"DELETE FROM face_suggestions WHERE face_id IN ({placeholders})", face_ids)
+    conn.execute(f"DELETE FROM person_faces WHERE face_id IN ({placeholders})", face_ids)
+    conn.execute("DELETE FROM faces WHERE file_id = ?", (file_id,))
 
 
 def load_face_app(config: FaceRecognitionConfig):

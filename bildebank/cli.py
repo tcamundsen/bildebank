@@ -660,6 +660,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     face_scan.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
     face_scan.add_argument(
+        "--force",
+        action="store_true",
+        help="Scan valgte bilder på nytt selv om de allerede er scannet",
+    )
+    face_scan.add_argument(
         "--show-model-output",
         action="store_true",
         help="Vis intern output fra InsightFace/ONNX ved feilsøking",
@@ -1022,7 +1027,12 @@ def run(args: argparse.Namespace) -> int:
         require_face_enabled(load_config(program_repo_root()).face_recognition.enabled)
 
     if args.command == "face-scan":
-        return run_face_scan(target, limit=args.limit, show_model_output=args.show_model_output)
+        return run_face_scan(
+            target,
+            limit=args.limit,
+            force=args.force,
+            show_model_output=args.show_model_output,
+        )
 
     if args.command == "face-report":
         return run_face_report(target, limit=args.limit)
@@ -2026,7 +2036,13 @@ def print_image_search_progress(
         return
 
 
-def run_face_scan(target: Path, *, limit: int | None, show_model_output: bool = False) -> int:
+def run_face_scan(
+    target: Path,
+    *,
+    limit: int | None,
+    force: bool = False,
+    show_model_output: bool = False,
+) -> int:
     config = load_config(program_repo_root()).face_recognition
     require_face_enabled(config.enabled)
     stats = scan_faces(
@@ -2035,6 +2051,7 @@ def run_face_scan(target: Path, *, limit: int | None, show_model_output: bool = 
         limit=limit,
         progress=print_face_scan_progress,
         show_model_output=show_model_output,
+        force=force,
     )
     print(
         "Oppsummering: "

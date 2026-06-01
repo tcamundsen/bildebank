@@ -6447,6 +6447,81 @@ print(json.dumps([
             self.assertIn("bad.jpg", stdout)
             self.assertIn("Kunne ikke lese testbildet", stdout)
 
+    def test_face_scan_force_rescans_limited_existing_files(self) -> None:
+        class FakeFace:
+            det_score = 0.9
+            embedding = [0.1, 0.2, 0.3]
+
+            def __init__(self, bbox):
+                self.bbox = bbox
+
+        class FakeApp:
+            def __init__(self, face):
+                self.face = face
+
+            def get(self, image):
+                return [self.face]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.enable_face_recognition_config()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+
+            with (
+                patch("bildebank.face.load_face_app", return_value=FakeApp(FakeFace([1.0, 2.0, 11.0, 22.0]))),
+                patch("bildebank.face.read_image", return_value=object()),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("scannet=1", stdout)
+
+            face_db = face_db_path(target, load_config(self.program_root).face_recognition)
+            conn = sqlite3.connect(face_db)
+            conn.row_factory = sqlite3.Row
+            try:
+                old_face_id = int(conn.execute("SELECT id FROM faces").fetchone()["id"])
+                person_id = int(
+                    conn.execute("INSERT INTO persons(name) VALUES('Kari') RETURNING id").fetchone()["id"]
+                )
+                conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(?, ?)", (person_id, old_face_id))
+                conn.execute(
+                    "INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(?, ?, 0.8)",
+                    (person_id, old_face_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch("bildebank.face.load_face_app", return_value=FakeApp(FakeFace([3.0, 4.0, 13.0, 24.0]))),
+                patch("bildebank.face.read_image", return_value=object()),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--force", "--limit", "1"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("hoppet_over=0", stdout)
+            self.assertIn("scannet=1", stdout)
+
+            conn = sqlite3.connect(face_db)
+            try:
+                face = conn.execute("SELECT id, bbox_x, bbox_y, bbox_width, bbox_height FROM faces").fetchone()
+                self.assertNotEqual(face[0], old_face_id)
+                self.assertEqual(face[1:], (3.0, 4.0, 10.0, 20.0))
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 0)
+            finally:
+                conn.close()
+
     def test_face_report_prints_relative_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
