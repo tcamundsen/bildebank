@@ -509,7 +509,8 @@ SERVER_CSS = r"""    :root {
     }
     .modal-panel h2 { margin: 0; font-size: 20px; }
     .modal-panel label { color: var(--muted); font-size: 13px; }
-    .modal-panel input[type="text"] {
+    .modal-panel input[type="text"],
+    .modal-panel input[type="date"] {
       width: 100%;
       box-sizing: border-box;
       min-height: 36px;
@@ -520,6 +521,21 @@ SERVER_CSS = r"""    :root {
       color: var(--text);
       font: inherit;
     }
+    .manual-date-panel { align-self: start; justify-self: center; margin-top: 36px; }
+    .manual-date-modes {
+      display: grid;
+      gap: 6px;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+    .manual-date-modes label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+    }
+    .manual-date-modes input { width: auto; }
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
     .info-list { display: grid; gap: 0; margin: 0; }
     .info-row {
@@ -674,6 +690,12 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   const closeInfoButton = document.querySelector("[data-close-info]");
   const faceList = faceOverlay?.querySelector("[data-face-list]");
   const infoList = infoOverlay?.querySelector("[data-info-list]");
+  const manualDateOverlay = document.getElementById("manualDateOverlay");
+  const manualDateForm = document.querySelector("[data-manual-date-form]");
+  const manualDateStatus = document.querySelector("[data-manual-date-status]");
+  const closeManualDateButtons = document.querySelectorAll("[data-close-manual-date]");
+  const clearManualDateButton = document.querySelector("[data-clear-manual-date]");
+  const manualDateFields = document.querySelectorAll("[data-manual-date-field]");
   const personRenameDialog = document.getElementById("personRenameDialog");
   const personRenameForm = document.querySelector("[data-person-rename-form]");
   const personRenameStatus = document.querySelector("[data-person-rename-status]");
@@ -685,6 +707,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   let facesLoaded = false;
   let infoLoaded = false;
   let infoFileId = "";
+  let manualDateFileId = "";
   document.addEventListener("submit", event => {
     const message = event.submitter?.dataset.confirmSubmit;
     if (message && !confirm(message)) event.preventDefault();
@@ -759,6 +782,57 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     if (!infoOverlay) return;
     infoOverlay.hidden = true;
   }
+  function manualDateInput(name) {
+    return manualDateForm?.querySelector(`[name="${name}"]`);
+  }
+  function selectedManualDateMode() {
+    return manualDateInput("mode")?.checked ? manualDateInput("mode").value : manualDateForm?.querySelector('[name="mode"]:checked')?.value || "exact";
+  }
+  function setManualDateMode(mode) {
+    manualDateForm?.querySelectorAll('[name="mode"]').forEach(input => {
+      input.checked = input.value === mode;
+    });
+    updateManualDateFields();
+  }
+  function updateManualDateFields() {
+    const mode = selectedManualDateMode();
+    manualDateFields.forEach(label => {
+      const field = label.dataset.manualDateField || "";
+      const visible = ((mode === "exact" || mode === "uncertain") && field === "date") || (mode === "uncertain" && field === "uncertainty") || (mode === "between" && (field === "date_from" || field === "date_to"));
+      label.hidden = !visible;
+      label.querySelectorAll("input").forEach(input => {
+        input.disabled = !visible;
+      });
+    });
+  }
+  function midpointIsoDate(dateFrom, dateTo) {
+    if (!dateFrom || !dateTo) return "";
+    const start = new Date(`${dateFrom}T00:00:00Z`);
+    const end = new Date(`${dateTo}T00:00:00Z`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return dateFrom;
+    return new Date(start.getTime() + Math.floor((end.getTime() - start.getTime()) / 2)).toISOString().slice(0, 10);
+  }
+  function openManualDateOverlay(button) {
+    if (!manualDateOverlay || !manualDateForm) return;
+    manualDateFileId = button.dataset.manualDateItem || "";
+    const manualFrom = button.dataset.manualDateFrom || "";
+    const manualTo = button.dataset.manualDateTo || "";
+    const manualNote = button.dataset.manualDateNote || "";
+    manualDateForm.reset();
+    manualDateInput("date").value = midpointIsoDate(manualFrom, manualTo);
+    manualDateInput("date_from").value = manualFrom;
+    manualDateInput("date_to").value = manualTo;
+    manualDateInput("note").value = manualNote;
+    setManualDateMode(manualFrom && manualTo && manualFrom !== manualTo ? "between" : "exact");
+    if (manualDateStatus) manualDateStatus.textContent = "";
+    if (clearManualDateButton) clearManualDateButton.hidden = !(manualFrom && manualTo);
+    manualDateOverlay.hidden = false;
+    manualDateInput("date")?.focus();
+  }
+  function closeManualDateOverlay() {
+    if (!manualDateOverlay) return;
+    manualDateOverlay.hidden = true;
+  }
   function openPersonRenameDialog(name) {
     if (!personRenameDialog || !personRenameForm || !personRenameNameInput || !personRenameOldNameInput) return;
     personRenameOldNameInput.value = name || "";
@@ -806,6 +880,63 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     });
   });
   closeInfoButton?.addEventListener("click", closeInfoOverlay);
+  closeManualDateButtons.forEach(button => {
+    button.addEventListener("click", closeManualDateOverlay);
+  });
+  document.querySelectorAll("[data-open-manual-date]").forEach(button => {
+    button.addEventListener("click", () => openManualDateOverlay(button));
+  });
+  manualDateForm?.querySelectorAll('[name="mode"]').forEach(input => {
+    input.addEventListener("change", updateManualDateFields);
+  });
+  manualDateForm?.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!manualDateFileId) return;
+    if (manualDateStatus) manualDateStatus.textContent = "Lagrer...";
+    manualDateForm.querySelectorAll("button, input").forEach(item => item.disabled = true);
+    try {
+      const response = await fetch("/api/item-manual-date", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          file_id: Number(manualDateFileId),
+          mode: selectedManualDateMode(),
+          date: manualDateInput("date")?.value || "",
+          uncertainty: manualDateInput("uncertainty")?.value || "",
+          date_from: manualDateInput("date_from")?.value || "",
+          date_to: manualDateInput("date_to")?.value || "",
+          note: manualDateInput("note")?.value || "",
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke lagre dato.");
+      window.location.reload();
+    } catch (error) {
+      if (manualDateStatus) manualDateStatus.textContent = error.message || "Kunne ikke lagre dato.";
+      manualDateForm.querySelectorAll("button, input").forEach(item => item.disabled = false);
+      updateManualDateFields();
+    }
+  });
+  clearManualDateButton?.addEventListener("click", async () => {
+    if (!manualDateFileId) return;
+    if (!confirm("Fjerne manuell dato fra bildet?")) return;
+    if (manualDateStatus) manualDateStatus.textContent = "Fjerner...";
+    manualDateForm?.querySelectorAll("button, input").forEach(item => item.disabled = true);
+    try {
+      const response = await fetch("/api/item-manual-date-clear", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({file_id: Number(manualDateFileId)}),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke fjerne dato.");
+      window.location.reload();
+    } catch (error) {
+      if (manualDateStatus) manualDateStatus.textContent = error.message || "Kunne ikke fjerne dato.";
+      manualDateForm?.querySelectorAll("button, input").forEach(item => item.disabled = false);
+      updateManualDateFields();
+    }
+  });
   searchForm?.addEventListener("submit", () => {
     if (searchForm.dataset.modelLoaded === "true") return;
     if (searchLoading) searchLoading.hidden = false;

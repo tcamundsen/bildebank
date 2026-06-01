@@ -347,6 +347,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/api/item-manual-location-remove":
                 self.respond_remove_manual_location_item()
                 return
+            if parsed.path == "/api/item-manual-date":
+                self.respond_manual_date_item()
+                return
+            if parsed.path == "/api/item-manual-date-clear":
+                self.respond_clear_manual_date_item()
+                return
             if parsed.path == "/api/item-delete":
                 self.respond_delete_item()
                 return
@@ -1107,6 +1113,50 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         self.respond_json({"ok": True, "file_id": file_id, "gps_source": None})
+
+    def respond_manual_date_item(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        try:
+            file_id = int(payload.get("file_id"))
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            date_from, date_to = server_actions.set_manual_date_on_file(
+                self.server.target,
+                file_id,
+                mode=str(payload.get("mode") or ""),
+                date=str(payload.get("date") or ""),
+                uncertainty=str(payload.get("uncertainty") or ""),
+                date_from=str(payload.get("date_from") or ""),
+                date_to=str(payload.get("date_to") or ""),
+                note=str(payload.get("note") or ""),
+            )
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_json(
+            {
+                "ok": True,
+                "file_id": file_id,
+                "manual_date_from": date_from.isoformat(),
+                "manual_date_to": date_to.isoformat(),
+            }
+        )
+
+    def respond_clear_manual_date_item(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        try:
+            file_id = int(payload.get("file_id"))
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            server_actions.clear_manual_date_on_file(self.server.target, file_id)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        self.respond_json({"ok": True, "file_id": file_id})
 
     def respond_delete_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)

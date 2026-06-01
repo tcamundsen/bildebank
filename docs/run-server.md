@@ -29,6 +29,7 @@ statiske HTML-filen laget av `make-browser`.
 - Slette bilder. (Foreløpig bare flytte til `deleted/`)
 - Rotere bilder som har feil orientering. Informasjon om rotasjon lagres i
   databasen, og bildet roteres i nettleseren. Originale bildefiler endres ikke.
+- Sette eller fjerne manuell dato for bilder, uten å endre originalfilen.
 - Vise bilder gruppert etter sted når GPS-data er scannet med
   `bildebank geo-scan`.
 - Vise importerte kilder og åpne en bildebrowser som bare viser bildene som
@@ -95,6 +96,11 @@ Overlayet kan lukkes med `Lukk` eller Esc.
 På bildesider kan du bruke `Roter venstre` og `Roter høyre` for å rotere
 visningen av bildet. Bildebank lagrer bare rotasjonen i databasen. Selve
 bildefilen i samlingen endres ikke.
+
+Knappen `Sett dato` eller `Endre dato` lar deg sette manuell dato for bildet.
+Du kan velge eksakt dato, usikker dato eller et datointervall, og legge inn et
+notat. Bildebank lagrer dette i databasen og bruker datoen i bildebrowserens
+sortering og månedsvisning. Bildefilen flyttes ikke og endres ikke.
 
 Lenken `Steder` viser lokale geo-sider basert på GPS-data som allerede er
 lagret i databasen. Kjør først:

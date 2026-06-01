@@ -835,6 +835,7 @@ def source_item_page_html(
         previous_item,
         next_item,
         rotation_buttons=rotation_buttons_html(source, item),
+        manual_date_button=manual_date_button_html(item),
         manual_location_button=(
             manual_location_button_html(target, item, manual_h3_cell)
             + remove_manual_location_button_html(item)
@@ -848,6 +849,7 @@ def source_item_page_html(
     faces_button = faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
     faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
     info_overlay = image_info_overlay_html()
+    manual_date_overlay = manual_date_overlay_html()
     out_of_focus_redirect_url = hidden_after_out_of_focus_tag_redirect_url(
         source,
         previous_item,
@@ -889,6 +891,7 @@ def source_item_page_html(
         </main>
         {faces_overlay}
         {info_overlay}
+        {manual_date_overlay}
         """,
     )
 
@@ -1083,6 +1086,30 @@ def rotation_buttons_html(source: BrowserSource, item: Any) -> str:
     """
 
 
+def manual_date_button_html(item: Any) -> str:
+    file_id = int(item["id"])
+    manual_from = item_string_value(item, "manual_date_from")
+    manual_to = item_string_value(item, "manual_date_to")
+    manual_note = item_string_value(item, "manual_date_note")
+    label = "Endre dato" if manual_date_text(item) else "Sett dato"
+    return (
+        f'<button class="nav-button" type="button" '
+        f'data-open-manual-date '
+        f'data-manual-date-item="{file_id}" '
+        f'data-manual-date-from="{html.escape(manual_from)}" '
+        f'data-manual-date-to="{html.escape(manual_to)}" '
+        f'data-manual-date-note="{html.escape(manual_note)}">'
+        f'{label}</button>'
+    )
+
+
+def item_string_value(item: Any, key: str) -> str:
+    try:
+        return str(item[key] or "")
+    except (KeyError, IndexError):
+        return ""
+
+
 def manual_location_button_html(target: Path, item: Any, h3_cell: str) -> str:
     clean_h3_cell = h3_cell.strip()
     if not clean_h3_cell or item_has_gps_location(item):
@@ -1149,6 +1176,46 @@ def image_info_overlay_html() -> str:
         <h2>Bildeinfo</h2>
         <dl class="info-list" data-info-list></dl>
       </div>
+    </div>
+    """
+
+
+def manual_date_overlay_html() -> str:
+    return """
+    <div id="manualDateOverlay" class="info-overlay" hidden>
+      <div class="lightbox-bar">
+        <div class="lightbox-title">Manuell dato</div>
+        <button class="lightbox-close" type="button" data-close-manual-date>Lukk</button>
+      </div>
+      <form class="modal-panel manual-date-panel" data-manual-date-form>
+        <h2>Manuell dato</h2>
+        <fieldset class="manual-date-modes">
+          <label><input type="radio" name="mode" value="exact" checked> Eksakt dato</label>
+          <label><input type="radio" name="mode" value="uncertain"> Usikker dato</label>
+          <label><input type="radio" name="mode" value="between"> Intervall</label>
+        </fieldset>
+        <label data-manual-date-field="date">Dato
+          <input type="date" name="date">
+        </label>
+        <label data-manual-date-field="uncertainty">Usikkerhet (d=dag, w=uke, m=måned, y=år)
+          <input type="text" name="uncertainty" placeholder="1m">
+        </label>
+        <label data-manual-date-field="date_from">Fra-dato
+          <input type="date" name="date_from">
+        </label>
+        <label data-manual-date-field="date_to">Til-dato
+          <input type="date" name="date_to">
+        </label>
+        <label>Notat
+          <input type="text" name="note">
+        </label>
+        <p class="assign-status" data-manual-date-status></p>
+        <div class="modal-actions">
+          <button class="danger-button" type="button" data-clear-manual-date hidden>Fjern manuell dato</button>
+          <button type="button" data-close-manual-date>Avbryt</button>
+          <button type="submit">Lagre</button>
+        </div>
+      </form>
     </div>
     """
 

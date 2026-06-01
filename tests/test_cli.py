@@ -1904,6 +1904,190 @@ model_name = "buffalo_l"
             self.assertEqual(browser_month_items(target, "2004-07"), [])
             self.assertEqual([item["stored_filename"] for item in browser_month_items(target, "2026-01")], ["IMG_20260102.jpg"])
 
+    def test_run_server_item_page_has_manual_date_controls(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20260102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+
+        self.assertIn("Sett dato", body)
+        self.assertIn('data-open-manual-date', body)
+        self.assertIn('data-manual-date-item="1"', body)
+        self.assertIn('id="manualDateOverlay"', body)
+        self.assertIn('value="uncertain"', body)
+        self.assertIn('value="between"', body)
+        self.assertIn("/api/item-manual-date", SERVER_JS)
+        self.assertIn("/api/item-manual-date-clear", SERVER_JS)
+
+    def test_run_server_manual_date_endpoint_sets_and_clears_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20260102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            data = json.dumps(
+                {
+                    "file_id": 1,
+                    "mode": "uncertain",
+                    "date": "2004-07-15",
+                    "uncertainty": "1m",
+                    "note": "Kamera hadde feil dato",
+                }
+            ).encode("utf-8")
+            response: dict[str, object] = {}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_manual_date_item(handler)  # type: ignore[arg-type]
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            info_body = image_info_content_html(target, item)
+            original_month_after_set = [item["stored_filename"] for item in browser_month_items(target, "2026-01")]
+            manual_month_after_set = [item["stored_filename"] for item in browser_month_items(target, "2004-07")]
+
+            clear_data = json.dumps({"file_id": 1}).encode("utf-8")
+            clear_response: dict[str, object] = {}
+
+            class ClearHandler:
+                headers = {
+                    "Content-Length": str(len(clear_data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(clear_data)
+                server = SimpleNamespace(target=target)
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    clear_response["content"] = content
+                    clear_response["status"] = status
+
+            clear_handler = ClearHandler()
+            BildebankRequestHandler.respond_clear_manual_date_item(clear_handler)  # type: ignore[arg-type]
+            manual_month_after_clear = [item["stored_filename"] for item in browser_month_items(target, "2004-07")]
+            original_month_after_clear = [item["stored_filename"] for item in browser_month_items(target, "2026-01")]
+
+        self.assertEqual(response["status"], HTTPStatus.OK)
+        self.assertEqual(response["content"], {"ok": True, "file_id": 1, "manual_date_from": "2004-06-15", "manual_date_to": "2004-08-15"})
+        self.assertEqual(original_month_after_set, [])
+        self.assertEqual(manual_month_after_set, ["IMG_20260102.jpg"])
+        self.assertIn("Endre dato", body)
+        self.assertIn('data-manual-date-from="2004-06-15"', body)
+        self.assertIn('data-manual-date-to="2004-08-15"', body)
+        self.assertIn('data-manual-date-note="Kamera hadde feil dato"', body)
+        self.assertIn("ca. 2004-07-15", info_body)
+        self.assertIn("Kamera hadde feil dato", info_body)
+        self.assertEqual(clear_response["status"], HTTPStatus.OK)
+        self.assertEqual(clear_response["content"], {"ok": True, "file_id": 1})
+        self.assertEqual(manual_month_after_clear, [])
+        self.assertEqual(original_month_after_clear, ["IMG_20260102.jpg"])
+
+    def test_run_server_manual_date_endpoint_rejects_invalid_input_without_changing_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20260102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            data = json.dumps(
+                {
+                    "file_id": 1,
+                    "mode": "between",
+                    "date_from": "2004-08-31",
+                    "date_to": "2004-06-01",
+                    "note": "Skal ikke lagres",
+                }
+            ).encode("utf-8")
+            response: dict[str, object] = {}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_manual_date_item(handler)  # type: ignore[arg-type]
+            conn = db.connect(target)
+            try:
+                row = conn.execute("SELECT manual_date_from, manual_date_to, manual_date_note FROM files WHERE id = 1").fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
+        self.assertIn("Fra-dato kan ikke være etter til-dato", str(response["content"]))
+        self.assertIsNone(row["manual_date_from"])
+        self.assertIsNone(row["manual_date_to"])
+        self.assertIsNone(row["manual_date_note"])
+
+    def test_run_server_manual_date_endpoint_rejects_deleted_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20260102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 1")
+                conn.commit()
+            finally:
+                conn.close()
+            data = json.dumps({"file_id": 1, "mode": "exact", "date": "2004-07-15"}).encode("utf-8")
+            response: dict[str, object] = {}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_manual_date_item(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
+        self.assertIn("Filen er markert som slettet", str(response["content"]))
+
     def test_manual_between_date_uses_midpoint_in_static_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -24,6 +24,16 @@ Hvis du har slått på manuel H3-lokalisering, så er tasten `g` hurtigtast for 
 RAW/NEF og PSD kan ligge i samlingen, men nettleseren viser dem som fil-lenker
 i stedet for vanlig bildevisning.
 
+## Manuell dato
+
+På en bildeside kan du bruke `Sett dato` eller `Endre dato` for å korrigere
+datoen Bildebank bruker i browseren. Du kan sette eksakt dato, usikker dato
+eller et intervall, og du kan legge inn et notat om hvorfor datoen er satt.
+
+Dette endrer bare Bildebank-databasen. Originalfilen flyttes ikke og endres
+ikke. Hvis du fjerner manuell dato, bruker Bildebank igjen datoen som ble funnet
+ved import eller metadataoppfrisking.
+
 ## Venstre øverste hjørne
 
 Her står det **Bildebrowser** når du starter. Det betyr at du ser alle bildene i samlingen.
