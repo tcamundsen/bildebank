@@ -1718,6 +1718,8 @@ model_name = "buffalo_l"
             source = Path(tmp) / "source"
             source.mkdir()
             for name, content in (
+                ("IMG_20050301.mp4", b"video-2005-03"),
+                ("IMG_20050302.jpg", b"image-2005-03"),
                 ("IMG_20050401.jpg", b"image-2005-04"),
                 ("IMG_20050501.jpg", b"image-2005-05"),
                 ("IMG_20060401.jpg", b"image-2006-04"),
@@ -1753,18 +1755,21 @@ model_name = "buffalo_l"
 
         self.assertIn('href="/years/2005"', years_body)
         self.assertIn(">2005</div>", years_body)
-        self.assertIn(">2 måneder</div>", years_body)
+        self.assertIn(">3 måneder</div>", years_body)
         self.assertNotIn('href="/years/2006"', years_body)
         self.assertIn('href="/years/2007"', years_body)
-        self.assertIn('src="/file/2005/04/IMG_20050401.jpg"', years_body)
+        self.assertIn('src="/file/2005/03/IMG_20050302.jpg"', years_body)
+        self.assertNotIn("Video<br>IMG_20050301.mp4", years_body)
+        self.assertIn('href="/month/2005-03"', year_body)
         self.assertIn('href="/month/2005-04"', year_body)
         self.assertIn('href="/month/2005-05"', year_body)
+        self.assertIn('src="/file/2005/03/IMG_20050302.jpg"', year_body)
         self.assertIn(">2005-04</div>", year_body)
         self.assertIn(">1 bilde</div>", year_body)
         self.assertNotIn('href="/years/2007"', filtered_years_body)
         self.assertNotIn('href="/month/2007-04"', filtered_year_body)
         self.assertEqual([card["year"] for card in year_cards], ["2005"])
-        self.assertEqual([card["month_key"] for card in month_cards], ["2005-04", "2005-05"])
+        self.assertEqual([card["month_key"] for card in month_cards], ["2005-03", "2005-04", "2005-05"])
 
     def test_run_server_year_route_rejects_invalid_year(self) -> None:
         handler = object.__new__(BildebankRequestHandler)

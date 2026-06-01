@@ -441,7 +441,7 @@ def browser_year_cards(target: Path, *, hide_out_of_focus: bool = False) -> list
         first_items = browser_month_items(target, year_months[0], hide_out_of_focus=hide_out_of_focus)
         if not first_items:
             continue
-        cards.append({"year": year, "month_count": len(year_months), "item": first_items[0]})
+        cards.append({"year": year, "month_count": len(year_months), "item": representative_image_item(first_items)})
     return cards
 
 
@@ -458,8 +458,12 @@ def browser_year_month_cards(target: Path, year: str, *, hide_out_of_focus: bool
         items = browser_month_items(target, month_key, hide_out_of_focus=hide_out_of_focus)
         if not items:
             continue
-        cards.append({"month_key": month_key, "item_count": len(items), "item": items[0]})
+        cards.append({"month_key": month_key, "item_count": len(items), "item": representative_image_item(items)})
     return cards
+
+
+def representative_image_item(items: list[Any]) -> Any:
+    return next((item for item in items if is_image_item(item)), items[0])
 
 
 def source_month_keys(
