@@ -874,6 +874,7 @@ def source_item_breadcrumb_html(target: Path, source: BrowserSource, item: Any) 
     file_id = int(item["id"])
     filename_link = (
         f'<a href="#" data-open-info data-info-item="{file_id}" '
+        f'title="Vis detaljer om bildet" '
         f'aria-label="Åpne bildeinfo for {filename}">{filename}</a>'
     )
     if not valid_month_key(month_key):
