@@ -67,7 +67,7 @@ Scriptet kjører:
 
 `face` extra inneholder:
 
-- `insightface==0.7.3`
+- `insightface==1.0.1`
 - `numpy`
 - `onnxruntime`
 

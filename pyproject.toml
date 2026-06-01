@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 face = [
-    "insightface==0.7.3",
+    "insightface==1.0.1",
     "onnxruntime",
 ]
 openclip = [
