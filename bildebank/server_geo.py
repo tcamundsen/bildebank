@@ -361,6 +361,40 @@ def h3geo_cell_link_html(h3_cell: str) -> str:
     return f'<a href="{html.escape(url)}" target="_blank" rel="noopener">H3Geo</a>'
 
 
+def h3_cell_google_maps_link_html(h3_cell: str, *, resolution: int) -> str:
+    try:
+        url = h3_cell_google_maps_url(h3_cell, resolution=resolution)
+    except Exception:  # noqa: BLE001 - area page should still render if H3 cannot parse the cell
+        return ""
+    label = f"Åpne i Google Maps (sentrum av H3-{resolution})"
+    return f'<a href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
+
+
+def h3_cell_google_maps_url(h3_cell: str, *, resolution: int) -> str:
+    import h3
+
+    latitude, longitude = h3.cell_to_latlng(h3_cell)
+    zoom = h3_google_maps_zoom(resolution)
+    return f"https://www.google.com/maps/@{latitude:.7f},{longitude:.7f},{zoom}z"
+
+
+def h3_google_maps_zoom(resolution: int) -> int:
+    return {
+        0: 2,
+        1: 3,
+        2: 4,
+        3: 5,
+        4: 6,
+        5: 8,
+        6: 9,
+        7: 11,
+        8: 12,
+        9: 14,
+        10: 15,
+        11: 16,
+    }.get(resolution, 11)
+
+
 def custom_geo_places_admin_html(places: list[PredefinedGeoPlace]) -> str:
     existing = "\n".join(custom_geo_place_edit_html(place) for place in places)
     existing_section = (
@@ -577,7 +611,7 @@ def geo_area_page_html(
     openclip_enabled: bool = True,
     hide_out_of_focus: bool = False,
 ) -> str:
-    from .server_browser import google_maps_link_html, source_month_item_html
+    from .server_browser import source_month_item_html
     from .server_browser_sources import all_browser_source
 
     conn = db.connect(target)
@@ -593,7 +627,7 @@ def geo_area_page_html(
     child_areas = geo_child_area_items(target, h3_cell=h3_cell, resolution=resolution)
     cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
     content = cards if cards else '<p class="meta">Ingen aktive bilder i dette området.</p>'
-    maps_link = google_maps_link_html(items[0]) if items else ""
+    maps_link = h3_cell_google_maps_link_html(h3_cell, resolution=resolution)
     map_links = " ".join(link for link in (maps_link, h3geo_cell_link_html(h3_cell)) if link)
     maps_paragraph = f'<p class="meta">{map_links}</p>' if map_links else ""
     parent_link = geo_parent_area_link_html(target, h3_cell, resolution)
