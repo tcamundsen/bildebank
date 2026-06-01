@@ -807,8 +807,6 @@ def source_item_page_html(
         month_nav,
         previous_item,
         next_item,
-        include_info_button=True,
-        info_button=image_info_button_html(int(item["id"])),
         rotation_buttons=rotation_buttons_html(source, item),
         manual_location_button=(
             manual_location_button_html(target, item, manual_h3_cell)
@@ -1091,11 +1089,6 @@ def delete_button_html(source: BrowserSource, item: Any, previous_item: Any | No
         f'data-delete-path="{html.escape(relative)}" '
         f'data-delete-redirect="{html.escape(redirect_url)}">Slett</button>'
     )
-
-
-def image_info_button_html(file_id: int | None) -> str:
-    file_attr = f' data-info-item="{file_id}"' if file_id is not None else ""
-    return f'<button class="nav-button" type="button" data-open-info{file_attr}>Bildeinfo</button>'
 
 
 def image_info_overlay_html() -> str:

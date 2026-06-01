@@ -1917,9 +1917,9 @@ model_name = "buffalo_l"
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
             info_body = image_info_content_html(target, item)
 
-        self.assertLess(body.index("Neste bilde"), body.index("Bildeinfo"))
         self.assertIn('data-open-info', body)
         self.assertIn('data-info-item="1"', body)
+        self.assertNotIn("<button class=\"nav-button\" type=\"button\" data-open-info", body)
         self.assertIn('href="/years">År</a>', body)
         self.assertIn('href="/years/2024">2024</a>', body)
         self.assertIn('href="/month/2024-01">Januar</a>', body)
