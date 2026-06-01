@@ -86,6 +86,7 @@ from bildebank.server_browser import (
     browser_year_month_cards,
     date_source_text,
     image_info_content_html,
+    month_key_for_item,
     person_item_by_id,
     person_month_items,
     person_month_navigation,
@@ -1847,6 +1848,91 @@ model_name = "buffalo_l"
         self.assertIsNotNone(next_item)
         self.assertEqual(previous_item["stored_filename"], "z.jpg")
         self.assertEqual(next_item["stored_filename"], "m.jpg")
+
+    def test_manual_date_changes_browser_month_without_moving_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20260102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            imported = target / "2026" / "01" / "IMG_20260102.jpg"
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "date-set",
+                    str(imported),
+                    "--date",
+                    "2004-07-15",
+                    "--uncertainty",
+                    "1m",
+                    "--note",
+                    "Kamera hadde feil dato",
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertTrue(imported.exists())
+            self.assertIn("Manuell dato satt: ca. 2004-07-15", stdout)
+            self.assertEqual(browser_month_items(target, "2026-01"), [])
+            manual_items = browser_month_items(target, "2004-07")
+            self.assertEqual([item["stored_filename"] for item in manual_items], ["IMG_20260102.jpg"])
+            self.assertEqual(month_key_for_item(target, manual_items[0]), "2004-07")
+            body = item_page_html(
+                target,
+                manual_items[0],
+                *adjacent_browser_items(target, manual_items[0]),
+                browser_month_navigation(target, manual_items[0]),
+            )
+            info_body = image_info_content_html(target, manual_items[0])
+            self.assertIn("ca. 2004-07-15", info_body)
+            self.assertIn("Kamera hadde feil dato", info_body)
+            self.assertIn("Opprinnelig dato", info_body)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "date-clear", str(imported)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(browser_month_items(target, "2004-07"), [])
+            self.assertEqual([item["stored_filename"] for item in browser_month_items(target, "2026-01")], ["IMG_20260102.jpg"])
+
+    def test_manual_between_date_uses_midpoint_in_static_browser(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20260102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            imported = target / "2026" / "01" / "IMG_20260102.jpg"
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "date-set",
+                    str(imported),
+                    "--between",
+                    "2004-06-01",
+                    "2004-08-31",
+                ]
+            )
+            self.assertEqual(code, 0, stderr)
+
+            output = root / "index.html"
+            self.assertEqual(run_cli(["--target", str(target), "make-browser", "--output", str(output)]), 0)
+            html = output.read_text(encoding="utf-8")
+
+        self.assertIn('"monthKey": "2004-07"', html)
+        self.assertIn('"browserDate": "2004-07-16"', html)
+        self.assertIn('"manualDateFrom": "2004-06-01"', html)
+        self.assertIn('"manualDateTo": "2004-08-31"', html)
 
     def test_server_month_thumbnails_clip_rotated_images(self) -> None:
         self.assertIn(".thumb-link {", SERVER_CSS)
@@ -3886,7 +3972,7 @@ model_name = "buffalo_l"
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "8",
+                    "9",
                 )
                 file_columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 self.assertNotIn("source_id", file_columns)
@@ -5829,12 +5915,12 @@ enabled = false
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 2", stdout)
-            self.assertIn("Ny schema_version: 8", stdout)
+            self.assertIn("Ny schema_version: 9", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "8",
+                    "9",
                 )
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
                 source_columns = {row[1] for row in conn.execute("pragma table_info(sources)")}
@@ -8261,14 +8347,14 @@ print(json.dumps([
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 1", stdout)
-            self.assertIn("Ny schema_version: 8", stdout)
+            self.assertIn("Ny schema_version: 9", stdout)
             self.assertIn("Vil opprette tabellen file_sources.", stdout)
             self.assertIn("  importerte filer: 1", stdout)
             self.assertIn("  duplikatfunn: 1", stdout)
             self.assertIn("  bygge om files uten gamle v1-kildekolonner", stdout)
             self.assertIn("  fjerne legacy-tabellen duplicate_findings", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
-            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-8-*")))
+            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-9-*")))
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertFalse(
@@ -8291,13 +8377,13 @@ print(json.dumps([
             self.assertEqual(code, 0, stderr)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Ferdig. Databasen er migrert.", stdout)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-8-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-9-*"))), 1)
 
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "8",
+                    "9",
                 )
                 self.assertEqual(conn.execute("select count(*) from file_sources").fetchone()[0], 2)
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
@@ -8335,7 +8421,7 @@ print(json.dumps([
         self.assertEqual(code, 0, stderr)
         self.assertEqual(stdout, "report er slått sammen med status\n")
 
-    def test_migrate_v5_to_v8_creates_performance_indexes(self) -> None:
+    def test_migrate_v5_to_v9_creates_performance_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             self.assertEqual(run_cli(["create", str(target)]), 0)
@@ -8351,12 +8437,12 @@ print(json.dumps([
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 5", stdout)
-            self.assertIn("Ny schema_version: 8", stdout)
+            self.assertIn("Ny schema_version: 9", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "8",
+                    "9",
                 )
                 self.assertTrue(
                     conn.execute(
@@ -8380,7 +8466,7 @@ print(json.dumps([
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Nåværende schema_version: 8", stdout)
+            self.assertIn("Nåværende schema_version: 9", stdout)
             self.assertIn("oppdatere manglende ytelsesindekser", stdout)
             self.assertIn("Oppdaterer manglende ytelsesindekser.", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
@@ -8393,7 +8479,7 @@ print(json.dumps([
             finally:
                 conn.close()
 
-    def test_migrate_v7_to_v8_adds_h3_10_11_and_backfills_existing_gps(self) -> None:
+    def test_migrate_v7_to_v9_adds_h3_10_11_and_backfills_existing_gps(self) -> None:
         cells = h3_cells_for_point(59.91273, 10.74609)
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -8428,13 +8514,13 @@ print(json.dumps([
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 7", stdout)
-            self.assertIn("Ny schema_version: 8", stdout)
+            self.assertIn("Ny schema_version: 9", stdout)
             self.assertIn("Fyller h3_res10 og h3_res11", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "8",
+                    "9",
                 )
                 columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 indexes = {row[1] for row in conn.execute("PRAGMA index_list(files)")}
@@ -8449,7 +8535,7 @@ print(json.dumps([
         self.assertEqual(row[0], cells["h3_res10"])
         self.assertEqual(row[1], cells["h3_res11"])
 
-    def test_migrate_v6_to_v8_replaces_legacy_gps_error_messages(self) -> None:
+    def test_migrate_v6_to_v9_replaces_legacy_gps_error_messages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             self.assertEqual(run_cli(["create", str(target)]), 0)
@@ -8475,14 +8561,14 @@ print(json.dumps([
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 6", stdout)
-            self.assertIn("Ny schema_version: 8", stdout)
+            self.assertIn("Ny schema_version: 9", stdout)
             self.assertIn("Rydder gamle GPS-feilmeldinger.", stdout)
             self.assertIn("bildebank vacuum", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "8",
+                    "9",
                 )
                 self.assertEqual(
                     conn.execute("SELECT gps_error FROM files").fetchone()[0],
@@ -8491,7 +8577,7 @@ print(json.dumps([
             finally:
                 conn.close()
 
-    def test_migrate_v6_to_v8_keeps_missing_file_as_short_marker(self) -> None:
+    def test_migrate_v6_to_v9_keeps_missing_file_as_short_marker(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             self.assertEqual(run_cli(["create", str(target)]), 0)
@@ -8538,7 +8624,7 @@ print(json.dumps([
             self.assertIn("Størrelse etter:", stdout)
             self.assertIn("Ferdig. Databasen er pakket.", stdout)
 
-    def test_current_schema_rejects_v8_database_with_absolute_target_path(self) -> None:
+    def test_current_schema_rejects_v9_database_with_absolute_target_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -8547,7 +8633,10 @@ print(json.dumps([
             create_v4_database(target, source, imported=imported)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
-                conn.execute("UPDATE meta SET value = '8' WHERE key = 'schema_version'")
+                conn.execute("ALTER TABLE files ADD COLUMN manual_date_from TEXT")
+                conn.execute("ALTER TABLE files ADD COLUMN manual_date_to TEXT")
+                conn.execute("ALTER TABLE files ADD COLUMN manual_date_note TEXT")
+                conn.execute("UPDATE meta SET value = '9' WHERE key = 'schema_version'")
                 conn.commit()
             finally:
                 conn.close()
@@ -8645,7 +8734,7 @@ print(json.dumps([
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Ny schema_version: 8", stdout)
+            self.assertIn("Ny schema_version: 9", stdout)
             conn = sqlite3.connect(db_path)
             try:
                 names = [row[0] for row in conn.execute("SELECT name FROM sources ORDER BY id")]
@@ -8673,7 +8762,7 @@ print(json.dumps([
             self.assertEqual(code, 1)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Databasen ble ikke migrert", stderr)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-8-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-9-*"))), 1)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
@@ -8708,7 +8797,7 @@ print(json.dumps([
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
-            self.assertIn("schema_version=8", stderr)
+            self.assertIn("schema_version=9", stderr)
             self.assertIn("bildebank migrate", stderr)
 
 

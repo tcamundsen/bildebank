@@ -14,7 +14,7 @@ from typing import Any, Iterable
 
 
 DB_FILENAME = ".bilder.sqlite3"
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 GPS_ERROR_EXIFTOOL = "exiftool_error"
 GPS_ERROR_FILE_MISSING = "file_missing"
 TAG_KIND_USER = "user"
@@ -23,8 +23,12 @@ SYSTEM_TAG_OUT_OF_FOCUS = "Ute av fokus"
 SYSTEM_TAG_NAMES = (SYSTEM_TAG_OUT_OF_FOCUS,)
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
 COLLECTION_ID_META_KEY = "collection_id"
+DATE_GLOB_SQL = "'[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
+MANUAL_DATE_MIDPOINT_SQL = "date((julianday(manual_date_from) + julianday(manual_date_to)) / 2.0)"
 BROWSER_DATE_ORDER_SQL = (
-    "CASE WHEN taken_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*' "
+    f"CASE WHEN manual_date_from GLOB {DATE_GLOB_SQL} AND manual_date_to GLOB {DATE_GLOB_SQL} "
+    f"THEN {MANUAL_DATE_MIDPOINT_SQL} "
+    f"WHEN taken_date GLOB {DATE_GLOB_SQL} "
     "THEN taken_date ELSE '9999-99-99' END"
 )
 H3_FILE_COLUMNS = tuple(f"h3_res{resolution}" for resolution in range(12))
@@ -187,7 +191,7 @@ def require_current_schema(conn: sqlite3.Connection, *, full: bool = True) -> No
                 validate_current_schema(conn)
             except ValueError as exc:
                 raise SchemaMigrationRequired(
-                    f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v8-struktur.\n"
+                    f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v9-struktur.\n"
                     f"{exc}\n"
                     "Kjør bildebank migrate før du gjør endringer."
                 ) from exc
@@ -230,6 +234,9 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
         ensure_column(conn, "files", "media_orientation", "INTEGER")
         ensure_column(conn, "files", "media_metadata_mtime_ns", "INTEGER")
         ensure_column(conn, "files", "view_rotation_degrees", "INTEGER")
+        ensure_column(conn, "files", "manual_date_from", "TEXT")
+        ensure_column(conn, "files", "manual_date_to", "TEXT")
+        ensure_column(conn, "files", "manual_date_note", "TEXT")
         ensure_column(conn, "files", "gps_lat", "REAL")
         ensure_column(conn, "files", "gps_lon", "REAL")
         ensure_column(conn, "files", "gps_alt", "REAL")
@@ -283,6 +290,11 @@ def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
         WHERE resolved_at IS NULL;
         """
         )
+
+
+def drop_performance_indexes(conn: sqlite3.Connection) -> None:
+    for name in PERFORMANCE_INDEX_NAMES:
+        conn.execute(f"DROP INDEX IF EXISTS {name}")
 
 
 def table_exists(conn: sqlite3.Connection, table: str) -> bool:
@@ -359,6 +371,9 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             media_orientation INTEGER,
             media_metadata_mtime_ns INTEGER,
             view_rotation_degrees INTEGER,
+            manual_date_from TEXT,
+            manual_date_to TEXT,
+            manual_date_note TEXT,
             gps_lat REAL,
             gps_lon REAL,
             gps_alt REAL,
@@ -371,20 +386,11 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);
 
         CREATE INDEX IF NOT EXISTS idx_files_active_browser_order
-        ON files (
-            CASE WHEN taken_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'
-            THEN taken_date ELSE '9999-99-99' END,
-            target_path_key
-        )
+        ON files ({BROWSER_DATE_ORDER_SQL}, target_path_key)
         WHERE deleted_at IS NULL;
 
         CREATE INDEX IF NOT EXISTS idx_files_active_date_source_order
-        ON files (
-            date_source,
-            CASE WHEN taken_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'
-            THEN taken_date ELSE '9999-99-99' END,
-            target_path_key
-        )
+        ON files (date_source, {BROWSER_DATE_ORDER_SQL}, target_path_key)
         WHERE deleted_at IS NULL;
 
         CREATE INDEX IF NOT EXISTS idx_files_active_target_path_key
@@ -572,9 +578,13 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 creates_file_sources=False,
                 refreshes_performance_indexes=bool(missing_performance_indexes(conn)),
             )
-        if version in {5, 6, 7}:
+        if version in {5, 6, 7, 8}:
             if validate:
-                validate_current_schema(conn, require_performance_indexes=False)
+                validate_current_schema(
+                    conn,
+                    require_performance_indexes=False,
+                    require_manual_date_columns=version >= 9,
+                )
             return MigrationPlan(
                 current_version=version,
                 target_version=SCHEMA_VERSION,
@@ -583,6 +593,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 creates_file_sources=False,
                 cleans_gps_errors=has_legacy_gps_errors(conn),
                 backfills_h3_10_11=needs_h3_10_11_backfill(conn),
+                refreshes_performance_indexes=version == 8,
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -628,6 +639,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 validate_current_schema(conn, require_performance_indexes=False)
+                drop_performance_indexes(conn)
                 ensure_performance_indexes(conn)
                 validate_current_schema(conn)
                 set_collection_id(conn)
@@ -643,15 +655,16 @@ def migrate_database(target: Path) -> MigrationPlan:
                 creates_file_sources=False,
                 refreshes_performance_indexes=refreshes_performance_indexes,
             )
-        if version in {5, 6, 7}:
+        if version in {5, 6, 7, 8}:
             imported_files = count_rows(conn, "files")
             duplicate_findings = count_rows(conn, "duplicate_findings")
             cleans_gps_errors = has_legacy_gps_errors(conn)
             backfills_h3_10_11 = needs_h3_10_11_backfill(conn)
             try:
                 conn.execute("BEGIN IMMEDIATE")
-                validate_current_schema(conn, require_performance_indexes=False)
                 ensure_compatible_columns(conn)
+                validate_current_schema(conn, require_performance_indexes=False)
+                drop_performance_indexes(conn)
                 ensure_performance_indexes(conn)
                 cleanup_legacy_gps_errors(conn)
                 backfill_h3_10_11(conn)
@@ -677,6 +690,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 creates_file_sources=False,
                 cleans_gps_errors=cleans_gps_errors,
                 backfills_h3_10_11=backfills_h3_10_11,
+                refreshes_performance_indexes=version == 8,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -712,6 +726,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             if table_exists(conn, "duplicate_findings"):
                 conn.execute("DROP TABLE duplicate_findings")
             ensure_compatible_columns(conn)
+            drop_performance_indexes(conn)
             ensure_performance_indexes(conn)
             cleanup_legacy_gps_errors(conn)
             backfill_h3_10_11(conn)
@@ -744,6 +759,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             rebuilds_file_sources_without_kind=rebuilds_file_sources,
             cleans_gps_errors=cleans_gps_errors,
             backfills_h3_10_11=backfills_h3_10_11,
+            refreshes_performance_indexes=version == 8,
         )
     finally:
         conn.close()
@@ -838,7 +854,12 @@ def source_name_is_not_null(conn: sqlite3.Connection) -> bool:
     return False
 
 
-def validate_current_schema(conn: sqlite3.Connection, *, require_performance_indexes: bool = True) -> None:
+def validate_current_schema(
+    conn: sqlite3.Connection,
+    *,
+    require_performance_indexes: bool = True,
+    require_manual_date_columns: bool = True,
+) -> None:
     if not table_exists(conn, "sources"):
         raise ValueError("Databasen mangler tabellen sources.")
     if table_exists(conn, "duplicate_findings"):
@@ -855,6 +876,15 @@ def validate_current_schema(conn: sqlite3.Connection, *, require_performance_ind
             "files inneholder gamle kildekolonner "
             f"({', '.join(legacy_file_columns)}). Kjør bildebank migrate."
         )
+    if require_manual_date_columns:
+        missing_manual_date_columns = sorted(
+            {"manual_date_from", "manual_date_to", "manual_date_note"} - file_columns
+        )
+        if missing_manual_date_columns:
+            raise ValueError(
+                "files mangler manuelle datokolonner "
+                f"({', '.join(missing_manual_date_columns)}). Kjør bildebank migrate."
+            )
     if table_exists(conn, "errors") and conn.execute("PRAGMA foreign_key_list(errors)").fetchall():
         raise ValueError("errors har gammel foreign key til sources. Kjør bildebank migrate.")
     validate_file_sources_schema(conn)
@@ -1741,6 +1771,9 @@ def file_sources_by_target_path(conn: sqlite3.Connection, target: Path, target_p
             files.size_bytes,
             files.taken_date,
             files.date_source,
+            files.manual_date_from,
+            files.manual_date_to,
+            files.manual_date_note,
             files.name_conflict,
             files.imported_at AS file_imported_at,
             sources.path AS source_root,
@@ -1896,7 +1929,10 @@ def deleted_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
 def browser_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     return conn.execute(
         f"""
-        SELECT id, target_path, stored_filename, taken_date, date_source, size_bytes, view_rotation_degrees
+        SELECT
+            id, target_path, stored_filename, taken_date, date_source,
+            manual_date_from, manual_date_to, manual_date_note,
+            size_bytes, view_rotation_degrees
         FROM files
         WHERE deleted_at IS NULL
         ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path
@@ -2341,6 +2377,7 @@ def geo_areas(
 
 GEO_FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
+    "manual_date_from, manual_date_to, manual_date_note, "
     "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_alt, gps_source, "
     f"{H3_FILE_COLUMNS_SQL}"
 )
@@ -2655,6 +2692,48 @@ def rotate_file_view(conn: sqlite3.Connection, file_id: int, direction: str) -> 
         (rotation, file_id),
     )
     return rotation
+
+
+def set_manual_date(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    date_from: str,
+    date_to: str,
+    note: str | None = None,
+) -> None:
+    conn.execute(
+        """
+        UPDATE files
+        SET manual_date_from = ?,
+            manual_date_to = ?,
+            manual_date_note = ?
+        WHERE id = ?
+          AND deleted_at IS NULL
+        """,
+        (date_from, date_to, clean_manual_date_note(note), file_id),
+    )
+
+
+def clear_manual_date(conn: sqlite3.Connection, *, file_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE files
+        SET manual_date_from = NULL,
+            manual_date_to = NULL,
+            manual_date_note = NULL
+        WHERE id = ?
+          AND deleted_at IS NULL
+        """,
+        (file_id,),
+    )
+
+
+def clean_manual_date_note(note: str | None) -> str | None:
+    if note is None:
+        return None
+    clean = " ".join(note.strip().split())
+    return clean or None
 
 
 def mark_file_deleted(

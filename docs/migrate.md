@@ -44,6 +44,12 @@ databasen først.
 
 Hvis migreringen feiler, skal databasen ikke oppgraderes, og backupen beholdes.
 
+## Migrering til v9
+
+V9 legger til manuell dato på filer. Datoen lagres bare i Bildebank-databasen,
+ikke i bildefilen. Browseren kan dermed vise et bilde etter korrigert dato
+selv om filen fysisk ligger i den opprinnelige år/måned-mappen.
+
 ## Migrering til v8
 
 V8 legger til finere H3-oppløsning for GPS-steder. Etter migreringen kan

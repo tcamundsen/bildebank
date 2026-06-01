@@ -4,6 +4,7 @@ import html
 import re
 import sqlite3
 import urllib.parse
+import datetime as dt
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
@@ -49,6 +50,7 @@ MONTH_NAMES = {
 }
 FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
+    "manual_date_from, manual_date_to, manual_date_note, "
     "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_source, "
     "media_width, media_height, media_orientation, media_metadata_mtime_ns, "
     f"{db.H3_FILE_COLUMNS_SQL}"
@@ -214,10 +216,35 @@ def source_item_by_id(
 
 
 def item_order_key(item: Any) -> tuple[str, str]:
+    return browser_date_for_item(item), str(item["target_path_key"])
+
+
+def browser_date_for_item(item: Any) -> str:
+    manual_date = manual_date_midpoint_for_item(item)
+    if manual_date is not None:
+        return manual_date.isoformat()
     taken_date = str(item["taken_date"] or "")
-    if not re.match(r"^\d{4}-\d{2}-\d{2}", taken_date):
-        taken_date = "9999-99-99"
-    return taken_date, str(item["target_path_key"])
+    if re.match(r"^\d{4}-\d{2}-\d{2}", taken_date):
+        return taken_date[:10]
+    return "9999-99-99"
+
+
+def manual_date_midpoint_for_item(item: Any) -> dt.date | None:
+    try:
+        date_from = parse_iso_date(str(item["manual_date_from"] or ""))
+        date_to = parse_iso_date(str(item["manual_date_to"] or ""))
+    except (KeyError, IndexError):
+        return None
+    if date_from is None or date_to is None:
+        return None
+    return date_from + (date_to - date_from) // 2
+
+
+def parse_iso_date(value: str) -> dt.date | None:
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def should_filter_out_of_focus(source: BrowserSource, hide_out_of_focus: bool) -> bool:
@@ -399,10 +426,10 @@ def cached_browser_month_keys(target_path: str, db_mtime_ns: int, hide_out_of_fo
     try:
         rows = conn.execute(
             f"""
-            SELECT DISTINCT substr(target_path, 1, 4) || '-' || substr(target_path, 6, 2) AS month_key
+            SELECT DISTINCT substr({db.BROWSER_DATE_ORDER_SQL}, 1, 7) AS month_key
             FROM files
             WHERE {where_sql}
-              AND target_path GLOB '[0-9][0-9][0-9][0-9]/[0-9][0-9]/*'
+              AND {db.BROWSER_DATE_ORDER_SQL} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
             ORDER BY month_key
             """,
             params,
@@ -424,11 +451,11 @@ def sql_filtered_source_month_keys(
     try:
         rows = conn.execute(
             f"""
-            SELECT DISTINCT substr(target_path, 1, 4) || '-' || substr(target_path, 6, 2) AS month_key
+            SELECT DISTINCT substr({db.BROWSER_DATE_ORDER_SQL}, 1, 7) AS month_key
             FROM files
             WHERE deleted_at IS NULL
               AND ({where_sql})
-              AND target_path GLOB '[0-9][0-9][0-9][0-9]/[0-9][0-9]/*'
+              AND {db.BROWSER_DATE_ORDER_SQL} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
             ORDER BY month_key
             """,
             params,
@@ -1125,6 +1152,10 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
         info_row_html("Oppløsning", f"{dimensions.width} x {dimensions.height}" if dimensions else "-"),
         info_row_html("Kamera", camera_text(camera)),
     ]
+    if manual_date_text(item):
+        rows.append(info_row_html("Opprinnelig dato", f"{item['taken_date'] or '-'} ({date_source_text(str(item['date_source'] or ''))})"))
+        if item["manual_date_note"]:
+            rows.append(info_row_html("Datonotat", str(item["manual_date_note"])))
     sources = image_source_rows(target, target_path)
     if sources:
         rows.append(info_row_html("Kilder", "\n\n".join(sources), multiline=True))
@@ -1243,9 +1274,40 @@ def gps_location_badge_html(item: Any) -> str:
 
 
 def image_date_text(item: Any) -> str:
+    manual_text = manual_date_text(item)
+    if manual_text:
+        return manual_text
     taken_date = str(item["taken_date"] or "-")
     source = str(item["date_source"] or "")
     return f"{taken_date} ({date_source_text(source)})"
+
+
+def manual_date_text(item: Any) -> str:
+    try:
+        date_from = parse_iso_date(str(item["manual_date_from"] or ""))
+        date_to = parse_iso_date(str(item["manual_date_to"] or ""))
+    except (KeyError, IndexError):
+        return ""
+    if date_from is None or date_to is None:
+        return ""
+    if date_from == date_to:
+        return f"{date_from.isoformat()} (manuell dato)"
+    midpoint = date_from + (date_to - date_from) // 2
+    uncertainty_days = max((date_to - date_from).days // 2, 1)
+    return f"ca. {midpoint.isoformat()} ± {format_uncertainty_days(uncertainty_days)} (manuell dato)"
+
+
+def format_uncertainty_days(days: int) -> str:
+    if days % 365 == 0:
+        years = days // 365
+        return f"{years} år" if years != 1 else "1 år"
+    if days % 30 == 0:
+        months = days // 30
+        return f"{months} måneder" if months != 1 else "1 måned"
+    if days % 7 == 0:
+        weeks = days // 7
+        return f"{weeks} uker" if weeks != 1 else "1 uke"
+    return f"{days} dager" if days != 1 else "1 dag"
 
 
 def date_source_text(source: str) -> str:
@@ -1712,10 +1774,11 @@ def browser_month_navigation(target: Path, item: Any, *, hide_out_of_focus: bool
 
 
 def month_key_for_item(target: Path, item: Any) -> str:
+    browser_date = browser_date_for_item(item)
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", browser_date):
+        return browser_date[:7]
     stored_key = month_key_from_stored_path(str(item["target_path"]))
-    if stored_key is not None:
-        return stored_key
-    return month_key_from_path(relative_to_target(target, Path(str(item["target_path"]))))
+    return stored_key or month_key_from_path(relative_to_target(target, Path(str(item["target_path"]))))
 
 
 def month_key_from_stored_path(path: str) -> str | None:
@@ -1845,8 +1908,6 @@ def sql_filtered_source_month_items(
         return []
     where_sql, params = source_sql_filter(source)
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
-    year, month = month_key.split("-", 1)
-    path_glob = f"{year}/{month}/*"
     conn = db.connect(target)
     try:
         return list(
@@ -1856,10 +1917,10 @@ def sql_filtered_source_month_items(
                 FROM files
                 WHERE deleted_at IS NULL
                   AND ({where_sql})
-                  AND target_path GLOB ?
+                  AND substr({db.BROWSER_DATE_ORDER_SQL}, 1, 7) = ?
                 ORDER BY {ITEM_ORDER_SQL}
                 """,
-                (*params, path_glob),
+                (*params, month_key),
             )
         )
     finally:
@@ -1909,37 +1970,22 @@ def first_month_in_year(keys: list[str], year: str | None) -> str | None:
 
 
 def browser_month_items(target: Path, month_key: str, *, hide_out_of_focus: bool = False) -> list[Any]:
-    year, month = month_key.split("-", 1)
-    prefix = db.relative_path_key(Path(year) / month) + "/"
+    if not valid_month_key(month_key):
+        return []
     where_sql, params = all_source_where(hide_out_of_focus=hide_out_of_focus)
     conn = db.connect(target)
     try:
-        rows = list(
+        return list(
             conn.execute(
                 f"""
                 SELECT {FILE_COLUMNS}
                 FROM files
                 WHERE {where_sql}
-                  AND target_path_key LIKE ?
+                  AND substr({db.BROWSER_DATE_ORDER_SQL}, 1, 7) = ?
                 ORDER BY {ITEM_ORDER_SQL}
                 """,
-                (*params, prefix + "%"),
+                (*params, month_key),
             )
         )
-        if rows:
-            return rows
-        return [
-            row
-            for row in conn.execute(
-                f"""
-                SELECT {FILE_COLUMNS}
-                FROM files
-                WHERE {where_sql}
-                ORDER BY {ITEM_ORDER_SQL}
-                """,
-                params,
-            )
-            if month_key_from_stored_path(str(row["target_path"])) == month_key
-        ]
     finally:
         conn.close()

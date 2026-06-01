@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -120,6 +122,8 @@ HELP_COMMAND_GROUPS = (
             ("refresh-metadata", "Sjekk filer uten metadata på nytt"),
             ("inspect-metadata", "Vis metadatafragmenter og datokandidater"),
             ("explain-date", "Forklar hvilken dato Bildebank ville brukt"),
+            ("date-set", "Sett manuell dato for en importert fil"),
+            ("date-clear", "Fjern manuell dato fra en importert fil"),
             ("exiftool-install", "Installer ExifTool for GPS og metadata"),
             ("exiftool-metadata-gaps", "Finn metadata Bildebank ikke leser ennå"),
             ("tag-list", "List tagger eller tagger for én fil"),
@@ -285,6 +289,36 @@ def build_parser() -> argparse.ArgumentParser:
         description="Vis hvilken kilde en importert målfil kommer fra",
     )
     show_source.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    date_set = add_command(
+        subparsers,
+        "date-set",
+        usage="bildebank date-set [valg] fil (--date DATO | --between FRA TIL)",
+        help="Sett manuell dato for en importert fil",
+        description="Sett manuell dato i Bildebank uten å endre originalfilen.",
+    )
+    date_set.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    date_choice = date_set.add_mutually_exclusive_group(required=True)
+    date_choice.add_argument("--date", type=iso_date_arg, help="Eksakt eller omtrentlig midtdato, YYYY-MM-DD")
+    date_choice.add_argument(
+        "--between",
+        nargs=2,
+        metavar=("FRA", "TIL"),
+        type=iso_date_arg,
+        help="Usikkert datointervall, YYYY-MM-DD YYYY-MM-DD",
+    )
+    date_set.add_argument(
+        "--uncertainty",
+        help="Usikkerhet rundt --date, for eksempel 3d, 2w, 1m eller 1y",
+    )
+    date_set.add_argument("--note", help="Fritekstnotat om hvorfor datoen er satt")
+    date_clear = add_command(
+        subparsers,
+        "date-clear",
+        usage="bildebank date-clear [valg] fil",
+        help="Fjern manuell dato fra en importert fil",
+        description="Fjern manuell dato fra Bildebank uten å endre originalfilen.",
+    )
+    date_clear.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
     check_source = add_command(
         subparsers,
         "check-source",
@@ -1274,6 +1308,30 @@ def run(args: argparse.Namespace) -> int:
                 print(f"  dato: {row['date_source']}\t{taken_date}")
                 if args.with_source:
                     print(f"  kilde: {row['source_path']}")
+            return 0
+
+        if args.command == "date-set":
+            row = resolve_db_file_for_tag_command(conn, target, args.path)
+            date_from, date_to = manual_date_range_from_args(args)
+            db.set_manual_date(
+                conn,
+                file_id=int(row["id"]),
+                date_from=date_from.isoformat(),
+                date_to=date_to.isoformat(),
+                note=args.note,
+            )
+            conn.commit()
+            print(f"Manuell dato satt: {manual_date_range_text(date_from, date_to)}")
+            print(f"Fil: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
+            if args.note:
+                print(f"Notat: {db.clean_manual_date_note(args.note)}")
+            return 0
+
+        if args.command == "date-clear":
+            row = resolve_db_file_for_tag_command(conn, target, args.path)
+            db.clear_manual_date(conn, file_id=int(row["id"]))
+            conn.commit()
+            print(f"Manuell dato fjernet: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
             return 0
 
         if args.command == "tag-list":
@@ -2824,6 +2882,11 @@ def print_source_item(target: Path, row) -> None:
     print(f"Lagret filnavn: {row['stored_filename']}")
     print(f"Importert: {row['file_imported_at']}")
     print(f"Dato: {row['taken_date'] or '-'} ({row['date_source']})")
+    manual_date = manual_date_from_row(row)
+    if manual_date:
+        print(f"Manuell dato: {manual_date}")
+        if row["manual_date_note"]:
+            print(f"Datonotat: {row['manual_date_note']}")
     print(f"Filstørrelse: {format_bytes(int(row['size_bytes']))} ({row['size_bytes']} bytes)")
     print(f"SHA-256: {row['sha256']}")
 
@@ -2839,6 +2902,11 @@ def print_source_items(target: Path, rows: list) -> None:
     print(f"Lagret filnavn: {first['stored_filename']}")
     print(f"Importert: {first['file_imported_at']}")
     print(f"Dato: {first['taken_date'] or '-'} ({first['date_source']})")
+    manual_date = manual_date_from_row(first)
+    if manual_date:
+        print(f"Manuell dato: {manual_date}")
+        if first["manual_date_note"]:
+            print(f"Datonotat: {first['manual_date_note']}")
     print(f"Filstørrelse: {format_bytes(int(first['size_bytes']))} ({first['size_bytes']} bytes)")
     print(f"SHA-256: {first['sha256']}")
     print("Kildefiler:")
@@ -2899,6 +2967,82 @@ def positive_int_arg(value: str) -> int:
     if number < 1:
         raise argparse.ArgumentTypeError("må være minst 1")
     return number
+
+
+def iso_date_arg(value: str) -> dt.date:
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("må være dato på formen YYYY-MM-DD") from exc
+
+
+def manual_date_range_from_args(args: argparse.Namespace) -> tuple[dt.date, dt.date]:
+    if args.between is not None:
+        if args.uncertainty:
+            raise ValueError("--uncertainty kan bare brukes sammen med --date.")
+        date_from, date_to = args.between
+    else:
+        date_value = args.date
+        if args.uncertainty:
+            date_from, date_to = date_range_from_uncertainty(date_value, args.uncertainty)
+        else:
+            date_from = date_value
+            date_to = date_value
+    if date_from > date_to:
+        raise ValueError("Fra-dato kan ikke være etter til-dato.")
+    return date_from, date_to
+
+
+def date_range_from_uncertainty(center: dt.date, value: str) -> tuple[dt.date, dt.date]:
+    match = re.fullmatch(r"\s*(\d+)\s*([A-Za-zæøåÆØÅ]+)\s*", value)
+    if match is None:
+        raise ValueError("Ugyldig usikkerhet. Bruk for eksempel 3d, 2w, 1m eller 1y.")
+    amount = int(match.group(1))
+    if amount < 1:
+        raise ValueError("Usikkerhet må være minst 1.")
+    unit = match.group(2).lower()
+    if unit in {"d", "day", "days", "dag", "dager"}:
+        delta = dt.timedelta(days=amount)
+        return center - delta, center + delta
+    if unit in {"w", "week", "weeks", "uke", "uker"}:
+        delta = dt.timedelta(weeks=amount)
+        return center - delta, center + delta
+    if unit in {"m", "month", "months", "måned", "måneder"}:
+        return add_months(center, -amount), add_months(center, amount)
+    if unit in {"y", "year", "years", "år"}:
+        return add_months(center, -12 * amount), add_months(center, 12 * amount)
+    raise ValueError("Ugyldig usikkerhetsenhet. Bruk d, w, m eller y.")
+
+
+def add_months(value: dt.date, months: int) -> dt.date:
+    month_index = value.year * 12 + value.month - 1 + months
+    year = month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, days_in_month(year, month))
+    return dt.date(year, month, day)
+
+
+def days_in_month(year: int, month: int) -> int:
+    if month == 12:
+        return 31
+    return (dt.date(year, month + 1, 1) - dt.timedelta(days=1)).day
+
+
+def manual_date_range_text(date_from: dt.date, date_to: dt.date) -> str:
+    if date_from == date_to:
+        return date_from.isoformat()
+    midpoint = date_from + (date_to - date_from) // 2
+    uncertainty_days = max((date_to - date_from).days // 2, 1)
+    return f"ca. {midpoint.isoformat()} ± {uncertainty_days} dager ({date_from.isoformat()} til {date_to.isoformat()})"
+
+
+def manual_date_from_row(row) -> str:
+    try:
+        date_from = dt.date.fromisoformat(str(row["manual_date_from"] or ""))
+        date_to = dt.date.fromisoformat(str(row["manual_date_to"] or ""))
+    except (ValueError, KeyError, IndexError):
+        return ""
+    return manual_date_range_text(date_from, date_to)
 
 
 def h3_resolution_arg(value: str) -> int:

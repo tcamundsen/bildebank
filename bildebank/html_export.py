@@ -4,6 +4,7 @@ import html
 import json
 import sqlite3
 import sys
+import datetime as dt
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
@@ -103,7 +104,8 @@ def row_to_item(
     relative_path = relative_to_target(target, stored_path)
     path = relative_path.as_posix()
     kind = media_kind(relative_path)
-    month_key = month_key_from_path(relative_path)
+    month_key = month_key_from_browser_date(row) or month_key_from_path(relative_path)
+    browser_date = browser_date_from_row(row)
     file_id = int(row["id"])
     return {
         "fileId": file_id,
@@ -112,11 +114,55 @@ def row_to_item(
         "thumbnailSrc": existing_thumbnail_url(target, relative_path) if kind == "image" else "",
         "kind": kind,
         "monthKey": month_key,
+        "browserDate": browser_date,
+        "dateText": browser_date_text(row),
         "takenDate": row["taken_date"] or "",
         "dateSource": row["date_source"],
+        "manualDateFrom": row["manual_date_from"] or "",
+        "manualDateTo": row["manual_date_to"] or "",
+        "manualDateNote": row["manual_date_note"] or "",
         "name": row["stored_filename"],
         "sizeText": format_bytes(int(row["size_bytes"])),
     }
+
+
+def month_key_from_browser_date(row) -> str | None:
+    browser_date = browser_date_from_row(row)
+    if browser_date != "9999-99-99":
+        return browser_date[:7]
+    return None
+
+
+def browser_date_from_row(row) -> str:
+    manual_midpoint = manual_date_midpoint(row["manual_date_from"], row["manual_date_to"])
+    if manual_midpoint is not None:
+        return manual_midpoint.isoformat()
+    taken_date = str(row["taken_date"] or "")
+    if len(taken_date) >= 10 and taken_date[4] == "-" and taken_date[7] == "-":
+        return taken_date[:10]
+    return "9999-99-99"
+
+
+def browser_date_text(row) -> str:
+    manual_from = str(row["manual_date_from"] or "")
+    manual_to = str(row["manual_date_to"] or "")
+    if manual_from and manual_to:
+        if manual_from == manual_to:
+            return f"{manual_from} (manuell dato)"
+        midpoint = manual_date_midpoint(manual_from, manual_to)
+        if midpoint is not None:
+            return f"ca. {midpoint.isoformat()} (manuell dato)"
+    taken_date = str(row["taken_date"] or "-")
+    return f"{taken_date} ({row['date_source']})"
+
+
+def manual_date_midpoint(date_from: object, date_to: object) -> dt.date | None:
+    try:
+        start = dt.date.fromisoformat(str(date_from or ""))
+        end = dt.date.fromisoformat(str(date_to or ""))
+    except ValueError:
+        return None
+    return start + (end - start) // 2
 
 
 def browser_face_items_from_metadata(
@@ -580,8 +626,8 @@ def render_html(
       render();
     }}
     function compareItems(a, b) {{
-      const aDate = (a.takenDate && /^\\d{{4}}-\\d{{2}}-\\d{{2}}/.test(a.takenDate)) ? a.takenDate : "9999-99-99";
-      const bDate = (b.takenDate && /^\\d{{4}}-\\d{{2}}-\\d{{2}}/.test(b.takenDate)) ? b.takenDate : "9999-99-99";
+      const aDate = a.browserDate || "9999-99-99";
+      const bDate = b.browserDate || "9999-99-99";
       return a.monthKey.localeCompare(b.monthKey, "nb") ||
         aDate.localeCompare(bDate, "nb") ||
         a.path.localeCompare(b.path, "nb", {{ numeric: true }});
