@@ -1012,7 +1012,7 @@ def date_status_badge_html(item: Any) -> str:
     return (
         '<div class="date-status-badge">'
         f'<span class="date-status-main">{html.escape(date_text)}</span>'
-        f'{original}'
+        f' {original}'
         '</div>'
     )
 
