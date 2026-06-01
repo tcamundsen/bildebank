@@ -3614,6 +3614,8 @@ model_name = "buffalo_l"
         self.assertIn('<div class="person-media" style="transform: rotate(90deg);" data-view-rotation="90">', body)
         self.assertNotIn("IMG_20250104", body)
         self.assertIn("Kari - uten ansiktsmarkering", plain_body)
+        self.assertIn('href="/person/Kari/no-faces">Kari</a>', plain_body)
+        self.assertNotIn('Kari - uten ansiktsmarkering</a><span class="sep">/</span>', plain_body)
         self.assertIn('href="/item/1">Alle bilder</a>', plain_body)
         self.assertIn('href="/person/Kari/item/1"', plain_body)
         self.assertIn("Med ansiktsmarkering", plain_body)

@@ -856,8 +856,9 @@ def source_item_breadcrumb_html(target: Path, source: BrowserSource, item: Any) 
             (month_name, source_month_url(source, month_key)),
         ]
     else:
+        source_label = source.person_name if source.person_name is not None else source.title
         crumbs = [
-            (source.title, source.root_url),
+            (source_label, source.root_url),
             (year, f"/years/{urllib.parse.quote(year)}"),
             (month_name, source_month_url(source, month_key)),
         ]
