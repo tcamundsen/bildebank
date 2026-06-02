@@ -384,12 +384,14 @@ class GeoTests(unittest.TestCase):
         self.assertIn("<h2>Definerte steder</h2>", html)
         self.assertIn("Kreta", html)
         self.assertIn('href="/geo/place/kreta"', html)
+        self.assertIn("<code>(kreta)</code>", html)
         self.assertIn(
             'href="https://h3geo.org/#hex=' + urllib.parse.quote_plus(", ".join(place.h3_cells)) + '"',
             html,
         )
         self.assertIn("Min plass", html)
         self.assertIn('href="/geo/place/min_plass"', html)
+        self.assertIn("<code>(min_plass)</code>", html)
         self.assertIn('href="https://h3geo.org/#hex=' + urllib.parse.quote_plus(h3_cell) + '"', html)
         self.assertIn('target="_blank"', html)
         self.assertIn('rel="noopener"', html)

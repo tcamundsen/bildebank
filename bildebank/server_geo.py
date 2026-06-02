@@ -345,7 +345,7 @@ def geo_place_row_html(row: dict[str, object]) -> str:
         icon = "user"
     return f"""
     <div class="geo-row">
-      <span><a href="{html.escape(url)}">{html.escape(name)}</a> <a href="{html.escape(h3geo_url)}" target="_blank" rel="noopener">H3Geo</a></span>
+      <span><a href="{html.escape(url)}">{html.escape(name)}</a> <code>({html.escape(slug)})</code> <a href="{html.escape(h3geo_url)}" target="_blank" rel="noopener">H3Geo</a></span>
       <span class="status">{icon}</span>
       <strong>{count} bilder</strong>
     </div>
