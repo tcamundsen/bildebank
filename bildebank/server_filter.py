@@ -34,6 +34,7 @@ class BrowserTextFilter:
     missing: str | None = None
     orientation: str | None = None
     path: str | None = None
+    person: str | None = None
     size_gt: int | None = None
     size_lt: int | None = None
     source: str | None = None
@@ -56,6 +57,7 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
     missing = None
     orientation = None
     path = None
+    person = None
     size_gt = None
     size_lt = None
     source = None
@@ -130,6 +132,10 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
             if path is not None:
                 raise ValueError("path kan bare brukes én gang.")
             path = value
+        elif key == "person":
+            if person is not None:
+                raise ValueError("person kan bare brukes én gang.")
+            person = value
         elif key == "source":
             if source is not None:
                 raise ValueError("source kan bare brukes én gang.")
@@ -160,6 +166,7 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
         missing=missing,
         orientation=orientation,
         path=path,
+        person=person,
         size_gt=size_gt,
         size_lt=size_lt,
         source=source,
@@ -266,6 +273,7 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         missing=text_filter.missing,
         orientation=text_filter.orientation,
         path=text_filter.path,
+        person=text_filter.person,
         size_gt=text_filter.size_gt,
         size_lt=text_filter.size_lt,
         source=text_filter.source,
@@ -336,6 +344,9 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     if text_filter.path is not None:
         where.append("lower(target_path) LIKE ?")
         params.append(like_contains_param(text_filter.path.replace("\\", "/")))
+    if text_filter.person is not None:
+        where.append(person_where_clause())
+        params.append(text_filter.person.strip().lower())
     if text_filter.source is not None:
         source_filter, source_params = source_where_clause(text_filter.source)
         where.append(source_filter)
@@ -406,12 +417,39 @@ def tag_params(value: str) -> tuple[str, str]:
     return clean_value, re.sub(r"[-_]+", " ", clean_value)
 
 
+def person_where_clause() -> str:
+    return """
+    EXISTS (
+        SELECT 1
+        FROM face_db.persons
+        JOIN (
+            SELECT person_id, face_id FROM face_db.person_faces
+            UNION ALL
+            SELECT person_id, face_id FROM face_db.face_suggestions
+        ) person_matches ON person_matches.person_id = face_db.persons.id
+        JOIN face_db.faces ON face_db.faces.id = person_matches.face_id
+        WHERE face_db.faces.file_id = files.id
+          AND lower(face_db.persons.name) = ?
+    )
+    """
+
+
 def like_contains_param(value: str) -> str:
     return f"%{value.strip().lower()}%"
 
 
 def text_filter_has_runtime_filter(text_filter: BrowserTextFilter) -> bool:
     return False
+
+
+def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTextFilter) -> None:
+    if text_filter.person is None:
+        return
+    from .face import connect_face_db, face_db_path
+
+    face_conn = connect_face_db(target)
+    face_conn.close()
+    conn.execute("ATTACH DATABASE ? AS face_db", (str(face_db_path(target)),))
 
 
 def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_of_focus: bool = False) -> list[Any]:
@@ -423,6 +461,7 @@ def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_
     focus_params = OUT_OF_FOCUS_FILTER_PARAMS if hide_out_of_focus else ()
     conn = db.connect(target)
     try:
+        attach_text_filter_databases(conn, target, text_filter)
         return list(
             conn.execute(
                 f"""
@@ -480,7 +519,7 @@ def filter_help_html() -> str:
         <div class="info-row"><dt>Sted</dt><dd><code>location:gps</code>, <code>location:manual</code>, <code>location:slug</code>. Slug er samme tekst som i <code>/geo/place/slug</code>.</dd></div>
         <div class="info-row"><dt>Fil</dt><dd><code>type:image</code>, <code>type:video</code>, <code>type:file</code>, <code>extension:jpg</code>, <code>size&lt;300KB</code>, <code>size&gt;2MB</code></dd></div>
         <div class="info-row"><dt>Tekst</dt><dd><code>filename:IMG</code>, <code>path:2024/01</code>, <code>camera:"iPhone"</code></dd></div>
-        <div class="info-row"><dt>Organisering</dt><dd><code>source:1</code>, <code>source:"mobil 2024"</code>, <code>tag:"Ute av fokus"</code>, <code>deleted:true</code></dd></div>
+        <div class="info-row"><dt>Organisering</dt><dd><code>source:1</code>, <code>source:"mobil 2024"</code>, <code>tag:"Ute av fokus"</code>, <code>person:Viljar</code>, <code>deleted:true</code></dd></div>
         <div class="info-row"><dt>Mangler</dt><dd><code>missing:gps</code>, <code>missing:date</code>, <code>missing:metadata</code></dd></div>
         <div class="info-row"><dt>Form</dt><dd><code>orientation:portrait</code>, <code>orientation:landscape</code></dd></div>
       </dl>

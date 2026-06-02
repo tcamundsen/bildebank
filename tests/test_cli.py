@@ -3065,6 +3065,34 @@ model_name = "buffalo_l"
                 conn.commit()
             finally:
                 conn.close()
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Viljar')")
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(1, 2, 'face-key-2', 1, 2, 10, 20, 0.9, 'test', ?)
+                    """,
+                    (b"embedding-1",),
+                )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(2, 3, 'face-key-3', 3, 4, 12, 22, 0.8, 'test', ?)
+                    """,
+                    (b"embedding-2",),
+                )
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)")
+                face_conn.commit()
+            finally:
+                face_conn.close()
 
             source_filter = text_filter_browser_source("after:2023-12-01 before:2024-12-12")
             gps_filter = text_filter_browser_source("location:gps")
@@ -3088,16 +3116,20 @@ model_name = "buffalo_l"
             orientation_landscape_filter = text_filter_browser_source("orientation:landscape")
             orientation_portrait_filter = text_filter_browser_source("orientation:portrait")
             path_filter = text_filter_browser_source("path:2024/01")
+            person_filter = text_filter_browser_source("person:viljar")
             source_name_filter = text_filter_browser_source("source:source")
             tag_filter = text_filter_browser_source("tag:ute-av-fokus")
             type_file_filter = text_filter_browser_source("type:file")
             type_image_filter = text_filter_browser_source("type:image")
             first_item = source_item_by_id(target, source_filter, 2)
+            person_item = source_item_by_id(target, person_filter, 2)
             manual_item = source_item_by_id(target, manual_filter, 4)
             self.assertIsNotNone(first_item)
+            self.assertIsNotNone(person_item)
             self.assertIsNotNone(manual_item)
             date_month = source_month_items(target, source_filter, "2024-01")
             date_month_nav = source_month_navigation(target, source_filter, first_item)
+            person_month_nav = source_month_navigation(target, person_filter, person_item)
             gps_month = source_month_items(target, gps_filter, "2024-12")
             manual_month = source_month_items(target, manual_filter, "2024-06")
             small_month = source_month_items(target, small_filter, "2023-12")
@@ -3118,6 +3150,8 @@ model_name = "buffalo_l"
             orientation_landscape_month = source_month_items(target, orientation_landscape_filter, "2024-12")
             orientation_portrait_month = source_month_items(target, orientation_portrait_filter, "2024-01")
             path_month = source_month_items(target, path_filter, "2024-01")
+            person_january_month = source_month_items(target, person_filter, "2024-01")
+            person_december_month = source_month_items(target, person_filter, "2024-12")
             source_name_month = source_month_items(target, source_name_filter, "2024-01")
             tag_month = source_month_items(target, tag_filter, "2024-01")
             type_file_item = source_item_by_id(target, type_file_filter, 5)
@@ -3128,6 +3162,13 @@ model_name = "buffalo_l"
                 first_item,
                 *adjacent_source_items(target, source_filter, first_item),
                 date_month_nav,
+            )
+            person_body = source_item_page_html(
+                target,
+                person_filter,
+                person_item,
+                *adjacent_source_items(target, person_filter, person_item),
+                person_month_nav,
             )
             date_filter_excludes_after_boundary = source_item_by_id(target, source_filter, 1) is None
             date_filter_excludes_before_boundary = source_item_by_id(target, source_filter, 3) is None
@@ -3157,6 +3198,8 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in orientation_landscape_month], [3])
         self.assertEqual([item["id"] for item in orientation_portrait_month], [2])
         self.assertEqual([item["id"] for item in path_month], [2])
+        self.assertEqual([item["id"] for item in person_january_month], [2])
+        self.assertEqual([item["id"] for item in person_december_month], [3])
         self.assertEqual([item["id"] for item in source_name_month], [2])
         self.assertEqual([item["id"] for item in tag_month], [2])
         self.assertIsNotNone(type_file_item)
@@ -3164,6 +3207,8 @@ model_name = "buffalo_l"
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
         self.assertIn("/filter/after%3A2023-12-01%20before%3A2024-12-12/item/4", date_body)
         self.assertIn('href="/filter">Filtersøk</a>', date_body)
+        self.assertIn("Filtersøk: person:viljar", person_body)
+        self.assertIn("/filter/person%3Aviljar/item/3", person_body)
         self.assertIn("Ingen aktive bilder matcher filtersøket.", empty_body)
 
     def test_run_server_filter_parser_rejects_invalid_queries(self) -> None:
@@ -3172,8 +3217,10 @@ model_name = "buffalo_l"
         self.assertEqual(text_filter.camera, "iPhone 17")
         self.assertEqual(text_filter.date_source, "metadata")
         self.assertEqual(text_filter.filename, "IMG")
+        self.assertIsNone(text_filter.person)
         self.assertEqual(text_filter.size_gt, 2 * 1024 * 1024)
         self.assertEqual(text_filter.size_lt, int(2.5 * 1024 * 1024 * 1024))
+        self.assertEqual(parse_text_filter("person:Viljar").person, "Viljar")
         for query, message in (
             ("after:2023-02-30", "after må være en dato på formen YYYY-MM-DD."),
             ("before:", "Filteret mangler verdi: before:"),
@@ -3183,6 +3230,7 @@ model_name = "buffalo_l"
             ("extension:..jpg", "extension må være en filendelse"),
             ("missing:camera", "missing må være gps, date eller metadata."),
             ("orientation:square", "orientation må være portrait eller landscape."),
+            ("person:Viljar person:Kari", "person kan bare brukes én gang."),
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
             ("size>2MB size>3MB", "size> kan bare brukes én gang."),
             ("size>stor", "size må skrives som for eksempel size<300KB eller size>2MB."),

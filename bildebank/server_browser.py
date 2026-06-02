@@ -118,6 +118,7 @@ def first_sql_filtered_source_item(target: Path, source: BrowserSource, *, hide_
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
+        attach_source_sql_filter_databases(conn, target, source)
         return conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
@@ -163,6 +164,7 @@ def sql_filtered_source_item_by_id(
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
+        attach_source_sql_filter_databases(conn, target, source)
         return conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
@@ -360,6 +362,7 @@ def adjacent_sql_filtered_source_items(
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
+        attach_source_sql_filter_databases(conn, target, source)
         previous_item = conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
@@ -460,6 +463,7 @@ def sql_filtered_source_month_keys(
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
+        attach_source_sql_filter_databases(conn, target, source)
         rows = conn.execute(
             f"""
             SELECT DISTINCT substr({db.BROWSER_DATE_ORDER_SQL}, 1, 7) AS month_key
@@ -2032,6 +2036,7 @@ def sql_filtered_source_month_items(
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
+        attach_source_sql_filter_databases(conn, target, source)
         return list(
             conn.execute(
                 f"""
@@ -2047,6 +2052,14 @@ def sql_filtered_source_month_items(
         )
     finally:
         conn.close()
+
+
+def attach_source_sql_filter_databases(conn: Any, target: Path, source: BrowserSource) -> None:
+    if source.text_filter is None:
+        return
+    from .server_filter import attach_text_filter_databases
+
+    attach_text_filter_databases(conn, target, source.text_filter)
 
 
 def browser_month_navigation_for_key(
