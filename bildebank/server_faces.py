@@ -781,6 +781,9 @@ def people_page_html(
         "Personer",
         f"""
         <h1>Personer</h1>
+        Kjør <a href="help/face-scan.md">face-scan</a> når du har lagt til nye bilder
+        og <a href="help/face-suggest.md">face-suggest</a> når du
+        har bekreftet at personer er et bestemt ansikt.
         {people_face_summary_html(summary)}
         {content}
         {person_rename_dialog_html()}

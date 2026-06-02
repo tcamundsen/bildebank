@@ -6,6 +6,9 @@ Litt om bildebrowseren fra run-server. Jeg vet at noen ting er litt rotete
 og preget av work-in-progress. Det er fordi det er det. Men det finpusses
 stadig. 
 
+For å gjøre lasting av månedsvisningen raskere kan du laga thumbsnails
+av bildene med å kjøre [`make-thumbnails`](../make-thumbnails.md).
+
 ## Hurtigtaster
 
 Når HTML-filen er åpen i nettleseren, kan du bla med tastaturet:
