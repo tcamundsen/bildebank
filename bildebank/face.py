@@ -73,6 +73,7 @@ class AddFaceToPersonResult:
 class RemoveFaceFromPersonResult:
     person_name: str
     face_id: int
+    file_id: int
     removed: bool
 
 
@@ -412,6 +413,8 @@ def remove_face_from_person(
     conn = connect_face_db(target, config)
     try:
         require_face(conn, face_id)
+        face_row = conn.execute("SELECT file_id FROM faces WHERE id = ?", (face_id,)).fetchone()
+        file_id = int(face_row["file_id"]) if face_row is not None else 0
         row = conn.execute("SELECT id FROM persons WHERE name = ?", (clean_name,)).fetchone()
         if row is None:
             raise ValueError(f"Fant ikke person: {clean_name}")
@@ -422,7 +425,7 @@ def remove_face_from_person(
         )
         conn.execute("UPDATE persons SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (person_id,))
         conn.commit()
-        return RemoveFaceFromPersonResult(clean_name, face_id, bool(cur.rowcount))
+        return RemoveFaceFromPersonResult(clean_name, face_id, file_id, bool(cur.rowcount))
     finally:
         conn.close()
 

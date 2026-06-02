@@ -1008,6 +1008,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 "person_name": result.person_name,
                 "person_url": person_url(result.person_name),
                 "face_id": result.face_id,
+                "file_id": result.file_id,
+                "redirect_url": f"/item/{result.file_id}",
                 "removed": result.removed,
             }
         )

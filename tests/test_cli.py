@@ -2131,7 +2131,7 @@ model_name = "buffalo_l"
         self.assertIn(".thumb-link {", SERVER_CSS)
         self.assertIn("aspect-ratio: 4 / 3;", SERVER_CSS)
         self.assertIn("overflow: hidden;", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "3")
+        self.assertEqual(SERVER_ASSET_VERSION, "4")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -3932,7 +3932,15 @@ model_name = "buffalo_l"
             BildebankRequestHandler.respond_remove_face_from_person(handler)  # type: ignore[arg-type]
 
             self.assertEqual(
-                {"ok": True, "person_name": "Kari", "person_url": "/person/Kari", "face_id": 1, "removed": True},
+                {
+                    "ok": True,
+                    "person_name": "Kari",
+                    "person_url": "/person/Kari",
+                    "face_id": 1,
+                    "file_id": 1,
+                    "redirect_url": "/item/1",
+                    "removed": True,
+                },
                 handler.body,
             )
             face_conn = connect_face_db(target)
@@ -4437,6 +4445,7 @@ model_name = "buffalo_l"
         self.assertNotIn("Tilsvarer:\\\\n${command}", SERVER_JS)
         self.assertIn("Flytte til deleted/?\\n\\n${path}", SERVER_JS)
         self.assertNotIn("Flytte til deleted/?\\\\n\\\\n${path}", SERVER_JS)
+        self.assertIn("window.location.href = payload.redirect_url", SERVER_JS)
 
     def test_target_command_is_not_available(self) -> None:
         with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

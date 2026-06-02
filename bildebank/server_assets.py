@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "3"
+SERVER_ASSET_VERSION = "4"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -1146,6 +1146,10 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
         });
         const payload = await response.json();
         if (!payload.ok) throw new Error(payload.error || "Kunne ikke avbekrefte.");
+        if (payload.redirect_url) {
+          window.location.href = payload.redirect_url;
+          return;
+        }
         window.location.reload();
       } catch (error) {
         alert(error.message || "Kunne ikke avbekrefte.");
