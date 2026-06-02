@@ -5628,6 +5628,28 @@ enabled = false
                 conn.close()
             self.assertEqual(commands_after, commands_before)
 
+    def test_check_source_progress_counts_files_before_checking(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+            (source / "IMG_20240103.jpg").write_bytes(b"image-two")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "check-source", str(source)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("scannet=2, dekket=2, mangler=0", stdout)
+            self.assertIn(f"Check-source: leser filoversikt for {source.resolve()}.", stderr)
+            self.assertIn(f"Check-source: fant 2 filer i {source.resolve()}.", stderr)
+            self.assertIn("Check-source: kontrollert=1/2", stderr)
+            self.assertIn("Check-source: kontrollert=2/2", stderr)
+            self.assertIn("gjenstår=", stderr)
+
     def test_check_source_reports_unimported_file_as_unsafe(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

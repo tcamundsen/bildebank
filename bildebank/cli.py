@@ -2586,8 +2586,12 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) ->
     target_hash_cache: dict[int, bool] = {}
     try:
         if progress is not None:
-            progress.message(f"Check-source: scanner {source}.")
-        for item in iter_check_source_files(source):
+            progress.message(f"Check-source: leser filoversikt for {source}.")
+        source_items = list(iter_check_source_files(source))
+        total_files = sum(1 for item in source_items if not isinstance(item, WalkError))
+        if progress is not None:
+            progress.message(f"Check-source: fant {total_files} filer i {source}.")
+        for item in source_items:
             if isinstance(item, WalkError):
                 stats.source_errors += 1
                 problems.append(CheckSourceProblem(item.path, item.message))
@@ -2614,10 +2618,12 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) ->
                 problems.append(CheckSourceProblem(path, "matchende målfil mangler eller har endret innhold"))
 
             if progress is not None:
-                progress.update_count(
+                progress.update(
                     stats.scanned,
+                    total_files,
                     action="kontrollert",
                     details=check_source_progress_details(stats),
+                    eta=True,
                 )
         if progress is not None:
             progress.done()
