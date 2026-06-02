@@ -23,6 +23,7 @@ from .server_browser_sources import (
     is_filtered_source,
     person_browser_source,
     source_has_sql_filter,
+    source_includes_deleted,
     source_item_url,
     source_month_url,
     source_sql_filter,
@@ -113,13 +114,14 @@ def first_source_item(
 def first_sql_filtered_source_item(target: Path, source: BrowserSource, *, hide_out_of_focus: bool = False) -> Any | None:
     where_sql, params = source_sql_filter(source)
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
+    deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
         return conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
             FROM files
-            WHERE deleted_at IS NULL
+            WHERE {deleted_sql}
               AND ({where_sql})
             ORDER BY {ITEM_ORDER_SQL}
             LIMIT 1
@@ -157,13 +159,14 @@ def sql_filtered_source_item_by_id(
 ) -> Any | None:
     where_sql, params = source_sql_filter(source)
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
+    deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
         return conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
             FROM files
-            WHERE deleted_at IS NULL
+            WHERE {deleted_sql}
               AND id = ?
               AND ({where_sql})
             """,
@@ -353,13 +356,14 @@ def adjacent_sql_filtered_source_items(
     where_sql, params = source_sql_filter(source)
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     order_key = item_order_key(item)
+    deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
         previous_item = conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
             FROM files
-            WHERE deleted_at IS NULL
+            WHERE {deleted_sql}
               AND ({where_sql})
               AND ({ITEM_DATE_ORDER_SQL}, target_path_key) < (?, ?)
             ORDER BY {ITEM_DATE_ORDER_SQL} DESC, target_path_key DESC
@@ -371,7 +375,7 @@ def adjacent_sql_filtered_source_items(
             f"""
             SELECT {FILE_COLUMNS}
             FROM files
-            WHERE deleted_at IS NULL
+            WHERE {deleted_sql}
               AND ({where_sql})
               AND ({ITEM_DATE_ORDER_SQL}, target_path_key) > (?, ?)
             ORDER BY {ITEM_ORDER_SQL}
@@ -403,7 +407,12 @@ def adjacent_source_items(
 ) -> tuple[Any | None, Any | None]:
     if source_has_sql_filter(source):
         return adjacent_sql_filtered_source_items(target, source, item, hide_out_of_focus=hide_out_of_focus)
-    if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
+    if (
+        source.person_name is not None
+        or source.source_id is not None
+        or source.tag_name is not None
+        or source.text_filter is not None
+    ):
         return adjacent_items_from_list(
             source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus),
             item,
@@ -447,13 +456,14 @@ def sql_filtered_source_month_keys(
 ) -> list[str]:
     where_sql, params = source_sql_filter(source)
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
+    deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
         rows = conn.execute(
             f"""
             SELECT DISTINCT substr({db.BROWSER_DATE_ORDER_SQL}, 1, 7) AS month_key
             FROM files
-            WHERE deleted_at IS NULL
+            WHERE {deleted_sql}
               AND ({where_sql})
               AND {db.BROWSER_DATE_ORDER_SQL} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
             ORDER BY month_key
@@ -548,7 +558,12 @@ def source_month_keys(
 ) -> list[str]:
     if source_has_sql_filter(source):
         return sql_filtered_source_month_keys(target, source, hide_out_of_focus=hide_out_of_focus)
-    if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
+    if (
+        source.person_name is not None
+        or source.source_id is not None
+        or source.tag_name is not None
+        or source.text_filter is not None
+    ):
         keys = {
             month_key_for_item(target, item)
             for item in source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
@@ -1896,6 +1911,10 @@ def source_items(
         from .server_geo import geo_place_items
 
         return filter_out_of_focus_items(target, source, geo_place_items(target, source.geo_place_slug), hide_out_of_focus)
+    if source.text_filter is not None:
+        from .server_filter import text_filter_items
+
+        return text_filter_items(target, source.text_filter, hide_out_of_focus=hide_out_of_focus)
     if source.date_source is not None:
         return date_source_items(target, source.date_source, hide_out_of_focus=hide_out_of_focus)
     if source.source_id is not None:
@@ -1974,7 +1993,12 @@ def source_month_items(
 ) -> list[Any]:
     if source_has_sql_filter(source):
         return sql_filtered_source_month_items(target, source, month_key, hide_out_of_focus=hide_out_of_focus)
-    if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
+    if (
+        source.person_name is not None
+        or source.source_id is not None
+        or source.tag_name is not None
+        or source.text_filter is not None
+    ):
         return [
             item
             for item in source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
@@ -1994,6 +2018,7 @@ def sql_filtered_source_month_items(
         return []
     where_sql, params = source_sql_filter(source)
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
+    deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
         return list(
@@ -2001,7 +2026,7 @@ def sql_filtered_source_month_items(
                 f"""
                 SELECT {FILE_COLUMNS}
                 FROM files
-                WHERE deleted_at IS NULL
+                WHERE {deleted_sql}
                   AND ({where_sql})
                   AND substr({db.BROWSER_DATE_ORDER_SQL}, 1, 7) = ?
                 ORDER BY {ITEM_ORDER_SQL}

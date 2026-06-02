@@ -3,12 +3,14 @@ from __future__ import annotations
 import datetime as dt
 import html
 import re
+import shlex
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from . import db
+from .media import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, camera_info
 from .server_shell import message_html
 
 
@@ -20,25 +22,45 @@ class BrowserTextFilter:
     query: str
     after: dt.date | None = None
     before: dt.date | None = None
+    camera: str | None = None
     date_source: str | None = None
+    deleted: bool = False
+    extension: str | None = None
+    filename: str | None = None
     location: str | None = None
     location_place_slug: str | None = None
     location_place_cells: tuple[tuple[str, str], ...] = ()
+    media_type: str | None = None
+    missing: str | None = None
+    orientation: str | None = None
+    path: str | None = None
     size_gt: int | None = None
     size_lt: int | None = None
+    source: str | None = None
+    tag: str | None = None
 
 
 def parse_text_filter(query: str) -> BrowserTextFilter:
-    clean_query = " ".join(query.strip().split())
-    if not clean_query:
+    tokens, clean_query = tokenize_filter_query(query)
+    if not tokens:
         raise ValueError("Filtersøk kan ikke være tomt.")
     after = None
     before = None
+    camera = None
     date_source = None
+    deleted = False
+    extension = None
+    filename = None
     location = None
+    media_type = None
+    missing = None
+    orientation = None
+    path = None
     size_gt = None
     size_lt = None
-    for token in clean_query.split():
+    source = None
+    tag = None
+    for token in tokens:
         size_operator = size_filter_operator(token)
         if size_operator is not None:
             operator, value = size_operator
@@ -66,6 +88,10 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
             if before is not None:
                 raise ValueError("before kan bare brukes én gang.")
             before = parse_filter_date(value, key)
+        elif key == "camera":
+            if camera is not None:
+                raise ValueError("camera kan bare brukes én gang.")
+            camera = value
         elif key == "location":
             if location is not None:
                 raise ValueError("location kan bare brukes én gang.")
@@ -76,17 +102,87 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
             if value not in {"manual", "metadata", "filename", "mtime"}:
                 raise ValueError("date må være manual, metadata, filename eller mtime.")
             date_source = value
+        elif key == "deleted":
+            if value not in {"true", "false"}:
+                raise ValueError("deleted må være true eller false.")
+            deleted = value == "true"
+        elif key == "extension":
+            if extension is not None:
+                raise ValueError("extension kan bare brukes én gang.")
+            extension = parse_extension(value)
+        elif key == "filename":
+            if filename is not None:
+                raise ValueError("filename kan bare brukes én gang.")
+            filename = value
+        elif key == "missing":
+            if missing is not None:
+                raise ValueError("missing kan bare brukes én gang.")
+            if value not in {"gps", "date", "metadata"}:
+                raise ValueError("missing må være gps, date eller metadata.")
+            missing = value
+        elif key == "orientation":
+            if orientation is not None:
+                raise ValueError("orientation kan bare brukes én gang.")
+            if value not in {"portrait", "landscape"}:
+                raise ValueError("orientation må være portrait eller landscape.")
+            orientation = value
+        elif key == "path":
+            if path is not None:
+                raise ValueError("path kan bare brukes én gang.")
+            path = value
+        elif key == "source":
+            if source is not None:
+                raise ValueError("source kan bare brukes én gang.")
+            source = value
+        elif key == "tag":
+            if tag is not None:
+                raise ValueError("tag kan bare brukes én gang.")
+            tag = value
+        elif key == "type":
+            if media_type is not None:
+                raise ValueError("type kan bare brukes én gang.")
+            if value not in {"image", "video", "file"}:
+                raise ValueError("type må være image, video eller file.")
+            media_type = value
         else:
             raise ValueError(f"Ukjent filter: {key}")
     return BrowserTextFilter(
         clean_query,
         after=after,
         before=before,
+        camera=camera,
         date_source=date_source,
+        deleted=deleted,
+        extension=extension,
+        filename=filename,
         location=location,
+        media_type=media_type,
+        missing=missing,
+        orientation=orientation,
+        path=path,
         size_gt=size_gt,
         size_lt=size_lt,
+        source=source,
+        tag=tag,
     )
+
+
+def tokenize_filter_query(query: str) -> tuple[list[str], str]:
+    try:
+        tokens = shlex.split(query.strip())
+    except ValueError as exc:
+        raise ValueError("Ugyldige anførselstegn i filtersøk.") from exc
+    return tokens, " ".join(canonical_filter_token(token) for token in tokens)
+
+
+def canonical_filter_token(token: str) -> str:
+    if not any(char.isspace() for char in token):
+        return token
+    if ":" not in token:
+        return token
+    key, value = token.split(":", 1)
+    escaped_value = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'{key}:"{escaped_value}"'
 
 
 def parse_filter_date(value: str, key: str) -> dt.date:
@@ -94,6 +190,13 @@ def parse_filter_date(value: str, key: str) -> dt.date:
         return dt.date.fromisoformat(value)
     except ValueError as exc:
         raise ValueError(f"{key} må være en dato på formen YYYY-MM-DD.") from exc
+
+
+def parse_extension(value: str) -> str:
+    clean_value = value.strip().lower().removeprefix(".")
+    if not clean_value or not re.fullmatch(r"[a-z0-9]+", clean_value):
+        raise ValueError("extension må være en filendelse, for eksempel jpg eller mp4.")
+    return clean_value
 
 
 def size_filter_operator(token: str) -> tuple[str, str] | None:
@@ -151,12 +254,22 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         text_filter.query,
         after=text_filter.after,
         before=text_filter.before,
+        camera=text_filter.camera,
         date_source=text_filter.date_source,
+        deleted=text_filter.deleted,
+        extension=text_filter.extension,
+        filename=text_filter.filename,
         location=text_filter.location,
         location_place_slug=place.slug,
         location_place_cells=tuple(geo_place_cells_by_column(place)),
+        media_type=text_filter.media_type,
+        missing=text_filter.missing,
+        orientation=text_filter.orientation,
+        path=text_filter.path,
         size_gt=text_filter.size_gt,
         size_lt=text_filter.size_lt,
+        source=text_filter.source,
+        tag=text_filter.tag,
     )
 
 
@@ -167,8 +280,12 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         f"COALESCE(manual_date_from GLOB {db.DATE_GLOB_SQL}, 0) "
         f"AND COALESCE(manual_date_to GLOB {db.DATE_GLOB_SQL}, 0)"
     )
+    taken_date_sql = f"COALESCE(taken_date GLOB {db.DATE_GLOB_SQL}, 0)"
+    browser_has_date_sql = f"(({manual_date_sql}) OR {taken_date_sql})"
+    if text_filter.deleted:
+        where.append("deleted_at IS NOT NULL")
     if text_filter.after is not None or text_filter.before is not None:
-        where.append(f"{db.BROWSER_DATE_ORDER_SQL} GLOB {db.DATE_GLOB_SQL}")
+        where.append(browser_has_date_sql)
     if text_filter.after is not None:
         where.append(f"{db.BROWSER_DATE_ORDER_SQL} > ?")
         params.append(text_filter.after.isoformat())
@@ -187,6 +304,42 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         where.append(f"NOT ({manual_date_sql})")
         where.append("date_source = ?")
         params.append(text_filter.date_source)
+    if text_filter.extension is not None:
+        where.append("lower(stored_filename) LIKE ?")
+        params.append(f"%.{text_filter.extension}")
+    if text_filter.filename is not None:
+        where.append("lower(stored_filename) LIKE ?")
+        params.append(like_contains_param(text_filter.filename))
+    if text_filter.media_type in {"image", "video"}:
+        where.append(extension_condition_for_type(text_filter.media_type))
+        params.extend(extension_params_for_type(text_filter.media_type))
+    elif text_filter.media_type == "file":
+        where.append(f"NOT {extension_condition_for_type('image')}")
+        params.extend(extension_params_for_type("image"))
+        where.append(f"NOT {extension_condition_for_type('video')}")
+        params.extend(extension_params_for_type("video"))
+    if text_filter.missing == "gps":
+        where.append("gps_lat IS NULL")
+        where.append("gps_lon IS NULL")
+        where.append("(gps_source IS NULL OR gps_source != 'manual-h3')")
+    elif text_filter.missing == "date":
+        where.append(f"NOT {browser_has_date_sql}")
+    elif text_filter.missing == "metadata":
+        where.append("date_source != 'metadata'")
+    if text_filter.orientation == "portrait":
+        where.append("media_width IS NOT NULL AND media_height IS NOT NULL AND media_height > media_width")
+    elif text_filter.orientation == "landscape":
+        where.append("media_width IS NOT NULL AND media_height IS NOT NULL AND media_width > media_height")
+    if text_filter.path is not None:
+        where.append("lower(target_path) LIKE ?")
+        params.append(like_contains_param(text_filter.path.replace("\\", "/")))
+    if text_filter.source is not None:
+        source_filter, source_params = source_where_clause(text_filter.source)
+        where.append(source_filter)
+        params.extend(source_params)
+    if text_filter.tag is not None:
+        where.append(tag_where_clause())
+        params.extend(tag_params(text_filter.tag))
     if text_filter.location == "gps":
         where.append("gps_lat IS NOT NULL")
         where.append("gps_lon IS NOT NULL")
@@ -197,9 +350,105 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         place_where, place_params = db.geo_place_where_clause(list(text_filter.location_place_cells))
         where.append(f"({place_where})")
         params.extend(place_params)
+    if not where and text_filter.camera is not None:
+        where.append("1 = 1")
     if not where:
         raise ValueError("Filtersøket må ha minst ett kriterium.")
     return " AND ".join(where), tuple(params)
+
+
+def extension_condition_for_type(media_type: str) -> str:
+    extensions = IMAGE_EXTENSIONS if media_type == "image" else VIDEO_EXTENSIONS
+    return "(" + " OR ".join("lower(stored_filename) LIKE ?" for _ext in extensions) + ")"
+
+
+def extension_params_for_type(media_type: str) -> tuple[str, ...]:
+    extensions = IMAGE_EXTENSIONS if media_type == "image" else VIDEO_EXTENSIONS
+    return tuple(f"%{extension}" for extension in sorted(extensions))
+
+
+def source_where_clause(value: str) -> tuple[str, tuple[object, ...]]:
+    clean_value = value.strip()
+    if clean_value.isdigit():
+        return (
+            "EXISTS (SELECT 1 FROM file_sources WHERE file_sources.file_id = files.id AND file_sources.source_id = ?)",
+            (int(clean_value),),
+        )
+    return (
+        """
+        EXISTS (
+            SELECT 1
+            FROM file_sources
+            JOIN sources ON sources.id = file_sources.source_id
+            WHERE file_sources.file_id = files.id
+              AND lower(sources.name) LIKE ?
+        )
+        """,
+        (like_contains_param(clean_value),),
+    )
+
+
+def tag_where_clause() -> str:
+    return """
+    EXISTS (
+        SELECT 1
+        FROM file_tags
+        JOIN tags ON tags.id = file_tags.tag_id
+        WHERE file_tags.file_id = files.id
+          AND tags.name_key IN (?, ?)
+    )
+    """
+
+
+def tag_params(value: str) -> tuple[str, str]:
+    clean_value = value.strip().casefold()
+    return clean_value, re.sub(r"[-_]+", " ", clean_value)
+
+
+def like_contains_param(value: str) -> str:
+    return f"%{value.strip().lower()}%"
+
+
+def text_filter_has_runtime_filter(text_filter: BrowserTextFilter) -> bool:
+    return text_filter.camera is not None
+
+
+def text_filter_matches_runtime(target: Path, text_filter: BrowserTextFilter, item: Any) -> bool:
+    if text_filter.camera is None:
+        return True
+    target_path = db.absolute_target_path(target, Path(str(item["target_path"])))
+    camera = camera_info(target_path)
+    if camera is None:
+        return False
+    haystack = " ".join(part for part in (camera.make, camera.model) if part).casefold()
+    return text_filter.camera.casefold() in haystack
+
+
+def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_of_focus: bool = False) -> list[Any]:
+    from .server_browser import FILE_COLUMNS, ITEM_ORDER_SQL, OUT_OF_FOCUS_FILTER_PARAMS, OUT_OF_FOCUS_FILTER_SQL
+
+    where_sql, params = text_filter_where_clause(text_filter)
+    deleted_sql = "1 = 1" if text_filter.deleted else "deleted_at IS NULL"
+    focus_sql = f"AND {OUT_OF_FOCUS_FILTER_SQL}" if hide_out_of_focus else ""
+    focus_params = OUT_OF_FOCUS_FILTER_PARAMS if hide_out_of_focus else ()
+    conn = db.connect(target)
+    try:
+        rows = list(
+            conn.execute(
+                f"""
+                SELECT {FILE_COLUMNS}
+                FROM files
+                WHERE {deleted_sql}
+                  AND ({where_sql})
+                  {focus_sql}
+                ORDER BY {ITEM_ORDER_SQL}
+                """,
+                (*params, *focus_params),
+            )
+        )
+    finally:
+        conn.close()
+    return [row for row in rows if text_filter_matches_runtime(target, text_filter, row)]
 
 
 def filter_start_html(
@@ -216,7 +465,7 @@ def filter_start_html(
         <h1>Filtersøk</h1>
         {message_html(message)}
         {filter_form(query)}
-        <p class="meta">Eksempler: after:2023-12-01 before:2024-12-12, date:manual, date:metadata, date:filename, date:mtime, location:gps, location:manual, location:slug, size&lt;300KB, size&gt;2MB.</p>
+        <p class="meta">Eksempler: after:2023-12-01 before:2024-12-12, date:manual, location:gps, location:slug, size&lt;300KB, size&gt;2MB, type:image, extension:jpg, tag:"Ute av fokus", source:1, missing:gps, orientation:portrait, camera:"iPhone", filename:IMG, path:2024/01, deleted:true.</p>
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,

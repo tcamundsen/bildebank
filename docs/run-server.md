@@ -126,15 +126,29 @@ en vanlig bildebrowser. Første versjon støtter:
 
 ```text
 after:2023-12-01 before:2024-12-12
+camera:"iPhone"
 date:manual
 date:metadata
 date:filename
 date:mtime
+deleted:true
+extension:jpg
+filename:IMG
 location:gps
 location:manual
 location:slug
+missing:gps
+missing:date
+missing:metadata
+orientation:portrait
+path:2024/01
 size<300KB
 size>2MB
+source:1
+source:"mobil 2024"
+tag:"Ute av fokus"
+type:image
+type:video
 after:2023-12-01 location:manual
 ```
 
@@ -148,6 +162,12 @@ bilder der du har satt manuell H3-lokasjon. `location:slug` viser bilder for
 et sted fra `Steder`, der `slug` er den samme teksten som brukes i adressen
 `/geo/place/slug`. `size<300KB` viser filer mindre enn 300 KB, og `size>2MB`
 viser filer større enn 2 MB. Størrelsene regnes med 1024 bytes per KB.
+`type:image`, `type:video` og `type:file` filtrerer på filtype. `extension:jpg`,
+`filename:IMG`, `path:2024/01` og `camera:"iPhone"` søker som tekst, og
+anførselstegn kan brukes når teksten inneholder mellomrom. `source:` kan være
+kilde-ID eller tekst i kildenavn. `tag:` finner tagger, og `missing:` kan være
+`gps`, `date` eller `metadata`. `orientation:` kan være `portrait` eller
+`landscape`. `deleted:true` viser bare bilder som er flyttet til `deleted`.
 
 Knappen `Slett` flytter bildet til `deleted`-mappen i bildesamlingen og
 markerer filen som slettet i databasen. Dette er samme slettemekanisme

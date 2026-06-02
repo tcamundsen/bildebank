@@ -127,7 +127,15 @@ def is_filtered_source(source: BrowserSource) -> bool:
 
 
 def source_has_sql_filter(source: BrowserSource) -> bool:
+    if source.text_filter is not None:
+        from .server_filter import text_filter_has_runtime_filter
+
+        return not text_filter_has_runtime_filter(source.text_filter)
     return source.date_source is not None or source.geo_place_slug is not None or source.text_filter is not None
+
+
+def source_includes_deleted(source: BrowserSource) -> bool:
+    return bool(source.text_filter is not None and getattr(source.text_filter, "deleted", False))
 
 
 def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:

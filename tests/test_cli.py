@@ -123,6 +123,7 @@ from bildebank.thumbnails import (
 )
 from tests.test_media import (
     jpeg_with_xmp_date,
+    jpeg_with_exif_camera,
     minimal_avi_with_creation_date,
     minimal_avi_with_idit_outside_info,
     minimal_mp4_with_creation_date,
@@ -2969,7 +2970,7 @@ model_name = "buffalo_l"
             source.mkdir()
             for name, content in (
                 ("IMG_20231201.jpg", b"after-boundary"),
-                ("IMG_20240102.jpg", b"gps-match"),
+                ("IMG_20240102.jpg", jpeg_with_exif_camera("Apple", "iPhone 17")),
                 ("IMG_20241212.jpg", b"before-boundary"),
                 ("IMG_20250101.jpg", b"manual-date-match"),
             ):
@@ -2980,11 +2981,12 @@ model_name = "buffalo_l"
             conn = db.connect(target)
             try:
                 conn.execute(
-                    "UPDATE files SET gps_lat = 59.9, gps_lon = 10.7, gps_source = 'exiftool' WHERE id IN (1, 2, 3)"
+                    "UPDATE files SET gps_lat = 59.9, gps_lon = 10.7, gps_source = 'exiftool' WHERE id IN (2, 3)"
                 )
                 oslo_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
                 conn.execute("UPDATE files SET h3_res7 = ? WHERE id = 2", (oslo_cell,))
                 db.set_custom_geo_place(conn, slug="oslo-test", name="Oslo test", h3_cells=[oslo_cell])
+                db.tag_file(conn, file_id=2, tag_name="Ute av fokus")
                 conn.execute(
                     """
                     UPDATE files
@@ -3017,6 +3019,42 @@ model_name = "buffalo_l"
                     WHERE id = 4
                     """
                 )
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET media_width = CASE id
+                        WHEN 2 THEN 400
+                        WHEN 3 THEN 1000
+                    END,
+                        media_height = CASE id
+                        WHEN 2 THEN 800
+                        WHEN 3 THEN 500
+                    END
+                    WHERE id IN (2, 3)
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename, stored_filename,
+                        sha256, size_bytes, taken_date, date_source, name_conflict
+                    ) VALUES(
+                        'udatert/no_date.bin', 'udatert/no_date.bin', 'no_date.bin', 'no_date.bin',
+                        'missing-date', 12, NULL, 'mtime', 0
+                    )
+                    """
+                )
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename, stored_filename,
+                        sha256, size_bytes, taken_date, date_source, name_conflict, deleted_at
+                    ) VALUES(
+                        'deleted/2024/01/deleted.jpg', 'deleted/2024/01/deleted.jpg', 'deleted.jpg', 'deleted.jpg',
+                        'deleted-row', 20, '2024-01-03', 'filename', 0, CURRENT_TIMESTAMP
+                    )
+                    """
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -3032,6 +3070,20 @@ model_name = "buffalo_l"
             filename_date_filter = text_filter_browser_source("date:filename")
             mtime_date_filter = text_filter_browser_source("date:mtime")
             place_filter = text_filter_browser_source("location:oslo-test", target)
+            camera_filter = text_filter_browser_source('camera:"iPhone"', target)
+            deleted_filter = text_filter_browser_source("deleted:true")
+            extension_filter = text_filter_browser_source("extension:jpg")
+            filename_filter = text_filter_browser_source("filename:20240102")
+            missing_date_filter = text_filter_browser_source("missing:date")
+            missing_gps_filter = text_filter_browser_source("missing:gps")
+            missing_metadata_filter = text_filter_browser_source("missing:metadata")
+            orientation_landscape_filter = text_filter_browser_source("orientation:landscape")
+            orientation_portrait_filter = text_filter_browser_source("orientation:portrait")
+            path_filter = text_filter_browser_source("path:2024/01")
+            source_name_filter = text_filter_browser_source("source:source")
+            tag_filter = text_filter_browser_source("tag:ute-av-fokus")
+            type_file_filter = text_filter_browser_source("type:file")
+            type_image_filter = text_filter_browser_source("type:image")
             first_item = source_item_by_id(target, source_filter, 2)
             manual_item = source_item_by_id(target, manual_filter, 4)
             self.assertIsNotNone(first_item)
@@ -3048,6 +3100,20 @@ model_name = "buffalo_l"
             filename_date_month = source_month_items(target, filename_date_filter, "2023-12")
             mtime_date_month = source_month_items(target, mtime_date_filter, "2024-12")
             place_month = source_month_items(target, place_filter, "2024-01")
+            camera_month = source_month_items(target, camera_filter, "2024-01")
+            deleted_month = source_month_items(target, deleted_filter, "2024-01")
+            extension_month = source_month_items(target, extension_filter, "2024-01")
+            filename_month = source_month_items(target, filename_filter, "2024-01")
+            missing_date_item = source_item_by_id(target, missing_date_filter, 5)
+            missing_gps_month = source_month_items(target, missing_gps_filter, "2023-12")
+            missing_metadata_month = source_month_items(target, missing_metadata_filter, "2023-12")
+            orientation_landscape_month = source_month_items(target, orientation_landscape_filter, "2024-12")
+            orientation_portrait_month = source_month_items(target, orientation_portrait_filter, "2024-01")
+            path_month = source_month_items(target, path_filter, "2024-01")
+            source_name_month = source_month_items(target, source_name_filter, "2024-01")
+            tag_month = source_month_items(target, tag_filter, "2024-01")
+            type_file_item = source_item_by_id(target, type_file_filter, 5)
+            type_image_month = source_month_items(target, type_image_filter, "2024-01")
             date_body = source_item_page_html(
                 target,
                 source_filter,
@@ -3073,15 +3139,31 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in filename_date_month], [1])
         self.assertEqual([item["id"] for item in mtime_date_month], [3])
         self.assertEqual([item["id"] for item in place_month], [2])
+        self.assertEqual([item["id"] for item in camera_month], [2])
+        self.assertEqual([item["id"] for item in deleted_month], [6])
+        self.assertEqual([item["id"] for item in extension_month], [2])
+        self.assertEqual([item["id"] for item in filename_month], [2])
+        self.assertIsNotNone(missing_date_item)
+        self.assertEqual([item["id"] for item in missing_gps_month], [1])
+        self.assertEqual([item["id"] for item in missing_metadata_month], [1])
+        self.assertEqual([item["id"] for item in orientation_landscape_month], [3])
+        self.assertEqual([item["id"] for item in orientation_portrait_month], [2])
+        self.assertEqual([item["id"] for item in path_month], [2])
+        self.assertEqual([item["id"] for item in source_name_month], [2])
+        self.assertEqual([item["id"] for item in tag_month], [2])
+        self.assertIsNotNone(type_file_item)
+        self.assertEqual([item["id"] for item in type_image_month], [2])
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
         self.assertIn("/filter/after%3A2023-12-01%20before%3A2024-12-12/item/4", date_body)
         self.assertIn('href="/filter">Filtersøk</a>', date_body)
         self.assertIn("Ingen aktive bilder matcher filtersøket.", empty_body)
 
     def test_run_server_filter_parser_rejects_invalid_queries(self) -> None:
-        text_filter = parse_text_filter("  after:2023-12-01   date:metadata location:gps size>2MB size<2.5GB ")
-        self.assertEqual(text_filter.query, "after:2023-12-01 date:metadata location:gps size>2MB size<2.5GB")
+        text_filter = parse_text_filter('  after:2023-12-01 camera:"iPhone 17" date:metadata filename:IMG location:gps size>2MB size<2.5GB ')
+        self.assertEqual(text_filter.query, 'after:2023-12-01 camera:"iPhone 17" date:metadata filename:IMG location:gps size>2MB size<2.5GB')
+        self.assertEqual(text_filter.camera, "iPhone 17")
         self.assertEqual(text_filter.date_source, "metadata")
+        self.assertEqual(text_filter.filename, "IMG")
         self.assertEqual(text_filter.size_gt, 2 * 1024 * 1024)
         self.assertEqual(text_filter.size_lt, int(2.5 * 1024 * 1024 * 1024))
         for query, message in (
@@ -3089,10 +3171,16 @@ model_name = "buffalo_l"
             ("before:", "Filteret mangler verdi: before:"),
             ("date:gps", "date må være manual, metadata, filename eller mtime."),
             ("date:manual date:metadata", "date kan bare brukes én gang."),
+            ("deleted:maybe", "deleted må være true eller false."),
+            ("extension:..jpg", "extension må være en filendelse"),
+            ("missing:camera", "missing må være gps, date eller metadata."),
+            ("orientation:square", "orientation må være portrait eller landscape."),
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
             ("size>2MB size>3MB", "size> kan bare brukes én gang."),
             ("size>stor", "size må skrives som for eksempel size<300KB eller size>2MB."),
-            ("camera:canon", "Ukjent filter: camera"),
+            ("type:audio", "type må være image, video eller file."),
+            ('camera:"iPhone', "Ugyldige anførselstegn i filtersøk."),
+            ("unknown:canon", "Ukjent filter: unknown"),
         ):
             with self.subTest(query=query):
                 with self.assertRaisesRegex(ValueError, message):
