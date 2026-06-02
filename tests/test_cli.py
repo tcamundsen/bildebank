@@ -8314,6 +8314,57 @@ print(json.dumps([
             finally:
                 conn.close()
 
+    def test_refresh_metadata_rescan_fills_camera_for_existing_metadata_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(jpeg_with_exif_camera("Canon", "EOS 80D"))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET date_source = 'metadata',
+                        camera_make = NULL,
+                        camera_model = NULL
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "refresh-metadata"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("sjekket=0", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT camera_make, camera_model FROM files").fetchone(),
+                    (None, None),
+                )
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "refresh-metadata", "--rescan"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("sjekket=1", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT camera_make, camera_model FROM files").fetchone(),
+                    ("Canon", "EOS 80D"),
+                )
+            finally:
+                conn.close()
+
     def test_errors_lists_recorded_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -8955,6 +9006,7 @@ print(json.dumps([
             self.assertIn("Nåværende schema_version: 9", stdout)
             self.assertIn("Ny schema_version: 10", stdout)
             self.assertIn("Legger til kamerakolonner i files.", stdout)
+            self.assertIn("refresh-metadata --rescan", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}

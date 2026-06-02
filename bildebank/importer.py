@@ -391,13 +391,14 @@ def refresh_non_metadata_files(
     target: Path,
     *,
     dry_run: bool = False,
+    rescan: bool = False,
     verbose: bool = False,
     progress: MetadataRefreshProgress | None = None,
 ) -> MetadataRefreshStats:
     stats = MetadataRefreshStats()
     conn = db.connect(target)
     try:
-        rows = list(db.non_metadata_files(conn))
+        rows = list(db.metadata_refresh_files(conn, rescan=rescan))
         total = len(rows)
         if progress is not None:
             progress("start", 0, total, stats, None)

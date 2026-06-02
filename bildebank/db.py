@@ -1886,9 +1886,10 @@ def conflict_candidate_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     )
 
 
-def non_metadata_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
+def metadata_refresh_files(conn: sqlite3.Connection, *, rescan: bool = False) -> Iterable[sqlite3.Row]:
+    date_filter = "" if rescan else "AND date_source != 'metadata'"
     return conn.execute(
-        """
+        f"""
         WITH primary_sources AS (
             SELECT
                 file_sources.*,
@@ -1909,11 +1910,15 @@ def non_metadata_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
         FROM files
         JOIN primary_sources ON primary_sources.file_id = files.id
             AND primary_sources.source_rank = 1
-        WHERE date_source != 'metadata'
-          AND deleted_at IS NULL
+        WHERE deleted_at IS NULL
+          {date_filter}
         ORDER BY files.date_source, files.taken_date, files.target_path
         """
     )
+
+
+def non_metadata_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
+    return metadata_refresh_files(conn)
 
 
 def deleted_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:

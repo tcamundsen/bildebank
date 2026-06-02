@@ -514,6 +514,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Vis oppsummering uten å flytte filer eller endre databasen",
     )
     refresh.add_argument(
+        "--rescan",
+        action="store_true",
+        help="Les metadata på nytt for alle aktive filer",
+    )
+    refresh.add_argument(
         "--verbose",
         action="store_true",
         help="Vis filer som flyttes, hoppes over eller feiler",
@@ -1389,7 +1394,11 @@ def run(args: argparse.Namespace) -> int:
             conn.commit()
             conn.close()
             stats = refresh_non_metadata_files(
-                target, dry_run=args.dry_run, verbose=args.verbose, progress=print_refresh_metadata_progress
+                target,
+                dry_run=args.dry_run,
+                rescan=args.rescan,
+                verbose=args.verbose,
+                progress=print_refresh_metadata_progress,
             )
             print_refresh_summary(stats, dry_run=args.dry_run)
             return 0 if stats.errors == 0 else 2
@@ -2723,6 +2732,7 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Fyller h3_res10 og h3_res11 for eksisterende GPS-posisjoner.")
     if result.adds_camera_columns:
         print("Legger til kamerakolonner i files.")
+        print("Kjør bildebank refresh-metadata --rescan for å fylle kameradata for eksisterende filer.")
     if result.refreshes_performance_indexes:
         print("Oppdaterer manglende ytelsesindekser.")
     print(f"Setter schema_version={result.target_version}.")
