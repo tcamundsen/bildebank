@@ -860,7 +860,7 @@ def source_item_page_html(
         manual_date_button=manual_date_button_html(item),
         manual_location_button=(
             manual_location_button_html(target, item, manual_h3_cell)
-            + remove_manual_location_button_html(item)
+            + remove_manual_location_button_html(item, manual_h3_cell)
         ),
         unconfirm_buttons=unconfirm_face_buttons_html(target, source, item, face_config) if face_enabled else "",
         delete_button=delete_button_html(source, item, previous_item, next_item),
@@ -1153,8 +1153,8 @@ def item_has_gps_location(item: Any) -> bool:
         return False
 
 
-def remove_manual_location_button_html(item: Any) -> str:
-    if not gps_source_is_manual_h3(item):
+def remove_manual_location_button_html(item: Any, h3_cell: str) -> str:
+    if not h3_cell.strip() or not gps_source_is_manual_h3(item):
         return ""
     file_id = int(item["id"])
     return (

@@ -2372,6 +2372,13 @@ model_name = "buffalo_l"
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            body_with_manual_cell = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+                manual_h3_cell=h3_cell,
+            )
             info_body = image_info_content_html(target, item)
             conn = db.connect(target)
             try:
@@ -2394,6 +2401,10 @@ model_name = "buffalo_l"
             f'<div class="location-status-badge"><a href="https://h3geo.org/#hex={h3_cell}" target="_blank" rel="noopener">Manuell H3</a></div>',
             body,
         )
+        self.assertNotIn("Fjern manuelt sted", body)
+        self.assertNotIn('data-remove-manual-location-item="1"', body)
+        self.assertIn("Fjern manuelt sted", body_with_manual_cell)
+        self.assertIn('data-remove-manual-location-item="1"', body_with_manual_cell)
         self.assertNotIn("<dt>Kart</dt>", info_body)
         self.assertIn("Manuell H3", info_body)
         self.assertIn(f'href="https://h3geo.org/#hex={h3_cell}"', info_body)
