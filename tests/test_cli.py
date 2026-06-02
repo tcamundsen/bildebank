@@ -31,6 +31,7 @@ from bildebank.face import (
     connect_face_db,
     face_box_percent,
     face_db_path,
+    insightface_import_error_message,
     normalize_insightface_model_layout,
     read_image,
     remove_insightface_model_zip,
@@ -5096,14 +5097,46 @@ enabled = true
         with (
             patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
             patch("bildebank.cli.python_module_available", side_effect=lambda name: name == "h3"),
+            patch(
+                "bildebank.cli.insightface_runtime_error",
+                return_value="InsightFace er ikke installert. Kjør install-insightface.ps1 fra programmappen.",
+            ),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
 
         self.assertEqual(code, 0, stderr)
         self.assertIn("  OK: face_recognition er slått på", stdout)
-        self.assertIn("  FEIL: face_recognition er slått på, men insightface mangler.", stdout)
+        self.assertIn("  FEIL: InsightFace er ikke installert.", stdout)
         self.assertIn("  FEIL: face_recognition er slått på, men onnxruntime mangler.", stdout)
         self.assertIn("install-insightface.ps1", stdout)
+        self.assertEqual(stderr, "")
+
+    def test_doctor_reports_insightface_opencv_linux_system_dependency(self) -> None:
+        (self.program_root / "bildebank-config.toml").write_text(
+            """
+[face_recognition]
+enabled = true
+""",
+            encoding="utf-8",
+        )
+
+        with (
+            patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli.python_module_available", side_effect=lambda name: name in {"h3", "onnxruntime"}),
+            patch(
+                "bildebank.cli.insightface_runtime_error",
+                return_value=(
+                    "InsightFace er installert, men OpenCV mangler Linux-biblioteket libGL.so.1. "
+                    "Installer det i WSL/Linux med `sudo apt install libgl1`."
+                ),
+            ),
+        ):
+            code, stdout, stderr = capture_cli(["doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("  FEIL: InsightFace er installert, men OpenCV mangler Linux-biblioteket libGL.so.1.", stdout)
+        self.assertIn("  Råd: Installer Linux-pakken: `sudo apt install libgl1`.", stdout)
+        self.assertIn("  OK: onnxruntime installert", stdout)
         self.assertEqual(stderr, "")
 
     def test_doctor_reports_enabled_image_search_missing_dependencies(self) -> None:
@@ -7002,6 +7035,33 @@ print(json.dumps([
             self.assertIn("Ansiktsgjenkjenning er av", stderr)
             self.assertFalse((face_db_path(target)).exists())
 
+    def test_face_scan_reports_insightface_opencv_linux_system_dependency(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.enable_face_recognition_config()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            with patch(
+                "bildebank.face.load_face_app",
+                side_effect=ValueError(
+                    "InsightFace er installert, men OpenCV mangler Linux-biblioteket libGL.so.1. "
+                    "Installer det i WSL/Linux med `sudo apt install libgl1`."
+                ),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--limit", "1"])
+
+            self.assertEqual(code, 1)
+            self.assertIn("Face-scan: laster ansiktsmodell.", stdout)
+            self.assertNotIn("Oppsummering:", stdout)
+            self.assertIn("Feil: InsightFace er installert, men OpenCV mangler Linux-biblioteket libGL.so.1.", stderr)
+            self.assertIn("sudo apt install libgl1", stderr)
+
     def test_image_commands_require_enabled_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -7387,6 +7447,14 @@ print(json.dumps([
             self.assertFalse(active_zip.exists())
             self.assertTrue(other_zip.exists())
             self.assertFalse(remove_insightface_model_zip(config))
+
+    def test_insightface_import_error_message_reports_linux_libgl_dependency(self) -> None:
+        message = insightface_import_error_message(
+            ImportError("libGL.so.1: cannot open shared object file: No such file or directory")
+        )
+
+        self.assertIn("OpenCV mangler Linux-biblioteket libGL.so.1", message)
+        self.assertIn("sudo apt install libgl1", message)
 
     def test_face_suggest_uses_relative_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

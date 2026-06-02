@@ -21,7 +21,7 @@ Kommandoen skriver korte linjer:
 
 `doctor` sjekker blant annet config-fil, H3, ExifTool, ansiktsgjenkjenning,
 tekstbasert bildesøk og aktiv bildesamling. Hvis for eksempel
-`face_recognition` er slått på, men InsightFace mangler, viser kommandoen en
-`FEIL:`-linje og råder deg til å kjøre `.\install-insightface.ps1`.
+`face_recognition` er slått på, men InsightFace mangler eller ikke kan lastes,
+viser kommandoen en `FEIL:`-linje og et råd om hva du bør gjøre videre.
 
 Det gamle navnet `face-status` virker fortsatt som alias.

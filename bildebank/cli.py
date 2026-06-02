@@ -35,6 +35,7 @@ from .face import (
     face_db_path,
     face_db_summary,
     face_report,
+    insightface_runtime_error,
     list_persons,
     remove_face_from_person,
     rename_person,
@@ -1933,11 +1934,15 @@ def run_doctor(target_arg: Path | None = None) -> int:
     print("Ansiktsgjenkjenning:")
     if face.enabled:
         doctor_ok(f"face_recognition er slått på ({face.model_name}, {face.provider})")
-        if python_module_available("insightface"):
+        insightface_error = insightface_runtime_error()
+        if insightface_error is None:
             doctor_ok("insightface installert")
         else:
-            doctor_error("face_recognition er slått på, men insightface mangler.")
-            doctor_advice("Kjør `.\\install-insightface.ps1` fra programmappen.")
+            doctor_error(insightface_error)
+            if "libGL.so.1" in insightface_error:
+                doctor_advice("Installer Linux-pakken: `sudo apt install libgl1`.")
+            else:
+                doctor_advice("Kjør `.\\install-insightface.ps1` fra programmappen.")
         if python_module_available("onnxruntime"):
             doctor_ok("onnxruntime installert")
         else:

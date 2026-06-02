@@ -18,6 +18,13 @@ Hvis `python3 --version` viser eldre enn 3.13, må du installere Python 3.13
 eller nyere før du fortsetter. Hvis du er usikker på hvordan, er dette et godt
 sted å be om hjelp.
 
+Hvis du skal bruke ansiktsgjenkjenning med InsightFace i Linux/WSL, trenger
+OpenCV også systembiblioteket `libGL`:
+
+```bash
+sudo apt install libgl1
+```
+
 ## Installer programmet
 
 Velg en mappe for programkoden, klon repoet og installer Bildebank i en lokal `.venv`:

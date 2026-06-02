@@ -1760,9 +1760,7 @@ def load_face_app(config: FaceRecognitionConfig):
     try:
         from insightface.app import FaceAnalysis
     except ImportError as exc:
-        raise ValueError(
-            "InsightFace er ikke installert. Kjør install-insightface.ps1 fra programmappen."
-        ) from exc
+        raise ValueError(insightface_import_error_message(exc)) from exc
     providers = ["CPUExecutionProvider"] if config.provider == "cpu" else None
     normalize_insightface_model_layout(config)
     try:
@@ -1778,6 +1776,26 @@ def load_face_app(config: FaceRecognitionConfig):
     app.prepare(ctx_id=-1 if config.provider == "cpu" else 0, det_size=(640, 640))
     remove_insightface_model_zip(config)
     return app
+
+
+def insightface_runtime_error() -> str | None:
+    try:
+        from insightface.app import FaceAnalysis  # noqa: F401
+    except ImportError as exc:
+        return insightface_import_error_message(exc)
+    return None
+
+
+def insightface_import_error_message(exc: ImportError) -> str:
+    message = str(exc)
+    if "libGL.so.1" in message:
+        return (
+            "InsightFace er installert, men OpenCV mangler Linux-biblioteket libGL.so.1. "
+            "Installer det i WSL/Linux med `sudo apt install libgl1`."
+        )
+    if exc.name == "insightface" or message.startswith("No module named 'insightface"):
+        return "InsightFace er ikke installert. Kjør install-insightface.ps1 fra programmappen."
+    return f"InsightFace er installert, men kan ikke lastes: {message}"
 
 
 def insightface_model_files_exist(config: FaceRecognitionConfig) -> bool:
