@@ -11,7 +11,7 @@ import sys
 import traceback
 import webbrowser
 from dataclasses import dataclass, replace
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from . import __version__, db
 from .backup import run_backup
@@ -54,6 +54,8 @@ from .importer import (
     import_source_dry_run,
     iter_media_files,
     refresh_non_metadata_files,
+    rescan_source,
+    rescan_source_dry_run,
     validate_source_target,
 )
 from .html_export import export_html, export_html_conflicts
@@ -105,6 +107,7 @@ HELP_COMMAND_GROUPS = (
             ("non-metadata", "List filer der datoen ikke kom fra metadata"),
             ("show-source", "Vis hvor en importert fil kom fra"),
             ("check-source", "Kontroller at en kildemappe er importert"),
+            ("rescan-source", "Scan en tidligere importert kilde på nytt"),
         ),
     ),
     (
@@ -331,6 +334,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check_source.add_argument("--quiet", action="store_true", help="Ikke vis fremdrift under kontrollen")
     check_source.add_argument("path", metavar="mappe", type=Path, help="Kildemappen som skal kontrolleres")
+    rescan_source_parser = add_command(
+        subparsers,
+        "rescan-source",
+        usage="bildebank rescan-source [valg] --name navn",
+        help="Scan en tidligere importert kilde på nytt",
+        description=(
+            "Scanner en tidligere importert kilde på nytt med dagens støttede filtyper. "
+            "Kommandoen oppretter ikke en ny kilde og sletter ingenting."
+        ),
+    )
+    rescan_source_parser.add_argument("--name", required=True, help="Navn på importen som skal scannes på nytt")
+    rescan_source_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Vis importoppsummering uten å kopiere filer eller endre databasen",
+    )
+    rescan_source_parser.add_argument("--quiet", action="store_true", help="Ikke vis fremdrift under scanning")
     unimport = add_command(
         subparsers,
         "unimport",
@@ -1148,6 +1168,9 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "import" and args.dry_run:
         return run_named_import_dry_run(target, args)
 
+    if args.command == "rescan-source" and args.dry_run:
+        return run_rescan_source_dry_run(target, args)
+
     if args.command == "check-source":
         return run_check_source(target, args.path, verbose=not args.quiet)
 
@@ -1169,6 +1192,15 @@ def run(args: argparse.Namespace) -> int:
                     print(f"Kilden er allerede importert: {args.name}")
                     return 0
                 stats = import_source(conn, target, source_row, verbose=not args.quiet)
+            print_summary(stats)
+            return 0 if stats.errors == 0 else 2
+
+        if args.command == "rescan-source":
+            source = resolve_rescan_source(conn, args.name)
+            validate_source_target(source.path, target)
+            with TargetLock(target, command="rescan-source"):
+                print(f"Scanner kilde på nytt #{source.id}: {source.name} ({source.path})")
+                stats = rescan_source(conn, target, source, verbose=not args.quiet)
             print_summary(stats)
             return 0 if stats.errors == 0 else 2
 
@@ -1531,6 +1563,33 @@ def resolve_source_by_name(conn, name: str) -> db.Source:
     if source is None:
         raise ValueError(f"Fant ikke kilde med navn: {name}")
     return source
+
+
+def resolve_rescan_source(conn, name: str) -> db.Source:
+    source = resolve_source_by_name(conn, name)
+    if source.superseded_by_source_id is not None or source.status == "superseded":
+        raise ValueError(
+            f"Kilden {name!r} er markert som erstattet av kilde #{source.superseded_by_source_id}. "
+            "Scan den aktive overkilden i stedet."
+        )
+    source_path = existing_path_arg(source.path).resolve()
+    if not source_path.exists() or not source_path.is_dir():
+        raise ValueError(f"Kilden finnes ikke som mappe: {source.path}")
+    return replace(source, path=source_path)
+
+
+def run_rescan_source_dry_run(target: Path, args: argparse.Namespace) -> int:
+    conn = db.connect(target)
+    try:
+        source = resolve_rescan_source(conn, args.name)
+        validate_source_target(source.path, target)
+        stats = rescan_source_dry_run(
+            conn, target, source, output=sys.stdout, verbose=not args.quiet
+        )
+        print_summary(stats)
+        return 0 if stats.errors == 0 else 2
+    finally:
+        conn.close()
 
 
 def validate_unimport_source_files(
@@ -2972,7 +3031,24 @@ def existing_path_arg(path: Path) -> Path:
         candidate = Path(stripped)
         if candidate.exists():
             return candidate
+    for value in (raw, stripped):
+        candidate = wsl_path_from_windows_path(value)
+        if candidate is not None and candidate.exists():
+            return candidate
     return path
+
+
+def wsl_path_from_windows_path(value: str) -> Path | None:
+    if os.name == "nt":
+        return None
+    windows_path = PureWindowsPath(value)
+    drive = windows_path.drive
+    if not re.fullmatch(r"[A-Za-z]:", drive):
+        return None
+    parts = list(windows_path.parts)
+    if parts and parts[0] == windows_path.anchor:
+        parts = parts[1:]
+    return Path("/mnt") / drive[0].lower() / Path(*parts)
 
 
 def positive_int_arg(value: str) -> int:

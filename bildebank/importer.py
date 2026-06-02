@@ -198,6 +198,117 @@ def import_source_dry_run(
     return stats
 
 
+def rescan_source(conn, target: Path, source: db.Source, *, verbose: bool = True) -> ImportStats:
+    stats = ImportStats()
+    if not source.path.exists() or not source.path.is_dir():
+        db.insert_error(
+            conn,
+            source_id=source.id,
+            source_path=source.path,
+            stage="rescan-source",
+            message="Kilden finnes ikke eller er ikke en mappe.",
+        )
+        db.mark_source_error(conn, source.id)
+        conn.commit()
+        stats.errors += 1
+        return stats
+
+    progress = ProgressMeter("Rescan-source", stream=sys.stderr) if verbose else None
+    try:
+        if progress is not None:
+            progress.message(f"Rescan-source: scanner {source.path}.")
+        for item in iter_media_files(source.path):
+            if isinstance(item, WalkError):
+                stats.errors += 1
+                db.insert_error(
+                    conn,
+                    source_id=source.id,
+                    source_path=item.path,
+                    stage="rescan-source",
+                    message=item.message,
+                )
+                continue
+            stats.scanned += 1
+            try:
+                process_file(conn, target, source, item, stats)
+            except Exception as exc:  # noqa: BLE001 - errors must be logged, not abort rescan
+                stats.errors += 1
+                db.insert_error(
+                    conn,
+                    source_id=source.id,
+                    source_path=item,
+                    stage="rescan-source",
+                    message=str(exc),
+                )
+            if progress is not None:
+                progress.update_count(
+                    stats.scanned,
+                    action="scannet",
+                    details=import_progress_details(stats),
+                )
+            if (stats.imported + stats.duplicates + stats.skipped_existing) % COMMIT_EVERY == 0:
+                conn.commit()
+    except KeyboardInterrupt:
+        stats.stopped = True
+        conn.commit()
+        if progress is not None:
+            progress.done()
+        print("Avbrutt. Databaseendringer er lagret så langt det var mulig.", flush=True)
+        return stats
+    finally:
+        if progress is not None:
+            progress.done()
+
+    if stats.errors == 0:
+        db.mark_source_imported(conn, source.id)
+    else:
+        db.mark_source_error(conn, source.id)
+    conn.commit()
+    return stats
+
+
+def rescan_source_dry_run(
+    conn, target: Path, source: db.Source, *, output: TextIO, verbose: bool = True
+) -> ImportStats:
+    stats = ImportStats()
+    if not source.path.exists() or not source.path.is_dir():
+        stats.errors += 1
+        print(f"FEIL\t{source.path}\tKilden finnes ikke eller er ikke en mappe.", file=output)
+        return stats
+
+    progress = ProgressMeter("Rescan-source dry-run", stream=sys.stderr) if verbose else None
+    try:
+        if progress is not None:
+            progress.message(f"Rescan-source dry-run: scanner {source.path}.")
+        for item in iter_media_files(source.path):
+            if isinstance(item, WalkError):
+                stats.errors += 1
+                print(f"FEIL\t{item.path}\t{item.message}", file=output)
+                continue
+            stats.scanned += 1
+            try:
+                process_file_dry_run(conn, target, source, item, stats, output=output)
+            except Exception as exc:  # noqa: BLE001 - dry-run should keep reporting
+                stats.errors += 1
+                print(f"FEIL\t{item}\t{exc}", file=output)
+            if progress is not None:
+                progress.update_count(
+                    stats.scanned,
+                    action="scannet",
+                    details=import_progress_details(stats, dry_run=True),
+                )
+    except KeyboardInterrupt:
+        stats.stopped = True
+        if progress is not None:
+            progress.done()
+        print("Avbrutt. Dry-run har ikke endret databasen.", flush=True)
+        return stats
+    finally:
+        if progress is not None:
+            progress.done()
+    return stats
+
+
 def import_progress_details(stats: ImportStats, *, dry_run: bool = False) -> str:
     imported_label = "ville_importert" if dry_run else "importert"
     return (

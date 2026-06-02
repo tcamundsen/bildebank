@@ -26,6 +26,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 - [`list-sources`](list-sources.md) **`web`**
 - [`show-source`](show-source.md) **`web`**
 - [`check-source`](check-source.md) **`cli`**
+- [`rescan-source`](rescan-source.md) **`cli`**
 - [`date-set`](date-set.md) **`cli`**
 - [`date-clear`](date-clear.md) **`cli`**
 
