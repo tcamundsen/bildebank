@@ -14,6 +14,7 @@ from .progress import ProgressMeter
 
 
 COMMIT_EVERY = 200
+REFRESH_METADATA_COMMIT_EVERY = 1000
 
 
 @dataclass
@@ -35,6 +36,7 @@ class MetadataRefreshStats:
     moved: int = 0
     already_correct: int = 0
     errors: int = 0
+    stopped: bool = False
 
 
 MetadataRefreshProgress = Callable[[str, int, int, MetadataRefreshStats, Path | None], None]
@@ -402,30 +404,39 @@ def refresh_non_metadata_files(
         total = len(rows)
         if progress is not None:
             progress("start", 0, total, stats, None)
-        for index, row in enumerate(rows, start=1):
-            stats.checked += 1
-            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-            try:
-                refresh_non_metadata_file(
-                    conn, target, row, stats, dry_run=dry_run, verbose=verbose
-                )
-            except Exception as exc:  # noqa: BLE001 - keep processing and record the file
-                stats.errors += 1
+        try:
+            for index, row in enumerate(rows, start=1):
+                stats.checked += 1
+                target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+                try:
+                    refresh_non_metadata_file(
+                        conn, target, row, stats, dry_run=dry_run, verbose=verbose
+                    )
+                except Exception as exc:  # noqa: BLE001 - keep processing and record the file
+                    stats.errors += 1
+                    if progress is not None:
+                        progress("error", index, total, stats, target_path)
+                    if verbose:
+                        print(f"FEIL\t{row['target_path']}\t{exc}", flush=True)
+                    db.insert_error(
+                        conn,
+                        source_id=None,
+                        source_path=target_path,
+                        stage="refresh-metadata",
+                        message=str(exc),
+                    )
+                if not dry_run and stats.checked % REFRESH_METADATA_COMMIT_EVERY == 0:
+                    conn.commit()
                 if progress is not None:
-                    progress("error", index, total, stats, target_path)
-                if verbose:
-                    print(f"FEIL\t{row['target_path']}\t{exc}", flush=True)
-                db.insert_error(
-                    conn,
-                    source_id=None,
-                    source_path=target_path,
-                    stage="refresh-metadata",
-                    message=str(exc),
-                )
-            if progress is not None:
-                progress("check", index, total, stats, target_path)
-        if not dry_run:
-            conn.commit()
+                    progress("check", index, total, stats, target_path)
+        except KeyboardInterrupt:
+            stats.stopped = True
+            if not dry_run:
+                conn.commit()
+            print("Avbrutt. Databaseendringer er lagret så langt det var mulig.", flush=True)
+        else:
+            if not dry_run:
+                conn.commit()
         if progress is not None:
             progress("done", total, total, stats, None)
     finally:

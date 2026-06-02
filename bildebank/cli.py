@@ -1401,6 +1401,8 @@ def run(args: argparse.Namespace) -> int:
                 progress=print_refresh_metadata_progress,
             )
             print_refresh_summary(stats, dry_run=args.dry_run)
+            if stats.stopped:
+                return 130
             return 0 if stats.errors == 0 else 2
 
         if args.command == "errors":
@@ -3132,11 +3134,13 @@ def print_status(conn) -> None:
 
 def print_refresh_summary(stats, *, dry_run: bool) -> None:
     prefix = "Dry-run: " if dry_run else ""
+    stopped = ", avbrutt=ja" if stats.stopped else ""
     print(
         prefix
         + "Oppsummering: "
         f"sjekket={stats.checked}, metadata_funnet={stats.metadata_found}, "
         f"flyttet={stats.moved}, allerede_riktig={stats.already_correct}, feil={stats.errors}"
+        f"{stopped}"
     )
 
 

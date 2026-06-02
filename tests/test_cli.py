@@ -8365,6 +8365,62 @@ print(json.dumps([
             finally:
                 conn.close()
 
+    def test_refresh_metadata_rescan_commits_progress_when_interrupted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(jpeg_with_exif_camera("Canon", "EOS 80D"))
+            (source / "IMG_20240103.jpg").write_bytes(jpeg_with_exif_camera("Apple", "iPhone 17"))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET date_source = 'metadata',
+                        camera_make = NULL,
+                        camera_model = NULL
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            calls = 0
+
+            def interrupt_after_one(conn, target, row, stats, *, dry_run, verbose):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    db.update_file_camera(
+                        conn,
+                        file_id=int(row["id"]),
+                        camera_make="Canon",
+                        camera_model="EOS 80D",
+                    )
+                    return
+                raise KeyboardInterrupt
+
+            with patch("bildebank.importer.refresh_non_metadata_file", side_effect=interrupt_after_one):
+                code, stdout, stderr = capture_cli(["--target", str(target), "refresh-metadata", "--rescan"])
+
+            self.assertEqual(code, 130, stderr)
+            self.assertIn("Avbrutt. Databaseendringer er lagret", stdout)
+            self.assertIn("avbrutt=ja", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                rows = conn.execute(
+                    "SELECT camera_make, camera_model FROM files ORDER BY target_path"
+                ).fetchall()
+                self.assertEqual(rows[0], ("Canon", "EOS 80D"))
+                self.assertEqual(rows[1], (None, None))
+            finally:
+                conn.close()
+
     def test_errors_lists_recorded_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
