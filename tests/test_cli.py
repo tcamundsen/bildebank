@@ -67,6 +67,7 @@ from bildebank.server_pages import (
     removed_files_page_html,
     search_html,
     search_start_html,
+    filter_start_html,
     source_item_page_html,
     source_month_page_html,
     source_year_months_page_html,
@@ -3208,6 +3209,16 @@ model_name = "buffalo_l"
 
             BildebankRequestHandler.respond_filter(handler, "q=location%3Aukjent-sted")  # type: ignore[arg-type]
             self.assertIn("Ukjent sted: ukjent-sted", str(response["html"]))
+
+    def test_run_server_filter_page_documents_search_criteria(self) -> None:
+        server = SimpleNamespace(face_enabled=True, openclip_enabled=True)
+        body = filter_start_html(server)
+
+        self.assertIn("<h2>Søkekriterier</h2>", body)
+        self.assertIn("<code>after:2023-12-01</code>", body)
+        self.assertIn('<code>camera:"iPhone"</code>', body)
+        self.assertIn('<code>tag:"Ute av fokus"</code>', body)
+        self.assertIn("<code>deleted:true</code>", body)
 
     def test_run_server_source_browser_reuses_source_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -465,7 +465,7 @@ def filter_start_html(
         <h1>Filtersøk</h1>
         {message_html(message)}
         {filter_form(query)}
-        <p class="meta">Eksempler: after:2023-12-01 before:2024-12-12, date:manual, location:gps, location:slug, size&lt;300KB, size&gt;2MB, type:image, extension:jpg, tag:"Ute av fokus", source:1, missing:gps, orientation:portrait, camera:"iPhone", filename:IMG, path:2024/01, deleted:true.</p>
+        {filter_help_html()}
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
@@ -478,4 +478,22 @@ def filter_form(query: str) -> str:
       <input name="q" value="{html.escape(query)}" placeholder="date:manual size&gt;2MB" autofocus>
       <button type="submit">Søk</button>
     </form>
+    """
+
+
+def filter_help_html() -> str:
+    return """
+    <section class="filter-help">
+      <h2>Søkekriterier</h2>
+      <p class="meta">Kriterier kan kombineres. Bruk anførselstegn når tekst inneholder mellomrom, for eksempel camera:"iPhone" eller tag:"Ute av fokus".</p>
+      <dl class="info-list">
+        <div class="info-row"><dt>Dato</dt><dd><code>after:2023-12-01</code>, <code>before:2024-12-12</code>, <code>date:manual</code>, <code>date:metadata</code>, <code>date:filename</code>, <code>date:mtime</code></dd></div>
+        <div class="info-row"><dt>Sted</dt><dd><code>location:gps</code>, <code>location:manual</code>, <code>location:slug</code>. Slug er samme tekst som i <code>/geo/place/slug</code>.</dd></div>
+        <div class="info-row"><dt>Fil</dt><dd><code>type:image</code>, <code>type:video</code>, <code>type:file</code>, <code>extension:jpg</code>, <code>size&lt;300KB</code>, <code>size&gt;2MB</code></dd></div>
+        <div class="info-row"><dt>Tekst</dt><dd><code>filename:IMG</code>, <code>path:2024/01</code>, <code>camera:"iPhone"</code></dd></div>
+        <div class="info-row"><dt>Organisering</dt><dd><code>source:1</code>, <code>source:"mobil 2024"</code>, <code>tag:"Ute av fokus"</code>, <code>deleted:true</code></dd></div>
+        <div class="info-row"><dt>Mangler</dt><dd><code>missing:gps</code>, <code>missing:date</code>, <code>missing:metadata</code></dd></div>
+        <div class="info-row"><dt>Form</dt><dd><code>orientation:portrait</code>, <code>orientation:landscape</code></dd></div>
+      </dl>
+    </section>
     """

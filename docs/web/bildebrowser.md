@@ -46,54 +46,8 @@ delene av bildebanken.
 ## Filtersøk
 
 Filtersøk lar deg skrive enkle tekstkriterier og bla i treffene som en vanlig
-bildebrowser. Dette er nyttig når du skal håndtere spesialtilfeller.
-
-Eksempler:
-
-```text
-after:2023-12-01 before:2024-12-12
-camera:"iPhone"
-date:manual
-date:metadata
-date:filename
-date:mtime
-deleted:true
-extension:jpg
-filename:IMG
-location:gps
-location:manual
-location:slug
-missing:gps
-missing:date
-missing:metadata
-orientation:portrait
-path:2024/01
-size<300KB
-size>2MB
-source:1
-source:"mobil 2024"
-tag:"Ute av fokus"
-type:image
-type:video
-after:2023-12-01 location:manual
-```
-
-`after:` og `before:` bruker datoen Bildebank bruker i browseren. Grensene er
-ikke inkludert, så `before:2024-12-12` betyr før 12. desember 2024.
-`date:manual` viser bilder der datoen er satt manuelt i Bildebank.
-`date:metadata`, `date:filename` og `date:mtime` viser bilder der datoen kommer
-fra henholdsvis metadata, filnavn eller filens endringstid.
-`location:gps` viser bilder med GPS-koordinater. `location:manual` viser bilder
-der du har satt manuell H3-lokasjon. `location:slug` viser bilder for et sted
-fra `Steder`, der `slug` er den samme teksten som brukes i adressen
-`/geo/place/slug`. `size<300KB` viser filer mindre enn 300 KB, og `size>2MB`
-viser filer større enn 2 MB. Størrelsene regnes med 1024 bytes per KB.
-`type:image`, `type:video` og `type:file` filtrerer på filtype. `extension:jpg`,
-`filename:IMG`, `path:2024/01` og `camera:"iPhone"` søker som tekst, og
-anførselstegn kan brukes når teksten inneholder mellomrom. `source:` kan være
-kilde-ID eller tekst i kildenavn. `tag:` finner tagger, og `missing:` kan være
-`gps`, `date` eller `metadata`. `orientation:` kan være `portrait` eller
-`landscape`. `deleted:true` viser bare bilder som er flyttet til `deleted`.
+bildebrowser. Dette er nyttig når du skal håndtere spesialtilfeller. Åpne
+`Filtersøk` i toppmenyen for søkefelt og oversikt over kriteriene.
 
 Knappene med navn til venstre for **Bildebrowser** lenker til personbrowseren
 for denne personen. Hvis knappen har en markering som dette, ✅, så har du
