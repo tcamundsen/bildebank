@@ -14,7 +14,7 @@ from typing import Any, Iterable
 
 
 DB_FILENAME = ".bilder.sqlite3"
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 GPS_ERROR_EXIFTOOL = "exiftool_error"
 GPS_ERROR_FILE_MISSING = "file_missing"
 TAG_KIND_USER = "user"
@@ -140,6 +140,7 @@ class MigrationPlan:
     rebuilds_file_sources_without_kind: bool = False
     cleans_gps_errors: bool = False
     refreshes_performance_indexes: bool = False
+    adds_camera_columns: bool = False
 
 
 def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection:
@@ -234,6 +235,8 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
         ensure_column(conn, "files", "media_orientation", "INTEGER")
         ensure_column(conn, "files", "media_metadata_mtime_ns", "INTEGER")
         ensure_column(conn, "files", "view_rotation_degrees", "INTEGER")
+        ensure_column(conn, "files", "camera_make", "TEXT")
+        ensure_column(conn, "files", "camera_model", "TEXT")
         ensure_column(conn, "files", "manual_date_from", "TEXT")
         ensure_column(conn, "files", "manual_date_to", "TEXT")
         ensure_column(conn, "files", "manual_date_note", "TEXT")
@@ -371,6 +374,8 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             media_orientation INTEGER,
             media_metadata_mtime_ns INTEGER,
             view_rotation_degrees INTEGER,
+            camera_make TEXT,
+            camera_model TEXT,
             manual_date_from TEXT,
             manual_date_to TEXT,
             manual_date_note TEXT,
@@ -578,12 +583,13 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 creates_file_sources=False,
                 refreshes_performance_indexes=bool(missing_performance_indexes(conn)),
             )
-        if version in {5, 6, 7, 8}:
+        if version in {5, 6, 7, 8, 9}:
             if validate:
                 validate_current_schema(
                     conn,
                     require_performance_indexes=False,
                     require_manual_date_columns=version >= 9,
+                    require_camera_columns=version >= 10,
                 )
             return MigrationPlan(
                 current_version=version,
@@ -594,6 +600,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 cleans_gps_errors=has_legacy_gps_errors(conn),
                 backfills_h3_10_11=needs_h3_10_11_backfill(conn),
                 refreshes_performance_indexes=version == 8,
+                adds_camera_columns=version < 10,
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -617,6 +624,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             rebuilds_file_sources_without_kind=bool("kind" in file_source_columns),
             cleans_gps_errors=has_legacy_gps_errors(conn),
             backfills_h3_10_11=needs_h3_10_11_backfill(conn),
+            adds_camera_columns=True,
         )
     finally:
         conn.close()
@@ -655,7 +663,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 creates_file_sources=False,
                 refreshes_performance_indexes=refreshes_performance_indexes,
             )
-        if version in {5, 6, 7, 8}:
+        if version in {5, 6, 7, 8, 9}:
             imported_files = count_rows(conn, "files")
             duplicate_findings = count_rows(conn, "duplicate_findings")
             cleans_gps_errors = has_legacy_gps_errors(conn)
@@ -691,6 +699,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 cleans_gps_errors=cleans_gps_errors,
                 backfills_h3_10_11=backfills_h3_10_11,
                 refreshes_performance_indexes=version == 8,
+                adds_camera_columns=version < 10,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -760,6 +769,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             cleans_gps_errors=cleans_gps_errors,
             backfills_h3_10_11=backfills_h3_10_11,
             refreshes_performance_indexes=version == 8,
+            adds_camera_columns=True,
         )
     finally:
         conn.close()
@@ -859,6 +869,7 @@ def validate_current_schema(
     *,
     require_performance_indexes: bool = True,
     require_manual_date_columns: bool = True,
+    require_camera_columns: bool = True,
 ) -> None:
     if not table_exists(conn, "sources"):
         raise ValueError("Databasen mangler tabellen sources.")
@@ -884,6 +895,13 @@ def validate_current_schema(
             raise ValueError(
                 "files mangler manuelle datokolonner "
                 f"({', '.join(missing_manual_date_columns)}). Kjør bildebank migrate."
+            )
+    if require_camera_columns:
+        missing_camera_columns = sorted({"camera_make", "camera_model"} - file_columns)
+        if missing_camera_columns:
+            raise ValueError(
+                "files mangler kamerakolonner "
+                f"({', '.join(missing_camera_columns)}). Kjør bildebank migrate."
             )
     if table_exists(conn, "errors") and conn.execute("PRAGMA foreign_key_list(errors)").fetchall():
         raise ValueError("errors har gammel foreign key til sources. Kjør bildebank migrate.")
@@ -1412,14 +1430,16 @@ def insert_imported_file(
     taken_date: str | None,
     date_source: str,
     name_conflict: bool,
+    camera_make: str | None = None,
+    camera_model: str | None = None,
 ) -> int:
     try:
         cur = conn.execute(
             """
             INSERT INTO files(
                 target_path, target_path_key, original_filename, stored_filename, sha256,
-                size_bytes, taken_date, date_source, name_conflict
-            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+                size_bytes, taken_date, date_source, name_conflict, camera_make, camera_model
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
             """,
             (
@@ -1432,6 +1452,8 @@ def insert_imported_file(
                 taken_date,
                 date_source,
                 1 if name_conflict else 0,
+                camera_make,
+                camera_model,
             ),
         )
         file_id = int(cur.fetchone()["id"])
@@ -1932,6 +1954,7 @@ def browser_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
         SELECT
             id, target_path, stored_filename, taken_date, date_source,
             manual_date_from, manual_date_to, manual_date_note,
+            camera_make, camera_model,
             size_bytes, view_rotation_degrees
         FROM files
         WHERE deleted_at IS NULL
@@ -2056,6 +2079,7 @@ def tagged_files(conn: sqlite3.Connection, tag_name: str) -> list[sqlite3.Row]:
             f"""
             SELECT files.id, files.target_path, files.target_path_key, files.stored_filename,
                    files.taken_date, files.date_source, files.size_bytes, files.view_rotation_degrees,
+                   files.camera_make, files.camera_model,
                    files.gps_lat, files.gps_lon, files.gps_source, files.media_width, files.media_height,
                    files.media_orientation, files.media_metadata_mtime_ns, {H3_FILE_COLUMNS_SQL}
             FROM files
@@ -2139,6 +2163,24 @@ def update_file_gps(
             gps_error,
             file_id,
         ),
+    )
+
+
+def update_file_camera(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    camera_make: str | None,
+    camera_model: str | None,
+) -> None:
+    conn.execute(
+        """
+        UPDATE files
+        SET camera_make = ?,
+            camera_model = ?
+        WHERE id = ?
+        """,
+        (camera_make, camera_model, file_id),
     )
 
 
@@ -2378,6 +2420,7 @@ def geo_areas(
 GEO_FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
     "manual_date_from, manual_date_to, manual_date_note, "
+    "camera_make, camera_model, "
     "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_alt, gps_source, "
     f"{H3_FILE_COLUMNS_SQL}"
 )
@@ -2798,6 +2841,8 @@ def update_file_placement(
     taken_date: str,
     date_source: str,
     name_conflict: bool,
+    camera_make: str | None = None,
+    camera_model: str | None = None,
 ) -> None:
     conn.execute(
         """
@@ -2807,7 +2852,9 @@ def update_file_placement(
             stored_filename = ?,
             taken_date = ?,
             date_source = ?,
-            name_conflict = ?
+            name_conflict = ?,
+            camera_make = ?,
+            camera_model = ?
         WHERE id = ?
         """,
         (
@@ -2817,6 +2864,8 @@ def update_file_placement(
             taken_date,
             date_source,
             1 if name_conflict else 0,
+            camera_make,
+            camera_model,
             file_id,
         ),
     )

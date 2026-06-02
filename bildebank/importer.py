@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, TextIO
 
 from . import db
-from .media import MediaDate, is_supported_media, media_date, sha256_file
+from .media import MediaDate, camera_info, is_supported_media, media_date, sha256_file
 from .progress import ProgressMeter
 
 
@@ -255,6 +255,7 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
         return
 
     date = media_date(path)
+    camera = camera_info(path)
     destination_dir = destination_directory(target, date)
     destination_dir.mkdir(parents=True, exist_ok=True)
     destination_path, name_conflict, already_present = find_existing_or_available_destination(
@@ -274,6 +275,8 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
             taken_date=_date_string(date),
             date_source=date.source,
             name_conflict=name_conflict,
+            camera_make=camera.make if camera is not None else None,
+            camera_model=camera.model if camera is not None else None,
         )
         stats.skipped_existing += 1
         if name_conflict:
@@ -294,6 +297,8 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
         taken_date=_date_string(date),
         date_source=date.source,
         name_conflict=name_conflict,
+        camera_make=camera.make if camera is not None else None,
+        camera_model=camera.model if camera is not None else None,
     )
     stats.imported += 1
     if name_conflict:
@@ -448,9 +453,17 @@ def refresh_non_metadata_file(
         current_path = repaired_path
 
     date = media_date(current_path)
+    camera = camera_info(current_path)
     if date.source != "metadata" or date.date is None:
         if verbose:
             print(f"INGEN_METADATA\t{current_path}", flush=True)
+        if not dry_run and camera is not None:
+            db.update_file_camera(
+                conn,
+                file_id=int(row["id"]),
+                camera_make=camera.make,
+                camera_model=camera.model,
+            )
         return
 
     stats.metadata_found += 1
@@ -492,6 +505,8 @@ def refresh_non_metadata_file(
             taken_date=_date_string(date) or "",
             date_source="metadata",
             name_conflict=name_conflict,
+            camera_make=camera.make if camera is not None else None,
+            camera_model=camera.model if camera is not None else None,
         )
         db.resolve_errors_for_path(conn, stage="refresh-metadata", source_path=current_path)
 
@@ -509,4 +524,3 @@ def find_file_in_target_by_hash(target: Path, expected_hash: str) -> Path | None
             except OSError:
                 continue
     return None
-

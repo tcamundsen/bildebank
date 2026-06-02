@@ -13,7 +13,7 @@ from . import db
 from .config import FaceRecognitionConfig
 from .geo import H3_COLUMNS, h3_area_label
 from .html_export import display_relative_path, format_bytes, month_key_from_path
-from .media import camera_info, media_kind
+from .media import media_kind
 from .media_cache import cached_image_dimensions
 from .openclip import relative_to_target
 from .server_browser_sources import (
@@ -52,6 +52,7 @@ MONTH_NAMES = {
 FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
     "manual_date_from, manual_date_to, manual_date_note, "
+    "camera_make, camera_model, "
     "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_source, "
     "media_width, media_height, media_orientation, media_metadata_mtime_ns, "
     f"{db.H3_FILE_COLUMNS_SQL}"
@@ -612,6 +613,8 @@ def imported_source_items(target: Path, source_id: int, *, hide_out_of_focus: bo
                     files.stored_filename,
                     files.taken_date,
                     files.date_source,
+                    files.camera_make,
+                    files.camera_model,
                     files.size_bytes,
                     files.view_rotation_degrees,
                     files.gps_lat,
@@ -1243,13 +1246,12 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
     target_path = Path(str(item["target_path"]))
     absolute_path = db.absolute_target_path(target, target_path)
     dimensions = cached_image_dimensions(target, absolute_path)
-    camera = camera_info(absolute_path)
     rows = [
         info_row_html("Filnavn", display_relative_path(target, target_path)),
         info_row_html("Dato", image_date_text(item)),
         info_row_html("Filstørrelse", f"{format_bytes(int(item['size_bytes']))} ({int(item['size_bytes'])} bytes)"),
         info_row_html("Oppløsning", f"{dimensions.width} x {dimensions.height}" if dimensions else "-"),
-        info_row_html("Kamera", camera_text(camera)),
+        info_row_html("Kamera", camera_text_from_item(item)),
     ]
     if manual_date_text(item):
         rows.append(info_row_html("Opprinnelig dato", f"{item['taken_date'] or '-'} ({date_source_text(str(item['date_source'] or ''))})"))
@@ -1457,11 +1459,20 @@ def gps_source_text(item: Any) -> str:
     return labels.get(source, source or "ukjent")
 
 
-def camera_text(camera: Any | None) -> str:
-    if camera is None:
-        return "-"
-    parts = [part for part in (camera.make, camera.model) if part]
+def camera_text_from_item(item: Any) -> str:
+    parts = [
+        str(part)
+        for part in (optional_item_value(item, "camera_make"), optional_item_value(item, "camera_model"))
+        if part
+    ]
     return " ".join(parts) if parts else "-"
+
+
+def optional_item_value(item: Any, key: str) -> Any | None:
+    try:
+        return item[key]
+    except (KeyError, IndexError):
+        return None
 
 
 def image_source_rows(target: Path, target_path: Path) -> list[str]:

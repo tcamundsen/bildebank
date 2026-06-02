@@ -2678,6 +2678,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  rydde gamle GPS-feilmeldinger")
     if plan.backfills_h3_10_11:
         print("  fylle h3_res10 og h3_res11 for eksisterende GPS-posisjoner")
+    if plan.adds_camera_columns:
+        print("  legge til kamerakolonner i files")
     if plan.refreshes_performance_indexes:
         print("  oppdatere manglende ytelsesindekser")
     print("Vil lage backup før endring.")
@@ -2719,6 +2721,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Rydder gamle GPS-feilmeldinger.")
     if result.backfills_h3_10_11:
         print("Fyller h3_res10 og h3_res11 for eksisterende GPS-posisjoner.")
+    if result.adds_camera_columns:
+        print("Legger til kamerakolonner i files.")
     if result.refreshes_performance_indexes:
         print("Oppdaterer manglende ytelsesindekser.")
     print(f"Setter schema_version={result.target_version}.")

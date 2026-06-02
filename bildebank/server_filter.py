@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import db
-from .media import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS, camera_info
+from .media import IMAGE_EXTENSIONS, VIDEO_EXTENSIONS
 from .server_shell import message_html
 
 
@@ -304,6 +304,9 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         where.append(f"NOT ({manual_date_sql})")
         where.append("date_source = ?")
         params.append(text_filter.date_source)
+    if text_filter.camera is not None:
+        where.append("lower(coalesce(camera_make, '') || ' ' || coalesce(camera_model, '')) LIKE ?")
+        params.append(like_contains_param(text_filter.camera))
     if text_filter.extension is not None:
         where.append("lower(stored_filename) LIKE ?")
         params.append(f"%.{text_filter.extension}")
@@ -350,8 +353,6 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         place_where, place_params = db.geo_place_where_clause(list(text_filter.location_place_cells))
         where.append(f"({place_where})")
         params.extend(place_params)
-    if not where and text_filter.camera is not None:
-        where.append("1 = 1")
     if not where:
         raise ValueError("Filtersøket må ha minst ett kriterium.")
     return " AND ".join(where), tuple(params)
@@ -410,18 +411,7 @@ def like_contains_param(value: str) -> str:
 
 
 def text_filter_has_runtime_filter(text_filter: BrowserTextFilter) -> bool:
-    return text_filter.camera is not None
-
-
-def text_filter_matches_runtime(target: Path, text_filter: BrowserTextFilter, item: Any) -> bool:
-    if text_filter.camera is None:
-        return True
-    target_path = db.absolute_target_path(target, Path(str(item["target_path"])))
-    camera = camera_info(target_path)
-    if camera is None:
-        return False
-    haystack = " ".join(part for part in (camera.make, camera.model) if part).casefold()
-    return text_filter.camera.casefold() in haystack
+    return False
 
 
 def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_of_focus: bool = False) -> list[Any]:
@@ -433,7 +423,7 @@ def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_
     focus_params = OUT_OF_FOCUS_FILTER_PARAMS if hide_out_of_focus else ()
     conn = db.connect(target)
     try:
-        rows = list(
+        return list(
             conn.execute(
                 f"""
                 SELECT {FILE_COLUMNS}
@@ -448,7 +438,6 @@ def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_
         )
     finally:
         conn.close()
-    return [row for row in rows if text_filter_matches_runtime(target, text_filter, row)]
 
 
 def filter_start_html(
