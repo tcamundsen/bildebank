@@ -2685,11 +2685,10 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True, ac
     finally:
         conn.close()
 
-    missing_paths = [problem.path for problem in problems if problem.kind == CHECK_SOURCE_MISSING_KIND]
-    missing_report_path = write_check_source_missing_report(missing_paths) if missing_paths else None
-    print_check_source_report(source, stats, problems, missing_report_path=missing_report_path)
-    if missing_report_path is not None:
-        open_check_source_missing_report(missing_report_path)
+    problem_report_path = write_check_source_problem_report(problems) if problems else None
+    print_check_source_report(source, stats, problems, problem_report_path=problem_report_path)
+    if problem_report_path is not None:
+        open_check_source_missing_report(problem_report_path)
     return 0 if check_source_is_safe(stats, accept_deleted=accept_deleted) else 2
 
 
@@ -2697,7 +2696,7 @@ def check_source_deleted_target_label(row) -> str:
     return Path(str(row["target_path"])).as_posix()
 
 
-def write_check_source_missing_report(missing_paths: list[Path]) -> Path:
+def write_check_source_problem_report(problems: list[CheckSourceProblem]) -> Path:
     with tempfile.NamedTemporaryFile(
         "w",
         encoding="utf-8",
@@ -2705,9 +2704,14 @@ def write_check_source_missing_report(missing_paths: list[Path]) -> Path:
         suffix=".txt",
         delete=False,
     ) as report:
-        for path in missing_paths:
-            report.write(f"{path}\n")
+        for problem in problems:
+            report.write(check_source_problem_report_line(problem))
         return Path(report.name)
+
+
+def check_source_problem_report_line(problem: CheckSourceProblem) -> str:
+    suffix = " [deleted/]" if problem.kind == CHECK_SOURCE_DELETED_KIND else ""
+    return f"{problem.path}{suffix}\n"
 
 
 def open_check_source_missing_report(report_path: Path) -> None:
@@ -2788,7 +2792,7 @@ def print_check_source_report(
     stats: CheckSourceStats,
     problems: list[CheckSourceProblem],
     *,
-    missing_report_path: Path | None = None,
+    problem_report_path: Path | None = None,
 ) -> None:
     print("Check-source")
     print(f"  Kildemappe: {source}")
@@ -2802,12 +2806,11 @@ def print_check_source_report(
         print("  Kildemappen er derfor ikke trygg å slette.")
         print("Problemer:")
         for problem in problems:
-            suffix = " [deleted/]" if problem.kind == CHECK_SOURCE_DELETED_KIND else ""
-            print(f"- {problem.path}{suffix}")
+            print(f"- {check_source_problem_report_line(problem).rstrip()}")
             print(f"  {problem.reason}")
-        if missing_report_path is not None:
+        if problem_report_path is not None:
             print()
-            print(f"Liste over manglende filer er lagret i: {missing_report_path}")
+            print(f"Liste over problemfiler er lagret i: {problem_report_path}")
         return
 
     if stats.deleted:

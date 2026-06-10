@@ -43,13 +43,13 @@ Hvis Bildebank finner filer som ikke er importert i bildesamlingen, eller hvis
 en målfil i bildesamlingen ikke kan valideres med SHA-256, skriver kommandoen at
 kildemappen ikke er trygg å slette.
 
-Hvis det finnes filer i kildemappen som mangler i bildesamlingen, lagrer
-kommandoen listen med filnavn i en midlertidig tekstfil. På Windows åpnes listen
-i Notepad når kommandoen er ferdig. På Linux åpnes den med gvim.
+Hvis det finnes problemfiler, lagrer kommandoen listen med filnavn i en
+midlertidig tekstfil. På Windows åpnes listen i Notepad når kommandoen er
+ferdig. På Linux åpnes den med gvim.
 
 Filer som er slettet med `bildebank remove` ligger i `deleted/`. Som standard
 regnes ikke disse som trygge aktive kopier, og `check-source` viser dem som
-problem merket med `[deleted/]`.
+problem merket med `[deleted/]`, både i terminalen og i tekstfilen som åpnes.
 
 Hvis du vet at slettingen er riktig og vil godta slike filer under kontrollen,
 kan du bruke:

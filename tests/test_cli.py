@@ -5800,7 +5800,7 @@ enabled = false
 
             self.assertEqual(code, 2, stderr)
             self.assertEqual(len(opened), 1)
-            self.assertIn("Liste over manglende filer er lagret i:", stdout)
+            self.assertIn("Liste over problemfiler er lagret i:", stdout)
             self.assertEqual(opened[0].read_text(encoding="utf-8"), f"{missing}\n")
             opened[0].unlink()
 
@@ -5820,7 +5820,7 @@ enabled = false
 
             self.assertEqual(code, 0, stderr)
             open_report.assert_not_called()
-            self.assertNotIn("Liste over manglende filer", stdout)
+            self.assertNotIn("Liste over problemfiler", stdout)
 
     def test_check_source_accepts_unknown_extension_when_hash_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5874,12 +5874,21 @@ enabled = false
             imported = target / "2024" / "01" / "IMG_20240102.jpg"
             self.assertEqual(run_cli(["--target", str(target), "remove", str(imported)]), 0)
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
+            opened: list[Path] = []
+
+            def fake_open(path: Path) -> None:
+                opened.append(path)
+
+            with patch("bildebank.cli.open_check_source_missing_report", fake_open):
+                code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
 
             self.assertEqual(code, 2, stderr)
+            self.assertEqual(len(opened), 1)
             self.assertIn("scannet=1, dekket=0, mangler=0, slettet=1", stdout)
             self.assertIn(f"{source / 'IMG_20240102.jpg'} [deleted/]", stdout)
             self.assertIn("deleted/2024/01/IMG_20240102.jpg", stdout)
+            self.assertEqual(opened[0].read_text(encoding="utf-8"), f"{source / 'IMG_20240102.jpg'} [deleted/]\n")
+            opened[0].unlink()
 
     def test_check_source_accepts_deleted_file_with_option(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5920,7 +5929,8 @@ enabled = false
             self.assertEqual(run_cli(["--target", str(target), "remove", str(imported)]), 0)
             deleted.write_bytes(b"changed")
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
+            with patch("bildebank.cli.open_check_source_missing_report"):
+                code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
 
             self.assertEqual(code, 2, stderr)
             self.assertIn("scannet=1, dekket=0, mangler=0, slettet=1", stdout)
