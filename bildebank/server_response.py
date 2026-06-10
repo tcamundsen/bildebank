@@ -5,14 +5,25 @@ import time
 from http import HTTPStatus
 from typing import Any
 
+BENCHMARK_HEADER = "X-Bildebank-Benchmark"
+
 
 class ServerResponseMixin:
+    def wants_benchmark_timing(self) -> bool:
+        headers = getattr(self, "headers", None)
+        return headers is not None and headers.get(BENCHMARK_HEADER) == "1"
+
     def respond_timing_headers(self) -> None:
+        if not self.wants_benchmark_timing():
+            return
         start = getattr(self, "request_started_at", None)
         if start is None:
             return
         elapsed = (time.perf_counter() - start) * 1000.0
-        self.send_header("Server-Timing", f"bildebank;dur={elapsed:.1f}")
+        steps = dict(getattr(self, "server_timing_steps", {}))
+        steps["total"] = elapsed
+        timing = ", ".join(f"{name};dur={duration:.1f}" for name, duration in steps.items())
+        self.send_header("Server-Timing", timing)
         self.send_header("X-Bildebank-Request-Ms", f"{elapsed:.1f}")
 
     def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:

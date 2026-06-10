@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import socket
 import time
 import urllib.parse
 from http import HTTPStatus
@@ -181,15 +180,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     server: BildebankServer
     protocol_version = "HTTP/1.1"
 
-    def setup(self) -> None:
-        super().setup()
-        try:
-            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        except OSError:
-            pass
-
     def do_GET(self) -> None:
         self.request_started_at = time.perf_counter()
+        self.server_timing_steps = {}
         parsed = urllib.parse.urlparse(self.path)
         try:
             if parsed.path == "/":
@@ -352,6 +345,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         self.request_started_at = time.perf_counter()
+        self.server_timing_steps = {}
         parsed = urllib.parse.urlparse(self.path)
         try:
             if parsed.path == "/geo/place-name":
@@ -442,30 +436,55 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         return
 
+    def record_server_timing(self, name: str, start: float) -> None:
+        if not self.wants_benchmark_timing():
+            return
+        steps = getattr(self, "server_timing_steps", None)
+        if steps is None:
+            steps = {}
+            self.server_timing_steps = steps
+        steps[name] = (time.perf_counter() - start) * 1000.0
+
     def respond_browser_root(self) -> None:
         self.respond_years()
 
     def respond_item(self, raw_file_id: str) -> None:
+        start = time.perf_counter()
         file_id = parse_file_id(raw_file_id)
+        self.record_server_timing("parse", start)
+
+        start = time.perf_counter()
         source = all_browser_source()
         conn = db.connect(self.server.target)
+        self.record_server_timing("db_connect", start)
         try:
+            start = time.perf_counter()
             item_ids, item_positions = self.server.browser_item_order(hide_out_of_focus=self.server.hide_out_of_focus)
+            self.record_server_timing("browser_item_order", start)
+
+            start = time.perf_counter()
             item = item_by_id(self.server.target, file_id, conn=conn) if file_id in item_positions else None
+            self.record_server_timing("item_by_id", start)
             if item is None:
                 self.respond_text("Filen finnes ikke i bildesamlingen.", status=HTTPStatus.NOT_FOUND)
                 return
             if source == all_browser_source():
+                start = time.perf_counter()
                 previous_item, next_item = adjacent_items_from_id_order(
                     item_ids,
                     int(item["id"]),
                     item_positions,
                 )
+                self.record_server_timing("adjacent", start)
+
+                start = time.perf_counter()
                 month_nav = month_navigation_for_keys(
                     self.server.browser_month_keys(hide_out_of_focus=self.server.hide_out_of_focus),
                     month_key_for_item(self.server.target, item),
                 )
+                self.record_server_timing("month_nav", start)
             else:
+                start = time.perf_counter()
                 previous_item, next_item = adjacent_source_items(
                     self.server.target,
                     source,
@@ -473,6 +492,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     hide_out_of_focus=self.server.hide_out_of_focus,
                     conn=conn,
                 )
+                self.record_server_timing("adjacent", start)
+
+                start = time.perf_counter()
                 month_nav = source_month_navigation(
                     self.server.target,
                     source,
@@ -480,22 +502,34 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     hide_out_of_focus=self.server.hide_out_of_focus,
                     conn=conn,
                 )
-            self.respond_html(
-                source_item_page_html(
-                    self.server.target,
-                    source,
-                    item,
-                    previous_item,
-                    next_item,
-                    month_nav,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                    face_config=self.server.config.face_recognition,
-                    manual_h3_cell=self.server.config.browser.manual_h3_cell,
-                    hide_out_of_focus=self.server.hide_out_of_focus,
-                    conn=conn,
-                )
+                self.record_server_timing("month_nav", start)
+
+            start = time.perf_counter()
+            html = source_item_page_html(
+                self.server.target,
+                source,
+                item,
+                previous_item,
+                next_item,
+                month_nav,
+                face_enabled=self.server.face_enabled,
+                openclip_enabled=self.server.openclip_enabled,
+                face_config=self.server.config.face_recognition,
+                manual_h3_cell=self.server.config.browser.manual_h3_cell,
+                hide_out_of_focus=self.server.hide_out_of_focus,
+                conn=conn,
             )
+            self.record_server_timing("source_item_page_html", start)
+
+            start = time.perf_counter()
+            encoded = html.encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.record_server_timing("encode/respond_before_write", start)
+            self.respond_timing_headers()
+            self.end_headers()
+            self.wfile.write(encoded)
         finally:
             conn.close()
 

@@ -53,7 +53,11 @@ def test_keepalive_fetch_uses_path_and_query_only() -> None:
 
     class FakeHeaders:
         def get(self, name: str, default: str = "") -> str:
-            return "text/html; charset=utf-8" if name == "Content-Type" else default
+            if name == "Content-Type":
+                return "text/html; charset=utf-8"
+            if name == "Server-Timing":
+                return "parse;dur=1.5, total;dur=12.5"
+            return default
 
         def __contains__(self, name: str) -> bool:
             return name == "X-Bildebank-Request-Ms"
@@ -75,9 +79,11 @@ def test_keepalive_fetch_uses_path_and_query_only() -> None:
 
     class FakeConnection:
         requested_path: str | None = None
+        headers: dict[str, str] | None = None
 
-        def request(self, method: str, path: str) -> None:
+        def request(self, method: str, path: str, headers: dict[str, str] | None = None) -> None:
             self.requested_path = path
+            self.headers = headers
 
         def getresponse(self) -> FakeResponse:
             return FakeResponse()
@@ -86,13 +92,84 @@ def test_keepalive_fetch_uses_path_and_query_only() -> None:
 
     assert benchmark.fetch_text_keepalive(conn, "http://127.0.0.1:8765/item/123?x=1") == "<html></html>"
     assert conn.requested_path == "/item/123?x=1"
-    html, _first_byte_ms, _read_ms, body_bytes, server_ms = benchmark.fetch_text_keepalive_timed(
+    html, _first_byte_ms, _read_ms, body_bytes, server_ms, server_timing = benchmark.fetch_text_keepalive_timed(
         conn,
         "http://127.0.0.1:8765/item/124",
     )
     assert html == "<html></html>"
+    assert conn.headers == {"X-Bildebank-Benchmark": "1"}
     assert body_bytes == len(b"<html></html>")
     assert server_ms == 12.5
+    assert server_timing == {"parse": 1.5, "total": 12.5}
+
+
+def test_parse_server_timing_header_ignores_invalid_durations() -> None:
+    benchmark = load_benchmark_module()
+
+    assert benchmark.parse_server_timing_header(
+        'parse;dur=1.2, ignored;desc="missing duration", total;dur="12.8", bad;dur=nope'
+    ) == {"parse": 1.2, "total": 12.8}
+
+
+def test_print_summary_includes_server_timing_medians(capsys) -> None:
+    benchmark = load_benchmark_module()
+    args = benchmark.parse_args(["--mode", "server-keepalive", "--steps", "2", "--warmup", "0"])
+    summary = benchmark.build_summary(
+        "server-keepalive",
+        args,
+        [
+            benchmark.StepResult(
+                index=1,
+                elapsed_ms=20.0,
+                url="/item/1",
+                server_timing_ms={"parse": 1.0, "db_connect": 2.0, "total": 10.0},
+            ),
+            benchmark.StepResult(
+                index=2,
+                elapsed_ms=30.0,
+                url="/item/2",
+                server_timing_ms={"parse": 3.0, "db_connect": 4.0, "total": 20.0},
+            ),
+        ],
+    )
+
+    benchmark.print_summary(summary)
+
+    output = capsys.readouterr().out
+    assert "  server: parse=2.0 ms, db_connect=3.0 ms, total=15.0 ms" in output
+
+
+def test_server_timing_headers_are_opt_in() -> None:
+    from bildebank.server_response import ServerResponseMixin
+
+    class FakeHeaders:
+        def __init__(self, benchmark: bool) -> None:
+            self.benchmark = benchmark
+
+        def get(self, name: str) -> str | None:
+            if name == "X-Bildebank-Benchmark" and self.benchmark:
+                return "1"
+            return None
+
+    class FakeHandler(ServerResponseMixin):
+        def __init__(self, benchmark: bool) -> None:
+            self.headers = FakeHeaders(benchmark)
+            self.sent: list[tuple[str, str]] = []
+            self.request_started_at = 1.0
+
+        def send_header(self, name: str, value: str) -> None:
+            self.sent.append((name, value))
+
+    handler = FakeHandler(benchmark=False)
+    handler.respond_timing_headers()
+    assert handler.sent == []
+
+    handler = FakeHandler(benchmark=True)
+    handler.server_timing_steps = {"parse": 1.2}
+    handler.respond_timing_headers()
+    header_names = [name for name, _value in handler.sent]
+    assert "Server-Timing" in header_names
+    assert "X-Bildebank-Request-Ms" in header_names
 
 
 def test_profile_summary_counts_threshold_failures_per_total_time() -> None:

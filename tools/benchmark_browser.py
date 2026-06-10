@@ -16,6 +16,18 @@ from typing import Any
 
 
 DEFAULT_URL = "http://127.0.0.1:8765/"
+BENCHMARK_HEADER = "X-Bildebank-Benchmark"
+SERVER_TIMING_STEP_ORDER = (
+    "parse",
+    "db_connect",
+    "browser_item_order",
+    "item_by_id",
+    "adjacent",
+    "month_nav",
+    "source_item_page_html",
+    "encode/respond_before_write",
+    "total",
+)
 
 
 @dataclass(frozen=True)
@@ -27,6 +39,7 @@ class StepResult:
     read_ms: float | None = None
     body_bytes: int | None = None
     server_ms: float | None = None
+    server_timing_ms: dict[str, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -242,7 +255,7 @@ def run_server_keepalive_benchmark(args: argparse.Namespace) -> BenchmarkSummary
     conn = http.client.HTTPConnection(parsed.hostname, parsed.port or 80, timeout=args.timeout_ms / 1000.0)
     try:
         url = args.url
-        html, _first_byte_ms, _read_ms, _body_bytes, _server_ms = fetch_text_keepalive_timed(conn, url)
+        html, _first_byte_ms, _read_ms, _body_bytes, _server_ms, _server_timing = fetch_text_keepalive_timed(conn, url)
         for _ in range(args.warmup):
             _step, url, html = fetch_next_page_keepalive_step(conn, url, html, 0)
         steps: list[StepResult] = []
@@ -487,7 +500,7 @@ def fetch_next_page_keepalive_step(
         raise RuntimeError("Fant ingen aktiv Neste bilde-lenke.")
     next_url = urllib.parse.urljoin(url, parser.next_href)
     start = time.perf_counter()
-    next_html, first_byte_ms, read_ms, body_bytes, server_ms = fetch_text_keepalive_timed(conn, next_url)
+    next_html, first_byte_ms, read_ms, body_bytes, server_ms, server_timing = fetch_text_keepalive_timed(conn, next_url)
     elapsed_ms = (time.perf_counter() - start) * 1000.0
     if not next_html:
         raise RuntimeError(f"Tom respons fra {next_url}")
@@ -500,6 +513,7 @@ def fetch_next_page_keepalive_step(
             read_ms=read_ms,
             body_bytes=body_bytes,
             server_ms=server_ms,
+            server_timing_ms=server_timing,
         ),
         next_url,
         next_html,
@@ -531,19 +545,23 @@ def fetch_text_keepalive(conn: http.client.HTTPConnection, url: str) -> str:
         response.close()
 
 
-def fetch_text_keepalive_timed(conn: http.client.HTTPConnection, url: str) -> tuple[str, float, float, int, float | None]:
+def fetch_text_keepalive_timed(
+    conn: http.client.HTTPConnection,
+    url: str,
+) -> tuple[str, float, float, int, float | None, dict[str, float]]:
     parsed = urllib.parse.urlparse(url)
     path = parsed.path or "/"
     if parsed.query:
         path += f"?{parsed.query}"
     start = time.perf_counter()
-    conn.request("GET", path)
+    conn.request("GET", path, headers={BENCHMARK_HEADER: "1"})
     response = conn.getresponse()
     first_byte_ms = elapsed_ms(start)
     try:
         if response.status >= 400:
             raise RuntimeError(f"HTTP {response.status} fra {url}")
         server_ms = float(response.headers["X-Bildebank-Request-Ms"]) if "X-Bildebank-Request-Ms" in response.headers else None
+        server_timing = parse_server_timing_header(response.headers.get("Server-Timing", ""))
         content_type = response.headers.get("Content-Type", "")
         encoding = "utf-8"
         if "charset=" in content_type:
@@ -551,9 +569,28 @@ def fetch_text_keepalive_timed(conn: http.client.HTTPConnection, url: str) -> tu
         start = time.perf_counter()
         content = response.read()
         read_ms = elapsed_ms(start)
-        return content.decode(encoding, errors="replace"), first_byte_ms, read_ms, len(content), server_ms
+        return content.decode(encoding, errors="replace"), first_byte_ms, read_ms, len(content), server_ms, server_timing
     finally:
         response.close()
+
+
+def parse_server_timing_header(value: str) -> dict[str, float]:
+    timings: dict[str, float] = {}
+    for entry in value.split(","):
+        parts = [part.strip() for part in entry.split(";") if part.strip()]
+        if not parts:
+            continue
+        name = parts[0]
+        for part in parts[1:]:
+            if not part.startswith("dur="):
+                continue
+            raw_duration = part.removeprefix("dur=").strip().strip('"')
+            try:
+                timings[name] = float(raw_duration)
+            except ValueError:
+                pass
+            break
+    return timings
 
 
 def build_summary(mode: str, args: argparse.Namespace, steps: list[StepResult]) -> BenchmarkSummary:
@@ -657,6 +694,11 @@ def print_summary(summary: BenchmarkSummary) -> None:
             f"server_median={format_ms(server['median_ms'])}, "
             f"bytes_median={statistics.median(body_values) if body_values else 0:.0f}"
         )
+    server_timing = server_timing_medians(summary.steps)
+    if server_timing:
+        ordered_names = [name for name in SERVER_TIMING_STEP_ORDER if name in server_timing]
+        ordered_names.extend(name for name in sorted(server_timing) if name not in ordered_names)
+        print("  server: " + ", ".join(f"{name}={format_ms(server_timing[name])}" for name in ordered_names))
     if summary.threshold_ms is not None:
         print(f"  terskel: {summary.threshold_ms:.1f} ms, brudd={summary.threshold_failures}")
 
@@ -689,6 +731,16 @@ def format_stats(stats: dict[str, float | None]) -> str:
 
 def format_ms(value: float | None) -> str:
     return "-" if value is None else f"{value:.1f} ms"
+
+
+def server_timing_medians(steps: list[StepResult]) -> dict[str, float]:
+    values_by_name: dict[str, list[float]] = {}
+    for step in steps:
+        if not step.server_timing_ms:
+            continue
+        for name, value in step.server_timing_ms.items():
+            values_by_name.setdefault(name, []).append(value)
+    return {name: statistics.median(values) for name, values in values_by_name.items()}
 
 
 def summary_to_json(summary: BenchmarkSummary | ProfileSummary) -> dict[str, Any]:
