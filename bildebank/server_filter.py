@@ -455,6 +455,8 @@ def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTe
         return
     from .face import connect_face_db, face_db_path
 
+    if any(str(row["name"]) == "face_db" for row in conn.execute("PRAGMA database_list")):
+        return
     face_conn = connect_face_db(target)
     face_conn.close()
     conn.execute("ATTACH DATABASE ? AS face_db", (str(face_db_path(target)),))

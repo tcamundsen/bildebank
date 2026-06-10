@@ -67,6 +67,7 @@ def test_profile_summary_counts_threshold_failures_per_total_time() -> None:
             index=1,
             url="/item/2",
             total_ms=40.0,
+            connect_ms=5.0,
             item_ms=1.0,
             adjacent_ms=20.0,
             month_nav_ms=10.0,
@@ -77,6 +78,7 @@ def test_profile_summary_counts_threshold_failures_per_total_time() -> None:
             index=2,
             url="/item/3",
             total_ms=60.0,
+            connect_ms=6.0,
             item_ms=1.0,
             adjacent_ms=30.0,
             month_nav_ms=20.0,
@@ -89,4 +91,5 @@ def test_profile_summary_counts_threshold_failures_per_total_time() -> None:
 
     assert summary.threshold_failures == 1
     assert summary.total["median_ms"] == 50.0
+    assert summary.connect["max_ms"] == 6.0
     assert summary.adjacent["max_ms"] == 30.0

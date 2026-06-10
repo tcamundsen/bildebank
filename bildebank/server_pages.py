@@ -252,6 +252,7 @@ def source_item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_h3_cell: str = "",
     hide_out_of_focus: bool = False,
+    conn: Any | None = None,
 ) -> str:
     return server_browser.source_item_page_html(
         target,
@@ -266,6 +267,7 @@ def source_item_page_html(
         face_config=face_config,
         manual_h3_cell=manual_h3_cell,
         hide_out_of_focus=hide_out_of_focus,
+        conn=conn,
     )
 
 

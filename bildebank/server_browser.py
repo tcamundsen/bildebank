@@ -167,6 +167,7 @@ def sql_filtered_source_item_by_id(
     file_id: int,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> Any | None:
     where_sql, params = source_sql_filter(source)
     where_sql, params = with_motion_video_filter(
@@ -177,7 +178,8 @@ def sql_filtered_source_item_by_id(
     )
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
-    conn = db.connect(target)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     try:
         attach_source_sql_filter_databases(conn, target, source)
         return conn.execute(
@@ -191,12 +193,20 @@ def sql_filtered_source_item_by_id(
             (file_id, *params),
         ).fetchone()
     finally:
-        conn.close()
+        if owned_conn:
+            conn.close()
 
 
-def unfiltered_source_item_by_id(target: Path, file_id: int, *, hide_out_of_focus: bool = False) -> Any | None:
+def unfiltered_source_item_by_id(
+    target: Path,
+    file_id: int,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> Any | None:
     where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
-    conn = db.connect(target)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     try:
         return conn.execute(
             f"""
@@ -207,7 +217,8 @@ def unfiltered_source_item_by_id(target: Path, file_id: int, *, hide_out_of_focu
             (*params, file_id),
         ).fetchone()
     finally:
-        conn.close()
+        if owned_conn:
+            conn.close()
 
 
 def browser_item_by_id(target: Path, file_id: int, *, hide_out_of_focus: bool = False) -> Any | None:
@@ -221,9 +232,16 @@ def source_item_by_id(
     face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> Any | None:
     if source_has_sql_filter(source):
-        return sql_filtered_source_item_by_id(target, source, file_id, hide_out_of_focus=hide_out_of_focus)
+        return sql_filtered_source_item_by_id(
+            target,
+            source,
+            file_id,
+            hide_out_of_focus=hide_out_of_focus,
+            conn=conn,
+        )
     if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
         return next(
             (
@@ -233,7 +251,7 @@ def source_item_by_id(
             ),
             None,
         )
-    return unfiltered_source_item_by_id(target, file_id, hide_out_of_focus=hide_out_of_focus)
+    return unfiltered_source_item_by_id(target, file_id, hide_out_of_focus=hide_out_of_focus, conn=conn)
 
 
 def item_order_key(item: Any) -> tuple[str, str]:
@@ -415,10 +433,12 @@ def adjacent_unfiltered_source_items(
     item: Any,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> tuple[Any | None, Any | None]:
     order_key = item_order_key(item)
     where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
-    conn = db.connect(target)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     try:
         previous_item = conn.execute(
             f"""
@@ -444,7 +464,8 @@ def adjacent_unfiltered_source_items(
         ).fetchone()
         return previous_item, next_item
     finally:
-        conn.close()
+        if owned_conn:
+            conn.close()
 
 
 def adjacent_sql_filtered_source_items(
@@ -453,6 +474,7 @@ def adjacent_sql_filtered_source_items(
     item: Any,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> tuple[Any | None, Any | None]:
     where_sql, params = source_sql_filter(source)
     where_sql, params = with_motion_video_filter(
@@ -464,7 +486,8 @@ def adjacent_sql_filtered_source_items(
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     order_key = item_order_key(item)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
-    conn = db.connect(target)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     try:
         attach_source_sql_filter_databases(conn, target, source)
         previous_item = conn.execute(
@@ -493,7 +516,8 @@ def adjacent_sql_filtered_source_items(
         ).fetchone()
         return previous_item, next_item
     finally:
-        conn.close()
+        if owned_conn:
+            conn.close()
 
 
 def adjacent_browser_items(
@@ -512,9 +536,16 @@ def adjacent_source_items(
     face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> tuple[Any | None, Any | None]:
     if source_has_sql_filter(source):
-        return adjacent_sql_filtered_source_items(target, source, item, hide_out_of_focus=hide_out_of_focus)
+        return adjacent_sql_filtered_source_items(
+            target,
+            source,
+            item,
+            hide_out_of_focus=hide_out_of_focus,
+            conn=conn,
+        )
     if (
         source.person_name is not None
         or source.source_id is not None
@@ -525,7 +556,7 @@ def adjacent_source_items(
             source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus),
             item,
         )
-    return adjacent_unfiltered_source_items(target, item, hide_out_of_focus=hide_out_of_focus)
+    return adjacent_unfiltered_source_items(target, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
 
 
 def valid_month_key(value: str) -> bool:
@@ -561,6 +592,7 @@ def sql_filtered_source_month_keys(
     source: BrowserSource,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> list[str]:
     where_sql, params = source_sql_filter(source)
     where_sql, params = with_motion_video_filter(
@@ -571,7 +603,8 @@ def sql_filtered_source_month_keys(
     )
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
-    conn = db.connect(target)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     try:
         attach_source_sql_filter_databases(conn, target, source)
         rows = conn.execute(
@@ -587,7 +620,8 @@ def sql_filtered_source_month_keys(
         )
         return [str(row["month_key"]) for row in rows if valid_month_key(str(row["month_key"]))]
     finally:
-        conn.close()
+        if owned_conn:
+            conn.close()
 
 
 def browser_month_keys(target: Path, *, hide_out_of_focus: bool = False) -> list[str]:
@@ -670,9 +704,10 @@ def source_month_keys(
     face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> list[str]:
     if source_has_sql_filter(source):
-        return sql_filtered_source_month_keys(target, source, hide_out_of_focus=hide_out_of_focus)
+        return sql_filtered_source_month_keys(target, source, hide_out_of_focus=hide_out_of_focus, conn=conn)
     if (
         source.person_name is not None
         or source.source_id is not None
@@ -956,6 +991,7 @@ def source_item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_h3_cell: str = "",
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> str:
     from .server_faces import (
         confirmed_people_for_file,
@@ -1002,11 +1038,12 @@ def source_item_page_html(
         target,
         item,
         out_of_focus_redirect_url=out_of_focus_redirect_url,
+        conn=conn,
     )
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config) if face_enabled else ""
-    all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus)
+    all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
     all_items_label = "Synlige bilder" if hide_out_of_focus else "Alle bilder"
-    motion_video = motion_video_for_image(target, item)
+    motion_video = motion_video_for_image(target, item, conn=conn)
     motion_video_link = motion_video_link_html(motion_video) if motion_video is not None else ""
     return page_html(
         f"{source.title}: {target_path.name}",
@@ -1041,13 +1078,14 @@ def source_item_page_html(
     )
 
 
-def motion_video_for_image(target: Path, item: Any) -> Any | None:
+def motion_video_for_image(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> Any | None:
     if not is_image_item(item):
         return None
-    original_filename = original_filename_for_item(target, item)
+    original_filename = original_filename_for_item(target, item, conn=conn)
     if original_filename is None:
         return None
-    conn = db.connect(target)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     try:
         return conn.execute(
             f"""
@@ -1063,20 +1101,23 @@ def motion_video_for_image(target: Path, item: Any) -> Any | None:
             (original_filename,),
         ).fetchone()
     finally:
-        conn.close()
+        if owned_conn:
+            conn.close()
 
 
-def original_filename_for_item(target: Path, item: Any) -> str | None:
+def original_filename_for_item(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> str | None:
     try:
         return str(item["original_filename"])
     except (KeyError, IndexError):
         pass
-    conn = db.connect(target)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     try:
         row = conn.execute("SELECT original_filename FROM files WHERE id = ?", (int(item["id"]),)).fetchone()
         return str(row["original_filename"]) if row is not None else None
     finally:
-        conn.close()
+        if owned_conn:
+            conn.close()
 
 
 def motion_video_link_html(motion_video: Any) -> str:
@@ -1127,7 +1168,14 @@ def breadcrumb_html(crumbs: list[tuple[str, str | None]], final_html: str) -> st
     return '<nav class="breadcrumb" aria-label="Plassering">' + '<span class="sep">/</span>'.join(parts) + "</nav>"
 
 
-def all_browser_item_link_url(target: Path, source: BrowserSource, item: Any, *, hide_out_of_focus: bool = False) -> str | None:
+def all_browser_item_link_url(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> str | None:
     if source == all_browser_source() or not hide_out_of_focus:
         return None
     visible_item = source_item_by_id(
@@ -1135,6 +1183,7 @@ def all_browser_item_link_url(target: Path, source: BrowserSource, item: Any, *,
         all_browser_source(),
         int(item["id"]),
         hide_out_of_focus=hide_out_of_focus,
+        conn=conn,
     )
     if visible_item is None:
         return "/"
@@ -1162,15 +1211,18 @@ def system_tag_controls_html(
     item: Any,
     *,
     out_of_focus_redirect_url: str = "",
+    conn: sqlite3.Connection | None = None,
 ) -> str:
     file_id = int(item["id"])
-    conn = db.connect(target)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     try:
         active_names = {str(row["name"]).casefold() for row in db.tags_for_file(conn, file_id)}
         manual_h3_name = manual_h3_place_name(conn, item)
         manual_h3_cell_value = manual_h3_cell(item)
     finally:
-        conn.close()
+        if owned_conn:
+            conn.close()
     buttons = []
     for tag_name in db.SYSTEM_TAG_NAMES:
         active = tag_name.casefold() in active_names
@@ -2128,6 +2180,7 @@ def source_month_navigation(
     face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> dict[str, str | None]:
     return source_month_navigation_for_key(
         target,
@@ -2135,6 +2188,7 @@ def source_month_navigation(
         month_key_for_item(target, item),
         face_config,
         hide_out_of_focus=hide_out_of_focus,
+        conn=conn,
     )
 
 
@@ -2145,10 +2199,11 @@ def source_month_navigation_for_key(
     face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> dict[str, str | None]:
     if not valid_month_key(current_key):
         return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
-    keys = source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
+    keys = source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus, conn=conn)
     if not keys:
         return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
     years = sorted({key[:4] for key in keys})

@@ -380,37 +380,50 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_item(self, raw_file_id: str) -> None:
         file_id = parse_file_id(raw_file_id)
         source = all_browser_source()
-        item = source_item_by_id(self.server.target, source, file_id, hide_out_of_focus=self.server.hide_out_of_focus)
-        if item is None:
-            self.respond_text("Filen finnes ikke i bildesamlingen.", status=HTTPStatus.NOT_FOUND)
-            return
-        previous_item, next_item = adjacent_source_items(
-            self.server.target,
-            source,
-            item,
-            hide_out_of_focus=self.server.hide_out_of_focus,
-        )
-        month_nav = source_month_navigation(
-            self.server.target,
-            source,
-            item,
-            hide_out_of_focus=self.server.hide_out_of_focus,
-        )
-        self.respond_html(
-            source_item_page_html(
+        conn = db.connect(self.server.target)
+        try:
+            item = source_item_by_id(
+                self.server.target,
+                source,
+                file_id,
+                hide_out_of_focus=self.server.hide_out_of_focus,
+                conn=conn,
+            )
+            if item is None:
+                self.respond_text("Filen finnes ikke i bildesamlingen.", status=HTTPStatus.NOT_FOUND)
+                return
+            previous_item, next_item = adjacent_source_items(
                 self.server.target,
                 source,
                 item,
-                previous_item,
-                next_item,
-                month_nav,
-                face_enabled=self.server.face_enabled,
-                openclip_enabled=self.server.openclip_enabled,
-                face_config=self.server.config.face_recognition,
-                manual_h3_cell=self.server.config.browser.manual_h3_cell,
                 hide_out_of_focus=self.server.hide_out_of_focus,
+                conn=conn,
             )
-        )
+            month_nav = source_month_navigation(
+                self.server.target,
+                source,
+                item,
+                hide_out_of_focus=self.server.hide_out_of_focus,
+                conn=conn,
+            )
+            self.respond_html(
+                source_item_page_html(
+                    self.server.target,
+                    source,
+                    item,
+                    previous_item,
+                    next_item,
+                    month_nav,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                    face_config=self.server.config.face_recognition,
+                    manual_h3_cell=self.server.config.browser.manual_h3_cell,
+                    hide_out_of_focus=self.server.hide_out_of_focus,
+                    conn=conn,
+                )
+            )
+        finally:
+            conn.close()
 
     def respond_month(self, raw_month: str) -> None:
         month_key = urllib.parse.unquote(raw_month).strip()
@@ -679,45 +692,53 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         if page_mode == "item":
             file_id = parse_file_id(raw_value)
-            item = source_item_by_id(
-                self.server.target,
-                source,
-                file_id,
-                face_config,
-                hide_out_of_focus=hide_out_of_focus,
-            )
-            if item is None:
-                self.respond_text(item_not_found_message, status=HTTPStatus.NOT_FOUND)
-                return
-            previous_item, next_item = adjacent_source_items(
-                self.server.target,
-                source,
-                item,
-                face_config,
-                hide_out_of_focus=hide_out_of_focus,
-            )
-            month_nav = source_month_navigation(
-                self.server.target,
-                source,
-                item,
-                face_config,
-                hide_out_of_focus=hide_out_of_focus,
-            )
-            self.respond_html(
-                source_item_page_html(
+            conn = db.connect(self.server.target)
+            try:
+                item = source_item_by_id(
+                    self.server.target,
+                    source,
+                    file_id,
+                    face_config,
+                    hide_out_of_focus=hide_out_of_focus,
+                    conn=conn,
+                )
+                if item is None:
+                    self.respond_text(item_not_found_message, status=HTTPStatus.NOT_FOUND)
+                    return
+                previous_item, next_item = adjacent_source_items(
                     self.server.target,
                     source,
                     item,
-                    previous_item,
-                    next_item,
-                    month_nav,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                    face_config=self.server.config.face_recognition,
-                    manual_h3_cell=self.server.config.browser.manual_h3_cell,
+                    face_config,
                     hide_out_of_focus=hide_out_of_focus,
+                    conn=conn,
                 )
-            )
+                month_nav = source_month_navigation(
+                    self.server.target,
+                    source,
+                    item,
+                    face_config,
+                    hide_out_of_focus=hide_out_of_focus,
+                    conn=conn,
+                )
+                self.respond_html(
+                    source_item_page_html(
+                        self.server.target,
+                        source,
+                        item,
+                        previous_item,
+                        next_item,
+                        month_nav,
+                        face_enabled=self.server.face_enabled,
+                        openclip_enabled=self.server.openclip_enabled,
+                        face_config=self.server.config.face_recognition,
+                        manual_h3_cell=self.server.config.browser.manual_h3_cell,
+                        hide_out_of_focus=hide_out_of_focus,
+                        conn=conn,
+                    )
+                )
+            finally:
+                conn.close()
             return
         if page_mode == "month":
             month_key = urllib.parse.unquote(raw_value).strip()

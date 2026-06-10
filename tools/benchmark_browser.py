@@ -47,6 +47,7 @@ class ProfileStepResult:
     index: int
     url: str
     total_ms: float
+    connect_ms: float
     item_ms: float
     adjacent_ms: float
     month_nav_ms: float
@@ -65,6 +66,7 @@ class ProfileSummary:
     threshold_ms: float | None
     threshold_failures: int
     total: dict[str, float | None]
+    connect: dict[str, float | None]
     item: dict[str, float | None]
     adjacent: dict[str, float | None]
     month_nav: dict[str, float | None]
@@ -274,6 +276,7 @@ def profile_source_and_file_id(target: Path, url: str) -> tuple[Any, int]:
 
 
 def profile_item_step(target: Path, source: Any, file_id: int, index: int) -> ProfileStepResult:
+    from bildebank import db
     from bildebank.server_browser import (
         adjacent_source_items,
         source_item_by_id,
@@ -284,29 +287,36 @@ def profile_item_step(target: Path, source: Any, file_id: int, index: int) -> Pr
 
     total_start = time.perf_counter()
     start = time.perf_counter()
-    item = source_item_by_id(target, source, file_id)
-    item_ms = elapsed_ms(start)
-    if item is None:
-        raise RuntimeError(f"Fant ikke item #{file_id} i profilert utvalg.")
+    conn = db.connect(target)
+    connect_ms = elapsed_ms(start)
+    try:
+        start = time.perf_counter()
+        item = source_item_by_id(target, source, file_id, conn=conn)
+        item_ms = elapsed_ms(start)
+        if item is None:
+            raise RuntimeError(f"Fant ikke item #{file_id} i profilert utvalg.")
 
-    start = time.perf_counter()
-    previous_item, next_item = adjacent_source_items(target, source, item)
-    adjacent_ms = elapsed_ms(start)
+        start = time.perf_counter()
+        previous_item, next_item = adjacent_source_items(target, source, item, conn=conn)
+        adjacent_ms = elapsed_ms(start)
 
-    start = time.perf_counter()
-    month_nav = source_month_navigation(target, source, item)
-    month_nav_ms = elapsed_ms(start)
+        start = time.perf_counter()
+        month_nav = source_month_navigation(target, source, item, conn=conn)
+        month_nav_ms = elapsed_ms(start)
 
-    start = time.perf_counter()
-    html = source_item_page_html(target, source, item, previous_item, next_item, month_nav)
-    html_ms = elapsed_ms(start)
-    total_ms = elapsed_ms(total_start)
+        start = time.perf_counter()
+        html = source_item_page_html(target, source, item, previous_item, next_item, month_nav, conn=conn)
+        html_ms = elapsed_ms(start)
+        total_ms = elapsed_ms(total_start)
+    finally:
+        conn.close()
 
     next_url = source_item_url(source, int(next_item["id"])) if next_item is not None else source_item_url(source, file_id)
     return ProfileStepResult(
         index=index,
         url=next_url,
         total_ms=total_ms,
+        connect_ms=connect_ms,
         item_ms=item_ms,
         adjacent_ms=adjacent_ms,
         month_nav_ms=month_nav_ms,
@@ -389,6 +399,7 @@ def build_profile_summary(args: argparse.Namespace, steps: list[ProfileStepResul
         threshold_ms=args.threshold_ms,
         threshold_failures=threshold_failures,
         total=stats_dict(total_values),
+        connect=stats_dict([step.connect_ms for step in steps]),
         item=stats_dict([step.item_ms for step in steps]),
         adjacent=stats_dict([step.adjacent_ms for step in steps]),
         month_nav=stats_dict([step.month_nav_ms for step in steps]),
@@ -443,6 +454,7 @@ def print_profile_summary(summary: ProfileSummary) -> None:
     print(f"  warmup: {summary.warmup}")
     print(f"  målt: {summary.steps_measured}/{summary.steps_requested}")
     print(f"  total: {format_stats(summary.total)}")
+    print(f"  db.connect: {format_stats(summary.connect)}")
     print(f"  source_item_by_id: {format_stats(summary.item)}")
     print(f"  adjacent_source_items: {format_stats(summary.adjacent)}")
     print(f"  source_month_navigation: {format_stats(summary.month_nav)}")
