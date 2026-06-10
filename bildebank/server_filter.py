@@ -442,6 +442,14 @@ def text_filter_has_runtime_filter(text_filter: BrowserTextFilter) -> bool:
     return False
 
 
+def text_filter_shows_motion_videos(text_filter: BrowserTextFilter) -> bool:
+    return (
+        text_filter.media_type == "video"
+        or text_filter.extension is not None
+        or text_filter.filename is not None
+    )
+
+
 def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTextFilter) -> None:
     if text_filter.person is None:
         return
@@ -453,9 +461,20 @@ def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTe
 
 
 def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_of_focus: bool = False) -> list[Any]:
-    from .server_browser import FILE_COLUMNS, ITEM_ORDER_SQL, OUT_OF_FOCUS_FILTER_PARAMS, OUT_OF_FOCUS_FILTER_SQL
+    from .server_browser import (
+        FILE_COLUMNS,
+        ITEM_ORDER_SQL,
+        OUT_OF_FOCUS_FILTER_PARAMS,
+        OUT_OF_FOCUS_FILTER_SQL,
+        with_motion_video_filter,
+    )
 
     where_sql, params = text_filter_where_clause(text_filter)
+    where_sql, params = with_motion_video_filter(
+        where_sql,
+        params,
+        include_motion=text_filter_shows_motion_videos(text_filter),
+    )
     deleted_sql = "1 = 1" if text_filter.deleted else "deleted_at IS NULL"
     focus_sql = f"AND {OUT_OF_FOCUS_FILTER_SQL}" if hide_out_of_focus else ""
     focus_params = OUT_OF_FOCUS_FILTER_PARAMS if hide_out_of_focus else ()

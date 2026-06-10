@@ -195,6 +195,18 @@ class MediaDateTests(unittest.TestCase):
             self.assertEqual(result.date, dt.date(2010, 7, 8))
             self.assertEqual(result.source, "metadata")
 
+    def test_mp_motion_file_is_video_only_when_it_is_mp4_container(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            motion = root / "PXL_20250102_123.MP"
+            motion.write_bytes(minimal_mp4_with_creation_date(dt.date(2025, 1, 2)))
+            not_motion = root / "not-video.MP"
+            not_motion.write_bytes(b"not an mp4")
+
+            self.assertTrue(is_supported_media(motion))
+            self.assertEqual(media_kind(motion), "video")
+            self.assertFalse(is_supported_media(not_motion))
+
     def test_avi_info_date_is_used_as_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "oktnov07 063.avi"

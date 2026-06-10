@@ -1507,7 +1507,10 @@ model_name = "buffalo_l"
             (source / "IMG_20250104.jpg").write_bytes(b"image-four")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
             item = browser_item_by_id(target, 2)
             self.assertIsNotNone(item)
             previous_item, next_item = adjacent_browser_items(target, item)
@@ -1551,7 +1554,10 @@ model_name = "buffalo_l"
             (source / "IMG_20240102.jpg").write_bytes(b"image")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
@@ -3252,6 +3258,40 @@ model_name = "buffalo_l"
             with self.subTest(query=query):
                 with self.assertRaisesRegex(ValueError, message):
                     parse_text_filter(query)
+
+    def test_run_server_hides_motion_video_unless_filter_explicitly_requests_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "PXL_20250102_123.MP").write_bytes(minimal_mp4_with_creation_date(dt.date(2025, 1, 2)))
+            (source / "PXL_20250102_123.MP.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            month_items = browser_month_items(target, "2025-01")
+            type_video_source = text_filter_browser_source("type:video")
+            filename_source = text_filter_browser_source("filename:PXL_20250102_123")
+            type_video_items = source_month_items(target, type_video_source, "2025-01")
+            filename_items = source_month_items(target, filename_source, "2025-01")
+            image_item = month_items[0]
+            image_body = item_page_html(
+                target,
+                image_item,
+                *adjacent_browser_items(target, image_item),
+                browser_month_navigation(target, image_item),
+            )
+
+        self.assertEqual([item["stored_filename"] for item in month_items], ["PXL_20250102_123.MP.jpg"])
+        self.assertEqual([item["stored_filename"] for item in type_video_items], ["PXL_20250102_123.mp4"])
+        self.assertEqual(
+            [item["stored_filename"] for item in filename_items],
+            ["PXL_20250102_123.MP.jpg", "PXL_20250102_123.mp4"],
+        )
+        self.assertIn("Motion-video: PXL_20250102_123.mp4", image_body)
+        self.assertIn("/filter/filename%3APXL_20250102_123.mp4/item/", image_body)
 
     def test_run_server_filter_route_redirects_query_to_canonical_browser_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5715,7 +5755,9 @@ enabled = false
                 conn.close()
 
             with patch("bildebank.cli.open_check_source_missing_report"):
-                code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "check-source", "--quiet", str(source)]
+                )
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("scannet=1, dekket=1, mangler=0", stdout)
@@ -5740,7 +5782,10 @@ enabled = false
             (source / "IMG_20240103.jpg").write_bytes(b"image-two")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
 
             code, stdout, stderr = capture_cli(["--target", str(target), "check-source", str(source)])
 
@@ -5763,7 +5808,10 @@ enabled = false
             imported.write_bytes(b"image")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
             missing.write_bytes(b"not-imported")
 
             with patch("bildebank.cli.open_check_source_missing_report"):
@@ -5775,6 +5823,37 @@ enabled = false
             self.assertIn("filen er ikke importert i bildesamlingen", stdout)
             self.assertIn("Kildemappen er derfor ikke trygg å slette.", stdout)
             self.assertNotIn("Remove-Item", stdout)
+
+    def test_check_source_ignores_google_json_sidecars_but_reports_other_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            image = source / "IMG_20240102.jpg"
+            sidecar = source / "IMG_20240102.jpg.json"
+            other_json = source / "album.json"
+            image.write_bytes(b"image")
+            sidecar.write_text('{"title":"IMG_20240102.jpg"}', encoding="utf-8")
+            other_json.write_text("{}", encoding="utf-8")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            opened: list[Path] = []
+
+            def fake_open(path: Path) -> None:
+                opened.append(path)
+
+            with patch("bildebank.cli.open_check_source_missing_report", fake_open):
+                code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("scannet=2, dekket=1, mangler=1, slettet=0, ignorert_json=1", stdout)
+            self.assertNotIn(str(sidecar), stdout)
+            self.assertIn(str(other_json), stdout)
+            self.assertEqual(opened[0].read_text(encoding="utf-8"), f"{other_json}\n")
+            opened[0].unlink()
 
     def test_check_source_writes_and_opens_missing_file_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -8599,6 +8678,46 @@ print(json.dumps([
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
 
             self.assertTrue((target / "2010" / "07" / "video.mp4").exists())
+
+    def test_import_mp_motion_file_stores_copy_as_mp4_and_keeps_original_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            motion = source / "PXL_20250102_123.MP"
+            motion.write_bytes(minimal_mp4_with_creation_date(dt.date(2025, 1, 2)))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            self.assertTrue((target / "2025" / "01" / "PXL_20250102_123.mp4").exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                row = conn.execute("SELECT original_filename, stored_filename FROM files").fetchone()
+            finally:
+                conn.close()
+            self.assertEqual(row, ("PXL_20250102_123.MP", "PXL_20250102_123.mp4"))
+
+    def test_import_mp_motion_name_conflict_uses_mp4_suffix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            (source / "a").mkdir(parents=True)
+            (source / "b").mkdir()
+            (source / "a" / "PXL_20250102_123.MP").write_bytes(
+                minimal_mp4_with_creation_date(dt.date(2025, 1, 2))
+            )
+            (source / "b" / "PXL_20250102_123.MP").write_bytes(
+                minimal_mp4_with_creation_date(dt.date(2025, 1, 3))
+            )
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            self.assertTrue((target / "2025" / "01" / "PXL_20250102_123.mp4").exists())
+            self.assertTrue((target / "2025" / "01" / "PXL_20250102_123-1.mp4").exists())
 
     def test_import_avi_uses_metadata_date(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, TextIO
 
 from . import db
-from .media import MediaDate, camera_info, is_supported_media, media_date, sha256_file
+from .media import MediaDate, camera_info, is_supported_media, media_date, sha256_file, stored_media_filename
 from .progress import ProgressMeter
 
 
@@ -371,8 +371,9 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
     camera = camera_info(path)
     destination_dir = destination_directory(target, date)
     destination_dir.mkdir(parents=True, exist_ok=True)
+    stored_filename = stored_media_filename(path.name)
     destination_path, name_conflict, already_present = find_existing_or_available_destination(
-        destination_dir, path.name, file_hash
+        destination_dir, stored_filename, file_hash
     )
     if already_present:
         db.insert_imported_file(
@@ -434,8 +435,9 @@ def process_file_dry_run(
 
     date = media_date(path)
     destination_dir = destination_directory(target, date)
+    stored_filename = stored_media_filename(path.name)
     destination_path, name_conflict, already_present = find_existing_or_available_destination(
-        destination_dir, path.name, file_hash
+        destination_dir, stored_filename, file_hash
     )
     if already_present:
         stats.skipped_existing += 1

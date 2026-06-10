@@ -50,7 +50,7 @@ MONTH_NAMES = {
     "12": "Desember",
 }
 FILE_COLUMNS = (
-    "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
+    "id, target_path, target_path_key, original_filename, stored_filename, taken_date, date_source, "
     "manual_date_from, manual_date_to, manual_date_note, "
     "camera_make, camera_model, "
     "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_source, "
@@ -69,6 +69,18 @@ NOT EXISTS (
 )
 """
 OUT_OF_FOCUS_FILTER_PARAMS = (db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS),)
+MOTION_VIDEO_FILTER_SQL = """
+NOT (
+    lower(original_filename) LIKE '%.mp'
+    AND lower(stored_filename) LIKE '%.mp4'
+    AND EXISTS (
+        SELECT 1
+        FROM files motion_image
+        WHERE motion_image.deleted_at IS NULL
+          AND lower(motion_image.original_filename) = lower(files.original_filename || '.jpg')
+    )
+)
+"""
 
 
 def is_image_item(item: Any) -> bool:
@@ -112,8 +124,14 @@ def first_source_item(
     return items[0] if items else None
 
 
-def first_sql_filtered_source_item(target: Path, source: BrowserSource, *, hide_out_of_focus: bool = False) -> Any | None:
+def first_sql_filtered_source_item(
+    target: Path,
+    source: BrowserSource,
+    *,
+    hide_out_of_focus: bool = False,
+) -> Any | None:
     where_sql, params = source_sql_filter(source)
+    where_sql, params = with_motion_video_filter(where_sql, params, include_motion=source_shows_motion_videos(source))
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
@@ -160,6 +178,7 @@ def sql_filtered_source_item_by_id(
     hide_out_of_focus: bool = False,
 ) -> Any | None:
     where_sql, params = source_sql_filter(source)
+    where_sql, params = with_motion_video_filter(where_sql, params, include_motion=source_shows_motion_videos(source))
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
@@ -262,9 +281,10 @@ def should_filter_out_of_focus(source: BrowserSource, hide_out_of_focus: bool) -
 
 
 def all_source_where(*, hide_out_of_focus: bool = False) -> tuple[str, tuple[object, ...]]:
+    base_sql = f"deleted_at IS NULL AND {MOTION_VIDEO_FILTER_SQL}"
     if not hide_out_of_focus:
-        return "deleted_at IS NULL", ()
-    return f"deleted_at IS NULL AND {OUT_OF_FOCUS_FILTER_SQL}", OUT_OF_FOCUS_FILTER_PARAMS
+        return base_sql, ()
+    return f"{base_sql} AND {OUT_OF_FOCUS_FILTER_SQL}", OUT_OF_FOCUS_FILTER_PARAMS
 
 
 def with_out_of_focus_filter(
@@ -278,11 +298,53 @@ def with_out_of_focus_filter(
     return f"({where_sql}) AND {OUT_OF_FOCUS_FILTER_SQL}", (*params, *OUT_OF_FOCUS_FILTER_PARAMS)
 
 
+def with_motion_video_filter(
+    where_sql: str,
+    params: tuple[object, ...],
+    *,
+    include_motion: bool = False,
+) -> tuple[str, tuple[object, ...]]:
+    if include_motion:
+        return where_sql, params
+    return f"({where_sql}) AND {MOTION_VIDEO_FILTER_SQL}", params
+
+
+def source_shows_motion_videos(source: BrowserSource) -> bool:
+    if source.text_filter is None:
+        return False
+    from .server_filter import text_filter_shows_motion_videos
+
+    return text_filter_shows_motion_videos(source.text_filter)
+
+
 def filter_out_of_focus_items(target: Path, source: BrowserSource, items: list[Any], hide_out_of_focus: bool) -> list[Any]:
     if not should_filter_out_of_focus(source, hide_out_of_focus) or not items:
         return items
     hidden_ids = out_of_focus_file_ids(target)
     return [item for item in items if int(item["id"]) not in hidden_ids]
+
+
+def filter_motion_video_items(target: Path, items: list[Any], *, include_motion: bool = False) -> list[Any]:
+    if include_motion or not items:
+        return items
+    hidden_ids = motion_video_file_ids(target)
+    return [item for item in items if int(item["id"]) not in hidden_ids]
+
+
+def motion_video_file_ids(target: Path) -> set[int]:
+    conn = db.connect(target)
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT id
+            FROM files
+            WHERE deleted_at IS NULL
+              AND NOT ({MOTION_VIDEO_FILTER_SQL})
+            """
+        )
+        return {int(row["id"]) for row in rows}
+    finally:
+        conn.close()
 
 
 def out_of_focus_file_ids(target: Path) -> set[int]:
@@ -357,6 +419,7 @@ def adjacent_sql_filtered_source_items(
     hide_out_of_focus: bool = False,
 ) -> tuple[Any | None, Any | None]:
     where_sql, params = source_sql_filter(source)
+    where_sql, params = with_motion_video_filter(where_sql, params, include_motion=source_shows_motion_videos(source))
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     order_key = item_order_key(item)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
@@ -459,6 +522,7 @@ def sql_filtered_source_month_keys(
     hide_out_of_focus: bool = False,
 ) -> list[str]:
     where_sql, params = source_sql_filter(source)
+    where_sql, params = with_motion_video_filter(where_sql, params, include_motion=source_shows_motion_videos(source))
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
@@ -603,7 +667,9 @@ def date_source_items(target: Path, date_source: str, *, hide_out_of_focus: bool
 
 
 def imported_source_items(target: Path, source_id: int, *, hide_out_of_focus: bool = False) -> list[Any]:
-    filter_sql = f"AND {OUT_OF_FOCUS_FILTER_SQL}" if hide_out_of_focus else ""
+    filter_sql = f"AND {MOTION_VIDEO_FILTER_SQL}"
+    if hide_out_of_focus:
+        filter_sql += f" AND {OUT_OF_FOCUS_FILTER_SQL}"
     filter_params = OUT_OF_FOCUS_FILTER_PARAMS if hide_out_of_focus else ()
     conn = db.connect(target)
     try:
@@ -886,6 +952,8 @@ def source_item_page_html(
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config) if face_enabled else ""
     all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus)
     all_items_label = "Synlige bilder" if hide_out_of_focus else "Alle bilder"
+    motion_video = motion_video_for_image(target, item)
+    motion_video_link = motion_video_link_html(motion_video) if motion_video is not None else ""
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
@@ -909,6 +977,7 @@ def source_item_page_html(
           </div>
           <footer class="browser-footer">
             <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
+            {motion_video_link}
           </footer>
         </main>
         {faces_overlay}
@@ -916,6 +985,50 @@ def source_item_page_html(
         {manual_date_overlay}
         """,
     )
+
+
+def motion_video_for_image(target: Path, item: Any) -> Any | None:
+    if not is_image_item(item):
+        return None
+    original_filename = original_filename_for_item(target, item)
+    if original_filename is None:
+        return None
+    conn = db.connect(target)
+    try:
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND lower(original_filename || '.jpg') = lower(?)
+              AND lower(original_filename) LIKE '%.mp'
+              AND lower(stored_filename) LIKE '%.mp4'
+            ORDER BY {ITEM_ORDER_SQL}
+            LIMIT 1
+            """,
+            (original_filename,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+def original_filename_for_item(target: Path, item: Any) -> str | None:
+    try:
+        return str(item["original_filename"])
+    except (KeyError, IndexError):
+        pass
+    conn = db.connect(target)
+    try:
+        row = conn.execute("SELECT original_filename FROM files WHERE id = ?", (int(item["id"]),)).fetchone()
+        return str(row["original_filename"]) if row is not None else None
+    finally:
+        conn.close()
+
+
+def motion_video_link_html(motion_video: Any) -> str:
+    filename = str(motion_video["stored_filename"])
+    url = "/filter/" + urllib.parse.quote(f"filename:{filename}", safe="") + f"/item/{int(motion_video['id'])}"
+    return f'<a class="filename" href="{html.escape(url)}">Motion-video: {html.escape(filename)}</a>'
 
 
 def source_item_breadcrumb_html(target: Path, source: BrowserSource, item: Any) -> str:
@@ -1921,11 +2034,13 @@ def source_items(
             include_suggestions=source.include_suggestions,
             face_config=face_config,
         )
+        items = filter_motion_video_items(target, items)
         return filter_out_of_focus_items(target, source, items, hide_out_of_focus)
     if source.geo_place_slug is not None:
         from .server_geo import geo_place_items
 
-        return filter_out_of_focus_items(target, source, geo_place_items(target, source.geo_place_slug), hide_out_of_focus)
+        items = filter_motion_video_items(target, geo_place_items(target, source.geo_place_slug))
+        return filter_out_of_focus_items(target, source, items, hide_out_of_focus)
     if source.text_filter is not None:
         from .server_filter import text_filter_items
 
@@ -1935,7 +2050,8 @@ def source_items(
     if source.source_id is not None:
         return imported_source_items(target, source.source_id, hide_out_of_focus=hide_out_of_focus)
     if source.tag_name is not None:
-        return filter_out_of_focus_items(target, source, tagged_items(target, source.tag_name), hide_out_of_focus)
+        items = filter_motion_video_items(target, tagged_items(target, source.tag_name))
+        return filter_out_of_focus_items(target, source, items, hide_out_of_focus)
     return all_source_items(target, hide_out_of_focus=hide_out_of_focus)
 
 
@@ -2032,6 +2148,7 @@ def sql_filtered_source_month_items(
     if not valid_month_key(month_key):
         return []
     where_sql, params = source_sql_filter(source)
+    where_sql, params = with_motion_video_filter(where_sql, params, include_motion=source_shows_motion_videos(source))
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)

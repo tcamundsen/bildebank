@@ -61,7 +61,7 @@ from .importer import (
     validate_source_target,
 )
 from .html_export import export_html, export_html_conflicts
-from .media import explain_date, inspect_metadata, sha256_file
+from .media import explain_date, inspect_metadata, is_supported_media, sha256_file
 from .media_cache import MediaMetadataCache, cached_image_dimensions
 from .openclip import (
     openclip_db_path,
@@ -2588,6 +2588,7 @@ class CheckSourceStats:
     covered: int = 0
     deleted: int = 0
     missing: int = 0
+    ignored_json: int = 0
     source_errors: int = 0
     target_errors: int = 0
 
@@ -2627,8 +2628,11 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True, ac
                 stats.source_errors += 1
                 problems.append(CheckSourceProblem(item.path, item.message))
                 continue
-            stats.scanned += 1
             path = item
+            if is_google_json_sidecar(path):
+                stats.ignored_json += 1
+                continue
+            stats.scanned += 1
             try:
                 file_hash = sha256_file(path)
             except OSError as exc:
@@ -2745,6 +2749,16 @@ def iter_check_source_files(root: Path):
         yield walk_errors.pop(0)
 
 
+def is_google_json_sidecar(path: Path) -> bool:
+    if path.suffix.lower() != ".json":
+        return False
+    media_path = path.with_name(path.name[:-5])
+    try:
+        return media_path.is_file() and is_supported_media(media_path)
+    except OSError:
+        return False
+
+
 def check_source_hash_is_validated(target: Path, rows: list, target_hash_cache: dict[int, bool]) -> bool:
     valid = False
     for row in rows:
@@ -2774,7 +2788,7 @@ def check_source_progress() -> ProgressMeter:
 def check_source_progress_details(stats: CheckSourceStats) -> str:
     return (
         f"dekket={stats.covered}, mangler={stats.missing}, slettet={stats.deleted}, "
-        f"kildefeil={stats.source_errors}, målfeil={stats.target_errors}"
+        f"ignorert_json={stats.ignored_json}, kildefeil={stats.source_errors}, målfeil={stats.target_errors}"
     )
 
 
@@ -2799,7 +2813,7 @@ def print_check_source_report(
     print(
         "  Oppsummering: "
         f"scannet={stats.scanned}, dekket={stats.covered}, mangler={stats.missing}, slettet={stats.deleted}, "
-        f"kildefeil={stats.source_errors}, målfeil={stats.target_errors}"
+        f"ignorert_json={stats.ignored_json}, kildefeil={stats.source_errors}, målfeil={stats.target_errors}"
     )
     if problems:
         print("  Det finnes filer som ikke er aktive i bildesamlingen, eller som ikke kan valideres.")

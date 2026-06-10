@@ -17,6 +17,11 @@ options:
 andre importerte bildefiler i bildesamlingen. Standardfilen heter `index.html` og legges i
 bildesamlingsmappen.
 
+Google/Pixel motion-videoer skjules fra de vanlige måneds- og årslistene når de
+hører til et bilde med samme navn. De er fortsatt bevart og kan vises med
+filtersøk, for eksempel `type:video`, `extension:mp4` eller
+`filename:PXL_20250102`.
+
 Browseren kan bla mellom filer, hoppe mellom måneder og år, og vise en enkel
 månedsoversikt. RAW/NEF og PSD vises som fil-lenker, ikke som bildevisning.
 

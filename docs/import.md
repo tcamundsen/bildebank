@@ -24,6 +24,10 @@ til bildesamlingen. Kilden kan være en mappe, USB-brikke, CD eller disk.
 Bildebank kan også importere RAW/NEF og PSD-filer. De brukes i duplikatsjekk og
 sortering, men vises ikke som vanlige bilder i nettleseren.
 
+Google/Pixel motion-videoer kan ligge som `.MP`-filer. Når filen faktisk er en
+MP4-video, importerer Bildebank den som video og lagrer kopien med `.mp4` i
+bildesamlingen. Kildemappen endres ikke.
+
 Bildene kopieres inn i bildesamlingen og plasseres etter dato, for eksempel:
 
 ```text

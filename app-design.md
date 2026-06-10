@@ -59,6 +59,9 @@ samme mappe som endelig målfil slik at endelig rename/flytting skjer innenfor
 samme filsystem.
 
 Når bildene (og videoene) importeres, så skal ikke filnavnet deres endres.
+Unntak: Google/Pixel motion-videoer med filendelsen `.MP` kan lagres i
+målmappen med `.mp4` når filinnholdet faktisk er en MP4-container. Kildemappen
+endres fortsatt ikke, og databasen beholder originalfilnavnet med `.MP`.
 Ved navnekollisjon i samme måned, så legges "-1", "-2" etc til filnavnet,
 før filendelsen, for eksempel `IMG1324-2.jpg`. Samtidig må det markeres
 i databasen at dette bildet har fått lagt til "-1" på grunn av navnekollisjon.

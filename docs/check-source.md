@@ -29,6 +29,11 @@ Eksempel:
 bildebank check-source "C:\Users\Tom\Pictures\Gamle bilder"
 ```
 
+Hvis kildemappen kommer fra Google Takeout, ignorerer `check-source`
+JSON-sidecarfiler som hører til en bilde- eller videofil i samme mappe, for
+eksempel `IMG_20240102.jpg.json`. Andre `.json`-filer rapporteres fortsatt som
+problemfiler.
+
 Hvis alt er dekket, får du en oppsummering og en linje som ligner:
 
 ```powershell

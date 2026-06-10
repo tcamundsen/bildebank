@@ -28,6 +28,7 @@ ARCHIVE_IMAGE_EXTENSIONS = {
 }
 VIDEO_EXTENSIONS = {
     ".mp4",
+    ".mp",
     ".mov",
     ".avi",
     ".m4v",
@@ -81,7 +82,27 @@ class CameraInfo:
 
 
 def is_supported_media(path: Path) -> bool:
-    return path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
+    if not path.is_file():
+        return False
+    if path.suffix.lower() == ".mp":
+        return is_mp4_container(path)
+    return path.suffix.lower() in SUPPORTED_EXTENSIONS
+
+
+def is_mp4_container(path: Path) -> bool:
+    try:
+        with path.open("rb") as fh:
+            header = fh.read(16)
+    except OSError:
+        return False
+    return len(header) >= 8 and header[4:8] == b"ftyp"
+
+
+def stored_media_filename(original_filename: str) -> str:
+    path = Path(original_filename)
+    if path.suffix.lower() == ".mp":
+        return f"{path.stem}.mp4"
+    return original_filename
 
 
 def media_kind(path: Path) -> str:
@@ -645,7 +666,7 @@ def _parse_exif_ascii(value: bytes | int | None) -> str | None:
 def video_metadata_date(path: Path) -> dt.date | None:
     if path.suffix.lower() == ".avi":
         return avi_metadata_date(path)
-    if path.suffix.lower() not in {".mp4", ".mov", ".m4v", ".3gp"}:
+    if path.suffix.lower() not in {".mp4", ".mp", ".mov", ".m4v", ".3gp"}:
         return None
     try:
         with path.open("rb") as fh:
