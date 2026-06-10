@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import statistics
 import sys
@@ -94,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
             summary = run_profile_benchmark(args)
         elif args.mode == "browser":
             summary = run_browser_benchmark(args)
+        elif args.mode == "server-keepalive":
+            summary = run_server_keepalive_benchmark(args)
         else:
             summary = run_server_benchmark(args)
     except RuntimeError as exc:
@@ -122,7 +125,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         )
     )
     parser.add_argument("--url", default=DEFAULT_URL, help=f"Startside eller item-URL. Standard: {DEFAULT_URL}")
-    parser.add_argument("--mode", choices=("browser", "server", "profile"), default="browser")
+    parser.add_argument("--mode", choices=("browser", "server", "server-keepalive", "profile"), default="browser")
     parser.add_argument("--target", type=Path, help="Bildesamlingsmappe. Kreves for --mode profile.")
     parser.add_argument("--steps", type=positive_int, default=50, help="Antall neste-klikk som måles. Standard: 50")
     parser.add_argument("--warmup", type=non_negative_int, default=5, help="Antall oppvarmingsklikk før måling. Standard: 5")
@@ -226,6 +229,28 @@ def run_server_benchmark(args: argparse.Namespace) -> BenchmarkSummary:
             break
         steps.append(StepResult(index=index, elapsed_ms=elapsed_ms, url=url))
     return build_summary("server", args, steps)
+
+
+def run_server_keepalive_benchmark(args: argparse.Namespace) -> BenchmarkSummary:
+    parsed = urllib.parse.urlparse(args.url)
+    if parsed.scheme != "http" or not parsed.hostname:
+        raise RuntimeError("--mode server-keepalive støtter foreløpig bare http-URL-er.")
+    conn = http.client.HTTPConnection(parsed.hostname, parsed.port or 80, timeout=args.timeout_ms / 1000.0)
+    try:
+        url = args.url
+        html = fetch_text_keepalive(conn, url)
+        for _ in range(args.warmup):
+            _elapsed_ms, url, html = fetch_next_page_keepalive(conn, url, html)
+        steps: list[StepResult] = []
+        for index in range(1, args.steps + 1):
+            try:
+                elapsed_ms, url, html = fetch_next_page_keepalive(conn, url, html)
+            except RuntimeError:
+                break
+            steps.append(StepResult(index=index, elapsed_ms=elapsed_ms, url=url))
+        return build_summary("server-keepalive", args, steps)
+    finally:
+        conn.close()
 
 
 def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
@@ -416,10 +441,43 @@ def fetch_next_page(url: str, html: str, timeout_ms: int) -> tuple[float, str, s
     return elapsed_ms, next_url, next_html
 
 
+def fetch_next_page_keepalive(conn: http.client.HTTPConnection, url: str, html: str) -> tuple[float, str, str]:
+    parser = NextLinkParser()
+    parser.feed(html)
+    if parser.next_href is None:
+        raise RuntimeError("Fant ingen aktiv Neste bilde-lenke.")
+    next_url = urllib.parse.urljoin(url, parser.next_href)
+    start = time.perf_counter()
+    next_html = fetch_text_keepalive(conn, next_url)
+    elapsed_ms = (time.perf_counter() - start) * 1000.0
+    if not next_html:
+        raise RuntimeError(f"Tom respons fra {next_url}")
+    return elapsed_ms, next_url, next_html
+
+
 def fetch_text(url: str, timeout_ms: int) -> str:
     with urllib.request.urlopen(url, timeout=timeout_ms / 1000.0) as response:
         encoding = response.headers.get_content_charset() or "utf-8"
         return response.read().decode(encoding, errors="replace")
+
+
+def fetch_text_keepalive(conn: http.client.HTTPConnection, url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    path = parsed.path or "/"
+    if parsed.query:
+        path += f"?{parsed.query}"
+    conn.request("GET", path)
+    response = conn.getresponse()
+    try:
+        if response.status >= 400:
+            raise RuntimeError(f"HTTP {response.status} fra {url}")
+        content_type = response.headers.get("Content-Type", "")
+        encoding = "utf-8"
+        if "charset=" in content_type:
+            encoding = content_type.rsplit("charset=", 1)[1].split(";", 1)[0].strip() or encoding
+        return response.read().decode(encoding, errors="replace")
+    finally:
+        response.close()
 
 
 def build_summary(mode: str, args: argparse.Namespace, steps: list[StepResult]) -> BenchmarkSummary:

@@ -177,6 +177,7 @@ class BildebankServer(ThreadingHTTPServer):
 
 class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     server: BildebankServer
+    protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)

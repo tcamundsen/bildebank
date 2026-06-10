@@ -34,4 +34,5 @@ class ServerResponseMixin:
     def redirect(self, location: str) -> None:
         self.send_response(HTTPStatus.FOUND)
         self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
         self.end_headers()

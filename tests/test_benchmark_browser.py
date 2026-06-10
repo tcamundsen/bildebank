@@ -48,6 +48,38 @@ def test_benchmark_summary_counts_threshold_failures_and_percentiles() -> None:
     assert summary.p95_ms == 250.0
 
 
+def test_keepalive_fetch_uses_path_and_query_only() -> None:
+    benchmark = load_benchmark_module()
+
+    class FakeHeaders:
+        def get(self, name: str, default: str = "") -> str:
+            return "text/html; charset=utf-8" if name == "Content-Type" else default
+
+    class FakeResponse:
+        status = 200
+        headers = FakeHeaders()
+
+        def read(self) -> bytes:
+            return b"<html></html>"
+
+        def close(self) -> None:
+            return
+
+    class FakeConnection:
+        requested_path: str | None = None
+
+        def request(self, method: str, path: str) -> None:
+            self.requested_path = path
+
+        def getresponse(self) -> FakeResponse:
+            return FakeResponse()
+
+    conn = FakeConnection()
+
+    assert benchmark.fetch_text_keepalive(conn, "http://127.0.0.1:8765/item/123?x=1") == "<html></html>"
+    assert conn.requested_path == "/item/123?x=1"
+
+
 def test_profile_summary_counts_threshold_failures_per_total_time() -> None:
     benchmark = load_benchmark_module()
     args = benchmark.parse_args(
