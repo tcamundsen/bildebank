@@ -239,9 +239,10 @@ def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
     db.prepare_database(target)
 
     source, file_id = profile_source_and_file_id(target, args.url)
+    month_keys = profile_cached_month_keys(target, source)
     current_file_id = file_id
     for _ in range(args.warmup):
-        step = profile_item_step(target, source, current_file_id, 0)
+        step = profile_item_step(target, source, current_file_id, 0, month_keys=month_keys)
         next_file_id = next_profile_file_id(step.url)
         if next_file_id is None:
             break
@@ -249,7 +250,7 @@ def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
 
     steps: list[ProfileStepResult] = []
     for index in range(1, args.steps + 1):
-        step = profile_item_step(target, source, current_file_id, index)
+        step = profile_item_step(target, source, current_file_id, index, month_keys=month_keys)
         steps.append(step)
         next_file_id = next_profile_file_id(step.url)
         if next_file_id is None:
@@ -275,10 +276,28 @@ def profile_source_and_file_id(target: Path, url: str) -> tuple[Any, int]:
     raise RuntimeError("Profile-modus støtter foreløpig /item/<id> og /filter/<query>/item/<id>.")
 
 
-def profile_item_step(target: Path, source: Any, file_id: int, index: int) -> ProfileStepResult:
+def profile_cached_month_keys(target: Path, source: Any) -> list[str] | None:
+    from bildebank.server_browser import browser_month_keys
+    from bildebank.server_browser_sources import all_browser_source
+
+    if source != all_browser_source():
+        return None
+    return browser_month_keys(target)
+
+
+def profile_item_step(
+    target: Path,
+    source: Any,
+    file_id: int,
+    index: int,
+    *,
+    month_keys: list[str] | None = None,
+) -> ProfileStepResult:
     from bildebank import db
     from bildebank.server_browser import (
         adjacent_source_items,
+        month_key_for_item,
+        month_navigation_for_keys,
         source_item_by_id,
         source_month_navigation,
     )
@@ -301,7 +320,10 @@ def profile_item_step(target: Path, source: Any, file_id: int, index: int) -> Pr
         adjacent_ms = elapsed_ms(start)
 
         start = time.perf_counter()
-        month_nav = source_month_navigation(target, source, item, conn=conn)
+        if month_keys is None:
+            month_nav = source_month_navigation(target, source, item, conn=conn)
+        else:
+            month_nav = month_navigation_for_keys(month_keys, month_key_for_item(target, item))
         month_nav_ms = elapsed_ms(start)
 
         start = time.perf_counter()

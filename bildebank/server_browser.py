@@ -2204,6 +2204,10 @@ def source_month_navigation_for_key(
     if not valid_month_key(current_key):
         return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
     keys = source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus, conn=conn)
+    return month_navigation_for_keys(keys, current_key)
+
+
+def month_navigation_for_keys(keys: list[str], current_key: str) -> dict[str, str | None]:
     if not keys:
         return {"previous_year": None, "next_year": None, "previous_month": None, "next_month": None}
     years = sorted({key[:4] for key in keys})

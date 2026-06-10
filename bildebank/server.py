@@ -52,9 +52,12 @@ from .server_pages import (
 from .server_browser import (
     adjacent_source_items,
     browser_item_by_id,
+    browser_month_keys,
     first_source_item,
     image_info_content_html,
     imported_source_by_id,
+    month_key_for_item,
+    month_navigation_for_keys,
     source_item_by_id,
     source_month_items,
     source_month_navigation,
@@ -99,12 +102,21 @@ from .server_assets import SERVER_CSS, SERVER_JS
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
+
+
+def clear_browser_navigation_cache(server: Any) -> None:
+    clear_cache = getattr(server, "clear_browser_navigation_cache", None)
+    if clear_cache is not None:
+        clear_cache()
+
+
 class BildebankServer(ThreadingHTTPServer):
     def __init__(self, address: tuple[str, int], target: Path, config: AppConfig) -> None:
         super().__init__(address, BildebankRequestHandler)
         self.target = target
         self.config = config
         self.search_cache = OpenClipSearchCache(config)
+        self._browser_month_keys: dict[bool, tuple[int, list[str]]] = {}
 
     @property
     def face_enabled(self) -> bool:
@@ -117,6 +129,23 @@ class BildebankServer(ThreadingHTTPServer):
     @property
     def hide_out_of_focus(self) -> bool:
         return self.config.browser.hide_out_of_focus
+
+    def browser_month_keys(self, *, hide_out_of_focus: bool = False) -> list[str]:
+        mtime_ns = db.database_path(self.target).stat().st_mtime_ns
+        cached = self._browser_month_keys.get(hide_out_of_focus)
+        if cached is None or cached[0] != mtime_ns:
+            cached = (
+                mtime_ns,
+                browser_month_keys(
+                    self.target,
+                    hide_out_of_focus=hide_out_of_focus,
+                ),
+            )
+            self._browser_month_keys[hide_out_of_focus] = cached
+        return cached[1]
+
+    def clear_browser_navigation_cache(self) -> None:
+        self._browser_month_keys.clear()
 
 
 class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
@@ -399,13 +428,19 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 hide_out_of_focus=self.server.hide_out_of_focus,
                 conn=conn,
             )
-            month_nav = source_month_navigation(
-                self.server.target,
-                source,
-                item,
-                hide_out_of_focus=self.server.hide_out_of_focus,
-                conn=conn,
-            )
+            if source == all_browser_source():
+                month_nav = month_navigation_for_keys(
+                    self.server.browser_month_keys(hide_out_of_focus=self.server.hide_out_of_focus),
+                    month_key_for_item(self.server.target, item),
+                )
+            else:
+                month_nav = source_month_navigation(
+                    self.server.target,
+                    source,
+                    item,
+                    hide_out_of_focus=self.server.hide_out_of_focus,
+                    conn=conn,
+                )
             self.respond_html(
                 source_item_page_html(
                     self.server.target,
@@ -862,6 +897,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             server_app.server_program_repo_root(),
             enabled,
         )
+        clear_browser_navigation_cache(self.server)
         self.redirect("/settings")
 
     def respond_set_manual_h3_cell(self) -> None:
@@ -1196,6 +1232,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
+        clear_browser_navigation_cache(self.server)
         self.respond_json(
             {
                 "ok": True,
@@ -1217,6 +1254,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
+        clear_browser_navigation_cache(self.server)
         self.respond_json({"ok": True, "file_id": file_id})
 
     def respond_delete_item(self) -> None:
@@ -1231,6 +1269,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
+        clear_browser_navigation_cache(self.server)
         self.respond_json({"ok": True, "file_id": file_id, "deleted_path": deleted_path.as_posix()})
 
     def respond_undelete_item(self) -> None:
@@ -1245,6 +1284,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
+        clear_browser_navigation_cache(self.server)
         self.respond_json({"ok": True, "file_id": file_id, "restored_path": restored_path.as_posix()})
 
     def read_json_payload(self) -> dict[str, object]:
