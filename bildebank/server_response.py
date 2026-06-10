@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import json
+import time
 from http import HTTPStatus
 from typing import Any
 
 
 class ServerResponseMixin:
+    def respond_timing_headers(self) -> None:
+        start = getattr(self, "request_started_at", None)
+        if start is None:
+            return
+        elapsed = (time.perf_counter() - start) * 1000.0
+        self.send_header("Server-Timing", f"bildebank;dur={elapsed:.1f}")
+        self.send_header("X-Bildebank-Request-Ms", f"{elapsed:.1f}")
+
     def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
         self.respond_bytes(content.encode("utf-8"), "text/html; charset=utf-8", status=status)
 
@@ -21,6 +30,7 @@ class ServerResponseMixin:
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "public, max-age=3600")
         self.send_header("Content-Length", str(len(encoded)))
+        self.respond_timing_headers()
         self.end_headers()
         self.wfile.write(encoded)
 
@@ -28,6 +38,7 @@ class ServerResponseMixin:
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))
+        self.respond_timing_headers()
         self.end_headers()
         self.wfile.write(content)
 
@@ -35,4 +46,5 @@ class ServerResponseMixin:
         self.send_response(HTTPStatus.FOUND)
         self.send_header("Location", location)
         self.send_header("Content-Length", "0")
+        self.respond_timing_headers()
         self.end_headers()

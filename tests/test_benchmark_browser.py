@@ -55,6 +55,14 @@ def test_keepalive_fetch_uses_path_and_query_only() -> None:
         def get(self, name: str, default: str = "") -> str:
             return "text/html; charset=utf-8" if name == "Content-Type" else default
 
+        def __contains__(self, name: str) -> bool:
+            return name == "X-Bildebank-Request-Ms"
+
+        def __getitem__(self, name: str) -> str:
+            if name == "X-Bildebank-Request-Ms":
+                return "12.5"
+            raise KeyError(name)
+
     class FakeResponse:
         status = 200
         headers = FakeHeaders()
@@ -78,6 +86,13 @@ def test_keepalive_fetch_uses_path_and_query_only() -> None:
 
     assert benchmark.fetch_text_keepalive(conn, "http://127.0.0.1:8765/item/123?x=1") == "<html></html>"
     assert conn.requested_path == "/item/123?x=1"
+    html, _first_byte_ms, _read_ms, body_bytes, server_ms = benchmark.fetch_text_keepalive_timed(
+        conn,
+        "http://127.0.0.1:8765/item/124",
+    )
+    assert html == "<html></html>"
+    assert body_bytes == len(b"<html></html>")
+    assert server_ms == 12.5
 
 
 def test_profile_summary_counts_threshold_failures_per_total_time() -> None:

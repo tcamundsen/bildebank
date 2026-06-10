@@ -26,6 +26,7 @@ class StepResult:
     first_byte_ms: float | None = None
     read_ms: float | None = None
     body_bytes: int | None = None
+    server_ms: float | None = None
 
 
 @dataclass(frozen=True)
@@ -241,7 +242,7 @@ def run_server_keepalive_benchmark(args: argparse.Namespace) -> BenchmarkSummary
     conn = http.client.HTTPConnection(parsed.hostname, parsed.port or 80, timeout=args.timeout_ms / 1000.0)
     try:
         url = args.url
-        html, _first_byte_ms, _read_ms, _body_bytes = fetch_text_keepalive_timed(conn, url)
+        html, _first_byte_ms, _read_ms, _body_bytes, _server_ms = fetch_text_keepalive_timed(conn, url)
         for _ in range(args.warmup):
             _step, url, html = fetch_next_page_keepalive_step(conn, url, html, 0)
         steps: list[StepResult] = []
@@ -486,7 +487,7 @@ def fetch_next_page_keepalive_step(
         raise RuntimeError("Fant ingen aktiv Neste bilde-lenke.")
     next_url = urllib.parse.urljoin(url, parser.next_href)
     start = time.perf_counter()
-    next_html, first_byte_ms, read_ms, body_bytes = fetch_text_keepalive_timed(conn, next_url)
+    next_html, first_byte_ms, read_ms, body_bytes, server_ms = fetch_text_keepalive_timed(conn, next_url)
     elapsed_ms = (time.perf_counter() - start) * 1000.0
     if not next_html:
         raise RuntimeError(f"Tom respons fra {next_url}")
@@ -498,6 +499,7 @@ def fetch_next_page_keepalive_step(
             first_byte_ms=first_byte_ms,
             read_ms=read_ms,
             body_bytes=body_bytes,
+            server_ms=server_ms,
         ),
         next_url,
         next_html,
@@ -529,7 +531,7 @@ def fetch_text_keepalive(conn: http.client.HTTPConnection, url: str) -> str:
         response.close()
 
 
-def fetch_text_keepalive_timed(conn: http.client.HTTPConnection, url: str) -> tuple[str, float, float, int]:
+def fetch_text_keepalive_timed(conn: http.client.HTTPConnection, url: str) -> tuple[str, float, float, int, float | None]:
     parsed = urllib.parse.urlparse(url)
     path = parsed.path or "/"
     if parsed.query:
@@ -541,6 +543,7 @@ def fetch_text_keepalive_timed(conn: http.client.HTTPConnection, url: str) -> tu
     try:
         if response.status >= 400:
             raise RuntimeError(f"HTTP {response.status} fra {url}")
+        server_ms = float(response.headers["X-Bildebank-Request-Ms"]) if "X-Bildebank-Request-Ms" in response.headers else None
         content_type = response.headers.get("Content-Type", "")
         encoding = "utf-8"
         if "charset=" in content_type:
@@ -548,7 +551,7 @@ def fetch_text_keepalive_timed(conn: http.client.HTTPConnection, url: str) -> tu
         start = time.perf_counter()
         content = response.read()
         read_ms = elapsed_ms(start)
-        return content.decode(encoding, errors="replace"), first_byte_ms, read_ms, len(content)
+        return content.decode(encoding, errors="replace"), first_byte_ms, read_ms, len(content), server_ms
     finally:
         response.close()
 
@@ -642,13 +645,16 @@ def print_summary(summary: BenchmarkSummary) -> None:
     first_byte_values = [step.first_byte_ms for step in summary.steps if step.first_byte_ms is not None]
     read_values = [step.read_ms for step in summary.steps if step.read_ms is not None]
     body_values = [step.body_bytes for step in summary.steps if step.body_bytes is not None]
+    server_values = [step.server_ms for step in summary.steps if step.server_ms is not None]
     if first_byte_values or read_values:
         first_byte = stats_dict(first_byte_values)
         read = stats_dict(read_values)
+        server = stats_dict(server_values)
         print(
             "  http: "
             f"første_byte_median={format_ms(first_byte['median_ms'])}, "
             f"body_les_median={format_ms(read['median_ms'])}, "
+            f"server_median={format_ms(server['median_ms'])}, "
             f"bytes_median={statistics.median(body_values) if body_values else 0:.0f}"
         )
     if summary.threshold_ms is not None:

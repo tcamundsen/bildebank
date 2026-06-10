@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import socket
+import time
 import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -188,6 +189,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             pass
 
     def do_GET(self) -> None:
+        self.request_started_at = time.perf_counter()
         parsed = urllib.parse.urlparse(self.path)
         try:
             if parsed.path == "/":
@@ -349,6 +351,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             )
 
     def do_POST(self) -> None:
+        self.request_started_at = time.perf_counter()
         parsed = urllib.parse.urlparse(self.path)
         try:
             if parsed.path == "/geo/place-name":
