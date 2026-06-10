@@ -678,6 +678,55 @@ class GeoTests(unittest.TestCase):
         self.assertEqual(stats.updated, 1)
         self.assertEqual(row["gps_error"], db.GPS_ERROR_EXIFTOOL)
 
+    def test_geo_scan_default_skips_previous_without_gps_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            register_target_file(target, Path("2024/01/image.jpg"))
+            expected_path = target / "2024/01/image.jpg"
+            calls = 0
+
+            def fake_read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, dict[str, object]]:
+                nonlocal calls
+                calls += 1
+                self.assertEqual(paths, [expected_path])
+                return {expected_path: {"SourceFile": str(expected_path)}}
+
+            with patch("bildebank.geo.read_gps_metadata_batch", fake_read_gps_metadata_batch):
+                with redirect_stderr(StringIO()):
+                    first_stats = scan_geo(target, exiftool_path="exiftool", batch_size=1)
+                    second_stats = scan_geo(target, exiftool_path="exiftool", batch_size=1)
+
+        self.assertEqual(first_stats.checked, 1)
+        self.assertEqual(first_stats.without_gps, 1)
+        self.assertEqual(second_stats.checked, 0)
+        self.assertEqual(calls, 1)
+
+    def test_geo_scan_retry_missing_includes_previous_without_gps_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            register_target_file(target, Path("2024/01/image.jpg"))
+            expected_path = target / "2024/01/image.jpg"
+            calls = 0
+
+            def fake_read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, dict[str, object]]:
+                nonlocal calls
+                calls += 1
+                self.assertEqual(paths, [expected_path])
+                return {expected_path: {"SourceFile": str(expected_path)}}
+
+            with patch("bildebank.geo.read_gps_metadata_batch", fake_read_gps_metadata_batch):
+                with redirect_stderr(StringIO()):
+                    first_stats = scan_geo(target, exiftool_path="exiftool", batch_size=1)
+                    second_stats = scan_geo(target, only_missing=False, exiftool_path="exiftool", batch_size=1)
+
+        self.assertEqual(first_stats.checked, 1)
+        self.assertEqual(first_stats.without_gps, 1)
+        self.assertEqual(second_stats.checked, 1)
+        self.assertEqual(second_stats.without_gps, 1)
+        self.assertEqual(calls, 2)
+
     def test_geo_scan_marks_missing_target_file_without_storing_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

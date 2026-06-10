@@ -65,7 +65,8 @@ Forbehold:
 
 - Den kan ta tid på store samlinger.
 - Den kan bruke exiftool/subprocess hvis konfigurert.
-- Den bør starte med konservative valg, for eksempel vanlig scan uten `--force`.
+- Den bør starte med konservative valg, altså vanlig scan som bare tar filer
+  uten tidligere GPS-resultat.
 - `--force` bør enten utelates fra web første gang eller kreve ekstra
   bekreftelse.
 

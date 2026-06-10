@@ -8,7 +8,9 @@ options:
   --force               Les GPS-metadata på nytt for filer som allerede er
                         scannet
   --only-missing        Scan bare filer uten GPS-data og uten tidligere GPS-
-                        resultat
+                        resultat. Dette er standard.
+  --retry-missing       Prøv også filer som tidligere ble scannet uten GPS
+                        eller med feil
   --override-manual-h3  Ta med filer med manuell H3-lokasjon. Den manuelle
                         H3-lokasjonen overskrives av GPS fra metadata, eller
                         slettes hvis filen ikke har GPS.
@@ -28,6 +30,7 @@ Kommandoen endrer ikke bildefilene.
 
 ```powershell
 bildebank geo-scan
+bildebank geo-scan --retry-missing
 bildebank geo-scan --limit 100
 bildebank geo-scan --force
 bildebank geo-scan --override-manual-h3
@@ -55,9 +58,13 @@ bildebank geo-scan --exiftool "C:\Tools\exiftool.exe"
 Vanlige valg:
 
 - `--limit N` scanner maks N bilder.
+- `bildebank geo-scan` scanner bare bilder som mangler GPS-data og ikke har
+  tidligere GPS-resultat.
+- `--retry-missing` prøver også bilder som tidligere ble scannet uten GPS eller
+  med feil.
 - `--force` leser GPS-metadata på nytt også for bilder som allerede er scannet.
-- `--only-missing` scanner bare bilder uten GPS-data og uten tidligere
-  GPS-resultat.
+- `--only-missing` betyr det samme som standardoppførselen og finnes for
+  kompatibilitet.
 - `--override-manual-h3` scanner også bilder der sted er satt manuelt med
   H3-celle. Hvis metadata inneholder GPS, erstatter GPS-lokasjonen den manuelle
   H3-lokasjonen. Hvis metadata ikke inneholder GPS, fjernes den manuelle

@@ -460,7 +460,12 @@ def build_parser() -> argparse.ArgumentParser:
     geo_scan.add_argument(
         "--only-missing",
         action="store_true",
-        help="Scan bare filer uten GPS-data og uten tidligere GPS-resultat",
+        help="Scan bare filer uten GPS-data og uten tidligere GPS-resultat. Dette er standard.",
+    )
+    geo_scan.add_argument(
+        "--retry-missing",
+        action="store_true",
+        help="Prøv også filer som tidligere ble scannet uten GPS eller med feil",
     )
     geo_scan.add_argument(
         "--override-manual-h3",
@@ -1036,7 +1041,8 @@ def run(args: argparse.Namespace) -> int:
         return run_geo_scan(
             target,
             force=args.force,
-            only_missing=args.only_missing,
+            only_missing=args.only_missing or not (args.force or args.retry_missing or args.override_manual_h3),
+            retry_missing=args.retry_missing,
             override_manual_h3=args.override_manual_h3,
             limit=args.limit,
             verbose=args.verbose,
@@ -1791,6 +1797,7 @@ def run_geo_scan(
     *,
     force: bool,
     only_missing: bool,
+    retry_missing: bool,
     override_manual_h3: bool,
     limit: int | None,
     verbose: bool,
@@ -1799,6 +1806,12 @@ def run_geo_scan(
 ) -> int:
     if force and only_missing:
         raise ValueError("--force og --only-missing kan ikke brukes samtidig.")
+    if force and retry_missing:
+        raise ValueError("--force og --retry-missing kan ikke brukes samtidig.")
+    if retry_missing and only_missing:
+        raise ValueError("--retry-missing og --only-missing kan ikke brukes samtidig.")
+    if override_manual_h3 and retry_missing:
+        raise ValueError("--override-manual-h3 og --retry-missing kan ikke brukes samtidig.")
     if override_manual_h3 and only_missing:
         raise ValueError("--override-manual-h3 og --only-missing kan ikke brukes samtidig.")
     stats = scan_geo(

@@ -240,7 +240,7 @@ def scan_geo(
     target: Path,
     *,
     force: bool = False,
-    only_missing: bool = False,
+    only_missing: bool = True,
     override_manual_h3: bool = False,
     limit: int | None = None,
     verbose: bool = False,
@@ -260,7 +260,7 @@ def scan_geo(
         rows = db.geo_scan_files(
             conn,
             force=force,
-            only_missing=only_missing,
+            only_missing=only_missing and not (force or override_manual_h3),
             override_manual_h3=override_manual_h3,
             limit=limit,
         )

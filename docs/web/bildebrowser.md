@@ -9,6 +9,10 @@ stadig.
 For å gjøre lasting av månedsvisningen raskere kan du laga thumbsnails
 av bildene med å kjøre [`make-thumbnails`](../make-thumbnails.md).
 
+For at geo-lokalisering skal fungere må [`geo-scan'](../geo-scan.md)
+være kjørt.
+
+
 ## Hurtigtaster
 
 Når HTML-filen er åpen i nettleseren, kan du bla med tastaturet:
