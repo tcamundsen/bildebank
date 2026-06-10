@@ -428,6 +428,16 @@ def adjacent_items_from_list(items: list[Any], item: Any) -> tuple[Any | None, A
     return previous_item, next_item
 
 
+def adjacent_items_from_id_order(item_ids: list[int], file_id: int) -> tuple[Any | None, Any | None]:
+    try:
+        index = item_ids.index(file_id)
+    except ValueError:
+        return None, None
+    previous_item = {"id": item_ids[index - 1]} if index > 0 else None
+    next_item = {"id": item_ids[index + 1]} if index < len(item_ids) - 1 else None
+    return previous_item, next_item
+
+
 def adjacent_unfiltered_source_items(
     target: Path,
     item: Any,
@@ -527,6 +537,33 @@ def adjacent_browser_items(
     hide_out_of_focus: bool = False,
 ) -> tuple[Any | None, Any | None]:
     return adjacent_source_items(target, all_browser_source(), item, hide_out_of_focus=hide_out_of_focus)
+
+
+def browser_item_ids(
+    target: Path,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> list[int]:
+    where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
+    try:
+        return [
+            int(row["id"])
+            for row in conn.execute(
+                f"""
+                SELECT id
+                FROM files
+                WHERE {where_sql}
+                ORDER BY {ITEM_ORDER_SQL}
+                """,
+                params,
+            )
+        ]
+    finally:
+        if owned_conn:
+            conn.close()
 
 
 def adjacent_source_items(

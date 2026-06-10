@@ -1344,9 +1344,11 @@ pretrained = "laion2b_s34b_b79k"
             init_database(target)
             server = object.__new__(BildebankServer)
             server.target = target
+            server._browser_item_ids = {}
             server._browser_month_keys = {}
 
             self.assertEqual(server.browser_month_keys(), [])
+            self.assertEqual(server.browser_item_ids(), [])
 
     def test_run_server_face_config_post_updates_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

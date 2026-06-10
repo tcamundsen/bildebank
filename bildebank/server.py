@@ -50,8 +50,10 @@ from .server_pages import (
     years_page_html,
 )
 from .server_browser import (
+    adjacent_items_from_id_order,
     adjacent_source_items,
     browser_item_by_id,
+    browser_item_ids,
     browser_month_keys,
     first_source_item,
     image_info_content_html,
@@ -116,6 +118,7 @@ class BildebankServer(ThreadingHTTPServer):
         self.target = target
         self.config = config
         self.search_cache = OpenClipSearchCache(config)
+        self._browser_item_ids: dict[bool, tuple[int, list[int]]] = {}
         self._browser_month_keys: dict[bool, tuple[int, list[str]]] = {}
 
     @property
@@ -144,7 +147,22 @@ class BildebankServer(ThreadingHTTPServer):
             self._browser_month_keys[hide_out_of_focus] = cached
         return cached[1]
 
+    def browser_item_ids(self, *, hide_out_of_focus: bool = False) -> list[int]:
+        mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
+        cached = self._browser_item_ids.get(hide_out_of_focus)
+        if cached is None or cached[0] != mtime_ns:
+            cached = (
+                mtime_ns,
+                browser_item_ids(
+                    self.target,
+                    hide_out_of_focus=hide_out_of_focus,
+                ),
+            )
+            self._browser_item_ids[hide_out_of_focus] = cached
+        return cached[1]
+
     def clear_browser_navigation_cache(self) -> None:
+        self._browser_item_ids.clear()
         self._browser_month_keys.clear()
 
 
@@ -421,19 +439,23 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if item is None:
                 self.respond_text("Filen finnes ikke i bildesamlingen.", status=HTTPStatus.NOT_FOUND)
                 return
-            previous_item, next_item = adjacent_source_items(
-                self.server.target,
-                source,
-                item,
-                hide_out_of_focus=self.server.hide_out_of_focus,
-                conn=conn,
-            )
             if source == all_browser_source():
+                previous_item, next_item = adjacent_items_from_id_order(
+                    self.server.browser_item_ids(hide_out_of_focus=self.server.hide_out_of_focus),
+                    int(item["id"]),
+                )
                 month_nav = month_navigation_for_keys(
                     self.server.browser_month_keys(hide_out_of_focus=self.server.hide_out_of_focus),
                     month_key_for_item(self.server.target, item),
                 )
             else:
+                previous_item, next_item = adjacent_source_items(
+                    self.server.target,
+                    source,
+                    item,
+                    hide_out_of_focus=self.server.hide_out_of_focus,
+                    conn=conn,
+                )
                 month_nav = source_month_navigation(
                     self.server.target,
                     source,
