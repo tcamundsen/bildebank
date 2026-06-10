@@ -253,7 +253,7 @@ def app_status_manual_h3_cell_row_html(h3_cell: str, named_h3_cells: list[Any]) 
     h3geo_link = h3_cell_h3geo_link_html(clean_h3_cell)
     return f"""
     <div class="info-row">
-      <dt>Aktiv manuell H3-celle. Denne brukes til å sette plassering på bilder som mangler det.</dt>
+      <dt>Aktiv manuell H3-celle. Denne brukes til å sette plassering på bilder som mangler det. Du kan ikke sette manuell H3-celle på bilder som har GPS-lokasjon. Si hva hvis det er behov for det.</dt>
       <dd>
         <form action="/settings/manual-h3-cell" method="post" class="app-toggle-form">
           <select name="h3_cell">

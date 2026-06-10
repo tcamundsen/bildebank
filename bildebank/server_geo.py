@@ -491,8 +491,6 @@ def geo_index_page_html(
           <a href="/geo/missing">Bilder uten GPS</a>
           <a href="/help/web/steder">Hjelp</a>
         </nav>
-        <h2>Statistikk over bilder med GPS-posisjon</h2>
-        {geo_stats_summary_html(stats)}
         {geo_places_section_html(geo_places)}
         """,
         face_enabled=face_enabled,
@@ -592,7 +590,7 @@ def geo_stats_page_html(
         </nav>
         <h1>Geo-statistikk</h1>
         {geo_stats_summary_html(stats)}
-        <p class="meta">Geo-data leses fra databasen. Kjør bildebank geo-scan for å fylle inn GPS og H3-celler.</p>
+        <p class="meta">Geo-data leses fra databasen. Kjør <tt>bildebank geo-scan</tt> for å fylle inn GPS og H3-celler.</p>
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
