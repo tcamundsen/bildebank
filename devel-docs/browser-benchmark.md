@@ -26,7 +26,8 @@ serverresponsene:
 
 For å se hvor item-siden bruker tid internt, bruk profile-modus. Den går ikke
 via HTTP, men bruker de samme Python-funksjonene som `run-server` bruker for en
-item-side:
+item-side. Profile-modus kjører samme databaseforberedelse som serveren før
+målingen starter:
 
 ```bash
 .venv/bin/python tools/benchmark_browser.py --mode profile --target /path/to/bildesamling --url http://127.0.0.1:8765/item/123 --steps 100 --warmup 10

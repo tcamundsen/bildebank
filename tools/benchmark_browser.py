@@ -226,11 +226,14 @@ def run_server_benchmark(args: argparse.Namespace) -> BenchmarkSummary:
 
 
 def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
+    from bildebank import db
+
     if args.target is None:
         raise RuntimeError("--target må oppgis med --mode profile.")
     target = args.target
     if not target.exists() or not target.is_dir():
         raise RuntimeError(f"Bildesamlingen finnes ikke som mappe: {target}")
+    db.prepare_database(target)
 
     source, file_id = profile_source_and_file_id(target, args.url)
     current_file_id = file_id
