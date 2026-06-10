@@ -1,4 +1,4 @@
-Codex skal ikke lese TODO, da den er en klass for utvikleren.
+Hent schema via bildebank_dev/get_schema_summary og se på hvordan files og file_sources henger sammen.
 
 Les app-design.md ved endringer i import, database, filflytting/sletting, browser/server eller overordnet
 produktatferd. For kommando-detaljer, bruk docs/<kommando>.md og relevant devel-docs først.

@@ -8,6 +8,8 @@ from mcp.server.fastmcp import FastMCP
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+# "example-bilder.sqlite3" er en kopi av nåværende .bildebank.sqlite3 fra bildesamlingen
+# min. Jeg kopierer jevnlig inn ny versjon.
 EXAMPLE_DATABASE = REPO_ROOT / "example-bilder.sqlite3"
 
 mcp = FastMCP("Bildebank dev")
