@@ -2639,16 +2639,29 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True, ac
             rows = db.files_by_hash(conn, file_hash)
             active_rows = [row for row in rows if row["deleted_at"] is None]
             deleted_rows = [row for row in rows if row["deleted_at"] is not None]
-            if active_rows and check_source_hash_is_validated(target, active_rows, target_hash_cache):
+            active_valid = bool(active_rows) and check_source_hash_is_validated(target, active_rows, target_hash_cache)
+            deleted_valid = bool(deleted_rows) and check_source_hash_is_validated(target, deleted_rows, target_hash_cache)
+            if active_valid:
                 stats.covered += 1
-            elif deleted_rows and check_source_hash_is_validated(target, deleted_rows, target_hash_cache):
+            elif deleted_rows:
                 stats.deleted += 1
-                if not accept_deleted:
+                deleted_label = check_source_deleted_target_label(deleted_rows[0])
+                if deleted_valid:
+                    if not accept_deleted:
+                        problems.append(
+                            CheckSourceProblem(
+                                path,
+                                f"filen finnes i bildesamlingen, men er markert slettet: {deleted_label}",
+                                CHECK_SOURCE_DELETED_KIND,
+                            )
+                        )
+                else:
+                    stats.target_errors += 1
                     problems.append(
                         CheckSourceProblem(
                             path,
-                            f"filen finnes i bildesamlingen, men er markert slettet: "
-                            f"{check_source_deleted_target_label(deleted_rows[0])}",
+                            f"filen er markert slettet, men deleted/-filen mangler eller har endret innhold: "
+                            f"{deleted_label}",
                             CHECK_SOURCE_DELETED_KIND,
                         )
                     )
