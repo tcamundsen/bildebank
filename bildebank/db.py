@@ -1407,6 +1407,20 @@ def active_files_by_hash(conn: sqlite3.Connection, sha256: str) -> list[sqlite3.
     )
 
 
+def files_by_hash(conn: sqlite3.Connection, sha256: str) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT *
+            FROM files
+            WHERE sha256 = ?
+            ORDER BY deleted_at IS NOT NULL, id
+            """,
+            (sha256,),
+        )
+    )
+
+
 def get_file_source_for_source_path(
     conn: sqlite3.Connection, source_id: int, source_path_key: str
 ) -> sqlite3.Row | None:

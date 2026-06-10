@@ -7,11 +7,12 @@ Scanner en kildemappe og kontrollerer at alle filer i kildemappen finnes i
 bildesamlingen med samme SHA-256. Kommandoen sletter ingenting.
 
 positional arguments:
-  mappe       Kildemappen som skal kontrolleres
+  mappe             Kildemappen som skal kontrolleres
 
 options:
-  -h, --help  show this help message and exit
-  --quiet     Ikke vis fremdrift under kontrollen
+  -h, --help        show this help message and exit
+  --quiet           Ikke vis fremdrift under kontrollen
+  --accept-deleted  Godta filer som finnes i bildesamlingens deleted/-mappe
 ```
 <!-- CLI-HELP-END -->
 
@@ -45,3 +46,14 @@ kildemappen ikke er trygg å slette.
 Hvis det finnes filer i kildemappen som mangler i bildesamlingen, lagrer
 kommandoen listen med filnavn i en midlertidig tekstfil. På Windows åpnes listen
 i Notepad når kommandoen er ferdig. På Linux åpnes den med gvim.
+
+Filer som er slettet med `bildebank remove` ligger i `deleted/`. Som standard
+regnes ikke disse som trygge aktive kopier, og `check-source` viser dem som
+problem merket med `[deleted/]`.
+
+Hvis du vet at slettingen er riktig og vil godta slike filer under kontrollen,
+kan du bruke:
+
+```powershell
+bildebank check-source --accept-deleted "C:\Users\Tom\Pictures\Gamle bilder"
+```

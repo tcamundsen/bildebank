@@ -335,6 +335,11 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     check_source.add_argument("--quiet", action="store_true", help="Ikke vis fremdrift under kontrollen")
+    check_source.add_argument(
+        "--accept-deleted",
+        action="store_true",
+        help="Godta filer som finnes i bildesamlingens deleted/-mappe",
+    )
     check_source.add_argument("path", metavar="mappe", type=Path, help="Kildemappen som skal kontrolleres")
     rescan_source_parser = add_command(
         subparsers,
@@ -1180,7 +1185,7 @@ def run(args: argparse.Namespace) -> int:
         return run_rescan_source_dry_run(target, args)
 
     if args.command == "check-source":
-        return run_check_source(target, args.path, verbose=not args.quiet)
+        return run_check_source(target, args.path, verbose=not args.quiet, accept_deleted=args.accept_deleted)
 
     conn = db.connect(target)
     try:
@@ -2581,6 +2586,7 @@ def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
 class CheckSourceStats:
     scanned: int = 0
     covered: int = 0
+    deleted: int = 0
     missing: int = 0
     source_errors: int = 0
     target_errors: int = 0
@@ -2594,10 +2600,11 @@ class CheckSourceProblem:
 
 
 CHECK_SOURCE_MISSING_KIND = "missing"
+CHECK_SOURCE_DELETED_KIND = "deleted"
 CHECK_SOURCE_MISSING_REASON = "filen er ikke importert i bildesamlingen med samme SHA-256"
 
 
-def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) -> int:
+def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True, accept_deleted: bool = False) -> int:
     source = existing_path_arg(source_arg).resolve()
     if not source.exists() or not source.is_dir():
         raise ValueError(f"Kilden finnes ikke som mappe: {source}")
@@ -2629,12 +2636,25 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) ->
                 problems.append(CheckSourceProblem(path, f"kan ikke lese kildefil: {exc}"))
                 continue
 
-            rows = db.active_files_by_hash(conn, file_hash)
-            if not rows:
+            rows = db.files_by_hash(conn, file_hash)
+            active_rows = [row for row in rows if row["deleted_at"] is None]
+            deleted_rows = [row for row in rows if row["deleted_at"] is not None]
+            if active_rows and check_source_hash_is_validated(target, active_rows, target_hash_cache):
+                stats.covered += 1
+            elif deleted_rows and check_source_hash_is_validated(target, deleted_rows, target_hash_cache):
+                stats.deleted += 1
+                if not accept_deleted:
+                    problems.append(
+                        CheckSourceProblem(
+                            path,
+                            f"filen finnes i bildesamlingen, men er markert slettet: "
+                            f"{check_source_deleted_target_label(deleted_rows[0])}",
+                            CHECK_SOURCE_DELETED_KIND,
+                        )
+                    )
+            elif not rows:
                 stats.missing += 1
                 problems.append(CheckSourceProblem(path, CHECK_SOURCE_MISSING_REASON, CHECK_SOURCE_MISSING_KIND))
-            elif check_source_hash_is_validated(target, rows, target_hash_cache):
-                stats.covered += 1
             else:
                 stats.target_errors += 1
                 problems.append(CheckSourceProblem(path, "matchende målfil mangler eller har endret innhold"))
@@ -2657,7 +2677,11 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) ->
     print_check_source_report(source, stats, problems, missing_report_path=missing_report_path)
     if missing_report_path is not None:
         open_check_source_missing_report(missing_report_path)
-    return 0 if check_source_is_safe(stats) else 2
+    return 0 if check_source_is_safe(stats, accept_deleted=accept_deleted) else 2
+
+
+def check_source_deleted_target_label(row) -> str:
+    return Path(str(row["target_path"])).as_posix()
 
 
 def write_check_source_missing_report(missing_paths: list[Path]) -> Path:
@@ -2732,13 +2756,18 @@ def check_source_progress() -> ProgressMeter:
 
 def check_source_progress_details(stats: CheckSourceStats) -> str:
     return (
-        f"dekket={stats.covered}, mangler={stats.missing}, "
+        f"dekket={stats.covered}, mangler={stats.missing}, slettet={stats.deleted}, "
         f"kildefeil={stats.source_errors}, målfeil={stats.target_errors}"
     )
 
 
-def check_source_is_safe(stats: CheckSourceStats) -> bool:
-    return stats.missing == 0 and stats.source_errors == 0 and stats.target_errors == 0
+def check_source_is_safe(stats: CheckSourceStats, *, accept_deleted: bool = False) -> bool:
+    return (
+        stats.missing == 0
+        and stats.source_errors == 0
+        and stats.target_errors == 0
+        and (accept_deleted or stats.deleted == 0)
+    )
 
 
 def print_check_source_report(
@@ -2752,22 +2781,26 @@ def print_check_source_report(
     print(f"  Kildemappe: {source}")
     print(
         "  Oppsummering: "
-        f"scannet={stats.scanned}, dekket={stats.covered}, mangler={stats.missing}, "
+        f"scannet={stats.scanned}, dekket={stats.covered}, mangler={stats.missing}, slettet={stats.deleted}, "
         f"kildefeil={stats.source_errors}, målfeil={stats.target_errors}"
     )
     if problems:
-        print("  Det finnes filer som ikke er importert i bildesamlingen, eller som ikke kan valideres.")
+        print("  Det finnes filer som ikke er aktive i bildesamlingen, eller som ikke kan valideres.")
         print("  Kildemappen er derfor ikke trygg å slette.")
         print("Problemer:")
         for problem in problems:
-            print(f"- {problem.path}")
+            suffix = " [deleted/]" if problem.kind == CHECK_SOURCE_DELETED_KIND else ""
+            print(f"- {problem.path}{suffix}")
             print(f"  {problem.reason}")
         if missing_report_path is not None:
             print()
             print(f"Liste over manglende filer er lagret i: {missing_report_path}")
         return
 
-    print("  Alle filer i kildemappen finnes i bildesamlingen og er validert med SHA-256.")
+    if stats.deleted:
+        print("  Alle filer i kildemappen finnes i bildesamlingen eller deleted/ og er validert med SHA-256.")
+    else:
+        print("  Alle filer i kildemappen finnes i bildesamlingen og er validert med SHA-256.")
     print("  Bildebank sletter ikke kildemapper.")
     print("  Hvis du vil slette mappen selv i PowerShell:")
     print()
