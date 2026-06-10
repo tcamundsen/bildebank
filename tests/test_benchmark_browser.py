@@ -46,3 +46,47 @@ def test_benchmark_summary_counts_threshold_failures_and_percentiles() -> None:
     assert summary.median_ms == 150.0
     assert summary.p90_ms == 250.0
     assert summary.p95_ms == 250.0
+
+
+def test_profile_summary_counts_threshold_failures_per_total_time() -> None:
+    benchmark = load_benchmark_module()
+    args = benchmark.parse_args(
+        [
+            "--mode",
+            "profile",
+            "--target",
+            "/tmp/bilder",
+            "--steps",
+            "2",
+            "--threshold-ms",
+            "50",
+        ]
+    )
+    steps = [
+        benchmark.ProfileStepResult(
+            index=1,
+            url="/item/2",
+            total_ms=40.0,
+            item_ms=1.0,
+            adjacent_ms=20.0,
+            month_nav_ms=10.0,
+            html_ms=9.0,
+            html_bytes=100,
+        ),
+        benchmark.ProfileStepResult(
+            index=2,
+            url="/item/3",
+            total_ms=60.0,
+            item_ms=1.0,
+            adjacent_ms=30.0,
+            month_nav_ms=20.0,
+            html_ms=9.0,
+            html_bytes=100,
+        ),
+    ]
+
+    summary = benchmark.build_profile_summary(args, steps)
+
+    assert summary.threshold_failures == 1
+    assert summary.total["median_ms"] == 50.0
+    assert summary.adjacent["max_ms"] == 30.0

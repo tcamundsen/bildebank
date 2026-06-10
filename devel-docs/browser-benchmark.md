@@ -24,6 +24,20 @@ serverresponsene:
 .venv/bin/python tools/benchmark_browser.py --mode server --url http://127.0.0.1:8765/item/123 --steps 100 --warmup 10
 ```
 
+For å se hvor item-siden bruker tid internt, bruk profile-modus. Den går ikke
+via HTTP, men bruker de samme Python-funksjonene som `run-server` bruker for en
+item-side:
+
+```bash
+.venv/bin/python tools/benchmark_browser.py --mode profile --target /path/to/bildesamling --url http://127.0.0.1:8765/item/123 --steps 100 --warmup 10
+```
+
+På Windows kan kommandoen for eksempel kjøres slik:
+
+```powershell
+.\.venv\Scripts\python.exe tools\benchmark_browser.py --mode profile --target "C:\Users\Tom\Pictures\Bildebank" --url http://127.0.0.1:8765/item/123 --steps 100 --warmup 10
+```
+
 Skriv rådata til fil når tallene skal sammenlignes over tid:
 
 ```bash

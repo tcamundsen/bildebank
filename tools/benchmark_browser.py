@@ -42,6 +42,36 @@ class BenchmarkSummary:
     steps: list[StepResult]
 
 
+@dataclass(frozen=True)
+class ProfileStepResult:
+    index: int
+    url: str
+    total_ms: float
+    item_ms: float
+    adjacent_ms: float
+    month_nav_ms: float
+    html_ms: float
+    html_bytes: int
+
+
+@dataclass(frozen=True)
+class ProfileSummary:
+    mode: str
+    start_url: str
+    target: str
+    steps_requested: int
+    steps_measured: int
+    warmup: int
+    threshold_ms: float | None
+    threshold_failures: int
+    total: dict[str, float | None]
+    item: dict[str, float | None]
+    adjacent: dict[str, float | None]
+    month_nav: dict[str, float | None]
+    html: dict[str, float | None]
+    steps: list[ProfileStepResult]
+
+
 class NextLinkParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -58,7 +88,9 @@ class NextLinkParser(HTMLParser):
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        if args.mode == "browser":
+        if args.mode == "profile":
+            summary = run_profile_benchmark(args)
+        elif args.mode == "browser":
             summary = run_browser_benchmark(args)
         else:
             summary = run_server_benchmark(args)
@@ -66,7 +98,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"FEIL: {exc}", file=sys.stderr)
         return 2
 
-    print_summary(summary)
+    if isinstance(summary, ProfileSummary):
+        print_profile_summary(summary)
+    else:
+        print_summary(summary)
     if args.json_output:
         Path(args.json_output).write_text(
             json.dumps(summary_to_json(summary), ensure_ascii=False, indent=2) + "\n",
@@ -85,7 +120,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         )
     )
     parser.add_argument("--url", default=DEFAULT_URL, help=f"Startside eller item-URL. Standard: {DEFAULT_URL}")
-    parser.add_argument("--mode", choices=("browser", "server"), default="browser")
+    parser.add_argument("--mode", choices=("browser", "server", "profile"), default="browser")
+    parser.add_argument("--target", type=Path, help="Bildesamlingsmappe. Kreves for --mode profile.")
     parser.add_argument("--steps", type=positive_int, default=50, help="Antall neste-klikk som måles. Standard: 50")
     parser.add_argument("--warmup", type=non_negative_int, default=5, help="Antall oppvarmingsklikk før måling. Standard: 5")
     parser.add_argument("--threshold-ms", type=float, help="Returner exit code 1 hvis ett eller flere steg er tregere.")
@@ -189,6 +225,104 @@ def run_server_benchmark(args: argparse.Namespace) -> BenchmarkSummary:
     return build_summary("server", args, steps)
 
 
+def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
+    if args.target is None:
+        raise RuntimeError("--target må oppgis med --mode profile.")
+    target = args.target
+    if not target.exists() or not target.is_dir():
+        raise RuntimeError(f"Bildesamlingen finnes ikke som mappe: {target}")
+
+    source, file_id = profile_source_and_file_id(target, args.url)
+    current_file_id = file_id
+    for _ in range(args.warmup):
+        step = profile_item_step(target, source, current_file_id, 0)
+        next_file_id = next_profile_file_id(step.url)
+        if next_file_id is None:
+            break
+        current_file_id = next_file_id
+
+    steps: list[ProfileStepResult] = []
+    for index in range(1, args.steps + 1):
+        step = profile_item_step(target, source, current_file_id, index)
+        steps.append(step)
+        next_file_id = next_profile_file_id(step.url)
+        if next_file_id is None:
+            break
+        current_file_id = next_file_id
+    return build_profile_summary(args, steps)
+
+
+def profile_source_and_file_id(target: Path, url: str) -> tuple[Any, int]:
+    from bildebank.server_browser_sources import all_browser_source, parse_source_path
+    from bildebank.server_filter import text_filter_browser_source
+
+    parsed = urllib.parse.urlparse(url)
+    path = parsed.path
+    if path.startswith("/item/"):
+        return all_browser_source(), int(path.removeprefix("/item/").strip("/"))
+    if path.startswith("/filter/"):
+        raw_query, page_mode, raw_value = parse_source_path(path.removeprefix("/filter/"))
+        if page_mode != "item":
+            raise RuntimeError("Profile-modus trenger en item-URL, for eksempel /filter/type%3Avideo/item/123.")
+        query = urllib.parse.unquote(raw_query).strip()
+        return text_filter_browser_source(query, target), int(raw_value)
+    raise RuntimeError("Profile-modus støtter foreløpig /item/<id> og /filter/<query>/item/<id>.")
+
+
+def profile_item_step(target: Path, source: Any, file_id: int, index: int) -> ProfileStepResult:
+    from bildebank.server_browser import (
+        adjacent_source_items,
+        source_item_by_id,
+        source_month_navigation,
+    )
+    from bildebank.server_browser_sources import source_item_url
+    from bildebank.server_pages import source_item_page_html
+
+    total_start = time.perf_counter()
+    start = time.perf_counter()
+    item = source_item_by_id(target, source, file_id)
+    item_ms = elapsed_ms(start)
+    if item is None:
+        raise RuntimeError(f"Fant ikke item #{file_id} i profilert utvalg.")
+
+    start = time.perf_counter()
+    previous_item, next_item = adjacent_source_items(target, source, item)
+    adjacent_ms = elapsed_ms(start)
+
+    start = time.perf_counter()
+    month_nav = source_month_navigation(target, source, item)
+    month_nav_ms = elapsed_ms(start)
+
+    start = time.perf_counter()
+    html = source_item_page_html(target, source, item, previous_item, next_item, month_nav)
+    html_ms = elapsed_ms(start)
+    total_ms = elapsed_ms(total_start)
+
+    next_url = source_item_url(source, int(next_item["id"])) if next_item is not None else source_item_url(source, file_id)
+    return ProfileStepResult(
+        index=index,
+        url=next_url,
+        total_ms=total_ms,
+        item_ms=item_ms,
+        adjacent_ms=adjacent_ms,
+        month_nav_ms=month_nav_ms,
+        html_ms=html_ms,
+        html_bytes=len(html.encode("utf-8")),
+    )
+
+
+def next_profile_file_id(url: str) -> int | None:
+    parsed = urllib.parse.urlparse(url)
+    if "/item/" not in parsed.path:
+        return None
+    raw_id = parsed.path.rsplit("/item/", 1)[1].strip("/")
+    return int(raw_id) if raw_id.isdigit() else None
+
+
+def elapsed_ms(start: float) -> float:
+    return (time.perf_counter() - start) * 1000.0
+
+
 def fetch_next(url: str, timeout_ms: int) -> tuple[float, str]:
     start = time.perf_counter()
     html = fetch_text(url, timeout_ms)
@@ -235,6 +369,42 @@ def build_summary(mode: str, args: argparse.Namespace, steps: list[StepResult]) 
     )
 
 
+def build_profile_summary(args: argparse.Namespace, steps: list[ProfileStepResult]) -> ProfileSummary:
+    total_values = [step.total_ms for step in steps]
+    threshold_failures = (
+        sum(1 for value in total_values if args.threshold_ms is not None and value > args.threshold_ms)
+        if args.threshold_ms is not None
+        else 0
+    )
+    return ProfileSummary(
+        mode="profile",
+        start_url=args.url,
+        target=str(args.target),
+        steps_requested=args.steps,
+        steps_measured=len(steps),
+        warmup=args.warmup,
+        threshold_ms=args.threshold_ms,
+        threshold_failures=threshold_failures,
+        total=stats_dict(total_values),
+        item=stats_dict([step.item_ms for step in steps]),
+        adjacent=stats_dict([step.adjacent_ms for step in steps]),
+        month_nav=stats_dict([step.month_nav_ms for step in steps]),
+        html=stats_dict([step.html_ms for step in steps]),
+        steps=steps,
+    )
+
+
+def stats_dict(values: list[float]) -> dict[str, float | None]:
+    return {
+        "min_ms": min(values) if values else None,
+        "median_ms": statistics.median(values) if values else None,
+        "mean_ms": statistics.fmean(values) if values else None,
+        "p90_ms": percentile(values, 90),
+        "p95_ms": percentile(values, 95),
+        "max_ms": max(values) if values else None,
+    }
+
+
 def percentile(values: list[float], percent: int) -> float | None:
     if not values:
         return None
@@ -263,11 +433,36 @@ def print_summary(summary: BenchmarkSummary) -> None:
         print(f"  terskel: {summary.threshold_ms:.1f} ms, brudd={summary.threshold_failures}")
 
 
+def print_profile_summary(summary: ProfileSummary) -> None:
+    print("Bildebank browser profile")
+    print(f"  start: {summary.start_url}")
+    print(f"  target: {summary.target}")
+    print(f"  warmup: {summary.warmup}")
+    print(f"  målt: {summary.steps_measured}/{summary.steps_requested}")
+    print(f"  total: {format_stats(summary.total)}")
+    print(f"  source_item_by_id: {format_stats(summary.item)}")
+    print(f"  adjacent_source_items: {format_stats(summary.adjacent)}")
+    print(f"  source_month_navigation: {format_stats(summary.month_nav)}")
+    print(f"  source_item_page_html: {format_stats(summary.html)}")
+    if summary.threshold_ms is not None:
+        print(f"  terskel: {summary.threshold_ms:.1f} ms, brudd={summary.threshold_failures}")
+
+
+def format_stats(stats: dict[str, float | None]) -> str:
+    return (
+        f"median={format_ms(stats['median_ms'])}, "
+        f"p90={format_ms(stats['p90_ms'])}, "
+        f"p95={format_ms(stats['p95_ms'])}, "
+        f"maks={format_ms(stats['max_ms'])}, "
+        f"snitt={format_ms(stats['mean_ms'])}"
+    )
+
+
 def format_ms(value: float | None) -> str:
     return "-" if value is None else f"{value:.1f} ms"
 
 
-def summary_to_json(summary: BenchmarkSummary) -> dict[str, Any]:
+def summary_to_json(summary: BenchmarkSummary | ProfileSummary) -> dict[str, Any]:
     data = asdict(summary)
     data["steps"] = [asdict(step) for step in summary.steps]
     return data
