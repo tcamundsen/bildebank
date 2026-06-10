@@ -58,6 +58,7 @@ from .server_browser import (
     first_source_item,
     image_info_content_html,
     imported_source_by_id,
+    item_by_id,
     month_key_for_item,
     month_navigation_for_keys,
     source_item_by_id,
@@ -118,7 +119,7 @@ class BildebankServer(ThreadingHTTPServer):
         self.target = target
         self.config = config
         self.search_cache = OpenClipSearchCache(config)
-        self._browser_item_ids: dict[bool, tuple[int, list[int]]] = {}
+        self._browser_item_ids: dict[bool, tuple[int, list[int], dict[int, int]]] = {}
         self._browser_month_keys: dict[bool, tuple[int, list[str]]] = {}
 
     @property
@@ -148,18 +149,26 @@ class BildebankServer(ThreadingHTTPServer):
         return cached[1]
 
     def browser_item_ids(self, *, hide_out_of_focus: bool = False) -> list[int]:
+        return self.browser_item_order(hide_out_of_focus=hide_out_of_focus)[0]
+
+    def browser_item_positions(self, *, hide_out_of_focus: bool = False) -> dict[int, int]:
+        return self.browser_item_order(hide_out_of_focus=hide_out_of_focus)[1]
+
+    def browser_item_order(self, *, hide_out_of_focus: bool = False) -> tuple[list[int], dict[int, int]]:
         mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
         cached = self._browser_item_ids.get(hide_out_of_focus)
         if cached is None or cached[0] != mtime_ns:
+            item_ids = browser_item_ids(
+                self.target,
+                hide_out_of_focus=hide_out_of_focus,
+            )
             cached = (
                 mtime_ns,
-                browser_item_ids(
-                    self.target,
-                    hide_out_of_focus=hide_out_of_focus,
-                ),
+                item_ids,
+                {file_id: index for index, file_id in enumerate(item_ids)},
             )
             self._browser_item_ids[hide_out_of_focus] = cached
-        return cached[1]
+        return cached[1], cached[2]
 
     def clear_browser_navigation_cache(self) -> None:
         self._browser_item_ids.clear()
@@ -429,20 +438,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         source = all_browser_source()
         conn = db.connect(self.server.target)
         try:
-            item = source_item_by_id(
-                self.server.target,
-                source,
-                file_id,
-                hide_out_of_focus=self.server.hide_out_of_focus,
-                conn=conn,
-            )
+            item_ids, item_positions = self.server.browser_item_order(hide_out_of_focus=self.server.hide_out_of_focus)
+            item = item_by_id(self.server.target, file_id, conn=conn) if file_id in item_positions else None
             if item is None:
                 self.respond_text("Filen finnes ikke i bildesamlingen.", status=HTTPStatus.NOT_FOUND)
                 return
             if source == all_browser_source():
                 previous_item, next_item = adjacent_items_from_id_order(
-                    self.server.browser_item_ids(hide_out_of_focus=self.server.hide_out_of_focus),
+                    item_ids,
                     int(item["id"]),
+                    item_positions,
                 )
                 month_nav = month_navigation_for_keys(
                     self.server.browser_month_keys(hide_out_of_focus=self.server.hide_out_of_focus),

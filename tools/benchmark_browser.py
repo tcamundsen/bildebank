@@ -241,9 +241,18 @@ def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
     source, file_id = profile_source_and_file_id(target, args.url)
     month_keys = profile_cached_month_keys(target, source)
     item_ids = profile_cached_item_ids(target, source)
+    item_positions = profile_item_positions(item_ids)
     current_file_id = file_id
     for _ in range(args.warmup):
-        step = profile_item_step(target, source, current_file_id, 0, month_keys=month_keys, item_ids=item_ids)
+        step = profile_item_step(
+            target,
+            source,
+            current_file_id,
+            0,
+            month_keys=month_keys,
+            item_ids=item_ids,
+            item_positions=item_positions,
+        )
         next_file_id = next_profile_file_id(step.url)
         if next_file_id is None:
             break
@@ -251,7 +260,15 @@ def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
 
     steps: list[ProfileStepResult] = []
     for index in range(1, args.steps + 1):
-        step = profile_item_step(target, source, current_file_id, index, month_keys=month_keys, item_ids=item_ids)
+        step = profile_item_step(
+            target,
+            source,
+            current_file_id,
+            index,
+            month_keys=month_keys,
+            item_ids=item_ids,
+            item_positions=item_positions,
+        )
         steps.append(step)
         next_file_id = next_profile_file_id(step.url)
         if next_file_id is None:
@@ -295,6 +312,12 @@ def profile_cached_item_ids(target: Path, source: Any) -> list[int] | None:
     return browser_item_ids(target)
 
 
+def profile_item_positions(item_ids: list[int] | None) -> dict[int, int] | None:
+    if item_ids is None:
+        return None
+    return {file_id: index for index, file_id in enumerate(item_ids)}
+
+
 def profile_item_step(
     target: Path,
     source: Any,
@@ -303,11 +326,13 @@ def profile_item_step(
     *,
     month_keys: list[str] | None = None,
     item_ids: list[int] | None = None,
+    item_positions: dict[int, int] | None = None,
 ) -> ProfileStepResult:
     from bildebank import db
     from bildebank.server_browser import (
         adjacent_items_from_id_order,
         adjacent_source_items,
+        item_by_id,
         month_key_for_item,
         month_navigation_for_keys,
         source_item_by_id,
@@ -322,7 +347,10 @@ def profile_item_step(
     connect_ms = elapsed_ms(start)
     try:
         start = time.perf_counter()
-        item = source_item_by_id(target, source, file_id, conn=conn)
+        if item_ids is None:
+            item = source_item_by_id(target, source, file_id, conn=conn)
+        else:
+            item = item_by_id(target, file_id, conn=conn) if file_id in (item_positions or {}) else None
         item_ms = elapsed_ms(start)
         if item is None:
             raise RuntimeError(f"Fant ikke item #{file_id} i profilert utvalg.")
@@ -331,7 +359,7 @@ def profile_item_step(
         if item_ids is None:
             previous_item, next_item = adjacent_source_items(target, source, item, conn=conn)
         else:
-            previous_item, next_item = adjacent_items_from_id_order(item_ids, int(item["id"]))
+            previous_item, next_item = adjacent_items_from_id_order(item_ids, int(item["id"]), item_positions)
         adjacent_ms = elapsed_ms(start)
 
         start = time.perf_counter()

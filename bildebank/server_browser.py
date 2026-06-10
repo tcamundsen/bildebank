@@ -221,6 +221,28 @@ def unfiltered_source_item_by_id(
             conn.close()
 
 
+def item_by_id(
+    target: Path,
+    file_id: int,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> Any | None:
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
+    try:
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE id = ?
+            """,
+            (file_id,),
+        ).fetchone()
+    finally:
+        if owned_conn:
+            conn.close()
+
+
 def browser_item_by_id(target: Path, file_id: int, *, hide_out_of_focus: bool = False) -> Any | None:
     return source_item_by_id(target, all_browser_source(), file_id, hide_out_of_focus=hide_out_of_focus)
 
@@ -428,10 +450,19 @@ def adjacent_items_from_list(items: list[Any], item: Any) -> tuple[Any | None, A
     return previous_item, next_item
 
 
-def adjacent_items_from_id_order(item_ids: list[int], file_id: int) -> tuple[Any | None, Any | None]:
-    try:
-        index = item_ids.index(file_id)
-    except ValueError:
+def adjacent_items_from_id_order(
+    item_ids: list[int],
+    file_id: int,
+    positions: dict[int, int] | None = None,
+) -> tuple[Any | None, Any | None]:
+    if positions is not None:
+        index = positions.get(file_id, -1)
+    else:
+        try:
+            index = item_ids.index(file_id)
+        except ValueError:
+            index = -1
+    if index < 0:
         return None, None
     previous_item = {"id": item_ids[index - 1]} if index > 0 else None
     next_item = {"id": item_ids[index + 1]} if index < len(item_ids) - 1 else None
