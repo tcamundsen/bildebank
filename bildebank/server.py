@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import socket
 import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -178,6 +179,13 @@ class BildebankServer(ThreadingHTTPServer):
 class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     server: BildebankServer
     protocol_version = "HTTP/1.1"
+
+    def setup(self) -> None:
+        super().setup()
+        try:
+            self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            pass
 
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
