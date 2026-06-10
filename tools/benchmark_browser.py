@@ -258,6 +258,7 @@ def run_server_keepalive_benchmark(args: argparse.Namespace) -> BenchmarkSummary
 
 def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
     from bildebank import db
+    from bildebank.config import load_config
 
     if args.target is None:
         raise RuntimeError("--target må oppgis med --mode profile.")
@@ -265,6 +266,7 @@ def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
     if not target.exists() or not target.is_dir():
         raise RuntimeError(f"Bildesamlingen finnes ikke som mappe: {target}")
     db.prepare_database(target)
+    config = load_config(Path(__file__).resolve().parents[1])
 
     source, file_id = profile_source_and_file_id(target, args.url)
     month_keys = profile_cached_month_keys(target, source)
@@ -280,6 +282,7 @@ def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
             month_keys=month_keys,
             item_ids=item_ids,
             item_positions=item_positions,
+            config=config,
         )
         next_file_id = next_profile_file_id(step.url)
         if next_file_id is None:
@@ -296,6 +299,7 @@ def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
             month_keys=month_keys,
             item_ids=item_ids,
             item_positions=item_positions,
+            config=config,
         )
         steps.append(step)
         next_file_id = next_profile_file_id(step.url)
@@ -355,6 +359,7 @@ def profile_item_step(
     month_keys: list[str] | None = None,
     item_ids: list[int] | None = None,
     item_positions: dict[int, int] | None = None,
+    config: Any | None = None,
 ) -> ProfileStepResult:
     from bildebank import db
     from bildebank.server_browser import (
@@ -398,7 +403,18 @@ def profile_item_step(
         month_nav_ms = elapsed_ms(start)
 
         start = time.perf_counter()
-        html = source_item_page_html(target, source, item, previous_item, next_item, month_nav, conn=conn)
+        kwargs: dict[str, Any] = {"conn": conn}
+        if config is not None:
+            kwargs.update(
+                {
+                    "face_enabled": config.face_recognition.enabled,
+                    "openclip_enabled": config.openclip.enabled,
+                    "face_config": config.face_recognition,
+                    "manual_h3_cell": config.browser.manual_h3_cell,
+                    "hide_out_of_focus": config.browser.hide_out_of_focus,
+                }
+            )
+        html = source_item_page_html(target, source, item, previous_item, next_item, month_nav, **kwargs)
         html_ms = elapsed_ms(start)
         total_ms = elapsed_ms(total_start)
     finally:
