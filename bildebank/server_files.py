@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
-from .server_browser import browser_item_by_id
 
 
 @dataclass(frozen=True)
@@ -27,10 +26,7 @@ def read_server_file(target: Path, encoded_relative_path: str) -> ServerFile:
 def server_file_path(target: Path, encoded_relative_path: str) -> Path:
     raw_path = urllib.parse.unquote(encoded_relative_path).strip("/")
     if raw_path.isdigit():
-        row = browser_item_by_id(target, int(raw_path))
-        if row is None:
-            raise FileNotFoundError("Filen finnes ikke.")
-        return db.absolute_target_path(target, Path(str(row["target_path"])))
+        return server_file_path_by_id(target, int(raw_path))
 
     relative = Path(raw_path)
     path = (target / relative).resolve()
@@ -39,3 +35,14 @@ def server_file_path(target: Path, encoded_relative_path: str) -> Path:
     except ValueError as exc:
         raise PermissionError("Ugyldig filsti.") from exc
     return path
+
+
+def server_file_path_by_id(target: Path, file_id: int) -> Path:
+    conn = db.connect(target)
+    try:
+        row = conn.execute("SELECT target_path FROM files WHERE id = ?", (file_id,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise FileNotFoundError("Filen finnes ikke.")
+    return db.absolute_target_path(target, Path(str(row["target_path"])))

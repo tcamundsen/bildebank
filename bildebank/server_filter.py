@@ -471,6 +471,7 @@ def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_
 
     where_sql, params = text_filter_where_clause(text_filter)
     where_sql, params = with_motion_video_filter(
+        target,
         where_sql,
         params,
         include_motion=text_filter_shows_motion_videos(text_filter),

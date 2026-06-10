@@ -45,6 +45,7 @@ from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding
 from bildebank.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
 from bildebank.server_actions import undelete_file_from_browser
 from bildebank.server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS
+from bildebank.server_files import read_server_file
 from bildebank.server import (
     BildebankServer,
     BildebankRequestHandler,
@@ -3276,6 +3277,7 @@ model_name = "buffalo_l"
             filename_source = text_filter_browser_source("filename:PXL_20250102_123")
             type_video_items = source_month_items(target, type_video_source, "2025-01")
             filename_items = source_month_items(target, filename_source, "2025-01")
+            motion_file = read_server_file(target, str(type_video_items[0]["id"]))
             image_item = month_items[0]
             image_body = item_page_html(
                 target,
@@ -3292,6 +3294,8 @@ model_name = "buffalo_l"
         )
         self.assertIn("Motion-video: PXL_20250102_123.mp4", image_body)
         self.assertIn("/filter/filename%3APXL_20250102_123.mp4/item/", image_body)
+        self.assertEqual(motion_file.content_type, "video/mp4")
+        self.assertEqual(motion_file.content[4:8], b"ftyp")
 
     def test_run_server_filter_route_redirects_query_to_canonical_browser_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
