@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import traceback
 import webbrowser
 from dataclasses import dataclass, replace
@@ -2589,6 +2590,11 @@ class CheckSourceStats:
 class CheckSourceProblem:
     path: Path
     reason: str
+    kind: str = "error"
+
+
+CHECK_SOURCE_MISSING_KIND = "missing"
+CHECK_SOURCE_MISSING_REASON = "filen er ikke importert i bildesamlingen med samme SHA-256"
 
 
 def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) -> int:
@@ -2626,9 +2632,7 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) ->
             rows = db.active_files_by_hash(conn, file_hash)
             if not rows:
                 stats.missing += 1
-                problems.append(
-                    CheckSourceProblem(path, "filen er ikke importert i bildesamlingen med samme SHA-256")
-                )
+                problems.append(CheckSourceProblem(path, CHECK_SOURCE_MISSING_REASON, CHECK_SOURCE_MISSING_KIND))
             elif check_source_hash_is_validated(target, rows, target_hash_cache):
                 stats.covered += 1
             else:
@@ -2648,8 +2652,34 @@ def run_check_source(target: Path, source_arg: Path, *, verbose: bool = True) ->
     finally:
         conn.close()
 
-    print_check_source_report(source, stats, problems)
+    missing_paths = [problem.path for problem in problems if problem.kind == CHECK_SOURCE_MISSING_KIND]
+    missing_report_path = write_check_source_missing_report(missing_paths) if missing_paths else None
+    print_check_source_report(source, stats, problems, missing_report_path=missing_report_path)
+    if missing_report_path is not None:
+        open_check_source_missing_report(missing_report_path)
     return 0 if check_source_is_safe(stats) else 2
+
+
+def write_check_source_missing_report(missing_paths: list[Path]) -> Path:
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        prefix="bildebank-check-source-mangler-",
+        suffix=".txt",
+        delete=False,
+    ) as report:
+        for path in missing_paths:
+            report.write(f"{path}\n")
+        return Path(report.name)
+
+
+def open_check_source_missing_report(report_path: Path) -> None:
+    command = ["notepad", str(report_path)] if sys.platform == "win32" else ["gvim", str(report_path)]
+    try:
+        subprocess.Popen(command)  # noqa: S603 - launches a local editor chosen by platform
+    except OSError as exc:
+        editor = command[0]
+        print(f"Kunne ikke åpne {report_path} med {editor}: {exc}", file=sys.stderr)
 
 
 def iter_check_source_files(root: Path):
@@ -2711,7 +2741,13 @@ def check_source_is_safe(stats: CheckSourceStats) -> bool:
     return stats.missing == 0 and stats.source_errors == 0 and stats.target_errors == 0
 
 
-def print_check_source_report(source: Path, stats: CheckSourceStats, problems: list[CheckSourceProblem]) -> None:
+def print_check_source_report(
+    source: Path,
+    stats: CheckSourceStats,
+    problems: list[CheckSourceProblem],
+    *,
+    missing_report_path: Path | None = None,
+) -> None:
     print("Check-source")
     print(f"  Kildemappe: {source}")
     print(
@@ -2726,6 +2762,9 @@ def print_check_source_report(source: Path, stats: CheckSourceStats, problems: l
         for problem in problems:
             print(f"- {problem.path}")
             print(f"  {problem.reason}")
+        if missing_report_path is not None:
+            print()
+            print(f"Liste over manglende filer er lagret i: {missing_report_path}")
         return
 
     print("  Alle filer i kildemappen finnes i bildesamlingen og er validert med SHA-256.")

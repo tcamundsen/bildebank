@@ -5774,6 +5774,52 @@ enabled = false
             self.assertIn("Kildemappen er derfor ikke trygg å slette.", stdout)
             self.assertNotIn("Remove-Item", stdout)
 
+    def test_check_source_writes_and_opens_missing_file_list(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            imported = source / "IMG_20240102.jpg"
+            missing = source / "notes.txt"
+            imported.write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            missing.write_bytes(b"not-imported")
+
+            opened: list[Path] = []
+
+            def fake_open(path: Path) -> None:
+                opened.append(path)
+
+            with patch("bildebank.cli.open_check_source_missing_report", fake_open):
+                code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
+
+            self.assertEqual(code, 2, stderr)
+            self.assertEqual(len(opened), 1)
+            self.assertIn("Liste over manglende filer er lagret i:", stdout)
+            self.assertEqual(opened[0].read_text(encoding="utf-8"), f"{missing}\n")
+            opened[0].unlink()
+
+    def test_check_source_does_not_open_missing_file_list_when_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            with patch("bildebank.cli.open_check_source_missing_report") as open_report:
+                code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
+
+            self.assertEqual(code, 0, stderr)
+            open_report.assert_not_called()
+            self.assertNotIn("Liste over manglende filer", stdout)
+
     def test_check_source_accepts_unknown_extension_when_hash_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

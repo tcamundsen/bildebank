@@ -41,3 +41,7 @@ fra kommandoen, trykke Ctrl-C for å kopiere, og så Ctrl-V for å lime inn.
 Hvis Bildebank finner filer som ikke er importert i bildesamlingen, eller hvis
 en målfil i bildesamlingen ikke kan valideres med SHA-256, skriver kommandoen at
 kildemappen ikke er trygg å slette.
+
+Hvis det finnes filer i kildemappen som mangler i bildesamlingen, lagrer
+kommandoen listen med filnavn i en midlertidig tekstfil. På Windows åpnes listen
+i Notepad når kommandoen er ferdig. På Linux åpnes den med gvim.
