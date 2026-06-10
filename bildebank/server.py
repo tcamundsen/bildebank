@@ -131,7 +131,7 @@ class BildebankServer(ThreadingHTTPServer):
         return self.config.browser.hide_out_of_focus
 
     def browser_month_keys(self, *, hide_out_of_focus: bool = False) -> list[str]:
-        mtime_ns = db.database_path(self.target).stat().st_mtime_ns
+        mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
         cached = self._browser_month_keys.get(hide_out_of_focus)
         if cached is None or cached[0] != mtime_ns:
             cached = (

@@ -1337,6 +1337,17 @@ pretrained = "laion2b_s34b_b79k"
             )
             self.assertFalse(server.face_enabled)
 
+    def test_run_server_browser_month_keys_uses_existing_database_path_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            init_database(target)
+            server = object.__new__(BildebankServer)
+            server.target = target
+            server._browser_month_keys = {}
+
+            self.assertEqual(server.browser_month_keys(), [])
+
     def test_run_server_face_config_post_updates_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
