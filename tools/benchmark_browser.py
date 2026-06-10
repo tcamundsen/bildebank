@@ -213,12 +213,13 @@ def wait_for_media(page: Any, timeout_ms: int) -> None:
 
 def run_server_benchmark(args: argparse.Namespace) -> BenchmarkSummary:
     url = args.url
+    html = fetch_text(url, args.timeout_ms)
     for _ in range(args.warmup):
-        _elapsed_ms, url = fetch_next(url, args.timeout_ms)
+        _elapsed_ms, url, html = fetch_next_page(url, html, args.timeout_ms)
     steps: list[StepResult] = []
     for index in range(1, args.steps + 1):
         try:
-            elapsed_ms, url = fetch_next(url, args.timeout_ms)
+            elapsed_ms, url, html = fetch_next_page(url, html, args.timeout_ms)
         except RuntimeError:
             break
         steps.append(StepResult(index=index, elapsed_ms=elapsed_ms, url=url))
@@ -326,19 +327,18 @@ def elapsed_ms(start: float) -> float:
     return (time.perf_counter() - start) * 1000.0
 
 
-def fetch_next(url: str, timeout_ms: int) -> tuple[float, str]:
-    start = time.perf_counter()
-    html = fetch_text(url, timeout_ms)
+def fetch_next_page(url: str, html: str, timeout_ms: int) -> tuple[float, str, str]:
     parser = NextLinkParser()
     parser.feed(html)
     if parser.next_href is None:
         raise RuntimeError("Fant ingen aktiv Neste bilde-lenke.")
     next_url = urllib.parse.urljoin(url, parser.next_href)
-    html = fetch_text(next_url, timeout_ms)
+    start = time.perf_counter()
+    next_html = fetch_text(next_url, timeout_ms)
     elapsed_ms = (time.perf_counter() - start) * 1000.0
-    if not html:
+    if not next_html:
         raise RuntimeError(f"Tom respons fra {next_url}")
-    return elapsed_ms, next_url
+    return elapsed_ms, next_url, next_html
 
 
 def fetch_text(url: str, timeout_ms: int) -> str:

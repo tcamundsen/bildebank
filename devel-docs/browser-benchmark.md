@@ -18,7 +18,8 @@ startpunkt:
 
 `browser`-modus bruker Playwright og måler ekte klikk på `Neste bilde`.
 Hvis Playwright ikke er installert, kan HTTP-modus brukes for å måle bare
-serverresponsene:
+serverresponsene. Den henter startsiden én gang først, og måler deretter hver
+`Neste bilde`-navigasjon som én ny sidehenting:
 
 ```bash
 .venv/bin/python tools/benchmark_browser.py --mode server --url http://127.0.0.1:8765/item/123 --steps 100 --warmup 10
