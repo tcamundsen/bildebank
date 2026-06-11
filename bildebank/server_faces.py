@@ -922,8 +922,8 @@ def manual_person_file_controls_html(
         <option value="">Velg person</option>
         {"".join(options)}
       </select>
-      <button class="nav-button" type="submit">Legg til</button>
-      <button class="nav-button danger-button" type="button" data-manual-person-remove>Fjern</button>
+      <button class="nav-button" type="submit" title="Manuelt legge til person uten å påvirke ansiktsgjenkjenning">Legg til</button>
+      <button class="nav-button danger-button" type="button" title="Fjern manuelt lagt til person fra bildet" data-manual-person-remove>Fjern</button>
       <span class="assign-status" data-manual-person-status></span>
     </form>
     """
