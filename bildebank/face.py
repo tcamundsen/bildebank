@@ -524,7 +524,9 @@ def suggest_faces(
         import numpy as np
 
         progress_stats = FaceSuggestProgressStats(threshold=threshold)
-        person_vectors: dict[int, list[Any]] = {}
+        known_person_ids: list[int] = []
+        known_person_id_set: set[int] = set()
+        known_vectors: list[Any] = []
         known_total = int(
             conn.execute(
                 """
@@ -549,15 +551,16 @@ def suggest_faces(
             ),
             start=1,
         ):
-            person_vectors.setdefault(int(row["person_id"]), []).append(
-                embedding_array_from_blob(row["embedding"], np)
-            )
+            person_id = int(row["person_id"])
+            known_person_ids.append(person_id)
+            known_person_id_set.add(person_id)
+            known_vectors.append(embedding_array_from_blob(row["embedding"], np))
             progress_stats.known_faces = index
-            progress_stats.persons = len(person_vectors)
+            progress_stats.persons = len(known_person_id_set)
             if progress is not None:
                 progress("load_known", index, known_total, progress_stats, None)
-        person_count = sum(1 for vectors in person_vectors.values() if vectors)
-        centroid_person_ids, centroid_matrix = normalized_centroid_matrix(person_vectors, np)
+        person_count = len(known_person_id_set)
+        known_matrix = normalized_vector_matrix(known_vectors, np)
         progress_stats.persons = person_count
         unknown_total = int(
             conn.execute(
@@ -575,7 +578,7 @@ def suggest_faces(
         suggestions = 0
         if progress is not None:
             progress("compare_start", 0, unknown_total, progress_stats, None)
-        if centroid_matrix.size == 0 or unknown_total == 0:
+        if known_matrix.size == 0 or unknown_total == 0:
             progress_stats.unknown_faces = unknown_total
             if progress is not None:
                 progress("compare", unknown_total, unknown_total, progress_stats, None)
@@ -599,11 +602,11 @@ def suggest_faces(
                     progress("load_unknown", processed_unknown, unknown_total, progress_stats, None)
 
                 unknown_matrix = normalized_embedding_matrix((row["embedding"] for row in batch), np)
-                scores = unknown_matrix @ centroid_matrix.T
+                scores = unknown_matrix @ known_matrix.T
                 best_indexes = scores.argmax(axis=1)
                 best_scores = scores[np.arange(scores.shape[0]), best_indexes]
                 rows_to_insert = [
-                    (centroid_person_ids[int(best_index)], int(face["id"]), float(best_score))
+                    (known_person_ids[int(best_index)], int(face["id"]), float(best_score))
                     for face, best_index, best_score in zip(batch, best_indexes, best_scores)
                     if float(best_score) > 0.0 and float(best_score) >= threshold
                 ]
@@ -637,21 +640,17 @@ def embedding_array_from_blob(blob: bytes | memoryview, np: Any) -> Any:
     return np.frombuffer(blob, dtype=np.float32)
 
 
-def normalized_centroid_matrix(person_vectors: dict[int, list[Any]], np: Any) -> tuple[list[int], Any]:
-    person_ids: list[int] = []
-    centroids = []
-    for person_id, vectors in person_vectors.items():
-        if not vectors:
-            continue
-        centroid = np.mean(np.vstack(vectors), axis=0, dtype=np.float32)
-        norm = np.linalg.norm(centroid)
-        if norm == 0.0:
-            continue
-        person_ids.append(person_id)
-        centroids.append(centroid / norm)
-    if not centroids:
-        return [], np.empty((0, 0), dtype=np.float32)
-    return person_ids, np.vstack(centroids).astype(np.float32, copy=False)
+def normalized_vector_matrix(vectors: list[Any], np: Any) -> Any:
+    if not vectors:
+        return np.empty((0, 0), dtype=np.float32)
+    matrix = np.vstack(vectors).astype(np.float32, copy=False)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    return np.divide(
+        matrix,
+        norms,
+        out=np.zeros_like(matrix, dtype=np.float32),
+        where=norms != 0.0,
+    )
 
 
 def normalized_embedding_matrix(blobs, np: Any) -> Any:

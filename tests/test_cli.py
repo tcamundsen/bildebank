@@ -7941,6 +7941,69 @@ print(json.dumps([
             finally:
                 conn.close()
 
+    def test_face_suggest_matches_best_confirmed_face_not_person_centroid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            relative_image_path = Path("2021/08/IMG_20210801.jpg")
+            self.enable_face_recognition_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            config = load_config(self.program_root).face_recognition
+            conn = connect_face_db(target, config)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                    VALUES(1, ?, ?, 'sha', 'ok', 4)
+                    """,
+                    (relative_image_path.as_posix(), db.relative_path_key(relative_image_path)),
+                )
+                faces = (
+                    (1, [1.0, 0.0, 0.0]),
+                    (2, [0.0, 1.0, 0.0]),
+                    (3, [1.0, 0.0, 0.0]),
+                    (4, [0.0, 0.0, 1.0]),
+                )
+                for face_id, embedding in faces:
+                    conn.execute(
+                        """
+                        INSERT INTO faces(
+                            id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                            detection_score, embedding_model, embedding
+                        ) VALUES(?, 1, ?, 1, 2, 30, 40, 0.9, 'buffalo_l', ?)
+                        """,
+                        (face_id, db.relative_path_key(relative_image_path), embedding_blob(embedding)),
+                    )
+                conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                conn.execute("INSERT INTO persons(id, name) VALUES(2, 'Ola')")
+                conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 2)")
+                conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(2, 4)")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "face-suggest", "--threshold", "0.9"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("personer=2", stdout)
+            self.assertIn("ukjente_ansikter=1", stdout)
+            self.assertIn("forslag=1", stdout)
+            conn = connect_face_db(target, config)
+            try:
+                suggestion = conn.execute(
+                    """
+                    SELECT persons.name, face_suggestions.face_id, face_suggestions.similarity
+                    FROM face_suggestions
+                    JOIN persons ON persons.id = face_suggestions.person_id
+                    """
+                ).fetchone()
+                self.assertIsNotNone(suggestion)
+                self.assertEqual((suggestion[0], suggestion[1]), ("Kari", 3))
+                self.assertAlmostEqual(suggestion[2], 1.0)
+            finally:
+                conn.close()
+
     def test_make_face_browser_uses_relative_face_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

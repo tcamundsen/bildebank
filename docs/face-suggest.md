@@ -17,7 +17,9 @@ options:
 `face-suggest` foreslår personer for ukjente ansikter.
 
 Forslagene bygger på ansikter du allerede har bekreftet med
-`face-person-add-face`.
+`face-person-add-face`. Hvert ukjent ansikt sammenlignes med hvert bekreftet
+ansikt. Hvis beste treff er likt nok, foreslås personen som det bekreftede
+ansiktet hører til.
 
 Se også [`Strategier for face-suggest`](face-suggest-strategier.md) for råd om
 hvordan du bør velge ansikter som skal bekreftes.
