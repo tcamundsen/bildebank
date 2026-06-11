@@ -106,6 +106,7 @@ from .server_assets import SERVER_CSS, SERVER_JS
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
+BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS = 1.0
 
 
 def clear_browser_navigation_cache(server: Any) -> None:
@@ -120,6 +121,9 @@ class BildebankServer(ThreadingHTTPServer):
         self.target = target
         self.config = config
         self.search_cache = OpenClipSearchCache(config)
+        self._browser_navigation_cache_version = 0
+        self._browser_navigation_db_mtime_ns: int | None = None
+        self._browser_navigation_checked_at = 0.0
         self._browser_item_ids: dict[bool, tuple[int, list[int], dict[int, int]]] = {}
         self._browser_month_keys: dict[bool, tuple[int, list[str]]] = {}
 
@@ -136,11 +140,11 @@ class BildebankServer(ThreadingHTTPServer):
         return self.config.browser.hide_out_of_focus
 
     def browser_month_keys(self, *, hide_out_of_focus: bool = False) -> list[str]:
-        mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
+        version = self.browser_navigation_cache_version()
         cached = self._browser_month_keys.get(hide_out_of_focus)
-        if cached is None or cached[0] != mtime_ns:
+        if cached is None or cached[0] != version:
             cached = (
-                mtime_ns,
+                version,
                 browser_month_keys(
                     self.target,
                     hide_out_of_focus=hide_out_of_focus,
@@ -156,24 +160,50 @@ class BildebankServer(ThreadingHTTPServer):
         return self.browser_item_order(hide_out_of_focus=hide_out_of_focus)[1]
 
     def browser_item_order(self, *, hide_out_of_focus: bool = False) -> tuple[list[int], dict[int, int]]:
-        mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
+        version = self.browser_navigation_cache_version()
         cached = self._browser_item_ids.get(hide_out_of_focus)
-        if cached is None or cached[0] != mtime_ns:
+        if cached is None or cached[0] != version:
             item_ids = browser_item_ids(
                 self.target,
                 hide_out_of_focus=hide_out_of_focus,
             )
             cached = (
-                mtime_ns,
+                version,
                 item_ids,
                 {file_id: index for index, file_id in enumerate(item_ids)},
             )
             self._browser_item_ids[hide_out_of_focus] = cached
         return cached[1], cached[2]
 
+    def browser_navigation_cache_version(self) -> int:
+        version = getattr(self, "_browser_navigation_cache_version", 0)
+        now = time.monotonic()
+        checked_at = getattr(self, "_browser_navigation_checked_at", 0.0)
+        if now - checked_at < BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS:
+            return version
+        self._browser_navigation_checked_at = now
+        try:
+            mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
+        except OSError:
+            mtime_ns = None
+        previous_mtime_ns = getattr(self, "_browser_navigation_db_mtime_ns", None)
+        self._browser_navigation_db_mtime_ns = mtime_ns
+        if previous_mtime_ns is not None and mtime_ns != previous_mtime_ns:
+            self._browser_item_ids.clear()
+            self._browser_month_keys.clear()
+            version += 1
+            self._browser_navigation_cache_version = version
+        return version
+
     def clear_browser_navigation_cache(self) -> None:
         self._browser_item_ids.clear()
         self._browser_month_keys.clear()
+        self._browser_navigation_cache_version = getattr(self, "_browser_navigation_cache_version", 0) + 1
+        try:
+            self._browser_navigation_db_mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
+        except OSError:
+            self._browser_navigation_db_mtime_ns = None
+        self._browser_navigation_checked_at = time.monotonic()
 
 
 class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):

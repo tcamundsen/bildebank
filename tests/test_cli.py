@@ -1350,6 +1350,26 @@ pretrained = "laion2b_s34b_b79k"
             self.assertEqual(server.browser_month_keys(), [])
             self.assertEqual(server.browser_item_ids(), [])
 
+    def test_run_server_navigation_cache_version_throttles_database_stat(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            init_database(target)
+            server = object.__new__(BildebankServer)
+            server.target = target
+            server._browser_item_ids = {}
+            server._browser_month_keys = {}
+            server._browser_navigation_cache_version = 0
+            server._browser_navigation_db_mtime_ns = None
+            server._browser_navigation_checked_at = 0.0
+
+            with patch("bildebank.server.time.monotonic", side_effect=[10.0, 10.5]):
+                with patch("bildebank.server.db.db_path_for_target", wraps=db.db_path_for_target) as db_path_for_target:
+                    self.assertEqual(server.browser_navigation_cache_version(), 0)
+                    self.assertEqual(server.browser_navigation_cache_version(), 0)
+
+            self.assertEqual(db_path_for_target.call_count, 1)
+
     def test_run_server_face_config_post_updates_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
