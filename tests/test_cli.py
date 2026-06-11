@@ -3562,6 +3562,47 @@ model_name = "buffalo_l"
         self.assertIn('href="/">Synlige bilder</a>', tag_item_body)
         self.assertNotIn('href="/item/1">Synlige bilder</a>', tag_item_body)
 
+    def test_source_item_page_uses_existing_connection_for_all_items_link(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-a")
+            (source / "IMG_20240103.jpg").write_bytes(b"image-b")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                imported = db.find_source_by_name(conn, "source")
+                self.assertIsNotNone(imported)
+                imported_source = imported_source_browser_source(imported)
+                item = source_item_by_id(target, imported_source, 1, conn=conn)
+                self.assertIsNotNone(item)
+                previous_item, next_item = adjacent_source_items(target, imported_source, item, conn=conn)
+                month_nav = source_month_navigation(target, imported_source, item)
+
+                with patch(
+                    "bildebank.server_browser.db.connect",
+                    side_effect=AssertionError("opened nested connection"),
+                ):
+                    body = source_item_page_html(
+                        target,
+                        imported_source,
+                        item,
+                        previous_item,
+                        next_item,
+                        month_nav,
+                        face_enabled=False,
+                        openclip_enabled=False,
+                        hide_out_of_focus=True,
+                        conn=conn,
+                    )
+            finally:
+                conn.close()
+
+        self.assertIn("Synlige bilder", body)
+
     def test_run_server_out_of_focus_button_redirects_to_adjacent_visible_item(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

@@ -144,9 +144,9 @@ def first_sql_filtered_source_item(
 
 
 def first_unfiltered_source_item(target: Path, *, hide_out_of_focus: bool = False) -> Any | None:
-    where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
     conn = db.connect(target)
     try:
+        where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
         return conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
@@ -170,16 +170,17 @@ def sql_filtered_source_item_by_id(
     conn: sqlite3.Connection | None = None,
 ) -> Any | None:
     where_sql, params = source_sql_filter(source)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     where_sql, params = with_motion_video_filter(
         target,
         where_sql,
         params,
         include_motion=source_shows_motion_videos(source),
+        conn=conn,
     )
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
-    owned_conn = conn is None
-    conn = conn or db.connect(target)
     try:
         attach_source_sql_filter_databases(conn, target, source)
         return conn.execute(
@@ -204,10 +205,10 @@ def unfiltered_source_item_by_id(
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> Any | None:
-    where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
+        where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
         return conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
@@ -316,8 +317,13 @@ def should_filter_out_of_focus(source: BrowserSource, hide_out_of_focus: bool) -
     return db.tag_name_key(source.tag_name) != db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS)
 
 
-def all_source_where(target: Path, *, hide_out_of_focus: bool = False) -> tuple[str, tuple[object, ...]]:
-    base_sql, params = motion_video_id_filter_sql(target, "deleted_at IS NULL", ())
+def all_source_where(
+    target: Path,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> tuple[str, tuple[object, ...]]:
+    base_sql, params = motion_video_id_filter_sql(target, "deleted_at IS NULL", (), conn=conn)
     if not hide_out_of_focus:
         return base_sql, params
     return f"{base_sql} AND {OUT_OF_FOCUS_FILTER_SQL}", (*params, *OUT_OF_FOCUS_FILTER_PARAMS)
@@ -340,18 +346,21 @@ def with_motion_video_filter(
     params: tuple[object, ...],
     *,
     include_motion: bool = False,
+    conn: sqlite3.Connection | None = None,
 ) -> tuple[str, tuple[object, ...]]:
     if include_motion:
         return where_sql, params
-    return motion_video_id_filter_sql(target, f"({where_sql})", params)
+    return motion_video_id_filter_sql(target, f"({where_sql})", params, conn=conn)
 
 
 def motion_video_id_filter_sql(
     target: Path,
     where_sql: str,
     params: tuple[object, ...],
+    *,
+    conn: sqlite3.Connection | None = None,
 ) -> tuple[str, tuple[object, ...]]:
-    hidden_ids = sorted(motion_video_file_ids(target))
+    hidden_ids = sorted(motion_video_file_ids(target, conn=conn))
     if not hidden_ids:
         return where_sql, params
     placeholders = ",".join("?" for _ in hidden_ids)
@@ -380,7 +389,9 @@ def filter_motion_video_items(target: Path, items: list[Any], *, include_motion:
     return [item for item in items if int(item["id"]) not in hidden_ids]
 
 
-def motion_video_file_ids(target: Path) -> set[int]:
+def motion_video_file_ids(target: Path, *, conn: sqlite3.Connection | None = None) -> set[int]:
+    if conn is not None:
+        return set(query_motion_video_file_ids(conn))
     db_path = db.db_path_for_target(target)
     try:
         mtime_ns = db_path.stat().st_mtime_ns
@@ -394,33 +405,37 @@ def cached_motion_video_file_ids(target_path: str, db_mtime_ns: int) -> tuple[in
     target = Path(target_path)
     conn = db.connect(target)
     try:
-        image_originals = {
-            str(row["original_filename"]).casefold()
-            for row in conn.execute(
-                """
-                SELECT original_filename
-                FROM files
-                WHERE deleted_at IS NULL
-                  AND lower(original_filename) LIKE '%.mp.jpg'
-                """
-            )
-        }
-        rows = conn.execute(
-            """
-            SELECT id, original_filename
-            FROM files
-            WHERE deleted_at IS NULL
-              AND lower(original_filename) LIKE '%.mp'
-              AND lower(stored_filename) LIKE '%.mp4'
-            """
-        )
-        return tuple(
-            int(row["id"])
-            for row in rows
-            if f"{str(row['original_filename'])}.jpg".casefold() in image_originals
-        )
+        return query_motion_video_file_ids(conn)
     finally:
         conn.close()
+
+
+def query_motion_video_file_ids(conn: sqlite3.Connection) -> tuple[int, ...]:
+    image_originals = {
+        str(row["original_filename"]).casefold()
+        for row in conn.execute(
+            """
+            SELECT original_filename
+            FROM files
+            WHERE deleted_at IS NULL
+              AND lower(original_filename) LIKE '%.mp.jpg'
+            """
+        )
+    }
+    rows = conn.execute(
+        """
+        SELECT id, original_filename
+        FROM files
+        WHERE deleted_at IS NULL
+          AND lower(original_filename) LIKE '%.mp'
+          AND lower(stored_filename) LIKE '%.mp4'
+        """
+    )
+    return tuple(
+        int(row["id"])
+        for row in rows
+        if f"{str(row['original_filename'])}.jpg".casefold() in image_originals
+    )
 
 
 def out_of_focus_file_ids(target: Path) -> set[int]:
@@ -477,10 +492,10 @@ def adjacent_unfiltered_source_items(
     conn: sqlite3.Connection | None = None,
 ) -> tuple[Any | None, Any | None]:
     order_key = item_order_key(item)
-    where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
+        where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
         previous_item = conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
@@ -518,17 +533,18 @@ def adjacent_sql_filtered_source_items(
     conn: sqlite3.Connection | None = None,
 ) -> tuple[Any | None, Any | None]:
     where_sql, params = source_sql_filter(source)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     where_sql, params = with_motion_video_filter(
         target,
         where_sql,
         params,
         include_motion=source_shows_motion_videos(source),
+        conn=conn,
     )
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     order_key = item_order_key(item)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
-    owned_conn = conn is None
-    conn = conn or db.connect(target)
     try:
         attach_source_sql_filter_databases(conn, target, source)
         previous_item = conn.execute(
@@ -576,10 +592,10 @@ def browser_item_ids(
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> list[int]:
-    where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
+        where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
         return [
             int(row["id"])
             for row in conn.execute(
@@ -663,16 +679,17 @@ def sql_filtered_source_month_keys(
     conn: sqlite3.Connection | None = None,
 ) -> list[str]:
     where_sql, params = source_sql_filter(source)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     where_sql, params = with_motion_video_filter(
         target,
         where_sql,
         params,
         include_motion=source_shows_motion_videos(source),
+        conn=conn,
     )
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
-    owned_conn = conn is None
-    conn = conn or db.connect(target)
     try:
         attach_source_sql_filter_databases(conn, target, source)
         rows = conn.execute(
