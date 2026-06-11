@@ -12,6 +12,10 @@ av bildene med å kjøre [`make-thumbnails`](../make-thumbnails.md).
 For at geo-lokalisering skal fungere må [`geo-scan'](../geo-scan.md)
 være kjørt.
 
+Det har kommet en boks med label "Person i bildet", med dropdown meny
+og knappene **Legg til** og **Slett**. Denne brukes til å markere at
+en person er i bildet manuelt, noe som er nyttig hvis ansiktet til personen
+ikke gjenkjennes av insightface.
 
 ## Hurtigtaster
 
