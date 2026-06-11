@@ -240,13 +240,14 @@ def face_tables_exist(conn: sqlite3.Connection) -> bool:
         SELECT name
         FROM sqlite_master
         WHERE type = 'table'
-          AND name IN ('faces', 'persons', 'person_faces', 'face_suggestions')
+          AND name IN ('faces', 'persons', 'person_faces', 'person_files', 'face_suggestions')
         """
     )
     return {str(row["name"]) for row in rows} == {
         "faces",
         "persons",
         "person_faces",
+        "person_files",
         "face_suggestions",
     }
 

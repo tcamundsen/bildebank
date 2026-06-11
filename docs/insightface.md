@@ -167,6 +167,10 @@ Rapporten viser blant annet:
 De vanligste vedlikeholdsoppgavene er:
 
 - liste personer: `bildebank face-person-list` eller klikk **Personer** i nettleseren.
+- markere at en person er i et bilde uten å bekrefte et ansikt: åpne bildet i
+  `run-server`, velg en eksisterende person i **Person i bildet**, og trykk
+  **Legg til**. Dette brukes når ansiktet ikke kan scannes godt nok. Personen
+  må finnes fra før i ansiktsdatabasen.
 - fjerne et feil ansikt fra en person: `bildebank face-person-remove-face` eller klikk
   **Personer**, deretter **Bekreftede bilder** på raden for personen, bla til bildet
   og klikk **Avkreft face-id nnnn**
@@ -176,6 +180,11 @@ De vanligste vedlikeholdsoppgavene er:
 - nullstille ansiktskoblinger: se [`face-reset`](face-reset.md)
 
 Se kommandosidene for detaljer og eksempler.
+
+Manuell **Person i bildet** påvirker ikke `face-suggest`, fordi det ikke
+bekrefter et bestemt ansikt. Slike bilder vises derfor heller ikke under
+**Bekreftede bilder**, men de vises i personbrowseren sammen med bekreftede
+bilder og forslag.
 
 ## Statiske HTML-filer
 

@@ -22,8 +22,8 @@ bildebank face-person-delete "Kari"
 ```
 
 Kommandoen krever bekreftelse. Den sletter personen, bekreftede
-ansiktskoblinger og forslag for personen. Den sletter ingen bilder og ingen
-scannede ansikter.
+ansiktskoblinger, manuelle person-i-bilde-koblinger og forslag for personen.
+Den sletter ingen bilder og ingen scannede ansikter.
 
 Det samme kan gjøres i nettleseren når `bildebank run-server` kjører: åpne
 siden **Personer**, og trykk `slett person` bak navnet.

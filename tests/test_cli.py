@@ -27,6 +27,7 @@ from bildebank import db
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
 from bildebank.face import (
+    add_person_to_file,
     apply_face_schema,
     connect_face_db,
     face_box_percent,
@@ -34,6 +35,7 @@ from bildebank.face import (
     insightface_import_error_message,
     normalize_insightface_model_layout,
     read_image,
+    remove_person_from_file,
     remove_insightface_model_zip,
 )
 from bildebank.geo import h3_cells_for_manual_cell, h3_cells_for_point
@@ -4067,6 +4069,123 @@ model_name = "buffalo_l"
             finally:
                 face_conn.close()
 
+    def test_run_server_api_adds_and_removes_manual_person_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            data = json.dumps({"file_id": 1, "person_name": "Kari"}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
+                body: dict[str, object] | None = None
+                status = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_add_person_to_file(handler)  # type: ignore[arg-type]
+
+            self.assertIsNone(handler.status)
+            self.assertEqual(
+                {
+                    "ok": True,
+                    "person_name": "Kari",
+                    "person_url": "/person/Kari/no-faces/item/1",
+                    "confirmed": True,
+                    "file_id": 1,
+                    "added": True,
+                },
+                handler.body,
+            )
+            face_conn = connect_face_db(target)
+            try:
+                self.assertEqual(face_conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 1)
+            finally:
+                face_conn.close()
+
+            handler = FakeHandler()
+            handler.rfile = BytesIO(data)
+            BildebankRequestHandler.respond_remove_person_from_file(handler)  # type: ignore[arg-type]
+
+            self.assertIsNone(handler.status)
+            self.assertEqual(
+                {
+                    "ok": True,
+                    "person_name": "Kari",
+                    "person_url": "/person/Kari",
+                    "file_id": 1,
+                    "removed": True,
+                },
+                handler.body,
+            )
+            face_conn = connect_face_db(target)
+            try:
+                self.assertEqual(face_conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 0)
+            finally:
+                face_conn.close()
+
+    def test_manual_person_file_requires_existing_person_and_active_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            with self.assertRaisesRegex(ValueError, "Fant ikke person: Ola"):
+                add_person_to_file(target, "Ola", 1)
+            with self.assertRaisesRegex(ValueError, "Fant ikke aktiv fil-id 999"):
+                add_person_to_file(target, "Kari", 999)
+
+            result = add_person_to_file(target, "Kari", 1)
+            self.assertTrue(result.added)
+            removed = remove_person_from_file(target, "Kari", 1)
+            self.assertTrue(removed.removed)
+
+    def test_run_server_api_manual_person_file_is_disabled_when_faces_are_disabled(self) -> None:
+        class FakeHandler:
+            path = "/api/face-person-add-file"
+            server = SimpleNamespace(face_enabled=False)
+            body: dict[str, object] | None = None
+            status = None
+
+            def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                self.body = content
+                self.status = status
+
+        handler = FakeHandler()
+        BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(HTTPStatus.FORBIDDEN, handler.status)
+        self.assertEqual({"ok": False, "error": "Ansiktsgjenkjenning er av."}, handler.body)
+
     def test_run_server_api_renames_person(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -4236,6 +4355,7 @@ model_name = "buffalo_l"
                     (b"embedding-2",),
                 )
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(1, 1)")
                 face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)")
                 face_conn.commit()
             finally:
@@ -4264,6 +4384,7 @@ model_name = "buffalo_l"
             try:
                 person_count = face_conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0]
                 link_count = face_conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0]
+                manual_link_count = face_conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0]
                 suggestion_count = face_conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0]
                 face_count = face_conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0]
             finally:
@@ -4271,11 +4392,12 @@ model_name = "buffalo_l"
 
         self.assertIsNone(handler.status)
         self.assertEqual(
-            {"ok": True, "person_name": "Kari", "removed_faces": 1, "removed_suggestions": 1},
+            {"ok": True, "person_name": "Kari", "removed_faces": 1, "removed_files": 1, "removed_suggestions": 1},
             handler.body,
         )
         self.assertEqual(0, person_count)
         self.assertEqual(0, link_count)
+        self.assertEqual(0, manual_link_count)
         self.assertEqual(0, suggestion_count)
         self.assertEqual(2, face_count)
 
@@ -8455,10 +8577,12 @@ print(json.dumps([
             self.assertIn("Face-scan-resultater er beholdt", stdout)
             conn = sqlite3.connect(face_db_path(target, config))
             try:
-                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "3")
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "4")
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 0)
                 legacy_tables = {
                     row[0]
@@ -8478,6 +8602,7 @@ print(json.dumps([
             try:
                 conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
                 conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(1, 1)")
                 conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 1, 0.95)")
                 conn.commit()
             finally:
@@ -8493,6 +8618,7 @@ print(json.dumps([
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 0)
             finally:
                 conn.close()
 
@@ -8528,8 +8654,9 @@ print(json.dumps([
 
             conn = connect_face_db(target)
             try:
-                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "3")
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "4")
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 0)
                 legacy_tables = {
                     row[0]
                     for row in conn.execute(
@@ -8541,6 +8668,83 @@ print(json.dumps([
                     )
                 }
                 self.assertEqual(legacy_tables, set())
+            finally:
+                conn.close()
+
+    def test_face_schema_v3_migration_adds_person_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            conn = sqlite3.connect(face_db_path(target))
+            try:
+                conn.executescript(
+                    """
+                    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                    CREATE TABLE scanned_files (
+                        file_id INTEGER PRIMARY KEY,
+                        target_path TEXT NOT NULL,
+                        target_path_key TEXT NOT NULL,
+                        sha256 TEXT NOT NULL,
+                        scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        status TEXT NOT NULL,
+                        error_message TEXT,
+                        face_count INTEGER NOT NULL DEFAULT 0
+                    );
+                    CREATE TABLE faces (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        file_id INTEGER NOT NULL,
+                        target_path_key TEXT NOT NULL,
+                        bbox_x REAL NOT NULL,
+                        bbox_y REAL NOT NULL,
+                        bbox_width REAL NOT NULL,
+                        bbox_height REAL NOT NULL,
+                        detection_score REAL NOT NULL,
+                        embedding_model TEXT NOT NULL,
+                        embedding BLOB NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE TABLE persons (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE TABLE person_faces (
+                        person_id INTEGER NOT NULL,
+                        face_id INTEGER NOT NULL,
+                        confirmed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY(person_id, face_id)
+                    );
+                    CREATE TABLE face_suggestions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        person_id INTEGER NOT NULL,
+                        face_id INTEGER NOT NULL,
+                        similarity REAL NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(person_id, face_id)
+                    );
+                    INSERT INTO meta(key, value) VALUES('schema_version', '3');
+                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
+                    VALUES(1, 'image.jpg', 'image.jpg', 'hash', 'ok', 1);
+                    INSERT INTO persons(id, name) VALUES(1, 'Kari');
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    ) VALUES(1, 1, 'image.jpg', 1, 2, 10, 20, 0.9, 'test', x'00000000');
+                    INSERT INTO person_faces(person_id, face_id) VALUES(1, 1);
+                    INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 1, 0.95);
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            conn = connect_face_db(target)
+            try:
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "4")
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 0)
             finally:
                 conn.close()
 
@@ -8557,7 +8761,7 @@ print(json.dumps([
                 with self.assertRaisesRegex(ValueError, "legacy-gruppetabeller"):
                     apply_face_schema(conn)
 
-                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "3")
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "4")
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_runs").fetchone()[0], 1)
             finally:
                 conn.close()

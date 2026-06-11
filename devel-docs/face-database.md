@@ -14,7 +14,7 @@ tidkrevende å bygge på nytt:
 
 ## Dagens versjon
 
-Dagens face-schema er `FACE_SCHEMA_VERSION = 3` i `bildebank/face.py`.
+Dagens face-schema er `FACE_SCHEMA_VERSION = 4` i `bildebank/face.py`.
 
 Face-schema-versjonen lagres i:
 
@@ -22,24 +22,42 @@ Face-schema-versjonen lagres i:
 meta.schema_version
 ```
 
-Nye face-databaser opprettes direkte som v3.
+Nye face-databaser opprettes direkte som v4.
 
-## Tabeller i v3
+## Tabeller i v4
 
-V3 inneholder disse hovedtabellene:
+V4 inneholder disse hovedtabellene:
 
 - `meta`
 - `scanned_files`
 - `faces`
 - `persons`
 - `person_faces`
+- `person_files`
 - `face_suggestions`
 
 `scanned_files` lagrer én rad per scannet bildefil.
 `faces` lagrer ansiktsbokser og embeddings.
 `persons` lagrer personnavn.
 `person_faces` lagrer bekreftede koblinger mellom person og face-id.
+`person_files` lagrer manuelle bekreftelser på at en person er i en fil,
+uten å bekrefte et bestemt face-id.
 `face_suggestions` lagrer beregnede forslag.
+
+`person_files` har disse kolonnene:
+
+```sql
+person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE
+file_id INTEGER NOT NULL
+confirmed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+PRIMARY KEY(person_id, file_id)
+```
+
+Tabellen har indeks på `file_id`.
+
+Manuelle person-fil-koblinger er visningsdata. De skal ikke brukes som
+treningsgrunnlag for `face-suggest`, og de skal ikke vises i “Bekreftede
+bilder”, fordi den visningen brukes som grunnlag for forslag.
 
 ## Stier
 
@@ -76,7 +94,7 @@ skal ikke forsøke å reparere gamle absolutte `target_path`-verdier ved åpning
 databasen. Slike databaser må migreres eller regenereres før de brukes med
 gjeldende kode.
 
-## Migrering v2 til v3
+## Migrering v2 til v3 og v3 til v4
 
 V2 hadde tabeller for gruppeflyten:
 
@@ -92,9 +110,10 @@ V3 fjerner gruppetabellene.
 Migreringen skjer i `apply_face_schema()`:
 
 - les `meta.schema_version`
-- hvis versjonen er 0, opprett v3 direkte
+- hvis versjonen er 0, opprett v4 direkte
 - hvis versjonen er 2, kjør `migrate_face_schema_v2_to_v3()`
-- sett `meta.schema_version = 3`
+- hvis versjonen er 3, kjør `migrate_face_schema_v3_to_v4()`
+- sett `meta.schema_version = 4`
 - valider gjeldende face-schema
 
 `migrate_face_schema_v2_to_v3()` gjør bare dette:
@@ -108,12 +127,16 @@ DROP TABLE IF EXISTS face_group_runs;
 Dette sletter ikke bilder, scannede ansikter, personer, bekreftelser eller
 forslag.
 
+`migrate_face_schema_v3_to_v4()` oppretter bare `person_files` og indeksen på
+`file_id`. Den endrer ikke eksisterende personer, ansiktskoblinger eller
+forslag.
+
 ## Validering
 
 Etter schema-oppretting eller migrering kjører `validate_current_face_schema()`.
 
-For v3 skal legacy-gruppetabellene ikke finnes. Hvis en database sier
-`schema_version=3`, men fortsatt inneholder gruppetabeller, skal programmet
+For v4 skal legacy-gruppetabellene ikke finnes. Hvis en database sier
+`schema_version=4`, men fortsatt inneholder gruppetabeller, skal programmet
 feile tydelig i stedet for å slette tabellene lydløst.
 
 Dette følger samme prinsipp som hoveddatabasen:

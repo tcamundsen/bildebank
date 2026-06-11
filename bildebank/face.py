@@ -24,7 +24,7 @@ from .thumbnails import existing_thumbnail_url
 LEGACY_FACE_DB_FILENAME = ".bilder-faces.sqlite3"
 LEGACY_FACE_DB_MODEL_NAME = "buffalo_l"
 FACE_DB_DIRNAME = ".bildebank-faces"
-FACE_SCHEMA_VERSION = 3
+FACE_SCHEMA_VERSION = 4
 FACE_MODEL_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 FACE_SUGGEST_BATCH_SIZE = 5000
 
@@ -78,9 +78,24 @@ class RemoveFaceFromPersonResult:
 
 
 @dataclass(frozen=True)
+class AddPersonToFileResult:
+    person_name: str
+    file_id: int
+    added: bool
+
+
+@dataclass(frozen=True)
+class RemovePersonFromFileResult:
+    person_name: str
+    file_id: int
+    removed: bool
+
+
+@dataclass(frozen=True)
 class DeletePersonResult:
     person_name: str
     removed_faces: int
+    removed_files: int
     removed_suggestions: int
 
 
@@ -95,6 +110,7 @@ class FaceResetResult:
     mode: str
     removed_persons: int
     removed_person_faces: int
+    removed_person_files: int
     removed_suggestions: int
 
 
@@ -219,6 +235,9 @@ def migrate_face_schema(conn: sqlite3.Connection, version: int) -> None:
     if version == 2:
         migrate_face_schema_v2_to_v3(conn)
         version = 3
+    if version == 3:
+        migrate_face_schema_v3_to_v4(conn)
+        version = 4
     if version != FACE_SCHEMA_VERSION:
         raise ValueError(f"Kan ikke migrere face-database med schema_version={version}.")
 
@@ -227,6 +246,21 @@ def migrate_face_schema_v2_to_v3(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE IF EXISTS face_group_members")
     conn.execute("DROP TABLE IF EXISTS face_groups")
     conn.execute("DROP TABLE IF EXISTS face_group_runs")
+
+
+def migrate_face_schema_v3_to_v4(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS person_files (
+            person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+            file_id INTEGER NOT NULL,
+            confirmed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(person_id, file_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_person_files_file_id ON person_files(file_id);
+        """
+    )
 
 
 def validate_current_face_schema(conn: sqlite3.Connection) -> None:
@@ -238,7 +272,7 @@ def validate_current_face_schema(conn: sqlite3.Connection) -> None:
     existing_legacy_tables = sorted(table for table in legacy_tables if db.table_exists(conn, table))
     if existing_legacy_tables:
         raise ValueError(
-            "Face-databasen har schema_version=3, men inneholder legacy-gruppetabeller "
+            f"Face-databasen har schema_version={FACE_SCHEMA_VERSION}, men inneholder legacy-gruppetabeller "
             f"({', '.join(existing_legacy_tables)})."
         )
     validate_relative_face_paths(conn)
@@ -316,6 +350,15 @@ def create_current_face_schema(conn: sqlite3.Connection) -> None:
         );
 
         CREATE INDEX IF NOT EXISTS idx_person_faces_face_id ON person_faces(face_id);
+
+        CREATE TABLE IF NOT EXISTS person_files (
+            person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+            file_id INTEGER NOT NULL,
+            confirmed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(person_id, file_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_person_files_file_id ON person_files(file_id);
 
         CREATE TABLE IF NOT EXISTS face_suggestions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -430,6 +473,50 @@ def remove_face_from_person(
         conn.close()
 
 
+def add_person_to_file(
+    target: Path,
+    person_name: str,
+    file_id: int,
+    config: FaceRecognitionConfig | None = None,
+) -> AddPersonToFileResult:
+    clean_name = normalize_person_name(person_name)
+    require_active_file(target, file_id)
+    conn = connect_face_db(target, config)
+    try:
+        person_id = require_person(conn, clean_name)
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO person_files(person_id, file_id) VALUES(?, ?)",
+            (person_id, file_id),
+        )
+        conn.execute("UPDATE persons SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (person_id,))
+        conn.commit()
+        return AddPersonToFileResult(clean_name, file_id, bool(cur.rowcount))
+    finally:
+        conn.close()
+
+
+def remove_person_from_file(
+    target: Path,
+    person_name: str,
+    file_id: int,
+    config: FaceRecognitionConfig | None = None,
+) -> RemovePersonFromFileResult:
+    clean_name = normalize_person_name(person_name)
+    require_active_file(target, file_id)
+    conn = connect_face_db(target, config)
+    try:
+        person_id = require_person(conn, clean_name)
+        cur = conn.execute(
+            "DELETE FROM person_files WHERE person_id = ? AND file_id = ?",
+            (person_id, file_id),
+        )
+        conn.execute("UPDATE persons SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (person_id,))
+        conn.commit()
+        return RemovePersonFromFileResult(clean_name, file_id, bool(cur.rowcount))
+    finally:
+        conn.close()
+
+
 def delete_person(target: Path, person_name: str, config: FaceRecognitionConfig | None = None) -> DeletePersonResult:
     clean_name = normalize_person_name(person_name)
     conn = connect_face_db(target, config)
@@ -447,11 +534,18 @@ def delete_person(target: Path, person_name: str, config: FaceRecognitionConfig 
                 (person_id,),
             ).fetchone()[0]
         )
+        removed_files = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM person_files WHERE person_id = ?",
+                (person_id,),
+            ).fetchone()[0]
+        )
         conn.execute("DELETE FROM person_faces WHERE person_id = ?", (person_id,))
+        conn.execute("DELETE FROM person_files WHERE person_id = ?", (person_id,))
         conn.execute("DELETE FROM face_suggestions WHERE person_id = ?", (person_id,))
         conn.execute("DELETE FROM persons WHERE id = ?", (person_id,))
         conn.commit()
-        return DeletePersonResult(clean_name, removed_faces, removed_suggestions)
+        return DeletePersonResult(clean_name, removed_faces, removed_files, removed_suggestions)
     finally:
         conn.close()
 
@@ -492,17 +586,20 @@ def reset_face_database(
     try:
         removed_persons = count_rows_if_table_exists(conn, "persons")
         removed_person_faces = count_rows_if_table_exists(conn, "person_faces")
+        removed_person_files = count_rows_if_table_exists(conn, "person_files")
         removed_suggestions = count_rows_if_table_exists(conn, "face_suggestions")
         if mode not in {"all", "keep-scan"}:
             raise ValueError(f"Ukjent face-reset-nivå: {mode}")
         conn.execute("DELETE FROM face_suggestions")
         conn.execute("DELETE FROM person_faces")
+        conn.execute("DELETE FROM person_files")
         conn.execute("DELETE FROM persons")
         conn.commit()
         return FaceResetResult(
             mode=mode,
             removed_persons=removed_persons,
             removed_person_faces=removed_person_faces,
+            removed_person_files=removed_person_files,
             removed_suggestions=removed_suggestions,
         )
     finally:
@@ -686,10 +783,17 @@ def list_persons(target: Path, config: FaceRecognitionConfig | None = None) -> l
                         WHERE person_faces.person_id = persons.id
                     ) AS face_count,
                     (
-                        SELECT COUNT(DISTINCT faces.file_id)
-                        FROM person_faces
-                        JOIN faces ON faces.id = person_faces.face_id
-                        WHERE person_faces.person_id = persons.id
+                        SELECT COUNT(DISTINCT file_id)
+                        FROM (
+                            SELECT faces.file_id AS file_id
+                            FROM person_faces
+                            JOIN faces ON faces.id = person_faces.face_id
+                            WHERE person_faces.person_id = persons.id
+                            UNION
+                            SELECT person_files.file_id AS file_id
+                            FROM person_files
+                            WHERE person_files.person_id = persons.id
+                        )
                     ) AS confirmed_file_count,
                     (
                         SELECT COUNT(*)
@@ -725,6 +829,19 @@ def require_face(conn: sqlite3.Connection, face_id: int) -> None:
     row = conn.execute("SELECT id FROM faces WHERE id = ?", (face_id,)).fetchone()
     if row is None:
         raise ValueError(f"Fant ikke ansikt-id {face_id}. Kjør make-face-browser for å se id-er.")
+
+
+def require_active_file(target: Path, file_id: int) -> None:
+    conn = db.connect(target)
+    try:
+        row = conn.execute(
+            "SELECT id FROM files WHERE id = ? AND deleted_at IS NULL",
+            (file_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise ValueError(f"Fant ikke aktiv fil-id {file_id}.")
 
 
 def face_report(
@@ -956,6 +1073,52 @@ def person_browser_items(
                 face["boxWidth"] = width
                 face["boxHeight"] = height
             item["faces"].append(face)
+        manual_file_ids = [
+            int(row["file_id"])
+            for row in conn.execute(
+                """
+                SELECT file_id
+                FROM person_files
+                WHERE person_id = ?
+                ORDER BY file_id
+                """,
+                (person_id,),
+            )
+        ]
+        if manual_file_ids:
+            placeholders = ",".join("?" for _ in manual_file_ids)
+            main_conn = db.connect(target)
+            try:
+                manual_rows = main_conn.execute(
+                    f"""
+                    SELECT target_path
+                    FROM files
+                    WHERE deleted_at IS NULL
+                      AND id IN ({placeholders})
+                    ORDER BY target_path_key
+                    """,
+                    tuple(manual_file_ids),
+                )
+                for manual_row in manual_rows:
+                    relative_path = relative_to_target(target, Path(str(manual_row["target_path"])))
+                    key = relative_path.as_posix()
+                    if key in grouped:
+                        continue
+                    target_path = db.absolute_target_path(target, relative_path)
+                    grouped[key] = {
+                        "path": relative_path.as_posix(),
+                        "url": path_to_url(relative_path),
+                        "thumbnailSrc": existing_thumbnail_url(target, relative_path),
+                        "name": relative_path.name,
+                        "monthKey": person_month_key(target, relative_path),
+                        "sizeText": format_person_file_size(target_path),
+                        "faceCount": 0,
+                        "dimensions": media_cache.image_dimensions(target_path),
+                        "orientation": media_cache.image_orientation(target_path),
+                        "faces": [],
+                    }
+            finally:
+                main_conn.close()
     finally:
         if own_cache:
             media_cache.close()

@@ -73,6 +73,11 @@ navnet til personen på øverste linje av skjermen.
 - **Bare bekreftede** viser bare bilder du har bekreftet. Dette bør ideelt
   sett bare være 1-5 gode bilder av personen.
 
+I vanlig bildevisning kan feltet **Person i bildet** brukes når personen er i
+bildet, men ansiktet ikke kan scannes eller bekreftes godt nok. Feltet bruker
+bare personer som allerede finnes i ansiktsdatabasen. Dette påvirker ikke
+`face-suggest`, og bildet vises ikke under **Bare bekreftede**.
+
 ## Personer
 
 På siden **Personer** kan du trykke `endre navn` bak et personnavn for å åpne
@@ -80,5 +85,6 @@ et lite vindu der navnet kan endres. Bekreftede ansiktskoblinger og forslag
 beholdes.
 
 Du kan også trykke `slett person` bak et personnavn. Dette sletter personen,
-bekreftede ansiktskoblinger og forslag for personen fra ansiktsdatabasen. Det
-sletter ingen bilder og ingen scannede ansikter.
+bekreftede ansiktskoblinger, manuelle person-i-bilde-koblinger og forslag for
+personen fra ansiktsdatabasen. Det sletter ingen bilder og ingen scannede
+ansikter.

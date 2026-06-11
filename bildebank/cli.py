@@ -2323,6 +2323,7 @@ def run_face_person_delete(target: Path, name: str) -> int:
 def print_delete_person_result(result: DeletePersonResult) -> None:
     print(f"Slettet person: {result.person_name}")
     print(f"Fjernet bekreftede ansiktskoblinger: {result.removed_faces}")
+    print(f"Fjernet manuelle person-i-bilde-koblinger: {result.removed_files}")
     print(f"Fjernet ansiktsforslag: {result.removed_suggestions}")
     print("Ingen bilder eller scannede ansikter er slettet.")
 
@@ -2530,6 +2531,7 @@ def print_face_reset_result(result: FaceResetResult) -> None:
         print("Face-reset gjennomført.")
     print(f"Slettet personer: {result.removed_persons}")
     print(f"Slettet bekreftede ansiktskoblinger: {result.removed_person_faces}")
+    print(f"Slettet manuelle person-i-bilde-koblinger: {result.removed_person_files}")
     print(f"Slettet ansiktsforslag: {result.removed_suggestions}")
 
 

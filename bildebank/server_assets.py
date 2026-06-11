@@ -181,6 +181,33 @@ SERVER_CSS = r"""    :root {
     .status { color: var(--muted); font-size: 13px; line-height: 1.2; }
     .warning { color: #ffd166; font-size: 13px; line-height: 1.2; font-weight: 700; }
     .people { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .manual-person-form {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      max-width: calc(100% - 16px);
+      padding: 6px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: rgb(26 26 26 / 92%);
+      font-size: 13px;
+    }
+    .manual-person-form label { color: var(--muted); }
+    .manual-person-form select {
+      min-width: 150px;
+      max-width: 220px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 6px;
+      background: #202020;
+      color: var(--text);
+    }
+    .manual-person-form .assign-status { color: var(--muted); }
     .top-actions {
       margin-left: auto;
       display: flex;
@@ -351,6 +378,7 @@ SERVER_CSS = r"""    :root {
       text-align: center;
     }
     .stage {
+      position: relative;
       min-height: 0;
       display: grid;
       place-items: center;
@@ -1169,6 +1197,74 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
         window.location.reload();
       } catch (error) {
         alert(error.message || "Kunne ikke avbekrefte.");
+        button.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll("[data-manual-person-form]").forEach(form => {
+    const select = form.querySelector('select[name="person_name"]');
+    const status = form.querySelector("[data-manual-person-status]");
+    const fileId = Number(form.dataset.fileId);
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const personName = select?.value || "";
+      if (!fileId || !personName) return;
+      if (status) status.textContent = "Lagrer...";
+      form.querySelectorAll("button, select").forEach(item => item.disabled = true);
+      try {
+        const response = await fetch("/api/face-person-add-file", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({file_id: fileId, person_name: personName}),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke lagre person.");
+        ensureTopPersonLink(payload.person_name, payload.person_url, true);
+        if (status) status.textContent = "Lagret.";
+        form.querySelectorAll("button, select").forEach(item => item.disabled = false);
+      } catch (error) {
+        if (status) status.textContent = error.message || "Kunne ikke lagre person.";
+        form.querySelectorAll("button, select").forEach(item => item.disabled = false);
+      }
+    });
+    form.querySelector("[data-manual-person-remove]")?.addEventListener("click", async () => {
+      const personName = select?.value || "";
+      if (!fileId || !personName) return;
+      if (status) status.textContent = "Fjerner...";
+      form.querySelectorAll("button, select").forEach(item => item.disabled = true);
+      try {
+        const response = await fetch("/api/face-person-remove-file", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({file_id: fileId, person_name: personName}),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke fjerne person.");
+        window.location.reload();
+      } catch (error) {
+        if (status) status.textContent = error.message || "Kunne ikke fjerne person.";
+        form.querySelectorAll("button, select").forEach(item => item.disabled = false);
+      }
+    });
+  });
+  document.querySelectorAll("[data-remove-person-file]").forEach(button => {
+    button.addEventListener("click", async () => {
+      const fileId = Number(button.dataset.removePersonFile);
+      const personName = button.dataset.removePersonFilePerson || "";
+      if (!fileId || !personName) return;
+      if (!confirm(`Fjerne manuell person-i-bilde for ${personName}?`)) return;
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/face-person-remove-file", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({file_id: fileId, person_name: personName}),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke fjerne person.");
+        window.location.href = payload.person_url || `/person/${encodeURIComponent(personName)}`;
+      } catch (error) {
+        alert(error.message || "Kunne ikke fjerne person.");
         button.disabled = false;
       }
     });

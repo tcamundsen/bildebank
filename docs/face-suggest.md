@@ -21,6 +21,10 @@ Forslagene bygger på ansikter du allerede har bekreftet med
 ansikt. Hvis beste treff er likt nok, foreslås personen som det bekreftede
 ansiktet hører til.
 
+Manuell **Person i bildet** fra `run-server` brukes bare til å vise at en
+eksisterende person er i bildet. Den bekrefter ikke et bestemt ansikt og brukes
+ikke av `face-suggest`.
+
 Se også [`Strategier for face-suggest`](face-suggest-strategier.md) for råd om
 hvordan du bør velge ansikter som skal bekreftes.
 

@@ -9,7 +9,7 @@ from typing import Any, Callable
 
 from . import db
 from .config import FaceRecognitionConfig
-from .face import active_image_files, face_db_path, normalize_person_name
+from .face import FACE_SCHEMA_VERSION, active_image_files, apply_face_schema, face_db_path, face_schema_version, normalize_person_name
 from .html_export import browser_face_items_from_metadata, face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
 from .server_browser import items_by_file_ids, rotation_style_attr
@@ -31,7 +31,16 @@ class PeopleFaceSummary:
 def current_face_db_path(target: Path, face_config: FaceRecognitionConfig | None = None) -> Path:
     if face_config is None:
         face_config = FaceRecognitionConfig()
-    return face_db_path(target, face_config)
+    path = face_db_path(target, face_config)
+    if path.exists():
+        conn = sqlite3.connect(path)
+        try:
+            if face_schema_version(conn) != FACE_SCHEMA_VERSION:
+                apply_face_schema(conn)
+                conn.commit()
+        finally:
+            conn.close()
+    return path
 
 
 def clear_face_caches() -> None:
@@ -51,7 +60,7 @@ def confirmed_people_for_file(
     except OSError:
         return []
     return [
-        {"name": name, "url": person_item_url(name, file_id, show_faces=False), "confirmed": priority == 0}
+        {"name": name, "url": person_item_url(name, file_id, show_faces=False), "confirmed": priority <= 1}
         for name, priority in cached_confirmed_people_for_file(str(db_path), mtime_ns, file_id)
     ]
 
@@ -99,13 +108,18 @@ def cached_confirmed_people_for_file(face_db_path: str, face_db_mtime_ns: int, f
             WHERE faces.file_id = ?
             UNION ALL
             SELECT persons.name, 1 AS priority
+            FROM person_files
+            JOIN persons ON persons.id = person_files.person_id
+            WHERE person_files.file_id = ?
+            UNION ALL
+            SELECT persons.name, 2 AS priority
             FROM face_suggestions
             JOIN persons ON persons.id = face_suggestions.person_id
             JOIN faces ON faces.id = face_suggestions.face_id
             WHERE faces.file_id = ?
             ORDER BY name, priority
             """,
-            (file_id, file_id),
+            (file_id, file_id, file_id),
         )
         people: dict[str, int] = {}
         for row in rows:
@@ -330,13 +344,17 @@ def cached_person_file_ids(
                 JOIN faces ON faces.id = person_faces.face_id
                 WHERE person_faces.person_id = ?
                 UNION
+                SELECT DISTINCT person_files.file_id
+                FROM person_files
+                WHERE person_files.person_id = ?
+                UNION
                 SELECT DISTINCT faces.file_id
                 FROM face_suggestions
                 JOIN faces ON faces.id = face_suggestions.face_id
                 WHERE face_suggestions.person_id = ?
                 ORDER BY file_id
                 """,
-                (int(person["id"]), int(person["id"])),
+                (int(person["id"]), int(person["id"]), int(person["id"])),
             )
         else:
             rows = conn.execute(
@@ -406,20 +424,35 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
                     (person_id,),
                 )
             ]
-            active_file_ids = active_file_id_set(target, [*confirmed_file_ids, *suggested_file_ids])
+            manual_file_ids = [
+                int(row["file_id"])
+                for row in face_conn.execute(
+                    """
+                    SELECT person_files.file_id
+                    FROM person_files
+                    WHERE person_files.person_id = ?
+                    """,
+                    (person_id,),
+                )
+            ]
+            active_file_ids = active_file_id_set(target, [*confirmed_file_ids, *suggested_file_ids, *manual_file_ids])
             active_confirmed_file_ids = [file_id for file_id in confirmed_file_ids if file_id in active_file_ids]
             active_suggested_file_ids = [file_id for file_id in suggested_file_ids if file_id in active_file_ids]
+            active_manual_file_ids = [file_id for file_id in manual_file_ids if file_id in active_file_ids]
             confirmed_counts_by_file: dict[int, int] = {}
             for file_id in active_confirmed_file_ids:
                 confirmed_counts_by_file[file_id] = confirmed_counts_by_file.get(file_id, 0) + 1
             duplicate_counts = [count for count in confirmed_counts_by_file.values() if count > 1]
             active_confirmed_file_id_set = set(active_confirmed_file_ids)
             active_suggested_file_id_set = set(active_suggested_file_ids)
+            active_manual_file_id_set = set(active_manual_file_ids)
             rows.append(
                 {
                     "name": str(person["name"]),
                     "confirmed_file_count": len(confirmed_counts_by_file),
-                    "all_file_count": len(active_confirmed_file_id_set | active_suggested_file_id_set),
+                    "all_file_count": len(
+                        active_confirmed_file_id_set | active_suggested_file_id_set | active_manual_file_id_set
+                    ),
                     "duplicate_confirmed_file_count": len(duplicate_counts),
                     "max_confirmed_faces_per_file": max(duplicate_counts, default=0),
                 }
@@ -660,8 +693,10 @@ def unconfirm_face_buttons_html(
     item: Any,
     face_config: FaceRecognitionConfig | None = None,
 ) -> str:
-    if source.person_name is None or source.include_suggestions:
+    if source.person_name is None:
         return ""
+    if source.include_suggestions:
+        return remove_manual_person_file_button_html(target, source.person_name, int(item["id"]), face_config)
     faces = person_faces_for_item(
         target,
         source.person_name,
@@ -681,6 +716,40 @@ def unconfirm_face_buttons_html(
             "</button>"
         )
     return "\n".join(buttons)
+
+
+def remove_manual_person_file_button_html(
+    target: Path,
+    person_name: str,
+    file_id: int,
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
+    person = person_by_name(target, person_name, face_config)
+    if person is None:
+        return ""
+    conn = sqlite3.connect(current_face_db_path(target, face_config))
+    try:
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM person_files
+            WHERE person_id = ? AND file_id = ?
+            """,
+            (int(person["id"]), file_id),
+        ).fetchone()
+    except sqlite3.Error:
+        return ""
+    finally:
+        conn.close()
+    if row is None:
+        return ""
+    return (
+        '<button class="nav-button danger-button" type="button" '
+        f'data-remove-person-file="{file_id}" '
+        f'data-remove-person-file-person="{html.escape(person_name)}">'
+        "Fjern manuell person-i-bilde"
+        "</button>"
+    )
 
 
 def people_links_html(people: list[dict[str, object]]) -> str:
@@ -827,6 +896,36 @@ def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
       <a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>
       {boxes}
     </div>
+    """
+
+
+def manual_person_file_controls_html(
+    target: Path,
+    item: Any,
+    people: list[dict[str, object]],
+    face_config: FaceRecognitionConfig | None = None,
+) -> str:
+    registered = registered_people(target, face_config)
+    if not registered:
+        return ""
+    file_id = int(item["id"])
+    present = {str(person["name"]) for person in people if person.get("confirmed")}
+    options = []
+    for person in registered:
+        name = str(person["name"])
+        selected = " selected" if name in present else ""
+        options.append(f'<option value="{html.escape(name)}"{selected}>{html.escape(name)}</option>')
+    return f"""
+    <form class="manual-person-form" data-manual-person-form data-file-id="{file_id}">
+      <label for="manualPersonSelect">Person i bildet</label>
+      <select id="manualPersonSelect" name="person_name">
+        <option value="">Velg person</option>
+        {"".join(options)}
+      </select>
+      <button class="nav-button" type="submit">Legg til</button>
+      <button class="nav-button danger-button" type="button" data-manual-person-remove>Fjern</button>
+      <span class="assign-status" data-manual-person-status></span>
+    </form>
     """
 
 

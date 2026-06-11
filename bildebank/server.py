@@ -11,9 +11,11 @@ from . import db
 from .config import AppConfig, FaceRecognitionConfig
 from .face import (
     add_face_to_person,
+    add_person_to_file,
     create_person,
     delete_person,
     remove_face_from_person,
+    remove_person_from_file,
     rename_person,
 )
 from .geo import (
@@ -77,6 +79,7 @@ from .server_browser_sources import (
     parse_person_path,
     parse_source_path,
     person_browser_source,
+    person_item_url,
     person_url,
     source_item_url,
     tag_browser_source,
@@ -416,6 +419,18 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
                     return
                 self.respond_remove_face_from_person()
+                return
+            if parsed.path == "/api/face-person-add-file":
+                if not self.server.face_enabled:
+                    self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
+                    return
+                self.respond_add_person_to_file()
+                return
+            if parsed.path == "/api/face-person-remove-file":
+                if not self.server.face_enabled:
+                    self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
+                    return
+                self.respond_remove_person_from_file()
                 return
             if parsed.path == "/api/face-person-create-and-add-face":
                 if not self.server.face_enabled:
@@ -1174,6 +1189,63 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             }
         )
 
+    def respond_add_person_to_file(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        person_name = str(payload.get("person_name") or "").strip()
+        if not person_name:
+            self.respond_json({"ok": False, "error": "Personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            file_id = int(payload.get("file_id"))
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            config = self.server.config.face_recognition
+            result = add_person_to_file(self.server.target, person_name, file_id, config)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        clear_face_caches()
+        self.respond_json(
+            {
+                "ok": True,
+                "person_name": result.person_name,
+                "person_url": person_item_url(result.person_name, result.file_id, show_faces=False),
+                "confirmed": True,
+                "file_id": result.file_id,
+                "added": result.added,
+            }
+        )
+
+    def respond_remove_person_from_file(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        person_name = str(payload.get("person_name") or "").strip()
+        if not person_name:
+            self.respond_json({"ok": False, "error": "Personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            file_id = int(payload.get("file_id"))
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            config = self.server.config.face_recognition
+            result = remove_person_from_file(self.server.target, person_name, file_id, config)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        clear_face_caches()
+        self.respond_json(
+            {
+                "ok": True,
+                "person_name": result.person_name,
+                "person_url": person_url(result.person_name),
+                "file_id": result.file_id,
+                "removed": result.removed,
+            }
+        )
+
     def respond_create_person_and_add_face(self) -> None:
         payload = BildebankRequestHandler.read_face_person_payload(self)
         if isinstance(payload[0], dict):
@@ -1244,6 +1316,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 "ok": True,
                 "person_name": result.person_name,
                 "removed_faces": result.removed_faces,
+                "removed_files": result.removed_files,
                 "removed_suggestions": result.removed_suggestions,
             }
         )

@@ -1082,6 +1082,7 @@ def source_item_page_html(
         confirmed_people_for_file,
         faces_button_html,
         faces_overlay_html,
+        manual_person_file_controls_html,
         people_links_html,
         source_duplicate_confirmed_faces_warning_html,
         unconfirm_face_buttons_html,
@@ -1106,7 +1107,11 @@ def source_item_page_html(
         unconfirm_buttons=unconfirm_face_buttons_html(target, source, item, face_config) if face_enabled else "",
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
-    people = people_links_html(confirmed_people_for_file(target, int(item["id"]), face_config)) if face_enabled else ""
+    people_data = confirmed_people_for_file(target, int(item["id"]), face_config) if face_enabled else []
+    people = people_links_html(people_data) if face_enabled else ""
+    manual_person_controls = (
+        manual_person_file_controls_html(target, item, people_data, face_config) if face_enabled and source.person_name is None else ""
+    )
     show_unconfirmed_faces = face_enabled and source.person_name is None
     unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
     faces_button = faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
@@ -1149,7 +1154,10 @@ def source_item_page_html(
           )}
           <div class="stage-shell">
             {tag_controls}
-            <section class="stage">{media}</section>
+            <section class="stage">
+              {manual_person_controls}
+              {media}
+            </section>
           </div>
           <footer class="browser-footer">
             <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
