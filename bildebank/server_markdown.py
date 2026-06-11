@@ -110,6 +110,13 @@ def markdown_to_html(markdown: str) -> str:
             flush_list()
             line_index += 1
             continue
+        alert = markdown_alert_html(lines, line_index)
+        if alert is not None:
+            alert_html, line_index = alert
+            flush_paragraph()
+            flush_list()
+            html_lines.append(alert_html)
+            continue
         table = markdown_table_html(lines, line_index)
         if table is not None:
             table_html, line_index = table
@@ -155,6 +162,32 @@ def markdown_to_html(markdown: str) -> str:
     if in_code:
         flush_code()
     return "\n".join(html_lines)
+
+
+def markdown_alert_html(lines: list[str], start_index: int) -> tuple[str, int] | None:
+    marker = re.fullmatch(r">\s*\[!WARNING\]\s*", lines[start_index].strip())
+    if marker is None:
+        return None
+
+    content_lines: list[str] = []
+    index = start_index + 1
+    while index < len(lines):
+        stripped = lines[index].strip()
+        if not stripped:
+            break
+        if not stripped.startswith(">"):
+            break
+        content_lines.append(stripped[1:].strip())
+        index += 1
+
+    body = "<br>".join(markdown_inline_html(line) for line in content_lines if line)
+    return (
+        '<div class="markdown-alert markdown-alert-warning">'
+        '<div class="markdown-alert-title"><span aria-hidden="true">&#9888;</span> Warning</div>'
+        f"<p>{body}</p>"
+        "</div>",
+        index,
+    )
 
 
 def markdown_table_html(lines: list[str], start_index: int) -> tuple[str, int] | None:

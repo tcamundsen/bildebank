@@ -137,6 +137,22 @@ SERVER_CSS = r"""    :root {
     .doc-content table { border-collapse: collapse; width: 100%; }
     .doc-content th, .doc-content td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
     .doc-content th { background: var(--panel); }
+    .markdown-alert {
+      margin: 0 0 1em;
+      padding: 8px 12px;
+      border-left: 4px solid var(--border);
+      color: var(--text);
+    }
+    .markdown-alert p { margin: 0; }
+    .markdown-alert-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+    .markdown-alert-warning { border-left-color: #ffd166; }
+    .markdown-alert-warning .markdown-alert-title { color: #ffd166; }
     .geo-stats, .people-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 18px 0; }
     .geo-stats div, .people-summary div { display: grid; gap: 3px; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
     .geo-stats span, .people-summary span { color: var(--muted); }

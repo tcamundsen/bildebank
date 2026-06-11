@@ -95,6 +95,28 @@ Vanlig dokumentasjon.
         self.assertIn("<tr><td>Pil venstre</td><td>Forrige bilde eller video</td></tr>", html)
         self.assertIn("<tr><td>Page Down</td><td>Neste år</td></tr>", html)
 
+    def test_markdown_help_renderer_supports_warning_alerts(self) -> None:
+        html = markdown_to_html(
+            """> [!WARNING]
+> `backup` lager en speiling av bildesamlingen.
+> Når backup oppdateres, kan filer også slettes fra backupen.
+> Ha derfor flere backup-disker som oppdateres på ulike tidspunkt.
+
+Neste avsnitt.
+"""
+        )
+
+        self.assertIn('<div class="markdown-alert markdown-alert-warning">', html)
+        self.assertIn('class="markdown-alert-title"', html)
+        self.assertIn("Warning", html)
+        self.assertIn(
+            "<p><code>backup</code> lager en speiling av bildesamlingen.<br>"
+            "Når backup oppdateres, kan filer også slettes fra backupen.<br>"
+            "Ha derfor flere backup-disker som oppdateres på ulike tidspunkt.</p>",
+            html,
+        )
+        self.assertIn("<p>Neste avsnitt.</p>", html)
+
 
 if __name__ == "__main__":
     unittest.main()
