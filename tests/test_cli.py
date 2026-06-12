@@ -2208,7 +2208,7 @@ model_name = "buffalo_l"
         self.assertIn(".thumb-link {", SERVER_CSS)
         self.assertIn("aspect-ratio: 4 / 3;", SERVER_CSS)
         self.assertIn("overflow: hidden;", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "4")
+        self.assertEqual(SERVER_ASSET_VERSION, "8")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -2892,14 +2892,21 @@ model_name = "buffalo_l"
         self.assertIn("transform: rotate(90deg)", body)
         self.assertIn("--quarter-turn-width:", body)
         self.assertIn("transform: rotate(90deg)", month_body)
+        self.assertIn(".server-browser { height: 100vh; overflow: hidden;", SERVER_CSS)
+        self.assertIn(".stage img, .stage video", SERVER_CSS)
+        self.assertIn("width: auto;", SERVER_CSS)
+        self.assertIn("height: auto;", SERVER_CSS)
+        self.assertIn("object-fit: contain;", SERVER_CSS)
+        self.assertIn("max-height: 100%;", SERVER_CSS)
         self.assertIn(".stage .media-link.quarter-turn", SERVER_CSS)
         self.assertIn("overflow: visible;", SERVER_CSS)
         self.assertIn('.stage img[data-view-rotation="90"]', SERVER_CSS)
         self.assertIn('.stage img[data-view-rotation="270"]', SERVER_CSS)
         self.assertIn("max-width: min(calc(100vh - 10rem), var(--quarter-turn-width, 100%));", SERVER_CSS)
         self.assertIn("max-height: none;", SERVER_CSS)
+        self.assertNotIn("padding: 14px;", SERVER_CSS)
         self.assertIn("function fitQuarterTurnMedia()", SERVER_JS)
-        self.assertIn("const availableHeight = Math.max(stageRect.height - 28, 1);", SERVER_JS)
+        self.assertIn("const availableHeight = Math.max(stageRect.height, 1);", SERVER_JS)
         self.assertIn("const maxOriginalWidth = Math.max(Math.min(availableHeight, availableWidth * ratio), 1);", SERVER_JS)
 
     def test_run_server_rotate_image_view_wraps_left(self) -> None:

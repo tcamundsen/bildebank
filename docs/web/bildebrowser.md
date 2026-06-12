@@ -17,6 +17,9 @@ og knappene **Legg til** og **Slett**. Denne brukes til å markere at
 en person er i bildet manuelt, noe som er nyttig hvis ansiktet til personen
 ikke gjenkjennes av insightface.
 
+Og info om bildet som vises får du ved å klikke på filnavnet til bildet,
+som vises øverst på skjermen.
+
 ## Hurtigtaster
 
 Når HTML-filen er åpen i nettleseren, kan du bla med tastaturet:

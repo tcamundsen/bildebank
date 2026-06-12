@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "4"
+SERVER_ASSET_VERSION = "8"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -164,7 +164,7 @@ SERVER_CSS = r"""    :root {
     .geo-hex { fill: #2f6f73; stroke: #8fd8dd; stroke-width: 2; }
     .geo-hex-link:hover .geo-hex { fill: #3f858a; }
     .geo-hex-count { fill: var(--text); font-size: 13px; font-weight: 700; pointer-events: none; }
-    .server-browser { min-height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+    .server-browser { height: 100vh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
     .browser-header {
       background: var(--panel);
       border-bottom: 1px solid var(--border);
@@ -380,19 +380,21 @@ SERVER_CSS = r"""    :root {
     .stage {
       position: relative;
       min-height: 0;
+      height: 100%;
       display: grid;
       place-items: center;
       background: var(--stage);
       overflow: hidden;
-      padding: 14px;
     }
     .stage .media-link {
       display: grid;
       place-items: center;
       min-width: 0;
       min-height: 0;
-      max-width: min(100%, 92vw);
-      max-height: calc(100vh - 10rem);
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
     }
     .stage .media-link.quarter-turn {
       position: relative;
@@ -408,8 +410,12 @@ SERVER_CSS = r"""    :root {
       max-height: none;
     }
     .stage img, .stage video {
-      max-width: min(100%, 92vw);
-      max-height: calc(100vh - 10rem);
+      min-width: 0;
+      min-height: 0;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
       object-fit: contain;
       display: block;
       transform-origin: center center;
@@ -870,8 +876,8 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     const stage = img.closest(".stage");
     if (!link || !stage || !img.naturalWidth || !img.naturalHeight) return;
     const stageRect = stage.getBoundingClientRect();
-    const availableWidth = Math.max(stageRect.width - 28, 1);
-    const availableHeight = Math.max(stageRect.height - 28, 1);
+    const availableWidth = Math.max(stageRect.width, 1);
+    const availableHeight = Math.max(stageRect.height, 1);
     const scale = Math.max(Math.min(availableWidth / img.naturalHeight, availableHeight / img.naturalWidth), 0.01);
     const originalWidth = img.naturalWidth * scale;
     const originalHeight = img.naturalHeight * scale;
@@ -889,8 +895,8 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       if (!(img instanceof HTMLImageElement)) return;
       if (!img.naturalWidth || !img.naturalHeight) return;
       const stageRect = stage.getBoundingClientRect();
-      const availableWidth = Math.max(stageRect.width - 28, 1);
-      const availableHeight = Math.max(stageRect.height - 28, 1);
+      const availableWidth = Math.max(stageRect.width, 1);
+      const availableHeight = Math.max(stageRect.height, 1);
       const ratio = img.naturalWidth / img.naturalHeight;
       const maxOriginalWidth = Math.max(Math.min(availableHeight, availableWidth * ratio), 1);
       item.style.maxWidth = `${maxOriginalWidth}px`;
