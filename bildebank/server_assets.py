@@ -386,12 +386,51 @@ SERVER_CSS = r"""    :root {
       overflow: hidden;
       padding: 14px;
     }
+    .stage .media-link {
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      min-height: 0;
+      max-width: min(100%, 92vw);
+      max-height: calc(100vh - 10rem);
+    }
+    .stage .media-link.quarter-turn {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+    .stage .media-link.quarter-turn > img {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      max-width: none;
+      max-height: none;
+    }
     .stage img, .stage video {
       max-width: min(100%, 92vw);
       max-height: calc(100vh - 10rem);
       object-fit: contain;
       display: block;
       transform-origin: center center;
+    }
+    .stage img[data-view-rotation="90"],
+    .stage img[data-view-rotation="270"] {
+      max-width: min(calc(100vh - 10rem), var(--quarter-turn-width, 100%));
+      max-height: none;
+    }
+    .person-media[data-view-rotation="90"],
+    .person-media[data-view-rotation="270"],
+    .lightbox-media[data-view-rotation="90"],
+    .lightbox-media[data-view-rotation="270"] {
+      max-width: min(calc(100vh - 10rem), var(--quarter-turn-width, 100%));
+      max-height: none;
+    }
+    .person-media[data-view-rotation="90"] img,
+    .person-media[data-view-rotation="270"] img,
+    .lightbox-media[data-view-rotation="90"] img,
+    .lightbox-media[data-view-rotation="270"] img {
+      max-height: none;
     }
     .person-media {
       position: relative;
@@ -826,6 +865,46 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     if (!infoOverlay) return;
     infoOverlay.hidden = true;
   }
+  function fitQuarterTurnMediaLink(img) {
+    const link = img.closest(".media-link.quarter-turn");
+    const stage = img.closest(".stage");
+    if (!link || !stage || !img.naturalWidth || !img.naturalHeight) return;
+    const stageRect = stage.getBoundingClientRect();
+    const availableWidth = Math.max(stageRect.width - 28, 1);
+    const availableHeight = Math.max(stageRect.height - 28, 1);
+    const scale = Math.max(Math.min(availableWidth / img.naturalHeight, availableHeight / img.naturalWidth), 0.01);
+    const originalWidth = img.naturalWidth * scale;
+    const originalHeight = img.naturalHeight * scale;
+    const rotation = img.dataset.viewRotation || "90";
+    link.style.width = `${originalHeight}px`;
+    link.style.height = `${originalWidth}px`;
+    img.style.width = `${originalWidth}px`;
+    img.style.height = `${originalHeight}px`;
+    img.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
+  }
+  function fitQuarterTurnLegacyMedia(item) {
+      const stage = item.closest(".stage");
+      if (!stage) return;
+      const img = item instanceof HTMLImageElement ? item : item.querySelector("img");
+      if (!(img instanceof HTMLImageElement)) return;
+      if (!img.naturalWidth || !img.naturalHeight) return;
+      const stageRect = stage.getBoundingClientRect();
+      const availableWidth = Math.max(stageRect.width - 28, 1);
+      const availableHeight = Math.max(stageRect.height - 28, 1);
+      const ratio = img.naturalWidth / img.naturalHeight;
+      const maxOriginalWidth = Math.max(Math.min(availableHeight, availableWidth * ratio), 1);
+      item.style.maxWidth = `${maxOriginalWidth}px`;
+      item.style.maxHeight = "none";
+  }
+  function fitQuarterTurnMedia() {
+    document.querySelectorAll('.stage .media-link.quarter-turn > img[data-view-rotation="90"], .stage .media-link.quarter-turn > img[data-view-rotation="270"]').forEach(img => {
+      if (img instanceof HTMLImageElement) fitQuarterTurnMediaLink(img);
+    });
+    document.querySelectorAll('.stage .person-media[data-view-rotation="90"], .stage .person-media[data-view-rotation="270"]').forEach(fitQuarterTurnLegacyMedia);
+  }
+  function scheduleQuarterTurnFit() {
+    requestAnimationFrame(fitQuarterTurnMedia);
+  }
   function manualDateInput(name) {
     return manualDateForm?.querySelector(`[name="${name}"]`);
   }
@@ -915,6 +994,13 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     }
     people.append(link);
   }
+  document.querySelectorAll('.stage img[data-view-rotation="90"], .stage img[data-view-rotation="270"], .stage .person-media[data-view-rotation="90"] img, .stage .person-media[data-view-rotation="270"] img').forEach(img => {
+    if (img instanceof HTMLImageElement && !img.complete) {
+      img.addEventListener("load", scheduleQuarterTurnFit, {once: true});
+    }
+  });
+  window.addEventListener("resize", scheduleQuarterTurnFit);
+  scheduleQuarterTurnFit();
   openFacesButton?.addEventListener("click", openFacesOverlay);
   closeFacesButton?.addEventListener("click", closeFacesOverlay);
   openInfoButtons.forEach(button => {

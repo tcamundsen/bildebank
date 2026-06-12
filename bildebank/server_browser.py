@@ -81,11 +81,39 @@ def item_view_rotation(item: Any) -> int:
         return 0
 
 
-def rotation_style_attr(item: Any) -> str:
+def rotation_style_attr(item: Any, target: Path | None = None) -> str:
     rotation = item_view_rotation(item)
     if rotation == 0:
         return ""
-    return f' style="transform: rotate({rotation}deg);" data-view-rotation="{rotation}"'
+    style = f"transform: rotate({rotation}deg);"
+    if rotation in {90, 270}:
+        ratio = item_media_width_height_ratio(item, target)
+        if ratio is not None:
+            style += f" --quarter-turn-width: {ratio * 100:.6f}%;"
+    return f' style="{style}" data-view-rotation="{rotation}"'
+
+
+def item_media_width_height_ratio(item: Any, target: Path | None = None) -> float | None:
+    try:
+        width = int(item["media_width"])
+        height = int(item["media_height"])
+    except (KeyError, IndexError, TypeError, ValueError):
+        width = 0
+        height = 0
+    if (width <= 0 or height <= 0) and target is not None:
+        dimensions = cached_image_dimensions(target, db.absolute_target_path(target, Path(str(item["target_path"]))))
+        if dimensions is not None:
+            width = dimensions.width
+            height = dimensions.height
+    if width <= 0 or height <= 0:
+        return None
+    return width / height
+
+
+def media_link_class_attr(item: Any) -> str:
+    rotation = item_view_rotation(item)
+    css_class = "media-link quarter-turn" if rotation in {90, 270} else "media-link"
+    return f' class="{css_class}"'
 
 
 def first_browser_item(target: Path, *, hide_out_of_focus: bool = False) -> Any | None:
@@ -1367,7 +1395,7 @@ def source_item_media_html(
 ) -> str:
     if source.person_name is not None:
         if not source.show_faces:
-            return item_media_html(item)
+            return item_media_html(target, item)
         from .server_faces import person_faces_for_item, person_item_media_html
 
         faces = person_faces_for_item(
@@ -1378,10 +1406,10 @@ def source_item_media_html(
             face_config=face_config,
         )
         return person_item_media_html(item, faces)
-    return item_media_html(item)
+    return item_media_html(target, item)
 
 
-def item_media_html(item: Any) -> str:
+def item_media_html(target: Path, item: Any) -> str:
     file_id = int(item["id"])
     target_path = Path(str(item["target_path"]))
     url = f"/file/{file_id}"
@@ -1391,7 +1419,7 @@ def item_media_html(item: Any) -> str:
         return f'<video src="{url}" controls></video>'
     if kind != "image":
         return f'<a class="file-card" href="{url}" target="_blank">Fil<br>{name}</a>'
-    return f'<a href="{url}" target="_blank"><img src="{url}" alt="{name}"{rotation_style_attr(item)}></a>'
+    return f'<a href="{url}" target="_blank"{media_link_class_attr(item)}><img src="{url}" alt="{name}"{rotation_style_attr(item, target)}></a>'
 
 
 def person_item_page_html(
