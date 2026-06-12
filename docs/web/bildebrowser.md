@@ -15,7 +15,8 @@ være kjørt.
 Det har kommet en boks med label "Person i bildet", med dropdown meny
 og knappene **Legg til** og **Slett**. Denne brukes til å markere at
 en person er i bildet manuelt, noe som er nyttig hvis ansiktet til personen
-ikke gjenkjennes av insightface.
+ikke gjenkjennes av insightface. Visningen av denne kan slås av og på i
+[innstillinger](/settings).
 
 Og info om bildet som vises får du ved å klikke på filnavnet til bildet,
 som vises øverst på skjermen.
