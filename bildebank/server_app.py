@@ -210,7 +210,7 @@ def app_status_manual_person_controls_row_html(enabled: bool) -> str:
     status = "På" if enabled else "Av"
     return f"""
     <div class="info-row">
-      <dt>Manuell Person i bildet</dt>
+      <dt>GUI for manuell bekrefting av person i bildet</dt>
       <dd>
         <form action="/settings/manual-person-controls" method="post" class="app-toggle-form">
           <input type="hidden" name="enabled" value="false">
