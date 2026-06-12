@@ -396,6 +396,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/settings/hide-out-of-focus":
                 self.respond_set_hide_out_of_focus()
                 return
+            if parsed.path == "/settings/manual-person-controls":
+                self.respond_set_manual_person_controls()
+                return
             if parsed.path == "/settings/manual-h3-cell":
                 self.respond_set_manual_h3_cell()
                 return
@@ -561,6 +564,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 openclip_enabled=self.server.openclip_enabled,
                 face_config=self.server.config.face_recognition,
                 manual_h3_cell=self.server.config.browser.manual_h3_cell,
+                manual_person_controls_enabled=self.server.config.browser.manual_person_controls_enabled,
                 hide_out_of_focus=self.server.hide_out_of_focus,
                 conn=conn,
             )
@@ -886,6 +890,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         openclip_enabled=self.server.openclip_enabled,
                         face_config=self.server.config.face_recognition,
                         manual_h3_cell=self.server.config.browser.manual_h3_cell,
+                        manual_person_controls_enabled=self.server.config.browser.manual_person_controls_enabled,
                         hide_out_of_focus=hide_out_of_focus,
                         conn=conn,
                     )
@@ -1016,6 +1021,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             enabled,
         )
         clear_browser_navigation_cache(self.server)
+        self.redirect("/settings")
+
+    def respond_set_manual_person_controls(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
+        self.server.config = server_app.update_manual_person_controls_config(
+            self.server.config,
+            server_app.server_program_repo_root(),
+            enabled,
+        )
         self.redirect("/settings")
 
     def respond_set_manual_h3_cell(self) -> None:

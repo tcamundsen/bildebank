@@ -224,6 +224,7 @@ def item_page_html(
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_h3_cell: str = "",
+    manual_person_controls_enabled: bool = True,
 ) -> str:
     return server_browser.item_page_html(
         target,
@@ -236,6 +237,7 @@ def item_page_html(
         openclip_enabled=openclip_enabled,
         face_config=face_config,
         manual_h3_cell=manual_h3_cell,
+        manual_person_controls_enabled=manual_person_controls_enabled,
     )
 
 
@@ -251,6 +253,7 @@ def source_item_page_html(
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_h3_cell: str = "",
+    manual_person_controls_enabled: bool = True,
     hide_out_of_focus: bool = False,
     conn: Any | None = None,
 ) -> str:
@@ -266,6 +269,7 @@ def source_item_page_html(
         openclip_enabled=openclip_enabled,
         face_config=face_config,
         manual_h3_cell=manual_h3_cell,
+        manual_person_controls_enabled=manual_person_controls_enabled,
         hide_out_of_focus=hide_out_of_focus,
         conn=conn,
     )

@@ -33,6 +33,7 @@ class OpenClipConfig:
 class BrowserConfig:
     hide_out_of_focus: bool = False
     manual_h3_cell: str = ""
+    manual_person_controls_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,7 @@ def load_config(repo_root: Path) -> AppConfig:
         browser=BrowserConfig(
             hide_out_of_focus=bool(browser_data.get("hide_out_of_focus", False)),
             manual_h3_cell=str(browser_data.get("manual_h3_cell", "")).strip(),
+            manual_person_controls_enabled=bool(browser_data.get("manual_person_controls_enabled", True)),
         ),
     )
 
@@ -104,6 +106,26 @@ def set_browser_hide_out_of_focus(repo_root: Path, enabled: bool) -> Path:
     _section(tomllib.loads(text), "browser")
     config_path.write_text(
         _set_toml_bool(text, section="browser", key="hide_out_of_focus", value=enabled),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def set_browser_manual_person_controls_enabled(repo_root: Path, enabled: bool) -> Path:
+    config_path = repo_root / CONFIG_FILENAME
+    if not config_path.exists():
+        config_path.write_text(
+            "[browser]\n"
+            f"manual_person_controls_enabled = {_toml_bool(enabled)}\n",
+            encoding="utf-8",
+        )
+        return config_path
+
+    migrate_legacy_openclip_section(config_path)
+    text = config_path.read_text(encoding="utf-8")
+    _section(tomllib.loads(text), "browser")
+    config_path.write_text(
+        _set_toml_bool(text, section="browser", key="manual_person_controls_enabled", value=enabled),
         encoding="utf-8",
     )
     return config_path

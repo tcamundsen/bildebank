@@ -1126,7 +1126,11 @@ pretrained = "laion2b_s34b_b79k"
             config = AppConfig(
                 face_recognition=FaceRecognitionConfig(enabled=True, model_root=model_root, model_name="buffalo_l"),
                 openclip=OpenClipConfig(enabled=True, model_name="Test-Model", pretrained="test-weights", device="cpu"),
-                browser=BrowserConfig(hide_out_of_focus=True, manual_h3_cell="872830828ffffff"),
+                browser=BrowserConfig(
+                    hide_out_of_focus=True,
+                    manual_h3_cell="872830828ffffff",
+                    manual_person_controls_enabled=False,
+                ),
             )
 
             with (
@@ -1150,6 +1154,11 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('name="enabled" value="true" checked', body)
         self.assertIn("InsightFace-modell", body)
         self.assertIn('action="/settings/face-model"', body)
+        self.assertIn("Manuell Person i bildet", body)
+        self.assertIn('action="/settings/manual-person-controls"', body)
+        self.assertIn('<span class="app-toggle-status">Av</span>', body)
+        self.assertLess(body.index("InsightFace-modell"), body.index("Manuell Person i bildet"))
+        self.assertLess(body.index("Manuell Person i bildet"), body.index("InsightFace installert"))
         self.assertIn('<option value="antelopev2">antelopev2</option>', body)
         self.assertIn('<option value="buffalo_l" selected>buffalo_l</option>', body)
         self.assertIn("må installeres for å scanne ansikter i nye bilder.", body)
@@ -1418,6 +1427,32 @@ pretrained = "laion2b_s34b_b79k"
 
         self.assertTrue(config.browser.hide_out_of_focus)
         self.assertTrue(handler.server.config.browser.hide_out_of_focus)
+        self.assertEqual(handler.location, "/settings")
+
+    def test_run_server_manual_person_controls_post_updates_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = b"enabled=false"
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(
+                    config=AppConfig(browser=BrowserConfig(manual_person_controls_enabled=True))
+                )
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_manual_person_controls(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+
+        self.assertFalse(config.browser.manual_person_controls_enabled)
+        self.assertFalse(handler.server.config.browser.manual_person_controls_enabled)
         self.assertEqual(handler.location, "/settings")
 
     def test_run_server_manual_h3_cell_post_updates_config(self) -> None:
@@ -3789,6 +3824,13 @@ model_name = "buffalo_l"
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            manual_disabled_body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+                manual_person_controls_enabled=False,
+            )
             face_body = face_overlay_content_html(target, item)
             disabled_body = item_page_html(
                 target,
@@ -3811,6 +3853,12 @@ model_name = "buffalo_l"
             body,
         )
         self.assertIn("Ubekreftet ansikter i bildet (1)", body)
+        self.assertIn("Person i bildet", body)
+        self.assertIn('data-manual-person-form', body)
+        self.assertIn('data-manual-person-remove', body)
+        self.assertNotIn("Person i bildet", manual_disabled_body)
+        self.assertNotIn('data-manual-person-form', manual_disabled_body)
+        self.assertNotIn('data-manual-person-remove', manual_disabled_body)
         self.assertIn('data-faces-item="1"', body)
         self.assertIn('data-face-list', body)
         self.assertNotIn("Ny person", body)

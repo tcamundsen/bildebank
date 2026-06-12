@@ -186,6 +186,9 @@ bekrefter et bestemt ansikt. Slike bilder vises derfor heller ikke under
 **Bekreftede bilder**, men de vises i personbrowseren sammen med bekreftede
 bilder og forslag.
 
+Hvis du ikke bruker manuell **Person i bildet**, kan kontrollen slås av på
+siden **Innstillinger**. Da blir ikke kontrollen laget i bildevisningen.
+
 ## Statiske HTML-filer
 
 Du kan lage en statisk bildebrowser som viser alle bildene med en person med

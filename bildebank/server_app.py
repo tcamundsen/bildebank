@@ -14,6 +14,7 @@ from .config import (
     FaceRecognitionConfig,
     set_browser_hide_out_of_focus,
     set_browser_manual_h3_cell,
+    set_browser_manual_person_controls_enabled,
     set_face_recognition_enabled,
     set_face_recognition_model_name,
 )
@@ -46,6 +47,7 @@ def app_status_page_html(
             app_status_row_html("Bildebank-versjon", __version__),
             app_status_face_config_row_html(config.face_recognition.enabled, insightface_installed=insightface_installed),
             app_status_face_model_row_html(config.face_recognition),
+            app_status_manual_person_controls_row_html(config.browser.manual_person_controls_enabled),
             app_status_row_html("InsightFace installert", yes_no(insightface_installed)),
             app_status_row_html("OpenCLIP tilgjengelig", yes_no(module_available_func("open_clip"))),
             app_status_row_html("OpenCLIP aktivert", yes_no(config.openclip.enabled)),
@@ -119,6 +121,14 @@ def update_hide_out_of_focus_config(config: AppConfig, repo_root: Path, enabled:
     )
 
 
+def update_manual_person_controls_config(config: AppConfig, repo_root: Path, enabled: bool) -> AppConfig:
+    set_browser_manual_person_controls_enabled(repo_root, enabled)
+    return replace(
+        config,
+        browser=replace(config.browser, manual_person_controls_enabled=enabled),
+    )
+
+
 def update_manual_h3_cell_config(config: AppConfig, repo_root: Path, h3_cell: str) -> AppConfig:
     clean_h3_cell = h3_cell.strip()
     set_browser_manual_h3_cell(repo_root, clean_h3_cell)
@@ -189,6 +199,26 @@ def app_status_face_config_row_html(enabled: bool, *, insightface_installed: boo
             <span class="app-toggle-status">{status}</span>
           </label>
           {install_note}
+        </form>
+      </dd>
+    </div>
+    """
+
+
+def app_status_manual_person_controls_row_html(enabled: bool) -> str:
+    checked = " checked" if enabled else ""
+    status = "På" if enabled else "Av"
+    return f"""
+    <div class="info-row">
+      <dt>Manuell Person i bildet</dt>
+      <dd>
+        <form action="/settings/manual-person-controls" method="post" class="app-toggle-form">
+          <input type="hidden" name="enabled" value="false">
+          <label class="app-toggle">
+            <input type="checkbox" name="enabled" value="true"{checked} onchange="this.form.submit()">
+            <span class="app-toggle-track" aria-hidden="true"><span></span></span>
+            <span class="app-toggle-status">{status}</span>
+          </label>
         </form>
       </dd>
     </div>

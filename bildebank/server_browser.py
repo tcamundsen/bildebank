@@ -1046,6 +1046,7 @@ def item_page_html(
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_h3_cell: str = "",
+    manual_person_controls_enabled: bool = True,
 ) -> str:
     return source_item_page_html(
         target,
@@ -1059,6 +1060,7 @@ def item_page_html(
         openclip_enabled=openclip_enabled,
         face_config=face_config,
         manual_h3_cell=manual_h3_cell,
+        manual_person_controls_enabled=manual_person_controls_enabled,
     )
 
 
@@ -1075,6 +1077,7 @@ def source_item_page_html(
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_h3_cell: str = "",
+    manual_person_controls_enabled: bool = True,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> str:
@@ -1110,7 +1113,9 @@ def source_item_page_html(
     people_data = confirmed_people_for_file(target, int(item["id"]), face_config) if face_enabled else []
     people = people_links_html(people_data) if face_enabled else ""
     manual_person_controls = (
-        manual_person_file_controls_html(target, item, people_data, face_config) if face_enabled and source.person_name is None else ""
+        manual_person_file_controls_html(target, item, people_data, face_config)
+        if face_enabled and manual_person_controls_enabled and source.person_name is None
+        else ""
     )
     show_unconfirmed_faces = face_enabled and source.person_name is None
     unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
