@@ -312,6 +312,13 @@ SERVER_CSS = r"""    :root {
       justify-content: center;
       text-align: center;
       white-space: nowrap;
+      min-height: 26px;
+      padding: 2px 6px;
+      border-color: #454545;
+      background: transparent;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
     }
     .tag-rail .faces-button {
       flex: 0 0 auto;
@@ -328,6 +335,7 @@ SERVER_CSS = r"""    :root {
     }
     .faces-button { color: var(--accent); }
     .nav-button:hover, .server-search-link:hover, .person-link:hover, .faces-button:hover { background: #3a3a3a; text-decoration: none; }
+    .tag-rail .person-link:hover { background: #252525; text-decoration: underline; }
     .danger-button { color: var(--danger); }
     .danger-button:hover { background: rgb(255 138 128 / 12%); }
     .disabled { color: #777; cursor: default; }
