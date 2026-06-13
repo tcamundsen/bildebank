@@ -1817,6 +1817,7 @@ model_name = "buffalo_l"
         self.assertIn('data-key-nav="next-year"', body)
         self.assertIn('data-key-nav="previous-month"', body)
         self.assertIn('data-key-nav="next-month"', body)
+        self.assertIn('<main class="server-browser month-browser">', body)
 
     def test_run_server_years_pages_link_to_years_and_months(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2208,7 +2209,9 @@ model_name = "buffalo_l"
         self.assertIn(".thumb-link {", SERVER_CSS)
         self.assertIn("aspect-ratio: 4 / 3;", SERVER_CSS)
         self.assertIn("overflow: hidden;", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "8")
+        self.assertIn(".server-browser.month-browser", SERVER_CSS)
+        self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
+        self.assertEqual(SERVER_ASSET_VERSION, "9")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)

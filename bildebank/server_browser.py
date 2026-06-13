@@ -2128,7 +2128,7 @@ def source_month_page_html(
     return page_html(
         f"{source.title}: {month_key}",
         f"""
-        <main class="server-browser">
+        <main class="server-browser month-browser">
           {app_header_html(
               source.title,
               source=source,

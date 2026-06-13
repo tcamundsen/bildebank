@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "8"
+SERVER_ASSET_VERSION = "9"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -165,6 +165,12 @@ SERVER_CSS = r"""    :root {
     .geo-hex-link:hover .geo-hex { fill: #3f858a; }
     .geo-hex-count { fill: var(--text); font-size: 13px; font-weight: 700; pointer-events: none; }
     .server-browser { height: 100vh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+    .server-browser.month-browser {
+      min-height: 100vh;
+      height: auto;
+      overflow: visible;
+      grid-template-rows: auto auto auto;
+    }
     .browser-header {
       background: var(--panel);
       border-bottom: 1px solid var(--border);
@@ -481,6 +487,7 @@ SERVER_CSS = r"""    :root {
       padding: 12px;
       overflow: auto;
     }
+    .month-browser .month-grid-server { overflow: visible; }
     .thumb-link {
       display: grid;
       place-items: center;
