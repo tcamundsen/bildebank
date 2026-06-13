@@ -1021,9 +1021,11 @@ def sources_page_html(
         else '<p class="meta">Ingen importerte kilder registrert.</p>'
     )
     return shell_page_html(
-        "Kilder",
+        "Importerte mapper",
         f"""
-        <h1>Kilder</h1>
+        <h1>Importerte mapper</h1>
+        <p>Denne siden viser alle importerte mapper, dvs samme info som du får fra å kjøre
+        <code>bildebank list-sources</code></p>
         {content}
         """,
         face_enabled=face_enabled,

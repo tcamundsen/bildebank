@@ -3523,7 +3523,7 @@ model_name = "buffalo_l"
         self.assertIn('href="/source/1/item/1"', month_body)
         self.assertIn('href="/source/1/year/2024">2024</a>', month_body)
         self.assertIn('<span class="sep">/</span>Januar</nav>', month_body)
-        self.assertIn("<h1>Kilder</h1>", sources_body)
+        self.assertIn("<h1>Importerte mapper</h1>", sources_body)
         self.assertIn('href="/source/1">Vis bilder (1)</a>', sources_body)
         self.assertIn("source-a", sources_body)
         self.assertIn("source-b", sources_body)
