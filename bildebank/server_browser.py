@@ -305,6 +305,55 @@ def source_item_by_id(
     return unfiltered_source_item_by_id(target, file_id, hide_out_of_focus=hide_out_of_focus, conn=conn)
 
 
+def sql_filtered_source_item_count(
+    target: Path,
+    source: BrowserSource,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> int:
+    where_sql, params = source_sql_filter(source)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
+    where_sql, params = with_motion_video_filter(
+        target,
+        where_sql,
+        params,
+        include_motion=source_shows_motion_videos(source),
+        conn=conn,
+    )
+    where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
+    deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
+    try:
+        attach_source_sql_filter_databases(conn, target, source)
+        row = conn.execute(
+            f"""
+            SELECT COUNT(*) AS item_count
+            FROM files
+            WHERE {deleted_sql}
+              AND ({where_sql})
+            """,
+            params,
+        ).fetchone()
+        return int(row["item_count"] if row is not None else 0)
+    finally:
+        if owned_conn:
+            conn.close()
+
+
+def source_item_count(
+    target: Path,
+    source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> int:
+    if source_has_sql_filter(source):
+        return sql_filtered_source_item_count(target, source, hide_out_of_focus=hide_out_of_focus, conn=conn)
+    return len(source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus))
+
+
 def item_order_key(item: Any) -> tuple[str, str]:
     return browser_date_for_item(item), str(item["target_path_key"])
 
@@ -1176,7 +1225,14 @@ def source_item_page_html(
               source.title,
               source=source,
               item=item,
-              title_html=source_item_breadcrumb_html(target, source, item),
+              title_html=source_item_breadcrumb_html(
+                  target,
+                  source,
+                  item,
+                  face_config=face_config,
+                  hide_out_of_focus=hide_out_of_focus,
+                  conn=conn,
+              ),
               extra_html=people + faces_button,
               controls=controls,
               message_html=duplicate_warning,
@@ -1252,7 +1308,15 @@ def motion_video_link_html(motion_video: Any) -> str:
     return f'<a class="filename" href="{html.escape(url)}">Motion-video: {html.escape(filename)}</a>'
 
 
-def source_item_breadcrumb_html(target: Path, source: BrowserSource, item: Any) -> str:
+def source_item_breadcrumb_html(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> str:
     month_key = month_key_for_item(target, item)
     filename = html.escape(str(item["stored_filename"]))
     file_id = int(item["id"])
@@ -1261,8 +1325,15 @@ def source_item_breadcrumb_html(target: Path, source: BrowserSource, item: Any) 
         f'title="Vis detaljer om bildet" '
         f'aria-label="Åpne bildeinfo for {filename}">{filename}</a>'
     )
+    source_label, source_title = source_breadcrumb_label(
+        target,
+        source,
+        face_config,
+        hide_out_of_focus=hide_out_of_focus,
+        conn=conn,
+    )
     if not valid_month_key(month_key):
-        return breadcrumb_html([(source.title, source.root_url)], filename_link)
+        return breadcrumb_html([(source_label, source.root_url, source_title)], filename_link)
     year, month = month_key.split("-", 1)
     month_name = MONTH_NAMES.get(month, month_key)
     if source == all_browser_source():
@@ -1272,24 +1343,41 @@ def source_item_breadcrumb_html(target: Path, source: BrowserSource, item: Any) 
             (month_name, source_month_url(source, month_key)),
         ]
     else:
-        source_label = source.person_name if source.person_name is not None else source.title
         crumbs = [
-            (source_label, source.root_url),
+            (source_label, source.root_url, source_title),
             (year, source_year_url(source, year)),
             (month_name, source_month_url(source, month_key)),
         ]
     return breadcrumb_html(crumbs, filename_link)
 
 
-def breadcrumb_html(crumbs: list[tuple[str, str | None]], final_html: str) -> str:
-    parts = [
-        (
-            f'<a href="{html.escape(url)}">{html.escape(label)}</a>'
+def source_breadcrumb_label(
+    target: Path,
+    source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> tuple[str, str | None]:
+    label = source.person_name if source.person_name is not None else source.title
+    if source.text_filter is None:
+        return label, None
+    count = source_item_count(target, source, face_config, hide_out_of_focus=hide_out_of_focus, conn=conn)
+    match_text = "1 treff" if count == 1 else f"{count} treff"
+    return f"{label} ({match_text})", f"{match_text} i filtersøket"
+
+
+def breadcrumb_html(crumbs: list[tuple[str, str | None] | tuple[str, str | None, str | None]], final_html: str) -> str:
+    parts = []
+    for crumb in crumbs:
+        label, url = crumb[0], crumb[1]
+        title = crumb[2] if len(crumb) > 2 else None
+        title_attr = f' title="{html.escape(title)}"' if title else ""
+        parts.append(
+            f'<a href="{html.escape(url)}"{title_attr}>{html.escape(label)}</a>'
             if url is not None
             else html.escape(label)
         )
-        for label, url in crumbs
-    ]
     parts.append(final_html)
     return '<nav class="breadcrumb" aria-label="Plassering">' + '<span class="sep">/</span>'.join(parts) + "</nav>"
 

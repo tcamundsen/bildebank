@@ -39,6 +39,12 @@ class BrowserTextFilter:
     size_lt: int | None = None
     source: str | None = None
     tag: str | None = None
+    width_gt: int | None = None
+    width_lt: int | None = None
+    width_eq: int | None = None
+    height_gt: int | None = None
+    height_lt: int | None = None
+    height_eq: int | None = None
 
 
 def parse_text_filter(query: str) -> BrowserTextFilter:
@@ -62,6 +68,12 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
     size_lt = None
     source = None
     tag = None
+    width_gt = None
+    width_lt = None
+    width_eq = None
+    height_gt = None
+    height_lt = None
+    height_eq = None
     for token in tokens:
         size_operator = size_filter_operator(token)
         if size_operator is not None:
@@ -74,6 +86,35 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
                 if size_lt is not None:
                     raise ValueError("size< kan bare brukes én gang.")
                 size_lt = parse_size_bytes(value)
+            continue
+        dimension_operator = dimension_filter_operator(token)
+        if dimension_operator is not None:
+            key, operator, value = dimension_operator
+            pixels = parse_dimension_pixels(key, value)
+            if key == "width" and operator == ">":
+                if width_gt is not None:
+                    raise ValueError("width> kan bare brukes én gang.")
+                width_gt = pixels
+            elif key == "width" and operator == "<":
+                if width_lt is not None:
+                    raise ValueError("width< kan bare brukes én gang.")
+                width_lt = pixels
+            elif key == "width" and operator == "=":
+                if width_eq is not None:
+                    raise ValueError("width= kan bare brukes én gang.")
+                width_eq = pixels
+            elif key == "height" and operator == ">":
+                if height_gt is not None:
+                    raise ValueError("height> kan bare brukes én gang.")
+                height_gt = pixels
+            elif key == "height" and operator == "<":
+                if height_lt is not None:
+                    raise ValueError("height< kan bare brukes én gang.")
+                height_lt = pixels
+            elif key == "height" and operator == "=":
+                if height_eq is not None:
+                    raise ValueError("height= kan bare brukes én gang.")
+                height_eq = pixels
             continue
         if ":" not in token:
             raise ValueError(f"Ukjent filter: {token}")
@@ -171,6 +212,12 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
         size_lt=size_lt,
         source=source,
         tag=tag,
+        width_gt=width_gt,
+        width_lt=width_lt,
+        width_eq=width_eq,
+        height_gt=height_gt,
+        height_lt=height_lt,
+        height_eq=height_eq,
     )
 
 
@@ -212,6 +259,24 @@ def size_filter_operator(token: str) -> tuple[str, str] | None:
     if token.startswith("size<"):
         return "<", token.removeprefix("size<")
     return None
+
+
+def dimension_filter_operator(token: str) -> tuple[str, str, str] | None:
+    for key in ("width", "height"):
+        for operator in (">", "<", "="):
+            prefix = f"{key}{operator}"
+            if token.startswith(prefix):
+                return key, operator, token.removeprefix(prefix)
+    return None
+
+
+def parse_dimension_pixels(key: str, value: str) -> int:
+    if not re.fullmatch(r"\d+", value.strip()):
+        raise ValueError(
+            f"{key} må være et heltall i piksler uten enhet, "
+            "for eksempel width>1024, width=1024 eller height<2000."
+        )
+    return int(value)
 
 
 def parse_size_bytes(value: str) -> int:
@@ -278,6 +343,12 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         size_lt=text_filter.size_lt,
         source=text_filter.source,
         tag=text_filter.tag,
+        width_gt=text_filter.width_gt,
+        width_lt=text_filter.width_lt,
+        width_eq=text_filter.width_eq,
+        height_gt=text_filter.height_gt,
+        height_lt=text_filter.height_lt,
+        height_eq=text_filter.height_eq,
     )
 
 
@@ -306,6 +377,24 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     if text_filter.size_lt is not None:
         where.append("size_bytes < ?")
         params.append(text_filter.size_lt)
+    if text_filter.width_gt is not None:
+        where.append("media_width > ?")
+        params.append(text_filter.width_gt)
+    if text_filter.width_lt is not None:
+        where.append("media_width < ?")
+        params.append(text_filter.width_lt)
+    if text_filter.width_eq is not None:
+        where.append("media_width = ?")
+        params.append(text_filter.width_eq)
+    if text_filter.height_gt is not None:
+        where.append("media_height > ?")
+        params.append(text_filter.height_gt)
+    if text_filter.height_lt is not None:
+        where.append("media_height < ?")
+        params.append(text_filter.height_lt)
+    if text_filter.height_eq is not None:
+        where.append("media_height = ?")
+        params.append(text_filter.height_eq)
     if text_filter.date_source == "manual":
         where.append(f"({manual_date_sql})")
     elif text_filter.date_source in {"metadata", "filename", "mtime"}:
@@ -543,7 +632,7 @@ def filter_help_html() -> str:
         <div class="info-row"><dt>Tekst</dt><dd><code>filename:IMG</code>, <code>path:2024/01</code>, <code>camera:"iPhone"</code></dd></div>
         <div class="info-row"><dt>Organisering</dt><dd><code>source:1</code>, <code>source:"mobil 2024"</code>, <code>tag:"Ute av fokus"</code>, <code>person:Viljar</code>, <code>deleted:true</code></dd></div>
         <div class="info-row"><dt>Mangler</dt><dd><code>missing:gps</code>, <code>missing:date</code>, <code>missing:metadata</code></dd></div>
-        <div class="info-row"><dt>Form</dt><dd><code>orientation:portrait</code>, <code>orientation:landscape</code></dd></div>
+        <div class="info-row"><dt>Form</dt><dd><code>orientation:portrait</code>, <code>orientation:landscape</code>, <code>width&gt;1024</code>, <code>width=1024</code>, <code>width&lt;2000</code>, <code>height&gt;1024</code>, <code>height=1024</code>, <code>height&lt;2000</code>. Bredde og høyde er piksler uten enhet.</dd></div>
       </dl>
     </section>
     """

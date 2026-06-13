@@ -141,6 +141,12 @@ missing:gps
 missing:date
 missing:metadata
 orientation:portrait
+width>1024
+width=1024
+width<2000
+height>1024
+height=1024
+height<2000
 path:2024/01
 size<300KB
 size>2MB
@@ -162,6 +168,10 @@ bilder der du har satt manuell H3-lokasjon. `location:slug` viser bilder for
 et sted fra `Steder`, der `slug` er den samme teksten som brukes i adressen
 `/geo/place/slug`. `size<300KB` viser filer mindre enn 300 KB, og `size>2MB`
 viser filer større enn 2 MB. Størrelsene regnes med 1024 bytes per KB.
+`width>1024`, `width=1024` og `width<2000` filtrerer på bildebredde, og
+tilsvarende kan `height>1024`, `height=1024` og `height<2000` brukes for
+bildehøyde. Bredde og høyde skrives som piksler uten enhet, altså `width>1024`
+og ikke `width>1024px`.
 `type:image`, `type:video` og `type:file` filtrerer på filtype. `extension:jpg`,
 `filename:IMG`, `path:2024/01` og `camera:"iPhone"` søker som tekst, og
 anførselstegn kan brukes når teksten inneholder mellomrom. `source:` kan være

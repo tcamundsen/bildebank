@@ -3221,6 +3221,13 @@ model_name = "buffalo_l"
             missing_metadata_filter = text_filter_browser_source("missing:metadata")
             orientation_landscape_filter = text_filter_browser_source("orientation:landscape")
             orientation_portrait_filter = text_filter_browser_source("orientation:portrait")
+            width_gt_filter = text_filter_browser_source("width>500")
+            width_lt_filter = text_filter_browser_source("width<500")
+            width_eq_filter = text_filter_browser_source("width=400")
+            height_gt_filter = text_filter_browser_source("height>700")
+            height_lt_filter = text_filter_browser_source("height<700")
+            height_eq_filter = text_filter_browser_source("height=500")
+            width_range_filter = text_filter_browser_source("width>500 width<1200")
             path_filter = text_filter_browser_source("path:2024/01")
             person_filter = text_filter_browser_source("person:viljar")
             source_name_filter = text_filter_browser_source("source:source")
@@ -3255,6 +3262,13 @@ model_name = "buffalo_l"
             missing_metadata_month = source_month_items(target, missing_metadata_filter, "2023-12")
             orientation_landscape_month = source_month_items(target, orientation_landscape_filter, "2024-12")
             orientation_portrait_month = source_month_items(target, orientation_portrait_filter, "2024-01")
+            width_gt_month = source_month_items(target, width_gt_filter, "2024-12")
+            width_lt_month = source_month_items(target, width_lt_filter, "2024-01")
+            width_eq_month = source_month_items(target, width_eq_filter, "2024-01")
+            height_gt_month = source_month_items(target, height_gt_filter, "2024-01")
+            height_lt_month = source_month_items(target, height_lt_filter, "2024-12")
+            height_eq_month = source_month_items(target, height_eq_filter, "2024-12")
+            width_range_month = source_month_items(target, width_range_filter, "2024-12")
             path_month = source_month_items(target, path_filter, "2024-01")
             person_january_month = source_month_items(target, person_filter, "2024-01")
             person_december_month = source_month_items(target, person_filter, "2024-12")
@@ -3303,6 +3317,13 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in missing_metadata_month], [1])
         self.assertEqual([item["id"] for item in orientation_landscape_month], [3])
         self.assertEqual([item["id"] for item in orientation_portrait_month], [2])
+        self.assertEqual([item["id"] for item in width_gt_month], [3])
+        self.assertEqual([item["id"] for item in width_lt_month], [2])
+        self.assertEqual([item["id"] for item in width_eq_month], [2])
+        self.assertEqual([item["id"] for item in height_gt_month], [2])
+        self.assertEqual([item["id"] for item in height_lt_month], [3])
+        self.assertEqual([item["id"] for item in height_eq_month], [3])
+        self.assertEqual([item["id"] for item in width_range_month], [3])
         self.assertEqual([item["id"] for item in path_month], [2])
         self.assertEqual([item["id"] for item in person_january_month], [2])
         self.assertEqual([item["id"] for item in person_december_month], [3])
@@ -3311,6 +3332,8 @@ model_name = "buffalo_l"
         self.assertIsNotNone(type_file_item)
         self.assertEqual([item["id"] for item in type_image_month], [2])
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
+        self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_body)
+        self.assertIn('title="2 treff i filtersøket"', date_body)
         self.assertIn("/filter/after%3A2023-12-01%20before%3A2024-12-12/item/4", date_body)
         self.assertIn('href="/filter">Filtersøk</a>', date_body)
         self.assertIn("Filtersøk: person:viljar", person_body)
@@ -3318,14 +3341,16 @@ model_name = "buffalo_l"
         self.assertIn("Ingen aktive bilder matcher filtersøket.", empty_body)
 
     def test_run_server_filter_parser_rejects_invalid_queries(self) -> None:
-        text_filter = parse_text_filter('  after:2023-12-01 camera:"iPhone 17" date:metadata filename:IMG location:gps size>2MB size<2.5GB ')
-        self.assertEqual(text_filter.query, 'after:2023-12-01 camera:"iPhone 17" date:metadata filename:IMG location:gps size>2MB size<2.5GB')
+        text_filter = parse_text_filter('  after:2023-12-01 camera:"iPhone 17" date:metadata filename:IMG location:gps size>2MB size<2.5GB width>1024 height=2000 ')
+        self.assertEqual(text_filter.query, 'after:2023-12-01 camera:"iPhone 17" date:metadata filename:IMG location:gps size>2MB size<2.5GB width>1024 height=2000')
         self.assertEqual(text_filter.camera, "iPhone 17")
         self.assertEqual(text_filter.date_source, "metadata")
         self.assertEqual(text_filter.filename, "IMG")
         self.assertIsNone(text_filter.person)
         self.assertEqual(text_filter.size_gt, 2 * 1024 * 1024)
         self.assertEqual(text_filter.size_lt, int(2.5 * 1024 * 1024 * 1024))
+        self.assertEqual(text_filter.width_gt, 1024)
+        self.assertEqual(text_filter.height_eq, 2000)
         self.assertEqual(parse_text_filter("person:Viljar").person, "Viljar")
         for query, message in (
             ("after:2023-02-30", "after må være en dato på formen YYYY-MM-DD."),
@@ -3340,6 +3365,8 @@ model_name = "buffalo_l"
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
             ("size>2MB size>3MB", "size> kan bare brukes én gang."),
             ("size>stor", "size må skrives som for eksempel size<300KB eller size>2MB."),
+            ("width>100 width>200", "width> kan bare brukes én gang."),
+            ("width>stor", "width må være et heltall i piksler uten enhet"),
             ("type:audio", "type må være image, video eller file."),
             ('camera:"iPhone', "Ugyldige anførselstegn i filtersøk."),
             ("unknown:canon", "Ukjent filter: unknown"),
@@ -3417,6 +3444,9 @@ model_name = "buffalo_l"
         self.assertIn('<code>camera:"iPhone"</code>', body)
         self.assertIn('<code>tag:"Ute av fokus"</code>', body)
         self.assertIn("<code>deleted:true</code>", body)
+        self.assertIn("<code>width&gt;1024</code>", body)
+        self.assertIn("<code>width=1024</code>", body)
+        self.assertIn("<code>height&lt;2000</code>", body)
 
     def test_run_server_source_browser_reuses_source_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
