@@ -95,7 +95,7 @@ finnes i metadata, hvilke kilder som inkluderer bildet, og lenker til
 stedssidene for H3-nivåene bildet er del av når bildet har GPS-data.
 Overlayet kan lukkes med `Lukk` eller Esc.
 
-På bildesider kan du bruke `Roter venstre` og `Roter høyre` for å rotere
+På bildesider kan du bruke knappene **↺** og **↻** for å rotere
 visningen av bildet. Bildebank lagrer bare rotasjonen i databasen. Selve
 bildefilen i samlingen endres ikke.
 

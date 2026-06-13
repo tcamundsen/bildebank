@@ -2902,8 +2902,8 @@ model_name = "buffalo_l"
 
         self.assertEqual({"ok": True, "file_id": 1, "rotation": 90}, handler.body)
         self.assertEqual(original_bytes, final_bytes)
-        self.assertIn("Roter venstre", body)
-        self.assertIn("Roter høyre", body)
+        self.assertIn("↺", body)
+        self.assertIn("↻", body)
         self.assertIn('data-rotate-direction="left"', body)
         self.assertIn('data-rotate-direction="right"', body)
         self.assertIn('class="media-link quarter-turn"', body)
@@ -2999,8 +2999,8 @@ model_name = "buffalo_l"
             self.assertIsNotNone(item)
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
 
-        self.assertNotIn("Roter venstre", body)
-        self.assertNotIn("Roter høyre", body)
+        self.assertNotIn("↻", body)
+        self.assertNotIn("↺", body)
 
     def test_run_server_archive_image_page_links_file_without_image_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3018,7 +3018,7 @@ model_name = "buffalo_l"
 
         self.assertIn('<a class="file-card" href="/file/1" target="_blank">Fil<br>IMG_20240102.nef</a>', body)
         self.assertNotIn('<img src="/file/1"', body)
-        self.assertNotIn("Roter venstre", body)
+        self.assertNotIn("↺", body)
         self.assertIn("Fil<br>IMG_20240102.nef", month_body)
 
     def test_run_server_date_source_browser_reuses_source_pages(self) -> None:

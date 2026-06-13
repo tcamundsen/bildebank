@@ -227,8 +227,8 @@ def app_header_html(
     """
 
 
-def nav_button(href: str, label: str, key_nav: str) -> str:
-    return f'<a class="nav-button" href="{href}" data-key-nav="{html.escape(key_nav)}">{html.escape(label)}</a>'
+def nav_button(href: str, label: str, key_nav: str, tooltip: str = "") -> str:
+    return f'<a class="nav-button" href="{href}" title="{tooltip}" data-key-nav="{html.escape(key_nav)}">{html.escape(label)}</a>'
 
 
 def nav_disabled(label: str) -> str:
@@ -251,12 +251,12 @@ def source_controls_html(
 ) -> str:
     return f"""
     <nav class="controls" aria-label="Navigering">
-      {source_month_nav_link(source, month_nav["previous_year"], "Å-", "previous-year")}
-      {source_month_nav_link(source, month_nav["next_year"], "Å+", "next-year")}
-      {source_month_nav_link(source, month_nav["previous_month"], "M-", "previous-month")}
-      {source_month_nav_link(source, month_nav["next_month"], "M+", "next-month")}
-      {source_nav_link(source, previous_item, "◀", "previous")}
-      {source_nav_link(source, next_item, "▶", "next")}
+      {source_month_nav_link(source, month_nav["previous_year"], "Å-", "previous-year", "Forrige år")}
+      {source_month_nav_link(source, month_nav["next_year"], "Å+", "next-year", "Neste år")}
+      {source_month_nav_link(source, month_nav["previous_month"], "M-", "previous-month", "Forrige måned")}
+      {source_month_nav_link(source, month_nav["next_month"], "M+", "next-month", "Neste måned")}
+      {source_nav_link(source, previous_item, "◀", "previous", "Forrige bilde")}
+      {source_nav_link(source, next_item, "▶", "next", "Neste bilde")}
       {rotation_buttons}
       {manual_date_button}
       {manual_location_button}
@@ -267,13 +267,13 @@ def source_controls_html(
     """
 
 
-def source_nav_link(source: BrowserSource, item: Any | None, label: str, key_nav: str) -> str:
+def source_nav_link(source: BrowserSource, item: Any | None, label: str, key_nav: str, tooltip: str) -> str:
     if item is None:
         return nav_disabled(label)
-    return nav_button(source_item_url(source, int(item["id"])), label, key_nav)
+    return nav_button(source_item_url(source, int(item["id"])), label, key_nav, tooltip)
 
 
-def source_month_nav_link(source: BrowserSource, month_key: str | None, label: str, key_nav: str) -> str:
+def source_month_nav_link(source: BrowserSource, month_key: str | None, label: str, key_nav: str, tooltip: str) -> str:
     if month_key is None:
         return nav_disabled(label)
-    return nav_button(source_month_url(source, month_key), label, key_nav)
+    return nav_button(source_month_url(source, month_key), label, key_nav, tooltip)

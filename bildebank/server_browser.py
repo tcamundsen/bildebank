@@ -1539,8 +1539,8 @@ def rotation_buttons_html(source: BrowserSource, item: Any) -> str:
         return ""
     file_id = int(item["id"])
     return f"""
-      <button class="nav-button" type="button" data-rotate-item="{file_id}" data-rotate-direction="left">Roter venstre</button>
-      <button class="nav-button" type="button" data-rotate-item="{file_id}" data-rotate-direction="right">Roter høyre</button>
+      <button class="nav-button" type="button" title="Roter bildet til venstre" data-rotate-item="{file_id}" data-rotate-direction="left">↺</button>
+      <button class="nav-button" type="button" title="Roter bildet til høyre" data-rotate-item="{file_id}" data-rotate-direction="right">↻</button>
     """
 
 
