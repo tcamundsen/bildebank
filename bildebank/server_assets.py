@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "10"
+SERVER_ASSET_VERSION = "11"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -193,10 +193,6 @@ SERVER_CSS = r"""    :root {
       gap: 6px;
       flex-wrap: wrap;
       max-width: 100%;
-      padding: 6px;
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: rgb(26 26 26 / 92%);
       font-size: 13px;
     }
     .manual-person-form label { color: var(--muted); }
