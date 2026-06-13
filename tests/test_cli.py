@@ -2408,9 +2408,17 @@ model_name = "buffalo_l"
                 manual_h3_cell=h3_cell,
             )
 
-        self.assertIn("Sett sted", body)
+        nav_start = body.index('<nav class="controls"')
+        tag_rail_start = body.index('<aside class="tag-rail"')
+        nav_body = body[nav_start:body.index("</nav>", nav_start)]
+        tag_rail_body = body[tag_rail_start:body.index("</aside>", tag_rail_start)]
+        self.assertIn("Sett valgt H3-celle", tag_rail_body)
+        self.assertNotIn("Sett sted", body)
+        self.assertNotIn("Sett valgt H3-celle", nav_body)
         self.assertIn('data-manual-location-item="1"', body)
         self.assertIn(f'data-manual-location-cell="{h3_cell}"', body)
+        self.assertIn('data-manual-location-item="1"', tag_rail_body)
+        self.assertIn(f'data-manual-location-cell="{h3_cell}"', tag_rail_body)
         self.assertIn("/api/item-manual-location", SERVER_JS)
         self.assertIn('event.key.toLowerCase() === "g"', SERVER_JS)
         self.assertIn("setManualLocation(button)", SERVER_JS)
@@ -2420,6 +2428,7 @@ model_name = "buffalo_l"
         import h3
 
         h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
+        other_h3_cell = h3.latlng_to_cell(60.39299, 5.32415, 3)
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -2461,6 +2470,13 @@ model_name = "buffalo_l"
                 browser_month_navigation(target, item),
                 manual_h3_cell=h3_cell,
             )
+            body_with_other_manual_cell = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+                manual_h3_cell=other_h3_cell,
+            )
             info_body = image_info_content_html(target, item)
             conn = db.connect(target)
             try:
@@ -2485,8 +2501,25 @@ model_name = "buffalo_l"
         )
         self.assertNotIn("Fjern manuelt sted", body)
         self.assertNotIn('data-remove-manual-location-item="1"', body)
-        self.assertIn("Fjern manuelt sted", body_with_manual_cell)
-        self.assertIn('data-remove-manual-location-item="1"', body_with_manual_cell)
+        nav_start = body_with_manual_cell.index('<nav class="controls"')
+        tag_rail_start = body_with_manual_cell.index('<aside class="tag-rail"')
+        nav_body_with_manual_cell = body_with_manual_cell[nav_start:body_with_manual_cell.index("</nav>", nav_start)]
+        tag_rail_body_with_manual_cell = body_with_manual_cell[
+            tag_rail_start:body_with_manual_cell.index("</aside>", tag_rail_start)
+        ]
+        self.assertIn("Fjern manuelt sted", tag_rail_body_with_manual_cell)
+        self.assertIn('data-remove-manual-location-item="1"', tag_rail_body_with_manual_cell)
+        self.assertNotIn('data-manual-location-item="1"', tag_rail_body_with_manual_cell)
+        self.assertNotIn(f'data-manual-location-cell="{h3_cell}"', tag_rail_body_with_manual_cell)
+        self.assertNotIn("Fjern manuelt sted", nav_body_with_manual_cell)
+        self.assertNotIn('data-remove-manual-location-item="1"', nav_body_with_manual_cell)
+        tag_rail_start = body_with_other_manual_cell.index('<aside class="tag-rail"')
+        tag_rail_body_with_other_manual_cell = body_with_other_manual_cell[
+            tag_rail_start:body_with_other_manual_cell.index("</aside>", tag_rail_start)
+        ]
+        self.assertIn("Sett valgt H3-celle", tag_rail_body_with_other_manual_cell)
+        self.assertIn(f'data-manual-location-cell="{other_h3_cell}"', tag_rail_body_with_other_manual_cell)
+        self.assertIn("Fjern manuelt sted", tag_rail_body_with_other_manual_cell)
         self.assertNotIn("<dt>Kart</dt>", info_body)
         self.assertIn("Manuell H3", info_body)
         self.assertIn(f'href="https://h3geo.org/#hex={h3_cell}"', info_body)
@@ -3630,6 +3663,7 @@ model_name = "buffalo_l"
                         month_nav,
                         face_enabled=False,
                         openclip_enabled=False,
+                        manual_h3_cell=h3_cells_for_point(59.91273, 10.74609)["h3_res7"],
                         hide_out_of_focus=True,
                         conn=conn,
                     )

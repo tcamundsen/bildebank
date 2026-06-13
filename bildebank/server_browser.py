@@ -1171,10 +1171,6 @@ def source_item_page_html(
         rotation_buttons=rotation_buttons_html(source, item),
         manual_date_button=manual_date_button_html(item),
         manual_person_controls=manual_person_controls,
-        manual_location_button=(
-            manual_location_button_html(target, item, manual_h3_cell)
-            + remove_manual_location_button_html(item, manual_h3_cell)
-        ),
         unconfirm_buttons=unconfirm_face_buttons_html(target, source, item, face_config) if face_enabled else "",
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
@@ -1196,6 +1192,7 @@ def source_item_page_html(
         item,
         out_of_focus_redirect_url=out_of_focus_redirect_url,
         extra_html=face_rail_html,
+        configured_manual_h3_cell=manual_h3_cell,
         conn=conn,
     )
     duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config) if face_enabled else ""
@@ -1410,6 +1407,7 @@ def tag_controls_html(
     *,
     out_of_focus_redirect_url: str = "",
     extra_html: str = "",
+    configured_manual_h3_cell: str = "",
     conn: sqlite3.Connection | None = None,
 ) -> str:
     file_id = int(item["id"])
@@ -1420,6 +1418,10 @@ def tag_controls_html(
         active_names = {str(row["name_key"]) for row in db.tags_for_file(conn, file_id)}
         manual_h3_name = manual_h3_place_name(conn, item)
         manual_h3_cell_value = manual_h3_cell(item)
+        location_controls = (
+            manual_location_button_html(target, item, configured_manual_h3_cell, conn=conn)
+            + remove_manual_location_button_html(item, configured_manual_h3_cell)
+        )
     finally:
         if owned_conn:
             conn.close()
@@ -1439,9 +1441,9 @@ def tag_controls_html(
             f'aria-pressed="{pressed}"{redirect_attr}>{html.escape(tag_name)}</button>'
         )
     location_status = (
-        manual_h3_badge_html(manual_h3_name, manual_h3_cell_value)
+        manual_h3_badge_html(manual_h3_name, manual_h3_cell_value, extra_html=location_controls)
         if gps_source_is_manual_h3(item)
-        else gps_location_badge_html(item)
+        else gps_location_badge_html(item, extra_html=location_controls)
     )
     date_status = date_status_badge_html(item)
     return f'<aside class="tag-rail" aria-label="Tagger">{"".join(buttons)}{date_status}{location_status}{extra_html}</aside>'
@@ -1554,17 +1556,25 @@ def item_string_value(item: Any, key: str) -> str:
         return ""
 
 
-def manual_location_button_html(target: Path, item: Any, h3_cell: str) -> str:
+def manual_location_button_html(
+    target: Path,
+    item: Any,
+    h3_cell: str,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> str:
     clean_h3_cell = h3_cell.strip()
     if not clean_h3_cell or item_has_gps_location(item):
         return ""
+    if manual_h3_cell(item) == clean_h3_cell:
+        return ""
     file_id = int(item["id"])
-    place_name = manual_h3_cell_name(target, clean_h3_cell) or "valgt H3-celle"
+    place_name = manual_h3_cell_name(target, clean_h3_cell, conn=conn) or "valgt H3-celle"
     return (
         f'<button class="nav-button" type="button" '
         f'data-manual-location-item="{file_id}" '
         f'data-manual-location-cell="{html.escape(clean_h3_cell)}">'
-        f'Sett sted {html.escape(place_name)}</button>'
+        f'Sett {html.escape(place_name)}</button>'
     )
 
 
@@ -1586,12 +1596,14 @@ def remove_manual_location_button_html(item: Any, h3_cell: str) -> str:
     )
 
 
-def manual_h3_cell_name(target: Path, h3_cell: str) -> str | None:
-    conn = db.connect(target)
+def manual_h3_cell_name(target: Path, h3_cell: str, *, conn: sqlite3.Connection | None = None) -> str | None:
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
     try:
         return db.geo_place_name(conn, h3_cell)
     finally:
-        conn.close()
+        if owned_conn:
+            conn.close()
 
 
 def delete_button_html(source: BrowserSource, item: Any, previous_item: Any | None, next_item: Any | None) -> str:
@@ -1783,20 +1795,21 @@ def manual_h3_status_html(place_name: str | None, h3_cell: str | None = None) ->
     return f'<span class="status">{manual_h3_link_html(label, h3_cell)}</span>'
 
 
-def manual_h3_badge_html(place_name: str | None, h3_cell: str | None = None) -> str:
+def manual_h3_badge_html(place_name: str | None, h3_cell: str | None = None, *, extra_html: str = "") -> str:
     label = f"Manuell H3: {place_name}" if place_name else "Manuell H3"
-    return f'<div class="location-status-badge">{manual_h3_link_html(label, h3_cell)}</div>'
+    return f'<div class="location-status-badge">{manual_h3_link_html(label, h3_cell)}{extra_html}</div>'
 
 
-def gps_location_badge_html(item: Any) -> str:
+def gps_location_badge_html(item: Any, *, extra_html: str = "") -> str:
     coordinates = gps_coordinate_pair(item)
     if coordinates is None:
-        return '<div class="location-status-badge">GPS mangler</div>'
+        return f'<div class="location-status-badge">GPS mangler{extra_html}</div>'
     latitude, longitude = coordinates
     url = google_maps_url(latitude, longitude)
     return (
         '<div class="location-status-badge">'
         f'<a href="{html.escape(url)}" target="_blank" rel="noopener">GPS-lokalisert</a>'
+        f'{extra_html}'
         '</div>'
     )
 

@@ -390,11 +390,26 @@ SERVER_CSS = r"""    :root {
     .date-status-main { font-weight: 700; }
     .date-status-original { color: var(--muted); }
     .location-status-badge {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 6px;
       padding: 2px 4px;
       color: var(--muted);
       font-size: 12px;
       line-height: 1.2;
       text-align: center;
+      overflow-wrap: anywhere;
+    }
+    .location-status-badge > a,
+    .location-status-badge > .nav-button {
+      flex: 0 1 auto;
+    }
+    .location-status-badge > .nav-button {
+      min-height: 30px;
+      padding: 4px 8px;
+      white-space: normal;
     }
     .stage {
       position: relative;

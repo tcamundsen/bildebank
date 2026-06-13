@@ -34,7 +34,7 @@ Når HTML-filen er åpen i nettleseren, kan du bla med tastaturet:
 | Page Up | Forrige år |
 | Page Down | Neste år |
 
-Hvis du har slått på manuel H3-lokalisering, så er tasten `g` hurtigtast for knappen "Sett sted XXX"
+Hvis du har slått på manuel H3-lokalisering, så er tasten `g` hurtigtast for knappen "Sett XXX"
 
 RAW/NEF og PSD kan ligge i samlingen, men nettleseren viser dem som fil-lenker
 i stedet for vanlig bildevisning.
