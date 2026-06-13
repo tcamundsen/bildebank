@@ -3827,6 +3827,9 @@ model_name = "buffalo_l"
             try:
                 face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
                 face_conn.execute("INSERT INTO persons(id, name) VALUES(2, 'Ola Nordmann')")
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(3, 'Per Manual')")
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(4, 'Siril')")
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(5, 'Viljar')")
                 face_conn.execute(
                     """
                     INSERT INTO faces(
@@ -3847,8 +3850,31 @@ model_name = "buffalo_l"
                     """,
                     (b"embedding-2",),
                 )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(3, 1, 'key-3', 5, 6, 14, 24, 0.7, 'test', ?)
+                    """,
+                    (b"embedding-3",),
+                )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(4, 1, 'key-4', 7, 8, 16, 26, 0.6, 'test', ?)
+                    """,
+                    (b"embedding-4",),
+                )
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(4, 3)")
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(5, 4)")
                 face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(2, 2, 0.91)")
+                face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(3, 1)")
                 face_conn.commit()
             finally:
                 face_conn.close()
@@ -3884,16 +3910,42 @@ model_name = "buffalo_l"
             "Ola Nordmann</a>",
             body,
         )
+        self.assertIn(
+            'class="person-link" href="/person/Per%20Manual/no-faces/item/1" data-person-name="Per Manual">'
+            'Per Manual<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet"> ✅</span></a>',
+            body,
+        )
         self.assertIn("Bekreft ansikter (1)", body)
         self.assertNotIn("Ubekreftet ansikter i bildet", body)
         tag_rail_start = body.index('<aside class="tag-rail"')
         tag_rail_end = body.index("</aside>", tag_rail_start)
         tag_rail_html = body[tag_rail_start:tag_rail_end]
+        self.assertIn("Bildebank tror disse er i bildet", tag_rail_html)
+        self.assertIn("Ansikter bekreftet til gjenkjenning: Kari, Siril og Viljar", tag_rail_html)
         self.assertIn('class="person-link" href="/person/Kari/no-faces/item/1"', tag_rail_html)
         self.assertIn('class="person-link" href="/person/Ola%20Nordmann/no-faces/item/1"', tag_rail_html)
+        self.assertIn('class="person-link" href="/person/Per%20Manual/no-faces/item/1"', tag_rail_html)
+        self.assertIn('class="person-link" href="/person/Siril/no-faces/item/1"', tag_rail_html)
+        self.assertIn('class="person-link" href="/person/Viljar/no-faces/item/1"', tag_rail_html)
         self.assertIn("Bekreft ansikter (1)", tag_rail_html)
-        self.assertLess(tag_rail_html.index("date-status-badge"), tag_rail_html.index('class="person-link"'))
-        self.assertLess(tag_rail_html.index('class="person-link"'), tag_rail_html.index("Bekreft ansikter (1)"))
+        assumed_people_start = tag_rail_html.index("Bildebank tror disse er i bildet")
+        faces_button_start = tag_rail_html.index("Bekreft ansikter (1)")
+        confirmed_faces_start = tag_rail_html.index("Ansikter bekreftet til gjenkjenning")
+        date_status_start = tag_rail_html.index("date-status-badge")
+        assumed_people_html = tag_rail_html[assumed_people_start:faces_button_start]
+        confirmed_faces_html = tag_rail_html[confirmed_faces_start:date_status_start]
+        self.assertIn("Kari", assumed_people_html)
+        self.assertIn("Ola Nordmann", assumed_people_html)
+        self.assertIn("Per Manual", assumed_people_html)
+        self.assertIn("Siril", assumed_people_html)
+        self.assertIn("Viljar", assumed_people_html)
+        self.assertIn("Kari, Siril og Viljar", confirmed_faces_html)
+        self.assertNotIn('class="person-link"', confirmed_faces_html)
+        self.assertNotIn("Ola Nordmann", confirmed_faces_html)
+        self.assertNotIn("Per Manual", confirmed_faces_html)
+        self.assertLess(assumed_people_start, faces_button_start)
+        self.assertLess(faces_button_start, confirmed_faces_start)
+        self.assertLess(confirmed_faces_start, date_status_start)
         self.assertIn("Person i bildet", body)
         self.assertIn('data-manual-person-form', body)
         self.assertIn('data-manual-person-remove', body)
@@ -3929,6 +3981,8 @@ model_name = "buffalo_l"
         self.assertNotIn('data-face-id="1"', face_body)
         self.assertNotIn('href="/people"', disabled_body)
         self.assertNotIn('href="/person/Kari"', disabled_body)
+        self.assertNotIn("Bildebank tror disse er i bildet", disabled_body)
+        self.assertNotIn("Ansikter bekreftet til gjenkjenning", disabled_body)
         self.assertNotIn('href="/search"', disabled_body)
         self.assertNotIn("Ansikter i bildet", disabled_body)
         self.assertNotIn("Ny person", disabled_body)

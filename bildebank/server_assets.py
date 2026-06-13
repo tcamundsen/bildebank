@@ -289,6 +289,18 @@ SERVER_CSS = r"""    :root {
       align-items: center;
     }
     .person-link { color: var(--accent); }
+    .people-section {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .people-heading {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      line-height: 1.25;
+    }
     .people {
       display: flex;
       flex-wrap: wrap;

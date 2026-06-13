@@ -1141,6 +1141,8 @@ def source_item_page_html(
     conn: sqlite3.Connection | None = None,
 ) -> str:
     from .server_faces import (
+        confirmed_face_people_text_html,
+        confirmed_face_people_for_file,
         confirmed_people_for_file,
         faces_button_html,
         faces_overlay_html,
@@ -1156,7 +1158,13 @@ def source_item_page_html(
     relative = display_relative_path(target, target_path)
     media = source_item_media_html(target, source, item, face_config)
     people_data = confirmed_people_for_file(target, int(item["id"]), face_config) if face_enabled else []
-    people = people_links_html(people_data) if face_enabled else ""
+    confirmed_face_people_data = confirmed_face_people_for_file(target, int(item["id"]), face_config) if face_enabled else []
+    people = people_links_html(people_data, "Bildebank tror disse er i bildet") if face_enabled else ""
+    confirmed_face_people = (
+        confirmed_face_people_text_html(confirmed_face_people_data)
+        if face_enabled
+        else ""
+    )
     face_rail_html = people
     manual_person_controls = (
         manual_person_file_controls_html(target, item, people_data, face_config)
@@ -1178,6 +1186,7 @@ def source_item_page_html(
     unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
     faces_button = faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
     face_rail_html += faces_button
+    face_rail_html += confirmed_face_people
     faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
     info_overlay = image_info_overlay_html()
     manual_date_overlay = manual_date_overlay_html()
@@ -1446,7 +1455,7 @@ def tag_controls_html(
         else gps_location_badge_html(item, extra_html=location_controls)
     )
     date_status = date_status_badge_html(item)
-    return f'<aside class="tag-rail" aria-label="Tagger">{"".join(buttons)}{date_status}{location_status}{extra_html}</aside>'
+    return f'<aside class="tag-rail" aria-label="Tagger">{extra_html}{"".join(buttons)}{date_status}{location_status}</aside>'
 
 
 def date_status_badge_html(item: Any) -> str:

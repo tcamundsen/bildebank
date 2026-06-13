@@ -5,7 +5,7 @@ import sqlite3
 from functools import lru_cache
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 from . import db
 from .config import FaceRecognitionConfig
@@ -45,6 +45,7 @@ def current_face_db_path(target: Path, face_config: FaceRecognitionConfig | None
 
 def clear_face_caches() -> None:
     cached_confirmed_people_for_file.cache_clear()
+    cached_confirmed_face_people_for_file.cache_clear()
     cached_person_file_ids.cache_clear()
     cached_registered_people.cache_clear()
 
@@ -62,6 +63,22 @@ def confirmed_people_for_file(
     return [
         {"name": name, "url": person_item_url(name, file_id, show_faces=False), "confirmed": priority <= 1}
         for name, priority in cached_confirmed_people_for_file(str(db_path), mtime_ns, file_id)
+    ]
+
+
+def confirmed_face_people_for_file(
+    target: Path,
+    file_id: int,
+    face_config: FaceRecognitionConfig | None = None,
+) -> list[dict[str, object]]:
+    db_path = current_face_db_path(target, face_config)
+    try:
+        mtime_ns = db_path.stat().st_mtime_ns
+    except OSError:
+        return []
+    return [
+        {"name": name, "url": person_item_url(name, file_id, show_faces=False), "confirmed": True}
+        for name in cached_confirmed_face_people_for_file(str(db_path), mtime_ns, file_id)
     ]
 
 
@@ -85,6 +102,31 @@ def cached_registered_people(face_db_path: str, face_db_mtime_ns: int) -> tuple[
         if not face_tables_exist(conn):
             return ()
         rows = conn.execute("SELECT name FROM persons ORDER BY name")
+        return tuple(str(row["name"]) for row in rows)
+    except sqlite3.Error:
+        return ()
+    finally:
+        conn.close()
+
+
+@lru_cache(maxsize=512)
+def cached_confirmed_face_people_for_file(face_db_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[str, ...]:
+    conn = sqlite3.connect(face_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if not face_tables_exist(conn):
+            return ()
+        rows = conn.execute(
+            """
+            SELECT DISTINCT persons.name
+            FROM person_faces
+            JOIN persons ON persons.id = person_faces.person_id
+            JOIN faces ON faces.id = person_faces.face_id
+            WHERE faces.file_id = ?
+            ORDER BY persons.name
+            """,
+            (file_id,),
+        )
         return tuple(str(row["name"]) for row in rows)
     except sqlite3.Error:
         return ()
@@ -752,11 +794,28 @@ def remove_manual_person_file_button_html(
     )
 
 
-def people_links_html(people: list[dict[str, object]]) -> str:
+def people_links_html(people: list[dict[str, object]], heading: str = "") -> str:
     if not people:
         return ""
+    heading_html = f'<h2 class="people-heading">{html.escape(heading)}</h2>' if heading else ""
     links = "\n".join(people_link_html(person) for person in people)
-    return f'<div class="people">{links}</div>'
+    return f'<section class="people-section">{heading_html}<div class="people">{links}</div></section>'
+
+
+def confirmed_face_people_text_html(people: list[dict[str, object]]) -> str:
+    if not people:
+        return ""
+    names = norwegian_name_list(str(person["name"]) for person in people)
+    return f'<p class="people-heading confirmed-face-people">Ansikter bekreftet til gjenkjenning: {html.escape(names)}</p>'
+
+
+def norwegian_name_list(names: Iterable[str]) -> str:
+    name_list = list(names)
+    if len(name_list) <= 1:
+        return "".join(name_list)
+    if len(name_list) == 2:
+        return f"{name_list[0]} og {name_list[1]}"
+    return f"{', '.join(name_list[:-1])} og {name_list[-1]}"
 
 
 def people_link_html(person: dict[str, object]) -> str:
