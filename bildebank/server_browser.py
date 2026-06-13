@@ -1618,6 +1618,7 @@ def delete_button_html(source: BrowserSource, item: Any, previous_item: Any | No
     relative = display_relative_path(Path("."), Path(str(item["target_path"])))
     return (
         f'<button class="nav-button danger-button" type="button" '
+        f'title="Flytt bildet til papirkurven" '
         f'data-delete-item="{int(item["id"])}" '
         f'data-delete-path="{html.escape(relative)}" '
         f'data-delete-redirect="{html.escape(redirect_url)}">Slett</button>'
