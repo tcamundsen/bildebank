@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "9"
+SERVER_ASSET_VERSION = "10"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -188,15 +188,11 @@ SERVER_CSS = r"""    :root {
     .warning { color: #ffd166; font-size: 13px; line-height: 1.2; font-weight: 700; }
     .people { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .manual-person-form {
-      position: absolute;
-      top: 8px;
-      left: 8px;
-      z-index: 1;
       display: flex;
       align-items: center;
       gap: 6px;
       flex-wrap: wrap;
-      max-width: calc(100% - 16px);
+      max-width: 100%;
       padding: 6px;
       border: 1px solid var(--border);
       border-radius: 6px;
@@ -214,6 +210,7 @@ SERVER_CSS = r"""    :root {
       color: var(--text);
     }
     .manual-person-form .assign-status { color: var(--muted); }
+    .controls .delete-button { margin-left: auto; }
     .top-actions {
       margin-left: auto;
       display: flex;

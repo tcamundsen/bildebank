@@ -3933,6 +3933,15 @@ model_name = "buffalo_l"
         self.assertIn("Person i bildet", body)
         self.assertIn('data-manual-person-form', body)
         self.assertIn('data-manual-person-remove', body)
+        controls_start = body.index('<nav class="controls"')
+        controls_end = body.index("</nav>", controls_start)
+        controls_html = body[controls_start:controls_end]
+        stage_start = body.index('<section class="stage">')
+        stage_end = body.index("</section>", stage_start)
+        stage_html = body[stage_start:stage_end]
+        self.assertLess(controls_html.index("data-open-manual-date"), controls_html.index("data-manual-person-form"))
+        self.assertLess(controls_html.index("data-manual-person-form"), controls_html.index("data-delete-item"))
+        self.assertNotIn("data-manual-person-form", stage_html)
         self.assertNotIn("Person i bildet", manual_disabled_body)
         self.assertNotIn('data-manual-person-form', manual_disabled_body)
         self.assertNotIn('data-manual-person-remove', manual_disabled_body)
@@ -3942,6 +3951,7 @@ model_name = "buffalo_l"
         self.assertIn("width: fit-content;", SERVER_CSS)
         self.assertIn("justify-self: start;", SERVER_CSS)
         self.assertIn(".tag-rail .faces-button {\n      flex: 0 0 auto;", SERVER_CSS)
+        self.assertIn(".controls .delete-button { margin-left: auto; }", SERVER_CSS)
         self.assertIn("Ny person", face_body)
         self.assertIn("/api/face-person-create-and-add-face", SERVER_JS)
         self.assertIn("/api/item-faces?file_id=", SERVER_JS)

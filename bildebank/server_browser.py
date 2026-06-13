@@ -1175,20 +1175,6 @@ def source_item_page_html(
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
     media = source_item_media_html(target, source, item, face_config)
-    controls = source_controls_html(
-        source,
-        month_nav,
-        previous_item,
-        next_item,
-        rotation_buttons=rotation_buttons_html(source, item),
-        manual_date_button=manual_date_button_html(item),
-        manual_location_button=(
-            manual_location_button_html(target, item, manual_h3_cell)
-            + remove_manual_location_button_html(item, manual_h3_cell)
-        ),
-        unconfirm_buttons=unconfirm_face_buttons_html(target, source, item, face_config) if face_enabled else "",
-        delete_button=delete_button_html(source, item, previous_item, next_item),
-    )
     people_data = confirmed_people_for_file(target, int(item["id"]), face_config) if face_enabled else []
     people = people_links_html(people_data) if face_enabled else ""
     face_rail_html = people
@@ -1196,6 +1182,21 @@ def source_item_page_html(
         manual_person_file_controls_html(target, item, people_data, face_config)
         if face_enabled and manual_person_controls_enabled and source.person_name is None
         else ""
+    )
+    controls = source_controls_html(
+        source,
+        month_nav,
+        previous_item,
+        next_item,
+        rotation_buttons=rotation_buttons_html(source, item),
+        manual_date_button=manual_date_button_html(item),
+        manual_person_controls=manual_person_controls,
+        manual_location_button=(
+            manual_location_button_html(target, item, manual_h3_cell)
+            + remove_manual_location_button_html(item, manual_h3_cell)
+        ),
+        unconfirm_buttons=unconfirm_face_buttons_html(target, source, item, face_config) if face_enabled else "",
+        delete_button=delete_button_html(source, item, previous_item, next_item),
     )
     show_unconfirmed_faces = face_enabled and source.person_name is None
     unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
@@ -1248,7 +1249,6 @@ def source_item_page_html(
           <div class="stage-shell">
             {tag_controls}
             <section class="stage">
-              {manual_person_controls}
               {media}
             </section>
           </div>
@@ -1622,7 +1622,7 @@ def delete_button_html(source: BrowserSource, item: Any, previous_item: Any | No
         redirect_url = source.root_url
     relative = display_relative_path(Path("."), Path(str(item["target_path"])))
     return (
-        f'<button class="nav-button danger-button" type="button" '
+        f'<button class="nav-button danger-button delete-button" type="button" '
         f'title="Flytt bildet til papirkurven" '
         f'data-delete-item="{int(item["id"])}" '
         f'data-delete-path="{html.escape(relative)}" '
