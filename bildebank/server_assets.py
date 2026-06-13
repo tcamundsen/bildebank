@@ -296,6 +296,18 @@ SERVER_CSS = r"""    :root {
       align-items: center;
     }
     .person-link { color: var(--accent); }
+    .people {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: stretch;
+    }
+    .tag-rail .person-link, .tag-rail .faces-button {
+      flex: 1 1 max-content;
+      justify-content: center;
+      text-align: center;
+      white-space: nowrap;
+    }
     .confirmed-badge {
       margin-left: 6px;
       font-size: 11px;
@@ -322,6 +334,8 @@ SERVER_CSS = r"""    :root {
       flex-direction: column;
       gap: 8px;
       align-items: stretch;
+      width: clamp(148px, 18vw, 260px);
+      box-sizing: border-box;
       padding: 14px 10px;
       border-right: 1px solid var(--border);
       background: #141414;
@@ -767,7 +781,7 @@ SERVER_CSS = r"""    :root {
       .search { grid-template-columns: 1fr; }
       .browser-header { align-items: stretch; }
       .stage-shell { grid-template-columns: 1fr; }
-      .tag-rail { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }
+      .tag-rail { width: auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }
       .tag-toggle { justify-content: center; text-align: center; flex: 1 1 auto; }
       .nav-button, .server-search-link, .person-link, .faces-button { flex: 1 1 auto; justify-content: center; text-align: center; }
       .top-actions { margin-left: 0; width: 100%; justify-content: stretch; }

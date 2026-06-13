@@ -3920,7 +3920,16 @@ model_name = "buffalo_l"
             "Ola Nordmann</a>",
             body,
         )
-        self.assertIn("Ubekreftet ansikter i bildet (1)", body)
+        self.assertIn("Bekreft ansikter (1)", body)
+        self.assertNotIn("Ubekreftet ansikter i bildet", body)
+        tag_rail_start = body.index('<aside class="tag-rail"')
+        tag_rail_end = body.index("</aside>", tag_rail_start)
+        tag_rail_html = body[tag_rail_start:tag_rail_end]
+        self.assertIn('class="person-link" href="/person/Kari/no-faces/item/1"', tag_rail_html)
+        self.assertIn('class="person-link" href="/person/Ola%20Nordmann/no-faces/item/1"', tag_rail_html)
+        self.assertIn("Bekreft ansikter (1)", tag_rail_html)
+        self.assertLess(tag_rail_html.index("date-status-badge"), tag_rail_html.index('class="person-link"'))
+        self.assertLess(tag_rail_html.index('class="person-link"'), tag_rail_html.index("Bekreft ansikter (1)"))
         self.assertIn("Person i bildet", body)
         self.assertIn('data-manual-person-form', body)
         self.assertIn('data-manual-person-remove', body)
@@ -4787,6 +4796,11 @@ model_name = "buffalo_l"
         self.assertNotIn("forslag:", body)
         self.assertIn("NB: 2 bekreftede ansikter i samme bilde", body)
         self.assertIn("NB: 2 bekreftede ansikter for Kari i dette bildet", confirmed_body)
+        confirmed_tag_rail_start = confirmed_body.index('<aside class="tag-rail"')
+        confirmed_tag_rail_end = confirmed_body.index("</aside>", confirmed_tag_rail_start)
+        confirmed_tag_rail_html = confirmed_body[confirmed_tag_rail_start:confirmed_tag_rail_end]
+        self.assertIn('class="person-link"', confirmed_tag_rail_html)
+        self.assertIn('data-person-name="Kari"', confirmed_tag_rail_html)
         self.assertIn('data-unconfirm-face="1"', confirmed_body)
         self.assertIn('data-unconfirm-face="3"', confirmed_body)
         self.assertIn('data-unconfirm-person="Kari"', confirmed_body)
