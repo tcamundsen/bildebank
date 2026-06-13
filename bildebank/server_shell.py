@@ -84,7 +84,6 @@ def source_top_links_html(
     links = [
         '<a class="server-search-link" href="/filter">Filtersøk</a>',
         '<a class="server-search-link" href="/geo">Steder</a>',
-        '<a class="server-search-link" href="/sources">Kilder</a>',
         '<a class="server-search-link" href="/tags">Tagger</a>',
     ]
     if face_enabled:

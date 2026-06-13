@@ -817,7 +817,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('<header class="browser-header">', body)
         self.assertIn('href="/">Alle bilder</a>', body)
         self.assertIn('href="/geo">Steder</a>', body)
-        self.assertIn('href="/sources">Kilder</a>', body)
         self.assertNotIn('href="/people">Personer</a>', body)
         self.assertNotIn('href="/search">Bildesøk</a>', body)
 
@@ -3517,7 +3516,6 @@ model_name = "buffalo_l"
         self.assertIn("Kilde: source-a", item_body)
         self.assertIn('href="/item/1">Alle bilder</a>', item_body)
         self.assertIn('href="/source/1/year/2024">2024</a>', item_body)
-        self.assertIn('href="/sources">Kilder</a>', item_body)
         self.assertNotIn("IMG_20240203", item_body)
         self.assertIn('href="/source/1">Kilde: source-a</a><span class="sep">/</span>2024</nav>', year_body)
         self.assertIn('href="/source/1/month/2024-01"', year_body)
