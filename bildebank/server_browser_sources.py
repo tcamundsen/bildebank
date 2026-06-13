@@ -16,7 +16,6 @@ class BrowserSource:
     root_url: str
     person_name: str | None = None
     include_suggestions: bool = True
-    date_source: str | None = None
     source_id: int | None = None
     show_faces: bool = True
     geo_place_slug: str | None = None
@@ -79,14 +78,6 @@ def person_browser_source(person_name: str, *, include_suggestions: bool, show_f
     return BrowserSource(title, root_url, person_name, include_suggestions, show_faces=show_faces)
 
 
-def date_source_browser_source(date_source: str) -> BrowserSource:
-    labels = {
-        "filename": "Dato fra filnavn",
-        "mtime": "Dato fra mtime",
-    }
-    return BrowserSource(labels[date_source], f"/date-source/{date_source}", date_source=date_source)
-
-
 def imported_source_browser_source(source: db.Source | sqlite3.Row) -> BrowserSource:
     source_id = int(source["id"] if isinstance(source, sqlite3.Row) else source.id)
     name = str(source["name"] if isinstance(source, sqlite3.Row) else source.name)
@@ -111,14 +102,9 @@ def tag_browser_source(tag_name: str) -> BrowserSource:
     )
 
 
-def valid_browser_date_source(date_source: str) -> bool:
-    return date_source in {"filename", "mtime"}
-
-
 def is_filtered_source(source: BrowserSource) -> bool:
     return (
         source.person_name is not None
-        or source.date_source is not None
         or source.source_id is not None
         or source.geo_place_slug is not None
         or source.tag_name is not None
@@ -131,7 +117,7 @@ def source_has_sql_filter(source: BrowserSource) -> bool:
         from .server_filter import text_filter_has_runtime_filter
 
         return not text_filter_has_runtime_filter(source.text_filter)
-    return source.date_source is not None or source.geo_place_slug is not None or source.text_filter is not None
+    return source.geo_place_slug is not None or source.text_filter is not None
 
 
 def source_includes_deleted(source: BrowserSource) -> bool:
@@ -139,10 +125,6 @@ def source_includes_deleted(source: BrowserSource) -> bool:
 
 
 def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
-    if source.date_source is not None:
-        if not valid_browser_date_source(source.date_source):
-            raise ValueError("Ugyldig datokilde.")
-        return "date_source = ?", (source.date_source,)
     if source.geo_place_slug is not None:
         place = PredefinedGeoPlace(source.geo_place_slug, source.title, source.geo_place_cells)
         return db.geo_place_where_clause(geo_place_cells_by_column(place))

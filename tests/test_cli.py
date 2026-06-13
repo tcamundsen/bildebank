@@ -103,7 +103,6 @@ from bildebank.server_browser import (
 )
 from bildebank.server_browser_sources import (
     all_browser_source,
-    date_source_browser_source,
     imported_source_browser_source,
     parse_source_path,
     person_browser_source,
@@ -1165,8 +1164,8 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("<dd>ja</dd>", body)
         self.assertIn("InsightFace installert", body)
         self.assertIn("OpenCLIP aktivert", body)
-        self.assertIn('href="/date-source/filename">Dato fra filnavn</a>', body)
-        self.assertIn('href="/date-source/mtime">Dato fra mtime</a>', body)
+        self.assertNotIn('href="/date-source/filename">Dato fra filnavn</a>', body)
+        self.assertNotIn('href="/date-source/mtime">Dato fra mtime</a>', body)
         self.assertIn("OpenCLIP tilgjengelig", body)
         self.assertIn("Test-Model", body)
         self.assertIn("test-weights", body)
@@ -2214,7 +2213,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "9")
+        self.assertEqual(SERVER_ASSET_VERSION, "11")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -3023,75 +3022,6 @@ model_name = "buffalo_l"
         self.assertNotIn('<img src="/file/1"', body)
         self.assertNotIn("↺", body)
         self.assertIn("Fil<br>IMG_20240102.nef", month_body)
-
-    def test_run_server_date_source_browser_reuses_source_pages(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            source = Path(tmp) / "source"
-            source.mkdir()
-            (source / "IMG_20231201.jpg").write_bytes(b"image-one")
-            (source / "IMG_20240102.jpg").write_bytes(b"image-two")
-            (source / "IMG_20240203.jpg").write_bytes(b"image-three")
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-            conn = sqlite3.connect(target / DB_FILENAME)
-            try:
-                conn.execute("UPDATE files SET date_source = 'filename' WHERE id = 1")
-                conn.execute("UPDATE files SET date_source = 'mtime' WHERE id = 2")
-                conn.execute("UPDATE files SET date_source = 'filename' WHERE id = 3")
-                conn.commit()
-            finally:
-                conn.close()
-
-            filename_source = date_source_browser_source("filename")
-            mtime_source = date_source_browser_source("mtime")
-            with patch("bildebank.server_browser.source_items", side_effect=AssertionError("source_items should not be used")):
-                filename_item = source_item_by_id(target, filename_source, 1)
-                mtime_item = source_item_by_id(target, mtime_source, 2)
-                self.assertIsNotNone(filename_item)
-                self.assertIsNotNone(mtime_item)
-                filename_adjacent = adjacent_source_items(target, filename_source, filename_item)
-                filename_month_navigation = source_month_navigation(target, filename_source, filename_item)
-                mtime_month_items = source_month_items(target, mtime_source, "2024-01")
-                filename_excludes_mtime_item = source_item_by_id(target, filename_source, 2) is None
-            self.assertIsNotNone(filename_item)
-            self.assertIsNotNone(mtime_item)
-            filename_body = source_item_page_html(
-                target,
-                filename_source,
-                filename_item,
-                *filename_adjacent,
-                filename_month_navigation,
-            )
-            mtime_month_body = source_month_page_html(
-                target,
-                mtime_source,
-                "2024-01",
-                mtime_month_items,
-            )
-            all_month_disabled_body = source_month_page_html(
-                target,
-                all_browser_source(),
-                "2024-01",
-                browser_month_items(target, "2024-01"),
-                face_enabled=False,
-                openclip_enabled=False,
-            )
-            empty_source_disabled_body = empty_source_html(filename_source, face_enabled=False, openclip_enabled=False)
-
-        self.assertIn("Dato fra filnavn", filename_body)
-        self.assertIn("/date-source/filename/item/3", filename_body)
-        self.assertIn('href="/item/1">Alle bilder</a>', filename_body)
-        self.assertTrue(filename_excludes_mtime_item)
-        self.assertIn("Dato fra mtime", mtime_month_body)
-        self.assertIn("/date-source/mtime/item/2", mtime_month_body)
-        self.assertNotIn("/date-source/mtime/item/1", mtime_month_body)
-        self.assertNotIn('href="/people"', all_month_disabled_body)
-        self.assertNotIn('href="/search"', all_month_disabled_body)
-        self.assertIn('href="/">Alle bilder</a>', empty_source_disabled_body)
-        self.assertNotIn('href="/people"', empty_source_disabled_body)
-        self.assertNotIn('href="/search"', empty_source_disabled_body)
 
     def test_run_server_filter_browser_uses_exclusive_dates_and_location_filters(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

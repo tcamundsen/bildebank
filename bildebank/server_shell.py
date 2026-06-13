@@ -92,8 +92,7 @@ def source_top_links_html(
     if source == all_browser_source() and item is None:
         links.insert(0, f'<a class="server-search-link" href="/">{all_label}</a>')
     if (
-        source.date_source is not None
-        or source.source_id is not None
+        source.source_id is not None
         or source.geo_place_slug is not None
         or source.tag_name is not None
         or source.text_filter is not None

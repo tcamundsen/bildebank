@@ -73,7 +73,6 @@ from .server_browser import (
 from .server_browser_sources import (
     BrowserSource,
     all_browser_source,
-    date_source_browser_source,
     geo_place_browser_source,
     imported_source_browser_source,
     parse_person_path,
@@ -83,7 +82,6 @@ from .server_browser_sources import (
     person_url,
     source_item_url,
     tag_browser_source,
-    valid_browser_date_source,
 )
 from .server_faces import (
     clear_face_caches,
@@ -325,9 +323,6 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path.startswith("/years/"):
                 self.respond_year(parsed.path.removeprefix("/years/"))
-                return
-            if parsed.path.startswith("/date-source/"):
-                self.respond_date_source(parsed.path.removeprefix("/date-source/"))
                 return
             if parsed.path == "/filter":
                 self.respond_filter(parsed.query)
@@ -653,22 +648,6 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             hide_out_of_focus=self.server.hide_out_of_focus,
             item_not_found_message="Filen finnes ikke for denne personen.",
             invalid_page_message="Ugyldig personside.",
-        )
-
-    def respond_date_source(self, raw_path: str) -> None:
-        raw_date_source, page_mode, raw_value = parse_source_path(raw_path)
-        date_source = urllib.parse.unquote(raw_date_source).strip()
-        if not valid_browser_date_source(date_source):
-            self.respond_text("Ugyldig datokilde.", status=HTTPStatus.BAD_REQUEST)
-            return
-        source = date_source_browser_source(date_source)
-        self.respond_browser_source(
-            source,
-            page_mode,
-            raw_value,
-            hide_out_of_focus=self.server.hide_out_of_focus,
-            item_not_found_message="Filen finnes ikke for denne datokilden.",
-            invalid_page_message="Ugyldig datokildeside.",
         )
 
     def respond_filter(self, query: str) -> None:

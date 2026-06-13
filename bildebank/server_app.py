@@ -61,8 +61,6 @@ def app_status_page_html(
         f"""
         <nav class="subnav">
           <a href="/settings/removed">Slettede bilder</a>
-          <a href="/date-source/filename">Dato fra filnavn</a>
-          <a href="/date-source/mtime">Dato fra mtime</a>
           <a href="/sources" title='Lister output fra "bildebank list-sources"'>Importerte mapper</a>
         </nav>
         <h1>Innstillinger</h1>

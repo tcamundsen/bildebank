@@ -889,26 +889,6 @@ def source_month_keys(
     return list(cached_browser_month_keys(str(target.resolve()), mtime_ns, hide_out_of_focus))
 
 
-def date_source_items(target: Path, date_source: str, *, hide_out_of_focus: bool = False) -> list[Any]:
-    where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
-    conn = db.connect(target)
-    try:
-        return list(
-            conn.execute(
-                f"""
-                SELECT {FILE_COLUMNS}
-                FROM files
-                WHERE {where_sql}
-                  AND date_source = ?
-                ORDER BY {ITEM_ORDER_SQL}
-                """,
-                (*params, date_source),
-            )
-        )
-    finally:
-        conn.close()
-
-
 def imported_source_items(target: Path, source_id: int, *, hide_out_of_focus: bool = False) -> list[Any]:
     hidden_ids = sorted(motion_video_file_ids(target))
     if hidden_ids:
@@ -2187,10 +2167,6 @@ def empty_source_html(
 
 def empty_source_message(source: BrowserSource) -> str:
     if source.person_name is None:
-        if source.date_source == "filename":
-            return "Ingen bilder med dato fra filnavn."
-        if source.date_source == "mtime":
-            return "Ingen bilder med dato fra mtime."
         if source.source_id is not None:
             return "Ingen aktive bilder for denne kilden."
         if source.geo_place_slug is not None:
@@ -2375,8 +2351,6 @@ def source_items(
         from .server_filter import text_filter_items
 
         return text_filter_items(target, source.text_filter, hide_out_of_focus=hide_out_of_focus)
-    if source.date_source is not None:
-        return date_source_items(target, source.date_source, hide_out_of_focus=hide_out_of_focus)
     if source.source_id is not None:
         return imported_source_items(target, source.source_id, hide_out_of_focus=hide_out_of_focus)
     if source.tag_name is not None:
