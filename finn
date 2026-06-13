@@ -1,6 +1,7 @@
 #!/usr/bin/bash
 # finn fungerer i git bash
 
+find -name "*.md" -not -path "./venv/*"  > finn.tmp
 find -name "*.py" -not -path "./venv/*"  > finn.tmp
 find -name "*.html" -not -path "./venv/*" >> finn.tmp
 find -name "*.css" -not -path "./venv/*" >> finn.tmp
