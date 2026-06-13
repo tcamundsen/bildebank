@@ -1549,15 +1549,16 @@ def manual_date_button_html(item: Any) -> str:
     manual_from = item_string_value(item, "manual_date_from")
     manual_to = item_string_value(item, "manual_date_to")
     manual_note = item_string_value(item, "manual_date_note")
-    label = "Endre dato" if manual_date_text(item) else "Sett dato"
+    title = "Endre manuell dato" if manual_date_text(item) else "Sett manuell dato"
     return (
         f'<button class="nav-button" type="button" '
+        f'title="{title}" '
         f'data-open-manual-date '
         f'data-manual-date-item="{file_id}" '
         f'data-manual-date-from="{html.escape(manual_from)}" '
         f'data-manual-date-to="{html.escape(manual_to)}" '
         f'data-manual-date-note="{html.escape(manual_note)}">'
-        f'{label}</button>'
+        f'📅</button>'
     )
 
 
