@@ -1022,13 +1022,29 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     if (!personRenameDialog) return;
     personRenameDialog.hidden = true;
   }
-  function ensureTopPersonLink(name, url, confirmed = false) {
+  function ensureRailPersonLink(name, url, confirmed = false) {
     if (!name || !url) return;
-    let people = document.querySelector(".topline .people");
+    const tagRail = document.querySelector(".tag-rail");
+    if (!tagRail) return;
+    let section = Array.from(tagRail.querySelectorAll(".people-section")).find(item => {
+      const heading = item.querySelector(".people-heading");
+      return heading && heading.textContent === "Personer i bildet";
+    });
+    if (!section) {
+      section = document.createElement("section");
+      section.className = "people-section";
+      const heading = document.createElement("h2");
+      heading.className = "people-heading";
+      heading.textContent = "Personer i bildet";
+      section.append(heading);
+      const before = tagRail.querySelector("[data-open-faces]") || tagRail.firstChild;
+      tagRail.insertBefore(section, before);
+    }
+    let people = section.querySelector(".people");
     if (!people) {
       people = document.createElement("div");
       people.className = "people";
-      document.querySelector(".topline .title")?.after(people);
+      section.append(people);
     }
     const exists = Array.from(people.querySelectorAll(".person-link")).some(link => link.dataset.personName === name);
     if (exists) return;
@@ -1358,7 +1374,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
         });
         const payload = await response.json();
         if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke lagre person.");
-        ensureTopPersonLink(payload.person_name, payload.person_url, true);
+        ensureRailPersonLink(payload.person_name, payload.person_url, true);
         if (status) status.textContent = "Lagret.";
         form.querySelectorAll("button, select").forEach(item => item.disabled = false);
       } catch (error) {

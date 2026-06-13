@@ -1159,7 +1159,7 @@ def source_item_page_html(
     media = source_item_media_html(target, source, item, face_config)
     people_data = confirmed_people_for_file(target, int(item["id"]), face_config) if face_enabled else []
     confirmed_face_people_data = confirmed_face_people_for_file(target, int(item["id"]), face_config) if face_enabled else []
-    people = people_links_html(people_data, "Bildebank tror disse er i bildet") if face_enabled else ""
+    people = people_links_html(people_data, "Personer i bildet") if face_enabled else ""
     confirmed_face_people = (
         confirmed_face_people_text_html(confirmed_face_people_data)
         if face_enabled
