@@ -169,7 +169,7 @@ SERVER_CSS = r"""    :root {
       min-height: 100vh;
       height: auto;
       overflow: visible;
-      grid-template-rows: auto auto auto;
+      grid-template-rows: max-content minmax(0, 1fr) max-content;
     }
     .browser-header {
       background: var(--panel);

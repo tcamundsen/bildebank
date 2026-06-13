@@ -2211,6 +2211,8 @@ model_name = "buffalo_l"
         self.assertIn("aspect-ratio: 4 / 3;", SERVER_CSS)
         self.assertIn("overflow: hidden;", SERVER_CSS)
         self.assertIn(".server-browser.month-browser", SERVER_CSS)
+        self.assertIn("min-height: 100vh;", SERVER_CSS)
+        self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
         self.assertEqual(SERVER_ASSET_VERSION, "9")
 
