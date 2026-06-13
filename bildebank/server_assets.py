@@ -302,8 +302,14 @@ SERVER_CSS = r"""    :root {
       gap: 8px;
       align-items: stretch;
     }
-    .tag-rail .person-link, .tag-rail .faces-button {
+    .tag-rail .person-link {
       flex: 1 1 max-content;
+      justify-content: center;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .tag-rail .faces-button {
+      flex: 0 0 auto;
       justify-content: center;
       text-align: center;
       white-space: nowrap;

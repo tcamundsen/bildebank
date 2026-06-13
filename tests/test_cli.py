@@ -3941,6 +3941,7 @@ model_name = "buffalo_l"
         self.assertNotIn("Ny person", body)
         self.assertIn("width: fit-content;", SERVER_CSS)
         self.assertIn("justify-self: start;", SERVER_CSS)
+        self.assertIn(".tag-rail .faces-button {\n      flex: 0 0 auto;", SERVER_CSS)
         self.assertIn("Ny person", face_body)
         self.assertIn("/api/face-person-create-and-add-face", SERVER_JS)
         self.assertIn("/api/item-faces?file_id=", SERVER_JS)
