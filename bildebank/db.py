@@ -2066,11 +2066,11 @@ def tags(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
     create_tags_schema(conn)
     return conn.execute(
         """
-        SELECT tags.id, tags.name, tags.kind, tags.created_at, COUNT(file_tags.file_id) AS file_count
+        SELECT tags.id, tags.name, tags.name_key, tags.kind, tags.created_at, COUNT(file_tags.file_id) AS file_count
         FROM tags
         LEFT JOIN file_tags ON file_tags.tag_id = tags.id
         GROUP BY tags.id
-        ORDER BY tags.name_key
+        ORDER BY CASE tags.kind WHEN 'system' THEN 0 ELSE 1 END, tags.name_key
         """
     )
 

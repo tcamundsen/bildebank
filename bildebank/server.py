@@ -1364,7 +1364,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Taggnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
-            server_actions.set_system_tag_on_file(self.server.target, file_id, tag_name, tagged)
+            server_actions.set_tag_on_file(self.server.target, file_id, tag_name, tagged)
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return

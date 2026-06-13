@@ -1797,12 +1797,12 @@ model_name = "buffalo_l"
             body = month_page_html(target, "2024-01", browser_month_items(target, "2024-01"))
 
         for label in (
-            "Forrige år",
-            "Neste år",
-            "Forrige måned",
-            "Neste måned",
-            "Forrige bilde",
-            "Neste bilde",
+            "Å-",
+            "Å+",
+            "M-",
+            "M+",
+            "◀",
+            "▶",
         ):
             self.assertIn(label, body)
         self.assertIn("/month/2023-12", body)
@@ -1976,7 +1976,7 @@ model_name = "buffalo_l"
             self.assertIn("date-status-badge", body)
             self.assertIn("ca. 2004-07-15", body)
             self.assertIn("Opprinnelig: 2026-01-02", body)
-            self.assertLess(body.index("date-status-badge"), body.index("tag-toggle"))
+            self.assertLess(body.index("tag-toggle"), body.index("date-status-badge"))
             self.assertIn("ca. 2004-07-15", info_body)
             self.assertIn("Kamera hadde feil dato", info_body)
             self.assertIn("Opprinnelig dato", info_body)
@@ -2640,7 +2640,7 @@ model_name = "buffalo_l"
         self.assertIsNone(row["h3_res0"])
         self.assertIsNone(row["h3_res3"])
 
-    def test_run_server_item_page_has_system_tag_buttons(self) -> None:
+    def test_run_server_item_page_lists_defined_tags_before_geo_info(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -2649,6 +2649,12 @@ model_name = "buffalo_l"
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                db.ensure_tag(conn, "Familie")
+                conn.commit()
+            finally:
+                conn.close()
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
@@ -2656,7 +2662,11 @@ model_name = "buffalo_l"
         self.assertIn('class="tag-rail"', body)
         self.assertIn('data-tag-toggle="1"', body)
         self.assertIn('data-tag-name="Ute av fokus"', body)
+        self.assertIn('data-tag-name="Familie"', body)
         self.assertIn('aria-pressed="false"', body)
+        self.assertLess(body.index('data-tag-name="Ute av fokus"'), body.index('data-tag-name="Familie"'))
+        self.assertLess(body.index('data-tag-name="Familie"'), body.index('class="date-status-badge"'))
+        self.assertLess(body.index('data-tag-name="Familie"'), body.index('class="location-status-badge"'))
         self.assertIn("/api/item-tag", SERVER_JS)
         self.assertIn("stage-shell", SERVER_CSS)
         self.assertIn("tag-rail", SERVER_CSS)
@@ -2699,7 +2709,7 @@ model_name = "buffalo_l"
         self.assertIn("Ute av fokus", info_body)
         self.assertIn("(system)", info_body)
 
-    def test_run_server_item_tag_endpoint_rejects_user_tag(self) -> None:
+    def test_run_server_item_tag_endpoint_sets_user_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -2726,10 +2736,15 @@ model_name = "buffalo_l"
 
             handler = FakeHandler()
             BildebankRequestHandler.respond_tag_item(handler)  # type: ignore[arg-type]
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            info_body = image_info_content_html(target, item)
 
-        self.assertEqual(handler.status, HTTPStatus.BAD_REQUEST)
-        self.assertIs(handler.body["ok"], False)
-        self.assertIn("systemtagger", str(handler.body["error"]))
+        self.assertIsNone(handler.status)
+        self.assertEqual({"ok": True, "file_id": 1, "tag_name": "Familie", "tagged": True}, handler.body)
+        self.assertIn('data-tag-name="Familie" aria-pressed="true"', body)
+        self.assertIn("Familie", info_body)
 
     def test_run_server_delete_button_moves_file_to_deleted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -8515,7 +8530,7 @@ print(json.dumps([
             html = (target / "person-Kari.html").read_text(encoding="utf-8")
             self.assertIn("<title>Kari</title>", html)
             self.assertIn('<div class="title">Kari</div>', html)
-            self.assertIn("Forrige måned", html)
+            self.assertIn("M-", html)
             self.assertIn("const embeddedItems", html)
             self.assertIn("IMG_20240102.jpg", html)
             self.assertIn('"kind": "image"', html)

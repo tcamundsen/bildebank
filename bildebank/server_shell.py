@@ -251,12 +251,12 @@ def source_controls_html(
 ) -> str:
     return f"""
     <nav class="controls" aria-label="Navigering">
-      {source_month_nav_link(source, month_nav["previous_year"], "Forrige år", "previous-year")}
-      {source_month_nav_link(source, month_nav["next_year"], "Neste år", "next-year")}
-      {source_month_nav_link(source, month_nav["previous_month"], "Forrige måned", "previous-month")}
-      {source_month_nav_link(source, month_nav["next_month"], "Neste måned", "next-month")}
-      {source_nav_link(source, previous_item, "Forrige bilde", "previous")}
-      {source_nav_link(source, next_item, "Neste bilde", "next")}
+      {source_month_nav_link(source, month_nav["previous_year"], "Å-", "previous-year")}
+      {source_month_nav_link(source, month_nav["next_year"], "Å+", "next-year")}
+      {source_month_nav_link(source, month_nav["previous_month"], "M-", "previous-month")}
+      {source_month_nav_link(source, month_nav["next_month"], "M+", "next-month")}
+      {source_nav_link(source, previous_item, "◀", "previous")}
+      {source_nav_link(source, next_item, "▶", "next")}
       {rotation_buttons}
       {manual_date_button}
       {manual_location_button}

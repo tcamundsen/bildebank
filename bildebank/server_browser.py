@@ -1206,7 +1206,7 @@ def source_item_page_html(
         next_item,
         hide_out_of_focus=hide_out_of_focus,
     )
-    tag_controls = system_tag_controls_html(
+    tag_controls = tag_controls_html(
         target,
         item,
         out_of_focus_redirect_url=out_of_focus_redirect_url,
@@ -1420,7 +1420,7 @@ def hidden_after_out_of_focus_tag_redirect_url(
     return source.root_url
 
 
-def system_tag_controls_html(
+def tag_controls_html(
     target: Path,
     item: Any,
     *,
@@ -1431,15 +1431,18 @@ def system_tag_controls_html(
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
-        active_names = {str(row["name"]).casefold() for row in db.tags_for_file(conn, file_id)}
+        defined_tags = list(db.tags(conn))
+        active_names = {str(row["name_key"]) for row in db.tags_for_file(conn, file_id)}
         manual_h3_name = manual_h3_place_name(conn, item)
         manual_h3_cell_value = manual_h3_cell(item)
     finally:
         if owned_conn:
             conn.close()
     buttons = []
-    for tag_name in db.SYSTEM_TAG_NAMES:
-        active = tag_name.casefold() in active_names
+    for tag in defined_tags:
+        tag_name = str(tag["name"])
+        tag_name_key = str(tag["name_key"])
+        active = tag_name_key in active_names
         pressed = "true" if active else "false"
         active_class = " active" if active else ""
         redirect_attr = ""
@@ -1456,7 +1459,7 @@ def system_tag_controls_html(
         else gps_location_badge_html(item)
     )
     date_status = date_status_badge_html(item)
-    return f'<aside class="tag-rail" aria-label="Systemtagger">{date_status}{"".join(buttons)}{location_status}</aside>'
+    return f'<aside class="tag-rail" aria-label="Tagger">{"".join(buttons)}{date_status}{location_status}</aside>'
 
 
 def date_status_badge_html(item: Any) -> str:

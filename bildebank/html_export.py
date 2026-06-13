@@ -545,12 +545,12 @@ def render_html(
         <span id="status" class="status"></span>
       </div>
       <div class="controls">
-        <button id="prevYear" type="button">Forrige år</button>
-        <button id="nextYear" type="button">Neste år</button>
-        <button id="prevMonth" type="button">Forrige måned</button>
-        <button id="nextMonth" type="button">Neste måned</button>
-        <button id="prevItem" type="button">Forrige bilde</button>
-        <button id="nextItem" type="button">Neste bilde</button>
+        <button id="prevYear" type="button">Å-</button>
+        <button id="nextYear" type="button">Å+</button>
+        <button id="prevMonth" type="button">M-</button>
+        <button id="nextMonth" type="button">M+</button>
+        <button id="prevItem" type="button">◀</button>
+        <button id="nextItem" type="button">▶</button>
         <span id="position" class="position"></span>
       </div>
     </header>

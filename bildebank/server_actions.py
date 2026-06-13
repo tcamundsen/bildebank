@@ -20,9 +20,7 @@ def rotate_file_view(target: Path, file_id: int, direction: str) -> int:
         conn.close()
 
 
-def set_system_tag_on_file(target: Path, file_id: int, tag_name: str, tagged: bool) -> bool:
-    if not db.is_system_tag_name(tag_name):
-        raise ValueError("Webtagging støtter foreløpig bare systemtagger.")
+def set_tag_on_file(target: Path, file_id: int, tag_name: str, tagged: bool) -> bool:
     conn = db.connect(target)
     try:
         row = conn.execute(
