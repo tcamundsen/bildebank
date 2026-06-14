@@ -29,21 +29,38 @@ class PeopleFaceSummary:
 
 
 def current_face_db_path(target: Path, face_config: FaceRecognitionConfig | None = None) -> Path:
-    if face_config is None:
-        face_config = FaceRecognitionConfig()
-    path = face_db_path(target, face_config)
-    if path.exists():
-        conn = sqlite3.connect(path)
-        try:
-            if face_schema_version(conn) != FACE_SCHEMA_VERSION:
-                apply_face_schema(conn)
-                conn.commit()
-        finally:
-            conn.close()
+    path, _mtime_ns = current_face_db_path_and_mtime(target, face_config)
     return path
 
 
+def current_face_db_path_and_mtime(
+    target: Path,
+    face_config: FaceRecognitionConfig | None = None,
+) -> tuple[Path, int | None]:
+    if face_config is None:
+        face_config = FaceRecognitionConfig()
+    path = face_db_path(target, face_config)
+    try:
+        mtime_ns = path.stat().st_mtime_ns
+    except OSError:
+        return path, None
+    ensure_current_face_schema(str(path), mtime_ns)
+    return path, mtime_ns
+
+
+@lru_cache(maxsize=8)
+def ensure_current_face_schema(face_db_path: str, face_db_mtime_ns: int) -> None:
+    conn = sqlite3.connect(face_db_path)
+    try:
+        if face_schema_version(conn) != FACE_SCHEMA_VERSION:
+            apply_face_schema(conn)
+            conn.commit()
+    finally:
+        conn.close()
+
+
 def clear_face_caches() -> None:
+    ensure_current_face_schema.cache_clear()
     cached_confirmed_people_for_file.cache_clear()
     cached_person_file_ids.cache_clear()
     cached_registered_people.cache_clear()
@@ -54,10 +71,8 @@ def people_for_file(
     file_id: int,
     face_config: FaceRecognitionConfig | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    db_path = current_face_db_path(target, face_config)
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
+    db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
+    if mtime_ns is None:
         return [], []
     rows = cached_confirmed_people_for_file(str(db_path), mtime_ns, file_id)
     return people_for_file_from_rows(file_id, rows), confirmed_face_people_for_file_from_rows(file_id, rows)
@@ -68,10 +83,8 @@ def confirmed_people_for_file(
     file_id: int,
     face_config: FaceRecognitionConfig | None = None,
 ) -> list[dict[str, object]]:
-    db_path = current_face_db_path(target, face_config)
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
+    db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
+    if mtime_ns is None:
         return []
     return people_for_file_from_rows(file_id, cached_confirmed_people_for_file(str(db_path), mtime_ns, file_id))
 
@@ -81,10 +94,8 @@ def confirmed_face_people_for_file(
     file_id: int,
     face_config: FaceRecognitionConfig | None = None,
 ) -> list[dict[str, object]]:
-    db_path = current_face_db_path(target, face_config)
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
+    db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
+    if mtime_ns is None:
         return []
     return confirmed_face_people_for_file_from_rows(
         file_id,
@@ -123,10 +134,8 @@ def confirmed_face_people_for_file_from_rows(
 
 
 def registered_people(target: Path, face_config: FaceRecognitionConfig | None = None) -> list[dict[str, str]]:
-    db_path = current_face_db_path(target, face_config)
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
+    db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
+    if mtime_ns is None:
         return []
     return [
         {"name": name, "url": person_url(name)}

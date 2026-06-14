@@ -1140,35 +1140,40 @@ def source_item_page_html(
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> str:
-    from .server_faces import (
-        confirmed_face_people_text_html,
-        faces_button_html,
-        faces_overlay_html,
-        manual_person_file_controls_html,
-        people_for_file,
-        people_links_html,
-        source_duplicate_confirmed_faces_warning_html,
-        unconfirm_face_buttons_html,
-        unconfirmed_face_count_for_item,
-    )
     from .server_shell import app_header_html, source_controls_html
 
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
     media = source_item_media_html(target, source, item, face_config)
-    people_data, confirmed_face_people_data = people_for_file(target, int(item["id"]), face_config) if face_enabled else ([], [])
-    people = people_links_html(people_data, "Personer i bildet") if face_enabled else ""
-    confirmed_face_people = (
-        confirmed_face_people_text_html(confirmed_face_people_data)
-        if face_enabled
-        else ""
-    )
-    face_rail_html = people
-    manual_person_controls = (
-        manual_person_file_controls_html(target, item, people_data, face_config)
-        if face_enabled and manual_person_controls_enabled and source.person_name is None
-        else ""
-    )
+    face_rail_html = ""
+    manual_person_controls = ""
+    unconfirm_buttons = ""
+    faces_overlay = ""
+    duplicate_warning = ""
+    if face_enabled:
+        from .server_faces import (
+            confirmed_face_people_text_html,
+            faces_button_html,
+            faces_overlay_html,
+            manual_person_file_controls_html,
+            people_for_file,
+            people_links_html,
+            source_duplicate_confirmed_faces_warning_html,
+            unconfirm_face_buttons_html,
+            unconfirmed_face_count_for_item,
+        )
+
+        people_data, confirmed_face_people_data = people_for_file(target, int(item["id"]), face_config)
+        face_rail_html = people_links_html(people_data, "Personer i bildet")
+        if manual_person_controls_enabled and source.person_name is None:
+            manual_person_controls = manual_person_file_controls_html(target, item, people_data, face_config)
+        unconfirm_buttons = unconfirm_face_buttons_html(target, source, item, face_config)
+        show_unconfirmed_faces = source.person_name is None
+        unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
+        face_rail_html += faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
+        face_rail_html += confirmed_face_people_text_html(confirmed_face_people_data)
+        faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
+        duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config)
     controls = source_controls_html(
         source,
         month_nav,
@@ -1177,15 +1182,9 @@ def source_item_page_html(
         rotation_buttons=rotation_buttons_html(source, item),
         manual_date_button=manual_date_button_html(item),
         manual_person_controls=manual_person_controls,
-        unconfirm_buttons=unconfirm_face_buttons_html(target, source, item, face_config) if face_enabled else "",
+        unconfirm_buttons=unconfirm_buttons,
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
-    show_unconfirmed_faces = face_enabled and source.person_name is None
-    unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
-    faces_button = faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
-    face_rail_html += faces_button
-    face_rail_html += confirmed_face_people
-    faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
     info_overlay = image_info_overlay_html()
     manual_date_overlay = manual_date_overlay_html()
     out_of_focus_redirect_url = hidden_after_out_of_focus_tag_redirect_url(
@@ -1202,7 +1201,6 @@ def source_item_page_html(
         configured_manual_h3_cell=manual_h3_cell,
         conn=conn,
     )
-    duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config) if face_enabled else ""
     all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
     all_items_label = "Synlige bilder" if hide_out_of_focus else "Alle bilder"
     motion_video = motion_video_for_image(target, item, conn=conn)
