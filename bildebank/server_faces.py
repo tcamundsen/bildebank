@@ -105,21 +105,31 @@ def confirmed_face_people_for_file(
 
 def people_for_file_from_rows(
     file_id: int,
-    rows: tuple[tuple[str, int, int | None], ...],
+    rows: tuple[tuple[str, int, int | None, bool], ...],
 ) -> list[dict[str, object]]:
-    people: dict[str, int] = {}
-    for name, priority, _face_id in rows:
-        if name not in people or priority < people[name]:
-            people[name] = priority
+    people: dict[str, dict[str, object]] = {}
+    for name, priority, _face_id, manual in rows:
+        if name not in people:
+            people[name] = {"priority": priority, "manual": manual}
+            continue
+        if priority < int(people[name]["priority"]):
+            people[name]["priority"] = priority
+        if manual:
+            people[name]["manual"] = True
     return [
-        {"name": name, "url": person_item_url(name, file_id, show_faces=False), "confirmed": priority <= 1}
-        for name, priority in sorted(people.items())
+        {
+            "name": name,
+            "url": person_item_url(name, file_id, show_faces=False),
+            "confirmed": int(data["priority"]) <= 1,
+            "manual": bool(data["manual"]),
+        }
+        for name, data in sorted(people.items())
     ]
 
 
 def confirmed_face_people_for_file_from_rows(
     file_id: int,
-    rows: tuple[tuple[str, int, int | None], ...],
+    rows: tuple[tuple[str, int, int | None, bool], ...],
 ) -> list[dict[str, object]]:
     return [
         {
@@ -128,7 +138,7 @@ def confirmed_face_people_for_file_from_rows(
             "confirmed": True,
             "faceId": face_id,
         }
-        for name, priority, face_id in rows
+        for name, priority, face_id, _manual in rows
         if priority == 0 and face_id is not None
     ]
 
@@ -159,7 +169,11 @@ def cached_registered_people(face_db_path: str, face_db_mtime_ns: int) -> tuple[
 
 
 @lru_cache(maxsize=512)
-def cached_confirmed_people_for_file(face_db_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[tuple[str, int, int | None], ...]:
+def cached_confirmed_people_for_file(
+    face_db_path: str,
+    face_db_mtime_ns: int,
+    file_id: int,
+) -> tuple[tuple[str, int, int | None, bool], ...]:
     conn = sqlite3.connect(face_db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -167,18 +181,18 @@ def cached_confirmed_people_for_file(face_db_path: str, face_db_mtime_ns: int, f
             return ()
         rows = conn.execute(
             """
-            SELECT persons.name, 0 AS priority, person_faces.face_id
+            SELECT persons.name, 0 AS priority, person_faces.face_id, 0 AS manual
             FROM person_faces
             JOIN persons ON persons.id = person_faces.person_id
             JOIN faces ON faces.id = person_faces.face_id
             WHERE faces.file_id = ?
             UNION ALL
-            SELECT persons.name, 1 AS priority, NULL AS face_id
+            SELECT persons.name, 1 AS priority, NULL AS face_id, 1 AS manual
             FROM person_files
             JOIN persons ON persons.id = person_files.person_id
             WHERE person_files.file_id = ?
             UNION ALL
-            SELECT persons.name, 2 AS priority, NULL AS face_id
+            SELECT persons.name, 2 AS priority, NULL AS face_id, 0 AS manual
             FROM face_suggestions
             JOIN persons ON persons.id = face_suggestions.person_id
             JOIN faces ON faces.id = face_suggestions.face_id
@@ -192,6 +206,7 @@ def cached_confirmed_people_for_file(face_db_path: str, face_db_mtime_ns: int, f
                 str(row["name"]),
                 int(row["priority"]),
                 int(row["face_id"]) if row["face_id"] is not None else None,
+                bool(row["manual"]),
             )
             for row in rows
         )
@@ -801,12 +816,36 @@ def remove_manual_person_file_button_html(
     )
 
 
-def people_links_html(people: list[dict[str, object]], heading: str = "") -> str:
-    if not people:
+def people_links_html(
+    people: list[dict[str, object]],
+    heading: str = "",
+    *,
+    manual_person_controls: str = "",
+    file_id: int | None = None,
+    manual_remove_enabled: bool = False,
+) -> str:
+    if not people and not manual_person_controls:
         return ""
     heading_html = f'<h2 class="people-heading">{html.escape(heading)}</h2>' if heading else ""
-    links = "\n".join(people_link_html(person) for person in people)
-    return f'<section class="people-section">{heading_html}<div class="people">{links}</div></section>'
+    add_button = (
+        '<button class="manual-person-add-button" type="button" '
+        'title="Legg til person manuelt" aria-label="Legg til person manuelt" '
+        'data-open-manual-person-form>[+]</button>'
+        if manual_person_controls
+        else ""
+    )
+    links = "\n".join(
+        people_link_html(
+            person,
+            file_id=file_id,
+            manual_remove_enabled=manual_remove_enabled,
+        )
+        for person in people
+    )
+    return (
+        f'<section class="people-section">{heading_html}<div class="people">{links}{add_button}</div>'
+        f"{manual_person_controls}</section>"
+    )
 
 
 def confirmed_face_people_text_html(people: list[dict[str, object]]) -> str:
@@ -841,12 +880,30 @@ def norwegian_html_list(items: Iterable[str]) -> str:
     return f"{', '.join(item_list[:-1])} og {item_list[-1]}"
 
 
-def people_link_html(person: dict[str, object]) -> str:
+def people_link_html(
+    person: dict[str, object],
+    *,
+    file_id: int | None = None,
+    manual_remove_enabled: bool = False,
+) -> str:
     name = str(person["name"])
     badge = '<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet"> ✅</span>' if person.get("confirmed") else ""
-    return (
+    link = (
         f'<a class="person-link" href="{html.escape(str(person["url"]))}" '
-        f'data-person-name="{html.escape(name)}">{html.escape(name)}{badge}</a>'
+        f'data-person-name="{html.escape(name)}" '
+        f'title="Vis alle bilder med denne personen">{html.escape(name)}{badge}</a>'
+    )
+    if not manual_remove_enabled or not person.get("manual") or file_id is None:
+        return link
+    return (
+        '<span class="manual-person-chip">'
+        f"{link}"
+        '<button class="manual-person-remove-button" type="button" '
+        'title="Fjern manuell kobling til denne personen fra bildet" '
+        'aria-label="Fjern manuell kobling til denne personen fra bildet" '
+        f'data-manual-person-remove data-file-id="{file_id}" '
+        f'data-person-name="{html.escape(name)}">×</button>'
+        "</span>"
     )
 
 
@@ -985,28 +1042,25 @@ def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
 def manual_person_file_controls_html(
     target: Path,
     item: Any,
-    people: list[dict[str, object]],
+    _people: list[dict[str, object]],
     face_config: FaceRecognitionConfig | None = None,
 ) -> str:
     registered = registered_people(target, face_config)
     if not registered:
         return ""
     file_id = int(item["id"])
-    present = {str(person["name"]) for person in people if person.get("confirmed")}
     options = []
     for person in registered:
         name = str(person["name"])
-        selected = " selected" if name in present else ""
-        options.append(f'<option value="{html.escape(name)}"{selected}>{html.escape(name)}</option>')
+        options.append(f'<option value="{html.escape(name)}">{html.escape(name)}</option>')
     return f"""
-    <form class="manual-person-form" data-manual-person-form data-file-id="{file_id}">
-      <label for="manualPersonSelect">Person i bildet</label>
+    <form class="manual-person-form inline-manual-person-form" data-manual-person-form data-file-id="{file_id}" hidden>
       <select id="manualPersonSelect" name="person_name">
         <option value="">Velg person</option>
         {"".join(options)}
       </select>
       <button class="nav-button" type="submit" title="Manuelt legge til person uten å påvirke ansiktsgjenkjenning">Legg til</button>
-      <button class="nav-button danger-button" type="button" title="Fjern manuelt lagt til person fra bildet" data-manual-person-remove>Fjern</button>
+      <button class="nav-button" type="button" data-close-manual-person-form>Ferdig</button>
       <span class="assign-status" data-manual-person-status></span>
     </form>
     """

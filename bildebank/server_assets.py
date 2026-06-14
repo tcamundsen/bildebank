@@ -206,6 +206,45 @@ SERVER_CSS = r"""    :root {
       color: var(--text);
     }
     .manual-person-form .assign-status { color: var(--muted); }
+    .inline-manual-person-form {
+      align-items: stretch;
+      margin-top: 2px;
+    }
+    .inline-manual-person-form[hidden] { display: none; }
+    .manual-person-add-button, .manual-person-remove-button {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      min-height: 26px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .manual-person-add-button {
+      padding: 2px 7px;
+      font-weight: 700;
+    }
+    .manual-person-chip {
+      display: inline-flex;
+      align-items: stretch;
+      flex: 1 1 max-content;
+      min-width: 0;
+    }
+    .manual-person-chip .person-link {
+      flex: 1 1 auto;
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    .manual-person-remove-button {
+      flex: 0 0 auto;
+      width: 26px;
+      border-left: 0;
+      border-top-left-radius: 0;
+      border-bottom-left-radius: 0;
+      color: #ffb4b4;
+      font-weight: 700;
+    }
+    .manual-person-add-button:hover, .manual-person-remove-button:hover { background: #252525; }
     .controls .delete-button { margin-left: auto; }
     .top-actions {
       margin-left: auto;
@@ -1073,6 +1112,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     link.className = "person-link";
     link.href = url;
     link.dataset.personName = name;
+    link.title = "Vis alle bilder med denne personen";
     link.append(document.createTextNode(name));
     if (confirmed) {
       const badge = document.createElement("span");
@@ -1381,6 +1421,16 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     const select = form.querySelector('select[name="person_name"]');
     const status = form.querySelector("[data-manual-person-status]");
     const fileId = Number(form.dataset.fileId);
+    const section = form.closest(".people-section");
+    section?.querySelector("[data-open-manual-person-form]")?.addEventListener("click", () => {
+      form.hidden = false;
+      if (status) status.textContent = "";
+      select?.focus();
+    });
+    form.querySelector("[data-close-manual-person-form]")?.addEventListener("click", () => {
+      form.hidden = true;
+      if (status) status.textContent = "";
+    });
     form.addEventListener("submit", async event => {
       event.preventDefault();
       const personName = select?.value || "";
@@ -1403,11 +1453,15 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
         form.querySelectorAll("button, select").forEach(item => item.disabled = false);
       }
     });
-    form.querySelector("[data-manual-person-remove]")?.addEventListener("click", async () => {
-      const personName = select?.value || "";
+  });
+  document.querySelectorAll("[data-manual-person-remove]").forEach(button => {
+    button.addEventListener("click", async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const fileId = Number(button.dataset.fileId);
+      const personName = button.dataset.personName || "";
       if (!fileId || !personName) return;
-      if (status) status.textContent = "Fjerner...";
-      form.querySelectorAll("button, select").forEach(item => item.disabled = true);
+      button.disabled = true;
       try {
         const response = await fetch("/api/face-person-remove-file", {
           method: "POST",
@@ -1418,8 +1472,8 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
         if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke fjerne person.");
         window.location.reload();
       } catch (error) {
-        if (status) status.textContent = error.message || "Kunne ikke fjerne person.";
-        form.querySelectorAll("button, select").forEach(item => item.disabled = false);
+        alert(error.message || "Kunne ikke fjerne person.");
+        button.disabled = false;
       }
     });
   });

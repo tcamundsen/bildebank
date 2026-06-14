@@ -9,7 +9,8 @@ Scanner importerte bilder etter ansikter.
 options:
   -h, --help           show this help message and exit
   --limit LIMIT        Maks antall bildefiler som skal sjekkes
-  --force              Scan valgte bilder på nytt selv om de allerede er scannet
+  --force              Scan valgte bilder på nytt selv om de allerede er
+                       scannet
   --show-model-output  Vis intern output fra InsightFace/ONNX ved feilsøking
 ```
 <!-- CLI-HELP-END -->

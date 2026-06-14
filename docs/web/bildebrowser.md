@@ -12,8 +12,8 @@ av bildene med å kjøre [`make-thumbnails`](../make-thumbnails.md).
 For at geo-lokalisering skal fungere må [`geo-scan'](../geo-scan.md)
 være kjørt.
 
-Det har kommet en boks med label "Person i bildet", med dropdown meny
-og knappene **Legg til** og **Slett**. Denne brukes til å markere at
+Under **Personer i bildet** i venstrepanelet kan du trykke **[+]** for å få
+opp **Velg person**, **Legg til** og **Ferdig**. Dette brukes til å markere at
 en person er i bildet manuelt, noe som er nyttig hvis ansiktet til personen
 ikke gjenkjennes av insightface. Visningen av denne kan slås av og på i
 [innstillinger](/settings).
@@ -81,10 +81,10 @@ navnet til personen på øverste linje av skjermen.
 - **Bare bekreftede** viser bare bilder du har bekreftet. Dette bør ideelt
   sett bare være 1-5 gode bilder av personen.
 
-I vanlig bildevisning kan feltet **Person i bildet** brukes når personen er i
-bildet, men ansiktet ikke kan scannes eller bekreftes godt nok. Feltet bruker
-bare personer som allerede finnes i ansiktsdatabasen. Dette påvirker ikke
-`face-suggest`, og bildet vises ikke under **Bare bekreftede**.
+I vanlig bildevisning kan **[+]** under **Personer i bildet** brukes når
+personen er i bildet, men ansiktet ikke kan scannes eller bekreftes godt nok.
+Feltet bruker bare personer som allerede finnes i ansiktsdatabasen. Dette
+påvirker ikke `face-suggest`, og bildet vises ikke under **Bare bekreftede**.
 
 ## Personer
 

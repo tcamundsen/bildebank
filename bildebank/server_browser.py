@@ -1146,7 +1146,6 @@ def source_item_page_html(
     relative = display_relative_path(target, target_path)
     media = source_item_media_html(target, source, item, face_config)
     face_rail_html = ""
-    manual_person_controls = ""
     unconfirm_buttons = ""
     faces_overlay = ""
     duplicate_warning = ""
@@ -1164,9 +1163,16 @@ def source_item_page_html(
         )
 
         people_data, confirmed_face_people_data = people_for_file(target, int(item["id"]), face_config)
-        face_rail_html = people_links_html(people_data, "Personer i bildet")
+        manual_person_controls = ""
         if manual_person_controls_enabled and source.person_name is None:
             manual_person_controls = manual_person_file_controls_html(target, item, people_data, face_config)
+        face_rail_html = people_links_html(
+            people_data,
+            "Personer i bildet",
+            manual_person_controls=manual_person_controls,
+            file_id=int(item["id"]),
+            manual_remove_enabled=manual_person_controls_enabled and source.person_name is None,
+        )
         unconfirm_buttons = unconfirm_face_buttons_html(target, source, item, face_config)
         show_unconfirmed_faces = source.person_name is None
         unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
@@ -1181,7 +1187,6 @@ def source_item_page_html(
         next_item,
         rotation_buttons=rotation_buttons_html(source, item),
         manual_date_button=manual_date_button_html(item),
-        manual_person_controls=manual_person_controls,
         unconfirm_buttons=unconfirm_buttons,
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )

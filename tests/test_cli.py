@@ -3830,6 +3830,7 @@ model_name = "buffalo_l"
                 face_conn.execute("INSERT INTO persons(id, name) VALUES(3, 'Per Manual')")
                 face_conn.execute("INSERT INTO persons(id, name) VALUES(4, 'Siril')")
                 face_conn.execute("INSERT INTO persons(id, name) VALUES(5, 'Viljar')")
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(6, 'Anne Begge')")
                 face_conn.execute(
                     """
                     INSERT INTO faces(
@@ -3870,11 +3871,23 @@ model_name = "buffalo_l"
                     """,
                     (b"embedding-4",),
                 )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(5, 1, 'key-5', 9, 10, 18, 28, 0.5, 'test', ?)
+                    """,
+                    (b"embedding-5",),
+                )
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(4, 3)")
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(5, 4)")
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(6, 5)")
                 face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(2, 2, 0.91)")
                 face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(3, 1)")
+                face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(6, 1)")
                 face_conn.commit()
             finally:
                 face_conn.close()
@@ -3900,19 +3913,21 @@ model_name = "buffalo_l"
             )
 
         self.assertNotIn("1 filer, 1 måneder", body)
+        self.assertIn('class="person-link" href="/person/Kari/no-faces/item/1"', body)
+        self.assertIn('data-person-name="Kari" title="Vis alle bilder med denne personen"', body)
+        self.assertIn('Kari<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet"> ✅</span></a>', body)
+        self.assertIn('class="person-link" href="/person/Ola%20Nordmann/no-faces/item/1"', body)
+        self.assertIn('data-person-name="Ola Nordmann" title="Vis alle bilder med denne personen">Ola Nordmann</a>', body)
+        self.assertIn('class="person-link" href="/person/Per%20Manual/no-faces/item/1"', body)
         self.assertIn(
-            'class="person-link" href="/person/Kari/no-faces/item/1" data-person-name="Kari">'
-            'Kari<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet"> ✅</span></a>',
-            body,
-        )
-        self.assertIn(
-            'class="person-link" href="/person/Ola%20Nordmann/no-faces/item/1" data-person-name="Ola Nordmann">'
-            "Ola Nordmann</a>",
-            body,
-        )
-        self.assertIn(
-            'class="person-link" href="/person/Per%20Manual/no-faces/item/1" data-person-name="Per Manual">'
+            'data-person-name="Per Manual" title="Vis alle bilder med denne personen">'
             'Per Manual<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet"> ✅</span></a>',
+            body,
+        )
+        self.assertIn('class="person-link" href="/person/Anne%20Begge/no-faces/item/1"', body)
+        self.assertIn(
+            'data-person-name="Anne Begge" title="Vis alle bilder med denne personen">'
+            'Anne Begge<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet"> ✅</span></a>',
             body,
         )
         self.assertIn("Bekreft ansikt", body)
@@ -3925,6 +3940,7 @@ model_name = "buffalo_l"
         self.assertIn('class="person-link" href="/person/Kari/no-faces/item/1"', tag_rail_html)
         self.assertIn('class="person-link" href="/person/Ola%20Nordmann/no-faces/item/1"', tag_rail_html)
         self.assertIn('class="person-link" href="/person/Per%20Manual/no-faces/item/1"', tag_rail_html)
+        self.assertIn('class="person-link" href="/person/Anne%20Begge/no-faces/item/1"', tag_rail_html)
         self.assertIn('class="person-link" href="/person/Siril/no-faces/item/1"', tag_rail_html)
         self.assertIn('class="person-link" href="/person/Viljar/no-faces/item/1"', tag_rail_html)
         self.assertIn("Bekreft ansikt", tag_rail_html)
@@ -3935,40 +3951,54 @@ model_name = "buffalo_l"
         assumed_people_html = tag_rail_html[assumed_people_start:faces_button_start]
         confirmed_faces_html = tag_rail_html[confirmed_faces_start:date_status_start]
         self.assertIn("Kari", assumed_people_html)
+        self.assertIn("Anne Begge", assumed_people_html)
         self.assertIn("Ola Nordmann", assumed_people_html)
         self.assertIn("Per Manual", assumed_people_html)
         self.assertIn("Siril", assumed_people_html)
         self.assertIn("Viljar", assumed_people_html)
+        self.assertIn("Anne Begge", confirmed_faces_html)
         self.assertIn("Kari", confirmed_faces_html)
         self.assertIn("Siril", confirmed_faces_html)
         self.assertIn("Viljar", confirmed_faces_html)
         self.assertIn('data-unconfirm-face="1"', confirmed_faces_html)
         self.assertIn('data-unconfirm-face="3"', confirmed_faces_html)
         self.assertIn('data-unconfirm-face="4"', confirmed_faces_html)
+        self.assertIn('data-unconfirm-face="5"', confirmed_faces_html)
+        self.assertIn('data-unconfirm-person="Anne Begge"', confirmed_faces_html)
         self.assertIn('data-unconfirm-person="Kari"', confirmed_faces_html)
         self.assertIn('data-unconfirm-person="Siril"', confirmed_faces_html)
         self.assertIn('data-unconfirm-person="Viljar"', confirmed_faces_html)
-        self.assertEqual(confirmed_faces_html.count(">fjern</button>"), 3)
+        self.assertEqual(confirmed_faces_html.count(">fjern</button>"), 4)
         self.assertNotIn('class="person-link"', confirmed_faces_html)
         self.assertNotIn("Ola Nordmann", confirmed_faces_html)
         self.assertNotIn("Per Manual", confirmed_faces_html)
         self.assertLess(assumed_people_start, faces_button_start)
         self.assertLess(faces_button_start, confirmed_faces_start)
         self.assertLess(confirmed_faces_start, date_status_start)
-        self.assertIn("Person i bildet", body)
+        self.assertNotIn("Person i bildet", body)
+        self.assertIn("Velg person", tag_rail_html)
+        self.assertIn("Legg til", tag_rail_html)
+        self.assertIn("Ferdig", tag_rail_html)
+        self.assertIn('data-open-manual-person-form', tag_rail_html)
         self.assertIn('data-manual-person-form', body)
-        self.assertIn('data-manual-person-remove', body)
+        self.assertEqual(tag_rail_html.count('data-manual-person-remove'), 2)
+        self.assertIn('data-person-name="Per Manual">×</button>', tag_rail_html)
+        self.assertIn('data-person-name="Anne Begge">×</button>', tag_rail_html)
+        self.assertNotIn('data-person-name="Kari">×</button>', tag_rail_html)
+        self.assertNotIn('data-person-name="Siril">×</button>', tag_rail_html)
+        self.assertNotIn('data-person-name="Viljar">×</button>', tag_rail_html)
         controls_start = body.index('<nav class="controls"')
         controls_end = body.index("</nav>", controls_start)
         controls_html = body[controls_start:controls_end]
         stage_start = body.index('<section class="stage">')
         stage_end = body.index("</section>", stage_start)
         stage_html = body[stage_start:stage_end]
-        self.assertLess(controls_html.index("data-open-manual-date"), controls_html.index("data-manual-person-form"))
-        self.assertLess(controls_html.index("data-manual-person-form"), controls_html.index("data-delete-item"))
+        self.assertNotIn("data-manual-person-form", controls_html)
+        self.assertNotIn("Person i bildet", controls_html)
         self.assertNotIn("data-manual-person-form", stage_html)
         self.assertNotIn("Person i bildet", manual_disabled_body)
         self.assertNotIn('data-manual-person-form', manual_disabled_body)
+        self.assertNotIn('data-open-manual-person-form', manual_disabled_body)
         self.assertNotIn('data-manual-person-remove', manual_disabled_body)
         self.assertIn('data-faces-item="1"', body)
         self.assertIn('data-face-list', body)
