@@ -813,7 +813,8 @@ def confirmed_face_people_text_html(people: list[dict[str, object]]) -> str:
     if not people:
         return ""
     entries = norwegian_html_list(confirmed_face_person_text_html(person) for person in people)
-    return f'<p class="people-heading confirmed-face-people">Ansikter bekreftet til gjenkjenning: {entries}</p>'
+    label = "Referanseansikt" if entries.count("data-unconfirm-face") == 1 else "Referanseansikter"
+    return f'<p class="people-heading confirmed-face-people">{label}: {entries}</p>'
 
 
 def confirmed_face_person_text_html(person: dict[str, object]) -> str:
@@ -827,7 +828,7 @@ def confirmed_face_person_text_html(person: dict[str, object]) -> str:
         f'(<button class="inline-link danger-inline-link" type="button" '
         f'data-unconfirm-face="{face_id}" '
         f'data-unconfirm-person="{html.escape(name)}" '
-        f'title="Avkreft face-id {face_id}">avkreft</button>)'
+        f'title="Avkreft face-id {face_id}">fjern</button>)'
     )
 
 
