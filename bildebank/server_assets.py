@@ -1090,7 +1090,36 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     if (!personRenameDialog) return;
     personRenameDialog.hidden = true;
   }
-  function ensureRailPersonLink(name, url, confirmed = false) {
+  function wireManualPersonRemoveButton(button) {
+    button.addEventListener("click", async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const fileId = Number(button.dataset.fileId);
+      const personName = button.dataset.personName || "";
+      if (!fileId || !personName) return;
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/face-person-remove-file", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({file_id: fileId, person_name: personName}),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke fjerne person.");
+        const pathParts = window.location.pathname.split("/").filter(Boolean);
+        const currentPerson = pathParts[0] === "person" && pathParts[1] ? decodeURIComponent(pathParts[1]) : "";
+        if (currentPerson === personName) {
+          window.location.href = `/item/${fileId}`;
+          return;
+        }
+        window.location.reload();
+      } catch (error) {
+        alert(error.message || "Kunne ikke fjerne person.");
+        button.disabled = false;
+      }
+    });
+  }
+  function ensureRailPersonLink(name, url, confirmed = false, manual = false, fileId = null) {
     if (!name || !url) return;
     const tagRail = document.querySelector(".tag-rail");
     if (!tagRail) return;
@@ -1130,7 +1159,25 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       badge.textContent = " ✅";
       link.append(badge);
     }
-    people.append(link);
+    let item = link;
+    if (manual && fileId) {
+      const chip = document.createElement("span");
+      chip.className = "manual-person-chip";
+      const removeButton = document.createElement("button");
+      removeButton.className = "manual-person-remove-button";
+      removeButton.type = "button";
+      removeButton.title = "Fjern manuell kobling til denne personen fra bildet";
+      removeButton.setAttribute("aria-label", "Fjern manuell kobling til denne personen fra bildet");
+      removeButton.dataset.manualPersonRemove = "";
+      removeButton.dataset.fileId = String(fileId);
+      removeButton.dataset.personName = name;
+      removeButton.textContent = "×";
+      wireManualPersonRemoveButton(removeButton);
+      chip.append(link, removeButton);
+      item = chip;
+    }
+    const addButton = people.querySelector("[data-open-manual-person-form]");
+    people.insertBefore(item, addButton);
   }
   document.querySelectorAll('.stage img[data-view-rotation="90"], .stage img[data-view-rotation="270"], .stage .person-media[data-view-rotation="90"] img, .stage .person-media[data-view-rotation="270"] img').forEach(img => {
     if (img instanceof HTMLImageElement && !img.complete) {
@@ -1455,7 +1502,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
         });
         const payload = await response.json();
         if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke lagre person.");
-        ensureRailPersonLink(payload.person_name, payload.person_url, true);
+        ensureRailPersonLink(payload.person_name, payload.person_url, true, true, fileId);
         if (status) status.textContent = "Lagret.";
         form.querySelectorAll("button, select").forEach(item => item.disabled = false);
       } catch (error) {
@@ -1465,49 +1512,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     });
   });
   document.querySelectorAll("[data-manual-person-remove]").forEach(button => {
-    button.addEventListener("click", async event => {
-      event.preventDefault();
-      event.stopPropagation();
-      const fileId = Number(button.dataset.fileId);
-      const personName = button.dataset.personName || "";
-      if (!fileId || !personName) return;
-      button.disabled = true;
-      try {
-        const response = await fetch("/api/face-person-remove-file", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({file_id: fileId, person_name: personName}),
-        });
-        const payload = await response.json();
-        if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke fjerne person.");
-        window.location.reload();
-      } catch (error) {
-        alert(error.message || "Kunne ikke fjerne person.");
-        button.disabled = false;
-      }
-    });
-  });
-  document.querySelectorAll("[data-remove-person-file]").forEach(button => {
-    button.addEventListener("click", async () => {
-      const fileId = Number(button.dataset.removePersonFile);
-      const personName = button.dataset.removePersonFilePerson || "";
-      if (!fileId || !personName) return;
-      if (!confirm(`Fjerne manuell person-i-bilde for ${personName}?`)) return;
-      button.disabled = true;
-      try {
-        const response = await fetch("/api/face-person-remove-file", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({file_id: fileId, person_name: personName}),
-        });
-        const payload = await response.json();
-        if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke fjerne person.");
-        window.location.href = payload.person_url || `/person/${encodeURIComponent(personName)}`;
-      } catch (error) {
-        alert(error.message || "Kunne ikke fjerne person.");
-        button.disabled = false;
-      }
-    });
+    wireManualPersonRemoveButton(button);
   });
   faceOverlay?.addEventListener("click", event => {
     if (event.target === faceOverlay || event.target.classList?.contains("lightbox-stage")) closeFacesOverlay();

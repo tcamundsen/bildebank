@@ -1158,22 +1158,20 @@ def source_item_page_html(
             people_for_file,
             people_links_html,
             source_duplicate_confirmed_faces_warning_html,
-            unconfirm_face_buttons_html,
             unconfirmed_face_count_for_item,
         )
 
         people_data, confirmed_face_people_data = people_for_file(target, int(item["id"]), face_config)
         manual_person_controls = ""
-        if manual_person_controls_enabled and source.person_name is None:
+        if manual_person_controls_enabled:
             manual_person_controls = manual_person_file_controls_html(target, item, people_data, face_config)
         face_rail_html = people_links_html(
             people_data,
             "Personer i bildet",
             manual_person_controls=manual_person_controls,
             file_id=int(item["id"]),
-            manual_remove_enabled=manual_person_controls_enabled and source.person_name is None,
+            manual_remove_enabled=manual_person_controls_enabled,
         )
-        unconfirm_buttons = unconfirm_face_buttons_html(target, source, item, face_config)
         show_unconfirmed_faces = source.person_name is None
         unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
         face_rail_html += faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""

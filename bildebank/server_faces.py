@@ -769,53 +769,6 @@ def confirmed_person_face_count_for_item(
         conn.close()
 
 
-def unconfirm_face_buttons_html(
-    target: Path,
-    source: BrowserSource,
-    item: Any,
-    face_config: FaceRecognitionConfig | None = None,
-) -> str:
-    if source.person_name is None:
-        return ""
-    if source.include_suggestions:
-        return remove_manual_person_file_button_html(target, source.person_name, int(item["id"]), face_config)
-    return ""
-
-
-def remove_manual_person_file_button_html(
-    target: Path,
-    person_name: str,
-    file_id: int,
-    face_config: FaceRecognitionConfig | None = None,
-) -> str:
-    person = person_by_name(target, person_name, face_config)
-    if person is None:
-        return ""
-    conn = sqlite3.connect(current_face_db_path(target, face_config))
-    try:
-        row = conn.execute(
-            """
-            SELECT 1
-            FROM person_files
-            WHERE person_id = ? AND file_id = ?
-            """,
-            (int(person["id"]), file_id),
-        ).fetchone()
-    except sqlite3.Error:
-        return ""
-    finally:
-        conn.close()
-    if row is None:
-        return ""
-    return (
-        '<button class="nav-button danger-button" type="button" '
-        f'data-remove-person-file="{file_id}" '
-        f'data-remove-person-file-person="{html.escape(person_name)}">'
-        "Fjern manuell person-i-bilde"
-        "</button>"
-    )
-
-
 def people_links_html(
     people: list[dict[str, object]],
     heading: str = "",

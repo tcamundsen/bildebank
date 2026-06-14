@@ -81,10 +81,11 @@ navnet til personen på øverste linje av skjermen.
 - **Bare bekreftede** viser bare bilder du har bekreftet. Dette bør ideelt
   sett bare være 1-5 gode bilder av personen.
 
-I vanlig bildevisning kan **[+]** under **Personer i bildet** brukes når
-personen er i bildet, men ansiktet ikke kan scannes eller bekreftes godt nok.
-Feltet bruker bare personer som allerede finnes i ansiktsdatabasen. Dette
-påvirker ikke `face-suggest`, og bildet vises ikke under **Bare bekreftede**.
+I bildevisningen, også i personbrowseren, kan **[+]** under **Personer i
+bildet** brukes når personen er i bildet, men ansiktet ikke kan scannes eller
+bekreftes godt nok. Feltet bruker bare personer som allerede finnes i
+ansiktsdatabasen. Dette påvirker ikke `face-suggest`, og bildet vises ikke
+under **Bare bekreftede**.
 
 ## Personer
 
