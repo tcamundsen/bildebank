@@ -43,7 +43,6 @@ def index_html(server: Any, *, message: str = "") -> str:
         month_nav,
         face_enabled=server.face_enabled,
         openclip_enabled=server.openclip_enabled,
-        manual_h3_cell=server.config.browser.manual_h3_cell,
     )
 
 
@@ -223,7 +222,6 @@ def item_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
-    manual_h3_cell: str = "",
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
     hotkeys: dict[str, object] | None = None,
@@ -238,7 +236,6 @@ def item_page_html(
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
         face_config=face_config,
-        manual_h3_cell=manual_h3_cell,
         manual_person_controls_enabled=manual_person_controls_enabled,
         hotkey_hints_enabled=hotkey_hints_enabled,
         hotkeys=hotkeys,
@@ -256,7 +253,6 @@ def source_item_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
-    manual_h3_cell: str = "",
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
     hotkeys: dict[str, object] | None = None,
@@ -274,7 +270,6 @@ def source_item_page_html(
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
         face_config=face_config,
-        manual_h3_cell=manual_h3_cell,
         manual_person_controls_enabled=manual_person_controls_enabled,
         hotkey_hints_enabled=hotkey_hints_enabled,
         hotkeys=hotkeys,

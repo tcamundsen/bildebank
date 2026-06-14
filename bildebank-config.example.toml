@@ -13,7 +13,6 @@ model_name = "buffalo_l"
 
 [browser]
 hide_out_of_focus = false
-manual_h3_cell = ""
 manual_person_controls_enabled = true
 hotkey_hints_enabled = false
 

@@ -1127,7 +1127,6 @@ pretrained = "laion2b_s34b_b79k"
                 openclip=OpenClipConfig(enabled=True, model_name="Test-Model", pretrained="test-weights", device="cpu"),
                 browser=BrowserConfig(
                     hide_out_of_focus=True,
-                    manual_h3_cell="872830828ffffff",
                     manual_person_controls_enabled=False,
                     hotkey_hints_enabled=True,
                     hotkeys={"1": BrowserHotkeyConfig(action="person", person_name="Kari")},
@@ -1145,9 +1144,8 @@ pretrained = "laion2b_s34b_b79k"
         self.assertLess(body.index("Bildesamling"), body.index("Skjul bilder tagget"))
         self.assertLess(body.index("Skjul bilder tagget"), body.index("Bildebank-versjon"))
         self.assertIn('action="/settings/hide-out-of-focus"', body)
-        self.assertIn('action="/settings/manual-h3-cell"', body)
-        self.assertIn('<option value="872830828ffffff" selected>Ikke navngitt: 872830828ffffff</option>', body)
-        self.assertIn("Aktiv manuell H3-celle", body)
+        self.assertNotIn('action="/settings/manual-h3-cell"', body)
+        self.assertNotIn("Aktiv manuell H3-celle", body)
         self.assertIn("Hurtigtaster 1-5", body)
         self.assertIn('action="/settings/hotkey"', body)
         self.assertIn('action="/settings/hotkey-hints"', body)
@@ -1325,25 +1323,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual(delete_handler.redirect_url, "/settings/h3-cells")
         self.assertEqual(after_delete, [])
 
-    def test_run_server_app_status_manual_h3_status_shows_named_cell(self) -> None:
-        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            init_database(target)
-            conn = db.connect(target)
-            try:
-                db.set_geo_place_name(conn, h3_cell, "Oslo")
-                conn.commit()
-            finally:
-                conn.close()
-            config = AppConfig(browser=BrowserConfig(manual_h3_cell=h3_cell))
-
-            body = app_status_page_html(target, config)
-
-        self.assertIn(f'<option value="{h3_cell}" selected>Oslo (H3-7)</option>', body)
-        self.assertIn('<span class="app-toggle-status">Oslo</span>', body)
-        self.assertNotIn(f'<span class="app-toggle-status">{h3_cell}</span>', body)
-
     def test_run_server_face_enabled_uses_server_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "program"
@@ -1491,56 +1470,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertTrue(config.browser.hotkey_hints_enabled)
         self.assertTrue(handler.server.config.browser.hotkey_hints_enabled)
         self.assertEqual(handler.location, "/settings")
-
-    def test_run_server_manual_h3_cell_post_updates_config(self) -> None:
-        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            data = f"h3_cell={h3_cell}".encode("utf-8")
-
-            class FakeHandler:
-                headers = {"Content-Length": str(len(data))}
-                rfile = BytesIO(data)
-                server = SimpleNamespace(config=AppConfig())
-                location: str | None = None
-
-                def redirect(self, location: str) -> None:
-                    self.location = location
-
-                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
-                    raise AssertionError(f"{status}: {content}")
-
-            handler = FakeHandler()
-            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
-                BildebankRequestHandler.respond_set_manual_h3_cell(handler)  # type: ignore[arg-type]
-
-            config = load_config(root)
-
-        self.assertEqual(config.browser.manual_h3_cell, h3_cell)
-        self.assertEqual(handler.server.config.browser.manual_h3_cell, h3_cell)
-        self.assertEqual(handler.location, "/settings")
-
-    def test_run_server_manual_h3_cell_post_rejects_invalid_cell(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            data = b"h3_cell=ikke-h3"
-            response: dict[str, object] = {}
-
-            class FakeHandler:
-                headers = {"Content-Length": str(len(data))}
-                rfile = BytesIO(data)
-                server = SimpleNamespace(config=AppConfig())
-
-                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
-                    response["content"] = content
-                    response["status"] = status
-
-            handler = FakeHandler()
-            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
-                BildebankRequestHandler.respond_set_manual_h3_cell(handler)  # type: ignore[arg-type]
-
-        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
-        self.assertIn("Ugyldig H3-celle", str(response["content"]))
 
     def test_run_server_hotkey_post_updates_config(self) -> None:
         h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
@@ -2397,7 +2326,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "14")
+        self.assertEqual(SERVER_ASSET_VERSION, "15")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -2572,8 +2501,7 @@ model_name = "buffalo_l"
         self.assertIn("/api/item-delete", SERVER_JS)
         self.assertIn("Flytte til deleted/?", SERVER_JS)
 
-    def test_run_server_item_page_has_manual_location_button_when_configured(self) -> None:
-        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+    def test_run_server_item_page_omits_legacy_manual_location_button(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -2584,30 +2512,23 @@ model_name = "buffalo_l"
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
-            body = item_page_html(
-                target,
-                item,
-                *adjacent_browser_items(target, item),
-                browser_month_navigation(target, item),
-                manual_h3_cell=h3_cell,
-            )
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
 
         nav_start = body.index('<nav class="controls"')
         tag_rail_start = body.index('<aside class="tag-rail"')
         nav_body = body[nav_start:body.index("</nav>", nav_start)]
         tag_rail_body = body[tag_rail_start:body.index("</aside>", tag_rail_start)]
-        self.assertIn("Sett valgt H3-celle", tag_rail_body)
+        self.assertNotIn("Sett valgt H3-celle", tag_rail_body)
         self.assertNotIn("Sett sted", body)
         self.assertNotIn("Sett valgt H3-celle", nav_body)
-        self.assertIn('data-manual-location-item="1"', body)
-        self.assertIn(f'data-manual-location-cell="{h3_cell}"', body)
-        self.assertIn('data-manual-location-item="1"', tag_rail_body)
-        self.assertIn(f'data-manual-location-cell="{h3_cell}"', tag_rail_body)
-        self.assertIn("/api/item-manual-location", SERVER_JS)
+        self.assertNotIn('data-manual-location-item="1"', body)
+        self.assertNotIn("data-manual-location-cell", body)
+        self.assertNotIn('fetch("/api/item-manual-location"', SERVER_JS)
+        self.assertIn("/api/item-manual-location-remove", SERVER_JS)
         self.assertIn("/api/item-hotkey-action", SERVER_JS)
         self.assertIn('["1", "2", "3", "4", "5"].includes(event.key)', SERVER_JS)
         self.assertNotIn('event.key.toLowerCase() === "g"', SERVER_JS)
-        self.assertIn("setManualLocation(button)", SERVER_JS)
+        self.assertNotIn("setManualLocation(button)", SERVER_JS)
         self.assertNotIn("Sette sted fra aktiv H3-celle?", SERVER_JS)
         self.assertIn('data-browser-item-id="1"', body)
 
@@ -2664,11 +2585,10 @@ model_name = "buffalo_l"
         self.assertTrue(tag_rail_body.strip().endswith("</section>"))
         self.assertNotIn('class="hotkey-hints"', hidden_body)
 
-    def test_run_server_item_manual_location_endpoint_sets_h3_location(self) -> None:
+    def test_run_server_hotkey_action_sets_h3_location(self) -> None:
         import h3
 
         h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
-        other_h3_cell = h3.latlng_to_cell(60.39299, 5.32415, 3)
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -2677,7 +2597,8 @@ model_name = "buffalo_l"
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-            data = json.dumps({"file_id": 1}).encode("utf-8")
+            data = json.dumps({"file_id": 1, "key": "1"}).encode("utf-8")
+            hotkeys = {"1": BrowserHotkeyConfig(action="h3", h3_cell=h3_cell)}
 
             class FakeHandler:
                 headers = {
@@ -2685,14 +2606,18 @@ model_name = "buffalo_l"
                     "Content-Type": "application/json",
                 }
                 rfile = BytesIO(data)
-                server = SimpleNamespace(target=target, config=AppConfig(browser=BrowserConfig(manual_h3_cell=h3_cell)))
+                server = SimpleNamespace(
+                    target=target,
+                    face_enabled=True,
+                    config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)),
+                )
                 body: dict[str, object] | None = None
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
                     self.body = content
 
             handler = FakeHandler()
-            BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
+            BildebankRequestHandler.respond_hotkey_action(handler)  # type: ignore[arg-type]
 
             conn = db.connect(target)
             try:
@@ -2703,20 +2628,6 @@ model_name = "buffalo_l"
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
-            body_with_manual_cell = item_page_html(
-                target,
-                item,
-                *adjacent_browser_items(target, item),
-                browser_month_navigation(target, item),
-                manual_h3_cell=h3_cell,
-            )
-            body_with_other_manual_cell = item_page_html(
-                target,
-                item,
-                *adjacent_browser_items(target, item),
-                browser_month_navigation(target, item),
-                manual_h3_cell=other_h3_cell,
-            )
             info_body = image_info_content_html(target, item)
             conn = db.connect(target)
             try:
@@ -2724,7 +2635,7 @@ model_name = "buffalo_l"
             finally:
                 conn.close()
 
-        self.assertEqual(handler.body, {"ok": True, "file_id": 1, "gps_source": "manual-h3"})
+        self.assertEqual(handler.body, {"ok": True, "key": "1", "action": "h3", "file_id": 1, "gps_source": "manual-h3"})
         self.assertEqual(row["gps_source"], "manual-h3")
         self.assertIsNone(row["gps_alt"])
         self.assertIsNone(row["gps_error"])
@@ -2735,139 +2646,17 @@ model_name = "buffalo_l"
         self.assertIsNone(row["h3_res4"])
         self.assertIsNone(row["h3_res11"])
         self.assertIn('<aside class="tag-rail"', body)
-        self.assertIn(
-            f'<div class="location-status-badge"><a href="https://h3geo.org/#hex={h3_cell}" target="_blank" rel="noopener">Manuell H3</a></div>',
-            body,
-        )
-        self.assertNotIn("Fjern manuelt sted", body)
-        self.assertNotIn('data-remove-manual-location-item="1"', body)
-        nav_start = body_with_manual_cell.index('<nav class="controls"')
-        tag_rail_start = body_with_manual_cell.index('<aside class="tag-rail"')
-        nav_body_with_manual_cell = body_with_manual_cell[nav_start:body_with_manual_cell.index("</nav>", nav_start)]
-        tag_rail_body_with_manual_cell = body_with_manual_cell[
-            tag_rail_start:body_with_manual_cell.index("</aside>", tag_rail_start)
-        ]
-        self.assertIn("Fjern manuelt sted", tag_rail_body_with_manual_cell)
-        self.assertIn('data-remove-manual-location-item="1"', tag_rail_body_with_manual_cell)
-        self.assertNotIn('data-manual-location-item="1"', tag_rail_body_with_manual_cell)
-        self.assertNotIn(f'data-manual-location-cell="{h3_cell}"', tag_rail_body_with_manual_cell)
-        self.assertNotIn("Fjern manuelt sted", nav_body_with_manual_cell)
-        self.assertNotIn('data-remove-manual-location-item="1"', nav_body_with_manual_cell)
-        tag_rail_start = body_with_other_manual_cell.index('<aside class="tag-rail"')
-        tag_rail_body_with_other_manual_cell = body_with_other_manual_cell[
-            tag_rail_start:body_with_other_manual_cell.index("</aside>", tag_rail_start)
-        ]
-        self.assertIn("Sett valgt H3-celle", tag_rail_body_with_other_manual_cell)
-        self.assertIn(f'data-manual-location-cell="{other_h3_cell}"', tag_rail_body_with_other_manual_cell)
-        self.assertIn("Fjern manuelt sted", tag_rail_body_with_other_manual_cell)
+        self.assertIn(f'href="https://h3geo.org/#hex={h3_cell}" target="_blank" rel="noopener">Manuell H3</a>', body)
+        self.assertIn("Fjern manuelt sted", body)
+        self.assertIn('data-remove-manual-location-item="1"', body)
+        self.assertNotIn('data-manual-location-item="1"', body)
+        self.assertNotIn("Sett valgt H3-celle", body)
         self.assertNotIn("<dt>Kart</dt>", info_body)
         self.assertIn("Manuell H3", info_body)
         self.assertIn(f'href="https://h3geo.org/#hex={h3_cell}"', info_body)
         self.assertLess(info_body.index("<dt>Tagger</dt>"), info_body.index("Manuell H3"))
         self.assertIn("<dt>GPS-kilde</dt>", info_body)
         self.assertIn("satt manuelt", info_body)
-
-    def test_run_server_item_manual_location_endpoint_rejects_unknown_file(self) -> None:
-        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            init_database(target)
-            data = json.dumps({"file_id": 99}).encode("utf-8")
-            response: dict[str, object] = {}
-
-            class FakeHandler:
-                headers = {
-                    "Content-Length": str(len(data)),
-                    "Content-Type": "application/json",
-                }
-                rfile = BytesIO(data)
-                server = SimpleNamespace(target=target, config=AppConfig(browser=BrowserConfig(manual_h3_cell=h3_cell)))
-
-                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
-                    response["content"] = content
-                    response["status"] = status
-
-            handler = FakeHandler()
-            BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
-
-        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
-        self.assertIn("Filen finnes ikke", str(response["content"]))
-
-    def test_run_server_item_manual_location_endpoint_rejects_invalid_h3_cell(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            source = Path(tmp) / "source"
-            source.mkdir()
-            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-            data = json.dumps({"file_id": 1}).encode("utf-8")
-            response: dict[str, object] = {}
-
-            class FakeHandler:
-                headers = {
-                    "Content-Length": str(len(data)),
-                    "Content-Type": "application/json",
-                }
-                rfile = BytesIO(data)
-                server = SimpleNamespace(target=target, config=AppConfig(browser=BrowserConfig(manual_h3_cell="ikke-h3")))
-
-                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
-                    response["content"] = content
-                    response["status"] = status
-
-            handler = FakeHandler()
-            BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
-
-        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
-        self.assertIn("Ugyldig H3-celle", str(response["content"]))
-
-    def test_run_server_item_manual_location_endpoint_rejects_file_with_gps(self) -> None:
-        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            source = Path(tmp) / "source"
-            source.mkdir()
-            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-            conn = db.connect(target)
-            try:
-                db.update_file_gps(
-                    conn,
-                    file_id=1,
-                    gps_lat=59.91273,
-                    gps_lon=10.74609,
-                    gps_alt=None,
-                    h3_cells=h3_cells_for_point(59.91273, 10.74609),
-                    gps_source="exiftool",
-                    gps_error=None,
-                )
-                conn.commit()
-            finally:
-                conn.close()
-            data = json.dumps({"file_id": 1}).encode("utf-8")
-            response: dict[str, object] = {}
-
-            class FakeHandler:
-                headers = {
-                    "Content-Length": str(len(data)),
-                    "Content-Type": "application/json",
-                }
-                rfile = BytesIO(data)
-                server = SimpleNamespace(target=target, config=AppConfig(browser=BrowserConfig(manual_h3_cell=h3_cell)))
-
-                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
-                    response["content"] = content
-                    response["status"] = status
-
-            handler = FakeHandler()
-            BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
-
-        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
-        self.assertIn("har GPS-lokasjon", str(response["content"]))
 
     def test_run_server_item_manual_location_remove_endpoint_clears_manual_h3(self) -> None:
         import h3
@@ -3903,7 +3692,6 @@ model_name = "buffalo_l"
                         month_nav,
                         face_enabled=False,
                         openclip_enabled=False,
-                        manual_h3_cell=h3_cells_for_point(59.91273, 10.74609)["h3_res7"],
                         hide_out_of_focus=True,
                         conn=conn,
                     )

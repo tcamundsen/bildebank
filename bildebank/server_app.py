@@ -17,7 +17,6 @@ from .config import (
     set_browser_hide_out_of_focus,
     set_browser_hotkey_hints_enabled,
     set_browser_hotkey,
-    set_browser_manual_h3_cell,
     set_browser_manual_person_controls_enabled,
     set_face_recognition_enabled,
     set_face_recognition_model_name,
@@ -48,7 +47,6 @@ def app_status_page_html(
         (
             app_status_row_html("Bildesamling", str(target)),
             app_status_hide_out_of_focus_row_html(config.browser.hide_out_of_focus),
-            app_status_manual_h3_cell_row_html(config.browser.manual_h3_cell, named_h3_cells),
             app_status_hotkeys_row_html(
                 config.browser.hotkeys or {},
                 named_h3_cells,
@@ -136,15 +134,6 @@ def update_manual_person_controls_config(config: AppConfig, repo_root: Path, ena
     return replace(
         config,
         browser=replace(config.browser, manual_person_controls_enabled=enabled),
-    )
-
-
-def update_manual_h3_cell_config(config: AppConfig, repo_root: Path, h3_cell: str) -> AppConfig:
-    clean_h3_cell = h3_cell.strip()
-    set_browser_manual_h3_cell(repo_root, clean_h3_cell)
-    return replace(
-        config,
-        browser=replace(config.browser, manual_h3_cell=clean_h3_cell),
     )
 
 
@@ -281,51 +270,6 @@ def app_status_named_h3_cells(target: Path) -> list[Any]:
         return db.geo_place_names(conn)
     finally:
         conn.close()
-
-
-def app_status_manual_h3_cell_row_html(h3_cell: str, named_h3_cells: list[Any]) -> str:
-    clean_h3_cell = h3_cell.strip()
-    has_selected_cell = False
-    selected_name = ""
-    options = [f'<option value=""{selected_attr(clean_h3_cell == "")}>Ingen celle valgt</option>']
-    for row in named_h3_cells:
-        cell = str(row["h3_cell"])
-        name = str(row["name"])
-        selected = cell == clean_h3_cell
-        has_selected_cell = has_selected_cell or selected
-        if selected:
-            selected_name = name
-        options.append(
-            f'<option value="{html.escape(cell)}"{selected_attr(selected)}>'
-            f'{html.escape(name)} ({html.escape(h3_resolution_option_label(cell))})'
-            "</option>"
-        )
-    if clean_h3_cell and not has_selected_cell:
-        options.append(
-            f'<option value="{html.escape(clean_h3_cell)}" selected>'
-            f'Ikke navngitt: {html.escape(clean_h3_cell)}'
-            "</option>"
-        )
-    status = html.escape(selected_name or clean_h3_cell or "Ikke satt")
-    maps_link = h3_cell_google_maps_link_html(clean_h3_cell)
-    h3geo_link = h3_cell_h3geo_link_html(clean_h3_cell)
-    return f"""
-    <div class="info-row">
-      <dt>Aktiv manuell H3-celle. Denne brukes til å sette plassering på bilder som mangler det. Du kan ikke sette manuell H3-celle på bilder som har GPS-lokasjon. Si hva hvis det er behov for det.</dt>
-      <dd>
-        <form action="/settings/manual-h3-cell" method="post" class="app-toggle-form">
-          <select name="h3_cell">
-            {"".join(options)}
-          </select>
-          <button type="submit" class="nav-button">Lagre</button>
-          <span class="app-toggle-status">{status}</span>
-          {maps_link}
-          {h3geo_link}
-          <a href="/settings/h3-cells" class="app-toggle-note">Rediger H3-celler</a>
-        </form>
-      </dd>
-    </div>
-    """
 
 
 def app_status_registered_people(target: Path, face_config: FaceRecognitionConfig | None = None) -> list[dict[str, str]]:

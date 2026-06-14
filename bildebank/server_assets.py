@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "14"
+SERVER_ASSET_VERSION = "15"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -1380,28 +1380,6 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
         button.disabled = false;
       }
     });
-  });
-  async function setManualLocation(button) {
-    if (!button || button.disabled) return;
-    const fileId = Number(button.dataset.manualLocationItem);
-    if (!fileId) return;
-    button.disabled = true;
-    try {
-      const response = await fetch("/api/item-manual-location", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({file_id: fileId}),
-      });
-      const payload = await response.json();
-      if (!payload.ok) throw new Error(payload.error || "Kunne ikke sette sted.");
-      window.location.reload();
-    } catch (error) {
-      alert(error.message || "Kunne ikke sette sted.");
-      button.disabled = false;
-    }
-  }
-  document.querySelectorAll("[data-manual-location-item]").forEach(button => {
-    button.addEventListener("click", () => setManualLocation(button));
   });
   function updateHotkeyForm(form) {
     const action = form.querySelector("[data-hotkey-action]")?.value || "";

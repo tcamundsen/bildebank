@@ -1104,7 +1104,6 @@ def item_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
-    manual_h3_cell: str = "",
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
     hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
@@ -1120,7 +1119,6 @@ def item_page_html(
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
         face_config=face_config,
-        manual_h3_cell=manual_h3_cell,
         manual_person_controls_enabled=manual_person_controls_enabled,
         hotkey_hints_enabled=hotkey_hints_enabled,
         hotkeys=hotkeys,
@@ -1139,7 +1137,6 @@ def source_item_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
-    manual_h3_cell: str = "",
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
     hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
@@ -1213,7 +1210,6 @@ def source_item_page_html(
         out_of_focus_redirect_url=out_of_focus_redirect_url,
         extra_html=face_rail_html,
         suffix_html=hotkey_hints_html,
-        configured_manual_h3_cell=manual_h3_cell,
         conn=conn,
     )
     all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
@@ -1428,7 +1424,6 @@ def tag_controls_html(
     out_of_focus_redirect_url: str = "",
     extra_html: str = "",
     suffix_html: str = "",
-    configured_manual_h3_cell: str = "",
     conn: sqlite3.Connection | None = None,
 ) -> str:
     file_id = int(item["id"])
@@ -1439,10 +1434,7 @@ def tag_controls_html(
         active_names = active_tag_name_keys_for_file(conn, file_id)
         manual_h3_name = manual_h3_place_name(conn, item)
         manual_h3_cell_value = manual_h3_cell(item)
-        location_controls = (
-            manual_location_button_html(target, item, configured_manual_h3_cell, conn=conn)
-            + remove_manual_location_button_html(item, configured_manual_h3_cell)
-        )
+        location_controls = remove_manual_location_button_html(item)
     finally:
         if owned_conn:
             conn.close()
@@ -1657,28 +1649,6 @@ def item_string_value(item: Any, key: str) -> str:
         return ""
 
 
-def manual_location_button_html(
-    target: Path,
-    item: Any,
-    h3_cell: str,
-    *,
-    conn: sqlite3.Connection | None = None,
-) -> str:
-    clean_h3_cell = h3_cell.strip()
-    if not clean_h3_cell or item_has_gps_location(item):
-        return ""
-    if manual_h3_cell(item) == clean_h3_cell:
-        return ""
-    file_id = int(item["id"])
-    place_name = manual_h3_cell_name(target, clean_h3_cell, conn=conn) or "valgt H3-celle"
-    return (
-        f'<button class="nav-button" type="button" '
-        f'data-manual-location-item="{file_id}" '
-        f'data-manual-location-cell="{html.escape(clean_h3_cell)}">'
-        f'Sett {html.escape(place_name)}</button>'
-    )
-
-
 def item_has_gps_location(item: Any) -> bool:
     try:
         return item["gps_lat"] is not None or item["gps_lon"] is not None
@@ -1686,8 +1656,8 @@ def item_has_gps_location(item: Any) -> bool:
         return False
 
 
-def remove_manual_location_button_html(item: Any, h3_cell: str) -> str:
-    if not h3_cell.strip() or not gps_source_is_manual_h3(item):
+def remove_manual_location_button_html(item: Any) -> str:
+    if not gps_source_is_manual_h3(item):
         return ""
     file_id = int(item["id"])
     return (
