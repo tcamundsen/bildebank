@@ -45,9 +45,22 @@ def current_face_db_path(target: Path, face_config: FaceRecognitionConfig | None
 
 def clear_face_caches() -> None:
     cached_confirmed_people_for_file.cache_clear()
-    cached_confirmed_face_people_for_file.cache_clear()
     cached_person_file_ids.cache_clear()
     cached_registered_people.cache_clear()
+
+
+def people_for_file(
+    target: Path,
+    file_id: int,
+    face_config: FaceRecognitionConfig | None = None,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    db_path = current_face_db_path(target, face_config)
+    try:
+        mtime_ns = db_path.stat().st_mtime_ns
+    except OSError:
+        return [], []
+    rows = cached_confirmed_people_for_file(str(db_path), mtime_ns, file_id)
+    return people_for_file_from_rows(file_id, rows), confirmed_face_people_for_file_from_rows(file_id, rows)
 
 
 def confirmed_people_for_file(
@@ -60,10 +73,7 @@ def confirmed_people_for_file(
         mtime_ns = db_path.stat().st_mtime_ns
     except OSError:
         return []
-    return [
-        {"name": name, "url": person_item_url(name, file_id, show_faces=False), "confirmed": priority <= 1}
-        for name, priority in cached_confirmed_people_for_file(str(db_path), mtime_ns, file_id)
-    ]
+    return people_for_file_from_rows(file_id, cached_confirmed_people_for_file(str(db_path), mtime_ns, file_id))
 
 
 def confirmed_face_people_for_file(
@@ -76,6 +86,30 @@ def confirmed_face_people_for_file(
         mtime_ns = db_path.stat().st_mtime_ns
     except OSError:
         return []
+    return confirmed_face_people_for_file_from_rows(
+        file_id,
+        cached_confirmed_people_for_file(str(db_path), mtime_ns, file_id),
+    )
+
+
+def people_for_file_from_rows(
+    file_id: int,
+    rows: tuple[tuple[str, int, int | None], ...],
+) -> list[dict[str, object]]:
+    people: dict[str, int] = {}
+    for name, priority, _face_id in rows:
+        if name not in people or priority < people[name]:
+            people[name] = priority
+    return [
+        {"name": name, "url": person_item_url(name, file_id, show_faces=False), "confirmed": priority <= 1}
+        for name, priority in sorted(people.items())
+    ]
+
+
+def confirmed_face_people_for_file_from_rows(
+    file_id: int,
+    rows: tuple[tuple[str, int, int | None], ...],
+) -> list[dict[str, object]]:
     return [
         {
             "name": name,
@@ -83,7 +117,8 @@ def confirmed_face_people_for_file(
             "confirmed": True,
             "faceId": face_id,
         }
-        for name, face_id in cached_confirmed_face_people_for_file(str(db_path), mtime_ns, file_id)
+        for name, priority, face_id in rows
+        if priority == 0 and face_id is not None
     ]
 
 
@@ -115,7 +150,7 @@ def cached_registered_people(face_db_path: str, face_db_mtime_ns: int) -> tuple[
 
 
 @lru_cache(maxsize=512)
-def cached_confirmed_face_people_for_file(face_db_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[tuple[str, int], ...]:
+def cached_confirmed_people_for_file(face_db_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[tuple[str, int, int | None], ...]:
     conn = sqlite3.connect(face_db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -123,58 +158,34 @@ def cached_confirmed_face_people_for_file(face_db_path: str, face_db_mtime_ns: i
             return ()
         rows = conn.execute(
             """
-            SELECT persons.name, person_faces.face_id
-            FROM person_faces
-            JOIN persons ON persons.id = person_faces.person_id
-            JOIN faces ON faces.id = person_faces.face_id
-            WHERE faces.file_id = ?
-            ORDER BY persons.name, person_faces.face_id
-            """,
-            (file_id,),
-        )
-        return tuple((str(row["name"]), int(row["face_id"])) for row in rows)
-    except sqlite3.Error:
-        return ()
-    finally:
-        conn.close()
-
-
-@lru_cache(maxsize=512)
-def cached_confirmed_people_for_file(face_db_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[tuple[str, int], ...]:
-    conn = sqlite3.connect(face_db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        if not face_tables_exist(conn):
-            return ()
-        rows = conn.execute(
-            """
-            SELECT persons.name, 0 AS priority
+            SELECT persons.name, 0 AS priority, person_faces.face_id
             FROM person_faces
             JOIN persons ON persons.id = person_faces.person_id
             JOIN faces ON faces.id = person_faces.face_id
             WHERE faces.file_id = ?
             UNION ALL
-            SELECT persons.name, 1 AS priority
+            SELECT persons.name, 1 AS priority, NULL AS face_id
             FROM person_files
             JOIN persons ON persons.id = person_files.person_id
             WHERE person_files.file_id = ?
             UNION ALL
-            SELECT persons.name, 2 AS priority
+            SELECT persons.name, 2 AS priority, NULL AS face_id
             FROM face_suggestions
             JOIN persons ON persons.id = face_suggestions.person_id
             JOIN faces ON faces.id = face_suggestions.face_id
             WHERE faces.file_id = ?
-            ORDER BY name, priority
+            ORDER BY name, priority, face_id
             """,
             (file_id, file_id, file_id),
         )
-        people: dict[str, int] = {}
-        for row in rows:
-            name = str(row["name"])
-            priority = int(row["priority"])
-            if name not in people or priority < people[name]:
-                people[name] = priority
-        return tuple(sorted(people.items()))
+        return tuple(
+            (
+                str(row["name"]),
+                int(row["priority"]),
+                int(row["face_id"]) if row["face_id"] is not None else None,
+            )
+            for row in rows
+        )
     except sqlite3.Error:
         return ()
     finally:

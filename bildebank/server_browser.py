@@ -1142,11 +1142,10 @@ def source_item_page_html(
 ) -> str:
     from .server_faces import (
         confirmed_face_people_text_html,
-        confirmed_face_people_for_file,
-        confirmed_people_for_file,
         faces_button_html,
         faces_overlay_html,
         manual_person_file_controls_html,
+        people_for_file,
         people_links_html,
         source_duplicate_confirmed_faces_warning_html,
         unconfirm_face_buttons_html,
@@ -1157,8 +1156,7 @@ def source_item_page_html(
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
     media = source_item_media_html(target, source, item, face_config)
-    people_data = confirmed_people_for_file(target, int(item["id"]), face_config) if face_enabled else []
-    confirmed_face_people_data = confirmed_face_people_for_file(target, int(item["id"]), face_config) if face_enabled else []
+    people_data, confirmed_face_people_data = people_for_file(target, int(item["id"]), face_config) if face_enabled else ([], [])
     people = people_links_html(people_data, "Personer i bildet") if face_enabled else ""
     confirmed_face_people = (
         confirmed_face_people_text_html(confirmed_face_people_data)
