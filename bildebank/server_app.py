@@ -11,8 +11,11 @@ from . import __version__, db
 from .geo import h3_column_for_resolution, h3_resolution
 from .config import (
     AppConfig,
+    BrowserHotkeyConfig,
     FaceRecognitionConfig,
+    HOTKEY_KEYS,
     set_browser_hide_out_of_focus,
+    set_browser_hotkey,
     set_browser_manual_h3_cell,
     set_browser_manual_person_controls_enabled,
     set_face_recognition_enabled,
@@ -39,11 +42,13 @@ def app_status_page_html(
         module_available_func = module_available
     insightface_installed = module_available_func("insightface")
     named_h3_cells = app_status_named_h3_cells(target)
+    registered_people = app_status_registered_people(target, config.face_recognition)
     rows = "\n".join(
         (
             app_status_row_html("Bildesamling", str(target)),
             app_status_hide_out_of_focus_row_html(config.browser.hide_out_of_focus),
             app_status_manual_h3_cell_row_html(config.browser.manual_h3_cell, named_h3_cells),
+            app_status_hotkeys_row_html(config.browser.hotkeys or {}, named_h3_cells, registered_people),
             app_status_row_html("Bildebank-versjon", __version__),
             app_status_face_config_row_html(config.face_recognition.enabled, insightface_installed=insightface_installed),
             app_status_face_model_row_html(config.face_recognition),
@@ -134,6 +139,16 @@ def update_manual_h3_cell_config(config: AppConfig, repo_root: Path, h3_cell: st
     return replace(
         config,
         browser=replace(config.browser, manual_h3_cell=clean_h3_cell),
+    )
+
+
+def update_hotkey_config(config: AppConfig, repo_root: Path, key: str, hotkey: BrowserHotkeyConfig) -> AppConfig:
+    set_browser_hotkey(repo_root, key, hotkey)
+    hotkeys = dict(config.browser.hotkeys or {})
+    hotkeys[key] = hotkey
+    return replace(
+        config,
+        browser=replace(config.browser, hotkeys=hotkeys),
     )
 
 
@@ -294,10 +309,115 @@ def app_status_manual_h3_cell_row_html(h3_cell: str, named_h3_cells: list[Any]) 
           {h3geo_link}
           <a href="/settings/h3-cells" class="app-toggle-note">Rediger H3-celler</a>
         </form>
-        <p>Hurtigtast for sette sted er <b>g</b>.</p>
       </dd>
     </div>
     """
+
+
+def app_status_registered_people(target: Path, face_config: FaceRecognitionConfig | None = None) -> list[dict[str, str]]:
+    try:
+        from .server_faces import registered_people
+
+        return registered_people(target, face_config)
+    except Exception:  # noqa: BLE001 - settings should still render without a valid face database
+        return []
+
+
+def app_status_hotkeys_row_html(
+    hotkeys: dict[str, BrowserHotkeyConfig],
+    named_h3_cells: list[Any],
+    registered_people: list[dict[str, str]],
+) -> str:
+    rows = "\n".join(
+        app_status_hotkey_form_html(
+            key,
+            hotkeys.get(key, BrowserHotkeyConfig()),
+            named_h3_cells,
+            registered_people,
+        )
+        for key in HOTKEY_KEYS
+    )
+    return f"""
+    <div class="info-row">
+      <dt>Hurtigtaster 1-5</dt>
+      <dd>
+        <div class="hotkey-settings">
+          {rows}
+        </div>
+      </dd>
+    </div>
+    """
+
+
+def app_status_hotkey_form_html(
+    key: str,
+    hotkey: BrowserHotkeyConfig,
+    named_h3_cells: list[Any],
+    registered_people: list[dict[str, str]],
+) -> str:
+    return f"""
+    <form action="/settings/hotkey" method="post" class="hotkey-form">
+      <input type="hidden" name="key" value="{html.escape(key)}">
+      <strong>{html.escape(key)}</strong>
+      <select name="action" aria-label="Handling for hurtigtast {html.escape(key)}">
+        <option value=""{selected_attr(not hotkey.action)}>Av</option>
+        <option value="h3"{selected_attr(hotkey.action == "h3")}>Sett H3</option>
+        <option value="manual_date"{selected_attr(hotkey.action == "manual_date")}>Sett dato</option>
+        <option value="person"{selected_attr(hotkey.action == "person")}>Legg til person</option>
+      </select>
+      <select name="h3_cell" aria-label="H3-celle">{hotkey_h3_options_html(hotkey.h3_cell, named_h3_cells)}</select>
+      <select name="person_name" aria-label="Person">{hotkey_person_options_html(hotkey.person_name, registered_people)}</select>
+      <select name="mode" aria-label="Datotype">
+        <option value="exact"{selected_attr(hotkey.mode == "exact")}>Eksakt</option>
+        <option value="uncertain"{selected_attr(hotkey.mode == "uncertain")}>Usikker</option>
+        <option value="between"{selected_attr(hotkey.mode == "between")}>Intervall</option>
+      </select>
+      <input name="date" value="{html.escape(hotkey.date)}" placeholder="YYYY-MM-DD" aria-label="Dato">
+      <select name="uncertainty" aria-label="Usikkerhet">
+        <option value="1d"{selected_attr(hotkey.uncertainty == "1d")}>±1 dag</option>
+        <option value="1w"{selected_attr(hotkey.uncertainty == "1w")}>±1 uke</option>
+        <option value="1m"{selected_attr(hotkey.uncertainty == "1m")}>±1 måned</option>
+        <option value="1y"{selected_attr(hotkey.uncertainty == "1y")}>±1 år</option>
+      </select>
+      <input name="date_from" value="{html.escape(hotkey.date_from)}" placeholder="Fra YYYY-MM-DD" aria-label="Fra-dato">
+      <input name="date_to" value="{html.escape(hotkey.date_to)}" placeholder="Til YYYY-MM-DD" aria-label="Til-dato">
+      <input name="note" value="{html.escape(hotkey.note)}" placeholder="Notat" aria-label="Datonotat">
+      <button type="submit" class="nav-button">Lagre</button>
+    </form>
+    """
+
+
+def hotkey_h3_options_html(selected_h3_cell: str, named_h3_cells: list[Any]) -> str:
+    selected = selected_h3_cell.strip()
+    options = [f'<option value=""{selected_attr(not selected)}>Velg H3-celle</option>']
+    has_selected = False
+    for row in named_h3_cells:
+        cell = str(row["h3_cell"])
+        name = str(row["name"])
+        is_selected = cell == selected
+        has_selected = has_selected or is_selected
+        options.append(
+            f'<option value="{html.escape(cell)}"{selected_attr(is_selected)}>'
+            f'{html.escape(name)} ({html.escape(h3_resolution_option_label(cell))})'
+            "</option>"
+        )
+    if selected and not has_selected:
+        options.append(f'<option value="{html.escape(selected)}" selected>Ikke navngitt: {html.escape(selected)}</option>')
+    return "".join(options)
+
+
+def hotkey_person_options_html(selected_person: str, registered_people: list[dict[str, str]]) -> str:
+    selected = selected_person.strip()
+    options = [f'<option value=""{selected_attr(not selected)}>Velg person</option>']
+    has_selected = False
+    for person in registered_people:
+        name = str(person["name"])
+        is_selected = name == selected
+        has_selected = has_selected or is_selected
+        options.append(f'<option value="{html.escape(name)}"{selected_attr(is_selected)}>{html.escape(name)}</option>')
+    if selected and not has_selected:
+        options.append(f'<option value="{html.escape(selected)}" selected>{html.escape(selected)}</option>')
+    return "".join(options)
 
 
 def h3_cell_google_maps_link_html(h3_cell: str) -> str:

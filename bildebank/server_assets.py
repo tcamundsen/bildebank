@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "11"
+SERVER_ASSET_VERSION = "12"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -753,6 +753,14 @@ SERVER_CSS = r"""    :root {
     .info-row dt { color: var(--muted); }
     .info-row dd { margin: 0; overflow-wrap: anywhere; }
     .app-toggle-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .hotkey-settings { display: grid; gap: 8px; }
+    .hotkey-form {
+      display: grid;
+      grid-template-columns: 24px minmax(110px, 140px) minmax(130px, 1fr) minmax(120px, 1fr) repeat(5, minmax(96px, 1fr)) auto;
+      gap: 6px;
+      align-items: center;
+    }
+    .hotkey-form input, .hotkey-form select { min-width: 0; }
     .app-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
     .app-toggle input { position: absolute; opacity: 0; pointer-events: none; }
     .app-toggle-track {
@@ -882,6 +890,7 @@ SERVER_CSS = r"""    :root {
       .people-row { grid-template-columns: 1fr; align-items: stretch; }
       .removed-row { grid-template-columns: 1fr; align-items: stretch; }
       .geo-row { grid-template-columns: 1fr; }
+      .hotkey-form { grid-template-columns: 1fr; align-items: stretch; }
       .new-person-form { grid-template-columns: 1fr; align-items: stretch; }
       .info-row { grid-template-columns: 1fr; gap: 4px; }
     }
@@ -1379,6 +1388,23 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   document.querySelectorAll("[data-manual-location-item]").forEach(button => {
     button.addEventListener("click", () => setManualLocation(button));
   });
+  async function applyHotkeyAction(key) {
+    const fileId = Number(document.querySelector("[data-browser-item-id]")?.dataset.browserItemId);
+    if (!fileId || !["1", "2", "3", "4", "5"].includes(key)) return false;
+    try {
+      const response = await fetch("/api/item-hotkey-action", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({file_id: fileId, key}),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke utføre hurtigtast.");
+      window.location.reload();
+    } catch (error) {
+      alert(error.message || "Kunne ikke utføre hurtigtast.");
+    }
+    return true;
+  }
   async function removeManualLocation(button) {
     if (!button || button.disabled) return;
     const fileId = Number(button.dataset.removeManualLocationItem);
@@ -1597,11 +1623,9 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       target instanceof HTMLButtonElement ||
       target?.isContentEditable
     ) return;
-    if (event.key.toLowerCase() === "g") {
-      const button = document.querySelector("[data-manual-location-item]");
-      if (!(button instanceof HTMLButtonElement)) return;
+    if (["1", "2", "3", "4", "5"].includes(event.key)) {
       event.preventDefault();
-      setManualLocation(button);
+      applyHotkeyAction(event.key);
       return;
     }
     const selector = {

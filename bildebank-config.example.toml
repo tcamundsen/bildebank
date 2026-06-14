@@ -16,6 +16,15 @@ hide_out_of_focus = false
 manual_h3_cell = ""
 manual_person_controls_enabled = true
 
+[browser.hotkeys]
+# Tastene 1-5 kan settes til handlinger i run-server.
+# Eksempler:
+# "1" = { action = "h3", h3_cell = "871ec9c95ffffff" }
+# "2" = { action = "person", person_name = "Kari" }
+# "3" = { action = "manual_date", mode = "exact", date = "1980-07-15", note = "Satt med hurtigtast" }
+# "4" = { action = "manual_date", mode = "between", date_from = "1980-06-01", date_to = "1980-08-31" }
+# "5" = { action = "" }
+
 [openclip]
 # OpenCLIP brukes til tekstbasert bildesøk, for eksempel "strand".
 # Dette er separat fra ansiktsgjenkjenning.

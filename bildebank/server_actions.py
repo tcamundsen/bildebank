@@ -6,6 +6,8 @@ import shutil
 from pathlib import Path
 
 from . import db
+from .config import BrowserHotkeyConfig, FaceRecognitionConfig
+from .face import AddPersonToFileResult, add_person_to_file
 from .geo import h3_cells_for_manual_cell
 from .target_lock import TargetLock
 
@@ -134,6 +136,50 @@ def clear_manual_date_on_file(target: Path, file_id: int) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def apply_browser_hotkey_to_file(
+    target: Path,
+    file_id: int,
+    hotkey: BrowserHotkeyConfig,
+    *,
+    face_config: FaceRecognitionConfig | None = None,
+) -> dict[str, object]:
+    if not hotkey.action:
+        raise ValueError("Hurtigtasten er ikke satt.")
+    if hotkey.action == "h3":
+        set_manual_h3_location_on_file(target, file_id, hotkey.h3_cell)
+        return {"action": "h3", "file_id": file_id, "gps_source": "manual-h3"}
+    if hotkey.action == "manual_date":
+        date_from, date_to = set_manual_date_on_file(
+            target,
+            file_id,
+            mode=hotkey.mode,
+            date=hotkey.date,
+            uncertainty=hotkey.uncertainty,
+            date_from=hotkey.date_from,
+            date_to=hotkey.date_to,
+            note=hotkey.note,
+        )
+        return {
+            "action": "manual_date",
+            "file_id": file_id,
+            "manual_date_from": date_from.isoformat(),
+            "manual_date_to": date_to.isoformat(),
+        }
+    if hotkey.action == "person":
+        result = add_person_to_file(target, hotkey.person_name, file_id, face_config)
+        return hotkey_person_result_payload(result)
+    raise ValueError(f"Ukjent hurtigtasthandling: {hotkey.action}")
+
+
+def hotkey_person_result_payload(result: AddPersonToFileResult) -> dict[str, object]:
+    return {
+        "action": "person",
+        "file_id": result.file_id,
+        "person_name": result.person_name,
+        "added": result.added,
+    }
 
 
 def manual_date_range_from_values(

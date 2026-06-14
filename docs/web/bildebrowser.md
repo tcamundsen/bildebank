@@ -34,7 +34,14 @@ Når HTML-filen er åpen i nettleseren, kan du bla med tastaturet:
 | Page Up | Forrige år |
 | Page Down | Neste år |
 
-Hvis du har slått på manuel H3-lokalisering, så er tasten `g` hurtigtast for knappen "Sett XXX"
+Tastene `1`, `2`, `3`, `4` og `5` kan settes opp i **Innstillinger**. Hver
+tast kan ha sin egen handling:
+
+- sette bildet til en valgt H3-celle når bildet mangler GPS
+- sette en forhåndsvalgt manuell dato
+- legge til en valgt person under **Personer i bildet**
+
+Taster som ikke er satt opp gjør ingenting.
 
 RAW/NEF og PSD kan ligge i samlingen, men nettleseren viser dem som fil-lenker
 i stedet for vanlig bildevisning.

@@ -1211,7 +1211,7 @@ def source_item_page_html(
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
-        <main class="server-browser">
+        <main class="server-browser" data-browser-item-id="{int(item["id"])}">
           {app_header_html(
               source.title,
               source=source,

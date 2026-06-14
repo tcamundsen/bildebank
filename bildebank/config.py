@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+import datetime as dt
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -9,6 +10,8 @@ from typing import Any
 CONFIG_FILENAME = "bildebank-config.toml"
 ENABLED_CONFIG_SECTIONS = frozenset({"face_recognition", "image_search"})
 DEFAULT_FACE_MODEL_NAME = "antelopev2"
+HOTKEY_KEYS = ("1", "2", "3", "4", "5")
+HOTKEY_ACTIONS = frozenset({"", "h3", "manual_date", "person"})
 
 
 @dataclass(frozen=True)
@@ -30,17 +33,35 @@ class OpenClipConfig:
 
 
 @dataclass(frozen=True)
+class BrowserHotkeyConfig:
+    action: str = ""
+    h3_cell: str = ""
+    person_name: str = ""
+    mode: str = ""
+    date: str = ""
+    uncertainty: str = ""
+    date_from: str = ""
+    date_to: str = ""
+    note: str = ""
+
+
+def default_browser_hotkeys() -> dict[str, BrowserHotkeyConfig]:
+    return {key: BrowserHotkeyConfig() for key in HOTKEY_KEYS}
+
+
+@dataclass(frozen=True)
 class BrowserConfig:
     hide_out_of_focus: bool = False
     manual_h3_cell: str = ""
     manual_person_controls_enabled: bool = True
+    hotkeys: dict[str, BrowserHotkeyConfig] = field(default_factory=default_browser_hotkeys)
 
 
 @dataclass(frozen=True)
 class AppConfig:
     face_recognition: FaceRecognitionConfig = FaceRecognitionConfig()
     openclip: OpenClipConfig = OpenClipConfig()
-    browser: BrowserConfig = BrowserConfig()
+    browser: BrowserConfig = field(default_factory=BrowserConfig)
 
 
 def load_config(repo_root: Path) -> AppConfig:
@@ -83,8 +104,93 @@ def load_config(repo_root: Path) -> AppConfig:
             hide_out_of_focus=bool(browser_data.get("hide_out_of_focus", False)),
             manual_h3_cell=str(browser_data.get("manual_h3_cell", "")).strip(),
             manual_person_controls_enabled=bool(browser_data.get("manual_person_controls_enabled", True)),
+            hotkeys=parse_browser_hotkeys(browser_data.get("hotkeys", {})),
         ),
     )
+
+
+def parse_browser_hotkeys(value: object) -> dict[str, BrowserHotkeyConfig]:
+    if value is None:
+        return default_browser_hotkeys()
+    if not isinstance(value, dict):
+        raise ValueError(f"{CONFIG_FILENAME}: [browser.hotkeys] må være en tabell.")
+    hotkeys = default_browser_hotkeys()
+    for key, raw_config in value.items():
+        clean_key = str(key).strip()
+        if clean_key not in HOTKEY_KEYS:
+            raise ValueError(f"Ukjent hurtigtast: {clean_key}. Gyldige taster er 1, 2, 3, 4 og 5.")
+        if not isinstance(raw_config, dict):
+            raise ValueError(f"Hurtigtast {clean_key} må være en tabell.")
+        hotkeys[clean_key] = browser_hotkey_from_mapping(raw_config)
+    return hotkeys
+
+
+def browser_hotkey_from_mapping(data: dict[str, object]) -> BrowserHotkeyConfig:
+    action = str(data.get("action", "")).strip()
+    if action == "off":
+        action = ""
+    if action not in HOTKEY_ACTIONS:
+        raise ValueError(f"Ukjent hurtigtasthandling: {action}")
+    config = BrowserHotkeyConfig(
+        action=action,
+        h3_cell=str(data.get("h3_cell", "")).strip(),
+        person_name=str(data.get("person_name", "")).strip(),
+        mode=str(data.get("mode", "")).strip(),
+        date=str(data.get("date", "")).strip(),
+        uncertainty=str(data.get("uncertainty", "")).strip(),
+        date_from=str(data.get("date_from", "")).strip(),
+        date_to=str(data.get("date_to", "")).strip(),
+        note=str(data.get("note", "")).strip(),
+    )
+    validate_browser_hotkey(config)
+    return config
+
+
+def validate_browser_hotkey(config: BrowserHotkeyConfig) -> None:
+    if config.action == "":
+        return
+    if config.action == "h3":
+        if not config.h3_cell:
+            raise ValueError("H3-hurtigtast mangler H3-celle.")
+        from .geo import h3_resolution
+
+        h3_resolution(config.h3_cell)
+        return
+    if config.action == "person":
+        if not config.person_name:
+            raise ValueError("Person-hurtigtast mangler personnavn.")
+        return
+    if config.action == "manual_date":
+        validate_manual_date_hotkey(config)
+        return
+    raise ValueError(f"Ukjent hurtigtasthandling: {config.action}")
+
+
+def validate_manual_date_hotkey(config: BrowserHotkeyConfig) -> None:
+    if config.mode == "exact":
+        parse_iso_date(config.date, "Dato")
+        return
+    if config.mode == "uncertain":
+        parse_iso_date(config.date, "Dato")
+        if not config.uncertainty:
+            raise ValueError("Usikkerhet mangler.")
+        if config.uncertainty not in {"1d", "1w", "1m", "1y"}:
+            raise ValueError("Ugyldig usikkerhet.")
+        return
+    if config.mode == "between":
+        start = parse_iso_date(config.date_from, "Fra-dato")
+        end = parse_iso_date(config.date_to, "Til-dato")
+        if start > end:
+            raise ValueError("Fra-dato kan ikke være etter til-dato.")
+        return
+    raise ValueError("Ugyldig datomodus.")
+
+
+def parse_iso_date(value: str, label: str) -> dt.date:
+    try:
+        return dt.date.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"{label} må være på formen YYYY-MM-DD.") from exc
 
 
 def set_face_recognition_enabled(repo_root: Path, enabled: bool) -> Path:
@@ -154,6 +260,55 @@ def set_browser_manual_h3_cell(repo_root: Path, h3_cell: str) -> Path:
         encoding="utf-8",
     )
     return config_path
+
+
+def set_browser_hotkey(repo_root: Path, key: str, hotkey: BrowserHotkeyConfig) -> Path:
+    clean_key = key.strip()
+    if clean_key not in HOTKEY_KEYS:
+        raise ValueError(f"Ukjent hurtigtast: {clean_key}. Gyldige taster er 1, 2, 3, 4 og 5.")
+    validate_browser_hotkey(hotkey)
+    config_path = repo_root / CONFIG_FILENAME
+    value = _toml_inline_table(browser_hotkey_to_toml_values(hotkey))
+    if not config_path.exists():
+        config_path.write_text(
+            "[browser.hotkeys]\n"
+            f'"{clean_key}" = {value}\n',
+            encoding="utf-8",
+        )
+        return config_path
+
+    migrate_legacy_openclip_section(config_path)
+    text = config_path.read_text(encoding="utf-8")
+    data = tomllib.loads(text)
+    _section(data, "browser")
+    parse_browser_hotkeys(_section(_section(data, "browser"), "hotkeys") if "hotkeys" in _section(data, "browser") else {})
+    config_path.write_text(
+        _set_toml_value(text, section="browser.hotkeys", key=f'"{clean_key}"', value=value),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def browser_hotkey_to_toml_values(hotkey: BrowserHotkeyConfig) -> dict[str, object]:
+    if not hotkey.action:
+        return {"action": ""}
+    if hotkey.action == "h3":
+        return {"action": "h3", "h3_cell": hotkey.h3_cell}
+    if hotkey.action == "person":
+        return {"action": "person", "person_name": hotkey.person_name}
+    if hotkey.action == "manual_date":
+        values: dict[str, object] = {"action": "manual_date", "mode": hotkey.mode}
+        if hotkey.mode in {"exact", "uncertain"}:
+            values["date"] = hotkey.date
+        if hotkey.mode == "uncertain":
+            values["uncertainty"] = hotkey.uncertainty
+        if hotkey.mode == "between":
+            values["date_from"] = hotkey.date_from
+            values["date_to"] = hotkey.date_to
+        if hotkey.note:
+            values["note"] = hotkey.note
+        return values
+    raise ValueError(f"Ukjent hurtigtasthandling: {hotkey.action}")
 
 
 def set_config_enabled(repo_root: Path, section: str, enabled: bool) -> Path:
@@ -288,3 +443,14 @@ def _toml_bool(value: bool) -> str:
 
 def _toml_string_value(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _toml_inline_table(values: dict[str, object]) -> str:
+    parts = []
+    for key, value in values.items():
+        if isinstance(value, bool):
+            rendered = _toml_bool(value)
+        else:
+            rendered = f'"{_toml_string_value(str(value))}"'
+        parts.append(f"{key} = {rendered}")
+    return "{ " + ", ".join(parts) + " }"

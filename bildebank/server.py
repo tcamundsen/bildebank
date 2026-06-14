@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import db
-from .config import AppConfig, FaceRecognitionConfig
+from .config import AppConfig, BrowserHotkeyConfig, FaceRecognitionConfig, HOTKEY_KEYS
 from .face import (
     add_face_to_person,
     add_person_to_file,
@@ -397,6 +397,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/settings/manual-h3-cell":
                 self.respond_set_manual_h3_cell()
                 return
+            if parsed.path == "/settings/hotkey":
+                self.respond_set_hotkey()
+                return
             if parsed.path == "/settings/h3-cell":
                 self.respond_set_h3_cell_name()
                 return
@@ -465,6 +468,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/item-manual-date-clear":
                 self.respond_clear_manual_date_item()
+                return
+            if parsed.path == "/api/item-hotkey-action":
+                self.respond_hotkey_action()
                 return
             if parsed.path == "/api/item-delete":
                 self.respond_delete_item()
@@ -1026,6 +1032,38 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         self.redirect("/settings")
 
+    def respond_set_hotkey(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        key = first_param(params, "key").strip()
+        action = first_param(params, "action").strip()
+        if action == "h3":
+            hotkey = BrowserHotkeyConfig(action=action, h3_cell=first_param(params, "h3_cell").strip())
+        elif action == "person":
+            hotkey = BrowserHotkeyConfig(action=action, person_name=first_param(params, "person_name").strip())
+        elif action == "manual_date":
+            hotkey = BrowserHotkeyConfig(
+                action=action,
+                mode=first_param(params, "mode").strip(),
+                date=first_param(params, "date").strip(),
+                uncertainty=first_param(params, "uncertainty").strip(),
+                date_from=first_param(params, "date_from").strip(),
+                date_to=first_param(params, "date_to").strip(),
+                note=first_param(params, "note").strip(),
+            )
+        else:
+            hotkey = BrowserHotkeyConfig(action=action)
+        try:
+            self.server.config = server_app.update_hotkey_config(
+                self.server.config,
+                server_app.server_program_repo_root(),
+                key,
+                hotkey,
+            )
+        except ValueError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
+            return
+        self.redirect("/settings")
+
     def respond_set_h3_cell_name(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)
         try:
@@ -1426,6 +1464,39 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         clear_browser_navigation_cache(self.server)
         self.respond_json({"ok": True, "file_id": file_id})
+
+    def respond_hotkey_action(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        try:
+            file_id = int(payload.get("file_id"))
+        except (TypeError, ValueError):
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        key = str(payload.get("key") or "").strip()
+        if key not in HOTKEY_KEYS:
+            self.respond_json({"ok": False, "error": "Ugyldig hurtigtast."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        hotkey = (self.server.config.browser.hotkeys or {}).get(key, BrowserHotkeyConfig())
+        if hotkey.action == "person" and not self.server.face_enabled:
+            self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
+            return
+        try:
+            result = server_actions.apply_browser_hotkey_to_file(
+                self.server.target,
+                file_id,
+                hotkey,
+                face_config=self.server.config.face_recognition,
+            )
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if hotkey.action == "manual_date":
+            clear_browser_navigation_cache(self.server)
+        if hotkey.action == "person":
+            clear_face_caches()
+            result["person_url"] = person_item_url(str(result["person_name"]), file_id, show_faces=False)
+            result["confirmed"] = True
+        self.respond_json({"ok": True, "key": key, **result})
 
     def respond_delete_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)

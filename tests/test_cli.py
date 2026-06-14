@@ -22,7 +22,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bildebank.cli import build_parser, main, print_image_search_progress, wsl_path_from_windows_path
-from bildebank.config import AppConfig, BrowserConfig, FaceRecognitionConfig, OpenClipConfig, load_config
+from bildebank.config import AppConfig, BrowserConfig, BrowserHotkeyConfig, FaceRecognitionConfig, OpenClipConfig, load_config
 from bildebank import db
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
@@ -30,6 +30,7 @@ from bildebank.face import (
     add_person_to_file,
     apply_face_schema,
     connect_face_db,
+    create_person,
     face_box_percent,
     face_db_path,
     insightface_import_error_message,
@@ -1128,6 +1129,7 @@ pretrained = "laion2b_s34b_b79k"
                     hide_out_of_focus=True,
                     manual_h3_cell="872830828ffffff",
                     manual_person_controls_enabled=False,
+                    hotkeys={"1": BrowserHotkeyConfig(action="person", person_name="Kari")},
                 ),
             )
 
@@ -1145,6 +1147,11 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('action="/settings/manual-h3-cell"', body)
         self.assertIn('<option value="872830828ffffff" selected>Ikke navngitt: 872830828ffffff</option>', body)
         self.assertIn("Aktiv manuell H3-celle", body)
+        self.assertIn("Hurtigtaster 1-5", body)
+        self.assertIn('action="/settings/hotkey"', body)
+        self.assertIn('<input type="hidden" name="key" value="1">', body)
+        self.assertIn('<option value="person" selected>Legg til person</option>', body)
+        self.assertIn('<option value="Kari" selected>Kari</option>', body)
         self.assertIn('<span class="app-toggle-status">På</span>', body)
         self.assertIn(str(target), body)
         self.assertIn("InsightFace aktivert", body)
@@ -1502,6 +1509,62 @@ pretrained = "laion2b_s34b_b79k"
 
         self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
         self.assertIn("Ugyldig H3-celle", str(response["content"]))
+
+    def test_run_server_hotkey_post_updates_config(self) -> None:
+        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = (
+                f"key=1&action=h3&h3_cell={h3_cell}&person_name=&mode=exact&"
+                "date=&uncertainty=1m&date_from=&date_to=&note="
+            ).encode("utf-8")
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig())
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_hotkey(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+
+        self.assertEqual(config.browser.hotkeys["1"], BrowserHotkeyConfig(action="h3", h3_cell=h3_cell))
+        self.assertEqual(handler.server.config.browser.hotkeys["1"], BrowserHotkeyConfig(action="h3", h3_cell=h3_cell))
+        self.assertEqual(handler.location, "/settings")
+
+    def test_run_server_hotkey_post_rejects_invalid_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = (
+                "key=5&action=manual_date&h3_cell=&person_name=&mode=between&"
+                "date=&uncertainty=1m&date_from=2004-08-31&date_to=2004-06-01&note="
+            ).encode("utf-8")
+            response: dict[str, object] = {}
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig())
+
+                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_hotkey(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
+        self.assertIn("Fra-dato kan ikke være etter til-dato", str(response["content"]))
 
     def test_run_server_face_model_post_updates_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2171,6 +2234,95 @@ model_name = "buffalo_l"
         self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
         self.assertIn("Filen er markert som slettet", str(response["content"]))
 
+    def test_run_server_hotkey_action_sets_manual_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20260102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            data = json.dumps({"file_id": 1, "key": "5"}).encode("utf-8")
+            response: dict[str, object] = {}
+            hotkeys = {
+                "5": BrowserHotkeyConfig(
+                    action="manual_date",
+                    mode="between",
+                    date_from="2004-06-01",
+                    date_to="2004-08-31",
+                    note="Sommer 2004",
+                )
+            }
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target, config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)))
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_hotkey_action(handler)  # type: ignore[arg-type]
+            item = browser_item_by_id(target, 1)
+
+        self.assertEqual(response["status"], HTTPStatus.OK)
+        self.assertEqual(response["content"]["action"], "manual_date")
+        self.assertEqual(response["content"]["manual_date_from"], "2004-06-01")
+        self.assertEqual(response["content"]["manual_date_to"], "2004-08-31")
+        self.assertEqual(item["manual_date_note"], "Sommer 2004")
+
+    def test_run_server_hotkey_action_adds_person_to_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20260102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            create_person(target, "Kari")
+            data = json.dumps({"file_id": 1, "key": "3"}).encode("utf-8")
+            response: dict[str, object] = {}
+            hotkeys = {"3": BrowserHotkeyConfig(action="person", person_name="Kari")}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(
+                    target=target,
+                    face_enabled=True,
+                    config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)),
+                )
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_hotkey_action(handler)  # type: ignore[arg-type]
+            face_conn = connect_face_db(target)
+            try:
+                manual_link_count = face_conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0]
+            finally:
+                face_conn.close()
+
+        self.assertEqual(response["status"], HTTPStatus.OK)
+        self.assertEqual(response["content"]["action"], "person")
+        self.assertEqual(response["content"]["person_name"], "Kari")
+        self.assertEqual(response["content"]["confirmed"], True)
+        self.assertEqual(manual_link_count, 1)
+
     def test_manual_between_date_uses_midpoint_in_static_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2213,7 +2365,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "11")
+        self.assertEqual(SERVER_ASSET_VERSION, "12")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -2420,9 +2572,12 @@ model_name = "buffalo_l"
         self.assertIn('data-manual-location-item="1"', tag_rail_body)
         self.assertIn(f'data-manual-location-cell="{h3_cell}"', tag_rail_body)
         self.assertIn("/api/item-manual-location", SERVER_JS)
-        self.assertIn('event.key.toLowerCase() === "g"', SERVER_JS)
+        self.assertIn("/api/item-hotkey-action", SERVER_JS)
+        self.assertIn('["1", "2", "3", "4", "5"].includes(event.key)', SERVER_JS)
+        self.assertNotIn('event.key.toLowerCase() === "g"', SERVER_JS)
         self.assertIn("setManualLocation(button)", SERVER_JS)
         self.assertNotIn("Sette sted fra aktiv H3-celle?", SERVER_JS)
+        self.assertIn('data-browser-item-id="1"', body)
 
     def test_run_server_item_manual_location_endpoint_sets_h3_location(self) -> None:
         import h3
