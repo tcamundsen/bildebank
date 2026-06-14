@@ -1475,7 +1475,8 @@ def hotkey_hints_panel_html(
             rows.append(f'<div class="hotkey-hint"><span>{html.escape(key)}:</span> {html.escape(label)}</div>')
     if not rows:
         return ""
-    return '<section class="hotkey-hints" aria-label="Hurtigtaster">' + "".join(rows) + "</section>"
+    heading = '<div class="hotkey-hints-heading">Hurtigtaster:</div>'
+    return '<section class="hotkey-hints" aria-label="Hurtigtaster">' + heading + "".join(rows) + "</section>"
 
 
 def hotkey_hint_label(

@@ -2326,7 +2326,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "15")
+        self.assertEqual(SERVER_ASSET_VERSION, "16")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -2577,6 +2577,7 @@ model_name = "buffalo_l"
         tag_rail_start = body.index('<aside class="tag-rail"')
         tag_rail_body = body[tag_rail_start:body.index("</aside>", tag_rail_start)]
         self.assertIn('class="hotkey-hints"', tag_rail_body)
+        self.assertIn('<div class="hotkey-hints-heading">Hurtigtaster:</div>', tag_rail_body)
         self.assertIn("<span>1:</span> H3 til Brevik", tag_rail_body)
         self.assertIn("<span>3:</span> Legg til Viljar", tag_rail_body)
         self.assertIn("<span>5:</span> Sett dato til 30.12.48 ±1w", tag_rail_body)

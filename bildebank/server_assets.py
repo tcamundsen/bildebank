@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "15"
+SERVER_ASSET_VERSION = "16"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -775,6 +775,7 @@ SERVER_CSS = r"""    :root {
       color: var(--muted);
       font-size: 12px;
     }
+    .hotkey-hints-heading { color: var(--text); font-weight: 700; }
     .hotkey-hint span { color: var(--text); font-weight: 700; }
     .app-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
     .app-toggle input { position: absolute; opacity: 0; pointer-events: none; }
