@@ -15,6 +15,7 @@ from .config import (
     FaceRecognitionConfig,
     HOTKEY_KEYS,
     set_browser_hide_out_of_focus,
+    set_browser_hotkey_hints_enabled,
     set_browser_hotkey,
     set_browser_manual_h3_cell,
     set_browser_manual_person_controls_enabled,
@@ -48,7 +49,12 @@ def app_status_page_html(
             app_status_row_html("Bildesamling", str(target)),
             app_status_hide_out_of_focus_row_html(config.browser.hide_out_of_focus),
             app_status_manual_h3_cell_row_html(config.browser.manual_h3_cell, named_h3_cells),
-            app_status_hotkeys_row_html(config.browser.hotkeys or {}, named_h3_cells, registered_people),
+            app_status_hotkeys_row_html(
+                config.browser.hotkeys or {},
+                named_h3_cells,
+                registered_people,
+                hints_enabled=config.browser.hotkey_hints_enabled,
+            ),
             app_status_row_html("Bildebank-versjon", __version__),
             app_status_face_config_row_html(config.face_recognition.enabled, insightface_installed=insightface_installed),
             app_status_face_model_row_html(config.face_recognition),
@@ -149,6 +155,14 @@ def update_hotkey_config(config: AppConfig, repo_root: Path, key: str, hotkey: B
     return replace(
         config,
         browser=replace(config.browser, hotkeys=hotkeys),
+    )
+
+
+def update_hotkey_hints_config(config: AppConfig, repo_root: Path, enabled: bool) -> AppConfig:
+    set_browser_hotkey_hints_enabled(repo_root, enabled)
+    return replace(
+        config,
+        browser=replace(config.browser, hotkey_hints_enabled=enabled),
     )
 
 
@@ -327,6 +341,8 @@ def app_status_hotkeys_row_html(
     hotkeys: dict[str, BrowserHotkeyConfig],
     named_h3_cells: list[Any],
     registered_people: list[dict[str, str]],
+    *,
+    hints_enabled: bool = False,
 ) -> str:
     rows = "\n".join(
         app_status_hotkey_form_html(
@@ -337,12 +353,22 @@ def app_status_hotkeys_row_html(
         )
         for key in HOTKEY_KEYS
     )
+    checked = " checked" if hints_enabled else ""
+    status = "På" if hints_enabled else "Av"
     return f"""
     <div class="info-row">
       <dt>Hurtigtaster 1-5</dt>
       <dd>
         <div class="hotkey-settings">
           {rows}
+          <form action="/settings/hotkey-hints" method="post" class="app-toggle-form">
+            <input type="hidden" name="enabled" value="false">
+            <label class="app-toggle">
+              <input type="checkbox" name="enabled" value="true"{checked} onchange="this.form.submit()">
+              <span class="app-toggle-track" aria-hidden="true"><span></span></span>
+              <span class="app-toggle-status">Vis hurtigtaster i venstrefelt: {status}</span>
+            </label>
+          </form>
         </div>
       </dd>
     </div>

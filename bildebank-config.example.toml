@@ -15,6 +15,7 @@ model_name = "buffalo_l"
 hide_out_of_focus = false
 manual_h3_cell = ""
 manual_person_controls_enabled = true
+hotkey_hints_enabled = false
 
 [browser.hotkeys]
 # Tastene 1-5 kan settes til handlinger i run-server.

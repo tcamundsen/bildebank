@@ -225,6 +225,8 @@ def item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_h3_cell: str = "",
     manual_person_controls_enabled: bool = True,
+    hotkey_hints_enabled: bool = False,
+    hotkeys: dict[str, object] | None = None,
 ) -> str:
     return server_browser.item_page_html(
         target,
@@ -238,6 +240,8 @@ def item_page_html(
         face_config=face_config,
         manual_h3_cell=manual_h3_cell,
         manual_person_controls_enabled=manual_person_controls_enabled,
+        hotkey_hints_enabled=hotkey_hints_enabled,
+        hotkeys=hotkeys,
     )
 
 
@@ -254,6 +258,8 @@ def source_item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_h3_cell: str = "",
     manual_person_controls_enabled: bool = True,
+    hotkey_hints_enabled: bool = False,
+    hotkeys: dict[str, object] | None = None,
     hide_out_of_focus: bool = False,
     conn: Any | None = None,
 ) -> str:
@@ -270,6 +276,8 @@ def source_item_page_html(
         face_config=face_config,
         manual_h3_cell=manual_h3_cell,
         manual_person_controls_enabled=manual_person_controls_enabled,
+        hotkey_hints_enabled=hotkey_hints_enabled,
+        hotkeys=hotkeys,
         hide_out_of_focus=hide_out_of_focus,
         conn=conn,
     )

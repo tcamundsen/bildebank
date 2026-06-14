@@ -400,6 +400,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/settings/hotkey":
                 self.respond_set_hotkey()
                 return
+            if parsed.path == "/settings/hotkey-hints":
+                self.respond_set_hotkey_hints()
+                return
             if parsed.path == "/settings/h3-cell":
                 self.respond_set_h3_cell_name()
                 return
@@ -566,6 +569,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 face_config=self.server.config.face_recognition,
                 manual_h3_cell=self.server.config.browser.manual_h3_cell,
                 manual_person_controls_enabled=self.server.config.browser.manual_person_controls_enabled,
+                hotkey_hints_enabled=self.server.config.browser.hotkey_hints_enabled,
+                hotkeys=self.server.config.browser.hotkeys,
                 hide_out_of_focus=self.server.hide_out_of_focus,
                 conn=conn,
             )
@@ -876,6 +881,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         face_config=self.server.config.face_recognition,
                         manual_h3_cell=self.server.config.browser.manual_h3_cell,
                         manual_person_controls_enabled=self.server.config.browser.manual_person_controls_enabled,
+                        hotkey_hints_enabled=self.server.config.browser.hotkey_hints_enabled,
+                        hotkeys=self.server.config.browser.hotkeys,
                         hide_out_of_focus=hide_out_of_focus,
                         conn=conn,
                     )
@@ -1062,6 +1069,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         except ValueError as exc:
             self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
             return
+        self.redirect("/settings")
+
+    def respond_set_hotkey_hints(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
+        self.server.config = server_app.update_hotkey_hints_config(
+            self.server.config,
+            server_app.server_program_repo_root(),
+            enabled,
+        )
         self.redirect("/settings")
 
     def respond_set_h3_cell_name(self) -> None:

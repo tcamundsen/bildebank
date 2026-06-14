@@ -43,6 +43,10 @@ tast kan ha sin egen handling:
 
 Taster som ikke er satt opp gjør ingenting.
 
+I **Innstillinger** kan du også slå på visning av hurtigtastene i venstrefeltet
+ved bildet. Da viser bildebrowseren korte linjer som for eksempel `1: H3 til
+Brevik`, `3: Legg til Viljar` eller `5: Sett dato til 30.12.48 ±1w`.
+
 RAW/NEF og PSD kan ligge i samlingen, men nettleseren viser dem som fil-lenker
 i stedet for vanlig bildevisning.
 

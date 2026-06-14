@@ -1129,6 +1129,7 @@ pretrained = "laion2b_s34b_b79k"
                     hide_out_of_focus=True,
                     manual_h3_cell="872830828ffffff",
                     manual_person_controls_enabled=False,
+                    hotkey_hints_enabled=True,
                     hotkeys={"1": BrowserHotkeyConfig(action="person", person_name="Kari")},
                 ),
             )
@@ -1149,6 +1150,8 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Aktiv manuell H3-celle", body)
         self.assertIn("Hurtigtaster 1-5", body)
         self.assertIn('action="/settings/hotkey"', body)
+        self.assertIn('action="/settings/hotkey-hints"', body)
+        self.assertIn("Vis hurtigtaster i venstrefelt: På", body)
         self.assertIn('<input type="hidden" name="key" value="1">', body)
         self.assertIn("data-hotkey-action", body)
         self.assertIn('data-hotkey-fields="h3"', body)
@@ -1463,6 +1466,30 @@ pretrained = "laion2b_s34b_b79k"
 
         self.assertFalse(config.browser.manual_person_controls_enabled)
         self.assertFalse(handler.server.config.browser.manual_person_controls_enabled)
+        self.assertEqual(handler.location, "/settings")
+
+    def test_run_server_hotkey_hints_post_updates_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = b"enabled=true"
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig())
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_hotkey_hints(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+
+        self.assertTrue(config.browser.hotkey_hints_enabled)
+        self.assertTrue(handler.server.config.browser.hotkey_hints_enabled)
         self.assertEqual(handler.location, "/settings")
 
     def test_run_server_manual_h3_cell_post_updates_config(self) -> None:
@@ -2370,7 +2397,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "13")
+        self.assertEqual(SERVER_ASSET_VERSION, "14")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -2583,6 +2610,59 @@ model_name = "buffalo_l"
         self.assertIn("setManualLocation(button)", SERVER_JS)
         self.assertNotIn("Sette sted fra aktiv H3-celle?", SERVER_JS)
         self.assertIn('data-browser-item-id="1"', body)
+
+    def test_run_server_item_page_can_show_hotkey_hints_in_tag_rail(self) -> None:
+        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                db.set_geo_place_name(conn, h3_cell, "Brevik")
+                conn.commit()
+            finally:
+                conn.close()
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            hotkeys = {
+                "1": BrowserHotkeyConfig(action="h3", h3_cell=h3_cell),
+                "3": BrowserHotkeyConfig(action="person", person_name="Viljar"),
+                "5": BrowserHotkeyConfig(action="manual_date", mode="uncertain", date="1948-12-30", uncertainty="1w"),
+            }
+            body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+                face_enabled=False,
+                hotkey_hints_enabled=True,
+                hotkeys=hotkeys,
+            )
+            hidden_body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+                face_enabled=False,
+                hotkey_hints_enabled=False,
+                hotkeys=hotkeys,
+            )
+
+        tag_rail_start = body.index('<aside class="tag-rail"')
+        tag_rail_body = body[tag_rail_start:body.index("</aside>", tag_rail_start)]
+        self.assertIn('class="hotkey-hints"', tag_rail_body)
+        self.assertIn("<span>1:</span> H3 til Brevik", tag_rail_body)
+        self.assertIn("<span>3:</span> Legg til Viljar", tag_rail_body)
+        self.assertIn("<span>5:</span> Sett dato til 30.12.48 ±1w", tag_rail_body)
+        self.assertLess(tag_rail_body.index("date-status-badge"), tag_rail_body.index('class="hotkey-hints"'))
+        self.assertLess(tag_rail_body.index("location-status-badge"), tag_rail_body.index('class="hotkey-hints"'))
+        self.assertTrue(tag_rail_body.strip().endswith("</section>"))
+        self.assertNotIn('class="hotkey-hints"', hidden_body)
 
     def test_run_server_item_manual_location_endpoint_sets_h3_location(self) -> None:
         import h3

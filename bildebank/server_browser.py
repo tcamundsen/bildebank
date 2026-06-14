@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import db
-from .config import FaceRecognitionConfig
+from .config import BrowserHotkeyConfig, FaceRecognitionConfig, HOTKEY_KEYS
 from .geo import H3_COLUMNS, h3_area_label
 from .html_export import display_relative_path, format_bytes, month_key_from_path
 from .media import media_kind
@@ -1106,6 +1106,8 @@ def item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_h3_cell: str = "",
     manual_person_controls_enabled: bool = True,
+    hotkey_hints_enabled: bool = False,
+    hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
 ) -> str:
     return source_item_page_html(
         target,
@@ -1120,6 +1122,8 @@ def item_page_html(
         face_config=face_config,
         manual_h3_cell=manual_h3_cell,
         manual_person_controls_enabled=manual_person_controls_enabled,
+        hotkey_hints_enabled=hotkey_hints_enabled,
+        hotkeys=hotkeys,
     )
 
 
@@ -1137,6 +1141,8 @@ def source_item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_h3_cell: str = "",
     manual_person_controls_enabled: bool = True,
+    hotkey_hints_enabled: bool = False,
+    hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> str:
@@ -1178,6 +1184,11 @@ def source_item_page_html(
         face_rail_html += confirmed_face_people_text_html(confirmed_face_people_data)
         faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
         duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config)
+    hotkey_hints_html = (
+        hotkey_hints_panel_html(target, hotkeys or {}, conn=conn)
+        if hotkey_hints_enabled
+        else ""
+    )
     controls = source_controls_html(
         source,
         month_nav,
@@ -1201,6 +1212,7 @@ def source_item_page_html(
         item,
         out_of_focus_redirect_url=out_of_focus_redirect_url,
         extra_html=face_rail_html,
+        suffix_html=hotkey_hints_html,
         configured_manual_h3_cell=manual_h3_cell,
         conn=conn,
     )
@@ -1415,6 +1427,7 @@ def tag_controls_html(
     *,
     out_of_focus_redirect_url: str = "",
     extra_html: str = "",
+    suffix_html: str = "",
     configured_manual_h3_cell: str = "",
     conn: sqlite3.Connection | None = None,
 ) -> str:
@@ -1454,7 +1467,62 @@ def tag_controls_html(
         else gps_location_badge_html(item, extra_html=location_controls)
     )
     date_status = date_status_badge_html(item)
-    return f'<aside class="tag-rail" aria-label="Tagger">{extra_html}{"".join(buttons)}{date_status}{location_status}</aside>'
+    return f'<aside class="tag-rail" aria-label="Tagger">{extra_html}{"".join(buttons)}{date_status}{location_status}{suffix_html}</aside>'
+
+
+def hotkey_hints_panel_html(
+    target: Path,
+    hotkeys: dict[str, BrowserHotkeyConfig],
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> str:
+    rows = []
+    for key in HOTKEY_KEYS:
+        label = hotkey_hint_label(target, hotkeys.get(key, BrowserHotkeyConfig()), conn=conn)
+        if label:
+            rows.append(f'<div class="hotkey-hint"><span>{html.escape(key)}:</span> {html.escape(label)}</div>')
+    if not rows:
+        return ""
+    return '<section class="hotkey-hints" aria-label="Hurtigtaster">' + "".join(rows) + "</section>"
+
+
+def hotkey_hint_label(
+    target: Path,
+    hotkey: BrowserHotkeyConfig,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> str:
+    if hotkey.action == "h3" and hotkey.h3_cell:
+        name = manual_h3_cell_name(target, hotkey.h3_cell, conn=conn) or hotkey.h3_cell
+        return f"H3 til {name}"
+    if hotkey.action == "person" and hotkey.person_name:
+        return f"Legg til {hotkey.person_name}"
+    if hotkey.action == "manual_date":
+        text = hotkey_date_hint_text(hotkey)
+        return f"Sett dato til {text}" if text else ""
+    return ""
+
+
+def hotkey_date_hint_text(hotkey: BrowserHotkeyConfig) -> str:
+    if hotkey.mode == "exact":
+        return display_short_date(hotkey.date)
+    if hotkey.mode == "uncertain":
+        date_text = display_short_date(hotkey.date)
+        return f"{date_text} ±{hotkey.uncertainty}" if date_text and hotkey.uncertainty else date_text
+    if hotkey.mode == "between":
+        start = display_short_date(hotkey.date_from)
+        end = display_short_date(hotkey.date_to)
+        if start and end:
+            return f"{start}-{end}"
+    return ""
+
+
+def display_short_date(value: str) -> str:
+    try:
+        parsed = dt.date.fromisoformat(value)
+    except ValueError:
+        return value
+    return parsed.strftime("%d.%m.%y")
 
 
 def tag_control_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
