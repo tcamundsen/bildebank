@@ -3985,6 +3985,8 @@ model_name = "buffalo_l"
         self.assertIn("/api/face-person-create-and-add-face", SERVER_JS)
         self.assertIn("/api/item-faces?file_id=", SERVER_JS)
         self.assertIn("function ensureRailPersonLink", SERVER_JS)
+        self.assertIn("ensureRailPersonLink(payload.person_name, payload.person_url, payload.confirmed);", SERVER_JS)
+        self.assertNotIn("ensureTopPersonLink", SERVER_JS)
         self.assertIn('document.querySelector(".tag-rail")', SERVER_JS)
         self.assertNotIn('document.querySelector(".topline .people")', SERVER_JS)
         self.assertIn("Identifiser", face_body)

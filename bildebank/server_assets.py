@@ -1464,7 +1464,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       const payload = await response.json();
       if (!payload.ok) throw new Error(payload.error || "Kunne ikke lagre.");
       status.textContent = `Koblet til ${payload.person_name}.`;
-      ensureTopPersonLink(payload.person_name, payload.person_url, payload.confirmed);
+      ensureRailPersonLink(payload.person_name, payload.person_url, payload.confirmed);
       detail.remove();
       if (!document.querySelector(".face-detail")) {
         closeFacesOverlay();
