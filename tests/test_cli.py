@@ -3915,7 +3915,7 @@ model_name = "buffalo_l"
             'Per Manual<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet"> ✅</span></a>',
             body,
         )
-        self.assertIn("Bekreft ansikter (1)", body)
+        self.assertIn("Bekreft ansikt", body)
         self.assertNotIn("Ubekreftet ansikter i bildet", body)
         tag_rail_start = body.index('<aside class="tag-rail"')
         tag_rail_end = body.index("</aside>", tag_rail_start)
@@ -3927,9 +3927,9 @@ model_name = "buffalo_l"
         self.assertIn('class="person-link" href="/person/Per%20Manual/no-faces/item/1"', tag_rail_html)
         self.assertIn('class="person-link" href="/person/Siril/no-faces/item/1"', tag_rail_html)
         self.assertIn('class="person-link" href="/person/Viljar/no-faces/item/1"', tag_rail_html)
-        self.assertIn("Bekreft ansikter (1)", tag_rail_html)
+        self.assertIn("Bekreft ansikt", tag_rail_html)
         assumed_people_start = tag_rail_html.index("Personer i bildet")
-        faces_button_start = tag_rail_html.index("Bekreft ansikter (1)")
+        faces_button_start = tag_rail_html.index("Bekreft ansikt")
         confirmed_faces_start = tag_rail_html.index("Referanseansikt")
         date_status_start = tag_rail_html.index("date-status-badge")
         assumed_people_html = tag_rail_html[assumed_people_start:faces_button_start]
