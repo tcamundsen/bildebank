@@ -333,6 +333,19 @@ SERVER_CSS = r"""    :root {
       line-height: 1;
       color: var(--ok);
     }
+    .inline-link {
+      border: 0;
+      border-radius: 0;
+      padding: 0;
+      min-height: 0;
+      background: transparent;
+      color: var(--accent);
+      font-size: inherit;
+      line-height: inherit;
+      text-decoration: underline;
+    }
+    .inline-link:hover { background: transparent; color: var(--text); }
+    .danger-inline-link { color: var(--danger); }
     .faces-button { color: var(--accent); }
     .nav-button:hover, .server-search-link:hover, .person-link:hover, .faces-button:hover { background: #3a3a3a; text-decoration: none; }
     .tag-rail .person-link:hover { background: #252525; text-decoration: underline; }

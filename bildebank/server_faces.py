@@ -77,8 +77,13 @@ def confirmed_face_people_for_file(
     except OSError:
         return []
     return [
-        {"name": name, "url": person_item_url(name, file_id, show_faces=False), "confirmed": True}
-        for name in cached_confirmed_face_people_for_file(str(db_path), mtime_ns, file_id)
+        {
+            "name": name,
+            "url": person_item_url(name, file_id, show_faces=False),
+            "confirmed": True,
+            "faceId": face_id,
+        }
+        for name, face_id in cached_confirmed_face_people_for_file(str(db_path), mtime_ns, file_id)
     ]
 
 
@@ -110,7 +115,7 @@ def cached_registered_people(face_db_path: str, face_db_mtime_ns: int) -> tuple[
 
 
 @lru_cache(maxsize=512)
-def cached_confirmed_face_people_for_file(face_db_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[str, ...]:
+def cached_confirmed_face_people_for_file(face_db_path: str, face_db_mtime_ns: int, file_id: int) -> tuple[tuple[str, int], ...]:
     conn = sqlite3.connect(face_db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -118,16 +123,16 @@ def cached_confirmed_face_people_for_file(face_db_path: str, face_db_mtime_ns: i
             return ()
         rows = conn.execute(
             """
-            SELECT DISTINCT persons.name
+            SELECT persons.name, person_faces.face_id
             FROM person_faces
             JOIN persons ON persons.id = person_faces.person_id
             JOIN faces ON faces.id = person_faces.face_id
             WHERE faces.file_id = ?
-            ORDER BY persons.name
+            ORDER BY persons.name, person_faces.face_id
             """,
             (file_id,),
         )
-        return tuple(str(row["name"]) for row in rows)
+        return tuple((str(row["name"]), int(row["face_id"])) for row in rows)
     except sqlite3.Error:
         return ()
     finally:
@@ -739,25 +744,7 @@ def unconfirm_face_buttons_html(
         return ""
     if source.include_suggestions:
         return remove_manual_person_file_button_html(target, source.person_name, int(item["id"]), face_config)
-    faces = person_faces_for_item(
-        target,
-        source.person_name,
-        item,
-        include_suggestions=False,
-        face_config=face_config,
-    )
-    buttons = []
-    for face in faces:
-        face_id = int(face["faceId"])
-        person_name = source.person_name
-        buttons.append(
-            '<button class="nav-button danger-button" type="button" '
-            f'data-unconfirm-face="{face_id}" '
-            f'data-unconfirm-person="{html.escape(person_name)}">'
-            f"Avbekreft face-id {face_id}"
-            "</button>"
-        )
-    return "\n".join(buttons)
+    return ""
 
 
 def remove_manual_person_file_button_html(
@@ -805,17 +792,32 @@ def people_links_html(people: list[dict[str, object]], heading: str = "") -> str
 def confirmed_face_people_text_html(people: list[dict[str, object]]) -> str:
     if not people:
         return ""
-    names = norwegian_name_list(str(person["name"]) for person in people)
-    return f'<p class="people-heading confirmed-face-people">Ansikter bekreftet til gjenkjenning: {html.escape(names)}</p>'
+    entries = norwegian_html_list(confirmed_face_person_text_html(person) for person in people)
+    return f'<p class="people-heading confirmed-face-people">Ansikter bekreftet til gjenkjenning: {entries}</p>'
 
 
-def norwegian_name_list(names: Iterable[str]) -> str:
-    name_list = list(names)
-    if len(name_list) <= 1:
-        return "".join(name_list)
-    if len(name_list) == 2:
-        return f"{name_list[0]} og {name_list[1]}"
-    return f"{', '.join(name_list[:-1])} og {name_list[-1]}"
+def confirmed_face_person_text_html(person: dict[str, object]) -> str:
+    name = str(person["name"])
+    try:
+        face_id = int(person["faceId"])
+    except (KeyError, TypeError, ValueError):
+        return html.escape(name)
+    return (
+        f'{html.escape(name)} '
+        f'(<button class="inline-link danger-inline-link" type="button" '
+        f'data-unconfirm-face="{face_id}" '
+        f'data-unconfirm-person="{html.escape(name)}" '
+        f'title="Avkreft face-id {face_id}">avkreft</button>)'
+    )
+
+
+def norwegian_html_list(items: Iterable[str]) -> str:
+    item_list = list(items)
+    if len(item_list) <= 1:
+        return "".join(item_list)
+    if len(item_list) == 2:
+        return f"{item_list[0]} og {item_list[1]}"
+    return f"{', '.join(item_list[:-1])} og {item_list[-1]}"
 
 
 def people_link_html(person: dict[str, object]) -> str:
