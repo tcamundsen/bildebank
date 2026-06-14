@@ -359,6 +359,7 @@ def app_status_hotkey_form_html(
         <input name="date_to" value="{html.escape(hotkey.date_to)}" placeholder="Til YYYY-MM-DD" aria-label="Til-dato">
         <input name="note" value="{html.escape(hotkey.note)}" placeholder="Notat" aria-label="Datonotat">
       </span>
+      <span class="hotkey-fields hotkey-empty-fields" data-hotkey-fields=""></span>
       <button type="submit" class="nav-button">Lagre</button>
     </form>
     """
