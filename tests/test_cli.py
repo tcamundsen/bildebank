@@ -1150,6 +1150,11 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Hurtigtaster 1-5", body)
         self.assertIn('action="/settings/hotkey"', body)
         self.assertIn('<input type="hidden" name="key" value="1">', body)
+        self.assertIn("data-hotkey-action", body)
+        self.assertIn('data-hotkey-fields="h3"', body)
+        self.assertIn('data-hotkey-fields="manual_date"', body)
+        self.assertIn('data-hotkey-fields="person"', body)
+        self.assertIn("function updateHotkeyForm", SERVER_JS)
         self.assertIn('<option value="person" selected>Legg til person</option>', body)
         self.assertIn('<option value="Kari" selected>Kari</option>', body)
         self.assertIn('<span class="app-toggle-status">På</span>', body)
@@ -2365,7 +2370,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "12")
+        self.assertEqual(SERVER_ASSET_VERSION, "13")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)

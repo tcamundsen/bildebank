@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "12"
+SERVER_ASSET_VERSION = "13"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -756,11 +756,18 @@ SERVER_CSS = r"""    :root {
     .hotkey-settings { display: grid; gap: 8px; }
     .hotkey-form {
       display: grid;
-      grid-template-columns: 24px minmax(110px, 140px) minmax(130px, 1fr) minmax(120px, 1fr) repeat(5, minmax(96px, 1fr)) auto;
+      grid-template-columns: 24px minmax(110px, 150px) minmax(180px, 1fr) auto;
       gap: 6px;
       align-items: center;
     }
     .hotkey-form input, .hotkey-form select { min-width: 0; }
+    .hotkey-fields[hidden] { display: none; }
+    .hotkey-date-fields {
+      display: grid;
+      grid-template-columns: minmax(100px, 130px) repeat(5, minmax(96px, 1fr));
+      gap: 6px;
+      min-width: 0;
+    }
     .app-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
     .app-toggle input { position: absolute; opacity: 0; pointer-events: none; }
     .app-toggle-track {
@@ -1387,6 +1394,20 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   }
   document.querySelectorAll("[data-manual-location-item]").forEach(button => {
     button.addEventListener("click", () => setManualLocation(button));
+  });
+  function updateHotkeyForm(form) {
+    const action = form.querySelector("[data-hotkey-action]")?.value || "";
+    form.querySelectorAll("[data-hotkey-fields]").forEach(group => {
+      const visible = group.dataset.hotkeyFields === action;
+      group.hidden = !visible;
+      group.querySelectorAll("input, select, textarea, button").forEach(input => {
+        input.disabled = !visible;
+      });
+    });
+  }
+  document.querySelectorAll(".hotkey-form").forEach(form => {
+    updateHotkeyForm(form);
+    form.querySelector("[data-hotkey-action]")?.addEventListener("change", () => updateHotkeyForm(form));
   });
   async function applyHotkeyAction(key) {
     const fileId = Number(document.querySelector("[data-browser-item-id]")?.dataset.browserItemId);

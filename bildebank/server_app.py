@@ -359,29 +359,35 @@ def app_status_hotkey_form_html(
     <form action="/settings/hotkey" method="post" class="hotkey-form">
       <input type="hidden" name="key" value="{html.escape(key)}">
       <strong>{html.escape(key)}</strong>
-      <select name="action" aria-label="Handling for hurtigtast {html.escape(key)}">
+      <select name="action" aria-label="Handling for hurtigtast {html.escape(key)}" data-hotkey-action>
         <option value=""{selected_attr(not hotkey.action)}>Av</option>
         <option value="h3"{selected_attr(hotkey.action == "h3")}>Sett H3</option>
         <option value="manual_date"{selected_attr(hotkey.action == "manual_date")}>Sett dato</option>
         <option value="person"{selected_attr(hotkey.action == "person")}>Legg til person</option>
       </select>
-      <select name="h3_cell" aria-label="H3-celle">{hotkey_h3_options_html(hotkey.h3_cell, named_h3_cells)}</select>
-      <select name="person_name" aria-label="Person">{hotkey_person_options_html(hotkey.person_name, registered_people)}</select>
-      <select name="mode" aria-label="Datotype">
-        <option value="exact"{selected_attr(hotkey.mode == "exact")}>Eksakt</option>
-        <option value="uncertain"{selected_attr(hotkey.mode == "uncertain")}>Usikker</option>
-        <option value="between"{selected_attr(hotkey.mode == "between")}>Intervall</option>
-      </select>
-      <input name="date" value="{html.escape(hotkey.date)}" placeholder="YYYY-MM-DD" aria-label="Dato">
-      <select name="uncertainty" aria-label="Usikkerhet">
-        <option value="1d"{selected_attr(hotkey.uncertainty == "1d")}>±1 dag</option>
-        <option value="1w"{selected_attr(hotkey.uncertainty == "1w")}>±1 uke</option>
-        <option value="1m"{selected_attr(hotkey.uncertainty == "1m")}>±1 måned</option>
-        <option value="1y"{selected_attr(hotkey.uncertainty == "1y")}>±1 år</option>
-      </select>
-      <input name="date_from" value="{html.escape(hotkey.date_from)}" placeholder="Fra YYYY-MM-DD" aria-label="Fra-dato">
-      <input name="date_to" value="{html.escape(hotkey.date_to)}" placeholder="Til YYYY-MM-DD" aria-label="Til-dato">
-      <input name="note" value="{html.escape(hotkey.note)}" placeholder="Notat" aria-label="Datonotat">
+      <span class="hotkey-fields" data-hotkey-fields="h3">
+        <select name="h3_cell" aria-label="H3-celle">{hotkey_h3_options_html(hotkey.h3_cell, named_h3_cells)}</select>
+      </span>
+      <span class="hotkey-fields" data-hotkey-fields="person">
+        <select name="person_name" aria-label="Person">{hotkey_person_options_html(hotkey.person_name, registered_people)}</select>
+      </span>
+      <span class="hotkey-fields hotkey-date-fields" data-hotkey-fields="manual_date">
+        <select name="mode" aria-label="Datotype">
+          <option value="exact"{selected_attr(hotkey.mode == "exact")}>Eksakt</option>
+          <option value="uncertain"{selected_attr(hotkey.mode == "uncertain")}>Usikker</option>
+          <option value="between"{selected_attr(hotkey.mode == "between")}>Intervall</option>
+        </select>
+        <input name="date" value="{html.escape(hotkey.date)}" placeholder="YYYY-MM-DD" aria-label="Dato">
+        <select name="uncertainty" aria-label="Usikkerhet">
+          <option value="1d"{selected_attr(hotkey.uncertainty == "1d")}>±1 dag</option>
+          <option value="1w"{selected_attr(hotkey.uncertainty == "1w")}>±1 uke</option>
+          <option value="1m"{selected_attr(hotkey.uncertainty == "1m")}>±1 måned</option>
+          <option value="1y"{selected_attr(hotkey.uncertainty == "1y")}>±1 år</option>
+        </select>
+        <input name="date_from" value="{html.escape(hotkey.date_from)}" placeholder="Fra YYYY-MM-DD" aria-label="Fra-dato">
+        <input name="date_to" value="{html.escape(hotkey.date_to)}" placeholder="Til YYYY-MM-DD" aria-label="Til-dato">
+        <input name="note" value="{html.escape(hotkey.note)}" placeholder="Notat" aria-label="Datonotat">
+      </span>
       <button type="submit" class="nav-button">Lagre</button>
     </form>
     """
