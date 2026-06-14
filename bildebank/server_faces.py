@@ -911,7 +911,7 @@ def faces_button_html(face_count: int, file_id: int) -> str:
     if face_count <= 0:
         return ""
     label = "Bekreft ansikt" if face_count == 1 else f"Bekreft {face_count} ansikter"
-    return f'<button class="faces-button" type="button" data-open-faces data-faces-item="{file_id}">{label}</button>'
+    return f'<button class="faces-button" title="Åpner et vindu som lar deg knytte navn til ansikter" type="button" data-open-faces data-faces-item="{file_id}">{label}</button>'
 
 
 def faces_overlay_html(item: Any) -> str:

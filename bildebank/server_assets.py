@@ -232,17 +232,25 @@ SERVER_CSS = r"""    :root {
     }
     .manual-person-chip .person-link {
       flex: 1 1 auto;
-      border-top-right-radius: 0;
-      border-bottom-right-radius: 0;
     }
     .manual-person-remove-button {
-      flex: 0 0 auto;
+      display: none;
       width: 26px;
       border-left: 0;
       border-top-left-radius: 0;
       border-bottom-left-radius: 0;
       color: #ffb4b4;
       font-weight: 700;
+    }
+    .people-section.manual-person-editing .manual-person-chip .person-link {
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    .people-section.manual-person-editing .manual-person-remove-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
     }
     .manual-person-add-button:hover, .manual-person-remove-button:hover { background: #252525; }
     .controls .delete-button { margin-left: auto; }
@@ -1423,11 +1431,13 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     const fileId = Number(form.dataset.fileId);
     const section = form.closest(".people-section");
     section?.querySelector("[data-open-manual-person-form]")?.addEventListener("click", () => {
+      section.classList.add("manual-person-editing");
       form.hidden = false;
       if (status) status.textContent = "";
       select?.focus();
     });
     form.querySelector("[data-close-manual-person-form]")?.addEventListener("click", () => {
+      section?.classList.remove("manual-person-editing");
       form.hidden = true;
       if (status) status.textContent = "";
     });
