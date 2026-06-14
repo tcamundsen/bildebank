@@ -312,6 +312,7 @@ def app_status_hotkeys_row_html(
               <span class="app-toggle-track" aria-hidden="true"><span></span></span>
               <span class="app-toggle-status">Vis hurtigtaster i venstrefelt: {status}</span>
             </label>
+            <a href="/settings/h3-cells" class="app-toggle-note">Rediger H3-celler</a>
           </form>
         </div>
       </dd>

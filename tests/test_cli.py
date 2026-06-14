@@ -1149,6 +1149,8 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Hurtigtaster 1-5", body)
         self.assertIn('action="/settings/hotkey"', body)
         self.assertIn('action="/settings/hotkey-hints"', body)
+        self.assertIn('href="/settings/h3-cells"', body)
+        self.assertIn("Rediger H3-celler", body)
         self.assertIn("Vis hurtigtaster i venstrefelt: På", body)
         self.assertIn('<input type="hidden" name="key" value="1">', body)
         self.assertIn("data-hotkey-action", body)
