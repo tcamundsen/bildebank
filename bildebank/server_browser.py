@@ -1419,8 +1419,8 @@ def tag_controls_html(
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
-        defined_tags = list(db.tags(conn))
-        active_names = {str(row["name_key"]) for row in db.tags_for_file(conn, file_id)}
+        defined_tags = tag_control_rows(conn)
+        active_names = active_tag_name_keys_for_file(conn, file_id)
         manual_h3_name = manual_h3_place_name(conn, item)
         manual_h3_cell_value = manual_h3_cell(item)
         location_controls = (
@@ -1452,6 +1452,31 @@ def tag_controls_html(
     )
     date_status = date_status_badge_html(item)
     return f'<aside class="tag-rail" aria-label="Tagger">{extra_html}{"".join(buttons)}{date_status}{location_status}</aside>'
+
+
+def tag_control_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT id, name, name_key, kind, created_at
+            FROM tags
+            ORDER BY CASE kind WHEN 'system' THEN 0 ELSE 1 END, name_key
+            """
+        )
+    )
+
+
+def active_tag_name_keys_for_file(conn: sqlite3.Connection, file_id: int) -> set[str]:
+    rows = conn.execute(
+        """
+        SELECT tags.name_key
+        FROM tags
+        JOIN file_tags ON file_tags.tag_id = tags.id
+        WHERE file_tags.file_id = ?
+        """,
+        (file_id,),
+    )
+    return {str(row["name_key"]) for row in rows}
 
 
 def date_status_badge_html(item: Any) -> str:
