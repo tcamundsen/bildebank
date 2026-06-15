@@ -1261,10 +1261,13 @@ def source_item_page_html(
     all_items_label = "Synlige bilder" if hide_out_of_focus else "Alle bilder"
     motion_video = motion_video_for_image(target, item, conn=conn)
     motion_video_link = motion_video_link_html(motion_video) if motion_video is not None else ""
+    source_url_attr = ""
+    if source.text_filter is not None:
+        source_url_attr = f' data-browser-source-url="{html.escape(source.root_url)}"'
     return page_html(
         f"{source.title}: {target_path.name}",
         f"""
-        <main class="server-browser" data-browser-item-id="{int(item["id"])}">
+        <main class="server-browser" data-browser-item-id="{int(item["id"])}"{source_url_attr}>
           {app_header_html(
               source.title,
               source=source,

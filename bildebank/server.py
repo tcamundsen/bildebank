@@ -116,6 +116,28 @@ def clear_browser_navigation_cache(server: Any) -> None:
         clear_cache()
 
 
+def hotkey_filter_source_from_url(target: Path, source_url: object) -> BrowserSource | None:
+    if not isinstance(source_url, str):
+        return None
+    parsed = urllib.parse.urlsplit(source_url.strip())
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        return None
+    raw_path = parsed.path
+    if not raw_path.startswith("/filter/"):
+        return None
+    raw_query, page_mode, raw_value = parse_source_path(raw_path.removeprefix("/filter/"))
+    if page_mode is not None or raw_value:
+        return None
+    query = urllib.parse.unquote(raw_query).strip()
+    if not query:
+        return None
+    try:
+        source = text_filter_browser_source(query, target)
+    except ValueError:
+        return None
+    return source if source.root_url == raw_path else None
+
+
 class BildebankServer(ThreadingHTTPServer):
     def __init__(self, address: tuple[str, int], target: Path, config: AppConfig) -> None:
         super().__init__(address, BildebankRequestHandler)
@@ -1529,6 +1551,24 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         if hotkey.action == "person" and not self.server.face_enabled:
             self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
             return
+        filter_source = hotkey_filter_source_from_url(self.server.target, payload.get("source_url"))
+        previous_filter_item = None
+        next_filter_item = None
+        if filter_source is not None:
+            conn = db.connect(self.server.target)
+            try:
+                filter_item = source_item_by_id(self.server.target, filter_source, file_id, conn=conn)
+                if filter_item is not None:
+                    previous_filter_item, next_filter_item = adjacent_source_items(
+                        self.server.target,
+                        filter_source,
+                        filter_item,
+                        conn=conn,
+                    )
+                else:
+                    filter_source = None
+            finally:
+                conn.close()
         try:
             result = server_actions.apply_browser_hotkey_to_file(
                 self.server.target,
@@ -1545,6 +1585,19 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             clear_face_caches()
             result["person_url"] = person_item_url(str(result["person_name"]), file_id, show_faces=False)
             result["confirmed"] = True
+        if filter_source is not None:
+            conn = db.connect(self.server.target)
+            try:
+                filter_item = source_item_by_id(self.server.target, filter_source, file_id, conn=conn)
+            finally:
+                conn.close()
+            if filter_item is None:
+                if next_filter_item is not None:
+                    result["redirect_url"] = source_item_url(filter_source, int(next_filter_item["id"]))
+                elif previous_filter_item is not None:
+                    result["redirect_url"] = source_item_url(filter_source, int(previous_filter_item["id"]))
+                else:
+                    result["redirect_url"] = filter_source.root_url
         self.respond_json({"ok": True, "key": key, **result})
 
     def respond_delete_item(self) -> None:

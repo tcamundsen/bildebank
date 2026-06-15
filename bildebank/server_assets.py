@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "21"
+SERVER_ASSET_VERSION = "22"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -1417,16 +1417,23 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     form.querySelector("[data-hotkey-action]")?.addEventListener("change", () => updateHotkeyForm(form));
   });
   async function applyHotkeyAction(key) {
-    const fileId = Number(document.querySelector("[data-browser-item-id]")?.dataset.browserItemId);
+    const itemRoot = document.querySelector("[data-browser-item-id]");
+    const fileId = Number(itemRoot?.dataset.browserItemId);
     if (!fileId || !["1", "2", "3", "4", "5"].includes(key)) return false;
+    const requestBody = {file_id: fileId, key};
+    if (itemRoot?.dataset.browserSourceUrl) requestBody.source_url = itemRoot.dataset.browserSourceUrl;
     try {
       const response = await fetch("/api/item-hotkey-action", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({file_id: fileId, key}),
+        body: JSON.stringify(requestBody),
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke utføre hurtigtast.");
+      if (payload.redirect_url) {
+        window.location.href = payload.redirect_url;
+        return true;
+      }
       if (payload.action === "tag" && payload.tagged && payload.tag_name === "Ute av fokus") {
         const matchingTagButton = Array.from(document.querySelectorAll("[data-tag-toggle]")).find(button => {
           return (button.dataset.tagName || "") === payload.tag_name && button.dataset.tagHideRedirect;

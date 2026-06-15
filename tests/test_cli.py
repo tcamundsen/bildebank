@@ -2454,7 +2454,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "21")
+        self.assertEqual(SERVER_ASSET_VERSION, "22")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -2660,6 +2660,35 @@ model_name = "buffalo_l"
         self.assertNotIn("Sette sted fra aktiv H3-celle?", SERVER_JS)
         self.assertIn('data-browser-item-id="1"', body)
 
+    def test_run_server_filter_item_page_has_source_url_for_hotkeys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            normal_body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            filter_source = text_filter_browser_source("missing:gps", target)
+            filter_item = source_item_by_id(target, filter_source, 1)
+            self.assertIsNotNone(filter_item)
+            filter_body = source_item_page_html(
+                target,
+                filter_source,
+                filter_item,
+                *adjacent_source_items(target, filter_source, filter_item),
+                source_month_navigation(target, filter_source, filter_item),
+            )
+
+        self.assertIn('data-browser-item-id="1"', filter_body)
+        self.assertIn('data-browser-source-url="/filter/missing%3Agps"', filter_body)
+        self.assertNotIn("data-browser-source-url", normal_body)
+        self.assertIn("browserSourceUrl", SERVER_JS)
+        self.assertIn("payload.redirect_url", SERVER_JS)
+
     def test_run_server_item_page_can_show_hotkey_hints_in_tag_rail(self) -> None:
         h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
         with tempfile.TemporaryDirectory() as tmp:
@@ -2791,6 +2820,123 @@ model_name = "buffalo_l"
         self.assertLess(info_body.index("<dt>Tagger</dt>"), info_body.index("Manuell H3"))
         self.assertIn("<dt>GPS-kilde</dt>", info_body)
         self.assertIn("satt manuelt", info_body)
+
+    def test_run_server_hotkey_action_redirects_to_next_filter_item_when_current_no_longer_matches(self) -> None:
+        import h3
+
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240101.png").write_bytes(minimal_png(100, 80))
+            (source / "IMG_20240102.png").write_bytes(minimal_png(101, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            filter_source = text_filter_browser_source("missing:gps", target)
+            data = json.dumps({"file_id": 1, "key": "1", "source_url": filter_source.root_url}).encode("utf-8")
+            hotkeys = {"1": BrowserHotkeyConfig(action="h3", h3_cell=h3_cell)}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(
+                    target=target,
+                    face_enabled=True,
+                    config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)),
+                )
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_hotkey_action(handler)  # type: ignore[arg-type]
+            row = browser_item_by_id(target, 1)
+
+        self.assertEqual(handler.body["action"], "h3")
+        self.assertEqual(handler.body["gps_source"], "manual-h3")
+        self.assertEqual(handler.body["redirect_url"], "/filter/missing%3Agps/item/2")
+        self.assertEqual(row["gps_source"], "manual-h3")
+
+    def test_run_server_hotkey_action_redirects_to_previous_filter_item_from_last_match(self) -> None:
+        import h3
+
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240101.png").write_bytes(minimal_png(100, 80))
+            (source / "IMG_20240102.png").write_bytes(minimal_png(101, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            filter_source = text_filter_browser_source("missing:gps", target)
+            data = json.dumps({"file_id": 2, "key": "1", "source_url": filter_source.root_url}).encode("utf-8")
+            hotkeys = {"1": BrowserHotkeyConfig(action="h3", h3_cell=h3_cell)}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(
+                    target=target,
+                    face_enabled=True,
+                    config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)),
+                )
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_hotkey_action(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.body["redirect_url"], "/filter/missing%3Agps/item/1")
+
+    def test_run_server_hotkey_action_redirects_to_filter_root_when_filter_becomes_empty(self) -> None:
+        import h3
+
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240101.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            filter_source = text_filter_browser_source("missing:gps", target)
+            data = json.dumps({"file_id": 1, "key": "1", "source_url": filter_source.root_url}).encode("utf-8")
+            hotkeys = {"1": BrowserHotkeyConfig(action="h3", h3_cell=h3_cell)}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(
+                    target=target,
+                    face_enabled=True,
+                    config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)),
+                )
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_hotkey_action(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.body["redirect_url"], "/filter/missing%3Agps")
 
     def test_run_server_item_manual_location_remove_endpoint_clears_manual_h3(self) -> None:
         import h3
