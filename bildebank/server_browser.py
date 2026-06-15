@@ -1475,7 +1475,7 @@ def hotkey_hints_panel_html(
             rows.append(f'<div class="hotkey-hint"><span>{html.escape(key)}:</span> {html.escape(label)}</div>')
     if not rows:
         return ""
-    heading = '<div class="hotkey-hints-heading">Hurtigtaster:</div>'
+    heading = '<div class="hotkey-hints-heading">Hurtigtaster aktivert:</div>'
     return '<section class="hotkey-hints" aria-label="Hurtigtaster">' + heading + "".join(rows) + "</section>"
 
 
@@ -1487,7 +1487,7 @@ def hotkey_hint_label(
 ) -> str:
     if hotkey.action == "h3" and hotkey.h3_cell:
         name = manual_h3_cell_name(target, hotkey.h3_cell, conn=conn) or hotkey.h3_cell
-        return f"H3 til {name}"
+        return f"Sett H3 til {name}"
     if hotkey.action == "person" and hotkey.person_name:
         return f"Legg til {hotkey.person_name}"
     if hotkey.action == "manual_date":
@@ -1662,9 +1662,9 @@ def remove_manual_location_button_html(item: Any) -> str:
         return ""
     file_id = int(item["id"])
     return (
-        f'<button class="nav-button danger-button" type="button" '
+        f'<span class="manual-location-remove">(<button class="inline-link danger-inline-link" type="button" '
         f'data-remove-manual-location-item="{file_id}">'
-        f'Fjern manuelt sted</button>'
+        f'fjern</button>)</span>'
     )
 
 

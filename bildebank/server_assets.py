@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "17"
+SERVER_ASSET_VERSION = "19"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -393,6 +393,7 @@ SERVER_CSS = r"""    :root {
     }
     .inline-link:hover { background: transparent; color: var(--text); }
     .danger-inline-link { color: var(--danger); }
+    .manual-location-remove { white-space: nowrap; }
     .faces-button { color: var(--accent); }
     .nav-button:hover, .server-search-link:hover, .person-link:hover, .faces-button:hover { background: #3a3a3a; text-decoration: none; }
     .tag-rail .person-link:hover { background: #252525; text-decoration: underline; }
@@ -482,14 +483,8 @@ SERVER_CSS = r"""    :root {
       text-align: center;
       overflow-wrap: anywhere;
     }
-    .location-status-badge > a,
-    .location-status-badge > .nav-button {
+    .location-status-badge > a {
       flex: 0 1 auto;
-    }
-    .location-status-badge > .nav-button {
-      min-height: 30px;
-      padding: 4px 8px;
-      white-space: normal;
     }
     .stage {
       position: relative;

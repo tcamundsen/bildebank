@@ -2330,7 +2330,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "17")
+        self.assertEqual(SERVER_ASSET_VERSION, "19")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -2581,8 +2581,8 @@ model_name = "buffalo_l"
         tag_rail_start = body.index('<aside class="tag-rail"')
         tag_rail_body = body[tag_rail_start:body.index("</aside>", tag_rail_start)]
         self.assertIn('class="hotkey-hints"', tag_rail_body)
-        self.assertIn('<div class="hotkey-hints-heading">Hurtigtaster:</div>', tag_rail_body)
-        self.assertIn("<span>1:</span> H3 til Brevik", tag_rail_body)
+        self.assertIn('<div class="hotkey-hints-heading">Hurtigtaster aktivert:</div>', tag_rail_body)
+        self.assertIn("<span>1:</span> Sett H3 til Brevik", tag_rail_body)
         self.assertIn("<span>3:</span> Legg til Viljar", tag_rail_body)
         self.assertIn("<span>5:</span> Sett dato til 30.12.48 ±1w", tag_rail_body)
         self.assertLess(tag_rail_body.index("date-status-badge"), tag_rail_body.index('class="hotkey-hints"'))
@@ -2652,7 +2652,10 @@ model_name = "buffalo_l"
         self.assertIsNone(row["h3_res11"])
         self.assertIn('<aside class="tag-rail"', body)
         self.assertIn(f'href="https://h3geo.org/#hex={h3_cell}" target="_blank" rel="noopener">Manuell H3</a>', body)
-        self.assertIn("Fjern manuelt sted", body)
+        self.assertNotIn("Fjern manuelt sted", body)
+        self.assertIn('class="inline-link danger-inline-link"', body)
+        self.assertIn('Manuell H3</a><span class="manual-location-remove">(<button class="inline-link danger-inline-link"', body)
+        self.assertIn(">fjern</button>)</span>", body)
         self.assertIn('data-remove-manual-location-item="1"', body)
         self.assertNotIn('data-manual-location-item="1"', body)
         self.assertNotIn("Sett valgt H3-celle", body)
