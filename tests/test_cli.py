@@ -5040,6 +5040,15 @@ model_name = "buffalo_l"
                 *adjacent_source_items(target, plain_source, plain_item),
                 source_month_navigation(target, plain_source, plain_item),
             )
+            suggested_item = source_item_by_id(target, plain_source, 2)
+            self.assertIsNotNone(suggested_item)
+            suggested_body = source_item_page_html(
+                target,
+                plain_source,
+                suggested_item,
+                *adjacent_source_items(target, plain_source, suggested_item),
+                source_month_navigation(target, plain_source, suggested_item),
+            )
             month_body = person_month_page_html(target, "Kari", "2024-02", person_month_items(target, "Kari", "2024-02"))
 
         self.assertIn(">Kari<", body)
@@ -5048,7 +5057,10 @@ model_name = "buffalo_l"
         controls_start = body.index('<nav class="controls"')
         controls_end = body.index("</nav>", controls_start)
         controls_html = body[controls_start:controls_end]
-        self.assertIn('<a class="nav-button" href="/person/Kari/no-faces/item/1" title="Skjul ansiktsmarkering">□👤</a>', controls_html)
+        self.assertIn('<a class="nav-button" href="/person/Kari/no-faces/item/1" title="Skjul ansiktsmarkering">☑👤</a>', controls_html)
+        self.assertIn('<a class="nav-button" href="/person/Kari/confirmed/item/1">[✓] Ta med forslag</a>', controls_html)
+        self.assertNotIn("Bare bekreftede", body)
+        self.assertNotIn("Med forslag", body)
         self.assertNotIn("Uten ansiktsmarkering", body)
         self.assertNotIn("Med ansiktsmarkering", body)
         self.assertIn("person-face-box", body)
@@ -5076,12 +5088,22 @@ model_name = "buffalo_l"
         plain_controls_html = plain_body[plain_controls_start:plain_controls_end]
         self.assertNotIn("Fjern manuell person-i-bilde", plain_controls_html)
         self.assertNotIn("data-remove-person-file", plain_controls_html)
-        self.assertIn('<a class="nav-button" href="/person/Kari/item/1" title="Vis ansiktsmarkering">□👤</a>', plain_controls_html)
+        self.assertIn('<a class="nav-button" href="/person/Kari/item/1" title="Vis ansiktsmarkering">☐👤</a>', plain_controls_html)
+        self.assertIn('<a class="nav-button" href="/person/Kari/confirmed/no-faces/item/1">[✓] Ta med forslag</a>', plain_controls_html)
         self.assertIn('href="/item/1">Alle bilder</a>', plain_body)
         self.assertNotIn("Med ansiktsmarkering", plain_body)
         self.assertNotIn('<div class="person-face-box"', plain_body)
         self.assertNotIn('<span class="person-face-label">face-id 1</span>', plain_body)
         self.assertIn('<img src="/file/1"', plain_body)
+        suggested_controls_start = suggested_body.index('<nav class="controls"')
+        suggested_controls_end = suggested_body.index("</nav>", suggested_controls_start)
+        suggested_controls_html = suggested_body[suggested_controls_start:suggested_controls_end]
+        self.assertIn('<a class="nav-button" href="/person/Kari/confirmed/no-faces">[✓] Ta med forslag</a>', suggested_controls_html)
+        self.assertNotIn('/person/Kari/confirmed/no-faces/item/2">[✓] Ta med forslag</a>', suggested_controls_html)
+        month_controls_start = month_body.index('<nav class="controls"')
+        month_controls_end = month_body.index("</nav>", month_controls_start)
+        month_controls_html = month_body[month_controls_start:month_controls_end]
+        self.assertIn('<a class="nav-button" href="/person/Kari/confirmed">[✓] Ta med forslag</a>', month_controls_html)
         self.assertIn("/person/Kari/item/2", month_body)
         self.assertNotIn("/person/Kari/item/3", month_body)
 
@@ -5212,6 +5234,12 @@ model_name = "buffalo_l"
                 *adjacent_source_items(target, confirmed_source, confirmed_item),
                 source_month_navigation(target, confirmed_source, confirmed_item),
             )
+            confirmed_month_body = source_month_page_html(
+                target,
+                confirmed_source,
+                "2024-01",
+                source_month_items(target, confirmed_source, "2024-01"),
+            )
 
         self.assertEqual(first_file_ids, [1, 2])
         self.assertEqual(second_file_ids, [1, 2])
@@ -5235,6 +5263,16 @@ model_name = "buffalo_l"
         self.assertNotIn("forslag:", body)
         self.assertIn("NB: 2 bekreftede ansikter i samme bilde", body)
         self.assertIn("NB: 2 bekreftede ansikter for Kari i dette bildet", confirmed_body)
+        confirmed_controls_start = confirmed_body.index('<nav class="controls"')
+        confirmed_controls_end = confirmed_body.index("</nav>", confirmed_controls_start)
+        confirmed_controls_html = confirmed_body[confirmed_controls_start:confirmed_controls_end]
+        self.assertIn('<a class="nav-button" href="/person/Kari/item/1">[&nbsp;&nbsp;&nbsp;] Ta med forslag</a>', confirmed_controls_html)
+        self.assertNotIn("Bare bekreftede", confirmed_body)
+        self.assertNotIn("Med forslag", confirmed_body)
+        confirmed_month_controls_start = confirmed_month_body.index('<nav class="controls"')
+        confirmed_month_controls_end = confirmed_month_body.index("</nav>", confirmed_month_controls_start)
+        confirmed_month_controls_html = confirmed_month_body[confirmed_month_controls_start:confirmed_month_controls_end]
+        self.assertIn('<a class="nav-button" href="/person/Kari">[&nbsp;&nbsp;&nbsp;] Ta med forslag</a>', confirmed_month_controls_html)
         confirmed_tag_rail_start = confirmed_body.index('<aside class="tag-rail"')
         confirmed_tag_rail_end = confirmed_body.index("</aside>", confirmed_tag_rail_start)
         confirmed_tag_rail_html = confirmed_body[confirmed_tag_rail_start:confirmed_tag_rail_end]

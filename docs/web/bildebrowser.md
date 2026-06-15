@@ -88,15 +88,17 @@ navnet til personen på øverste linje av skjermen.
 - **Alle bilder** viser det nettop det.
 - **Uten ansiktsmarkeringer** eller **Med ansiktsmarkeringer** tegner en ramme
   rundt ansiktet til personen du viser personbrowseren av.
-- **Med forslag** viser også forslagene fra `face-suggest`
-- **Bare bekreftede** viser bare bilder du har bekreftet. Dette bør ideelt
-  sett bare være 1-5 gode bilder av personen.
+- **[✓] Ta med forslag** i verktøylinjen betyr at browseren også viser
+  forslagene fra `face-suggest`.
+- **[ ] Ta med forslag** i verktøylinjen betyr at browseren bare viser bilder
+  du har bekreftet. Dette bør ideelt sett bare være 1-5 gode bilder av
+  personen.
 
 I bildevisningen, også i personbrowseren, kan **[+]** under **Personer i
 bildet** brukes når personen er i bildet, men ansiktet ikke kan scannes eller
 bekreftes godt nok. Feltet bruker bare personer som allerede finnes i
-ansiktsdatabasen. Dette påvirker ikke `face-suggest`, og bildet vises ikke
-under **Bare bekreftede**.
+ansiktsdatabasen. Dette påvirker ikke `face-suggest`, og bildet vises ikke når
+**[ ] Ta med forslag** er valgt.
 
 ## Personer
 

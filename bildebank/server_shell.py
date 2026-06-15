@@ -102,16 +102,6 @@ def source_top_links_html(
     if source.person_name is not None and face_enabled:
         all_url = all_items_url or (source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/")
         links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">{all_label}</a>')
-        if source.include_suggestions:
-            links.insert(
-                1,
-                f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=False).root_url)}">Bare bekreftede</a>',
-            )
-        else:
-            links.insert(
-                1,
-                f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=True).root_url)}">Med forslag</a>',
-            )
     return "\n".join(links)
 
 
@@ -225,6 +215,25 @@ def face_toggle_button_html(source: BrowserSource, item: Any | None, *, face_ena
     return f'<a class="nav-button" href="{html.escape(href)}" title="{title}">{box}👤</a>'
 
 
+def suggestion_toggle_button_html(
+    source: BrowserSource,
+    item: Any | None,
+    *,
+    face_enabled: bool = True,
+    href: str | None = None,
+) -> str:
+    if not face_enabled or source.person_name is None:
+        return ""
+    target_source = person_browser_source(
+        source.person_name,
+        include_suggestions=not source.include_suggestions,
+        show_faces=source.show_faces,
+    )
+    href = href or (source_item_url(target_source, int(item["id"])) if item is not None else target_source.root_url)
+    box = "[✓]" if source.include_suggestions else "[&nbsp;&nbsp;&nbsp;]"
+    return f'<a class="nav-button" href="{html.escape(href)}">{box} Ta med forslag</a>'
+
+
 def source_controls_html(
     source: BrowserSource,
     month_nav: dict[str, str | None],
@@ -238,6 +247,7 @@ def source_controls_html(
     manual_person_controls: str = "",
     manual_location_button: str = "",
     face_toggle_button: str = "",
+    suggestion_toggle_button: str = "",
     unconfirm_buttons: str = "",
     delete_button: str = "",
 ) -> str:
@@ -254,6 +264,7 @@ def source_controls_html(
       {manual_person_controls}
       {manual_location_button}
       {face_toggle_button}
+      {suggestion_toggle_button}
       {info_button if include_info_button else ""}
       {unconfirm_buttons}
       {delete_button}

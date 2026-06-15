@@ -1169,7 +1169,12 @@ def source_item_page_html(
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> str:
-    from .server_shell import app_header_html, face_toggle_button_html, source_controls_html
+    from .server_shell import (
+        app_header_html,
+        face_toggle_button_html,
+        source_controls_html,
+        suggestion_toggle_button_html,
+    )
 
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
@@ -1220,6 +1225,19 @@ def source_item_page_html(
         rotation_buttons=rotation_buttons_html(source, item),
         manual_date_button=manual_date_button_html(item),
         face_toggle_button=face_toggle_button_html(source, item, face_enabled=face_enabled),
+        suggestion_toggle_button=suggestion_toggle_button_html(
+            source,
+            item,
+            face_enabled=face_enabled,
+            href=suggestion_toggle_href(
+                target,
+                source,
+                item,
+                face_config,
+                hide_out_of_focus=hide_out_of_focus,
+                conn=conn,
+            ),
+        ),
         unconfirm_buttons=unconfirm_buttons,
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
@@ -1282,6 +1300,38 @@ def source_item_page_html(
         {manual_date_overlay}
         """,
     )
+
+
+def suggestion_toggle_href(
+    target: Path,
+    source: BrowserSource,
+    item: Any | None,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> str | None:
+    if source.person_name is None:
+        return None
+    target_source = person_browser_source(
+        source.person_name,
+        include_suggestions=not source.include_suggestions,
+        show_faces=source.show_faces,
+    )
+    if item is None:
+        return target_source.root_url
+    file_id = int(item["id"])
+    target_item = source_item_by_id(
+        target,
+        target_source,
+        file_id,
+        face_config,
+        hide_out_of_focus=hide_out_of_focus,
+        conn=conn,
+    )
+    if target_item is None:
+        return target_source.root_url
+    return source_item_url(target_source, file_id)
 
 
 def motion_video_for_image(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> Any | None:
@@ -2218,7 +2268,7 @@ def source_month_page_html(
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
 ) -> str:
-    from .server_shell import app_header_html, source_controls_html
+    from .server_shell import app_header_html, source_controls_html, suggestion_toggle_button_html
 
     cards = "\n".join(source_month_item_html(target, source, item) for item in items)
     previous_item = items[-1] if items else None
@@ -2228,6 +2278,7 @@ def source_month_page_html(
         source_month_navigation_for_key(target, source, month_key, face_config),
         previous_item,
         next_item,
+        suggestion_toggle_button=suggestion_toggle_button_html(source, None, face_enabled=face_enabled),
     )
     return page_html(
         f"{source.title}: {month_key}",
