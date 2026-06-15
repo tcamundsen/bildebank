@@ -170,6 +170,14 @@ def apply_browser_hotkey_to_file(
     if hotkey.action == "person":
         result = add_person_to_file(target, hotkey.person_name, file_id, face_config)
         return hotkey_person_result_payload(result)
+    if hotkey.action == "tag":
+        set_tag_on_file(target, file_id, hotkey.tag_name, True)
+        return {
+            "action": "tag",
+            "file_id": file_id,
+            "tag_name": db.normalize_tag_name(hotkey.tag_name),
+            "tagged": True,
+        }
     raise ValueError(f"Ukjent hurtigtasthandling: {hotkey.action}")
 
 

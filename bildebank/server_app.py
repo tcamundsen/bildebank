@@ -43,6 +43,7 @@ def app_status_page_html(
     insightface_installed = module_available_func("insightface")
     named_h3_cells = app_status_named_h3_cells(target)
     registered_people = app_status_registered_people(target, config.face_recognition)
+    defined_tags = app_status_defined_tags(target)
     rows = "\n".join(
         (
             app_status_row_html("Bildesamling", str(target)),
@@ -51,6 +52,7 @@ def app_status_page_html(
                 config.browser.hotkeys or {},
                 named_h3_cells,
                 registered_people,
+                defined_tags,
                 hints_enabled=config.browser.hotkey_hints_enabled,
             ),
             app_status_row_html("Bildebank-versjon", __version__),
@@ -138,6 +140,8 @@ def update_manual_person_controls_config(config: AppConfig, repo_root: Path, ena
 
 
 def update_hotkey_config(config: AppConfig, repo_root: Path, key: str, hotkey: BrowserHotkeyConfig) -> AppConfig:
+    if hotkey.action == "tag":
+        hotkey = replace(hotkey, tag_name=db.normalize_tag_name(hotkey.tag_name))
     set_browser_hotkey(repo_root, key, hotkey)
     hotkeys = dict(config.browser.hotkeys or {})
     hotkeys[key] = hotkey
@@ -281,10 +285,24 @@ def app_status_registered_people(target: Path, face_config: FaceRecognitionConfi
         return []
 
 
+def app_status_defined_tags(target: Path) -> list[Any]:
+    if not db.db_path_for_target(target).is_file():
+        return []
+    try:
+        conn = db.connect(target)
+        try:
+            return list(db.tags(conn))
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - settings should still render without a valid target database
+        return []
+
+
 def app_status_hotkeys_row_html(
     hotkeys: dict[str, BrowserHotkeyConfig],
     named_h3_cells: list[Any],
     registered_people: list[dict[str, str]],
+    defined_tags: list[Any],
     *,
     hints_enabled: bool = False,
 ) -> str:
@@ -294,6 +312,7 @@ def app_status_hotkeys_row_html(
             hotkeys.get(key, BrowserHotkeyConfig()),
             named_h3_cells,
             registered_people,
+            defined_tags,
         )
         for key in HOTKEY_KEYS
     )
@@ -325,6 +344,7 @@ def app_status_hotkey_form_html(
     hotkey: BrowserHotkeyConfig,
     named_h3_cells: list[Any],
     registered_people: list[dict[str, str]],
+    defined_tags: list[Any],
 ) -> str:
     return f"""
     <form action="/settings/hotkey" method="post" class="hotkey-form">
@@ -335,12 +355,16 @@ def app_status_hotkey_form_html(
         <option value="h3"{selected_attr(hotkey.action == "h3")}>Sett H3</option>
         <option value="manual_date"{selected_attr(hotkey.action == "manual_date")}>Sett dato</option>
         <option value="person"{selected_attr(hotkey.action == "person")}>Legg til person</option>
+        <option value="tag"{selected_attr(hotkey.action == "tag")}>Sett tagg</option>
       </select>
       <span class="hotkey-fields" data-hotkey-fields="h3">
         <select name="h3_cell" aria-label="H3-celle">{hotkey_h3_options_html(hotkey.h3_cell, named_h3_cells)}</select>
       </span>
       <span class="hotkey-fields" data-hotkey-fields="person">
         <select name="person_name" aria-label="Person">{hotkey_person_options_html(hotkey.person_name, registered_people)}</select>
+      </span>
+      <span class="hotkey-fields" data-hotkey-fields="tag">
+        <select name="tag_name" aria-label="Tagg">{hotkey_tag_options_html(hotkey.tag_name, defined_tags)}</select>
       </span>
       <span class="hotkey-fields hotkey-date-fields" data-hotkey-fields="manual_date">
         <select name="mode" aria-label="Datotype">
@@ -390,6 +414,20 @@ def hotkey_person_options_html(selected_person: str, registered_people: list[dic
     has_selected = False
     for person in registered_people:
         name = str(person["name"])
+        is_selected = name == selected
+        has_selected = has_selected or is_selected
+        options.append(f'<option value="{html.escape(name)}"{selected_attr(is_selected)}>{html.escape(name)}</option>')
+    if selected and not has_selected:
+        options.append(f'<option value="{html.escape(selected)}" selected>{html.escape(selected)}</option>')
+    return "".join(options)
+
+
+def hotkey_tag_options_html(selected_tag: str, defined_tags: list[Any]) -> str:
+    selected = selected_tag.strip()
+    options = [f'<option value=""{selected_attr(not selected)}>Velg tagg</option>']
+    has_selected = False
+    for tag in defined_tags:
+        name = str(tag["name"])
         is_selected = name == selected
         has_selected = has_selected or is_selected
         options.append(f'<option value="{html.escape(name)}"{selected_attr(is_selected)}>{html.escape(name)}</option>')

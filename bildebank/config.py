@@ -11,7 +11,7 @@ CONFIG_FILENAME = "bildebank-config.toml"
 ENABLED_CONFIG_SECTIONS = frozenset({"face_recognition", "image_search"})
 DEFAULT_FACE_MODEL_NAME = "antelopev2"
 HOTKEY_KEYS = ("1", "2", "3", "4", "5")
-HOTKEY_ACTIONS = frozenset({"", "h3", "manual_date", "person"})
+HOTKEY_ACTIONS = frozenset({"", "h3", "manual_date", "person", "tag"})
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,7 @@ class BrowserHotkeyConfig:
     action: str = ""
     h3_cell: str = ""
     person_name: str = ""
+    tag_name: str = ""
     mode: str = ""
     date: str = ""
     uncertainty: str = ""
@@ -135,6 +136,7 @@ def browser_hotkey_from_mapping(data: dict[str, object]) -> BrowserHotkeyConfig:
         action=action,
         h3_cell=str(data.get("h3_cell", "")).strip(),
         person_name=str(data.get("person_name", "")).strip(),
+        tag_name=str(data.get("tag_name", "")).strip(),
         mode=str(data.get("mode", "")).strip(),
         date=str(data.get("date", "")).strip(),
         uncertainty=str(data.get("uncertainty", "")).strip(),
@@ -159,6 +161,14 @@ def validate_browser_hotkey(config: BrowserHotkeyConfig) -> None:
     if config.action == "person":
         if not config.person_name:
             raise ValueError("Person-hurtigtast mangler personnavn.")
+        return
+    if config.action == "tag":
+        from .db import normalize_tag_name
+
+        try:
+            normalize_tag_name(config.tag_name)
+        except ValueError as exc:
+            raise ValueError(f"Tagg-hurtigtast har ugyldig taggnavn: {exc}") from exc
         return
     if config.action == "manual_date":
         validate_manual_date_hotkey(config)
@@ -291,6 +301,10 @@ def browser_hotkey_to_toml_values(hotkey: BrowserHotkeyConfig) -> dict[str, obje
         return {"action": "h3", "h3_cell": hotkey.h3_cell}
     if hotkey.action == "person":
         return {"action": "person", "person_name": hotkey.person_name}
+    if hotkey.action == "tag":
+        from .db import normalize_tag_name
+
+        return {"action": "tag", "tag_name": normalize_tag_name(hotkey.tag_name)}
     if hotkey.action == "manual_date":
         values: dict[str, object] = {"action": "manual_date", "mode": hotkey.mode}
         if hotkey.mode in {"exact", "uncertain"}:

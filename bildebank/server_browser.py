@@ -1516,6 +1516,8 @@ def hotkey_hint_label(
         return f"Sett H3 til {name}"
     if hotkey.action == "person" and hotkey.person_name:
         return f"Legg til {hotkey.person_name}"
+    if hotkey.action == "tag" and hotkey.tag_name:
+        return f"Sett tagg {db.normalize_tag_name(hotkey.tag_name)}"
     if hotkey.action == "manual_date":
         text = hotkey_date_hint_text(hotkey)
         return f"Sett dato til {text}" if text else ""

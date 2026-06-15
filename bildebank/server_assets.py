@@ -1427,6 +1427,15 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       });
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke utføre hurtigtast.");
+      if (payload.action === "tag" && payload.tagged && payload.tag_name === "Ute av fokus") {
+        const matchingTagButton = Array.from(document.querySelectorAll("[data-tag-toggle]")).find(button => {
+          return (button.dataset.tagName || "") === payload.tag_name && button.dataset.tagHideRedirect;
+        });
+        if (matchingTagButton) {
+          window.location.href = matchingTagButton.dataset.tagHideRedirect;
+          return true;
+        }
+      }
       window.location.reload();
     } catch (error) {
       alert(error.message || "Kunne ikke utføre hurtigtast.");

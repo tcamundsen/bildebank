@@ -1034,6 +1034,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             hotkey = BrowserHotkeyConfig(action=action, h3_cell=first_param(params, "h3_cell").strip())
         elif action == "person":
             hotkey = BrowserHotkeyConfig(action=action, person_name=first_param(params, "person_name").strip())
+        elif action == "tag":
+            hotkey = BrowserHotkeyConfig(action=action, tag_name=first_param(params, "tag_name").strip())
         elif action == "manual_date":
             hotkey = BrowserHotkeyConfig(
                 action=action,

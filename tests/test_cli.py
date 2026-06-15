@@ -1158,10 +1158,12 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('data-hotkey-fields="h3"', body)
         self.assertIn('data-hotkey-fields="manual_date"', body)
         self.assertIn('data-hotkey-fields="person"', body)
+        self.assertIn('data-hotkey-fields="tag"', body)
         self.assertIn('data-hotkey-fields=""', body)
         self.assertIn(".hotkey-empty-fields", SERVER_CSS)
         self.assertIn("function updateHotkeyForm", SERVER_JS)
         self.assertIn('<option value="person" selected>Legg til person</option>', body)
+        self.assertIn('<option value="tag">Sett tagg</option>', body)
         self.assertIn('<option value="Kari" selected>Kari</option>', body)
         self.assertIn('<span class="app-toggle-status">På</span>', body)
         self.assertIn(str(target), body)
@@ -1173,6 +1175,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("GUI for manuell bekrefting av person", body)
         self.assertIn('action="/settings/manual-person-controls"', body)
         self.assertIn('<span class="app-toggle-status">Av</span>', body)
+
         self.assertLess(body.index("InsightFace-modell"), body.index("GUI for manuell bekrefting av person"))
         self.assertLess(body.index("GUI for manuell bekrefting av person"), body.index("InsightFace installert"))
         self.assertIn('<option value="antelopev2">antelopev2</option>', body)
@@ -1188,6 +1191,18 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Test-Model", body)
         self.assertIn("test-weights", body)
         self.assertIn("cpu", body)
+
+    def test_run_server_settings_hotkey_tag_select_keeps_missing_selected_tag(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            body = app_status_page_html(
+                target,
+                AppConfig(browser=BrowserConfig(hotkeys={"1": BrowserHotkeyConfig(action="tag", tag_name="Familie")})),
+            )
+
+        self.assertIn('<option value="tag" selected>Sett tagg</option>', body)
+        self.assertIn('<option value="Familie" selected>Familie</option>', body)
 
     def test_run_server_h3_cells_page_saves_and_lists_named_cell(self) -> None:
         h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
@@ -1476,6 +1491,18 @@ pretrained = "laion2b_s34b_b79k"
         self.assertTrue(handler.server.config.browser.hotkey_hints_enabled)
         self.assertEqual(handler.location, "/settings")
 
+    def test_load_config_reads_tag_hotkey(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "bildebank-config.toml").write_text(
+                '[browser.hotkeys]\n"1" = { action = "tag", tag_name = "Familie" }\n',
+                encoding="utf-8",
+            )
+
+            config = load_config(root)
+
+        self.assertEqual(config.browser.hotkeys["1"], BrowserHotkeyConfig(action="tag", tag_name="Familie"))
+
     def test_run_server_hotkey_post_updates_config(self) -> None:
         h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
         with tempfile.TemporaryDirectory() as tmp:
@@ -1507,6 +1534,35 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual(handler.server.config.browser.hotkeys["1"], BrowserHotkeyConfig(action="h3", h3_cell=h3_cell))
         self.assertEqual(handler.location, "/settings")
 
+    def test_run_server_hotkey_post_updates_tag_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = b"key=1&action=tag&tag_name=+Familie++&h3_cell=&person_name=&mode=exact&date=&uncertainty=1m"
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig())
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_hotkey(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+            config_text = (root / "bildebank-config.toml").read_text(encoding="utf-8")
+
+        self.assertEqual(config.browser.hotkeys["1"], BrowserHotkeyConfig(action="tag", tag_name="Familie"))
+        self.assertEqual(handler.server.config.browser.hotkeys["1"], BrowserHotkeyConfig(action="tag", tag_name="Familie"))
+        self.assertIn('"1" = { action = "tag", tag_name = "Familie" }', config_text)
+        self.assertEqual(handler.location, "/settings")
+
     def test_run_server_hotkey_post_rejects_invalid_date(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1531,6 +1587,28 @@ pretrained = "laion2b_s34b_b79k"
 
         self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
         self.assertIn("Fra-dato kan ikke være etter til-dato", str(response["content"]))
+
+    def test_run_server_hotkey_post_rejects_empty_tag_name(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = b"key=1&action=tag&tag_name=+&h3_cell=&person_name=&mode=exact&date=&uncertainty=1m"
+            response: dict[str, object] = {}
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig())
+
+                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_hotkey(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
+        self.assertIn("Taggnavn kan ikke være tomt", str(response["content"]))
 
     def test_run_server_face_model_post_updates_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2289,6 +2367,51 @@ model_name = "buffalo_l"
         self.assertEqual(response["content"]["confirmed"], True)
         self.assertEqual(manual_link_count, 1)
 
+    def test_run_server_hotkey_action_sets_tag_on_file_idempotently(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20260102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            data = json.dumps({"file_id": 1, "key": "2"}).encode("utf-8")
+            responses: list[dict[str, object]] = []
+            hotkeys = {"2": BrowserHotkeyConfig(action="tag", tag_name="  Familie  ")}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                server = SimpleNamespace(target=target, config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)))
+
+                def __init__(self) -> None:
+                    self.rfile = BytesIO(data)
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    responses.append({"content": content, "status": status})
+
+            BildebankRequestHandler.respond_hotkey_action(FakeHandler())  # type: ignore[arg-type]
+            BildebankRequestHandler.respond_hotkey_action(FakeHandler())  # type: ignore[arg-type]
+            conn = db.connect(target)
+            try:
+                tag_row = conn.execute("SELECT id, name FROM tags WHERE name_key = ?", ("familie",)).fetchone()
+                link_count = conn.execute("SELECT COUNT(*) AS count FROM file_tags WHERE file_id = 1").fetchone()["count"]
+            finally:
+                conn.close()
+
+        self.assertEqual(responses[0]["status"], HTTPStatus.OK)
+        self.assertEqual(responses[0]["content"]["action"], "tag")
+        self.assertEqual(responses[0]["content"]["tag_name"], "Familie")
+        self.assertEqual(responses[0]["content"]["tagged"], True)
+        self.assertEqual(responses[1]["status"], HTTPStatus.OK)
+        self.assertEqual(responses[1]["content"]["tag_name"], "Familie")
+        self.assertEqual(tag_row["name"], "Familie")
+        self.assertEqual(link_count, 1)
+
     def test_manual_between_date_uses_midpoint_in_static_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2558,6 +2681,7 @@ model_name = "buffalo_l"
             hotkeys = {
                 "1": BrowserHotkeyConfig(action="h3", h3_cell=h3_cell),
                 "3": BrowserHotkeyConfig(action="person", person_name="Viljar"),
+                "4": BrowserHotkeyConfig(action="tag", tag_name="Familie"),
                 "5": BrowserHotkeyConfig(action="manual_date", mode="uncertain", date="1948-12-30", uncertainty="1w"),
             }
             body = item_page_html(
@@ -2585,6 +2709,7 @@ model_name = "buffalo_l"
         self.assertIn('<div class="hotkey-hints-heading">Hurtigtaster aktivert:</div>', tag_rail_body)
         self.assertIn("<span>1:</span> Sett H3 til Brevik", tag_rail_body)
         self.assertIn("<span>3:</span> Legg til Viljar", tag_rail_body)
+        self.assertIn("<span>4:</span> Sett tagg Familie", tag_rail_body)
         self.assertIn("<span>5:</span> Sett dato til 30.12.48 ±1w", tag_rail_body)
         self.assertLess(tag_rail_body.index("date-status-badge"), tag_rail_body.index('class="hotkey-hints"'))
         self.assertLess(tag_rail_body.index("location-status-badge"), tag_rail_body.index('class="hotkey-hints"'))
