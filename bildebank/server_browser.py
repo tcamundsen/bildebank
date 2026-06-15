@@ -1169,7 +1169,7 @@ def source_item_page_html(
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> str:
-    from .server_shell import app_header_html, source_controls_html
+    from .server_shell import app_header_html, face_toggle_button_html, source_controls_html
 
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
@@ -1219,6 +1219,7 @@ def source_item_page_html(
         next_item,
         rotation_buttons=rotation_buttons_html(source, item),
         manual_date_button=manual_date_button_html(item),
+        face_toggle_button=face_toggle_button_html(source, item, face_enabled=face_enabled),
         unconfirm_buttons=unconfirm_buttons,
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )

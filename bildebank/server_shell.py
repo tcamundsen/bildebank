@@ -102,36 +102,14 @@ def source_top_links_html(
     if source.person_name is not None and face_enabled:
         all_url = all_items_url or (source_item_url(all_browser_source(), int(item["id"])) if item is not None else "/")
         links.insert(0, f'<a class="server-search-link" href="{html.escape(all_url)}">{all_label}</a>')
-        if source.show_faces:
-            no_faces_source = person_browser_source(
-                source.person_name,
-                include_suggestions=source.include_suggestions,
-                show_faces=False,
-            )
-            no_faces_url = source_item_url(no_faces_source, int(item["id"])) if item is not None else no_faces_source.root_url
-            links.insert(
-                1,
-                f'<a class="server-search-link" href="{html.escape(no_faces_url)}">Uten ansiktsmarkering</a>',
-            )
-        else:
-            faces_source = person_browser_source(
-                source.person_name,
-                include_suggestions=source.include_suggestions,
-                show_faces=True,
-            )
-            faces_url = source_item_url(faces_source, int(item["id"])) if item is not None else faces_source.root_url
-            links.insert(
-                1,
-                f'<a class="server-search-link" href="{html.escape(faces_url)}">Med ansiktsmarkering</a>',
-            )
         if source.include_suggestions:
             links.insert(
-                2,
+                1,
                 f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=False).root_url)}">Bare bekreftede</a>',
             )
         else:
             links.insert(
-                2,
+                1,
                 f'<a class="server-search-link" href="{html.escape(person_browser_source(source.person_name, include_suggestions=True).root_url)}">Med forslag</a>',
             )
     return "\n".join(links)
@@ -233,6 +211,20 @@ def nav_disabled(label: str) -> str:
     return f'<span class="nav-button disabled">{html.escape(label)}</span>'
 
 
+def face_toggle_button_html(source: BrowserSource, item: Any | None, *, face_enabled: bool = True) -> str:
+    if not face_enabled or source.person_name is None or item is None:
+        return ""
+    target_source = person_browser_source(
+        source.person_name,
+        include_suggestions=source.include_suggestions,
+        show_faces=not source.show_faces,
+    )
+    href = source_item_url(target_source, int(item["id"]))
+    title = "Skjul ansiktsmarkering" if source.show_faces else "Vis ansiktsmarkering"
+    box = "☑" if source.show_faces else "☐"
+    return f'<a class="nav-button" href="{html.escape(href)}" title="{title}">{box}👤</a>'
+
+
 def source_controls_html(
     source: BrowserSource,
     month_nav: dict[str, str | None],
@@ -245,6 +237,7 @@ def source_controls_html(
     manual_date_button: str = "",
     manual_person_controls: str = "",
     manual_location_button: str = "",
+    face_toggle_button: str = "",
     unconfirm_buttons: str = "",
     delete_button: str = "",
 ) -> str:
@@ -260,6 +253,7 @@ def source_controls_html(
       {manual_date_button}
       {manual_person_controls}
       {manual_location_button}
+      {face_toggle_button}
       {info_button if include_info_button else ""}
       {unconfirm_buttons}
       {delete_button}
