@@ -2454,7 +2454,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "22")
+        self.assertEqual(SERVER_ASSET_VERSION, "23")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -5203,7 +5203,11 @@ model_name = "buffalo_l"
         controls_start = body.index('<nav class="controls"')
         controls_end = body.index("</nav>", controls_start)
         controls_html = body[controls_start:controls_end]
-        self.assertIn('<a class="nav-button" href="/person/Kari/no-faces/item/1" title="Skjul ansiktsmarkering">☑👤</a>', controls_html)
+        self.assertIn(
+            '<a class="nav-button" href="/person/Kari/no-faces/item/1" title="Skjul ansiktsmarkering"><span class="face-toggle-icon face-toggle-icon-active">👤</span></a>',
+            controls_html,
+        )
+        self.assertIn(".face-toggle-icon-active", SERVER_CSS)
         self.assertIn('<a class="nav-button" href="/person/Kari/confirmed/item/1">[✓] Ta med forslag</a>', controls_html)
         self.assertNotIn("Bare bekreftede", body)
         self.assertNotIn("Med forslag", body)
@@ -5234,7 +5238,11 @@ model_name = "buffalo_l"
         plain_controls_html = plain_body[plain_controls_start:plain_controls_end]
         self.assertNotIn("Fjern manuell person-i-bilde", plain_controls_html)
         self.assertNotIn("data-remove-person-file", plain_controls_html)
-        self.assertIn('<a class="nav-button" href="/person/Kari/item/1" title="Vis ansiktsmarkering">☐👤</a>', plain_controls_html)
+        self.assertIn(
+            '<a class="nav-button" href="/person/Kari/item/1" title="Vis ansiktsmarkering"><span class="face-toggle-icon">👤</span></a>',
+            plain_controls_html,
+        )
+        self.assertNotIn("face-toggle-icon-active", plain_controls_html)
         self.assertIn('<a class="nav-button" href="/person/Kari/confirmed/no-faces/item/1">[✓] Ta med forslag</a>', plain_controls_html)
         self.assertIn('href="/item/1">Alle bilder</a>', plain_body)
         self.assertNotIn("Med ansiktsmarkering", plain_body)

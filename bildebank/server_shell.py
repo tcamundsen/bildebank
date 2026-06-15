@@ -211,8 +211,8 @@ def face_toggle_button_html(source: BrowserSource, item: Any | None, *, face_ena
     )
     href = source_item_url(target_source, int(item["id"]))
     title = "Skjul ansiktsmarkering" if source.show_faces else "Vis ansiktsmarkering"
-    box = "☑" if source.show_faces else "☐"
-    return f'<a class="nav-button" href="{html.escape(href)}" title="{title}">{box}👤</a>'
+    icon_class = "face-toggle-icon face-toggle-icon-active" if source.show_faces else "face-toggle-icon"
+    return f'<a class="nav-button" href="{html.escape(href)}" title="{title}"><span class="{icon_class}">👤</span></a>'
 
 
 def suggestion_toggle_button_html(

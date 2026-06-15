@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "22"
+SERVER_ASSET_VERSION = "23"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -335,6 +335,18 @@ SERVER_CSS = r"""    :root {
       display: inline-flex;
       align-items: center;
     }
+    .face-toggle-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      min-height: 20px;
+      margin-left: 2px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      line-height: 1;
+    }
+    .face-toggle-icon-active { border-color: var(--accent); }
     .person-link { color: var(--accent); }
     .people-section {
       display: flex;
