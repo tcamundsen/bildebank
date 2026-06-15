@@ -454,7 +454,6 @@ def h3_cells_page_html(
     return shell_page_html(
         "Rediger H3-celler",
         f"""
-        <nav class="subnav"><a href="/settings">Innstillinger</a></nav>
         <h1>Navngi H3-celler</h1>
         <section class="custom-geo-places">
         <p>På denne siden gir du navn til H3-celler. Disse navnene brukes for
