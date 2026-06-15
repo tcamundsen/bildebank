@@ -45,6 +45,8 @@ class BrowserTextFilter:
     height_gt: int | None = None
     height_lt: int | None = None
     height_eq: int | None = None
+    month: int | None = None
+    day: int | None = None
 
 
 def parse_text_filter(query: str) -> BrowserTextFilter:
@@ -74,6 +76,8 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
     height_gt = None
     height_lt = None
     height_eq = None
+    month = None
+    day = None
     for token in tokens:
         size_operator = size_filter_operator(token)
         if size_operator is not None:
@@ -145,6 +149,14 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
             if value not in {"manual", "metadata", "filename", "mtime"}:
                 raise ValueError("date må være manual, metadata, filename eller mtime.")
             date_source = value
+        elif key == "month":
+            if month is not None:
+                raise ValueError("month kan bare brukes én gang.")
+            month = parse_filter_integer_range(value, "month", 1, 12)
+        elif key == "day":
+            if day is not None:
+                raise ValueError("day kan bare brukes én gang.")
+            day = parse_filter_integer_range(value, "day", 1, 31)
         elif key == "deleted":
             if value not in {"true", "false"}:
                 raise ValueError("deleted må være true eller false.")
@@ -218,6 +230,8 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
         height_gt=height_gt,
         height_lt=height_lt,
         height_eq=height_eq,
+        month=month,
+        day=day,
     )
 
 
@@ -244,6 +258,16 @@ def parse_filter_date(value: str, key: str) -> dt.date:
         return dt.date.fromisoformat(value)
     except ValueError as exc:
         raise ValueError(f"{key} må være en dato på formen YYYY-MM-DD.") from exc
+
+
+def parse_filter_integer_range(value: str, key: str, minimum: int, maximum: int) -> int:
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{key} må være et heltall fra {minimum} til {maximum}.") from exc
+    if number < minimum or number > maximum:
+        raise ValueError(f"{key} må være et heltall fra {minimum} til {maximum}.")
+    return number
 
 
 def parse_extension(value: str) -> str:
@@ -349,6 +373,8 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         height_gt=text_filter.height_gt,
         height_lt=text_filter.height_lt,
         height_eq=text_filter.height_eq,
+        month=text_filter.month,
+        day=text_filter.day,
     )
 
 
@@ -363,7 +389,12 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     browser_has_date_sql = f"(({manual_date_sql}) OR {taken_date_sql})"
     if text_filter.deleted:
         where.append("deleted_at IS NOT NULL")
-    if text_filter.after is not None or text_filter.before is not None:
+    if (
+        text_filter.after is not None
+        or text_filter.before is not None
+        or text_filter.month is not None
+        or text_filter.day is not None
+    ):
         where.append(browser_has_date_sql)
     if text_filter.after is not None:
         where.append(f"{db.BROWSER_DATE_ORDER_SQL} > ?")
@@ -371,6 +402,12 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     if text_filter.before is not None:
         where.append(f"{db.BROWSER_DATE_ORDER_SQL} < ?")
         params.append(text_filter.before.isoformat())
+    if text_filter.month is not None:
+        where.append(f"CAST(substr({db.BROWSER_DATE_ORDER_SQL}, 6, 2) AS INTEGER) = ?")
+        params.append(text_filter.month)
+    if text_filter.day is not None:
+        where.append(f"CAST(substr({db.BROWSER_DATE_ORDER_SQL}, 9, 2) AS INTEGER) = ?")
+        params.append(text_filter.day)
     if text_filter.size_gt is not None:
         where.append("size_bytes > ?")
         params.append(text_filter.size_gt)
@@ -626,7 +663,7 @@ def filter_help_html() -> str:
       <h2>Søkekriterier</h2>
       <p class="meta">Kriterier kan kombineres. Bruk anførselstegn når tekst inneholder mellomrom, for eksempel camera:"iPhone" eller tag:"Ute av fokus".</p>
       <dl class="info-list">
-        <div class="info-row"><dt>Dato</dt><dd><code>after:2023-12-01</code>, <code>before:2024-12-12</code>, <code>date:manual</code>, <code>date:metadata</code>, <code>date:filename</code>, <code>date:mtime</code></dd></div>
+        <div class="info-row"><dt>Dato</dt><dd><code>after:2023-12-01</code>, <code>before:2024-12-12</code>, <code>month:12</code>, <code>day:24</code>, <code>month:12 day:24</code>, <code>date:manual</code>, <code>date:metadata</code>, <code>date:filename</code>, <code>date:mtime</code></dd></div>
         <div class="info-row"><dt>Sted</dt><dd><code>location:gps</code>, <code>location:manual</code>, <code>location:slug</code>. Slug er samme tekst som i <code>/geo/place/slug</code>.</dd></div>
         <div class="info-row"><dt>Fil</dt><dd><code>type:image</code>, <code>type:video</code>, <code>type:file</code>, <code>extension:jpg</code>, <code>size&lt;300KB</code>, <code>size&gt;2MB</code></dd></div>
         <div class="info-row"><dt>Tekst</dt><dd><code>filename:IMG</code>, <code>path:2024/01</code>, <code>camera:"iPhone"</code></dd></div>
@@ -634,5 +671,17 @@ def filter_help_html() -> str:
         <div class="info-row"><dt>Mangler</dt><dd><code>missing:gps</code>, <code>missing:date</code>, <code>missing:metadata</code></dd></div>
         <div class="info-row"><dt>Form</dt><dd><code>orientation:portrait</code>, <code>orientation:landscape</code>, <code>width&gt;1024</code>, <code>width=1024</code>, <code>width&lt;2000</code>, <code>height&gt;1024</code>, <code>height=1024</code>, <code>height&lt;2000</code>. Bredde og høyde er piksler uten enhet.</dd></div>
       </dl>
+      <h3>Eksempler</h3>
+       <dl class="info-list">
+         <div class="info-row">
+           <dt>Alle julaftener</dt>
+           <dd><a href="/filter/day:24 month:12"><code>day:24 month:12</code></a></dd></div>
+         <div class="info-row">
+           <dt>Alle 17. mai</dt>
+           <dd><a href="/filter/day:17 month:5"><code>day:17 month:5</code></a></dd></div>
+         <div class="info-row">
+           <dt>Alle julidager på Kreta</dt>
+           <dd><a href="/filter/month:7 location:kreta"><code>month:7 location:kreta</code></a></dd></div>
+       </dl>
     </section>
     """

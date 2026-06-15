@@ -3103,6 +3103,7 @@ model_name = "buffalo_l"
                 ("IMG_20240102.jpg", jpeg_with_exif_camera("Apple", "iPhone 17")),
                 ("IMG_20241212.jpg", b"before-boundary"),
                 ("IMG_20250101.jpg", b"manual-date-match"),
+                ("IMG_20260115.jpg", b"manual-christmas-eve"),
             ):
                 (source / name).write_bytes(content)
 
@@ -3129,6 +3130,7 @@ model_name = "buffalo_l"
                         WHEN 2 THEN 'metadata'
                         WHEN 3 THEN 'mtime'
                         WHEN 4 THEN 'filename'
+                        WHEN 5 THEN 'filename'
                     END
                     """
                 )
@@ -3140,6 +3142,7 @@ model_name = "buffalo_l"
                         WHEN 2 THEN 409600
                         WHEN 3 THEN 3145728
                         WHEN 4 THEN 2097152
+                        WHEN 5 THEN 4096
                     END
                     """
                 )
@@ -3151,6 +3154,14 @@ model_name = "buffalo_l"
                         gps_source = 'manual-h3',
                         h3_res7 = '872830828ffffff'
                     WHERE id = 4
+                    """
+                )
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET manual_date_from = '2021-12-24',
+                        manual_date_to = '2021-12-24'
+                    WHERE id = 5
                     """
                 )
                 conn.execute(
@@ -3255,6 +3266,9 @@ model_name = "buffalo_l"
             tag_filter = text_filter_browser_source("tag:ute-av-fokus")
             type_file_filter = text_filter_browser_source("type:file")
             type_image_filter = text_filter_browser_source("type:image")
+            month_filter = text_filter_browser_source("month:12")
+            day_filter = text_filter_browser_source("day:24")
+            month_day_filter = text_filter_browser_source("month:12 day:24")
             first_item = source_item_by_id(target, source_filter, 2)
             person_item = source_item_by_id(target, person_filter, 2)
             manual_item = source_item_by_id(target, manual_filter, 4)
@@ -3278,7 +3292,7 @@ model_name = "buffalo_l"
             deleted_month = source_month_items(target, deleted_filter, "2024-01")
             extension_month = source_month_items(target, extension_filter, "2024-01")
             filename_month = source_month_items(target, filename_filter, "2024-01")
-            missing_date_item = source_item_by_id(target, missing_date_filter, 5)
+            missing_date_item = source_item_by_id(target, missing_date_filter, 6)
             missing_gps_month = source_month_items(target, missing_gps_filter, "2023-12")
             missing_metadata_month = source_month_items(target, missing_metadata_filter, "2023-12")
             orientation_landscape_month = source_month_items(target, orientation_landscape_filter, "2024-12")
@@ -3295,8 +3309,15 @@ model_name = "buffalo_l"
             person_december_month = source_month_items(target, person_filter, "2024-12")
             source_name_month = source_month_items(target, source_name_filter, "2024-01")
             tag_month = source_month_items(target, tag_filter, "2024-01")
-            type_file_item = source_item_by_id(target, type_file_filter, 5)
+            type_file_item = source_item_by_id(target, type_file_filter, 6)
             type_image_month = source_month_items(target, type_image_filter, "2024-01")
+            month_december_2021 = source_month_items(target, month_filter, "2021-12")
+            month_january_2022 = source_month_items(target, month_filter, "2022-01")
+            month_december_2023 = source_month_items(target, month_filter, "2023-12")
+            month_december_2024 = source_month_items(target, month_filter, "2024-12")
+            day_december_2021 = source_month_items(target, day_filter, "2021-12")
+            month_day_december_2021 = source_month_items(target, month_day_filter, "2021-12")
+            month_day_january_2024 = source_month_items(target, month_day_filter, "2024-01")
             date_body = source_item_page_html(
                 target,
                 source_filter,
@@ -3330,7 +3351,7 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in mtime_date_month], [3])
         self.assertEqual([item["id"] for item in place_month], [2])
         self.assertEqual([item["id"] for item in camera_month], [2])
-        self.assertEqual([item["id"] for item in deleted_month], [6])
+        self.assertEqual([item["id"] for item in deleted_month], [7])
         self.assertEqual([item["id"] for item in extension_month], [2])
         self.assertEqual([item["id"] for item in filename_month], [2])
         self.assertIsNotNone(missing_date_item)
@@ -3352,6 +3373,13 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in tag_month], [2])
         self.assertIsNotNone(type_file_item)
         self.assertEqual([item["id"] for item in type_image_month], [2])
+        self.assertEqual([item["id"] for item in month_december_2021], [5])
+        self.assertEqual([item["id"] for item in month_january_2022], [])
+        self.assertEqual([item["id"] for item in month_december_2023], [1])
+        self.assertEqual([item["id"] for item in month_december_2024], [3])
+        self.assertEqual([item["id"] for item in day_december_2021], [5])
+        self.assertEqual([item["id"] for item in month_day_december_2021], [5])
+        self.assertEqual([item["id"] for item in month_day_january_2024], [])
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_body)
         self.assertIn('title="2 treff i filtersøket"', date_body)
@@ -3372,12 +3400,22 @@ model_name = "buffalo_l"
         self.assertEqual(text_filter.size_lt, int(2.5 * 1024 * 1024 * 1024))
         self.assertEqual(text_filter.width_gt, 1024)
         self.assertEqual(text_filter.height_eq, 2000)
+        self.assertEqual(parse_text_filter("month:12").month, 12)
+        self.assertEqual(parse_text_filter("day:24").day, 24)
         self.assertEqual(parse_text_filter("person:Viljar").person, "Viljar")
         for query, message in (
             ("after:2023-02-30", "after må være en dato på formen YYYY-MM-DD."),
             ("before:", "Filteret mangler verdi: before:"),
             ("date:gps", "date må være manual, metadata, filename eller mtime."),
             ("date:manual date:metadata", "date kan bare brukes én gang."),
+            ("month:12 month:11", "month kan bare brukes én gang."),
+            ("month:0", "month må være et heltall fra 1 til 12."),
+            ("month:13", "month må være et heltall fra 1 til 12."),
+            ("month:desember", "month må være et heltall fra 1 til 12."),
+            ("day:24 day:25", "day kan bare brukes én gang."),
+            ("day:0", "day må være et heltall fra 1 til 31."),
+            ("day:32", "day må være et heltall fra 1 til 31."),
+            ("day:julaften", "day må være et heltall fra 1 til 31."),
             ("deleted:maybe", "deleted må være true eller false."),
             ("extension:..jpg", "extension må være en filendelse"),
             ("missing:camera", "missing må være gps, date eller metadata."),
@@ -3462,6 +3500,9 @@ model_name = "buffalo_l"
 
         self.assertIn("<h2>Søkekriterier</h2>", body)
         self.assertIn("<code>after:2023-12-01</code>", body)
+        self.assertIn("<code>month:12</code>", body)
+        self.assertIn("<code>day:24</code>", body)
+        self.assertIn("<code>month:12 day:24</code>", body)
         self.assertIn('<code>camera:"iPhone"</code>', body)
         self.assertIn('<code>tag:"Ute av fokus"</code>', body)
         self.assertIn("<code>deleted:true</code>", body)
