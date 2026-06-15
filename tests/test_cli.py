@@ -1059,7 +1059,7 @@ pretrained = "laion2b_s34b_b79k"
 
         self.assertEqual([result.file_id for result in stats.results], [2])
 
-    def test_run_server_image_search_uses_target_path_for_image_url(self) -> None:
+    def test_run_server_image_search_links_item_but_uses_target_path_for_image_url(self) -> None:
         target = Path("/tmp/target")
         server = SimpleNamespace(
             target=target,
@@ -1078,7 +1078,8 @@ pretrained = "laion2b_s34b_b79k"
         body = search_html(server, ServerSearchStats("red wine", (result,)), DEFAULT_SEARCH_LIMIT)
 
         self.assertIn('src="/file/2025/07/PXL%2020250709_193516074.jpg"', body)
-        self.assertIn('href="/file/2025/07/PXL%2020250709_193516074.jpg"', body)
+        self.assertIn('href="/item/999"', body)
+        self.assertNotIn('href="/file/2025/07/PXL%2020250709_193516074.jpg"', body)
         self.assertNotIn('src="/file/999"', body)
 
     def test_openclip_database_rejects_absolute_target_paths(self) -> None:

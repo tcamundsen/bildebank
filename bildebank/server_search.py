@@ -19,6 +19,7 @@ from .openclip import (
     relative_to_target,
     text_embedding,
 )
+from .server_browser_sources import all_browser_source, source_item_url
 
 
 DEFAULT_SEARCH_LIMIT = 100
@@ -300,10 +301,11 @@ def search_form(query: str, limit: int = DEFAULT_SEARCH_LIMIT, *, model_loaded: 
 def result_html(target: Path, result: ImageSearchResult) -> str:
     relative = relative_to_target(target, result.target_path)
     url = "/file/" + relative_path_url(relative)
+    item_url = source_item_url(all_browser_source(), result.file_id)
     path_text = str(relative).replace("\\", "/")
     return f"""
     <article class="item">
-      <a href="{html.escape(url)}"><img src="{html.escape(url)}" alt=""></a>
+      <a href="{html.escape(item_url)}"><img src="{html.escape(url)}" alt=""></a>
       <div class="text">
         <div class="path">#{result.rank} {html.escape(path_text)}</div>
         <div class="score">score={result.similarity:.3f}</div>
