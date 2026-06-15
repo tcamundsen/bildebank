@@ -1031,6 +1031,10 @@ def tags_page_html(
         "Tagger",
         f"""
         <h1>Tagger</h1>
+        <form action="/tags/create" method="post" class="new-person-form">
+          <label>Ny tagg <input name="name" autocomplete="off"></label>
+          <button type="submit">Legg til</button>
+        </form>
         {content}
         """,
         face_enabled=face_enabled,
@@ -1039,17 +1043,39 @@ def tags_page_html(
 
 
 def tag_row_html(row: sqlite3.Row) -> str:
+    tag_id = int(row["id"])
     name = str(row["name"])
     kind = str(row["kind"])
     kind_label = "systemtagg" if kind == db.TAG_KIND_SYSTEM else "brukertagg"
     url = "/tag/" + urllib.parse.quote(name, safe="")
+    actions = tag_row_actions_html(tag_id, name, kind)
     return f"""
     <div class="people-row">
       <div class="people-name">{html.escape(name)}</div>
       <a class="person-link" href="{html.escape(url)}">Vis bilder ({int(row["file_count"])})</a>
       <span class="status">{html.escape(kind_label)}</span>
       <span class="status">opprettet: {html.escape(str(row["created_at"]))}</span>
+      {actions}
     </div>
+    """
+
+
+def tag_row_actions_html(tag_id: int, name: str, kind: str) -> str:
+    if kind == db.TAG_KIND_SYSTEM:
+        return '<span class="status">systemtagg kan ikke endres</span>'
+    escaped_name = html.escape(name)
+    return f"""
+      <div class="tag-actions">
+        <form action="/tags/rename" method="post" class="inline-edit-form">
+          <input type="hidden" name="tag_id" value="{tag_id}">
+          <input name="name" value="{escaped_name}" autocomplete="off" aria-label="Nytt taggnavn">
+          <button type="submit">Endre navn</button>
+        </form>
+        <form action="/tags/delete" method="post">
+          <input type="hidden" name="tag_id" value="{tag_id}">
+          <button type="submit" class="danger-button" data-confirm-submit="Slette taggen {escaped_name} fra alle bilder?">Slett</button>
+        </form>
+      </div>
     """
 
 

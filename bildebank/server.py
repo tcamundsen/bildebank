@@ -409,6 +409,15 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/settings/face-model":
                 self.respond_set_face_model()
                 return
+            if parsed.path == "/tags/create":
+                self.respond_create_tag()
+                return
+            if parsed.path == "/tags/rename":
+                self.respond_rename_tag()
+                return
+            if parsed.path == "/tags/delete":
+                self.respond_delete_tag()
+                return
             if parsed.path == "/api/face-person-add-face":
                 if not self.server.face_enabled:
                     self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
@@ -1100,6 +1109,67 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             model_name,
         )
         self.redirect("/settings")
+
+    def respond_create_tag(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        try:
+            conn = db.connect(self.server.target)
+            try:
+                db.create_user_tag(conn, first_param(params, "name"))
+                conn.commit()
+            finally:
+                conn.close()
+        except ValueError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+        self.redirect("/tags")
+
+    def respond_rename_tag(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        try:
+            tag_id = int(first_param(params, "tag_id"))
+        except ValueError:
+            self.respond_text("Ugyldig tagg-id.", status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            conn = db.connect(self.server.target)
+            try:
+                db.rename_user_tag(conn, tag_id=tag_id, new_name=first_param(params, "name"))
+                conn.commit()
+            finally:
+                conn.close()
+        except ValueError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+        self.redirect("/tags")
+
+    def respond_delete_tag(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        try:
+            tag_id = int(first_param(params, "tag_id"))
+        except ValueError:
+            self.respond_text("Ugyldig tagg-id.", status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            conn = db.connect(self.server.target)
+            try:
+                db.delete_user_tag(conn, tag_id=tag_id)
+                conn.commit()
+            finally:
+                conn.close()
+        except ValueError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+        self.redirect("/tags")
 
     def respond_file(self, encoded_relative_path: str) -> None:
         try:

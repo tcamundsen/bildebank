@@ -2023,6 +2023,52 @@ def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
     return int(cursor.lastrowid)
 
 
+def create_user_tag(conn: sqlite3.Connection, name: str) -> int:
+    create_tags_schema(conn)
+    clean_name = normalize_tag_name(name)
+    if is_system_tag_name(clean_name):
+        raise ValueError("Systemtagger kan ikke opprettes som brukertagger.")
+    row = conn.execute("SELECT id FROM tags WHERE name_key = ?", (tag_name_key(clean_name),)).fetchone()
+    if row is not None:
+        return int(row["id"])
+    cursor = conn.execute(
+        "INSERT INTO tags(name, name_key, kind) VALUES(?, ?, ?)",
+        (clean_name, tag_name_key(clean_name), TAG_KIND_USER),
+    )
+    return int(cursor.lastrowid)
+
+
+def rename_user_tag(conn: sqlite3.Connection, *, tag_id: int, new_name: str) -> str:
+    create_tags_schema(conn)
+    clean_name = normalize_tag_name(new_name)
+    if is_system_tag_name(clean_name):
+        raise ValueError("Brukertagger kan ikke endres til systemtagg-navn.")
+    row = conn.execute("SELECT id, kind FROM tags WHERE id = ?", (tag_id,)).fetchone()
+    if row is None:
+        raise ValueError("Taggen finnes ikke.")
+    if row["kind"] == TAG_KIND_SYSTEM:
+        raise ValueError("Systemtagger kan ikke endres.")
+    name_key = tag_name_key(clean_name)
+    conflict = conn.execute("SELECT id FROM tags WHERE name_key = ? AND id <> ?", (name_key, tag_id)).fetchone()
+    if conflict is not None:
+        raise ValueError("Det finnes allerede en tagg med dette navnet.")
+    conn.execute("UPDATE tags SET name = ?, name_key = ? WHERE id = ?", (clean_name, name_key, tag_id))
+    return clean_name
+
+
+def delete_user_tag(conn: sqlite3.Connection, *, tag_id: int) -> str:
+    create_tags_schema(conn)
+    row = conn.execute("SELECT name, kind FROM tags WHERE id = ?", (tag_id,)).fetchone()
+    if row is None:
+        raise ValueError("Taggen finnes ikke.")
+    if row["kind"] == TAG_KIND_SYSTEM:
+        raise ValueError("Systemtagger kan ikke slettes.")
+    name = str(row["name"])
+    conn.execute("DELETE FROM file_tags WHERE tag_id = ?", (tag_id,))
+    conn.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+    return name
+
+
 def tag_file(conn: sqlite3.Connection, *, file_id: int, tag_name: str) -> bool:
     create_tags_schema(conn)
     if conn.execute("SELECT 1 FROM files WHERE id = ?", (file_id,)).fetchone() is None:

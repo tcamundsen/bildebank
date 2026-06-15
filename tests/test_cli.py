@@ -2330,7 +2330,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "19")
+        self.assertEqual(SERVER_ASSET_VERSION, "21")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -3593,9 +3593,136 @@ model_name = "buffalo_l"
         self.assertIn('href="/tag/familie/item/1"', month_body)
         self.assertEqual(len(tag_month), 1)
         self.assertIn("<h1>Tagger</h1>", tags_body)
+        self.assertIn('action="/tags/create"', tags_body)
+        self.assertIn('action="/tags/rename"', tags_body)
+        self.assertIn('action="/tags/delete"', tags_body)
+        self.assertIn('class="tag-actions"', tags_body)
+        self.assertIn(".tag-actions", SERVER_CSS)
+        self.assertIn('data-confirm-submit="Slette taggen Familie fra alle bilder?"', tags_body)
+        self.assertIn("systemtagg kan ikke endres", tags_body)
         self.assertIn('href="/tag/Familie">Vis bilder (1)</a>', tags_body)
         self.assertIn("brukertagg", tags_body)
         self.assertIn("systemtagg", tags_body)
+
+    def test_run_server_tags_page_can_create_rename_and_delete_user_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            create_data = b"name=Familie"
+
+            class CreateHandler:
+                headers = {"Content-Length": str(len(create_data))}
+                rfile = BytesIO(create_data)
+                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                redirect_url: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.redirect_url = location
+
+                def respond_html(self, content: str, *, status: HTTPStatus) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+            create_handler = CreateHandler()
+            BildebankRequestHandler.respond_create_tag(create_handler)  # type: ignore[arg-type]
+            conn = db.connect(target)
+            try:
+                tag_row = conn.execute("SELECT id, name, kind FROM tags WHERE name_key = ?", ("familie",)).fetchone()
+            finally:
+                conn.close()
+            self.assertIsNotNone(tag_row)
+            tag_id = int(tag_row["id"])
+
+            rename_data = f"tag_id={tag_id}&name=Familie+og+venner".encode("utf-8")
+
+            class RenameHandler:
+                headers = {"Content-Length": str(len(rename_data))}
+                rfile = BytesIO(rename_data)
+                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                redirect_url: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.redirect_url = location
+
+                def respond_html(self, content: str, *, status: HTTPStatus) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+            rename_handler = RenameHandler()
+            BildebankRequestHandler.respond_rename_tag(rename_handler)  # type: ignore[arg-type]
+            conn = db.connect(target)
+            try:
+                renamed_row = conn.execute("SELECT name, name_key FROM tags WHERE id = ?", (tag_id,)).fetchone()
+            finally:
+                conn.close()
+
+            delete_data = f"tag_id={tag_id}".encode("utf-8")
+
+            class DeleteHandler:
+                headers = {"Content-Length": str(len(delete_data))}
+                rfile = BytesIO(delete_data)
+                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                redirect_url: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.redirect_url = location
+
+                def respond_html(self, content: str, *, status: HTTPStatus) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+            delete_handler = DeleteHandler()
+            BildebankRequestHandler.respond_delete_tag(delete_handler)  # type: ignore[arg-type]
+            conn = db.connect(target)
+            try:
+                deleted_row = conn.execute("SELECT id FROM tags WHERE id = ?", (tag_id,)).fetchone()
+                system_row = conn.execute("SELECT id FROM tags WHERE name_key = ?", ("ute av fokus",)).fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(create_handler.redirect_url, "/tags")
+        self.assertEqual(tag_row["name"], "Familie")
+        self.assertEqual(tag_row["kind"], db.TAG_KIND_USER)
+        self.assertEqual(rename_handler.redirect_url, "/tags")
+        self.assertEqual(renamed_row["name"], "Familie og venner")
+        self.assertEqual(renamed_row["name_key"], "familie og venner")
+        self.assertEqual(delete_handler.redirect_url, "/tags")
+        self.assertIsNone(deleted_row)
+        self.assertIsNotNone(system_row)
+
+    def test_run_server_tags_page_rejects_system_tag_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                system_id = int(conn.execute("SELECT id FROM tags WHERE name_key = ?", ("ute av fokus",)).fetchone()["id"])
+            finally:
+                conn.close()
+            data = f"tag_id={system_id}".encode("utf-8")
+            response: dict[str, object] = {}
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+
+                def respond_html(self, content: str, *, status: HTTPStatus) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_delete_tag(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
+        self.assertIn("Systemtagger kan ikke slettes", str(response["content"]))
 
     def test_run_server_hide_out_of_focus_filters_browser_sources_but_not_tag_view(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

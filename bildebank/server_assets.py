@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "19"
+SERVER_ASSET_VERSION = "21"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -748,6 +748,22 @@ SERVER_CSS = r"""    :root {
     .info-row dt { color: var(--muted); }
     .info-row dd { margin: 0; overflow-wrap: anywhere; }
     .app-toggle-form { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .inline-edit-form {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+    .inline-edit-form input { min-width: 120px; }
+    .tag-actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      flex-wrap: nowrap;
+      min-width: 0;
+    }
+    .tag-actions form { margin: 0; }
     .hotkey-settings { display: grid; gap: 8px; }
     .hotkey-form {
       display: grid;
