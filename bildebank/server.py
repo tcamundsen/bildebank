@@ -110,6 +110,10 @@ DEFAULT_PORT = 8765
 BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS = 1.0
 
 
+def client_disconnected_error(exc: OSError) -> bool:
+    return isinstance(exc, (BrokenPipeError, ConnectionResetError))
+
+
 def clear_browser_navigation_cache(server: Any) -> None:
     clear_cache = getattr(server, "clear_browser_navigation_cache", None)
     if clear_cache is not None:
@@ -509,6 +513,15 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Ukjent endepunkt."}, status=HTTPStatus.NOT_FOUND)
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def handle(self) -> None:
+        try:
+            super().handle()
+        except OSError as exc:
+            if client_disconnected_error(exc):
+                self.close_connection = True
+                return
+            raise
 
     def log_message(self, format: str, *args: Any) -> None:
         return

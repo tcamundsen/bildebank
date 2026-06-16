@@ -7,9 +7,6 @@ from typing import Any
 
 BENCHMARK_HEADER = "X-Bildebank-Benchmark"
 
-def client_disconnected_error(exc: OSError) -> bool:
-    return isinstance(exc, (BrokenPipeError, ConnectionResetError))
-
 class ServerResponseMixin:
     def wants_benchmark_timing(self) -> bool:
         headers = getattr(self, "headers", None)
@@ -38,32 +35,22 @@ class ServerResponseMixin:
         self.respond_bytes(json.dumps(content).encode("utf-8"), "application/json; charset=utf-8", status=status)
 
     def respond_static_asset(self, content: str, content_type: str) -> None:
-        try:
-            encoded = content.encode("utf-8")
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Cache-Control", "public, max-age=3600")
-            self.send_header("Content-Length", str(len(encoded)))
-            self.respond_timing_headers()
-            self.end_headers()
-            self.wfile.write(encoded)
-        except OSError as exc:
-            if client_disconnected_error(exc):
-                return
-            raise
+        encoded = content.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "public, max-age=3600")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.respond_timing_headers()
+        self.end_headers()
+        self.wfile.write(encoded)
 
     def respond_bytes(self, content: bytes, content_type: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
-        try:
-            self.send_response(status)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(content)))
-            self.respond_timing_headers()
-            self.end_headers()
-            self.wfile.write(content)
-        except OSError as exc:
-            if client_disconnected_error(exc):
-                return
-            raise
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(content)))
+        self.respond_timing_headers()
+        self.end_headers()
+        self.wfile.write(content)
 
     def redirect(self, location: str) -> None:
         self.send_response(HTTPStatus.FOUND)
