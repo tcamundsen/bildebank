@@ -1902,10 +1902,10 @@ model_name = "buffalo_l"
             body = month_page_html(target, "2024-01", browser_month_items(target, "2024-01"))
 
         for label in (
-            "Å-",
-            "Å+",
-            "M-",
-            "M+",
+            "År-",
+            "År+",
+            "Mnd-",
+            "Mnd+",
             "◀",
             "▶",
         ):
