@@ -78,31 +78,6 @@ def people_for_file(
     return people_for_file_from_rows(file_id, rows), confirmed_face_people_for_file_from_rows(file_id, rows)
 
 
-def confirmed_people_for_file(
-    target: Path,
-    file_id: int,
-    face_config: FaceRecognitionConfig | None = None,
-) -> list[dict[str, object]]:
-    db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
-    if mtime_ns is None:
-        return []
-    return people_for_file_from_rows(file_id, cached_confirmed_people_for_file(str(db_path), mtime_ns, file_id))
-
-
-def confirmed_face_people_for_file(
-    target: Path,
-    file_id: int,
-    face_config: FaceRecognitionConfig | None = None,
-) -> list[dict[str, object]]:
-    db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
-    if mtime_ns is None:
-        return []
-    return confirmed_face_people_for_file_from_rows(
-        file_id,
-        cached_confirmed_people_for_file(str(db_path), mtime_ns, file_id),
-    )
-
-
 def people_for_file_from_rows(
     file_id: int,
     rows: tuple[tuple[str, int, int | None, bool], ...],
