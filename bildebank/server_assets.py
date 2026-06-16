@@ -335,6 +335,26 @@ SERVER_CSS = r"""    :root {
       display: inline-flex;
       align-items: center;
     }
+    .nav-button-pair {
+      display: inline-flex;
+      align-items: stretch;
+      gap: 0;
+    }
+    .nav-button-pair .nav-button {
+      border-radius: 0;
+      justify-content: center;
+    }
+    .nav-button-pair .nav-button + .nav-button { margin-left: -1px; }
+    .nav-button-pair .nav-button:first-child {
+      border-top-left-radius: 6px;
+      border-bottom-left-radius: 6px;
+      padding-right: 0;
+    }
+    .nav-button-pair .nav-button:last-child {
+      border-top-right-radius: 6px;
+      border-bottom-right-radius: 6px;
+      padding-left: 0;
+    }
     .face-toggle-icon {
       display: inline-flex;
       align-items: center;
@@ -934,6 +954,8 @@ SERVER_CSS = r"""    :root {
       .tag-rail { width: auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }
       .tag-toggle { justify-content: center; text-align: center; flex: 1 1 auto; }
       .nav-button, .server-search-link, .person-link, .faces-button { flex: 1 1 auto; justify-content: center; text-align: center; }
+      .nav-button-pair { flex: 1 1 auto; }
+      .nav-button-pair .nav-button { flex: 1 1 0; }
       .top-actions { margin-left: 0; width: 100%; justify-content: stretch; }
       .people-row { grid-template-columns: 1fr; align-items: stretch; }
       .removed-row { grid-template-columns: 1fr; align-items: stretch; }

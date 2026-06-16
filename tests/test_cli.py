@@ -1713,6 +1713,9 @@ model_name = "buffalo_l"
         self.assertIn('data-key-nav="next-year"', body)
         self.assertIn('data-key-nav="previous-month"', body)
         self.assertIn('data-key-nav="next-month"', body)
+        self.assertIn('data-nav-button-pair="year"', body)
+        self.assertIn('data-nav-button-pair="month"', body)
+        self.assertIn('data-nav-button-pair="item"', body)
         self.assertIn('href="/static/server.css?v=', body)
         self.assertIn('src="/static/server.js?v=', body)
         self.assertIn("ArrowLeft", SERVER_JS)
@@ -1902,12 +1905,12 @@ model_name = "buffalo_l"
             body = month_page_html(target, "2024-01", browser_month_items(target, "2024-01"))
 
         for label in (
-            "År-",
-            "År+",
-            "Mnd-",
-            "Mnd+",
-            "◀",
-            "▶",
+            "◀ Å",
+            "r ▶",
+            "◀ Mån",
+            "ed ▶",
+            "◀ Bil",
+            "de ▶",
         ):
             self.assertIn(label, body)
         self.assertIn("/month/2023-12", body)
@@ -1922,6 +1925,9 @@ model_name = "buffalo_l"
         self.assertIn('data-key-nav="next-year"', body)
         self.assertIn('data-key-nav="previous-month"', body)
         self.assertIn('data-key-nav="next-month"', body)
+        self.assertIn('data-nav-button-pair="year"', body)
+        self.assertIn('data-nav-button-pair="month"', body)
+        self.assertIn('data-nav-button-pair="item"', body)
         self.assertIn('<main class="server-browser month-browser">', body)
 
     def test_run_server_years_pages_link_to_years_and_months(self) -> None:

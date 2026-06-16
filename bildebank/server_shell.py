@@ -253,12 +253,18 @@ def source_controls_html(
 ) -> str:
     return f"""
     <nav class="controls" aria-label="Navigering">
-      {source_month_nav_link(source, month_nav["previous_year"], "År-", "previous-year", "Forrige år")}
-      {source_month_nav_link(source, month_nav["next_year"], "År+", "next-year", "Neste år")}
-      {source_month_nav_link(source, month_nav["previous_month"], "Mnd-", "previous-month", "Forrige måned")}
-      {source_month_nav_link(source, month_nav["next_month"], "Mnd+", "next-month", "Neste måned")}
-      {source_nav_link(source, previous_item, "◀", "previous", "Forrige bilde")}
-      {source_nav_link(source, next_item, "▶", "next", "Neste bilde")}
+      <span class="nav-button-pair" data-nav-button-pair="year">
+        {source_month_nav_link(source, month_nav["previous_year"], "◀ Å", "previous-year", "Forrige år")}
+        {source_month_nav_link(source, month_nav["next_year"], "r ▶", "next-year", "Neste år")}
+      </span>
+      <span class="nav-button-pair" data-nav-button-pair="month">
+        {source_month_nav_link(source, month_nav["previous_month"], "◀ Mån", "previous-month", "Forrige måned")}
+        {source_month_nav_link(source, month_nav["next_month"], "ed ▶", "next-month", "Neste måned")}
+      </span>
+      <span class="nav-button-pair" data-nav-button-pair="item">
+        {source_nav_link(source, previous_item, "◀ Bil", "previous", "Forrige bilde")}
+        {source_nav_link(source, next_item, "de ▶", "next", "Neste bilde")}
+      </span>
       {rotation_buttons}
       {manual_date_button}
       {manual_person_controls}
