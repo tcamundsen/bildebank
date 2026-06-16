@@ -136,6 +136,9 @@ extension:jpg
 filename:IMG
 location:gps
 location:manual
+location:manual h3res:11
+h3res>10
+h3res<8
 location:slug
 missing:gps
 missing:date
@@ -164,7 +167,10 @@ ikke inkludert, så `after:2023-12-01` betyr etter 1. desember 2023.
 `date:metadata`, `date:filename` og `date:mtime` viser bilder der datoen kommer
 fra henholdsvis metadata, filnavn eller filens endringstid.
 `location:gps` viser bilder med GPS-koordinater, mens `location:manual` viser
-bilder der du har satt manuell H3-lokasjon. `location:slug` viser bilder for
+bilder der du har satt manuell H3-lokasjon. `h3res:` kan brukes sammen med
+`location:manual` for å filtrere på den fineste H3-oppløsningen som er satt,
+for eksempel `location:manual h3res:11`, `location:manual h3res>10` eller
+`location:manual h3res<8`. `location:slug` viser bilder for
 et sted fra `Steder`, der `slug` er den samme teksten som brukes i adressen
 `/geo/place/slug`. `size<300KB` viser filer mindre enn 300 KB, og `size>2MB`
 viser filer større enn 2 MB. Størrelsene regnes med 1024 bytes per KB.

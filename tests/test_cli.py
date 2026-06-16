@@ -3432,7 +3432,10 @@ model_name = "buffalo_l"
                     """
                     UPDATE files
                     SET manual_date_from = '2021-12-24',
-                        manual_date_to = '2021-12-24'
+                        manual_date_to = '2021-12-24',
+                        gps_source = 'manual-h3',
+                        h3_res7 = '87283082dffffff',
+                        h3_res11 = '8b283082d8d4fff'
                     WHERE id = 5
                     """
                 )
@@ -3541,6 +3544,9 @@ model_name = "buffalo_l"
             month_filter = text_filter_browser_source("month:12")
             day_filter = text_filter_browser_source("day:24")
             month_day_filter = text_filter_browser_source("month:12 day:24")
+            h3res_exact_filter = text_filter_browser_source("location:manual h3res:7")
+            h3res_lt_filter = text_filter_browser_source("location:manual h3res<8")
+            h3res_gt_filter = text_filter_browser_source("location:manual h3res>10")
             first_item = source_item_by_id(target, source_filter, 2)
             person_item = source_item_by_id(target, person_filter, 2)
             manual_item = source_item_by_id(target, manual_filter, 4)
@@ -3590,6 +3596,9 @@ model_name = "buffalo_l"
             day_december_2021 = source_month_items(target, day_filter, "2021-12")
             month_day_december_2021 = source_month_items(target, month_day_filter, "2021-12")
             month_day_january_2024 = source_month_items(target, month_day_filter, "2024-01")
+            h3res_exact_month = source_month_items(target, h3res_exact_filter, "2024-06")
+            h3res_lt_month = source_month_items(target, h3res_lt_filter, "2024-06")
+            h3res_gt_month = source_month_items(target, h3res_gt_filter, "2021-12")
             date_body = source_item_page_html(
                 target,
                 source_filter,
@@ -3652,6 +3661,9 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in day_december_2021], [5])
         self.assertEqual([item["id"] for item in month_day_december_2021], [5])
         self.assertEqual([item["id"] for item in month_day_january_2024], [])
+        self.assertEqual([item["id"] for item in h3res_exact_month], [4])
+        self.assertEqual([item["id"] for item in h3res_lt_month], [4])
+        self.assertEqual([item["id"] for item in h3res_gt_month], [5])
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_body)
         self.assertIn('title="2 treff i filtersøket"', date_body)
@@ -3675,6 +3687,12 @@ model_name = "buffalo_l"
         self.assertEqual(parse_text_filter("month:12").month, 12)
         self.assertEqual(parse_text_filter("day:24").day, 24)
         self.assertEqual(parse_text_filter("person:Viljar").person, "Viljar")
+        h3res_gt = parse_text_filter("location:manual h3res>10")
+        h3res_lt = parse_text_filter("location:manual h3res<8")
+        h3res_eq = parse_text_filter("location:manual h3res:11")
+        self.assertEqual((h3res_gt.h3res_operator, h3res_gt.h3res_value), (">", 10))
+        self.assertEqual((h3res_lt.h3res_operator, h3res_lt.h3res_value), ("<", 8))
+        self.assertEqual((h3res_eq.h3res_operator, h3res_eq.h3res_value), ("=", 11))
         for query, message in (
             ("after:2023-02-30", "after må være en dato på formen YYYY-MM-DD."),
             ("before:", "Filteret mangler verdi: before:"),
@@ -3698,6 +3716,13 @@ model_name = "buffalo_l"
             ("size>stor", "size må skrives som for eksempel size<300KB eller size>2MB."),
             ("width>100 width>200", "width> kan bare brukes én gang."),
             ("width>stor", "width må være et heltall i piksler uten enhet"),
+            ("location:manual h3res:12", "h3res må være et heltall fra 0 til 11."),
+            ("location:manual h3res:-1", "h3res må være et heltall fra 0 til 11."),
+            ("location:manual h3res:elleve", "h3res må være et heltall fra 0 til 11."),
+            ("location:manual h3res:7 h3res>10", "h3res kan bare brukes én gang."),
+            ("h3res:11", "h3res kan bare brukes sammen med location:manual."),
+            ("location:gps h3res:11", "h3res kan bare brukes sammen med location:manual."),
+            ("location:oslo h3res:11", "h3res kan bare brukes sammen med location:manual."),
             ("type:audio", "type må være image, video eller file."),
             ('camera:"iPhone', "Ugyldige anførselstegn i filtersøk."),
             ("unknown:canon", "Ukjent filter: unknown"),
@@ -3781,6 +3806,9 @@ model_name = "buffalo_l"
         self.assertIn("<code>width&gt;1024</code>", body)
         self.assertIn("<code>width=1024</code>", body)
         self.assertIn("<code>height&lt;2000</code>", body)
+        self.assertIn("<code>location:manual h3res:11</code>", body)
+        self.assertIn("<code>h3res&gt;10</code>", body)
+        self.assertIn("<code>h3res&lt;8</code>", body)
 
     def test_run_server_source_browser_reuses_source_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

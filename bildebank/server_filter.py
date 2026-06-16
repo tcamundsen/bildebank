@@ -30,6 +30,8 @@ class BrowserTextFilter:
     location: str | None = None
     location_place_slug: str | None = None
     location_place_cells: tuple[tuple[str, str], ...] = ()
+    h3res_operator: str | None = None
+    h3res_value: int | None = None
     media_type: str | None = None
     missing: str | None = None
     orientation: str | None = None
@@ -61,6 +63,8 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
     extension = None
     filename = None
     location = None
+    h3res_operator = None
+    h3res_value = None
     media_type = None
     missing = None
     orientation = None
@@ -90,6 +94,14 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
                 if size_lt is not None:
                     raise ValueError("size< kan bare brukes én gang.")
                 size_lt = parse_size_bytes(value)
+            continue
+        h3res_operator_token = h3res_filter_operator(token)
+        if h3res_operator_token is not None:
+            operator, value = h3res_operator_token
+            if h3res_operator is not None:
+                raise ValueError("h3res kan bare brukes én gang.")
+            h3res_operator = operator
+            h3res_value = parse_filter_integer_range(value, "h3res", 0, 11)
             continue
         dimension_operator = dimension_filter_operator(token)
         if dimension_operator is not None:
@@ -143,6 +155,11 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
             if location is not None:
                 raise ValueError("location kan bare brukes én gang.")
             location = value
+        elif key == "h3res":
+            if h3res_operator is not None:
+                raise ValueError("h3res kan bare brukes én gang.")
+            h3res_operator = "="
+            h3res_value = parse_filter_integer_range(value, "h3res", 0, 11)
         elif key == "date":
             if date_source is not None:
                 raise ValueError("date kan bare brukes én gang.")
@@ -205,6 +222,8 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
             media_type = value
         else:
             raise ValueError(f"Ukjent filter: {key}")
+    if h3res_operator is not None and location != "manual":
+        raise ValueError("h3res kan bare brukes sammen med location:manual.")
     return BrowserTextFilter(
         clean_query,
         after=after,
@@ -215,6 +234,8 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
         extension=extension,
         filename=filename,
         location=location,
+        h3res_operator=h3res_operator,
+        h3res_value=h3res_value,
         media_type=media_type,
         missing=missing,
         orientation=orientation,
@@ -294,6 +315,14 @@ def dimension_filter_operator(token: str) -> tuple[str, str, str] | None:
     return None
 
 
+def h3res_filter_operator(token: str) -> tuple[str, str] | None:
+    for operator in (">", "<", "="):
+        prefix = f"h3res{operator}"
+        if token.startswith(prefix):
+            return operator, token.removeprefix(prefix)
+    return None
+
+
 def parse_dimension_pixels(key: str, value: str) -> int:
     if not re.fullmatch(r"\d+", value.strip()):
         raise ValueError(
@@ -358,6 +387,8 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         location=text_filter.location,
         location_place_slug=place.slug,
         location_place_cells=tuple(geo_place_cells_by_column(place)),
+        h3res_operator=text_filter.h3res_operator,
+        h3res_value=text_filter.h3res_value,
         media_type=text_filter.media_type,
         missing=text_filter.missing,
         orientation=text_filter.orientation,
@@ -490,9 +521,17 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         place_where, place_params = db.geo_place_where_clause(list(text_filter.location_place_cells))
         where.append(f"({place_where})")
         params.extend(place_params)
+    if text_filter.h3res_operator is not None and text_filter.h3res_value is not None:
+        where.append(f"{manual_h3_resolution_sql()} {text_filter.h3res_operator} ?")
+        params.append(text_filter.h3res_value)
     if not where:
         raise ValueError("Filtersøket må ha minst ett kriterium.")
     return " AND ".join(where), tuple(params)
+
+
+def manual_h3_resolution_sql() -> str:
+    parts = [f"WHEN h3_res{resolution} IS NOT NULL THEN {resolution}" for resolution in range(11, -1, -1)]
+    return "CASE " + " ".join(parts) + " END"
 
 
 def extension_condition_for_type(media_type: str) -> str:
@@ -664,7 +703,7 @@ def filter_help_html() -> str:
       <p class="meta">Kriterier kan kombineres. Bruk anførselstegn når tekst inneholder mellomrom, for eksempel camera:"iPhone" eller tag:"Ute av fokus".</p>
       <dl class="info-list">
         <div class="info-row"><dt>Dato</dt><dd><code>after:2023-12-01</code>, <code>before:2024-12-12</code>, <code>month:12</code>, <code>day:24</code>, <code>month:12 day:24</code>, <code>date:manual</code>, <code>date:metadata</code>, <code>date:filename</code>, <code>date:mtime</code></dd></div>
-        <div class="info-row"><dt>Sted</dt><dd><code>location:gps</code>, <code>location:manual</code>, <code>location:slug</code>. Slug er samme tekst som i <code>/geo/place/slug</code>.</dd></div>
+        <div class="info-row"><dt>Sted</dt><dd><code>location:gps</code>, <code>location:manual</code>, <code>location:manual h3res:11</code>, <code>h3res&gt;10</code>, <code>h3res&lt;8</code>, <code>location:slug</code>. <code>h3res</code> brukes sammen med <code>location:manual</code>. Slug er samme tekst som i <code>/geo/place/slug</code>.</dd></div>
         <div class="info-row"><dt>Fil</dt><dd><code>type:image</code>, <code>type:video</code>, <code>type:file</code>, <code>extension:jpg</code>, <code>size&lt;300KB</code>, <code>size&gt;2MB</code></dd></div>
         <div class="info-row"><dt>Tekst</dt><dd><code>filename:IMG</code>, <code>path:2024/01</code>, <code>camera:"iPhone"</code></dd></div>
         <div class="info-row"><dt>Organisering</dt><dd><code>source:1</code>, <code>source:"mobil 2024"</code>, <code>tag:"Ute av fokus"</code>, <code>person:Viljar</code>, <code>deleted:true</code></dd></div>
