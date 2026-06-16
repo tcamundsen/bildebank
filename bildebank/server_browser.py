@@ -2206,7 +2206,13 @@ def source_year_months_page_html(
           {app_header_html(
               source.title,
               source=source,
-              title_html=source_year_breadcrumb_html(source, year),
+              title_html=source_year_breadcrumb_html(
+                  target,
+                  source,
+                  year,
+                  face_config,
+                  hide_out_of_focus=hide_out_of_focus,
+              ),
               face_enabled=face_enabled,
               openclip_enabled=openclip_enabled,
           )}
@@ -2219,11 +2225,25 @@ def source_year_months_page_html(
     )
 
 
-def source_year_breadcrumb_html(source: BrowserSource, year: str) -> str:
+def source_year_breadcrumb_html(
+    target: Path,
+    source: BrowserSource,
+    year: str,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> str:
     if not valid_year_key(year):
         return html.escape(source.title)
-    source_label = source.person_name if source.person_name is not None else source.title
-    return breadcrumb_html([(source_label, source.root_url)], html.escape(year))
+    source_label, source_title = source_breadcrumb_label(
+        target,
+        source,
+        face_config,
+        hide_out_of_focus=hide_out_of_focus,
+        conn=conn,
+    )
+    return breadcrumb_html([(source_label, source.root_url, source_title)], html.escape(year))
 
 
 def year_card_html(target: Path, card: dict[str, Any]) -> str:
@@ -2270,6 +2290,7 @@ def source_month_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
+    hide_out_of_focus: bool = False,
 ) -> str:
     from .server_shell import app_header_html, source_controls_html, suggestion_toggle_button_html
 
@@ -2278,7 +2299,13 @@ def source_month_page_html(
     next_item = items[0] if items else None
     controls = source_controls_html(
         source,
-        source_month_navigation_for_key(target, source, month_key, face_config),
+        source_month_navigation_for_key(
+            target,
+            source,
+            month_key,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+        ),
         previous_item,
         next_item,
         suggestion_toggle_button=suggestion_toggle_button_html(source, None, face_enabled=face_enabled),
@@ -2290,7 +2317,13 @@ def source_month_page_html(
           {app_header_html(
               source.title,
               source=source,
-              title_html=source_month_breadcrumb_html(source, month_key),
+              title_html=source_month_breadcrumb_html(
+                  target,
+                  source,
+                  month_key,
+                  face_config,
+                  hide_out_of_focus=hide_out_of_focus,
+              ),
               controls=controls,
               face_enabled=face_enabled,
               openclip_enabled=openclip_enabled,
@@ -2382,7 +2415,15 @@ def person_month_page_html(
     )
 
 
-def source_month_breadcrumb_html(source: BrowserSource, month_key: str) -> str:
+def source_month_breadcrumb_html(
+    target: Path,
+    source: BrowserSource,
+    month_key: str,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> str:
     if not valid_month_key(month_key):
         return html.escape(source.title)
     year, month = month_key.split("-", 1)
@@ -2393,9 +2434,15 @@ def source_month_breadcrumb_html(source: BrowserSource, month_key: str) -> str:
             (year, source_year_url(source, year)),
         ]
     else:
-        source_label = source.person_name if source.person_name is not None else source.title
+        source_label, source_title = source_breadcrumb_label(
+            target,
+            source,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+            conn=conn,
+        )
         crumbs = [
-            (source_label, source.root_url),
+            (source_label, source.root_url, source_title),
             (year, source_year_url(source, year)),
         ]
     return breadcrumb_html(crumbs, html.escape(month_name))

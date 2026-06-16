@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "23"
+SERVER_ASSET_VERSION = "24"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -570,7 +570,7 @@ SERVER_CSS = r"""    :root {
     .person-media[data-view-rotation="270"],
     .lightbox-media[data-view-rotation="90"],
     .lightbox-media[data-view-rotation="270"] {
-      max-width: min(calc(100vh - 10rem), var(--quarter-turn-width, 100%));
+      max-width: var(--quarter-turn-width, 100%);
       max-height: none;
     }
     .person-media[data-view-rotation="90"] img,
@@ -581,14 +581,33 @@ SERVER_CSS = r"""    :root {
     }
     .person-media {
       position: relative;
-      display: inline-block;
-      max-width: min(100%, 92vw);
-      max-height: calc(100vh - 10rem);
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      min-height: 0;
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
       transform-origin: center center;
     }
-    .person-media img {
+    .person-media > a {
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      min-height: 0;
+      width: 100%;
+      height: 100%;
       max-width: 100%;
-      max-height: calc(100vh - 10rem);
+      max-height: 100%;
+    }
+    .person-media img {
+      min-width: 0;
+      min-height: 0;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
       object-fit: contain;
       display: block;
     }

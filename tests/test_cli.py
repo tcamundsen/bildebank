@@ -2460,7 +2460,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "23")
+        self.assertEqual(SERVER_ASSET_VERSION, "24")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -3272,6 +3272,15 @@ model_name = "buffalo_l"
         self.assertIn('.stage img[data-view-rotation="270"]', SERVER_CSS)
         self.assertIn("max-width: min(calc(100vh - 10rem), var(--quarter-turn-width, 100%));", SERVER_CSS)
         self.assertIn("max-height: none;", SERVER_CSS)
+        self.assertIn(".person-media {\n      position: relative;\n      display: grid;", SERVER_CSS)
+        self.assertIn(".person-media > a", SERVER_CSS)
+        self.assertIn("width: 100%;\n      height: 100%;\n      max-width: 100%;\n      max-height: 100%;", SERVER_CSS)
+        self.assertIn(".person-media img", SERVER_CSS)
+        self.assertIn("max-width: var(--quarter-turn-width, 100%);", SERVER_CSS)
+        self.assertNotIn(".person-media {\n      position: relative;\n      display: inline-block;", SERVER_CSS)
+        self.assertNotIn("max-width: min(100%, 92vw);", SERVER_CSS)
+        self.assertNotIn("max-height: calc(100vh - 10rem);\n      transform-origin: center center;", SERVER_CSS)
+        self.assertNotIn("max-height: calc(100vh - 10rem);\n      object-fit: contain;", SERVER_CSS)
         self.assertNotIn("padding: 14px;", SERVER_CSS)
         self.assertIn("function fitQuarterTurnMedia()", SERVER_JS)
         self.assertIn("const availableHeight = Math.max(stageRect.height, 1);", SERVER_JS)
@@ -3612,6 +3621,8 @@ model_name = "buffalo_l"
                 *adjacent_source_items(target, source_filter, first_item),
                 date_month_nav,
             )
+            date_year_body = source_year_months_page_html(target, source_filter, "2024")
+            date_month_body = source_month_page_html(target, source_filter, "2024-01", date_month)
             person_body = source_item_page_html(
                 target,
                 person_filter,
@@ -3673,6 +3684,10 @@ model_name = "buffalo_l"
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_body)
         self.assertIn('title="2 treff i filtersøket"', date_body)
+        self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_year_body)
+        self.assertIn('title="2 treff i filtersøket"', date_year_body)
+        self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_month_body)
+        self.assertIn('title="2 treff i filtersøket"', date_month_body)
         self.assertIn("/filter/after%3A2023-12-01%20before%3A2024-12-12/item/4", date_body)
         self.assertIn('href="/filter">Filtersøk</a>', date_body)
         self.assertIn("Filtersøk: person:viljar", person_body)
@@ -5251,6 +5266,7 @@ model_name = "buffalo_l"
         self.assertIn("bekreftet face-id 1", body)
         self.assertIn('<span class="person-face-label">face-id 1</span>', body)
         self.assertIn('<div class="person-media" style="transform: rotate(90deg); --quarter-turn-width:', body)
+        self.assertIn('<a href="/file/1" target="_blank"><img src="/file/1"', body)
         self.assertIn('data-view-rotation="90">', body)
         self.assertNotIn("IMG_20250104", body)
         self.assertIn("Kari - uten ansiktsmarkering", plain_body)

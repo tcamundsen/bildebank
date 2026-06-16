@@ -361,6 +361,7 @@ def source_month_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
+    hide_out_of_focus: bool = False,
 ) -> str:
     return server_browser.source_month_page_html(
         target,
@@ -371,6 +372,7 @@ def source_month_page_html(
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
         face_config=face_config,
+        hide_out_of_focus=hide_out_of_focus,
     )
 
 
