@@ -111,7 +111,7 @@ BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS = 1.0
 
 
 def client_disconnected_error(exc: OSError) -> bool:
-    return isinstance(exc, (BrokenPipeError, ConnectionResetError))
+    return isinstance(exc, (BrokenPipeError, ConnectionResetError, ConnectionAbortedError))
 
 
 def clear_browser_navigation_cache(server: Any) -> None:
