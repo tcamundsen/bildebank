@@ -54,7 +54,6 @@ from .importer import (
     WalkError,
     import_source,
     import_source_dry_run,
-    iter_media_files,
     refresh_non_metadata_files,
     rescan_source,
     rescan_source_dry_run,

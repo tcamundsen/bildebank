@@ -27,7 +27,6 @@ from . import server_actions
 from .server_pages import (
     app_status_page_html,
     custom_geo_places_page_html,
-    empty_browser_html,
     empty_person_browser_html,
     empty_source_html,
     error_html,

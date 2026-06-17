@@ -474,11 +474,8 @@ def geo_index_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
-    column = h3_column_for_resolution(resolution)
     conn = db.connect(target)
     try:
-        stats = db.geo_stats(conn)
-        areas = db.geo_areas(conn, column=column, min_count=min_count, limit=limit)
         geo_places = geo_place_rows(conn)
     finally:
         conn.close()
