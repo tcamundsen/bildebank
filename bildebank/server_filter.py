@@ -54,11 +54,17 @@ class BrowserTextFilter:
     height_lte: int | None = None
     height_eq: int | None = None
     month: int | None = None
+    month_eq: int | None = None
     month_gt: int | None = None
+    month_gte: int | None = None
     month_lt: int | None = None
+    month_lte: int | None = None
     day: int | None = None
+    day_eq: int | None = None
     day_gt: int | None = None
+    day_gte: int | None = None
     day_lt: int | None = None
+    day_lte: int | None = None
 
 
 @dataclass
@@ -74,9 +80,16 @@ class NumericComparison:
         conflict_operator = COMPARISON_CONFLICTS.get(operator)
         if conflict_operator is not None and getattr(self, COMPARISON_ATTRS[conflict_operator]) is not None:
             raise ValueError(f"{label}{operator} kan ikke kombineres med {label}{conflict_operator}.")
+        if operator == "=" and self.has_range():
+            raise ValueError(f"{label}= kan ikke kombineres med range-filter.")
+        if operator != "=" and self.eq is not None:
+            raise ValueError(f"{label}{operator} kan ikke kombineres med {label}=.")
         if getattr(self, attr) is not None:
             raise ValueError(f"{label}{operator} kan bare brukes én gang.")
         setattr(self, attr, value)
+
+    def has_range(self) -> bool:
+        return self.gt is not None or self.gte is not None or self.lt is not None or self.lte is not None
 
 
 @dataclass
@@ -102,10 +115,8 @@ class FilterParseState:
     tag: str | None = None
     width: NumericComparison = field(default_factory=NumericComparison)
     height: NumericComparison = field(default_factory=NumericComparison)
-    month: int | None = None
-    month_range: NumericComparison = field(default_factory=NumericComparison)
-    day: int | None = None
-    day_range: NumericComparison = field(default_factory=NumericComparison)
+    month: NumericComparison = field(default_factory=NumericComparison)
+    day: NumericComparison = field(default_factory=NumericComparison)
 
     def set_once(self, name: str, value: object, message_name: str | None = None) -> None:
         if getattr(self, name) is not None:
@@ -157,12 +168,18 @@ class FilterParseState:
             height_lt=self.height.lt,
             height_lte=self.height.lte,
             height_eq=self.height.eq,
-            month=self.month,
-            month_gt=self.month_range.gt,
-            month_lt=self.month_range.lt,
-            day=self.day,
-            day_gt=self.day_range.gt,
-            day_lt=self.day_range.lt,
+            month=self.month.eq,
+            month_eq=self.month.eq,
+            month_gt=self.month.gt,
+            month_gte=self.month.gte,
+            month_lt=self.month.lt,
+            month_lte=self.month.lte,
+            day=self.day.eq,
+            day_eq=self.day.eq,
+            day_gt=self.day.gt,
+            day_gte=self.day.gte,
+            day_lt=self.day.lt,
+            day_lte=self.day.lte,
         )
 
 
@@ -248,11 +265,15 @@ def parse_date_source_filter(state: FilterParseState, _key: str, value: str) -> 
 
 
 def parse_month_filter(state: FilterParseState, key: str, value: str) -> None:
-    state.set_once("month", parse_filter_integer_range(value, key, 1, 12), key)
+    if state.month.eq is not None:
+        raise ValueError("month kan bare brukes én gang.")
+    state.month.set_once("=", parse_filter_integer_range(value, key, 1, 12), key)
 
 
 def parse_day_filter(state: FilterParseState, key: str, value: str) -> None:
-    state.set_once("day", parse_filter_integer_range(value, key, 1, 31), key)
+    if state.day.eq is not None:
+        raise ValueError("day kan bare brukes én gang.")
+    state.day.set_once("=", parse_filter_integer_range(value, key, 1, 31), key)
 
 
 def parse_deleted_filter(state: FilterParseState, _key: str, value: str) -> None:
@@ -300,11 +321,11 @@ def apply_height_operator(state: FilterParseState, operator: str, value: int) ->
 
 
 def apply_month_operator(state: FilterParseState, operator: str, value: int) -> None:
-    state.month_range.set_once(operator, value, "month")
+    state.month.set_once(operator, value, "month")
 
 
 def apply_day_operator(state: FilterParseState, operator: str, value: int) -> None:
-    state.day_range.set_once(operator, value, "day")
+    state.day.set_once(operator, value, "day")
 
 
 def parse_h3res_integer(value: str) -> int:
@@ -428,8 +449,8 @@ OPERATOR_FILTERS: dict[str, OperatorFilterSpec] = {
     "h3res": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_h3res_integer, apply_h3res_operator),
     "width": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_width_pixels, apply_width_operator),
     "height": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_height_pixels, apply_height_operator),
-    "month": OperatorFilterSpec((">", "<"), parse_month_integer, apply_month_operator),
-    "day": OperatorFilterSpec((">", "<"), parse_day_integer, apply_day_operator),
+    "month": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_month_integer, apply_month_operator),
+    "day": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_day_integer, apply_day_operator),
 }
 
 
@@ -494,17 +515,49 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         height_lte=text_filter.height_lte,
         height_eq=text_filter.height_eq,
         month=text_filter.month,
+        month_eq=text_filter.month_eq,
         month_gt=text_filter.month_gt,
+        month_gte=text_filter.month_gte,
         month_lt=text_filter.month_lt,
+        month_lte=text_filter.month_lte,
         day=text_filter.day,
+        day_eq=text_filter.day_eq,
         day_gt=text_filter.day_gt,
+        day_gte=text_filter.day_gte,
         day_lt=text_filter.day_lt,
+        day_lte=text_filter.day_lte,
+    )
+
+
+def text_filter_has_date_criteria(
+    text_filter: BrowserTextFilter,
+    month_eq: int | None,
+    day_eq: int | None,
+) -> bool:
+    return any(
+        value is not None
+        for value in (
+            text_filter.after,
+            text_filter.before,
+            month_eq,
+            text_filter.month_gt,
+            text_filter.month_gte,
+            text_filter.month_lt,
+            text_filter.month_lte,
+            day_eq,
+            text_filter.day_gt,
+            text_filter.day_gte,
+            text_filter.day_lt,
+            text_filter.day_lte,
+        )
     )
 
 
 def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple[object, ...]]:
     where: list[str] = []
     params: list[object] = []
+    month_eq = text_filter.month_eq if text_filter.month_eq is not None else text_filter.month
+    day_eq = text_filter.day_eq if text_filter.day_eq is not None else text_filter.day
     manual_date_sql = (
         f"COALESCE(manual_date_from GLOB {db.DATE_GLOB_SQL}, 0) "
         f"AND COALESCE(manual_date_to GLOB {db.DATE_GLOB_SQL}, 0)"
@@ -513,16 +566,7 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     browser_has_date_sql = f"(({manual_date_sql}) OR {taken_date_sql})"
     if text_filter.deleted:
         where.append("deleted_at IS NOT NULL")
-    if (
-        text_filter.after is not None
-        or text_filter.before is not None
-        or text_filter.month is not None
-        or text_filter.month_gt is not None
-        or text_filter.month_lt is not None
-        or text_filter.day is not None
-        or text_filter.day_gt is not None
-        or text_filter.day_lt is not None
-    ):
+    if text_filter_has_date_criteria(text_filter, month_eq, day_eq):
         where.append(browser_has_date_sql)
     if text_filter.after is not None:
         where.append(f"{db.BROWSER_DATE_ORDER_SQL} > ?")
@@ -534,17 +578,21 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         where,
         params,
         date_part_sql(6),
-        eq=text_filter.month,
+        eq=month_eq,
         gt=text_filter.month_gt,
+        gte=text_filter.month_gte,
         lt=text_filter.month_lt,
+        lte=text_filter.month_lte,
     )
     add_date_part_conditions(
         where,
         params,
         date_part_sql(9),
-        eq=text_filter.day,
+        eq=day_eq,
         gt=text_filter.day_gt,
+        gte=text_filter.day_gte,
         lt=text_filter.day_lt,
+        lte=text_filter.day_lte,
     )
     add_numeric_conditions(
         where,
@@ -864,7 +912,7 @@ def filter_help_html() -> str:
       <h2>Søkekriterier</h2>
       <p class="meta">Kriterier kan kombineres. Bruk anførselstegn når tekst inneholder mellomrom, for eksempel camera:"iPhone" eller tag:"Ute av fokus".</p>
       <dl class="info-list">
-        <div class="info-row"><dt>Dato</dt><dd><code>after:2023-12-01</code>, <code>before:2024-12-12</code>, <code>month:12</code>, <code>month&gt;5 month&lt;10</code>, <code>day:24</code>, <code>day&gt;10 day&lt;20</code>, <code>month:12 day:24</code>, <code>date:manual</code>, <code>date:metadata</code>, <code>date:filename</code>, <code>date:mtime</code></dd></div>
+        <div class="info-row"><dt>Dato</dt><dd><code>after:2023-12-01</code>, <code>before:2024-12-12</code>, <code>month:12</code>, <code>month=12</code>, <code>month&gt;6 month&lt;10</code>, <code>month&gt;=6 month&lt;=10</code>, <code>day:24</code>, <code>day=24</code>, <code>day&gt;10 day&lt;20</code>, <code>day&gt;=10 day&lt;=20</code>, <code>month:12 day:24</code>, <code>date:manual</code>, <code>date:metadata</code>, <code>date:filename</code>, <code>date:mtime</code></dd></div>
         <div class="info-row"><dt>Sted</dt><dd><code>location:gps</code>, <code>location:manual</code>, <code>location:manual h3res:11</code>, <code>h3res&gt;=8</code>, <code>h3res&gt;10</code>, <code>h3res&lt;=11</code>, <code>h3res&lt;8</code>, <code>location:slug</code>. <code>h3res</code> brukes sammen med <code>location:manual</code>. Slug er samme tekst som i <code>/geo/place/slug</code>.</dd></div>
         <div class="info-row"><dt>Fil</dt><dd><code>type:image</code>, <code>type:video</code>, <code>type:file</code>, <code>extension:jpg</code>, <code>size&lt;=2MB</code>, <code>size&lt;300KB</code>, <code>size&gt;=300KB</code>, <code>size&gt;2MB</code></dd></div>
         <div class="info-row"><dt>Tekst</dt><dd><code>filename:IMG</code>, <code>path:2024/01</code>, <code>camera:"iPhone"</code></dd></div>

@@ -3568,10 +3568,14 @@ model_name = "buffalo_l"
             type_file_filter = text_filter_browser_source("type:file")
             type_image_filter = text_filter_browser_source("type:image")
             month_filter = text_filter_browser_source("month:12")
+            month_eq_filter = text_filter_browser_source("month=12")
             day_filter = text_filter_browser_source("day:24")
+            day_eq_filter = text_filter_browser_source("day=24")
             month_day_filter = text_filter_browser_source("month:12 day:24")
             month_range_filter = text_filter_browser_source("month>5 month<10")
+            month_inclusive_range_filter = text_filter_browser_source("month>=6 month<=10")
             day_range_filter = text_filter_browser_source("day>10 day<20")
+            day_inclusive_range_filter = text_filter_browser_source("day>=10 day<=20")
             h3res_exact_filter = text_filter_browser_source("location:manual h3res:7")
             h3res_lt_filter = text_filter_browser_source("location:manual h3res<8")
             h3res_gt_filter = text_filter_browser_source("location:manual h3res>10")
@@ -3627,15 +3631,19 @@ model_name = "buffalo_l"
             type_file_item = source_item_by_id(target, type_file_filter, 6)
             type_image_month = source_month_items(target, type_image_filter, "2024-01")
             month_december_2021 = source_month_items(target, month_filter, "2021-12")
+            month_eq_december_2021 = source_month_items(target, month_eq_filter, "2021-12")
             month_january_2022 = source_month_items(target, month_filter, "2022-01")
             month_december_2023 = source_month_items(target, month_filter, "2023-12")
             month_december_2024 = source_month_items(target, month_filter, "2024-12")
             day_december_2021 = source_month_items(target, day_filter, "2021-12")
+            day_eq_december_2021 = source_month_items(target, day_eq_filter, "2021-12")
             month_day_december_2021 = source_month_items(target, month_day_filter, "2021-12")
             month_day_january_2024 = source_month_items(target, month_day_filter, "2024-01")
             month_range_june_2024 = source_month_items(target, month_range_filter, "2024-06")
+            month_inclusive_range_june_2024 = source_month_items(target, month_inclusive_range_filter, "2024-06")
             month_range_december_2024 = source_month_items(target, month_range_filter, "2024-12")
             day_range_december_2024 = source_month_items(target, day_range_filter, "2024-12")
+            day_inclusive_range_december_2024 = source_month_items(target, day_inclusive_range_filter, "2024-12")
             day_range_december_2021 = source_month_items(target, day_range_filter, "2021-12")
             h3res_exact_month = source_month_items(target, h3res_exact_filter, "2024-06")
             h3res_lt_month = source_month_items(target, h3res_lt_filter, "2024-06")
@@ -3707,15 +3715,19 @@ model_name = "buffalo_l"
         self.assertIsNotNone(type_file_item)
         self.assertEqual([item["id"] for item in type_image_month], [2])
         self.assertEqual([item["id"] for item in month_december_2021], [5])
+        self.assertEqual([item["id"] for item in month_eq_december_2021], [5])
         self.assertEqual([item["id"] for item in month_january_2022], [])
         self.assertEqual([item["id"] for item in month_december_2023], [1])
         self.assertEqual([item["id"] for item in month_december_2024], [3])
         self.assertEqual([item["id"] for item in day_december_2021], [5])
+        self.assertEqual([item["id"] for item in day_eq_december_2021], [5])
         self.assertEqual([item["id"] for item in month_day_december_2021], [5])
         self.assertEqual([item["id"] for item in month_day_january_2024], [])
         self.assertEqual([item["id"] for item in month_range_june_2024], [4])
+        self.assertEqual([item["id"] for item in month_inclusive_range_june_2024], [4])
         self.assertEqual([item["id"] for item in month_range_december_2024], [])
         self.assertEqual([item["id"] for item in day_range_december_2024], [3])
+        self.assertEqual([item["id"] for item in day_inclusive_range_december_2024], [3])
         self.assertEqual([item["id"] for item in day_range_december_2021], [])
         self.assertEqual([item["id"] for item in h3res_exact_month], [4])
         self.assertEqual([item["id"] for item in h3res_lt_month], [4])
@@ -3754,14 +3766,26 @@ model_name = "buffalo_l"
         self.assertEqual(parse_text_filter("size>=300KB").size_gte, 300 * 1024)
         self.assertEqual(parse_text_filter("size<=2MB").size_lte, 2 * 1024 * 1024)
         self.assertEqual(parse_text_filter("month:12").month, 12)
+        self.assertEqual(parse_text_filter("month:12").month_eq, 12)
+        self.assertEqual(parse_text_filter("month=12").month, 12)
+        self.assertEqual(parse_text_filter("month=12").month_eq, 12)
         self.assertEqual(parse_text_filter("day:24").day, 24)
+        self.assertEqual(parse_text_filter("day:24").day_eq, 24)
+        self.assertEqual(parse_text_filter("day=24").day, 24)
+        self.assertEqual(parse_text_filter("day=24").day_eq, 24)
         self.assertEqual(parse_text_filter("person:Viljar").person, "Viljar")
         month_range = parse_text_filter("month>6 month<10")
+        month_inclusive_range = parse_text_filter("month>=6 month<=10")
         day_range = parse_text_filter("day>10 day<20")
+        day_inclusive_range = parse_text_filter("day>=10 day<=20")
         self.assertEqual((month_range.month_gt, month_range.month_lt), (6, 10))
         self.assertEqual((month_range.month, month_range.day), (None, None))
+        self.assertEqual((month_inclusive_range.month_gte, month_inclusive_range.month_lte), (6, 10))
+        self.assertEqual((month_inclusive_range.month, month_inclusive_range.day), (None, None))
         self.assertEqual((day_range.day_gt, day_range.day_lt), (10, 20))
         self.assertEqual((day_range.month, day_range.day), (None, None))
+        self.assertEqual((day_inclusive_range.day_gte, day_inclusive_range.day_lte), (10, 20))
+        self.assertEqual((day_inclusive_range.month, day_inclusive_range.day), (None, None))
         h3res_gt = parse_text_filter("location:manual h3res>10")
         h3res_lt = parse_text_filter("location:manual h3res<8")
         h3res_eq = parse_text_filter("location:manual h3res:11")
@@ -3791,10 +3815,16 @@ model_name = "buffalo_l"
             ("size<300KB", {"size_lt": 300 * 1024}),
             ("size>=300KB", {"size_gte": 300 * 1024}),
             ("size<=2MB", {"size_lte": 2 * 1024 * 1024}),
+            ("month=12", {"month": 12, "month_eq": 12}),
             ("month>6", {"month_gt": 6}),
+            ("month>=6", {"month_gte": 6}),
             ("month<10", {"month_lt": 10}),
+            ("month<=10", {"month_lte": 10}),
+            ("day=24", {"day": 24, "day_eq": 24}),
             ("day>10", {"day_gt": 10}),
+            ("day>=10", {"day_gte": 10}),
             ("day<20", {"day_lt": 20}),
+            ("day<=20", {"day_lte": 20}),
             ("width<2000", {"width_lt": 2000}),
             ("width>=1024", {"width_gte": 1024}),
             ("width<=2000", {"width_lte": 2000}),
@@ -3814,17 +3844,25 @@ model_name = "buffalo_l"
             ("date:gps", "date må være manual, metadata, filename eller mtime."),
             ("date:manual date:metadata", "date kan bare brukes én gang."),
             ("month:12 month:11", "month kan bare brukes én gang."),
+            ("month:12 month=11", "month= kan bare brukes én gang."),
+            ("month=12 month>6", "month> kan ikke kombineres med month=."),
             ("month>6 month>7", "month> kan bare brukes én gang."),
+            ("month>6 month>=7", "month>= kan ikke kombineres med month>."),
             ("month:0", "month må være et heltall fra 1 til 12."),
             ("month>0", "month må være et heltall fra 1 til 12."),
             ("month:13", "month må være et heltall fra 1 til 12."),
+            ("month=13", "month må være et heltall fra 1 til 12."),
             ("month<13", "month må være et heltall fra 1 til 12."),
             ("month:desember", "month må være et heltall fra 1 til 12."),
             ("day:24 day:25", "day kan bare brukes én gang."),
+            ("day:24 day=25", "day= kan bare brukes én gang."),
+            ("day=24 day>10", "day> kan ikke kombineres med day=."),
             ("day<24 day<25", "day< kan bare brukes én gang."),
+            ("day<20 day<=19", "day<= kan ikke kombineres med day<."),
             ("day:0", "day må være et heltall fra 1 til 31."),
             ("day>0", "day må være et heltall fra 1 til 31."),
             ("day:32", "day må være et heltall fra 1 til 31."),
+            ("day=32", "day må være et heltall fra 1 til 31."),
             ("day<32", "day må være et heltall fra 1 til 31."),
             ("day:julaften", "day må være et heltall fra 1 til 31."),
             ("deleted:maybe", "deleted må være true eller false."),
