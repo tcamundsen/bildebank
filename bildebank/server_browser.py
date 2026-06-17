@@ -1237,6 +1237,7 @@ def source_item_page_html(
     hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
+    source_item_count_value: int | None = None,
     timing_callback: Callable[[str, float], None] | None = None,
 ) -> str:
     from .server_shell import (
@@ -1376,6 +1377,7 @@ def source_item_page_html(
         face_config=face_config,
         hide_out_of_focus=hide_out_of_focus,
         conn=conn,
+        source_item_count_value=source_item_count_value,
     )
     if timing_callback is not None:
         timing_callback("html_breadcrumb", start)
@@ -1515,6 +1517,7 @@ def source_item_breadcrumb_html(
     *,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
+    source_item_count_value: int | None = None,
 ) -> str:
     month_key = month_key_for_item(target, item)
     filename = html.escape(str(item["stored_filename"]))
@@ -1530,6 +1533,7 @@ def source_item_breadcrumb_html(
         face_config,
         hide_out_of_focus=hide_out_of_focus,
         conn=conn,
+        source_item_count_value=source_item_count_value,
     )
     if not valid_month_key(month_key):
         return breadcrumb_html([(source_label, source.root_url, source_title)], filename_link)
@@ -1557,11 +1561,16 @@ def source_breadcrumb_label(
     *,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
+    source_item_count_value: int | None = None,
 ) -> tuple[str, str | None]:
     label = source.person_name if source.person_name is not None else source.title
     if source.text_filter is None:
         return label, None
-    count = source_item_count(target, source, face_config, hide_out_of_focus=hide_out_of_focus, conn=conn)
+    count = (
+        source_item_count_value
+        if source_item_count_value is not None
+        else source_item_count(target, source, face_config, hide_out_of_focus=hide_out_of_focus, conn=conn)
+    )
     match_text = "1 treff" if count == 1 else f"{count} treff"
     return f"{label} ({match_text})", f"{match_text} i filtersøket"
 

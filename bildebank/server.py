@@ -64,6 +64,7 @@ from .server_browser import (
     item_by_id,
     month_key_for_item,
     month_navigation_for_keys,
+    source_item_count as browser_source_item_count,
     source_item_ids,
     source_item_by_id,
     source_month_keys,
@@ -160,6 +161,7 @@ class BildebankServer(ThreadingHTTPServer):
         self._browser_month_keys: dict[bool, tuple[int, list[str]]] = {}
         self._source_item_ids: dict[tuple[BrowserSource, bool], tuple[int, list[int], dict[int, int]]] = {}
         self._source_month_keys: dict[tuple[BrowserSource, bool], tuple[int, list[str]]] = {}
+        self._source_item_counts: dict[tuple[BrowserSource, bool], tuple[int, int]] = {}
 
     @property
     def face_enabled(self) -> bool:
@@ -242,6 +244,23 @@ class BildebankServer(ThreadingHTTPServer):
             self._source_item_ids[cache_key] = cached
         return cached[1], cached[2]
 
+    def source_item_count(self, source: BrowserSource, *, hide_out_of_focus: bool = False) -> int:
+        version = self.browser_navigation_cache_version()
+        cache_key = (source, hide_out_of_focus)
+        cached = self._source_item_counts.get(cache_key)
+        if cached is None or cached[0] != version:
+            cached = (
+                version,
+                browser_source_item_count(
+                    self.target,
+                    source,
+                    self.config.face_recognition,
+                    hide_out_of_focus=hide_out_of_focus,
+                ),
+            )
+            self._source_item_counts[cache_key] = cached
+        return cached[1]
+
     def browser_navigation_cache_version(self) -> int:
         version = getattr(self, "_browser_navigation_cache_version", 0)
         now = time.monotonic()
@@ -275,6 +294,7 @@ class BildebankServer(ThreadingHTTPServer):
             self._browser_month_keys.clear()
             getattr(self, "_source_item_ids", {}).clear()
             getattr(self, "_source_month_keys", {}).clear()
+            getattr(self, "_source_item_counts", {}).clear()
             version += 1
             self._browser_navigation_cache_version = version
         return version
@@ -284,6 +304,7 @@ class BildebankServer(ThreadingHTTPServer):
         self._browser_month_keys.clear()
         getattr(self, "_source_item_ids", {}).clear()
         getattr(self, "_source_month_keys", {}).clear()
+        getattr(self, "_source_item_counts", {}).clear()
         self._browser_navigation_cache_version = getattr(self, "_browser_navigation_cache_version", 0) + 1
         try:
             self._browser_navigation_db_mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
@@ -1022,6 +1043,11 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         hotkeys=self.server.config.browser.hotkeys,
                         hide_out_of_focus=hide_out_of_focus,
                         conn=conn,
+                        source_item_count_value=(
+                            self.server.source_item_count(source, hide_out_of_focus=hide_out_of_focus)
+                            if source.text_filter is not None
+                            else None
+                        ),
                         timing_callback=self.record_server_timing,
                     )
                 )
