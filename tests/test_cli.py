@@ -3718,6 +3718,32 @@ model_name = "buffalo_l"
         self.assertEqual((h3res_gt.h3res_operator, h3res_gt.h3res_value), (">", 10))
         self.assertEqual((h3res_lt.h3res_operator, h3res_lt.h3res_value), ("<", 8))
         self.assertEqual((h3res_eq.h3res_operator, h3res_eq.h3res_value), ("=", 11))
+        for query, attrs in (
+            ("after:2023-12-01", {"after": dt.date(2023, 12, 1)}),
+            ("before:2024-12-12", {"before": dt.date(2024, 12, 12)}),
+            ("camera:Canon", {"camera": "Canon"}),
+            ("location:gps", {"location": "gps"}),
+            ("date:manual", {"date_source": "manual"}),
+            ("deleted:true", {"deleted": True}),
+            ("extension:.JPG", {"extension": "jpg"}),
+            ("filename:IMG", {"filename": "IMG"}),
+            ("missing:metadata", {"missing": "metadata"}),
+            ("orientation:portrait", {"orientation": "portrait"}),
+            ("path:2024/01", {"path": "2024/01"}),
+            ("person:Viljar", {"person": "Viljar"}),
+            ("source:phone", {"source": "phone"}),
+            ("tag:ute-av-fokus", {"tag": "ute-av-fokus"}),
+            ("type:video", {"media_type": "video"}),
+            ("size<300KB", {"size_lt": 300 * 1024}),
+            ("width<2000", {"width_lt": 2000}),
+            ("width=1024", {"width_eq": 1024}),
+            ("height>1024", {"height_gt": 1024}),
+            ("height<2000", {"height_lt": 2000}),
+        ):
+            with self.subTest(query=query):
+                parsed = parse_text_filter(query)
+                for attr, expected in attrs.items():
+                    self.assertEqual(getattr(parsed, attr), expected)
         for query, message in (
             ("after:2023-02-30", "after må være en dato på formen YYYY-MM-DD."),
             ("before:", "Filteret mangler verdi: before:"),

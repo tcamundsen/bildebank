@@ -5,7 +5,7 @@ import html
 import re
 import shlex
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
@@ -51,217 +51,247 @@ class BrowserTextFilter:
     day: int | None = None
 
 
+@dataclass
+class NumericComparison:
+    gt: int | None = None
+    lt: int | None = None
+    eq: int | None = None
+
+    def set_once(self, operator: str, value: int, label: str) -> None:
+        attr = COMPARISON_ATTRS[operator]
+        if getattr(self, attr) is not None:
+            raise ValueError(f"{label}{operator} kan bare brukes én gang.")
+        setattr(self, attr, value)
+
+
+@dataclass
+class FilterParseState:
+    query: str
+    after: dt.date | None = None
+    before: dt.date | None = None
+    camera: str | None = None
+    date_source: str | None = None
+    deleted: bool = False
+    extension: str | None = None
+    filename: str | None = None
+    location: str | None = None
+    h3res_operator: str | None = None
+    h3res_value: int | None = None
+    media_type: str | None = None
+    missing: str | None = None
+    orientation: str | None = None
+    path: str | None = None
+    person: str | None = None
+    size: NumericComparison = field(default_factory=NumericComparison)
+    source: str | None = None
+    tag: str | None = None
+    width: NumericComparison = field(default_factory=NumericComparison)
+    height: NumericComparison = field(default_factory=NumericComparison)
+    month: int | None = None
+    day: int | None = None
+
+    def set_once(self, name: str, value: object, message_name: str | None = None) -> None:
+        if getattr(self, name) is not None:
+            raise ValueError(f"{message_name or name} kan bare brukes én gang.")
+        setattr(self, name, value)
+
+    def set_h3res_once(self, operator: str, value: int) -> None:
+        if self.h3res_operator is not None:
+            raise ValueError("h3res kan bare brukes én gang.")
+        self.h3res_operator = operator
+        self.h3res_value = value
+
+    def validate(self) -> None:
+        if self.h3res_operator is not None and self.location != "manual":
+            raise ValueError("h3res kan bare brukes sammen med location:manual.")
+
+    def to_filter(self) -> BrowserTextFilter:
+        self.validate()
+        return BrowserTextFilter(
+            self.query,
+            after=self.after,
+            before=self.before,
+            camera=self.camera,
+            date_source=self.date_source,
+            deleted=self.deleted,
+            extension=self.extension,
+            filename=self.filename,
+            location=self.location,
+            h3res_operator=self.h3res_operator,
+            h3res_value=self.h3res_value,
+            media_type=self.media_type,
+            missing=self.missing,
+            orientation=self.orientation,
+            path=self.path,
+            person=self.person,
+            size_gt=self.size.gt,
+            size_lt=self.size.lt,
+            source=self.source,
+            tag=self.tag,
+            width_gt=self.width.gt,
+            width_lt=self.width.lt,
+            width_eq=self.width.eq,
+            height_gt=self.height.gt,
+            height_lt=self.height.lt,
+            height_eq=self.height.eq,
+            month=self.month,
+            day=self.day,
+        )
+
+
+@dataclass(frozen=True)
+class OperatorFilterSpec:
+    operators: tuple[str, ...]
+    parse_value: Callable[[str], int]
+    apply: Callable[[FilterParseState, str, int], None]
+
+
+COMPARISON_ATTRS = {">": "gt", "<": "lt", "=": "eq"}
+
+
 def parse_text_filter(query: str) -> BrowserTextFilter:
     tokens, clean_query = tokenize_filter_query(query)
     if not tokens:
         raise ValueError("Filtersøk kan ikke være tomt.")
-    after = None
-    before = None
-    camera = None
-    date_source = None
-    deleted = False
-    extension = None
-    filename = None
-    location = None
-    h3res_operator = None
-    h3res_value = None
-    media_type = None
-    missing = None
-    orientation = None
-    path = None
-    person = None
-    size_gt = None
-    size_lt = None
-    source = None
-    tag = None
-    width_gt = None
-    width_lt = None
-    width_eq = None
-    height_gt = None
-    height_lt = None
-    height_eq = None
-    month = None
-    day = None
+    state = FilterParseState(clean_query)
     for token in tokens:
-        size_operator = size_filter_operator(token)
-        if size_operator is not None:
-            operator, value = size_operator
-            if operator == ">":
-                if size_gt is not None:
-                    raise ValueError("size> kan bare brukes én gang.")
-                size_gt = parse_size_bytes(value)
-            else:
-                if size_lt is not None:
-                    raise ValueError("size< kan bare brukes én gang.")
-                size_lt = parse_size_bytes(value)
+        if parse_operator_filter_token(state, token):
             continue
-        h3res_operator_token = h3res_filter_operator(token)
-        if h3res_operator_token is not None:
-            operator, value = h3res_operator_token
-            if h3res_operator is not None:
-                raise ValueError("h3res kan bare brukes én gang.")
-            h3res_operator = operator
-            h3res_value = parse_filter_integer_range(value, "h3res", 0, 11)
-            continue
-        dimension_operator = dimension_filter_operator(token)
-        if dimension_operator is not None:
-            key, operator, value = dimension_operator
-            pixels = parse_dimension_pixels(key, value)
-            if key == "width" and operator == ">":
-                if width_gt is not None:
-                    raise ValueError("width> kan bare brukes én gang.")
-                width_gt = pixels
-            elif key == "width" and operator == "<":
-                if width_lt is not None:
-                    raise ValueError("width< kan bare brukes én gang.")
-                width_lt = pixels
-            elif key == "width" and operator == "=":
-                if width_eq is not None:
-                    raise ValueError("width= kan bare brukes én gang.")
-                width_eq = pixels
-            elif key == "height" and operator == ">":
-                if height_gt is not None:
-                    raise ValueError("height> kan bare brukes én gang.")
-                height_gt = pixels
-            elif key == "height" and operator == "<":
-                if height_lt is not None:
-                    raise ValueError("height< kan bare brukes én gang.")
-                height_lt = pixels
-            elif key == "height" and operator == "=":
-                if height_eq is not None:
-                    raise ValueError("height= kan bare brukes én gang.")
-                height_eq = pixels
-            continue
-        if ":" not in token:
-            raise ValueError(f"Ukjent filter: {token}")
-        key, value = token.split(":", 1)
-        key = key.strip().casefold()
-        value = value.strip()
-        if not value:
-            raise ValueError(f"Filteret mangler verdi: {key}:")
-        if key == "after":
-            if after is not None:
-                raise ValueError("after kan bare brukes én gang.")
-            after = parse_filter_date(value, key)
-        elif key == "before":
-            if before is not None:
-                raise ValueError("before kan bare brukes én gang.")
-            before = parse_filter_date(value, key)
-        elif key == "camera":
-            if camera is not None:
-                raise ValueError("camera kan bare brukes én gang.")
-            camera = value
-        elif key == "location":
-            if location is not None:
-                raise ValueError("location kan bare brukes én gang.")
-            location = value
-        elif key == "h3res":
-            if h3res_operator is not None:
-                raise ValueError("h3res kan bare brukes én gang.")
-            h3res_operator = "="
-            h3res_value = parse_filter_integer_range(value, "h3res", 0, 11)
-        elif key == "date":
-            if date_source is not None:
-                raise ValueError("date kan bare brukes én gang.")
-            if value not in {"manual", "metadata", "filename", "mtime"}:
-                raise ValueError("date må være manual, metadata, filename eller mtime.")
-            date_source = value
-        elif key == "month":
-            if month is not None:
-                raise ValueError("month kan bare brukes én gang.")
-            month = parse_filter_integer_range(value, "month", 1, 12)
-        elif key == "day":
-            if day is not None:
-                raise ValueError("day kan bare brukes én gang.")
-            day = parse_filter_integer_range(value, "day", 1, 31)
-        elif key == "deleted":
-            if value not in {"true", "false"}:
-                raise ValueError("deleted må være true eller false.")
-            deleted = value == "true"
-        elif key == "extension":
-            if extension is not None:
-                raise ValueError("extension kan bare brukes én gang.")
-            extension = parse_extension(value)
-        elif key == "filename":
-            if filename is not None:
-                raise ValueError("filename kan bare brukes én gang.")
-            filename = value
-        elif key == "missing":
-            if missing is not None:
-                raise ValueError("missing kan bare brukes én gang.")
-            if value not in {"gps", "date", "metadata"}:
-                raise ValueError("missing må være gps, date eller metadata.")
-            missing = value
-        elif key == "orientation":
-            if orientation is not None:
-                raise ValueError("orientation kan bare brukes én gang.")
-            if value not in {"portrait", "landscape"}:
-                raise ValueError("orientation må være portrait eller landscape.")
-            orientation = value
-        elif key == "path":
-            if path is not None:
-                raise ValueError("path kan bare brukes én gang.")
-            path = value
-        elif key == "person":
-            if person is not None:
-                raise ValueError("person kan bare brukes én gang.")
-            person = value
-        elif key == "source":
-            if source is not None:
-                raise ValueError("source kan bare brukes én gang.")
-            source = value
-        elif key == "tag":
-            if tag is not None:
-                raise ValueError("tag kan bare brukes én gang.")
-            tag = value
-        elif key == "type":
-            if media_type is not None:
-                raise ValueError("type kan bare brukes én gang.")
-            if value not in {"image", "video", "file"}:
-                raise ValueError("type må være image, video eller file.")
-            media_type = value
-        else:
-            raise ValueError(f"Ukjent filter: {key}")
-    if h3res_operator is not None and location != "manual":
-        raise ValueError("h3res kan bare brukes sammen med location:manual.")
-    return BrowserTextFilter(
-        clean_query,
-        after=after,
-        before=before,
-        camera=camera,
-        date_source=date_source,
-        deleted=deleted,
-        extension=extension,
-        filename=filename,
-        location=location,
-        h3res_operator=h3res_operator,
-        h3res_value=h3res_value,
-        media_type=media_type,
-        missing=missing,
-        orientation=orientation,
-        path=path,
-        person=person,
-        size_gt=size_gt,
-        size_lt=size_lt,
-        source=source,
-        tag=tag,
-        width_gt=width_gt,
-        width_lt=width_lt,
-        width_eq=width_eq,
-        height_gt=height_gt,
-        height_lt=height_lt,
-        height_eq=height_eq,
-        month=month,
-        day=day,
-    )
+        parse_key_value_filter_token(state, token)
+    return state.to_filter()
+
+
+def parse_operator_filter_token(state: FilterParseState, token: str) -> bool:
+    operator_filter = operator_filter_token(token)
+    if operator_filter is None:
+        return False
+    key, operator, raw_value = operator_filter
+    spec = OPERATOR_FILTERS[key]
+    value = spec.parse_value(raw_value)
+    spec.apply(state, operator, value)
+    return True
+
+
+def operator_filter_token(token: str) -> tuple[str, str, str] | None:
+    for key, spec in OPERATOR_FILTERS.items():
+        for operator in spec.operators:
+            prefix = f"{key}{operator}"
+            if token.startswith(prefix):
+                return key, operator, token.removeprefix(prefix)
+    return None
+
+
+def parse_key_value_filter_token(state: FilterParseState, token: str) -> None:
+    if ":" not in token:
+        raise ValueError(f"Ukjent filter: {token}")
+    key, value = token.split(":", 1)
+    key = key.strip().casefold()
+    value = value.strip()
+    if not value:
+        raise ValueError(f"Filteret mangler verdi: {key}:")
+    parser = KEY_VALUE_FILTERS.get(key)
+    if parser is None:
+        raise ValueError(f"Ukjent filter: {key}")
+    parser(state, key, value)
+
+
+def parse_date_filter(state: FilterParseState, key: str, value: str) -> None:
+    state.set_once(key, parse_filter_date(value, key))
+
+
+def parse_simple_text_filter(state: FilterParseState, key: str, value: str) -> None:
+    state.set_once(key, value)
+
+
+def parse_location_filter(state: FilterParseState, _key: str, value: str) -> None:
+    state.set_once("location", value)
+
+
+def parse_h3res_key_value_filter(state: FilterParseState, _key: str, value: str) -> None:
+    state.set_h3res_once("=", parse_filter_integer_range(value, "h3res", 0, 11))
+
+
+def parse_date_source_filter(state: FilterParseState, _key: str, value: str) -> None:
+    if value not in {"manual", "metadata", "filename", "mtime"}:
+        raise ValueError("date må være manual, metadata, filename eller mtime.")
+    state.set_once("date_source", value, "date")
+
+
+def parse_month_filter(state: FilterParseState, key: str, value: str) -> None:
+    state.set_once("month", parse_filter_integer_range(value, key, 1, 12), key)
+
+
+def parse_day_filter(state: FilterParseState, key: str, value: str) -> None:
+    state.set_once("day", parse_filter_integer_range(value, key, 1, 31), key)
+
+
+def parse_deleted_filter(state: FilterParseState, _key: str, value: str) -> None:
+    if value not in {"true", "false"}:
+        raise ValueError("deleted må være true eller false.")
+    state.deleted = value == "true"
+
+
+def parse_extension_filter(state: FilterParseState, key: str, value: str) -> None:
+    state.set_once(key, parse_extension(value))
+
+
+def parse_missing_filter(state: FilterParseState, key: str, value: str) -> None:
+    if value not in {"gps", "date", "metadata"}:
+        raise ValueError("missing må være gps, date eller metadata.")
+    state.set_once(key, value)
+
+
+def parse_orientation_filter(state: FilterParseState, key: str, value: str) -> None:
+    if value not in {"portrait", "landscape"}:
+        raise ValueError("orientation må være portrait eller landscape.")
+    state.set_once(key, value)
+
+
+def parse_type_filter(state: FilterParseState, _key: str, value: str) -> None:
+    if value not in {"image", "video", "file"}:
+        raise ValueError("type må være image, video eller file.")
+    state.set_once("media_type", value, "type")
+
+
+def apply_size_operator(state: FilterParseState, operator: str, value: int) -> None:
+    state.size.set_once(operator, value, "size")
+
+
+def apply_h3res_operator(state: FilterParseState, operator: str, value: int) -> None:
+    state.set_h3res_once(operator, value)
+
+
+def apply_width_operator(state: FilterParseState, operator: str, value: int) -> None:
+    state.width.set_once(operator, value, "width")
+
+
+def apply_height_operator(state: FilterParseState, operator: str, value: int) -> None:
+    state.height.set_once(operator, value, "height")
+
+
+def parse_h3res_integer(value: str) -> int:
+    return parse_filter_integer_range(value, "h3res", 0, 11)
+
+
+def parse_width_pixels(value: str) -> int:
+    return parse_dimension_pixels("width", value)
+
+
+def parse_height_pixels(value: str) -> int:
+    return parse_dimension_pixels("height", value)
 
 
 def tokenize_filter_query(query: str) -> tuple[list[str], str]:
     try:
-        tokens = shlex.split(query.strip())
+        raw_tokens = shlex.split(query.strip())
     except ValueError as exc:
         raise ValueError("Ugyldige anførselstegn i filtersøk.") from exc
+    tokens = normalize_filter_tokens(raw_tokens)
     return tokens, " ".join(canonical_filter_token(token) for token in tokens)
+
+
+def normalize_filter_tokens(tokens: list[str]) -> list[str]:
+    return tokens
 
 
 def canonical_filter_token(token: str) -> str:
@@ -298,31 +328,6 @@ def parse_extension(value: str) -> str:
     return clean_value
 
 
-def size_filter_operator(token: str) -> tuple[str, str] | None:
-    if token.startswith("size>"):
-        return ">", token.removeprefix("size>")
-    if token.startswith("size<"):
-        return "<", token.removeprefix("size<")
-    return None
-
-
-def dimension_filter_operator(token: str) -> tuple[str, str, str] | None:
-    for key in ("width", "height"):
-        for operator in (">", "<", "="):
-            prefix = f"{key}{operator}"
-            if token.startswith(prefix):
-                return key, operator, token.removeprefix(prefix)
-    return None
-
-
-def h3res_filter_operator(token: str) -> tuple[str, str] | None:
-    for operator in (">", "<", "="):
-        prefix = f"h3res{operator}"
-        if token.startswith(prefix):
-            return operator, token.removeprefix(prefix)
-    return None
-
-
 def parse_dimension_pixels(key: str, value: str) -> int:
     if not re.fullmatch(r"\d+", value.strip()):
         raise ValueError(
@@ -348,6 +353,36 @@ def parse_size_bytes(value: str) -> int:
         "TB": 1024**4,
     }[unit]
     return int(number * multiplier)
+
+
+KEY_VALUE_FILTERS: dict[str, Callable[[FilterParseState, str, str], None]] = {
+    "after": parse_date_filter,
+    "before": parse_date_filter,
+    "camera": parse_simple_text_filter,
+    "location": parse_location_filter,
+    "h3res": parse_h3res_key_value_filter,
+    "date": parse_date_source_filter,
+    "month": parse_month_filter,
+    "day": parse_day_filter,
+    "deleted": parse_deleted_filter,
+    "extension": parse_extension_filter,
+    "filename": parse_simple_text_filter,
+    "missing": parse_missing_filter,
+    "orientation": parse_orientation_filter,
+    "path": parse_simple_text_filter,
+    "person": parse_simple_text_filter,
+    "source": parse_simple_text_filter,
+    "tag": parse_simple_text_filter,
+    "type": parse_type_filter,
+}
+
+
+OPERATOR_FILTERS: dict[str, OperatorFilterSpec] = {
+    "size": OperatorFilterSpec((">", "<"), parse_size_bytes, apply_size_operator),
+    "h3res": OperatorFilterSpec((">", "<", "="), parse_h3res_integer, apply_h3res_operator),
+    "width": OperatorFilterSpec((">", "<", "="), parse_width_pixels, apply_width_operator),
+    "height": OperatorFilterSpec((">", "<", "="), parse_height_pixels, apply_height_operator),
+}
 
 
 def text_filter_url(query: str) -> str:
@@ -439,30 +474,23 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     if text_filter.day is not None:
         where.append(f"CAST(substr({db.BROWSER_DATE_ORDER_SQL}, 9, 2) AS INTEGER) = ?")
         params.append(text_filter.day)
-    if text_filter.size_gt is not None:
-        where.append("size_bytes > ?")
-        params.append(text_filter.size_gt)
-    if text_filter.size_lt is not None:
-        where.append("size_bytes < ?")
-        params.append(text_filter.size_lt)
-    if text_filter.width_gt is not None:
-        where.append("media_width > ?")
-        params.append(text_filter.width_gt)
-    if text_filter.width_lt is not None:
-        where.append("media_width < ?")
-        params.append(text_filter.width_lt)
-    if text_filter.width_eq is not None:
-        where.append("media_width = ?")
-        params.append(text_filter.width_eq)
-    if text_filter.height_gt is not None:
-        where.append("media_height > ?")
-        params.append(text_filter.height_gt)
-    if text_filter.height_lt is not None:
-        where.append("media_height < ?")
-        params.append(text_filter.height_lt)
-    if text_filter.height_eq is not None:
-        where.append("media_height = ?")
-        params.append(text_filter.height_eq)
+    add_numeric_conditions(where, params, "size_bytes", gt=text_filter.size_gt, lt=text_filter.size_lt)
+    add_numeric_conditions(
+        where,
+        params,
+        "media_width",
+        gt=text_filter.width_gt,
+        lt=text_filter.width_lt,
+        eq=text_filter.width_eq,
+    )
+    add_numeric_conditions(
+        where,
+        params,
+        "media_height",
+        gt=text_filter.height_gt,
+        lt=text_filter.height_lt,
+        eq=text_filter.height_eq,
+    )
     if text_filter.date_source == "manual":
         where.append(f"({manual_date_sql})")
     elif text_filter.date_source in {"metadata", "filename", "mtime"}:
@@ -522,11 +550,41 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         where.append(f"({place_where})")
         params.extend(place_params)
     if text_filter.h3res_operator is not None and text_filter.h3res_value is not None:
-        where.append(f"{manual_h3_resolution_sql()} {text_filter.h3res_operator} ?")
-        params.append(text_filter.h3res_value)
+        add_numeric_condition(
+            where,
+            params,
+            manual_h3_resolution_sql(),
+            text_filter.h3res_operator,
+            text_filter.h3res_value,
+        )
     if not where:
         raise ValueError("Filtersøket må ha minst ett kriterium.")
     return " AND ".join(where), tuple(params)
+
+
+def add_numeric_conditions(
+    where: list[str],
+    params: list[object],
+    sql_expression: str,
+    *,
+    gt: int | None = None,
+    lt: int | None = None,
+    eq: int | None = None,
+) -> None:
+    for operator, value in ((">", gt), ("<", lt), ("=", eq)):
+        if value is not None:
+            add_numeric_condition(where, params, sql_expression, operator, value)
+
+
+def add_numeric_condition(
+    where: list[str],
+    params: list[object],
+    sql_expression: str,
+    operator: str,
+    value: int,
+) -> None:
+    where.append(f"{sql_expression} {operator} ?")
+    params.append(value)
 
 
 def manual_h3_resolution_sql() -> str:
