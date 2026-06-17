@@ -454,13 +454,6 @@ def h3_cell_google_maps_url(h3_cell: str) -> str:
     return f"https://www.google.com/maps/search/?api=1&query={query}"
 
 
-def h3_cell_h3geo_link_html(h3_cell: str) -> str:
-    if not h3_cell:
-        return ""
-    url = h3_cell_h3geo_url(h3_cell)
-    return f'<a href="{html.escape(url)}" target="_blank" rel="noopener" class="app-toggle-note">h3geo.org</a>'
-
-
 def h3_cell_h3geo_url(h3_cell: str) -> str:
     return f"https://h3geo.org/#hex={urllib.parse.quote(h3_cell, safe='')}"
 

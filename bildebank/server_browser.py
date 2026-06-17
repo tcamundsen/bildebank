@@ -1732,13 +1732,6 @@ def item_string_value(item: Any, key: str) -> str:
         return ""
 
 
-def item_has_gps_location(item: Any) -> bool:
-    try:
-        return item["gps_lat"] is not None or item["gps_lon"] is not None
-    except (KeyError, IndexError):
-        return False
-
-
 def remove_manual_location_button_html(item: Any) -> str:
     if not gps_source_is_manual_h3(item):
         return ""

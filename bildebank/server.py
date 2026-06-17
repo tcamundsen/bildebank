@@ -183,9 +183,6 @@ class BildebankServer(ThreadingHTTPServer):
     def browser_item_ids(self, *, hide_out_of_focus: bool = False) -> list[int]:
         return self.browser_item_order(hide_out_of_focus=hide_out_of_focus)[0]
 
-    def browser_item_positions(self, *, hide_out_of_focus: bool = False) -> dict[int, int]:
-        return self.browser_item_order(hide_out_of_focus=hide_out_of_focus)[1]
-
     def browser_item_order(self, *, hide_out_of_focus: bool = False) -> tuple[list[int], dict[int, int]]:
         version = self.browser_navigation_cache_version()
         cached = self._browser_item_ids.get(hide_out_of_focus)
