@@ -3548,12 +3548,19 @@ model_name = "buffalo_l"
             orientation_landscape_filter = text_filter_browser_source("orientation:landscape")
             orientation_portrait_filter = text_filter_browser_source("orientation:portrait")
             width_gt_filter = text_filter_browser_source("width>500")
+            width_gte_filter = text_filter_browser_source("width>=400")
             width_lt_filter = text_filter_browser_source("width<500")
+            width_lte_filter = text_filter_browser_source("width<=400")
             width_eq_filter = text_filter_browser_source("width=400")
             height_gt_filter = text_filter_browser_source("height>700")
+            height_gte_filter = text_filter_browser_source("height>=500")
             height_lt_filter = text_filter_browser_source("height<700")
+            height_lte_filter = text_filter_browser_source("height<=500")
             height_eq_filter = text_filter_browser_source("height=500")
             width_range_filter = text_filter_browser_source("width>500 width<1200")
+            width_inclusive_range_filter = text_filter_browser_source("width>=400 width<=400")
+            size_gte_filter = text_filter_browser_source("size>=300KB")
+            size_lte_filter = text_filter_browser_source("size<=2MB")
             path_filter = text_filter_browser_source("path:2024/01")
             person_filter = text_filter_browser_source("person:viljar")
             source_name_filter = text_filter_browser_source("source:source")
@@ -3563,9 +3570,13 @@ model_name = "buffalo_l"
             month_filter = text_filter_browser_source("month:12")
             day_filter = text_filter_browser_source("day:24")
             month_day_filter = text_filter_browser_source("month:12 day:24")
+            month_range_filter = text_filter_browser_source("month>5 month<10")
+            day_range_filter = text_filter_browser_source("day>10 day<20")
             h3res_exact_filter = text_filter_browser_source("location:manual h3res:7")
             h3res_lt_filter = text_filter_browser_source("location:manual h3res<8")
             h3res_gt_filter = text_filter_browser_source("location:manual h3res>10")
+            h3res_gte_filter = text_filter_browser_source("location:manual h3res>=8")
+            h3res_lte_filter = text_filter_browser_source("location:manual h3res<=11")
             first_item = source_item_by_id(target, source_filter, 2)
             person_item = source_item_by_id(target, person_filter, 2)
             manual_item = source_item_by_id(target, manual_filter, 4)
@@ -3595,12 +3606,19 @@ model_name = "buffalo_l"
             orientation_landscape_month = source_month_items(target, orientation_landscape_filter, "2024-12")
             orientation_portrait_month = source_month_items(target, orientation_portrait_filter, "2024-01")
             width_gt_month = source_month_items(target, width_gt_filter, "2024-12")
+            width_gte_month = source_month_items(target, width_gte_filter, "2024-01")
             width_lt_month = source_month_items(target, width_lt_filter, "2024-01")
+            width_lte_month = source_month_items(target, width_lte_filter, "2024-01")
             width_eq_month = source_month_items(target, width_eq_filter, "2024-01")
             height_gt_month = source_month_items(target, height_gt_filter, "2024-01")
+            height_gte_month = source_month_items(target, height_gte_filter, "2024-12")
             height_lt_month = source_month_items(target, height_lt_filter, "2024-12")
+            height_lte_month = source_month_items(target, height_lte_filter, "2024-12")
             height_eq_month = source_month_items(target, height_eq_filter, "2024-12")
             width_range_month = source_month_items(target, width_range_filter, "2024-12")
+            width_inclusive_range_month = source_month_items(target, width_inclusive_range_filter, "2024-01")
+            size_gte_month = source_month_items(target, size_gte_filter, "2024-12")
+            size_lte_month = source_month_items(target, size_lte_filter, "2023-12")
             path_month = source_month_items(target, path_filter, "2024-01")
             person_january_month = source_month_items(target, person_filter, "2024-01")
             person_december_month = source_month_items(target, person_filter, "2024-12")
@@ -3615,9 +3633,15 @@ model_name = "buffalo_l"
             day_december_2021 = source_month_items(target, day_filter, "2021-12")
             month_day_december_2021 = source_month_items(target, month_day_filter, "2021-12")
             month_day_january_2024 = source_month_items(target, month_day_filter, "2024-01")
+            month_range_june_2024 = source_month_items(target, month_range_filter, "2024-06")
+            month_range_december_2024 = source_month_items(target, month_range_filter, "2024-12")
+            day_range_december_2024 = source_month_items(target, day_range_filter, "2024-12")
+            day_range_december_2021 = source_month_items(target, day_range_filter, "2021-12")
             h3res_exact_month = source_month_items(target, h3res_exact_filter, "2024-06")
             h3res_lt_month = source_month_items(target, h3res_lt_filter, "2024-06")
             h3res_gt_month = source_month_items(target, h3res_gt_filter, "2021-12")
+            h3res_gte_month = source_month_items(target, h3res_gte_filter, "2021-12")
+            h3res_lte_month = source_month_items(target, h3res_lte_filter, "2024-06")
             date_body = source_item_page_html(
                 target,
                 source_filter,
@@ -3662,12 +3686,19 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in orientation_landscape_month], [3])
         self.assertEqual([item["id"] for item in orientation_portrait_month], [2])
         self.assertEqual([item["id"] for item in width_gt_month], [3])
+        self.assertEqual([item["id"] for item in width_gte_month], [2])
         self.assertEqual([item["id"] for item in width_lt_month], [2])
+        self.assertEqual([item["id"] for item in width_lte_month], [2])
         self.assertEqual([item["id"] for item in width_eq_month], [2])
         self.assertEqual([item["id"] for item in height_gt_month], [2])
+        self.assertEqual([item["id"] for item in height_gte_month], [3])
         self.assertEqual([item["id"] for item in height_lt_month], [3])
+        self.assertEqual([item["id"] for item in height_lte_month], [3])
         self.assertEqual([item["id"] for item in height_eq_month], [3])
         self.assertEqual([item["id"] for item in width_range_month], [3])
+        self.assertEqual([item["id"] for item in width_inclusive_range_month], [2])
+        self.assertEqual([item["id"] for item in size_gte_month], [3])
+        self.assertEqual([item["id"] for item in size_lte_month], [1])
         self.assertEqual([item["id"] for item in path_month], [2])
         self.assertEqual([item["id"] for item in person_january_month], [2])
         self.assertEqual([item["id"] for item in person_december_month], [3])
@@ -3682,9 +3713,15 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in day_december_2021], [5])
         self.assertEqual([item["id"] for item in month_day_december_2021], [5])
         self.assertEqual([item["id"] for item in month_day_january_2024], [])
+        self.assertEqual([item["id"] for item in month_range_june_2024], [4])
+        self.assertEqual([item["id"] for item in month_range_december_2024], [])
+        self.assertEqual([item["id"] for item in day_range_december_2024], [3])
+        self.assertEqual([item["id"] for item in day_range_december_2021], [])
         self.assertEqual([item["id"] for item in h3res_exact_month], [4])
         self.assertEqual([item["id"] for item in h3res_lt_month], [4])
         self.assertEqual([item["id"] for item in h3res_gt_month], [5])
+        self.assertEqual([item["id"] for item in h3res_gte_month], [5])
+        self.assertEqual([item["id"] for item in h3res_lte_month], [4])
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_body)
         self.assertIn('title="2 treff i filtersøket"', date_body)
@@ -3709,15 +3746,32 @@ model_name = "buffalo_l"
         self.assertEqual(text_filter.size_lt, int(2.5 * 1024 * 1024 * 1024))
         self.assertEqual(text_filter.width_gt, 1024)
         self.assertEqual(text_filter.height_eq, 2000)
+        self.assertEqual(parse_text_filter("width>=1024").width_gte, 1024)
+        self.assertIsNone(parse_text_filter("width>=1024").width_gt)
+        self.assertEqual(parse_text_filter("width<=2000").width_lte, 2000)
+        self.assertEqual(parse_text_filter("height>=1024").height_gte, 1024)
+        self.assertEqual(parse_text_filter("height<=2000").height_lte, 2000)
+        self.assertEqual(parse_text_filter("size>=300KB").size_gte, 300 * 1024)
+        self.assertEqual(parse_text_filter("size<=2MB").size_lte, 2 * 1024 * 1024)
         self.assertEqual(parse_text_filter("month:12").month, 12)
         self.assertEqual(parse_text_filter("day:24").day, 24)
         self.assertEqual(parse_text_filter("person:Viljar").person, "Viljar")
+        month_range = parse_text_filter("month>6 month<10")
+        day_range = parse_text_filter("day>10 day<20")
+        self.assertEqual((month_range.month_gt, month_range.month_lt), (6, 10))
+        self.assertEqual((month_range.month, month_range.day), (None, None))
+        self.assertEqual((day_range.day_gt, day_range.day_lt), (10, 20))
+        self.assertEqual((day_range.month, day_range.day), (None, None))
         h3res_gt = parse_text_filter("location:manual h3res>10")
         h3res_lt = parse_text_filter("location:manual h3res<8")
         h3res_eq = parse_text_filter("location:manual h3res:11")
+        h3res_gte = parse_text_filter("location:manual h3res>=8")
+        h3res_lte = parse_text_filter("location:manual h3res<=11")
         self.assertEqual((h3res_gt.h3res_operator, h3res_gt.h3res_value), (">", 10))
         self.assertEqual((h3res_lt.h3res_operator, h3res_lt.h3res_value), ("<", 8))
         self.assertEqual((h3res_eq.h3res_operator, h3res_eq.h3res_value), ("=", 11))
+        self.assertEqual((h3res_gte.h3res_operator, h3res_gte.h3res_value), (">=", 8))
+        self.assertEqual((h3res_lte.h3res_operator, h3res_lte.h3res_value), ("<=", 11))
         for query, attrs in (
             ("after:2023-12-01", {"after": dt.date(2023, 12, 1)}),
             ("before:2024-12-12", {"before": dt.date(2024, 12, 12)}),
@@ -3735,10 +3789,20 @@ model_name = "buffalo_l"
             ("tag:ute-av-fokus", {"tag": "ute-av-fokus"}),
             ("type:video", {"media_type": "video"}),
             ("size<300KB", {"size_lt": 300 * 1024}),
+            ("size>=300KB", {"size_gte": 300 * 1024}),
+            ("size<=2MB", {"size_lte": 2 * 1024 * 1024}),
+            ("month>6", {"month_gt": 6}),
+            ("month<10", {"month_lt": 10}),
+            ("day>10", {"day_gt": 10}),
+            ("day<20", {"day_lt": 20}),
             ("width<2000", {"width_lt": 2000}),
+            ("width>=1024", {"width_gte": 1024}),
+            ("width<=2000", {"width_lte": 2000}),
             ("width=1024", {"width_eq": 1024}),
             ("height>1024", {"height_gt": 1024}),
+            ("height>=1024", {"height_gte": 1024}),
             ("height<2000", {"height_lt": 2000}),
+            ("height<=2000", {"height_lte": 2000}),
         ):
             with self.subTest(query=query):
                 parsed = parse_text_filter(query)
@@ -3750,12 +3814,18 @@ model_name = "buffalo_l"
             ("date:gps", "date må være manual, metadata, filename eller mtime."),
             ("date:manual date:metadata", "date kan bare brukes én gang."),
             ("month:12 month:11", "month kan bare brukes én gang."),
+            ("month>6 month>7", "month> kan bare brukes én gang."),
             ("month:0", "month må være et heltall fra 1 til 12."),
+            ("month>0", "month må være et heltall fra 1 til 12."),
             ("month:13", "month må være et heltall fra 1 til 12."),
+            ("month<13", "month må være et heltall fra 1 til 12."),
             ("month:desember", "month må være et heltall fra 1 til 12."),
             ("day:24 day:25", "day kan bare brukes én gang."),
+            ("day<24 day<25", "day< kan bare brukes én gang."),
             ("day:0", "day må være et heltall fra 1 til 31."),
+            ("day>0", "day må være et heltall fra 1 til 31."),
             ("day:32", "day må være et heltall fra 1 til 31."),
+            ("day<32", "day må være et heltall fra 1 til 31."),
             ("day:julaften", "day må være et heltall fra 1 til 31."),
             ("deleted:maybe", "deleted må være true eller false."),
             ("extension:..jpg", "extension må være en filendelse"),
@@ -3764,8 +3834,12 @@ model_name = "buffalo_l"
             ("person:Viljar person:Kari", "person kan bare brukes én gang."),
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
             ("size>2MB size>3MB", "size> kan bare brukes én gang."),
+            ("size>=2MB size>=3MB", "size>= kan bare brukes én gang."),
             ("size>stor", "size må skrives som for eksempel size<300KB eller size>2MB."),
             ("width>100 width>200", "width> kan bare brukes én gang."),
+            ("width>=100 width>=200", "width>= kan bare brukes én gang."),
+            ("width>100 width>=200", "width>= kan ikke kombineres med width>."),
+            ("width>=100 width>200", "width> kan ikke kombineres med width>=."),
             ("width>stor", "width må være et heltall i piksler uten enhet"),
             ("location:manual h3res:12", "h3res må være et heltall fra 0 til 11."),
             ("location:manual h3res:-1", "h3res må være et heltall fra 0 til 11."),

@@ -38,27 +38,42 @@ class BrowserTextFilter:
     path: str | None = None
     person: str | None = None
     size_gt: int | None = None
+    size_gte: int | None = None
     size_lt: int | None = None
+    size_lte: int | None = None
     source: str | None = None
     tag: str | None = None
     width_gt: int | None = None
+    width_gte: int | None = None
     width_lt: int | None = None
+    width_lte: int | None = None
     width_eq: int | None = None
     height_gt: int | None = None
+    height_gte: int | None = None
     height_lt: int | None = None
+    height_lte: int | None = None
     height_eq: int | None = None
     month: int | None = None
+    month_gt: int | None = None
+    month_lt: int | None = None
     day: int | None = None
+    day_gt: int | None = None
+    day_lt: int | None = None
 
 
 @dataclass
 class NumericComparison:
     gt: int | None = None
+    gte: int | None = None
     lt: int | None = None
+    lte: int | None = None
     eq: int | None = None
 
     def set_once(self, operator: str, value: int, label: str) -> None:
         attr = COMPARISON_ATTRS[operator]
+        conflict_operator = COMPARISON_CONFLICTS.get(operator)
+        if conflict_operator is not None and getattr(self, COMPARISON_ATTRS[conflict_operator]) is not None:
+            raise ValueError(f"{label}{operator} kan ikke kombineres med {label}{conflict_operator}.")
         if getattr(self, attr) is not None:
             raise ValueError(f"{label}{operator} kan bare brukes én gang.")
         setattr(self, attr, value)
@@ -88,7 +103,9 @@ class FilterParseState:
     width: NumericComparison = field(default_factory=NumericComparison)
     height: NumericComparison = field(default_factory=NumericComparison)
     month: int | None = None
+    month_range: NumericComparison = field(default_factory=NumericComparison)
     day: int | None = None
+    day_range: NumericComparison = field(default_factory=NumericComparison)
 
     def set_once(self, name: str, value: object, message_name: str | None = None) -> None:
         if getattr(self, name) is not None:
@@ -125,17 +142,27 @@ class FilterParseState:
             path=self.path,
             person=self.person,
             size_gt=self.size.gt,
+            size_gte=self.size.gte,
             size_lt=self.size.lt,
+            size_lte=self.size.lte,
             source=self.source,
             tag=self.tag,
             width_gt=self.width.gt,
+            width_gte=self.width.gte,
             width_lt=self.width.lt,
+            width_lte=self.width.lte,
             width_eq=self.width.eq,
             height_gt=self.height.gt,
+            height_gte=self.height.gte,
             height_lt=self.height.lt,
+            height_lte=self.height.lte,
             height_eq=self.height.eq,
             month=self.month,
+            month_gt=self.month_range.gt,
+            month_lt=self.month_range.lt,
             day=self.day,
+            day_gt=self.day_range.gt,
+            day_lt=self.day_range.lt,
         )
 
 
@@ -146,7 +173,8 @@ class OperatorFilterSpec:
     apply: Callable[[FilterParseState, str, int], None]
 
 
-COMPARISON_ATTRS = {">": "gt", "<": "lt", "=": "eq"}
+COMPARISON_ATTRS = {">": "gt", ">=": "gte", "<": "lt", "<=": "lte", "=": "eq"}
+COMPARISON_CONFLICTS = {">": ">=", ">=": ">", "<": "<=", "<=": "<"}
 
 
 def parse_text_filter(query: str) -> BrowserTextFilter:
@@ -174,9 +202,11 @@ def parse_operator_filter_token(state: FilterParseState, token: str) -> bool:
 
 def operator_filter_token(token: str) -> tuple[str, str, str] | None:
     for key, spec in OPERATOR_FILTERS.items():
-        for operator in spec.operators:
+        for operator in sorted(spec.operators, key=len, reverse=True):
             prefix = f"{key}{operator}"
             if token.startswith(prefix):
+                if len(operator) == 1 and token.startswith(f"{prefix}="):
+                    return None
                 return key, operator, token.removeprefix(prefix)
     return None
 
@@ -269,8 +299,24 @@ def apply_height_operator(state: FilterParseState, operator: str, value: int) ->
     state.height.set_once(operator, value, "height")
 
 
+def apply_month_operator(state: FilterParseState, operator: str, value: int) -> None:
+    state.month_range.set_once(operator, value, "month")
+
+
+def apply_day_operator(state: FilterParseState, operator: str, value: int) -> None:
+    state.day_range.set_once(operator, value, "day")
+
+
 def parse_h3res_integer(value: str) -> int:
     return parse_filter_integer_range(value, "h3res", 0, 11)
+
+
+def parse_month_integer(value: str) -> int:
+    return parse_filter_integer_range(value, "month", 1, 12)
+
+
+def parse_day_integer(value: str) -> int:
+    return parse_filter_integer_range(value, "day", 1, 31)
 
 
 def parse_width_pixels(value: str) -> int:
@@ -378,10 +424,12 @@ KEY_VALUE_FILTERS: dict[str, Callable[[FilterParseState, str, str], None]] = {
 
 
 OPERATOR_FILTERS: dict[str, OperatorFilterSpec] = {
-    "size": OperatorFilterSpec((">", "<"), parse_size_bytes, apply_size_operator),
-    "h3res": OperatorFilterSpec((">", "<", "="), parse_h3res_integer, apply_h3res_operator),
-    "width": OperatorFilterSpec((">", "<", "="), parse_width_pixels, apply_width_operator),
-    "height": OperatorFilterSpec((">", "<", "="), parse_height_pixels, apply_height_operator),
+    "size": OperatorFilterSpec((">=", "<=", ">", "<"), parse_size_bytes, apply_size_operator),
+    "h3res": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_h3res_integer, apply_h3res_operator),
+    "width": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_width_pixels, apply_width_operator),
+    "height": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_height_pixels, apply_height_operator),
+    "month": OperatorFilterSpec((">", "<"), parse_month_integer, apply_month_operator),
+    "day": OperatorFilterSpec((">", "<"), parse_day_integer, apply_day_operator),
 }
 
 
@@ -430,17 +478,27 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         path=text_filter.path,
         person=text_filter.person,
         size_gt=text_filter.size_gt,
+        size_gte=text_filter.size_gte,
         size_lt=text_filter.size_lt,
+        size_lte=text_filter.size_lte,
         source=text_filter.source,
         tag=text_filter.tag,
         width_gt=text_filter.width_gt,
+        width_gte=text_filter.width_gte,
         width_lt=text_filter.width_lt,
+        width_lte=text_filter.width_lte,
         width_eq=text_filter.width_eq,
         height_gt=text_filter.height_gt,
+        height_gte=text_filter.height_gte,
         height_lt=text_filter.height_lt,
+        height_lte=text_filter.height_lte,
         height_eq=text_filter.height_eq,
         month=text_filter.month,
+        month_gt=text_filter.month_gt,
+        month_lt=text_filter.month_lt,
         day=text_filter.day,
+        day_gt=text_filter.day_gt,
+        day_lt=text_filter.day_lt,
     )
 
 
@@ -459,7 +517,11 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         text_filter.after is not None
         or text_filter.before is not None
         or text_filter.month is not None
+        or text_filter.month_gt is not None
+        or text_filter.month_lt is not None
         or text_filter.day is not None
+        or text_filter.day_gt is not None
+        or text_filter.day_lt is not None
     ):
         where.append(browser_has_date_sql)
     if text_filter.after is not None:
@@ -468,19 +530,39 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     if text_filter.before is not None:
         where.append(f"{db.BROWSER_DATE_ORDER_SQL} < ?")
         params.append(text_filter.before.isoformat())
-    if text_filter.month is not None:
-        where.append(f"CAST(substr({db.BROWSER_DATE_ORDER_SQL}, 6, 2) AS INTEGER) = ?")
-        params.append(text_filter.month)
-    if text_filter.day is not None:
-        where.append(f"CAST(substr({db.BROWSER_DATE_ORDER_SQL}, 9, 2) AS INTEGER) = ?")
-        params.append(text_filter.day)
-    add_numeric_conditions(where, params, "size_bytes", gt=text_filter.size_gt, lt=text_filter.size_lt)
+    add_date_part_conditions(
+        where,
+        params,
+        date_part_sql(6),
+        eq=text_filter.month,
+        gt=text_filter.month_gt,
+        lt=text_filter.month_lt,
+    )
+    add_date_part_conditions(
+        where,
+        params,
+        date_part_sql(9),
+        eq=text_filter.day,
+        gt=text_filter.day_gt,
+        lt=text_filter.day_lt,
+    )
+    add_numeric_conditions(
+        where,
+        params,
+        "size_bytes",
+        gt=text_filter.size_gt,
+        gte=text_filter.size_gte,
+        lt=text_filter.size_lt,
+        lte=text_filter.size_lte,
+    )
     add_numeric_conditions(
         where,
         params,
         "media_width",
         gt=text_filter.width_gt,
+        gte=text_filter.width_gte,
         lt=text_filter.width_lt,
+        lte=text_filter.width_lte,
         eq=text_filter.width_eq,
     )
     add_numeric_conditions(
@@ -488,7 +570,9 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         params,
         "media_height",
         gt=text_filter.height_gt,
+        gte=text_filter.height_gte,
         lt=text_filter.height_lt,
+        lte=text_filter.height_lte,
         eq=text_filter.height_eq,
     )
     if text_filter.date_source == "manual":
@@ -562,16 +646,36 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     return " AND ".join(where), tuple(params)
 
 
+def date_part_sql(start: int) -> str:
+    return f"CAST(substr({db.BROWSER_DATE_ORDER_SQL}, {start}, 2) AS INTEGER)"
+
+
+def add_date_part_conditions(
+    where: list[str],
+    params: list[object],
+    sql_expression: str,
+    *,
+    eq: int | None = None,
+    gt: int | None = None,
+    gte: int | None = None,
+    lt: int | None = None,
+    lte: int | None = None,
+) -> None:
+    add_numeric_conditions(where, params, sql_expression, gt=gt, gte=gte, lt=lt, lte=lte, eq=eq)
+
+
 def add_numeric_conditions(
     where: list[str],
     params: list[object],
     sql_expression: str,
     *,
     gt: int | None = None,
+    gte: int | None = None,
     lt: int | None = None,
+    lte: int | None = None,
     eq: int | None = None,
 ) -> None:
-    for operator, value in ((">", gt), ("<", lt), ("=", eq)):
+    for operator, value in ((">", gt), (">=", gte), ("<", lt), ("<=", lte), ("=", eq)):
         if value is not None:
             add_numeric_condition(where, params, sql_expression, operator, value)
 
@@ -760,13 +864,13 @@ def filter_help_html() -> str:
       <h2>Søkekriterier</h2>
       <p class="meta">Kriterier kan kombineres. Bruk anførselstegn når tekst inneholder mellomrom, for eksempel camera:"iPhone" eller tag:"Ute av fokus".</p>
       <dl class="info-list">
-        <div class="info-row"><dt>Dato</dt><dd><code>after:2023-12-01</code>, <code>before:2024-12-12</code>, <code>month:12</code>, <code>day:24</code>, <code>month:12 day:24</code>, <code>date:manual</code>, <code>date:metadata</code>, <code>date:filename</code>, <code>date:mtime</code></dd></div>
-        <div class="info-row"><dt>Sted</dt><dd><code>location:gps</code>, <code>location:manual</code>, <code>location:manual h3res:11</code>, <code>h3res&gt;10</code>, <code>h3res&lt;8</code>, <code>location:slug</code>. <code>h3res</code> brukes sammen med <code>location:manual</code>. Slug er samme tekst som i <code>/geo/place/slug</code>.</dd></div>
-        <div class="info-row"><dt>Fil</dt><dd><code>type:image</code>, <code>type:video</code>, <code>type:file</code>, <code>extension:jpg</code>, <code>size&lt;300KB</code>, <code>size&gt;2MB</code></dd></div>
+        <div class="info-row"><dt>Dato</dt><dd><code>after:2023-12-01</code>, <code>before:2024-12-12</code>, <code>month:12</code>, <code>month&gt;5 month&lt;10</code>, <code>day:24</code>, <code>day&gt;10 day&lt;20</code>, <code>month:12 day:24</code>, <code>date:manual</code>, <code>date:metadata</code>, <code>date:filename</code>, <code>date:mtime</code></dd></div>
+        <div class="info-row"><dt>Sted</dt><dd><code>location:gps</code>, <code>location:manual</code>, <code>location:manual h3res:11</code>, <code>h3res&gt;=8</code>, <code>h3res&gt;10</code>, <code>h3res&lt;=11</code>, <code>h3res&lt;8</code>, <code>location:slug</code>. <code>h3res</code> brukes sammen med <code>location:manual</code>. Slug er samme tekst som i <code>/geo/place/slug</code>.</dd></div>
+        <div class="info-row"><dt>Fil</dt><dd><code>type:image</code>, <code>type:video</code>, <code>type:file</code>, <code>extension:jpg</code>, <code>size&lt;=2MB</code>, <code>size&lt;300KB</code>, <code>size&gt;=300KB</code>, <code>size&gt;2MB</code></dd></div>
         <div class="info-row"><dt>Tekst</dt><dd><code>filename:IMG</code>, <code>path:2024/01</code>, <code>camera:"iPhone"</code></dd></div>
         <div class="info-row"><dt>Organisering</dt><dd><code>source:1</code>, <code>source:"mobil 2024"</code>, <code>tag:"Ute av fokus"</code>, <code>person:Viljar</code>, <code>deleted:true</code></dd></div>
         <div class="info-row"><dt>Mangler</dt><dd><code>missing:gps</code>, <code>missing:date</code>, <code>missing:metadata</code></dd></div>
-        <div class="info-row"><dt>Form</dt><dd><code>orientation:portrait</code>, <code>orientation:landscape</code>, <code>width&gt;1024</code>, <code>width=1024</code>, <code>width&lt;2000</code>, <code>height&gt;1024</code>, <code>height=1024</code>, <code>height&lt;2000</code>. Bredde og høyde er piksler uten enhet.</dd></div>
+        <div class="info-row"><dt>Form</dt><dd><code>orientation:portrait</code>, <code>orientation:landscape</code>, <code>width&gt;=1024</code>, <code>width&gt;1024</code>, <code>width=1024</code>, <code>width&lt;=2000</code>, <code>width&lt;2000</code>, <code>height&gt;=1024</code>, <code>height&gt;1024</code>, <code>height=1024</code>, <code>height&lt;=2000</code>, <code>height&lt;2000</code>. Bredde og høyde er piksler uten enhet.</dd></div>
       </dl>
       <h3>Eksempler</h3>
        <dl class="info-list">
