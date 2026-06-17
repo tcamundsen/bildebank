@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "24"
+SERVER_ASSET_VERSION = "25"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -611,6 +611,11 @@ SERVER_CSS = r"""    :root {
       object-fit: contain;
       display: block;
     }
+    .person-face-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
     .person-face-box {
       position: absolute;
       border: 2px solid #2fbf71;
@@ -1115,14 +1120,46 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       item.style.maxWidth = `${maxOriginalWidth}px`;
       item.style.maxHeight = "none";
   }
+  function fitPersonFaceLayer(media) {
+      const img = media.querySelector("img");
+      const layer = media.querySelector(".person-face-layer");
+      if (!(img instanceof HTMLImageElement) || !(layer instanceof HTMLElement)) return;
+      if (!img.offsetWidth || !img.offsetHeight) return;
+      layer.style.left = `${img.offsetLeft}px`;
+      layer.style.top = `${img.offsetTop}px`;
+      layer.style.width = `${img.offsetWidth}px`;
+      layer.style.height = `${img.offsetHeight}px`;
+  }
+  function observePersonFaceLayers() {
+    const mediaItems = document.querySelectorAll(".stage .person-media");
+    if (!mediaItems.length) return;
+    if ("ResizeObserver" in window) {
+      const observer = new ResizeObserver(() => scheduleQuarterTurnFit());
+      mediaItems.forEach(media => {
+        const img = media.querySelector("img");
+        observer.observe(media);
+        if (img instanceof HTMLImageElement) observer.observe(img);
+      });
+    }
+    mediaItems.forEach(media => {
+      const img = media.querySelector("img");
+      if (img instanceof HTMLImageElement && !img.complete) {
+        img.addEventListener("load", scheduleQuarterTurnFit, {once: true});
+      }
+    });
+  }
   function fitQuarterTurnMedia() {
     document.querySelectorAll('.stage .media-link.quarter-turn > img[data-view-rotation="90"], .stage .media-link.quarter-turn > img[data-view-rotation="270"]').forEach(img => {
       if (img instanceof HTMLImageElement) fitQuarterTurnMediaLink(img);
     });
     document.querySelectorAll('.stage .person-media[data-view-rotation="90"], .stage .person-media[data-view-rotation="270"]').forEach(fitQuarterTurnLegacyMedia);
+    document.querySelectorAll(".stage .person-media").forEach(fitPersonFaceLayer);
   }
   function scheduleQuarterTurnFit() {
-    requestAnimationFrame(fitQuarterTurnMedia);
+    requestAnimationFrame(() => {
+      fitQuarterTurnMedia();
+      requestAnimationFrame(fitQuarterTurnMedia);
+    });
   }
   function manualDateInput(name) {
     return manualDateForm?.querySelector(`[name="${name}"]`);
@@ -1282,6 +1319,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       img.addEventListener("load", scheduleQuarterTurnFit, {once: true});
     }
   });
+  observePersonFaceLayers();
   window.addEventListener("resize", scheduleQuarterTurnFit);
   scheduleQuarterTurnFit();
   openFacesButton?.addEventListener("click", openFacesOverlay);

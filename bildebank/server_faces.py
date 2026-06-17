@@ -962,7 +962,7 @@ def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
     return f"""
     <div class="person-media"{rotation_style_attr(item)}>
       <a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>
-      {boxes}
+      <div class="person-face-layer">{boxes}</div>
     </div>
     """
 
