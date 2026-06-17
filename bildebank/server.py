@@ -64,7 +64,9 @@ from .server_browser import (
     item_by_id,
     month_key_for_item,
     month_navigation_for_keys,
+    source_item_ids,
     source_item_by_id,
+    source_month_keys,
     source_month_items,
     source_month_navigation,
     valid_month_key,
@@ -80,11 +82,13 @@ from .server_browser_sources import (
     person_browser_source,
     person_item_url,
     person_url,
+    source_has_sql_filter,
     source_item_url,
     tag_browser_source,
 )
 from .server_faces import (
     clear_face_caches,
+    current_face_db_path,
     face_overlay_content_html,
     person_by_name,
     person_item_url_for_face,
@@ -150,9 +154,12 @@ class BildebankServer(ThreadingHTTPServer):
         self.search_cache = OpenClipSearchCache(config)
         self._browser_navigation_cache_version = 0
         self._browser_navigation_db_mtime_ns: int | None = None
+        self._browser_navigation_face_db_mtime_ns: int | None = None
         self._browser_navigation_checked_at = 0.0
         self._browser_item_ids: dict[bool, tuple[int, list[int], dict[int, int]]] = {}
         self._browser_month_keys: dict[bool, tuple[int, list[str]]] = {}
+        self._source_item_ids: dict[tuple[BrowserSource, bool], tuple[int, list[int], dict[int, int]]] = {}
+        self._source_month_keys: dict[tuple[BrowserSource, bool], tuple[int, list[str]]] = {}
 
     @property
     def face_enabled(self) -> bool:
@@ -199,6 +206,42 @@ class BildebankServer(ThreadingHTTPServer):
             self._browser_item_ids[hide_out_of_focus] = cached
         return cached[1], cached[2]
 
+    def source_month_keys(self, source: BrowserSource, *, hide_out_of_focus: bool = False) -> list[str]:
+        version = self.browser_navigation_cache_version()
+        cache_key = (source, hide_out_of_focus)
+        cached = self._source_month_keys.get(cache_key)
+        if cached is None or cached[0] != version:
+            cached = (
+                version,
+                source_month_keys(
+                    self.target,
+                    source,
+                    self.config.face_recognition,
+                    hide_out_of_focus=hide_out_of_focus,
+                ),
+            )
+            self._source_month_keys[cache_key] = cached
+        return cached[1]
+
+    def source_item_order(self, source: BrowserSource, *, hide_out_of_focus: bool = False) -> tuple[list[int], dict[int, int]]:
+        version = self.browser_navigation_cache_version()
+        cache_key = (source, hide_out_of_focus)
+        cached = self._source_item_ids.get(cache_key)
+        if cached is None or cached[0] != version:
+            item_ids = source_item_ids(
+                self.target,
+                source,
+                self.config.face_recognition,
+                hide_out_of_focus=hide_out_of_focus,
+            )
+            cached = (
+                version,
+                item_ids,
+                {file_id: index for index, file_id in enumerate(item_ids)},
+            )
+            self._source_item_ids[cache_key] = cached
+        return cached[1], cached[2]
+
     def browser_navigation_cache_version(self) -> int:
         version = getattr(self, "_browser_navigation_cache_version", 0)
         now = time.monotonic()
@@ -210,11 +253,28 @@ class BildebankServer(ThreadingHTTPServer):
             mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
         except OSError:
             mtime_ns = None
+        config = getattr(self, "config", None)
+        face_config = config.face_recognition if config is not None else None
+        try:
+            face_db_mtime_ns = (
+                current_face_db_path(self.target, face_config).stat().st_mtime_ns
+                if face_config is not None and face_config.enabled
+                else None
+            )
+        except OSError:
+            face_db_mtime_ns = None
         previous_mtime_ns = getattr(self, "_browser_navigation_db_mtime_ns", None)
+        previous_face_db_mtime_ns = getattr(self, "_browser_navigation_face_db_mtime_ns", None)
         self._browser_navigation_db_mtime_ns = mtime_ns
-        if previous_mtime_ns is not None and mtime_ns != previous_mtime_ns:
+        self._browser_navigation_face_db_mtime_ns = face_db_mtime_ns
+        if (
+            (previous_mtime_ns is not None and mtime_ns != previous_mtime_ns)
+            or (previous_face_db_mtime_ns is not None and face_db_mtime_ns != previous_face_db_mtime_ns)
+        ):
             self._browser_item_ids.clear()
             self._browser_month_keys.clear()
+            getattr(self, "_source_item_ids", {}).clear()
+            getattr(self, "_source_month_keys", {}).clear()
             version += 1
             self._browser_navigation_cache_version = version
         return version
@@ -222,11 +282,23 @@ class BildebankServer(ThreadingHTTPServer):
     def clear_browser_navigation_cache(self) -> None:
         self._browser_item_ids.clear()
         self._browser_month_keys.clear()
+        getattr(self, "_source_item_ids", {}).clear()
+        getattr(self, "_source_month_keys", {}).clear()
         self._browser_navigation_cache_version = getattr(self, "_browser_navigation_cache_version", 0) + 1
         try:
             self._browser_navigation_db_mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
         except OSError:
             self._browser_navigation_db_mtime_ns = None
+        config = getattr(self, "config", None)
+        face_config = config.face_recognition if config is not None else None
+        try:
+            self._browser_navigation_face_db_mtime_ns = (
+                current_face_db_path(self.target, face_config).stat().st_mtime_ns
+                if face_config is not None and face_config.enabled
+                else None
+            )
+        except OSError:
+            self._browser_navigation_face_db_mtime_ns = None
         self._browser_navigation_checked_at = time.monotonic()
 
 
@@ -607,6 +679,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 hotkeys=self.server.config.browser.hotkeys,
                 hide_out_of_focus=self.server.hide_out_of_focus,
                 conn=conn,
+                timing_callback=self.record_server_timing,
             )
             self.record_server_timing("source_item_page_html", start)
 
@@ -873,36 +946,66 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.redirect(source_item_url(source, int(item["id"])))
             return
         if page_mode == "item":
+            start = time.perf_counter()
             file_id = parse_file_id(raw_value)
+            self.record_server_timing("parse", start)
+            start = time.perf_counter()
             conn = db.connect(self.server.target)
+            self.record_server_timing("db_connect", start)
             try:
-                item = source_item_by_id(
-                    self.server.target,
-                    source,
-                    file_id,
-                    face_config,
-                    hide_out_of_focus=hide_out_of_focus,
-                    conn=conn,
-                )
+                if source_has_sql_filter(source):
+                    start = time.perf_counter()
+                    item_ids, item_positions = self.server.source_item_order(source, hide_out_of_focus=hide_out_of_focus)
+                    self.record_server_timing("source_item_order", start)
+                    start = time.perf_counter()
+                    item = item_by_id(self.server.target, file_id, conn=conn) if file_id in item_positions else None
+                    self.record_server_timing("item_by_id", start)
+                else:
+                    start = time.perf_counter()
+                    item = source_item_by_id(
+                        self.server.target,
+                        source,
+                        file_id,
+                        face_config,
+                        hide_out_of_focus=hide_out_of_focus,
+                        conn=conn,
+                    )
+                    self.record_server_timing("item_by_id", start)
                 if item is None:
                     self.respond_text(item_not_found_message, status=HTTPStatus.NOT_FOUND)
                     return
-                previous_item, next_item = adjacent_source_items(
-                    self.server.target,
-                    source,
-                    item,
-                    face_config,
-                    hide_out_of_focus=hide_out_of_focus,
-                    conn=conn,
-                )
-                month_nav = source_month_navigation(
-                    self.server.target,
-                    source,
-                    item,
-                    face_config,
-                    hide_out_of_focus=hide_out_of_focus,
-                    conn=conn,
-                )
+                if source_has_sql_filter(source):
+                    start = time.perf_counter()
+                    previous_item, next_item = adjacent_items_from_id_order(item_ids, int(item["id"]), item_positions)
+                    self.record_server_timing("adjacent", start)
+                    start = time.perf_counter()
+                    month_nav = month_navigation_for_keys(
+                        self.server.source_month_keys(source, hide_out_of_focus=hide_out_of_focus),
+                        month_key_for_item(self.server.target, item),
+                    )
+                    self.record_server_timing("month_nav", start)
+                else:
+                    start = time.perf_counter()
+                    previous_item, next_item = adjacent_source_items(
+                        self.server.target,
+                        source,
+                        item,
+                        face_config,
+                        hide_out_of_focus=hide_out_of_focus,
+                        conn=conn,
+                    )
+                    self.record_server_timing("adjacent", start)
+                    start = time.perf_counter()
+                    month_nav = source_month_navigation(
+                        self.server.target,
+                        source,
+                        item,
+                        face_config,
+                        hide_out_of_focus=hide_out_of_focus,
+                        conn=conn,
+                    )
+                    self.record_server_timing("month_nav", start)
+                start = time.perf_counter()
                 self.respond_html(
                     source_item_page_html(
                         self.server.target,
@@ -919,8 +1022,10 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         hotkeys=self.server.config.browser.hotkeys,
                         hide_out_of_focus=hide_out_of_focus,
                         conn=conn,
+                        timing_callback=self.record_server_timing,
                     )
                 )
+                self.record_server_timing("source_item_page_html", start)
             finally:
                 conn.close()
             return

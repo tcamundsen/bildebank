@@ -93,11 +93,15 @@ from bildebank.server_browser import (
     date_source_text,
     image_info_content_html,
     month_key_for_item,
+    motion_video_for_image,
     person_item_by_id,
     person_month_items,
     person_month_navigation,
     source_item_by_id,
+    source_item_count,
+    source_item_ids,
     source_month_items,
+    source_month_keys,
     source_month_navigation,
     source_summary_rows,
     valid_year_key,
@@ -3789,6 +3793,21 @@ model_name = "buffalo_l"
         self.assertEqual(motion_file.content_type, "video/mp4")
         self.assertEqual(motion_file.content[4:8], b"ftyp")
 
+    def test_run_server_motion_video_lookup_skips_non_motion_partner_images(self) -> None:
+        class ExplodingConnection:
+            def execute(self, *_args, **_kwargs):
+                raise AssertionError("Non-motion image should not query for a motion video.")
+
+        item = {
+            "id": 1,
+            "target_path": "2024/01/IMG_20240102.jpg",
+            "target_path_key": "2024/01/img_20240102.jpg",
+            "original_filename": "IMG_20240102.jpg",
+            "stored_filename": "IMG_20240102.jpg",
+        }
+
+        self.assertIsNone(motion_video_for_image(Path("/unused"), item, conn=ExplodingConnection()))  # type: ignore[arg-type]
+
     def test_run_server_filter_route_redirects_query_to_canonical_browser_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -4196,6 +4215,7 @@ model_name = "buffalo_l"
                 conn.close()
 
         self.assertIn("Synlige bilder", body)
+        self.assertIn('href="/item/1">Synlige bilder</a>', body)
 
     def test_run_server_out_of_focus_button_redirects_to_adjacent_visible_item(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5310,6 +5330,133 @@ model_name = "buffalo_l"
         self.assertIn('<a class="nav-button" href="/person/Kari/confirmed">[✓] Ta med forslag</a>', month_controls_html)
         self.assertIn("/person/Kari/item/2", month_body)
         self.assertNotIn("/person/Kari/item/3", month_body)
+
+    def test_run_server_person_browser_uses_sql_filter_for_item_navigation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+            (source / "IMG_20240203.png").write_bytes(minimal_png(101, 80))
+            (source / "IMG_20240304.png").write_bytes(minimal_png(102, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(1, 1, 'key-1', 1, 2, 10, 20, 0.9, 'test', ?)
+                    """,
+                    (b"embedding-1",),
+                )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(2, 2, 'key-2', 3, 4, 12, 22, 0.8, 'test', ?)
+                    """,
+                    (b"embedding-2",),
+                )
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)")
+                face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(1, 3)")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            all_source = person_browser_source("Kari", include_suggestions=True, show_faces=False)
+            confirmed_source = person_browser_source("Kari", include_suggestions=False, show_faces=False)
+
+            with patch("bildebank.server_browser.source_items", side_effect=AssertionError("person browser should use SQL filter")):
+                all_item = source_item_by_id(target, all_source, 2)
+                self.assertIsNotNone(all_item)
+                previous_item, next_item = adjacent_source_items(target, all_source, all_item)
+                all_month_nav = source_month_navigation(target, all_source, all_item)
+                manual_month_items = source_month_items(target, all_source, "2024-03")
+                confirmed_item = source_item_by_id(target, confirmed_source, 1)
+                self.assertIsNotNone(confirmed_item)
+
+                self.assertTrue(source_has_sql_filter(all_source))
+                self.assertTrue(source_has_sql_filter(confirmed_source))
+                self.assertEqual(3, source_item_count(target, all_source))
+                self.assertEqual(1, source_item_count(target, confirmed_source))
+                self.assertEqual(1, int(previous_item["id"]))
+                self.assertEqual(3, int(next_item["id"]))
+                self.assertEqual({"previous_year": None, "next_year": None, "previous_month": "2024-01", "next_month": "2024-03"}, all_month_nav)
+                self.assertEqual([3], [int(item["id"]) for item in manual_month_items])
+                self.assertIsNone(source_item_by_id(target, confirmed_source, 2))
+                self.assertIsNone(source_item_by_id(target, confirmed_source, 3))
+
+                class FakeServer:
+                    def __init__(self, target: Path) -> None:
+                        self.target = target
+                        self.config = AppConfig(face_recognition=FaceRecognitionConfig(enabled=True), openclip=OpenClipConfig(enabled=False))
+                        self.face_enabled = True
+                        self.openclip_enabled = False
+                        self.hide_out_of_focus = False
+
+                    def source_item_order(self, source, *, hide_out_of_focus: bool = False):
+                        item_ids = source_item_ids(
+                            self.target,
+                            source,
+                            self.config.face_recognition,
+                            hide_out_of_focus=hide_out_of_focus,
+                        )
+                        return item_ids, {file_id: index for index, file_id in enumerate(item_ids)}
+
+                    def source_month_keys(self, source, *, hide_out_of_focus: bool = False):
+                        return source_month_keys(
+                            self.target,
+                            source,
+                            self.config.face_recognition,
+                            hide_out_of_focus=hide_out_of_focus,
+                        )
+
+                class FakeHandler:
+                    server = FakeServer(target)
+                    body = ""
+                    status = None
+
+                    def respond_html(self, body: str, *, status=HTTPStatus.OK) -> None:
+                        self.body = body
+                        self.status = status
+
+                    def respond_text(self, body: str, *, status=HTTPStatus.OK) -> None:
+                        self.body = body
+                        self.status = status
+
+                    def redirect(self, location: str) -> None:
+                        self.body = location
+                        self.status = HTTPStatus.FOUND
+
+                    def record_server_timing(self, name: str, start: float) -> None:
+                        return
+
+                handler = FakeHandler()
+                with (
+                    patch("bildebank.server.source_item_by_id", side_effect=AssertionError("handler should use cached source item order")),
+                    patch("bildebank.server.adjacent_source_items", side_effect=AssertionError("handler should use cached adjacent item ids")),
+                ):
+                    BildebankRequestHandler.respond_browser_source(  # type: ignore[arg-type]
+                        handler,
+                        all_source,
+                        "item",
+                        "2",
+                        face_config=handler.server.config.face_recognition,
+                        item_not_found_message="Filen finnes ikke for denne personen.",
+                        invalid_page_message="Ugyldig personside.",
+                    )
+
+                self.assertEqual(HTTPStatus.OK, handler.status)
+                self.assertIn('data-browser-item-id="2"', handler.body)
 
     def test_run_server_people_page_links_confirmed_and_suggested_person_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

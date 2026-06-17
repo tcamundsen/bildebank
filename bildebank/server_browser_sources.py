@@ -117,7 +117,7 @@ def source_has_sql_filter(source: BrowserSource) -> bool:
         from .server_filter import text_filter_has_runtime_filter
 
         return not text_filter_has_runtime_filter(source.text_filter)
-    return source.geo_place_slug is not None or source.text_filter is not None
+    return source.person_name is not None or source.geo_place_slug is not None or source.text_filter is not None
 
 
 def source_includes_deleted(source: BrowserSource) -> bool:
@@ -125,6 +125,45 @@ def source_includes_deleted(source: BrowserSource) -> bool:
 
 
 def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
+    if source.person_name is not None:
+        from .face import normalize_person_name
+
+        person_name = normalize_person_name(source.person_name)
+        selectors = [
+            """
+            SELECT face_db.faces.file_id
+            FROM face_db.persons
+            JOIN face_db.person_faces ON face_db.person_faces.person_id = face_db.persons.id
+            JOIN face_db.faces ON face_db.faces.id = face_db.person_faces.face_id
+            WHERE face_db.persons.name = ?
+            """,
+        ]
+        params: tuple[object, ...] = (person_name,)
+        if source.include_suggestions:
+            selectors.extend(
+                [
+                    """
+                    SELECT face_db.person_files.file_id
+                    FROM face_db.persons
+                    JOIN face_db.person_files ON face_db.person_files.person_id = face_db.persons.id
+                    WHERE face_db.persons.name = ?
+                    """,
+                    """
+                    SELECT face_db.faces.file_id
+                    FROM face_db.persons
+                    JOIN face_db.face_suggestions ON face_db.face_suggestions.person_id = face_db.persons.id
+                    JOIN face_db.faces ON face_db.faces.id = face_db.face_suggestions.face_id
+                    WHERE face_db.persons.name = ?
+                    """,
+                ]
+            )
+            params = (person_name, person_name, person_name)
+        return (
+            "files.id IN ("
+            + " UNION ".join(selectors)
+            + ")",
+            params,
+        )
     if source.geo_place_slug is not None:
         place = PredefinedGeoPlace(source.geo_place_slug, source.title, source.geo_place_cells)
         return db.geo_place_where_clause(geo_place_cells_by_column(place))

@@ -258,6 +258,7 @@ def source_item_page_html(
     hotkeys: dict[str, object] | None = None,
     hide_out_of_focus: bool = False,
     conn: Any | None = None,
+    timing_callback: Any | None = None,
 ) -> str:
     return server_browser.source_item_page_html(
         target,
@@ -275,6 +276,7 @@ def source_item_page_html(
         hotkeys=hotkeys,
         hide_out_of_focus=hide_out_of_focus,
         conn=conn,
+        timing_callback=timing_callback,
     )
 
 

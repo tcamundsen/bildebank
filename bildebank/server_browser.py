@@ -5,6 +5,7 @@ import re
 import sqlite3
 import urllib.parse
 import datetime as dt
+import time
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
@@ -128,7 +129,7 @@ def first_source_item(
     hide_out_of_focus: bool = False,
 ) -> Any | None:
     if source_has_sql_filter(source):
-        return first_sql_filtered_source_item(target, source, hide_out_of_focus=hide_out_of_focus)
+        return first_sql_filtered_source_item(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
     if source.person_name is not None or source.source_id is not None or source.tag_name is not None:
         items = source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
         return items[0] if items else None
@@ -141,6 +142,7 @@ def first_source_item(
 def first_sql_filtered_source_item(
     target: Path,
     source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
 ) -> Any | None:
@@ -155,7 +157,7 @@ def first_sql_filtered_source_item(
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
-        attach_source_sql_filter_databases(conn, target, source)
+        attach_source_sql_filter_databases(conn, target, source, face_config)
         return conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
@@ -193,6 +195,7 @@ def sql_filtered_source_item_by_id(
     target: Path,
     source: BrowserSource,
     file_id: int,
+    face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
@@ -210,7 +213,7 @@ def sql_filtered_source_item_by_id(
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     try:
-        attach_source_sql_filter_databases(conn, target, source)
+        attach_source_sql_filter_databases(conn, target, source, face_config)
         return conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
@@ -290,6 +293,7 @@ def source_item_by_id(
             target,
             source,
             file_id,
+            face_config,
             hide_out_of_focus=hide_out_of_focus,
             conn=conn,
         )
@@ -308,6 +312,7 @@ def source_item_by_id(
 def sql_filtered_source_item_count(
     target: Path,
     source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
@@ -325,7 +330,7 @@ def sql_filtered_source_item_count(
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     try:
-        attach_source_sql_filter_databases(conn, target, source)
+        attach_source_sql_filter_databases(conn, target, source, face_config)
         row = conn.execute(
             f"""
             SELECT COUNT(*) AS item_count
@@ -350,7 +355,7 @@ def source_item_count(
     conn: sqlite3.Connection | None = None,
 ) -> int:
     if source_has_sql_filter(source):
-        return sql_filtered_source_item_count(target, source, hide_out_of_focus=hide_out_of_focus, conn=conn)
+        return sql_filtered_source_item_count(target, source, face_config, hide_out_of_focus=hide_out_of_focus, conn=conn)
     return len(source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus))
 
 
@@ -605,6 +610,7 @@ def adjacent_sql_filtered_source_items(
     target: Path,
     source: BrowserSource,
     item: Any,
+    face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
@@ -623,7 +629,7 @@ def adjacent_sql_filtered_source_items(
     order_key = item_order_key(item)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     try:
-        attach_source_sql_filter_databases(conn, target, source)
+        attach_source_sql_filter_databases(conn, target, source, face_config)
         previous_item = conn.execute(
             f"""
             SELECT {FILE_COLUMNS}
@@ -690,6 +696,67 @@ def browser_item_ids(
             conn.close()
 
 
+def source_item_ids(
+    target: Path,
+    source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> list[int]:
+    if source_has_sql_filter(source):
+        return sql_filtered_source_item_ids(
+            target,
+            source,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+            conn=conn,
+        )
+    if source == all_browser_source():
+        return browser_item_ids(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
+    return [int(item["id"]) for item in source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)]
+
+
+def sql_filtered_source_item_ids(
+    target: Path,
+    source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> list[int]:
+    where_sql, params = source_sql_filter(source)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
+    where_sql, params = with_motion_video_filter(
+        target,
+        where_sql,
+        params,
+        include_motion=source_shows_motion_videos(source),
+        conn=conn,
+    )
+    where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
+    deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
+    try:
+        attach_source_sql_filter_databases(conn, target, source, face_config)
+        return [
+            int(row["id"])
+            for row in conn.execute(
+                f"""
+                SELECT id
+                FROM files
+                WHERE {deleted_sql}
+                  AND ({where_sql})
+                ORDER BY {ITEM_ORDER_SQL}
+                """,
+                params,
+            )
+        ]
+    finally:
+        if owned_conn:
+            conn.close()
+
+
 def adjacent_source_items(
     target: Path,
     source: BrowserSource,
@@ -704,6 +771,7 @@ def adjacent_source_items(
             target,
             source,
             item,
+            face_config,
             hide_out_of_focus=hide_out_of_focus,
             conn=conn,
         )
@@ -751,6 +819,7 @@ def cached_browser_month_keys(target_path: str, db_mtime_ns: int, hide_out_of_fo
 def sql_filtered_source_month_keys(
     target: Path,
     source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
@@ -768,7 +837,7 @@ def sql_filtered_source_month_keys(
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     try:
-        attach_source_sql_filter_databases(conn, target, source)
+        attach_source_sql_filter_databases(conn, target, source, face_config)
         rows = conn.execute(
             f"""
             SELECT DISTINCT substr({db.BROWSER_DATE_ORDER_SQL}, 1, 7) AS month_key
@@ -869,7 +938,7 @@ def source_month_keys(
     conn: sqlite3.Connection | None = None,
 ) -> list[str]:
     if source_has_sql_filter(source):
-        return sql_filtered_source_month_keys(target, source, hide_out_of_focus=hide_out_of_focus, conn=conn)
+        return sql_filtered_source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus, conn=conn)
     if (
         source.person_name is not None
         or source.source_id is not None
@@ -1168,6 +1237,7 @@ def source_item_page_html(
     hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
+    timing_callback: Callable[[str, float], None] | None = None,
 ) -> str:
     from .server_shell import (
         app_header_html,
@@ -1178,11 +1248,15 @@ def source_item_page_html(
 
     target_path = Path(str(item["target_path"]))
     relative = display_relative_path(target, target_path)
+    start = time.perf_counter()
     media = source_item_media_html(target, source, item, face_config)
+    if timing_callback is not None:
+        timing_callback("html_media", start)
     face_rail_html = ""
     unconfirm_buttons = ""
     faces_overlay = ""
     duplicate_warning = ""
+    person_has_confirmed_face = False
     if face_enabled:
         from .server_faces import (
             confirmed_face_people_text_html,
@@ -1195,10 +1269,22 @@ def source_item_page_html(
             unconfirmed_face_count_for_item,
         )
 
+        start = time.perf_counter()
         people_data, confirmed_face_people_data = people_for_file(target, int(item["id"]), face_config)
+        if source.person_name is not None:
+            person_has_confirmed_face = any(
+                str(person.get("name")) == source.person_name
+                for person in confirmed_face_people_data
+            )
+        if timing_callback is not None:
+            timing_callback("html_people_for_file", start)
         manual_person_controls = ""
         if manual_person_controls_enabled:
+            start = time.perf_counter()
             manual_person_controls = manual_person_file_controls_html(target, item, people_data, face_config)
+            if timing_callback is not None:
+                timing_callback("html_manual_person_controls", start)
+        start = time.perf_counter()
         face_rail_html = people_links_html(
             people_data,
             "Personer i bildet",
@@ -1212,11 +1298,17 @@ def source_item_page_html(
         face_rail_html += confirmed_face_people_text_html(confirmed_face_people_data)
         faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
         duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config)
+        if timing_callback is not None:
+            timing_callback("html_face_rail", start)
+    start = time.perf_counter()
     hotkey_hints_html = (
         hotkey_hints_panel_html(target, hotkeys or {}, conn=conn)
         if hotkey_hints_enabled
         else ""
     )
+    if timing_callback is not None:
+        timing_callback("html_hotkey_hints", start)
+    start = time.perf_counter()
     controls = source_controls_html(
         source,
         month_nav,
@@ -1234,6 +1326,7 @@ def source_item_page_html(
                 source,
                 item,
                 face_config,
+                person_has_confirmed_face=person_has_confirmed_face,
                 hide_out_of_focus=hide_out_of_focus,
                 conn=conn,
             ),
@@ -1241,6 +1334,9 @@ def source_item_page_html(
         unconfirm_buttons=unconfirm_buttons,
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
+    if timing_callback is not None:
+        timing_callback("html_controls", start)
+    start = time.perf_counter()
     info_overlay = image_info_overlay_html()
     manual_date_overlay = manual_date_overlay_html()
     out_of_focus_redirect_url = hidden_after_out_of_focus_tag_redirect_url(
@@ -1257,36 +1353,53 @@ def source_item_page_html(
         suffix_html=hotkey_hints_html,
         conn=conn,
     )
+    if timing_callback is not None:
+        timing_callback("html_tag_controls", start)
+    start = time.perf_counter()
     all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
+    if timing_callback is not None:
+        timing_callback("html_all_items_link", start)
     all_items_label = "Synlige bilder" if hide_out_of_focus else "Alle bilder"
+    start = time.perf_counter()
     motion_video = motion_video_for_image(target, item, conn=conn)
     motion_video_link = motion_video_link_html(motion_video) if motion_video is not None else ""
+    if timing_callback is not None:
+        timing_callback("html_motion_video", start)
     source_url_attr = ""
     if source.text_filter is not None:
         source_url_attr = f' data-browser-source-url="{html.escape(source.root_url)}"'
-    return page_html(
+    start = time.perf_counter()
+    title_html = source_item_breadcrumb_html(
+        target,
+        source,
+        item,
+        face_config=face_config,
+        hide_out_of_focus=hide_out_of_focus,
+        conn=conn,
+    )
+    if timing_callback is not None:
+        timing_callback("html_breadcrumb", start)
+    start = time.perf_counter()
+    header_html = app_header_html(
+        source.title,
+        source=source,
+        item=item,
+        title_html=title_html,
+        controls=controls,
+        message_html=duplicate_warning,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+        all_items_url=all_items_url,
+        all_items_label=all_items_label,
+    )
+    if timing_callback is not None:
+        timing_callback("html_app_header", start)
+    start = time.perf_counter()
+    result = page_html(
         f"{source.title}: {target_path.name}",
         f"""
         <main class="server-browser" data-browser-item-id="{int(item["id"])}"{source_url_attr}>
-          {app_header_html(
-              source.title,
-              source=source,
-              item=item,
-              title_html=source_item_breadcrumb_html(
-                  target,
-                  source,
-                  item,
-                  face_config=face_config,
-                  hide_out_of_focus=hide_out_of_focus,
-                  conn=conn,
-              ),
-              controls=controls,
-              message_html=duplicate_warning,
-              face_enabled=face_enabled,
-              openclip_enabled=openclip_enabled,
-              all_items_url=all_items_url,
-              all_items_label=all_items_label,
-          )}
+          {header_html}
           <div class="stage-shell">
             {tag_controls}
             <section class="stage">
@@ -1303,6 +1416,9 @@ def source_item_page_html(
         {manual_date_overlay}
         """,
     )
+    if timing_callback is not None:
+        timing_callback("html_page", start)
+    return result
 
 
 def suggestion_toggle_href(
@@ -1311,6 +1427,7 @@ def suggestion_toggle_href(
     item: Any | None,
     face_config: FaceRecognitionConfig | None = None,
     *,
+    person_has_confirmed_face: bool | None = None,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> str | None:
@@ -1324,6 +1441,8 @@ def suggestion_toggle_href(
     if item is None:
         return target_source.root_url
     file_id = int(item["id"])
+    if source.person_name is not None and source.include_suggestions and not target_source.include_suggestions:
+        return source_item_url(target_source, file_id) if person_has_confirmed_face else target_source.root_url
     target_item = source_item_by_id(
         target,
         target_source,
@@ -1343,6 +1462,9 @@ def motion_video_for_image(target: Path, item: Any, *, conn: sqlite3.Connection 
     original_filename = original_filename_for_item(target, item, conn=conn)
     if original_filename is None:
         return None
+    if not original_filename.casefold().endswith(".mp.jpg"):
+        return None
+    motion_original_filename = original_filename[:-4]
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
@@ -1351,13 +1473,13 @@ def motion_video_for_image(target: Path, item: Any, *, conn: sqlite3.Connection 
             SELECT {FILE_COLUMNS}
             FROM files
             WHERE deleted_at IS NULL
-              AND lower(original_filename || '.jpg') = lower(?)
+              AND lower(original_filename) = lower(?)
               AND lower(original_filename) LIKE '%.mp'
               AND lower(stored_filename) LIKE '%.mp4'
             ORDER BY {ITEM_ORDER_SQL}
             LIMIT 1
             """,
-            (original_filename,),
+            (motion_original_filename,),
         ).fetchone()
     finally:
         if owned_conn:
@@ -1469,6 +1591,8 @@ def all_browser_item_link_url(
 ) -> str | None:
     if source == all_browser_source() or not hide_out_of_focus:
         return None
+    if should_filter_out_of_focus(source, hide_out_of_focus) and not source_includes_deleted(source):
+        return source_item_url(all_browser_source(), int(item["id"]))
     visible_item = source_item_by_id(
         target,
         all_browser_source(),
@@ -2642,7 +2766,7 @@ def source_month_items(
     hide_out_of_focus: bool = False,
 ) -> list[Any]:
     if source_has_sql_filter(source):
-        return sql_filtered_source_month_items(target, source, month_key, hide_out_of_focus=hide_out_of_focus)
+        return sql_filtered_source_month_items(target, source, month_key, face_config, hide_out_of_focus=hide_out_of_focus)
     if (
         source.person_name is not None
         or source.source_id is not None
@@ -2661,6 +2785,7 @@ def sql_filtered_source_month_items(
     target: Path,
     source: BrowserSource,
     month_key: str,
+    face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
 ) -> list[Any]:
@@ -2677,7 +2802,7 @@ def sql_filtered_source_month_items(
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     conn = db.connect(target)
     try:
-        attach_source_sql_filter_databases(conn, target, source)
+        attach_source_sql_filter_databases(conn, target, source, face_config)
         return list(
             conn.execute(
                 f"""
@@ -2695,12 +2820,33 @@ def sql_filtered_source_month_items(
         conn.close()
 
 
-def attach_source_sql_filter_databases(conn: Any, target: Path, source: BrowserSource) -> None:
+def attach_source_sql_filter_databases(
+    conn: Any,
+    target: Path,
+    source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
+) -> None:
+    if source.person_name is not None:
+        attach_face_database(conn, target, face_config)
     if source.text_filter is None:
         return
     from .server_filter import attach_text_filter_databases
 
     attach_text_filter_databases(conn, target, source.text_filter)
+
+
+def attach_face_database(
+    conn: Any,
+    target: Path,
+    face_config: FaceRecognitionConfig | None = None,
+) -> None:
+    if any(str(row["name"]) == "face_db" for row in conn.execute("PRAGMA database_list")):
+        return
+    from .face import connect_face_db, face_db_path
+
+    face_conn = connect_face_db(target, face_config)
+    face_conn.close()
+    conn.execute("ATTACH DATABASE ? AS face_db", (str(face_db_path(target, face_config)),))
 
 
 def browser_month_navigation_for_key(
