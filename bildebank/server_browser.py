@@ -1220,95 +1220,88 @@ def item_page_html(
     )
 
 
-def source_item_page_html(
+def _source_item_face_html(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    face_config: FaceRecognitionConfig | None,
+    *,
+    face_enabled: bool,
+    manual_person_controls_enabled: bool,
+    timing_callback: Callable[[str, float], None] | None = None,
+) -> tuple[str, str, str, bool]:
+    if not face_enabled:
+        return "", "", "", False
+
+    from .server_faces import (
+        confirmed_face_people_text_html,
+        faces_button_html,
+        faces_overlay_html,
+        manual_person_file_controls_html,
+        people_for_file,
+        people_links_html,
+        source_duplicate_confirmed_faces_warning_html,
+        unconfirmed_face_count_for_item,
+    )
+
+    start = time.perf_counter()
+    people_data, confirmed_face_people_data = people_for_file(target, int(item["id"]), face_config)
+    person_has_confirmed_face = False
+    if source.person_name is not None:
+        person_has_confirmed_face = any(
+            str(person.get("name")) == source.person_name
+            for person in confirmed_face_people_data
+        )
+    if timing_callback is not None:
+        timing_callback("html_people_for_file", start)
+
+    manual_person_controls = ""
+    if manual_person_controls_enabled:
+        start = time.perf_counter()
+        manual_person_controls = manual_person_file_controls_html(target, item, people_data, face_config)
+        if timing_callback is not None:
+            timing_callback("html_manual_person_controls", start)
+
+    start = time.perf_counter()
+    face_rail_html = people_links_html(
+        people_data,
+        "Personer i bildet",
+        manual_person_controls=manual_person_controls,
+        file_id=int(item["id"]),
+        manual_remove_enabled=manual_person_controls_enabled,
+    )
+    show_unconfirmed_faces = source.person_name is None
+    unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
+    face_rail_html += faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
+    face_rail_html += confirmed_face_people_text_html(confirmed_face_people_data)
+    faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
+    duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config)
+    if timing_callback is not None:
+        timing_callback("html_face_rail", start)
+    return face_rail_html, faces_overlay, duplicate_warning, person_has_confirmed_face
+
+
+def _source_item_controls_html(
     target: Path,
     source: BrowserSource,
     item: Any,
     previous_item: Any | None,
     next_item: Any | None,
     month_nav: dict[str, str | None],
+    face_config: FaceRecognitionConfig | None,
     *,
-    page_html: PageRenderer,
-    face_enabled: bool = True,
-    openclip_enabled: bool = True,
-    face_config: FaceRecognitionConfig | None = None,
-    manual_person_controls_enabled: bool = True,
-    hotkey_hints_enabled: bool = False,
-    hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
-    hide_out_of_focus: bool = False,
-    conn: sqlite3.Connection | None = None,
-    source_item_count_value: int | None = None,
+    face_enabled: bool,
+    person_has_confirmed_face: bool,
+    hide_out_of_focus: bool,
+    conn: sqlite3.Connection | None,
     timing_callback: Callable[[str, float], None] | None = None,
 ) -> str:
     from .server_shell import (
-        app_header_html,
         face_toggle_button_html,
         source_controls_html,
         suggestion_toggle_button_html,
     )
 
-    target_path = Path(str(item["target_path"]))
-    relative = display_relative_path(target, target_path)
-    start = time.perf_counter()
-    media = source_item_media_html(target, source, item, face_config)
-    if timing_callback is not None:
-        timing_callback("html_media", start)
-    face_rail_html = ""
-    unconfirm_buttons = ""
-    faces_overlay = ""
-    duplicate_warning = ""
-    person_has_confirmed_face = False
-    if face_enabled:
-        from .server_faces import (
-            confirmed_face_people_text_html,
-            faces_button_html,
-            faces_overlay_html,
-            manual_person_file_controls_html,
-            people_for_file,
-            people_links_html,
-            source_duplicate_confirmed_faces_warning_html,
-            unconfirmed_face_count_for_item,
-        )
-
-        start = time.perf_counter()
-        people_data, confirmed_face_people_data = people_for_file(target, int(item["id"]), face_config)
-        if source.person_name is not None:
-            person_has_confirmed_face = any(
-                str(person.get("name")) == source.person_name
-                for person in confirmed_face_people_data
-            )
-        if timing_callback is not None:
-            timing_callback("html_people_for_file", start)
-        manual_person_controls = ""
-        if manual_person_controls_enabled:
-            start = time.perf_counter()
-            manual_person_controls = manual_person_file_controls_html(target, item, people_data, face_config)
-            if timing_callback is not None:
-                timing_callback("html_manual_person_controls", start)
-        start = time.perf_counter()
-        face_rail_html = people_links_html(
-            people_data,
-            "Personer i bildet",
-            manual_person_controls=manual_person_controls,
-            file_id=int(item["id"]),
-            manual_remove_enabled=manual_person_controls_enabled,
-        )
-        show_unconfirmed_faces = source.person_name is None
-        unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
-        face_rail_html += faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
-        face_rail_html += confirmed_face_people_text_html(confirmed_face_people_data)
-        faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
-        duplicate_warning = source_duplicate_confirmed_faces_warning_html(target, source, item, face_config)
-        if timing_callback is not None:
-            timing_callback("html_face_rail", start)
-    start = time.perf_counter()
-    hotkey_hints_html = (
-        hotkey_hints_panel_html(target, hotkeys or {}, conn=conn)
-        if hotkey_hints_enabled
-        else ""
-    )
-    if timing_callback is not None:
-        timing_callback("html_hotkey_hints", start)
     start = time.perf_counter()
     controls = source_controls_html(
         source,
@@ -1332,14 +1325,28 @@ def source_item_page_html(
                 conn=conn,
             ),
         ),
-        unconfirm_buttons=unconfirm_buttons,
+        unconfirm_buttons="",
         delete_button=delete_button_html(source, item, previous_item, next_item),
     )
     if timing_callback is not None:
         timing_callback("html_controls", start)
-    start = time.perf_counter()
-    info_overlay = image_info_overlay_html()
-    manual_date_overlay = manual_date_overlay_html()
+    return controls
+
+
+def _source_item_tag_controls_html(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    previous_item: Any | None,
+    next_item: Any | None,
+    *,
+    hide_out_of_focus: bool,
+    face_rail_html: str,
+    suffix_html: str,
+    conn: sqlite3.Connection | None,
+    timing_start: float,
+    timing_callback: Callable[[str, float], None] | None = None,
+) -> str:
     out_of_focus_redirect_url = hidden_after_out_of_focus_tag_redirect_url(
         source,
         previous_item,
@@ -1351,24 +1358,33 @@ def source_item_page_html(
         item,
         out_of_focus_redirect_url=out_of_focus_redirect_url,
         extra_html=face_rail_html,
-        suffix_html=hotkey_hints_html,
+        suffix_html=suffix_html,
         conn=conn,
     )
     if timing_callback is not None:
-        timing_callback("html_tag_controls", start)
-    start = time.perf_counter()
-    all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
-    if timing_callback is not None:
-        timing_callback("html_all_items_link", start)
-    all_items_label = "Synlige bilder" if hide_out_of_focus else "Alle bilder"
-    start = time.perf_counter()
-    motion_video = motion_video_for_image(target, item, conn=conn)
-    motion_video_link = motion_video_link_html(motion_video) if motion_video is not None else ""
-    if timing_callback is not None:
-        timing_callback("html_motion_video", start)
-    source_url_attr = ""
-    if source.text_filter is not None:
-        source_url_attr = f' data-browser-source-url="{html.escape(source.root_url)}"'
+        timing_callback("html_tag_controls", timing_start)
+    return tag_controls
+
+
+def _source_item_header_html(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    controls: str,
+    duplicate_warning: str,
+    face_config: FaceRecognitionConfig | None,
+    *,
+    face_enabled: bool,
+    openclip_enabled: bool,
+    all_items_url: str | None,
+    all_items_label: str,
+    hide_out_of_focus: bool,
+    conn: sqlite3.Connection | None,
+    source_item_count_value: int | None,
+    timing_callback: Callable[[str, float], None] | None = None,
+) -> str:
+    from .server_shell import app_header_html
+
     start = time.perf_counter()
     title_html = source_item_breadcrumb_html(
         target,
@@ -1381,6 +1397,7 @@ def source_item_page_html(
     )
     if timing_callback is not None:
         timing_callback("html_breadcrumb", start)
+
     start = time.perf_counter()
     header_html = app_header_html(
         source.title,
@@ -1396,6 +1413,111 @@ def source_item_page_html(
     )
     if timing_callback is not None:
         timing_callback("html_app_header", start)
+    return header_html
+
+
+def source_item_page_html(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    previous_item: Any | None,
+    next_item: Any | None,
+    month_nav: dict[str, str | None],
+    *,
+    page_html: PageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
+    manual_person_controls_enabled: bool = True,
+    hotkey_hints_enabled: bool = False,
+    hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+    source_item_count_value: int | None = None,
+    timing_callback: Callable[[str, float], None] | None = None,
+) -> str:
+    target_path = Path(str(item["target_path"]))
+    relative = display_relative_path(target, target_path)
+    start = time.perf_counter()
+    media = source_item_media_html(target, source, item, face_config)
+    if timing_callback is not None:
+        timing_callback("html_media", start)
+    face_rail_html, faces_overlay, duplicate_warning, person_has_confirmed_face = _source_item_face_html(
+        target,
+        source,
+        item,
+        face_config,
+        face_enabled=face_enabled,
+        manual_person_controls_enabled=manual_person_controls_enabled,
+        timing_callback=timing_callback,
+    )
+    start = time.perf_counter()
+    hotkey_hints_html = (
+        hotkey_hints_panel_html(target, hotkeys or {}, conn=conn)
+        if hotkey_hints_enabled
+        else ""
+    )
+    if timing_callback is not None:
+        timing_callback("html_hotkey_hints", start)
+    controls = _source_item_controls_html(
+        target,
+        source,
+        item,
+        previous_item,
+        next_item,
+        month_nav,
+        face_config,
+        face_enabled=face_enabled,
+        person_has_confirmed_face=person_has_confirmed_face,
+        hide_out_of_focus=hide_out_of_focus,
+        conn=conn,
+        timing_callback=timing_callback,
+    )
+    start = time.perf_counter()
+    info_overlay = image_info_overlay_html()
+    manual_date_overlay = manual_date_overlay_html()
+    tag_controls = _source_item_tag_controls_html(
+        target,
+        source,
+        item,
+        previous_item,
+        next_item,
+        hide_out_of_focus=hide_out_of_focus,
+        face_rail_html=face_rail_html,
+        suffix_html=hotkey_hints_html,
+        conn=conn,
+        timing_start=start,
+        timing_callback=timing_callback,
+    )
+    start = time.perf_counter()
+    all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
+    if timing_callback is not None:
+        timing_callback("html_all_items_link", start)
+    all_items_label = "Synlige bilder" if hide_out_of_focus else "Alle bilder"
+    start = time.perf_counter()
+    motion_video = motion_video_for_image(target, item, conn=conn)
+    motion_video_link = motion_video_link_html(motion_video) if motion_video is not None else ""
+    if timing_callback is not None:
+        timing_callback("html_motion_video", start)
+    source_url_attr = ""
+    if source.text_filter is not None:
+        source_url_attr = f' data-browser-source-url="{html.escape(source.root_url)}"'
+    header_html = _source_item_header_html(
+        target,
+        source,
+        item,
+        controls,
+        duplicate_warning,
+        face_config=face_config,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+        all_items_url=all_items_url,
+        all_items_label=all_items_label,
+        hide_out_of_focus=hide_out_of_focus,
+        conn=conn,
+        source_item_count_value=source_item_count_value,
+        timing_callback=timing_callback,
+    )
     start = time.perf_counter()
     result = page_html(
         f"{source.title}: {target_path.name}",
