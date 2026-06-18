@@ -53,6 +53,12 @@ class BrowserTextFilter:
     height_lt: int | None = None
     height_lte: int | None = None
     height_eq: int | None = None
+    year: int | None = None
+    year_eq: int | None = None
+    year_gt: int | None = None
+    year_gte: int | None = None
+    year_lt: int | None = None
+    year_lte: int | None = None
     month: int | None = None
     month_eq: int | None = None
     month_gt: int | None = None
@@ -115,6 +121,7 @@ class FilterParseState:
     tag: str | None = None
     width: NumericComparison = field(default_factory=NumericComparison)
     height: NumericComparison = field(default_factory=NumericComparison)
+    year: NumericComparison = field(default_factory=NumericComparison)
     month: NumericComparison = field(default_factory=NumericComparison)
     day: NumericComparison = field(default_factory=NumericComparison)
 
@@ -168,6 +175,12 @@ class FilterParseState:
             height_lt=self.height.lt,
             height_lte=self.height.lte,
             height_eq=self.height.eq,
+            year=self.year.eq,
+            year_eq=self.year.eq,
+            year_gt=self.year.gt,
+            year_gte=self.year.gte,
+            year_lt=self.year.lt,
+            year_lte=self.year.lte,
             month=self.month.eq,
             month_eq=self.month.eq,
             month_gt=self.month.gt,
@@ -270,6 +283,12 @@ def parse_month_filter(state: FilterParseState, key: str, value: str) -> None:
     state.month.set_once("=", parse_filter_integer_range(value, key, 1, 12), key)
 
 
+def parse_year_filter(state: FilterParseState, key: str, value: str) -> None:
+    if state.year.eq is not None:
+        raise ValueError("year kan bare brukes én gang.")
+    state.year.set_once("=", parse_filter_integer_range(value, key, 1, 9999), key)
+
+
 def parse_day_filter(state: FilterParseState, key: str, value: str) -> None:
     if state.day.eq is not None:
         raise ValueError("day kan bare brukes én gang.")
@@ -324,6 +343,10 @@ def apply_month_operator(state: FilterParseState, operator: str, value: int) -> 
     state.month.set_once(operator, value, "month")
 
 
+def apply_year_operator(state: FilterParseState, operator: str, value: int) -> None:
+    state.year.set_once(operator, value, "year")
+
+
 def apply_day_operator(state: FilterParseState, operator: str, value: int) -> None:
     state.day.set_once(operator, value, "day")
 
@@ -334,6 +357,10 @@ def parse_h3res_integer(value: str) -> int:
 
 def parse_month_integer(value: str) -> int:
     return parse_filter_integer_range(value, "month", 1, 12)
+
+
+def parse_year_integer(value: str) -> int:
+    return parse_filter_integer_range(value, "year", 1, 9999)
 
 
 def parse_day_integer(value: str) -> int:
@@ -471,6 +498,7 @@ KEY_VALUE_FILTERS: dict[str, Callable[[FilterParseState, str, str], None]] = {
     "location": parse_location_filter,
     "h3res": parse_h3res_key_value_filter,
     "date": parse_date_source_filter,
+    "year": parse_year_filter,
     "month": parse_month_filter,
     "day": parse_day_filter,
     "deleted": parse_deleted_filter,
@@ -491,6 +519,7 @@ OPERATOR_FILTERS: dict[str, OperatorFilterSpec] = {
     "h3res": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_h3res_integer, apply_h3res_operator),
     "width": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_width_pixels, apply_width_operator),
     "height": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_height_pixels, apply_height_operator),
+    "year": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_year_integer, apply_year_operator),
     "month": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_month_integer, apply_month_operator),
     "day": OperatorFilterSpec((">=", "<=", ">", "<", "="), parse_day_integer, apply_day_operator),
 }
@@ -556,6 +585,12 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         height_lt=text_filter.height_lt,
         height_lte=text_filter.height_lte,
         height_eq=text_filter.height_eq,
+        year=text_filter.year,
+        year_eq=text_filter.year_eq,
+        year_gt=text_filter.year_gt,
+        year_gte=text_filter.year_gte,
+        year_lt=text_filter.year_lt,
+        year_lte=text_filter.year_lte,
         month=text_filter.month,
         month_eq=text_filter.month_eq,
         month_gt=text_filter.month_gt,
@@ -573,6 +608,7 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
 
 def text_filter_has_date_criteria(
     text_filter: BrowserTextFilter,
+    year_eq: int | None,
     month_eq: int | None,
     day_eq: int | None,
 ) -> bool:
@@ -581,6 +617,11 @@ def text_filter_has_date_criteria(
         for value in (
             text_filter.after,
             text_filter.before,
+            year_eq,
+            text_filter.year_gt,
+            text_filter.year_gte,
+            text_filter.year_lt,
+            text_filter.year_lte,
             month_eq,
             text_filter.month_gt,
             text_filter.month_gte,
@@ -598,6 +639,7 @@ def text_filter_has_date_criteria(
 def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple[object, ...]]:
     where: list[str] = []
     params: list[object] = []
+    year_eq = text_filter.year_eq if text_filter.year_eq is not None else text_filter.year
     month_eq = text_filter.month_eq if text_filter.month_eq is not None else text_filter.month
     day_eq = text_filter.day_eq if text_filter.day_eq is not None else text_filter.day
     manual_date_sql = (
@@ -608,7 +650,7 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     browser_has_date_sql = f"(({manual_date_sql}) OR {taken_date_sql})"
     if text_filter.deleted:
         where.append("deleted_at IS NOT NULL")
-    if text_filter_has_date_criteria(text_filter, month_eq, day_eq):
+    if text_filter_has_date_criteria(text_filter, year_eq, month_eq, day_eq):
         where.append(browser_has_date_sql)
     if text_filter.after is not None:
         where.append(f"{db.BROWSER_DATE_ORDER_SQL} > ?")
@@ -616,6 +658,16 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     if text_filter.before is not None:
         where.append(f"{db.BROWSER_DATE_ORDER_SQL} < ?")
         params.append(text_filter.before.isoformat())
+    add_date_part_conditions(
+        where,
+        params,
+        date_part_sql(1, 4),
+        eq=year_eq,
+        gt=text_filter.year_gt,
+        gte=text_filter.year_gte,
+        lt=text_filter.year_lt,
+        lte=text_filter.year_lte,
+    )
     add_date_part_conditions(
         where,
         params,
@@ -736,8 +788,8 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     return " AND ".join(where), tuple(params)
 
 
-def date_part_sql(start: int) -> str:
-    return f"CAST(substr({db.BROWSER_DATE_ORDER_SQL}, {start}, 2) AS INTEGER)"
+def date_part_sql(start: int, length: int = 2) -> str:
+    return f"CAST(substr({db.BROWSER_DATE_ORDER_SQL}, {start}, {length}) AS INTEGER)"
 
 
 def add_date_part_conditions(
@@ -956,48 +1008,52 @@ def filter_help_html() -> str:
       <h3>Eksempelsøk</h3>
       <dl class="info-list">
         <div class="info-row">
+          <dt>Bilder fra 2024</dt>
+          <dd><a href="/filter/year:2024"><code>year:2024</code></a>></dd>
+        </div>
+        <div class="info-row">
           <dt>Alle julaftener</dt>
-          <dd><code><a href="/filter/month:12 day:24">month:12 day:24</a></code></dd>
+          <dd><a href="/filter/month:12 day:24"><code>month:12 day:24</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Adventstiden</dt>
-          <dd><code><a href="/filter/month:12 day>=1 day<=25">month:12 day>=1 day<=25</a></code></dd>
+          <dd><a href="/filter/month:12 day>=1 day<=25"><code>month:12 day>=1 day<=25</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Sommerbilder</dt>
-          <dd><code><a href="/filter/month>=6 month<=8">month>=6 month<=8</a></code></dd>
+          <dd><a href="/filter/month>=6 month<=8"><code>month>=6 month<=8</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Bilder fra juli på Kreta</dt>
-          <dd><code><a href="/filter/month:7 location:kreta">month:7 location:kreta</a></code></dd>
+          <dd><a href="/filter/month:7 location:kreta"><code>month:7 location:kreta</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Bilder uten GPS</dt>
-          <dd><code><a href="/filter/missing:gps">missing:gps</a></code></dd>
+          <dd><a href="/filter/missing:gps"><code>missing:gps</code></a></dd>
         </div>
         <div class="info-row">
           <dt> Manuelt plasserte bilder</dt>
-          <dd><code><a href="/filter/location:manual">location:manual</a></code></dd>
+          <dd><a href="/filter/location:manual"><code>location:manual</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Detaljert manuell plassering</dt>
-          <dd><code><a href="/filter/location:manual h3res>=9">location:manual h3res>=9</a></code></dd>
+          <dd><a href="/filter/location:manual h3res>=9"><code>location:manual h3res>=9</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Store bilder</dt>
-          <dd><code><a href="/filter/width>=3000 height>=2000">width>=3000 height>=2000</a></code></dd>
+          <dd><a href="/filter/width>=3000 height>=2000"><code>width>=3000 height>=2000</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Små filer</dt>
-          <dd><code><a href="/filter/size<300KB">size<300KB</a></code></dd>
+          <dd><a href="/filter/size<300KB"><code>size<300KB</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Bilder med tagg</dt>
-          <dd><code><a href='/filter/tag:"Ute av fokus"'>tag:"Ute av fokus"</a></code></dd>
+          <dd><a href='/filter/tag:"Ute av fokus"'><code>tag:"Ute av fokus"</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Et bestemt tidsrom</dt>
-          <dd><code><a href="/filter/after:2023-12-01 before:2023-12-23">after:2023-12-01 before:2023-12-23</a></code></dd>
+          <dd><a href="/filter/after:2023-12-01 before:2023-12-23"><code>after:2023-12-01 before:2023-12-23</code></a></dd>
         </div>
       </dl>
     </section>

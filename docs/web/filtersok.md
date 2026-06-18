@@ -64,7 +64,12 @@ Disse operatorene brukes i numeriske filtre:
 | `>=`     | større enn eller lik |
 | `<=`     | mindre enn eller lik |
 
-For `month` og `day` er `:` det samme som `=`:
+For `year`, `month` og `day` er `:` det samme som `=`:
+
+```text
+year:2024
+year=2024
+```
 
 ```text
 month:12
@@ -91,6 +96,20 @@ width>1000 width<4000
 ```
 
 ## Dato
+
+### `year`
+
+Filtrer på år.
+
+```text
+year:2024
+year=2024
+year>2020
+year<2025
+year>=2020 year<=2024
+```
+
+Gyldige verdier er `1` til `9999`.
 
 ### `after:YYYY-MM-DD`
 
@@ -600,6 +619,7 @@ deleted:true source:"Mobil 2024"
 | ------------- | --------------------------------- | -------------------------------------------- |
 | `after`       | `after:2023-12-01`                | dato etter gitt dato                         |
 | `before`      | `before:2024-12-12`               | dato før gitt dato                           |
+| `year`        | `year:2024`, `year>=2020`         | år 1–9999                                    |
 | `month`       | `month:12`, `month>=6`            | måned 1–12                                   |
 | `day`         | `day:24`, `day<=25`               | dag 1–31                                     |
 | `date`        | `date:manual`                     | `manual`, `metadata`, `filename`, `mtime`    |
@@ -619,4 +639,3 @@ deleted:true source:"Mobil 2024"
 | `person`      | `person:Viljar`                   | personnavn i ansiktsdatabasen                |
 | `deleted`     | `deleted:true`                    | slettede filer                               |
 | `missing`     | `missing:gps`                     | `gps`, `date`, `metadata`                    |
-
