@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "25"
+SERVER_ASSET_VERSION = "26"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -1510,7 +1510,8 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   async function applyHotkeyAction(key) {
     const itemRoot = document.querySelector("[data-browser-item-id]");
     const fileId = Number(itemRoot?.dataset.browserItemId);
-    if (!fileId || !["1", "2", "3", "4", "5"].includes(key)) return false;
+    const hotkeysEnabled = itemRoot?.dataset.browserHotkeysEnabled === "true";
+    if (!fileId || !hotkeysEnabled || !["1", "2", "3", "4", "5"].includes(key)) return false;
     const requestBody = {file_id: fileId, key};
     if (itemRoot?.dataset.browserSourceUrl) requestBody.source_url = itemRoot.dataset.browserSourceUrl;
     try {
@@ -1759,6 +1760,8 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       target?.isContentEditable
     ) return;
     if (["1", "2", "3", "4", "5"].includes(event.key)) {
+      const itemRoot = document.querySelector("[data-browser-item-id]");
+      if (itemRoot?.dataset.browserHotkeysEnabled !== "true") return;
       event.preventDefault();
       applyHotkeyAction(event.key);
       return;

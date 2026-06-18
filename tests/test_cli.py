@@ -1156,8 +1156,12 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('action="/settings/hotkey-hints"', body)
         self.assertIn('href="/settings/h3-cells"', body)
         self.assertIn("Rediger H3-celler", body)
-        self.assertIn("Vis hurtigtaster i venstrefelt: På", body)
+        self.assertIn("Aktiver hurtigtaster 1-5: På", body)
         self.assertIn('<input type="hidden" name="key" value="1">', body)
+        self.assertLess(
+            body.index('action="/settings/hotkey-hints"'),
+            body.index('<input type="hidden" name="key" value="1">'),
+        )
         self.assertIn("data-hotkey-action", body)
         self.assertIn('data-hotkey-fields="h3"', body)
         self.assertIn('data-hotkey-fields="manual_date"', body)
@@ -2288,6 +2292,27 @@ model_name = "buffalo_l"
         self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
         self.assertIn("Filen er markert som slettet", str(response["content"]))
 
+    def test_run_server_hotkey_action_is_rejected_when_hints_are_hidden(self) -> None:
+        data = json.dumps({"file_id": 1, "key": "5"}).encode("utf-8")
+        response: dict[str, object] = {}
+
+        class FakeHandler:
+            headers = {
+                "Content-Length": str(len(data)),
+                "Content-Type": "application/json",
+            }
+            rfile = BytesIO(data)
+            server = SimpleNamespace(config=AppConfig(browser=BrowserConfig(hotkey_hints_enabled=False)))
+
+            def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                response["content"] = content
+                response["status"] = status
+
+        BildebankRequestHandler.respond_hotkey_action(FakeHandler())  # type: ignore[arg-type]
+
+        self.assertEqual(response["status"], HTTPStatus.FORBIDDEN)
+        self.assertEqual(response["content"], {"ok": False, "error": "Hurtigtaster er slått av."})
+
     def test_run_server_hotkey_action_sets_manual_date(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2316,7 +2341,10 @@ model_name = "buffalo_l"
                     "Content-Type": "application/json",
                 }
                 rfile = BytesIO(data)
-                server = SimpleNamespace(target=target, config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)))
+                server = SimpleNamespace(
+                    target=target,
+                    config=AppConfig(browser=BrowserConfig(hotkey_hints_enabled=True, hotkeys=hotkeys)),
+                )
 
                 def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
                     response["content"] = content
@@ -2356,7 +2384,7 @@ model_name = "buffalo_l"
                 server = SimpleNamespace(
                     target=target,
                     face_enabled=True,
-                    config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)),
+                    config=AppConfig(browser=BrowserConfig(hotkey_hints_enabled=True, hotkeys=hotkeys)),
                 )
 
                 def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
@@ -2396,7 +2424,10 @@ model_name = "buffalo_l"
                     "Content-Length": str(len(data)),
                     "Content-Type": "application/json",
                 }
-                server = SimpleNamespace(target=target, config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)))
+                server = SimpleNamespace(
+                    target=target,
+                    config=AppConfig(browser=BrowserConfig(hotkey_hints_enabled=True, hotkeys=hotkeys)),
+                )
 
                 def __init__(self) -> None:
                     self.rfile = BytesIO(data)
@@ -2464,7 +2495,7 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "25")
+        self.assertEqual(SERVER_ASSET_VERSION, "26")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -2753,6 +2784,10 @@ model_name = "buffalo_l"
         self.assertLess(tag_rail_body.index("date-status-badge"), tag_rail_body.index('class="hotkey-hints"'))
         self.assertLess(tag_rail_body.index("location-status-badge"), tag_rail_body.index('class="hotkey-hints"'))
         self.assertTrue(tag_rail_body.strip().endswith("</section>"))
+        self.assertIn('data-browser-hotkeys-enabled="true"', body)
+        self.assertNotIn("data-browser-hotkeys-enabled", hidden_body)
+        self.assertIn('itemRoot?.dataset.browserHotkeysEnabled === "true"', SERVER_JS)
+        self.assertIn('itemRoot?.dataset.browserHotkeysEnabled !== "true"', SERVER_JS)
         self.assertNotIn('class="hotkey-hints"', hidden_body)
 
     def test_run_server_hotkey_action_sets_h3_location(self) -> None:
@@ -2779,7 +2814,7 @@ model_name = "buffalo_l"
                 server = SimpleNamespace(
                     target=target,
                     face_enabled=True,
-                    config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)),
+                    config=AppConfig(browser=BrowserConfig(hotkey_hints_enabled=True, hotkeys=hotkeys)),
                 )
                 body: dict[str, object] | None = None
 
@@ -2857,7 +2892,7 @@ model_name = "buffalo_l"
                 server = SimpleNamespace(
                     target=target,
                     face_enabled=True,
-                    config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)),
+                    config=AppConfig(browser=BrowserConfig(hotkey_hints_enabled=True, hotkeys=hotkeys)),
                 )
                 body: dict[str, object] | None = None
 
@@ -2899,7 +2934,7 @@ model_name = "buffalo_l"
                 server = SimpleNamespace(
                     target=target,
                     face_enabled=True,
-                    config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)),
+                    config=AppConfig(browser=BrowserConfig(hotkey_hints_enabled=True, hotkeys=hotkeys)),
                 )
                 body: dict[str, object] | None = None
 
@@ -2936,7 +2971,7 @@ model_name = "buffalo_l"
                 server = SimpleNamespace(
                     target=target,
                     face_enabled=True,
-                    config=AppConfig(browser=BrowserConfig(hotkeys=hotkeys)),
+                    config=AppConfig(browser=BrowserConfig(hotkey_hints_enabled=True, hotkeys=hotkeys)),
                 )
                 body: dict[str, object] | None = None
 

@@ -323,16 +323,16 @@ def app_status_hotkeys_row_html(
       <dt>Hurtigtaster 1-5</dt>
       <dd>
         <div class="hotkey-settings">
-          {rows}
           <form action="/settings/hotkey-hints" method="post" class="app-toggle-form">
             <input type="hidden" name="enabled" value="false">
             <label class="app-toggle">
               <input type="checkbox" name="enabled" value="true"{checked} onchange="this.form.submit()">
               <span class="app-toggle-track" aria-hidden="true"><span></span></span>
-              <span class="app-toggle-status">Vis hurtigtaster i venstrefelt: {status}</span>
+              <span class="app-toggle-status">Aktiver hurtigtaster 1-5: {status}</span>
             </label>
             <a href="/settings/h3-cells" class="app-toggle-note">Rediger H3-celler</a>
           </form>
+          {rows}
         </div>
       </dd>
     </div>

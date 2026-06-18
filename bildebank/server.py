@@ -1680,6 +1680,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
 
     def respond_hotkey_action(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)
+        if not self.server.config.browser.hotkey_hints_enabled:
+            self.respond_json(
+                {"ok": False, "error": "Hurtigtaster er slått av."},
+                status=HTTPStatus.FORBIDDEN,
+            )
+            return
         try:
             file_id = int(payload.get("file_id"))
         except (TypeError, ValueError):

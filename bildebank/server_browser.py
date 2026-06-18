@@ -1502,6 +1502,7 @@ def source_item_page_html(
     source_url_attr = ""
     if source.text_filter is not None:
         source_url_attr = f' data-browser-source-url="{html.escape(source.root_url)}"'
+    hotkeys_enabled_attr = ' data-browser-hotkeys-enabled="true"' if hotkey_hints_enabled else ""
     header_html = _source_item_header_html(
         target,
         source,
@@ -1522,7 +1523,7 @@ def source_item_page_html(
     result = page_html(
         f"{source.title}: {target_path.name}",
         f"""
-        <main class="server-browser" data-browser-item-id="{int(item["id"])}"{source_url_attr}>
+        <main class="server-browser" data-browser-item-id="{int(item["id"])}"{source_url_attr}{hotkeys_enabled_attr}>
           {header_html}
           <div class="stage-shell">
             {tag_controls}
