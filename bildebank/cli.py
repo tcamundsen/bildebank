@@ -1074,7 +1074,7 @@ def run(args: argparse.Namespace) -> int:
         require_openclip_enabled(load_config(program_repo_root()).openclip.enabled)
         if args.command == "image-scan":
             return run_image_scan(target, limit=args.limit)
-        return run_image_search(target, query=args.query, limit=args.limit, browsers=args.gen_browsers)
+        return run_image_search(target, query=args.query, limit=args.limit, browser=not args.no_browser)
 
     if args.command == "run-server":
         return run_server_command(target, host=args.host, port=args.port, browser=not args.no_browser)

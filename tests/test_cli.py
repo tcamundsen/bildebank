@@ -8672,6 +8672,23 @@ print(json.dumps([
             self.assertIn("Tekstbasert bildesøk er av", stderr)
             self.assertFalse(openclip_db_path(target).exists())
 
+    def test_image_search_passes_browser_option_to_runner(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.enable_openclip_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with patch("bildebank.cli.run_image_search", return_value=0) as run_search:
+                self.assertEqual(run_cli(["--target", str(target), "image-search", "strand"]), 0)
+                run_search.assert_called_once_with(target.resolve(), query="strand", limit=100, browser=True)
+
+            with patch("bildebank.cli.run_image_search", return_value=0) as run_search:
+                self.assertEqual(
+                    run_cli(["--target", str(target), "image-search", "strand", "--no-browser"]),
+                    0,
+                )
+                run_search.assert_called_once_with(target.resolve(), query="strand", limit=100, browser=False)
+
     def test_image_search_progress_uses_progress_meter(self) -> None:
         stdout = StringIO()
         stats = SimpleNamespace(query="strand")
