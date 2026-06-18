@@ -952,27 +952,53 @@ def filter_help_html() -> str:
     return """
     <section class="filter-help">
       <h2>Søkekriterier</h2>
-      <p class="meta">Kriterier kan kombineres. Bruk anførselstegn når tekst inneholder mellomrom, for eksempel camera:"iPhone" eller tag:"Ute av fokus".</p>
+      <p>Komplett referanse over søkekriterier <a href="/help/web/filtersok.md">finner du her</a>.
+      <h3>Eksempelsøk</h3>
       <dl class="info-list">
-        <div class="info-row"><dt>Dato</dt><dd><code>after:2023-12-01</code>, <code>before:2024-12-12</code>, <code>month:12</code>, <code>month=12</code>, <code>month&gt;6 month&lt;10</code>, <code>month&gt;=6 month&lt;=10</code>, <code>day:24</code>, <code>day=24</code>, <code>day&gt;10 day&lt;20</code>, <code>day&gt;=10 day&lt;=20</code>, <code>month:12 day:24</code>, <code>date:manual</code>, <code>date:metadata</code>, <code>date:filename</code>, <code>date:mtime</code></dd></div>
-        <div class="info-row"><dt>Sted</dt><dd><code>location:gps</code>, <code>location:manual</code>, <code>location:manual h3res:11</code>, <code>h3res&gt;=8</code>, <code>h3res&gt;10</code>, <code>h3res&lt;=11</code>, <code>h3res&lt;8</code>, <code>location:slug</code>. <code>h3res</code> brukes sammen med <code>location:manual</code>. Slug er samme tekst som i <code>/geo/place/slug</code>.</dd></div>
-        <div class="info-row"><dt>Fil</dt><dd><code>type:image</code>, <code>type:video</code>, <code>type:file</code>, <code>extension:jpg</code>, <code>size&lt;=2MB</code>, <code>size&lt;300KB</code>, <code>size&gt;=300KB</code>, <code>size&gt;2MB</code></dd></div>
-        <div class="info-row"><dt>Tekst</dt><dd><code>filename:IMG</code>, <code>path:2024/01</code>, <code>camera:"iPhone"</code></dd></div>
-        <div class="info-row"><dt>Organisering</dt><dd><code>source:1</code>, <code>source:"mobil 2024"</code>, <code>tag:"Ute av fokus"</code>, <code>person:Viljar</code>, <code>deleted:true</code></dd></div>
-        <div class="info-row"><dt>Mangler</dt><dd><code>missing:gps</code>, <code>missing:date</code>, <code>missing:metadata</code></dd></div>
-        <div class="info-row"><dt>Form</dt><dd><code>orientation:portrait</code>, <code>orientation:landscape</code>, <code>width&gt;=1024</code>, <code>width&gt;1024</code>, <code>width=1024</code>, <code>width&lt;=2000</code>, <code>width&lt;2000</code>, <code>height&gt;=1024</code>, <code>height&gt;1024</code>, <code>height=1024</code>, <code>height&lt;=2000</code>, <code>height&lt;2000</code>. Bredde og høyde er piksler uten enhet.</dd></div>
+        <div class="info-row">
+          <dt>Alle julaftener</dt>
+          <dd><code><a href="/filter/month:12 day:24">month:12 day:24</a></code></dd>
+        </div>
+        <div class="info-row">
+          <dt>Adventstiden</dt>
+          <dd><code><a href="/filter/month:12 day>=1 day<=25">month:12 day>=1 day<=25</a></code></dd>
+        </div>
+        <div class="info-row">
+          <dt>Sommerbilder</dt>
+          <dd><code><a href="/filter/month>=6 month<=8">month>=6 month<=8</a></code></dd>
+        </div>
+        <div class="info-row">
+          <dt>Bilder fra juli på Kreta</dt>
+          <dd><code><a href="/filter/month:7 location:kreta">month:7 location:kreta</a></code></dd>
+        </div>
+        <div class="info-row">
+          <dt>Bilder uten GPS</dt>
+          <dd><code><a href="/filter/missing:gps">missing:gps</a></code></dd>
+        </div>
+        <div class="info-row">
+          <dt> Manuelt plasserte bilder</dt>
+          <dd><code><a href="/filter/location:manual">location:manual</a></code></dd>
+        </div>
+        <div class="info-row">
+          <dt>Detaljert manuell plassering</dt>
+          <dd><code><a href="/filter/location:manual h3res>=9">location:manual h3res>=9</a></code></dd>
+        </div>
+        <div class="info-row">
+          <dt>Store bilder</dt>
+          <dd><code><a href="/filter/width>=3000 height>=2000">width>=3000 height>=2000</a></code></dd>
+        </div>
+        <div class="info-row">
+          <dt>Små filer</dt>
+          <dd><code><a href="/filter/size<300KB">size<300KB</a></code></dd>
+        </div>
+        <div class="info-row">
+          <dt>Bilder med tagg</dt>
+          <dd><code><a href='/filter/tag:"Ute av fokus"'>tag:"Ute av fokus"</a></code></dd>
+        </div>
+        <div class="info-row">
+          <dt>Et bestemt tidsrom</dt>
+          <dd><code><a href="/filter/after:2023-12-01 before:2023-12-23">after:2023-12-01 before:2023-12-23</a></code></dd>
+        </div>
       </dl>
-      <h3>Eksempler</h3>
-       <dl class="info-list">
-         <div class="info-row">
-           <dt>Alle julaftener</dt>
-           <dd><a href="/filter/day:24 month:12"><code>day:24 month:12</code></a></dd></div>
-         <div class="info-row">
-           <dt>Alle 17. mai</dt>
-           <dd><a href="/filter/day:17 month:5"><code>day:17 month:5</code></a></dd></div>
-         <div class="info-row">
-           <dt>Alle julidager på Kreta</dt>
-           <dd><a href="/filter/month:7 location:kreta"><code>month:7 location:kreta</code></a></dd></div>
-       </dl>
     </section>
     """
