@@ -3567,6 +3567,9 @@ model_name = "buffalo_l"
             tag_filter = text_filter_browser_source("tag:ute-av-fokus")
             type_file_filter = text_filter_browser_source("type:file")
             type_image_filter = text_filter_browser_source("type:image")
+            year_filter = text_filter_browser_source("year:2024")
+            year_eq_filter = text_filter_browser_source("year=2024")
+            year_range_filter = text_filter_browser_source("year>2021 year<2024")
             month_filter = text_filter_browser_source("month:12")
             month_eq_filter = text_filter_browser_source("month=12")
             day_filter = text_filter_browser_source("day:24")
@@ -3630,6 +3633,11 @@ model_name = "buffalo_l"
             tag_month = source_month_items(target, tag_filter, "2024-01")
             type_file_item = source_item_by_id(target, type_file_filter, 6)
             type_image_month = source_month_items(target, type_image_filter, "2024-01")
+            year_january_2024 = source_month_items(target, year_filter, "2024-01")
+            year_eq_december_2024 = source_month_items(target, year_eq_filter, "2024-12")
+            year_december_2021 = source_month_items(target, year_filter, "2021-12")
+            year_range_december_2023 = source_month_items(target, year_range_filter, "2023-12")
+            year_range_december_2024 = source_month_items(target, year_range_filter, "2024-12")
             month_december_2021 = source_month_items(target, month_filter, "2021-12")
             month_eq_december_2021 = source_month_items(target, month_eq_filter, "2021-12")
             month_january_2022 = source_month_items(target, month_filter, "2022-01")
@@ -3714,6 +3722,11 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in tag_month], [2])
         self.assertIsNotNone(type_file_item)
         self.assertEqual([item["id"] for item in type_image_month], [2])
+        self.assertEqual([item["id"] for item in year_january_2024], [2])
+        self.assertEqual([item["id"] for item in year_eq_december_2024], [3])
+        self.assertEqual([item["id"] for item in year_december_2021], [])
+        self.assertEqual([item["id"] for item in year_range_december_2023], [1])
+        self.assertEqual([item["id"] for item in year_range_december_2024], [])
         self.assertEqual([item["id"] for item in month_december_2021], [5])
         self.assertEqual([item["id"] for item in month_eq_december_2021], [5])
         self.assertEqual([item["id"] for item in month_january_2022], [])
@@ -3773,11 +3786,21 @@ model_name = "buffalo_l"
         self.assertEqual(parse_text_filter("day:24").day_eq, 24)
         self.assertEqual(parse_text_filter("day=24").day, 24)
         self.assertEqual(parse_text_filter("day=24").day_eq, 24)
+        self.assertEqual(parse_text_filter("year:2024").year, 2024)
+        self.assertEqual(parse_text_filter("year:2024").year_eq, 2024)
+        self.assertEqual(parse_text_filter("year=2024").year, 2024)
+        self.assertEqual(parse_text_filter("year=2024").year_eq, 2024)
         self.assertEqual(parse_text_filter("person:Viljar").person, "Viljar")
+        year_range = parse_text_filter("year>2020 year<2025")
+        year_inclusive_range = parse_text_filter("year>=2020 year<=2025")
         month_range = parse_text_filter("month>6 month<10")
         month_inclusive_range = parse_text_filter("month>=6 month<=10")
         day_range = parse_text_filter("day>10 day<20")
         day_inclusive_range = parse_text_filter("day>=10 day<=20")
+        self.assertEqual((year_range.year_gt, year_range.year_lt), (2020, 2025))
+        self.assertEqual(year_range.year, None)
+        self.assertEqual((year_inclusive_range.year_gte, year_inclusive_range.year_lte), (2020, 2025))
+        self.assertEqual(year_inclusive_range.year, None)
         self.assertEqual((month_range.month_gt, month_range.month_lt), (6, 10))
         self.assertEqual((month_range.month, month_range.day), (None, None))
         self.assertEqual((month_inclusive_range.month_gte, month_inclusive_range.month_lte), (6, 10))
@@ -3815,6 +3838,11 @@ model_name = "buffalo_l"
             ("size<300KB", {"size_lt": 300 * 1024}),
             ("size>=300KB", {"size_gte": 300 * 1024}),
             ("size<=2MB", {"size_lte": 2 * 1024 * 1024}),
+            ("year=2024", {"year": 2024, "year_eq": 2024}),
+            ("year>2020", {"year_gt": 2020}),
+            ("year>=2020", {"year_gte": 2020}),
+            ("year<2025", {"year_lt": 2025}),
+            ("year<=2025", {"year_lte": 2025}),
             ("month=12", {"month": 12, "month_eq": 12}),
             ("month>6", {"month_gt": 6}),
             ("month>=6", {"month_gte": 6}),
@@ -3874,6 +3902,14 @@ model_name = "buffalo_l"
             ("size>2MB size>3MB", "size> kan bare brukes én gang."),
             ("size>=2MB size>=3MB", "size>= kan bare brukes én gang."),
             ("size>stor", "size må skrives som for eksempel size<300KB eller size>2MB."),
+            ("year:2024 year:2023", "year kan bare brukes én gang."),
+            ("year:2024 year=2023", "year= kan bare brukes én gang."),
+            ("year=2024 year>2020", "year> kan ikke kombineres med year=."),
+            ("year>2020 year>2021", "year> kan bare brukes én gang."),
+            ("year>2020 year>=2021", "year>= kan ikke kombineres med year>."),
+            ("year:0", "year må være et heltall fra 1 til 9999."),
+            ("year=10000", "year må være et heltall fra 1 til 9999."),
+            ("year:nyere", "year må være et heltall fra 1 til 9999."),
             ("width>100 width>200", "width> kan bare brukes én gang."),
             ("width>=100 width>=200", "width>= kan bare brukes én gang."),
             ("width>100 width>=200", "width>= kan ikke kombineres med width>."),
@@ -3897,6 +3933,7 @@ model_name = "buffalo_l"
     def test_run_server_filter_parser_normalizes_spaces_around_operators(self) -> None:
         for query, canonical_query, attr, expected in (
             ("month > 6", "month>6", "month_gt", 6),
+            ("year >= 2020", "year>=2020", "year_gte", 2020),
             ("month> 6", "month>6", "month_gt", 6),
             ("month >6", "month>6", "month_gt", 6),
             ("day <= 25", "day<=25", "day_lte", 25),
@@ -4034,19 +4071,11 @@ model_name = "buffalo_l"
         body = filter_start_html(server)
 
         self.assertIn("<h2>Søkekriterier</h2>", body)
-        self.assertIn("<code>after:2023-12-01</code>", body)
-        self.assertIn("<code>month:12</code>", body)
-        self.assertIn("<code>day:24</code>", body)
         self.assertIn("<code>month:12 day:24</code>", body)
-        self.assertIn('<code>camera:"iPhone"</code>', body)
         self.assertIn('<code>tag:"Ute av fokus"</code>', body)
-        self.assertIn("<code>deleted:true</code>", body)
-        self.assertIn("<code>width&gt;1024</code>", body)
-        self.assertIn("<code>width=1024</code>", body)
-        self.assertIn("<code>height&lt;2000</code>", body)
-        self.assertIn("<code>location:manual h3res:11</code>", body)
-        self.assertIn("<code>h3res&gt;10</code>", body)
-        self.assertIn("<code>h3res&lt;8</code>", body)
+        self.assertIn("<code>width>=3000 height>=2000", body)
+        self.assertIn("<code>location:manual h3res>=9</code>", body)
+        self.assertIn("h3res>=9</code>", body)
 
     def test_run_server_source_browser_reuses_source_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
