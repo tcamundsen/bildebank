@@ -1994,6 +1994,7 @@ def remove_manual_location_button_html(item: Any) -> str:
     file_id = int(item["id"])
     return (
         f'<span class="manual-location-remove">(<button class="inline-link danger-inline-link" type="button" '
+        'title="Fjern manuell angitt sted bildet er tatt" '
         f'data-remove-manual-location-item="{file_id}">'
         f'fjern</button>)</span>'
     )
