@@ -3894,6 +3894,38 @@ model_name = "buffalo_l"
                 with self.assertRaisesRegex(ValueError, message):
                     parse_text_filter(query)
 
+    def test_run_server_filter_parser_normalizes_spaces_around_operators(self) -> None:
+        for query, canonical_query, attr, expected in (
+            ("month > 6", "month>6", "month_gt", 6),
+            ("month> 6", "month>6", "month_gt", 6),
+            ("month >6", "month>6", "month_gt", 6),
+            ("day <= 25", "day<=25", "day_lte", 25),
+            ("width >= 1024", "width>=1024", "width_gte", 1024),
+            ("height < 2000", "height<2000", "height_lt", 2000),
+            ("size < 2MB", "size<2MB", "size_lt", 2 * 1024 * 1024),
+            ("location:manual h3res >= 8", "location:manual h3res>=8", "h3res_value", 8),
+        ):
+            with self.subTest(query=query):
+                parsed = parse_text_filter(query)
+                self.assertEqual(parsed.query, canonical_query)
+                self.assertEqual(getattr(parsed, attr), expected)
+
+        combined = parse_text_filter("month > 6 day <= 25")
+        self.assertEqual(combined.query, "month>6 day<=25")
+
+        for query in ('camera:"iPhone 12"', 'tag:"Ute av fokus"', 'source:"Mobil 2024"'):
+            with self.subTest(query=query):
+                self.assertEqual(parse_text_filter(query).query, query)
+
+        for query, message in (
+            ("month >", "Filteret mangler verdi: month>"),
+            ("width >=", "Filteret mangler verdi: width>="),
+            ("size <", "Filteret mangler verdi: size<"),
+        ):
+            with self.subTest(query=query):
+                with self.assertRaisesRegex(ValueError, message):
+                    parse_text_filter(query)
+
     def test_run_server_hides_motion_video_unless_filter_explicitly_requests_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

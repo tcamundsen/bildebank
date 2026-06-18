@@ -358,7 +358,49 @@ def tokenize_filter_query(query: str) -> tuple[list[str], str]:
 
 
 def normalize_filter_tokens(tokens: list[str]) -> list[str]:
-    return tokens
+    normalized: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        normalized_token: str | None = None
+        consumed = 1
+
+        for key, spec in OPERATOR_FILTERS.items():
+            operators = sorted(spec.operators, key=len, reverse=True)
+            if token == key and index + 1 < len(tokens):
+                next_token = tokens[index + 1]
+                for operator in operators:
+                    if not next_token.startswith(operator):
+                        continue
+                    raw_value = next_token.removeprefix(operator)
+                    if raw_value:
+                        normalized_token = f"{key}{operator}{raw_value}"
+                        consumed = 2
+                        break
+                    if index + 2 >= len(tokens):
+                        raise ValueError(f"Filteret mangler verdi: {key}{operator}")
+                    normalized_token = f"{key}{operator}{tokens[index + 2]}"
+                    consumed = 3
+                    break
+            else:
+                for operator in operators:
+                    prefix = f"{key}{operator}"
+                    if not token.startswith(prefix):
+                        continue
+                    if token.removeprefix(prefix):
+                        break
+                    if index + 1 >= len(tokens):
+                        raise ValueError(f"Filteret mangler verdi: {prefix}")
+                    normalized_token = f"{token}{tokens[index + 1]}"
+                    consumed = 2
+                    break
+
+            if normalized_token is not None:
+                break
+
+        normalized.append(normalized_token or token)
+        index += consumed
+    return normalized
 
 
 def canonical_filter_token(token: str) -> str:
