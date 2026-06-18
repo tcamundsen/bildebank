@@ -971,7 +971,72 @@ def main_help_epilog() -> str:
     return "\n".join(lines)
 
 
+NO_TARGET_COMMANDS = {
+    "create",
+    "explain-date",
+    "inspect-metadata",
+    "update",
+    "exiftool-install",
+    "where-is",
+    "doctor",
+    "face-status",
+    "config",
+    "face-config",
+}
+
+TARGET_COMMANDS = {
+    "migrate",
+    "backup",
+    "vacuum",
+    "geo-scan",
+    "geo-stats",
+    "geo-areas",
+    "geo-area",
+    "run-server",
+    "check-source",
+}
+
+IMAGE_COMMANDS = {"image-scan", "image-search"}
+
+FACE_COMMANDS = {
+    "face-scan",
+    "face-report",
+    "face-person-create",
+    "face-person-add-face",
+    "face-person-remove-face",
+    "face-person-delete",
+    "face-person-rename",
+    "face-person-list",
+    "face-suggest",
+    "make-face-browser",
+    "make-person-browser",
+    "make-people-browser",
+    "face-reset",
+}
+
+
 def run(args: argparse.Namespace) -> int:
+    if args.command in NO_TARGET_COMMANDS:
+        return run_no_target_command(args)
+
+    target = resolve_target(args.target)
+    record_target_best_effort(program_repo_root(), target)
+
+    if args.command in TARGET_COMMANDS or (
+        args.command in {"import", "rescan-source"} and args.dry_run
+    ):
+        return run_target_command(args, target)
+
+    if args.command in IMAGE_COMMANDS:
+        return run_image_command(args, target)
+
+    if args.command in FACE_COMMANDS:
+        return run_face_command(args, target)
+
+    return run_db_command(args, target)
+
+
+def run_no_target_command(args: argparse.Namespace) -> int:
     if args.command == "create":
         target = args.path.resolve()
         validate_target_not_in_program_repo(target)
@@ -1031,8 +1096,8 @@ def run(args: argparse.Namespace) -> int:
     if args.command == "face-config":
         return run_face_config(args.enabled)
 
-    target = resolve_target(args.target)
-    record_target_best_effort(program_repo_root(), target)
+
+def run_target_command(args: argparse.Namespace, target: Path) -> int:
     if args.command == "migrate":
         return run_migrate(target, check=args.check)
 
@@ -1070,32 +1135,27 @@ def run(args: argparse.Namespace) -> int:
             with_coordinates=args.with_coordinates,
         )
 
-    if args.command in {"image-scan", "image-search"}:
-        require_openclip_enabled(load_config(program_repo_root()).openclip.enabled)
-        if args.command == "image-scan":
-            return run_image_scan(target, limit=args.limit)
-        return run_image_search(target, query=args.query, limit=args.limit, browser=not args.no_browser)
-
     if args.command == "run-server":
         return run_server_command(target, host=args.host, port=args.port, browser=not args.no_browser)
 
-    face_commands = {
-        "face-scan",
-        "face-report",
-        "face-person-create",
-        "face-person-add-face",
-        "face-person-remove-face",
-        "face-person-delete",
-        "face-person-rename",
-        "face-person-list",
-        "face-suggest",
-        "make-face-browser",
-        "make-person-browser",
-        "make-people-browser",
-        "face-reset",
-    }
-    if args.command in face_commands:
-        require_face_enabled(load_config(program_repo_root()).face_recognition.enabled)
+    if args.command == "import":
+        return run_named_import_dry_run(target, args)
+
+    if args.command == "rescan-source":
+        return run_rescan_source_dry_run(target, args)
+
+    return run_check_source(target, args.path, verbose=not args.quiet, accept_deleted=args.accept_deleted)
+
+
+def run_image_command(args: argparse.Namespace, target: Path) -> int:
+    require_openclip_enabled(load_config(program_repo_root()).openclip.enabled)
+    if args.command == "image-scan":
+        return run_image_scan(target, limit=args.limit)
+    return run_image_search(target, query=args.query, limit=args.limit, browser=not args.no_browser)
+
+
+def run_face_command(args: argparse.Namespace, target: Path) -> int:
+    require_face_enabled(load_config(program_repo_root()).face_recognition.enabled)
 
     if args.command == "face-scan":
         return run_face_scan(
@@ -1177,15 +1237,8 @@ def run(args: argparse.Namespace) -> int:
             all_data=args.all,
         )
 
-    if args.command == "import" and args.dry_run:
-        return run_named_import_dry_run(target, args)
 
-    if args.command == "rescan-source" and args.dry_run:
-        return run_rescan_source_dry_run(target, args)
-
-    if args.command == "check-source":
-        return run_check_source(target, args.path, verbose=not args.quiet, accept_deleted=args.accept_deleted)
-
+def run_db_command(args: argparse.Namespace, target: Path) -> int:
     conn = db.connect(target)
     try:
         if not (args.command == "unimport" and args.dry_run):
