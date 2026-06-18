@@ -1,10 +1,35 @@
 Litt skriblerier om programmet [kan du lese her](om-bildebank.md).
 Oversikt over alle kommandoer [finner du her](../reference.md).
+
 # Bildebrowseren
 
-Litt om bildebrowseren fra run-server. Jeg vet at noen ting er litt rotete
-og preget av work-in-progress. Det er fordi det er det. Men det finpusses
-stadig. 
+Her beskrives funksjonene til bildebrowseren vi får fra [`run-server`](../run-server.md).
+
+Vinduet som åpnes når du starter serveren viser en side der du ser første
+bilde fra hvert år du har bilder fra. Når du klikker et bilde sendes du
+til månedsvisningen som viser et bilde for hver måned du har bilder fra. Og
+klikk på et bilde på månedsvisningen åpner bildesiden som er den visningen
+du kommer til å jobbe mest i.
+
+Du kan bla i bildene med knappene med piler på nest øverste linje på siden.
+Men aller enklest er det å bruke tastaturet:
+
+| Tast | Hva skjer |
+| --- | --- |
+| Pil venstre | Forrige fil |
+| Pil høyre | Neste fil |
+| Pil opp | Forrige måned |
+| Pil ned | Neste måned |
+| Page Up | Forrige år |
+| Page Down | Neste år |
+
+
+Hold musepekeren over knapper og lenker, så får du i de fleste tilfellen
+opp en liten hjelpetekst som forklarer knappen.
+
+Knappene med avkrysningsboks til venstre for bildet brukes for å sette
+tagger på bildet som vises. Du kan definere egne tagger ved å klikke
+[Tagger](/tags)-lenken øverst og til høyre på siden.
 
 For å gjøre lasting av månedsvisningen raskere kan du laga thumbsnails
 av bildene med å kjøre [`make-thumbnails`](../make-thumbnails.md).
@@ -23,16 +48,6 @@ som vises øverst på skjermen.
 
 ## Hurtigtaster
 
-Når HTML-filen er åpen i nettleseren, kan du bla med tastaturet:
-
-| Tast | Hva skjer |
-| --- | --- |
-| Pil venstre | Forrige fil |
-| Pil høyre | Neste fil |
-| Pil opp | Forrige måned |
-| Pil ned | Neste måned |
-| Page Up | Forrige år |
-| Page Down | Neste år |
 
 Tastene `1`, `2`, `3`, `4` og `5` kan settes opp i **Innstillinger**. Hver
 tast kan ha sin egen handling:
@@ -43,47 +58,31 @@ tast kan ha sin egen handling:
 
 Taster som ikke er satt opp gjør ingenting.
 
-I **Innstillinger** kan du også slå på visning av hurtigtastene i venstrefeltet
-ved bildet. Da viser bildebrowseren korte linjer som for eksempel `1: H3 til
-Brevik`, `3: Legg til Viljar` eller `5: Sett dato til 30.12.48 ±1w`.
-
-RAW/NEF og PSD kan ligge i samlingen, men nettleseren viser dem som fil-lenker
-i stedet for vanlig bildevisning.
+I **Innstillinger** kan du slå hurtigtastfunksjonen av og på. Når den er på,
+viser bildebrowseren hurtigtastene i venstrefeltet ved bildet, med korte linjer
+som for eksempel `1: H3 til Brevik`, `3: Legg til Viljar` eller
+`5: Sett dato til 30.12.48 ±1w`. Når funksjonen er av, virker ikke tastene.
 
 ## Manuell dato
 
-På en bildeside kan du bruke `Sett dato` eller `Endre dato` for å korrigere
-datoen Bildebank bruker i browseren. Du kan sette eksakt dato, usikker dato
-eller et intervall, og du kan legge inn et notat om hvorfor datoen er satt.
+Knappen 📅 lar deg sette manuell dato for bildet.
+Du kan velge eksakt dato, usikker dato eller et datointervall, og legge inn et
+notat. Bildebank lagrer dette i databasen og bruker datoen i bildebrowserens
+sortering og månedsvisning. Bildefilen flyttes ikke og endres ikke.
 
-Dette endrer bare Bildebank-databasen. Originalfilen flyttes ikke og endres
-ikke. Hvis du fjerner manuell dato, bruker Bildebank igjen datoen som ble funnet
-ved import eller metadataoppfrisking.
 
-## Venstre øverste hjørne
+## Rotere bilder
 
-Her står det **Bildebrowser** når du starter. Det betyr at du ser alle bildene i samlingen.
+På bildesider kan du bruke knappene **↺** og **↻** for å rotere
+visningen av bildet. Bildebank lagrer bare rotasjonen i databasen. Selve
+bildefilen i samlingen endres ikke.
 
-Den øverste linjen vises også når du går videre til andre sider i lokalserveren,
-for eksempel Personer, Filtersøk, Kilder, Steder, Bildesøk, Hjelp og
-Innstillinger. Bruk denne linjen som hovednavigasjon tilbake til de viktigste
-delene av bildebanken.
 
-## Filtersøk
-
-Filtersøk lar deg skrive enkle tekstkriterier og bla i treffene som en vanlig
-bildebrowser. Dette er nyttig når du skal håndtere spesialtilfeller. Åpne
-`Filtersøk` i toppmenyen for søkefelt og oversikt over kriteriene.
-
-Knappene med navn til venstre for **Bildebrowser** lenker til personbrowseren
-for denne personen. Hvis knappen har en markering som dette, ✅, så har du
-bekreftet personen i dette bildet.
-
-### Personbrowser
-Hvis det står navnet til bare en person er det fordi du kjører person-browseren
-som viser bekreftede (av deg) og forslag (fra face-suggest) på bilder av denne
-personen. Dette moduset har du valgt for eksempel ved å klikke på knappen med
-navnet til personen på øverste linje av skjermen.
+## Personbrowser
+Hvis det står navnet til en person øverst til venstre i finduet er det fordi du
+kjører person-browseren som viser bekreftede (av deg) og forslag (fra
+face-suggest) på bilder av denne personen. Dette moduset har du valgt for
+eksempel ved å klikke på knappen med navnet til personen.
 
 - **Alle bilder** viser det nettop det.
 - **Uten ansiktsmarkeringer** eller **Med ansiktsmarkeringer** tegner en ramme
@@ -94,19 +93,4 @@ navnet til personen på øverste linje av skjermen.
   du har bekreftet. Dette bør ideelt sett bare være 1-5 gode bilder av
   personen.
 
-I bildevisningen, også i personbrowseren, kan **[+]** under **Personer i
-bildet** brukes når personen er i bildet, men ansiktet ikke kan scannes eller
-bekreftes godt nok. Feltet bruker bare personer som allerede finnes i
-ansiktsdatabasen. Dette påvirker ikke `face-suggest`, og bildet vises ikke når
-**[ ] Ta med forslag** er valgt.
 
-## Personer
-
-På siden **Personer** kan du trykke `endre navn` bak et personnavn for å åpne
-et lite vindu der navnet kan endres. Bekreftede ansiktskoblinger og forslag
-beholdes.
-
-Du kan også trykke `slett person` bak et personnavn. Dette sletter personen,
-bekreftede ansiktskoblinger, manuelle person-i-bilde-koblinger og forslag for
-personen fra ansiktsdatabasen. Det sletter ingen bilder og ingen scannede
-ansikter.

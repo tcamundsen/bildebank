@@ -90,8 +90,8 @@ Start serveren og åpne bildebrowseren i nettleseren:
 bildebank run-server
 ```
 
-Når et bilde har scannede ansikter, vises knappen **Ansikter i bildet** øverst
-i nettleservinduet. Trykk på den for å åpne ansiktsvisningen. For hvert ansikt
+Når et bilde har scannede ansikter, vises knappen **Bekreft ansikt** i panelet
+til venstre for bildet. Trykk på den for å åpne ansiktsvisningen. For hvert ansikt
 i bildet viser Bildebank:
 
 - en linje med teksten `face-id 0000`, deteksjon `0.xyz`
@@ -104,8 +104,9 @@ Hvis ansiktet i det røde rektangelet er en person som allerede er opprettet,
 klikker du på knappen med riktig navn. Hvis du vil opprette en ny person,
 skriver du navnet i tekstfeltet og trykker **Identifiser**.
 
-Hvis det er mange personer i bildet, vises ett utsnitt for hvert ansikt. Pass
-på at du bruker knappene under utsnittet der riktig ansikt er markert.
+Det vises ett bilde for hvert ansikt som er funnet, med ansiktet markert med et
+rektangel. Pass på at du bruker knappene under utsnittet der det ansiktet du
+ønsker å bekrefte er markert.
 
 Du trenger ikke å markere alle ansikter manuelt. Det er vanligvis nok å legge
 inn noen få sikre eksempler per person. Du får best resultat med bilder som er
@@ -129,13 +130,10 @@ hvor like bildene må være før programmet antar det er samme person. Du
 må eksperimentere med dine bilder for å se hvilken tallverdi som passer
 for dine bilder.
 
-Forslagene er ikke det samme som manuell bekreftelse. Bruk sikre, tydelige
-bilder som grunnlag, og ikke la dårlige forslag bli nye sikre eksempler.
-
 Etter at du har kjørt `face-suggest`, vises forslagene i bildebrowseren fra
 `run-server`:
 
-- Øverst på skjermen vises knapper med navn på personer som Bildebank har
+- Til venstre for bildet vises knapper med navn på personer som Bildebank har
   forslag for.
 - Knappen "Personer" åpner en side med lenker til bildebrowser for hver
   person.
@@ -145,6 +143,20 @@ Etter at du har kjørt `face-suggest`, vises forslagene i bildebrowseren fra
 Hvis du bekrefter flere ansikter senere, må du kjøre `face-suggest` på nytt for
 å oppdatere forslagene.  Når grunnflyten er kjent, kan du lese mer i
 [face-suggest-strategier](face-suggest-strategier.md).
+
+Hvis du har viser bilder av bare en bestemt person, så dukker det opp to nye
+knapper på verktøylinjen:
+
+- En knapp av et hode, der du kan klikke på den for å slå av og på visning
+  av rektangel som viser ansiktet som er funnet.
+- En knapp "Ta med forslag" som lar deg bytte mellom å bare vise bekreftede
+  bilder av personen, eller også bildene som `face-suggest` har funnet.
+
+I bildevisningen, også i personbrowseren, kan **[+]** under **Personer i
+bildet** brukes når personen er i bildet, men ansiktet ikke kan scannes eller
+bekreftes godt nok. Feltet bruker bare personer som allerede finnes i
+ansiktsdatabasen. Dette påvirker ikke `face-suggest`, og bildet vises ikke når
+**[ ] Ta med forslag** er valgt.
 
 ## Rapport
 
@@ -172,22 +184,20 @@ De vanligste vedlikeholdsoppgavene er:
   **Legg til**. Dette brukes når ansiktet ikke kan scannes godt nok. Personen
   må finnes fra før i ansiktsdatabasen.
 - fjerne et feil ansikt fra en person: `bildebank face-person-remove-face` eller klikk
-  **Personer**, deretter **Bekreftede bilder** på raden for personen, bla til bildet
-  og klikk **Avkreft face-id nnnn**
-- endre navn på en person: `bildebank face-person-rename` eller klikk **Personer**
-  og deretter **endre navn** bak navnet som skal endres.
-- slette en person: `bildebank face-person-delete`
+  **fjern** bak "Referanseansikt: Navn".
+- endre navn på en person: `bildebank face-person-rename` eller klikk 
+  [**Personer**](/people) og deretter **endre navn** bak navnet som skal endres.
+- slette en person: `bildebank face-person-delete` eller klikk **Slett** bak navnet til
+  en person på siden [**Personer**](/people).
 - nullstille ansiktskoblinger: se [`face-reset`](face-reset.md)
 
 Se kommandosidene for detaljer og eksempler.
 
-Manuell **Person i bildet** påvirker ikke `face-suggest`, fordi det ikke
-bekrefter et bestemt ansikt. Slike bilder vises derfor heller ikke under
-**Bekreftede bilder**, men de vises i personbrowseren sammen med bekreftede
-bilder og forslag.
-
-Hvis du ikke bruker manuell **Person i bildet**, kan kontrollen slås av på
-siden **Innstillinger**. Da blir ikke kontrollen laget i bildevisningen.
+I bildevisningen, også i personbrowseren, kan **[+]** under **Personer i
+bildet** brukes når personen er i bildet, men ansiktet ikke kan scannes eller
+bekreftes godt nok. Feltet bruker bare personer som allerede finnes i
+ansiktsdatabasen. Dette påvirker ikke `face-suggest`, og bildet vises ikke når
+**[ ] Ta med forslag** er valgt.
 
 ## Statiske HTML-filer
 

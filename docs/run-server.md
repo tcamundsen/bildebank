@@ -20,26 +20,9 @@ Dette er vanligvis den beste måten å se på bildene på egen PC.
 
 Den statiske HTML-browseren laget med [`make-browser`](make-browser.md) kan
 fortsatt brukes når bildesamlingen skal åpnes på en maskin uten installert
-Bildebank.  `run-server` gir også flere funksjoner som ikke er mulig med den
+Bildebank. Men `run-server` gir flere funksjoner som ikke er mulig med den
 statiske HTML-filen laget av `make-browser`.
 
-## Funksjoner
-
-- Bla gjennom hele bildesamlingen i nettleseren.
-- Slette bilder. (Foreløpig bare flytte til `deleted/`)
-- Rotere bilder som har feil orientering. Informasjon om rotasjon lagres i
-  databasen, og bildet roteres i nettleseren. Originale bildefiler endres ikke.
-- Sette eller fjerne manuell dato for bilder, uten å endre originalfilen.
-- Vise bilder gruppert etter sted når GPS-data er scannet med
-  `bildebank geo-scan`.
-- Vise importerte kilder og åpne en bildebrowser som bare viser bildene som
-  kom fra én bestemt kilde.
-- Bruke `Filtersøk` for å åpne en bildebrowser med bilder som matcher enkle
-  tekstkriterier, for eksempel dato eller lokasjonstype.
-- Holde OpenCLIP-modellen lastet i minnet mens serveren kjører, slik at
-  modellen ikke må lastes inn på nytt ved hvert søk.
-  Dette gjør at søkene går raskere etter første søk.
-- Registrere personer og knytte gode bilder til dem.
 
 ## Start serveren
 
@@ -81,113 +64,6 @@ Hvis du ikke vil åpne nettleseren automatisk:
 ```powershell
 bildebank run-server --no-browser
 ```
-
-## Litt om bruk
-
-Når du åpner `Ansikter i bildet` i bildebrowseren, kan du enten velge en
-registrert person eller skrive inn et nytt navn under `Ny person` og trykke
-`Identifiser`. Da oppretter serveren personen og kobler ansiktet til personen.
-Se også den samlede innføringen: [`insightface`](insightface.md).
-
-Knappen `Bildeinfo` i bildebrowseren viser filnavn, dato og om datoen kommer
-fra metadata, filnavn eller mtime, filstørrelse, oppløsning, kamera hvis dette
-finnes i metadata, hvilke kilder som inkluderer bildet, og lenker til
-stedssidene for H3-nivåene bildet er del av når bildet har GPS-data.
-Overlayet kan lukkes med `Lukk` eller Esc.
-
-På bildesider kan du bruke knappene **↺** og **↻** for å rotere
-visningen av bildet. Bildebank lagrer bare rotasjonen i databasen. Selve
-bildefilen i samlingen endres ikke.
-
-Knappen `Sett dato` eller `Endre dato` lar deg sette manuell dato for bildet.
-Du kan velge eksakt dato, usikker dato eller et datointervall, og legge inn et
-notat. Bildebank lagrer dette i databasen og bruker datoen i bildebrowserens
-sortering og månedsvisning. Bildefilen flyttes ikke og endres ikke.
-
-Lenken `Steder` viser lokale geo-sider basert på GPS-data som allerede er
-lagret i databasen. Kjør først:
-
-```powershell
-bildebank geo-scan
-```
-
-Etterpå kan `http://127.0.0.1:8765/geo` vise områder med bilder,
-`http://127.0.0.1:8765/geo/missing` vise bilder uten GPS, og `Bildeinfo`
-på bildesidene kan lenke til stedssidene bildet er del av. Serveren endrer
-ikke bildefilene og gjør ikke oppslag mot eksterne karttjenester.
-
-Lenken `Kilder` viser importene Bildebank kjenner til. Fra kildesiden kan du
-åpne en bildebrowser som bare viser aktive bilder fra én bestemt kilde. Dette er
-nyttig når du vil kontrollere bilder fra for eksempel én mobil, USB-brikke eller
-mappe.
-
-Lenken `Filtersøk` lar deg skrive enkle tekstkriterier og bla i treffene som
-en vanlig bildebrowser. Første versjon støtter:
-
-```text
-after:2023-12-01 before:2024-12-12
-camera:"iPhone"
-date:manual
-date:metadata
-date:filename
-date:mtime
-deleted:true
-extension:jpg
-filename:IMG
-location:gps
-location:manual
-location:manual h3res:11
-h3res>10
-h3res<8
-location:slug
-missing:gps
-missing:date
-missing:metadata
-orientation:portrait
-width>1024
-width=1024
-width<2000
-height>1024
-height=1024
-height<2000
-path:2024/01
-size<300KB
-size>2MB
-source:1
-source:"mobil 2024"
-tag:"Ute av fokus"
-type:image
-type:video
-after:2023-12-01 location:manual
-```
-
-`after:` og `before:` bruker datoen Bildebank bruker i browseren. Grensene er
-ikke inkludert, så `after:2023-12-01` betyr etter 1. desember 2023.
-`date:manual` viser bilder der datoen er satt manuelt i Bildebank.
-`date:metadata`, `date:filename` og `date:mtime` viser bilder der datoen kommer
-fra henholdsvis metadata, filnavn eller filens endringstid.
-`location:gps` viser bilder med GPS-koordinater, mens `location:manual` viser
-bilder der du har satt manuell H3-lokasjon. `h3res:` kan brukes sammen med
-`location:manual` for å filtrere på den fineste H3-oppløsningen som er satt,
-for eksempel `location:manual h3res:11`, `location:manual h3res>10` eller
-`location:manual h3res<8`. `location:slug` viser bilder for
-et sted fra `Steder`, der `slug` er den samme teksten som brukes i adressen
-`/geo/place/slug`. `size<300KB` viser filer mindre enn 300 KB, og `size>2MB`
-viser filer større enn 2 MB. Størrelsene regnes med 1024 bytes per KB.
-`width>1024`, `width=1024` og `width<2000` filtrerer på bildebredde, og
-tilsvarende kan `height>1024`, `height=1024` og `height<2000` brukes for
-bildehøyde. Bredde og høyde skrives som piksler uten enhet, altså `width>1024`
-og ikke `width>1024px`.
-`type:image`, `type:video` og `type:file` filtrerer på filtype. `extension:jpg`,
-`filename:IMG`, `path:2024/01` og `camera:"iPhone"` søker som tekst, og
-anførselstegn kan brukes når teksten inneholder mellomrom. `source:` kan være
-kilde-ID eller tekst i kildenavn. `tag:` finner tagger, og `missing:` kan være
-`gps`, `date` eller `metadata`. `orientation:` kan være `portrait` eller
-`landscape`. `deleted:true` viser bare bilder som er flyttet til `deleted`.
-
-Knappen `Slett` flytter bildet til `deleted`-mappen i bildesamlingen og
-markerer filen som slettet i databasen. Dette er samme slettemekanisme
-som kommandoen [`bildebank remove`](remove.md).
 
 ## Teknisk info
 
