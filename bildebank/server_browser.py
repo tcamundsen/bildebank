@@ -1786,6 +1786,7 @@ def tag_controls_html(
             redirect_attr = f' data-tag-hide-redirect="{html.escape(out_of_focus_redirect_url)}"'
         buttons.append(
             f'<button class="tag-toggle{active_class}" type="button" '
+            f'title="Klikk for å legge til eller fjerne taggen fra bildet" '
             f'data-tag-toggle="{file_id}" data-tag-name="{html.escape(tag_name)}" '
             f'aria-pressed="{pressed}"{redirect_attr}>{html.escape(tag_name)}</button>'
         )
