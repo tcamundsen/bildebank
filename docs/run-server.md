@@ -80,13 +80,6 @@ Bildebrowseren bruker samme underliggende database som `make-browser`, men har
 egen serverflyt med stabile `file_id`-URL-er. Det gjør at et bilde kan bokmerkes
 og åpnes igjen senere.
 
-På siden **Personer** kan du trykke **Foreslå personer** for å kjøre
-`face-suggest`. Velg threshold i dialogen og bekreft kjøringen. Nettleseren
-venter til jobben er ferdig. Verdien lagres som `suggest_threshold` under
-`[face_recognition]` og brukes som utgangspunkt neste gang dialogen åpnes.
-Når jobben er ferdig fra bildebrowseren, åpnes dialogen igjen med en kort
-oppsummering av resultatet. Knappen **Avbryt** heter da **Lukk**.
-
 ## Stoppe serveren
 
 Stopp serveren i terminalen med:

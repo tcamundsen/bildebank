@@ -59,7 +59,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
 - [`face-config`](face-config.md) **`cli`** - gammel kompatibilitetskommando erstattet av [`config`](config.md)
 - [`face-scan`](face-scan.md) **`cli`**
-- [`face-suggest`](face-suggest.md) **`cli`**
+- [`face-suggest`](face-suggest.md) **`web`**
 - [`face-reset`](face-reset.md) **`cli`**
 
 Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker

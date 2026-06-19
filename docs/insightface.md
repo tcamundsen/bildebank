@@ -117,15 +117,22 @@ bedre enn mange tvilsomme.
 
 ### La Bildebank foreslå flere bilder
 
-Når du har bekreftet noen sikre ansikter for en person, kan du kjøre:
+For å foreslå flere bilder kjøres kommandoen [`face-suggest`](face-suggest.md).
+Denne kan kjøres fra PowerShell, eller fra nettleseren.
 
-```powershell
-bildebank face-suggest  --threshold 0.45
-```
+På siden **Personer** kan du trykke **Foreslå personer** for å kjøre
+`face-suggest`. Du finner også samme funksjon på knappen 👥✨ på
+ verktøylinjen for bilder.
+
+Velg threshold i dialogen og bekreft kjøringen. Nettleseren
+venter til jobben er ferdig. Verdien lagres som `suggest_threshold` under
+`[face_recognition]` og brukes som utgangspunkt neste gang dialogen åpnes.
+Når jobben er ferdig fra bildebrowseren, åpnes dialogen igjen med en kort
+oppsummering av resultatet. Knappen **Avbryt** heter da **Lukk**.
 
 [`face-suggest`](face-suggest.md) sammenligner de bekreftede ansiktene med
 andre scannede ansikter og lagrer forslag til hvilke bilder som kan vise samme
-person. Du kan angi et tall mellom 0.0 og 1.0 med `--threshold` som avgjør
+person. Du kan angi et tall mellom 0.0 og 1.0 (`threshold`) som avgjør
 hvor like bildene må være før programmet antar det er samme person. Du
 må eksperimentere med dine bilder for å se hvilken tallverdi som passer
 for dine bilder.
