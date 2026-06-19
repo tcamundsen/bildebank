@@ -14,6 +14,7 @@ from .html_export import browser_face_items_from_metadata, face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
 from .server_browser import items_by_file_ids, rotation_style_attr
 from .server_browser_sources import BrowserSource, person_browser_source, person_item_url, person_url
+from .value_parsing import require_float, require_int
 
 
 ShellPageRenderer = Callable[..., str]
@@ -87,7 +88,7 @@ def people_for_file_from_rows(
         if name not in people:
             people[name] = {"priority": priority, "manual": manual}
             continue
-        if priority < int(people[name]["priority"]):
+        if priority < require_int(people[name]["priority"], "personprioritet"):
             people[name]["priority"] = priority
         if manual:
             people[name]["manual"] = True
@@ -95,7 +96,7 @@ def people_for_file_from_rows(
         {
             "name": name,
             "url": person_item_url(name, file_id, show_faces=False),
-            "confirmed": int(data["priority"]) <= 1,
+            "confirmed": require_int(data["priority"], "personprioritet") <= 1,
             "manual": bool(data["manual"]),
         }
         for name, data in sorted(people.items())
@@ -688,10 +689,10 @@ def person_faces_for_item(
         ]
     finally:
         conn.close()
-    face_meta = {int(face["faceId"]): face for face in faces}
+    face_meta = {require_int(face["faceId"], "faceId"): face for face in faces}
     rendered = cached_face_box_items_for_item(target, item, faces)
     for face in rendered:
-        meta = face_meta.get(int(face["faceId"]))
+        meta = face_meta.get(require_int(face["faceId"], "faceId"))
         if meta is not None:
             face["status"] = meta["status"]
             face["similarity"] = meta["similarity"]
@@ -787,8 +788,8 @@ def confirmed_face_people_text_html(people: list[dict[str, object]]) -> str:
 def confirmed_face_person_text_html(person: dict[str, object]) -> str:
     name = str(person["name"])
     try:
-        face_id = int(person["faceId"])
-    except (KeyError, TypeError, ValueError):
+        face_id = require_int(person["faceId"], "faceId")
+    except (KeyError, ValueError):
         return html.escape(name)
     return (
         f'{html.escape(name)} '
@@ -872,10 +873,10 @@ def person_assignment_buttons_html(face_id: int, people: list[dict[str, str]]) -
 
 def people_row_html(person: dict[str, object]) -> str:
     name = str(person["name"])
-    confirmed_count = int(person["confirmed_file_count"])
-    all_count = int(person["all_file_count"])
-    duplicate_count = int(person["duplicate_confirmed_file_count"])
-    max_confirmed_faces = int(person["max_confirmed_faces_per_file"])
+    confirmed_count = require_int(person["confirmed_file_count"], "antall bekreftede bilder")
+    all_count = require_int(person["all_file_count"], "antall bilder")
+    duplicate_count = require_int(person["duplicate_confirmed_file_count"], "antall duplikater")
+    max_confirmed_faces = require_int(person["max_confirmed_faces_per_file"], "maks bekreftede ansikter")
     confirmed_source = person_browser_source(name, include_suggestions=False, show_faces=False)
     all_source = person_browser_source(name, include_suggestions=True, show_faces=False)
     duplicate_warning = ""
@@ -1031,14 +1032,15 @@ def person_face_box_html(face: dict[str, object]) -> str:
     if not {"left", "top", "boxWidth", "boxHeight"} <= face.keys():
         return ""
     css_class = "person-face-box suggested" if face.get("status") == "forslag" else "person-face-box"
-    title = f'{face.get("status", "")} face-id {face["faceId"]} score {float(face.get("similarity", 0.0)):.3f}'
+    similarity = require_float(face.get("similarity", 0.0), "similarity")
+    title = f'{face.get("status", "")} face-id {face["faceId"]} score {similarity:.3f}'
     label = f'face-id {face["faceId"]}'
     return (
         f'<div class="{css_class}" title="{html.escape(title)}" style="'
-        f'left: {float(face["left"]):.4f}%; '
-        f'top: {float(face["top"]):.4f}%; '
-        f'width: {float(face["boxWidth"]):.4f}%; '
-        f'height: {float(face["boxHeight"]):.4f}%;'
+        f'left: {require_float(face["left"], "left"):.4f}%; '
+        f'top: {require_float(face["top"], "top"):.4f}%; '
+        f'width: {require_float(face["boxWidth"], "boxWidth"):.4f}%; '
+        f'height: {require_float(face["boxHeight"], "boxHeight"):.4f}%;'
         f'"><span class="person-face-label">{html.escape(label)}</span></div>'
     )
 
@@ -1057,7 +1059,7 @@ def face_overlay_content_html(
 
 
 def face_overlay_item_html(item: Any, image_url: str, face: dict[str, object], people: list[dict[str, str]]) -> str:
-    face_id = int(face["faceId"])
+    face_id = require_int(face["faceId"], "faceId")
     people_buttons = person_assignment_buttons_html(face_id, people)
     suggestions = face.get("suggestions", [])
     suggestion_html = face_suggestion_summary_html(suggestions if isinstance(suggestions, list) else [])
@@ -1065,15 +1067,15 @@ def face_overlay_item_html(item: Any, image_url: str, face: dict[str, object], p
     if {"left", "top", "boxWidth", "boxHeight"} <= face.keys():
         box = (
             '<div class="face-box" style="'
-            f'left: {float(face["left"]):.4f}%; '
-            f'top: {float(face["top"]):.4f}%; '
-            f'width: {float(face["boxWidth"]):.4f}%; '
-            f'height: {float(face["boxHeight"]):.4f}%;'
+            f'left: {require_float(face["left"], "left"):.4f}%; '
+            f'top: {require_float(face["top"], "top"):.4f}%; '
+            f'width: {require_float(face["boxWidth"], "boxWidth"):.4f}%; '
+            f'height: {require_float(face["boxHeight"], "boxHeight"):.4f}%;'
             '"></div>'
         )
     return f"""
     <section class="face-detail" data-face-detail="{face_id}">
-      <div class="face-detail-title">face-id {face_id}, deteksjon {float(face["score"]):.3f}</div>
+      <div class="face-detail-title">face-id {face_id}, deteksjon {require_float(face["score"], "score"):.3f}</div>
       {suggestion_html}
       <div class="lightbox-media"{rotation_style_attr(item)}>
         <img src="{html.escape(image_url)}" alt="">
@@ -1102,8 +1104,8 @@ def face_suggestion_summary_html(suggestions: list[object]) -> str:
         if not name:
             continue
         try:
-            similarity = float(suggestion.get("similarity", 0.0))
-        except (TypeError, ValueError):
+            similarity = require_float(suggestion.get("similarity", 0.0), "similarity")
+        except ValueError:
             similarity = 0.0
         parts.append(f"<span>{name} <strong>{similarity:.3f}</strong></span>")
     if not parts:
@@ -1114,9 +1116,9 @@ def face_suggestion_summary_html(suggestions: list[object]) -> str:
 def cached_face_box_items_for_item(target: Path, item: Any, faces: list[dict[str, object]]) -> list[dict[str, object]]:
     dimensions, orientation = cached_face_box_media_metadata(target, item)
     items = browser_face_items_from_metadata(faces, dimensions, orientation)
-    extra_by_face_id = {int(face["faceId"]): face for face in faces}
+    extra_by_face_id = {require_int(face["faceId"], "faceId"): face for face in faces}
     for item in items:
-        face = extra_by_face_id.get(int(item["faceId"]))
+        face = extra_by_face_id.get(require_int(item["faceId"], "faceId"))
         if face is not None and "suggestions" in face:
             item["suggestions"] = face["suggestions"]
     return items

@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .value_parsing import require_float
+
 
 CONFIG_FILENAME = "bildebank-config.toml"
 ENABLED_CONFIG_SECTIONS = frozenset({"face_recognition", "image_search"})
@@ -380,8 +382,8 @@ def set_face_recognition_model_name(repo_root: Path, model_name: str) -> Path:
 
 def validate_face_suggest_threshold(value: object) -> float:
     try:
-        threshold = float(value)
-    except (TypeError, ValueError) as exc:
+        threshold = require_float(value, "threshold")
+    except ValueError as exc:
         raise ValueError("Threshold må være et tall mellom 0.0 og 1.0.") from exc
     if not math.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
         raise ValueError("Threshold må være et endelig tall mellom 0.0 og 1.0.")

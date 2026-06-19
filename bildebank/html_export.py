@@ -15,6 +15,7 @@ from .formatting import format_bytes
 from .media import image_dimensions, media_kind
 from .media_cache import MediaMetadataCache
 from .thumbnails import existing_thumbnail_url
+from .value_parsing import require_float
 
 
 @dataclass
@@ -199,10 +200,10 @@ def face_box_percent(face: dict[str, object], dimensions, orientation: int = 1) 
     if dimensions.width <= 0 or dimensions.height <= 0:
         return None
     x, y, width, height, box_width, box_height = orient_face_box(
-        float(face["x"]),
-        float(face["y"]),
-        float(face["width"]),
-        float(face["height"]),
+        require_float(face["x"], "x"),
+        require_float(face["y"], "y"),
+        require_float(face["width"], "width"),
+        require_float(face["height"], "height"),
         dimensions.width,
         dimensions.height,
         orientation,

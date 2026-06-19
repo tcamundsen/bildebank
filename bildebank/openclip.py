@@ -13,6 +13,7 @@ from . import db
 from .config import OpenClipConfig
 from .media import IMAGE_EXTENSIONS
 from .media_cache import cached_image_dimensions
+from .value_parsing import optional_int
 
 
 OPENCLIP_DB_FILENAME = ".bilder-openclip.sqlite3"
@@ -454,7 +455,10 @@ def create_search_run(
         """,
         (query, config.model_name, config.pretrained, limit),
     )
-    return int(cur.lastrowid)
+    search_run_id = optional_int(cur.lastrowid, "søkejobb-id")
+    if search_run_id is None:
+        raise ValueError("Databasen returnerte ikke id for søkejobben.")
+    return search_run_id
 
 
 def load_image_model(config: OpenClipConfig) -> tuple[Any, Any]:

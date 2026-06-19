@@ -19,6 +19,7 @@ from .geo import (
     h3_resolution_label,
     predefined_geo_place,
 )
+from .value_parsing import require_int
 
 DEFAULT_GEO_RESOLUTION = 7
 DEFAULT_GEO_MIN_COUNT = 2
@@ -298,7 +299,7 @@ def geo_stats_summary_html(stats: dict[str, int]) -> str:
 
 def geo_area_row_html(row: Any, *, resolution: int, inherited_name: str | None = None) -> str:
     h3_cell = str(row["h3_cell"])
-    count = int(row["count"])
+    count = require_int(row["count"], "antall bilder")
     name = row["name"] if "name" in row.keys() else None
     if name:
         label = str(name)
@@ -335,7 +336,7 @@ def geo_places_section_html(rows: list[dict[str, object]]) -> str:
 def geo_place_row_html(row: dict[str, object]) -> str:
     slug = str(row["slug"])
     name = str(row["name"])
-    count = int(row["count"])
+    count = require_int(row["count"], "antall bilder")
     h3_cells = tuple(str(cell) for cell in row["h3_cells"])
     url = "/geo/place/" + urllib.parse.quote(slug, safe="")
     h3geo_url = h3geo_place_url(h3_cells)

@@ -10,6 +10,7 @@ from typing import Iterable
 from . import db
 from .exiftool import resolve_exiftool_path
 from .progress import ProgressMeter
+from .value_parsing import optional_float, require_float
 
 
 GPS_TAGS = (
@@ -109,10 +110,10 @@ def extract_gps_from_metadata(meta: dict[str, object]) -> GpsData | None:
         return None
 
     try:
-        lat_value = float(lat)
-        lon_value = float(lon)
-        alt_value = float(alt) if alt is not None else None
-    except (TypeError, ValueError) as exc:
+        lat_value = require_float(lat, "GPS-breddegrad")
+        lon_value = require_float(lon, "GPS-lengdegrad")
+        alt_value = optional_float(alt, "GPS-høyde")
+    except ValueError as exc:
         raise ValueError("Ugyldige GPS-koordinater") from exc
 
     if not -90 <= lat_value <= 90:

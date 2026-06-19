@@ -12,6 +12,8 @@ from pathlib import Path
 from pathlib import PureWindowsPath
 from typing import Any, Iterable
 
+from .value_parsing import optional_int, require_int
+
 
 DB_FILENAME = ".bilder.sqlite3"
 SCHEMA_VERSION = 10
@@ -2005,7 +2007,10 @@ def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
         "INSERT INTO tags(name, name_key, kind) VALUES(?, ?, ?)",
         (clean_name, name_key, kind),
     )
-    return int(cursor.lastrowid)
+    tag_id = optional_int(cursor.lastrowid, "tag-id")
+    if tag_id is None:
+        raise ValueError("Databasen returnerte ikke id for den nye taggen.")
+    return tag_id
 
 
 def create_user_tag(conn: sqlite3.Connection, name: str) -> int:
@@ -2020,7 +2025,10 @@ def create_user_tag(conn: sqlite3.Connection, name: str) -> int:
         "INSERT INTO tags(name, name_key, kind) VALUES(?, ?, ?)",
         (clean_name, tag_name_key(clean_name), TAG_KIND_USER),
     )
-    return int(cursor.lastrowid)
+    tag_id = optional_int(cursor.lastrowid, "tag-id")
+    if tag_id is None:
+        raise ValueError("Databasen returnerte ikke id for den nye taggen.")
+    return tag_id
 
 
 def rename_user_tag(conn: sqlite3.Connection, *, tag_id: int, new_name: str) -> str:
@@ -2754,8 +2762,8 @@ def geo_missing_files(conn: sqlite3.Connection, *, limit: int, offset: int = 0) 
 
 def normalize_view_rotation(value: object) -> int:
     try:
-        rotation = int(value or 0) % 360
-    except (TypeError, ValueError):
+        rotation = require_int(value or 0, "visningsrotasjon") % 360
+    except ValueError:
         rotation = 0
     return rotation if rotation in {0, 90, 180, 270} else 0
 
