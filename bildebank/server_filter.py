@@ -663,7 +663,7 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     if text_filter.deleted:
         where.append("deleted_at IS NOT NULL")
     if text_filter.rotated:
-        where.append("view_rotation_degrees IS NOT NULL")
+        where.append("view_rotation_degrees IN (90, 180, 270)")
     if text_filter_has_date_criteria(text_filter, year_eq, month_eq, day_eq):
         where.append(browser_has_date_sql)
     if text_filter.after is not None:

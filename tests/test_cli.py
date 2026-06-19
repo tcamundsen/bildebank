@@ -3860,7 +3860,7 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in place_month], [2])
         self.assertEqual([item["id"] for item in camera_month], [2])
         self.assertEqual([item["id"] for item in deleted_month], [7])
-        self.assertEqual(rotated_ids, [1, 2, 3, 4])
+        self.assertEqual(rotated_ids, [2, 3, 4])
         self.assertEqual([item["id"] for item in deleted_rotated_month], [7])
         self.assertEqual([item["id"] for item in rotated_metadata_month], [2])
         self.assertEqual([item["id"] for item in extension_month], [2])

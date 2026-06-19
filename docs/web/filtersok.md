@@ -487,8 +487,9 @@ is:rotated
 
 `is:deleted` viser filer som er markert som slettet.
 
-`is:rotated` viser aktive bilder der brukeren har brukt rotasjon i Bildebank.
-Bildet regnes som rotert selv om det senere er rotert tilbake til 0 grader.
+`is:rotated` viser aktive bilder som er rotert 90, 180 eller 270 grader i
+Bildebank. Et bilde som er rotert tilbake til opprinnelig posisjon, regnes
+ikke som rotert.
 
 Uten `is:deleted` viser Bildebank bare aktive filer.
 
