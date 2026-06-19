@@ -183,6 +183,8 @@ def filter_source_from_url(target: Path, source_url: object) -> BrowserSource | 
 
 
 class BildebankServer(ThreadingHTTPServer):
+    server_address: tuple[str, int]
+
     def __init__(self, address: tuple[str, int], target: Path, config: AppConfig) -> None:
         super().__init__(address, BildebankRequestHandler)
         self.target = target
