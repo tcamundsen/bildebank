@@ -44,6 +44,7 @@ from .face import (
     scan_faces,
     suggest_faces,
 )
+from .file_lifecycle import remove_file, undelete_file
 from .geo import (
     DEFAULT_EXIFTOOL_BATCH_SIZE,
     h3_column_for_resolution,
@@ -1034,6 +1035,9 @@ def run(args: argparse.Namespace) -> int:
     if args.command in FACE_COMMANDS:
         return run_face_command(args, target)
 
+    if args.command in {"remove", "undelete"}:
+        return run_file_lifecycle_command(args, target)
+
     return run_db_command(args, target)
 
 
@@ -1239,6 +1243,27 @@ def run_face_command(args: argparse.Namespace, target: Path) -> int:
         )
 
 
+def run_file_lifecycle_command(args: argparse.Namespace, target: Path) -> int:
+    if args.command == "remove":
+        result_path = remove_file(
+            target,
+            collection_path=args.path,
+            command_args=vars_for_log(args),
+            path_adapter=existing_path_arg,
+        )
+        print(f"Flyttet til slettet mappe: {target / result_path}")
+        return 0
+
+    result_path = undelete_file(
+        target,
+        collection_path=args.path,
+        command_args=vars_for_log(args),
+        path_adapter=existing_path_arg,
+    )
+    print(f"Flyttet tilbake til bildesamlingen: {target / result_path}")
+    return 0
+
+
 def run_db_command(args: argparse.Namespace, target: Path) -> int:
     conn = db.connect(target)
     try:
@@ -1343,65 +1368,9 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
             print("Kilden er fjernet fra kildelisten.")
             return 0
 
-        if args.command == "remove":
-            original_path = resolve_target_file_arg(target, args.path)
-            row = db.file_by_target_path(conn, target, original_path)
-            if row is None:
-                raise ValueError(f"Filen finnes ikke i importdatabasen: {original_path}")
-            if row["deleted_at"] is not None:
-                raise ValueError(f"Filen er allerede markert som slettet: {original_path}")
-            if not original_path.exists():
-                raise ValueError(f"Målfilen finnes ikke på disk: {original_path}")
-
-            relative_path = relative_path_under_target(target, original_path)
-            deleted_path = target / "deleted" / relative_path
-            if deleted_path.exists():
-                raise ValueError(f"Slettemål finnes allerede: {deleted_path}")
-
-            deleted_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(original_path), str(deleted_path))
-            db.mark_file_deleted(
-                conn,
-                file_id=int(row["id"]),
-                target_root=target,
-                deleted_path=deleted_path,
-                original_target_path=original_path,
-            )
-            conn.commit()
-            print(f"Flyttet til slettet mappe: {deleted_path}")
-            return 0
-
         if args.command == "list-removed":
             for row in db.deleted_files(conn):
                 print_deleted_item(target, row)
-            return 0
-
-        if args.command == "undelete":
-            deleted_path = resolve_deleted_file_arg(target, args.path)
-            row = db.file_by_target_path(conn, target, deleted_path)
-            if row is None:
-                raise ValueError(f"Filen finnes ikke i importdatabasen: {deleted_path}")
-            if row["deleted_at"] is None:
-                raise ValueError(f"Filen er ikke markert som slettet: {deleted_path}")
-            if row["deleted_original_target_path"] is None:
-                raise ValueError(f"Filen mangler opprinnelig målsti i databasen: {deleted_path}")
-            if not deleted_path.exists():
-                raise ValueError(f"Slettet fil finnes ikke på disk: {deleted_path}")
-
-            restored_path = target / Path(str(row["deleted_original_target_path"]))
-            if restored_path.exists():
-                raise ValueError(f"Målfilen finnes allerede: {restored_path}")
-
-            restored_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(deleted_path), str(restored_path))
-            db.mark_file_undeleted(
-                conn,
-                file_id=int(row["id"]),
-                target_root=target,
-                restored_path=restored_path,
-            )
-            conn.commit()
-            print(f"Flyttet tilbake til bildesamlingen: {restored_path}")
             return 0
 
         if args.command == "non-metadata":

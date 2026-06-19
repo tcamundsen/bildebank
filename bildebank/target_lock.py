@@ -9,6 +9,10 @@ from pathlib import Path
 LOCK_FILENAME = ".bildebank.lock"
 
 
+class TargetLockError(RuntimeError):
+    pass
+
+
 class TargetLock:
     def __init__(self, target: Path, *, command: str) -> None:
         self.path = target / LOCK_FILENAME
@@ -27,7 +31,7 @@ class TargetLock:
             )
             if details:
                 message = f"{message}\n{details}"
-            raise RuntimeError(message) from exc
+            raise TargetLockError(message) from exc
 
         created = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
         content = (

@@ -111,6 +111,7 @@ from .server_search import (
     OpenClipSearchCache,
     search_server_images,
 )
+from .target_lock import TargetLockError
 from .server_filter import text_filter_browser_source
 from .server_response import ServerResponseMixin
 from . import server_request
@@ -1839,6 +1840,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         try:
             deleted_path = server_actions.remove_file_from_browser(self.server.target, file_id)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1854,6 +1858,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         try:
             restored_path = server_actions.undelete_file_from_browser(self.server.target, file_id)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return

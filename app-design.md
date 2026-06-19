@@ -70,6 +70,14 @@ Kommando for å liste bilder med navnekollisjon
 unimport må være konservativ, verifiser kildefiler før endring, aldri føre til
 tap, og fjerne bare proveniens når andre kilder fortsatt peker på samme fil.
 
+## Låsing av samlingsendringer
+
+Operasjoner som flytter filer i bildesamlingen og samtidig oppdaterer
+hoveddatabasen, skal holde bildesamlingens target-lås fra før første
+databaseoppslag og validering til etter at databaseendringen er committed.
+Dette gjelder uavhengig av om operasjonen startes fra kommandolinjen eller
+webgrensesnittet.
+
 ## Teknologi
 
 Programmet skal skrives i Python. Planen er at dette skal være et program

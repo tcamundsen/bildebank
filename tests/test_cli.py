@@ -46,7 +46,7 @@ from bildebank.media import ImageDimensions, sha256_file
 from bildebank.media_cache import cached_image_dimensions, cached_image_orientation
 from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
 from bildebank.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
-from bildebank.server_actions import undelete_file_from_browser
+from bildebank.server_actions import remove_file_from_browser, undelete_file_from_browser
 from bildebank.server_assets import SERVER_CSS, SERVER_JS
 from bildebank.server_files import read_server_file
 from bildebank.server import (
@@ -3178,6 +3178,55 @@ model_name = "buffalo_l"
             self.assertIsNotNone(row["deleted_at"])
             self.assertIsNone(browser_item_by_id(target, 1))
 
+    def test_run_server_delete_returns_conflict_when_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            original = target / "2024" / "01" / "IMG_20240102.png"
+            (target / LOCK_FILENAME).write_text(
+                "command=import\npid=123\n", encoding="utf-8"
+            )
+            data = json.dumps({"file_id": 1}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+                status = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_delete_item(handler)  # type: ignore[arg-type]
+
+            self.assertEqual(HTTPStatus.CONFLICT, handler.status)
+            self.assertEqual(False, handler.body["ok"])
+            self.assertIn("Bildesamlingen er låst", str(handler.body["error"]))
+            self.assertTrue(original.exists())
+
     def test_app_links_to_removed_files_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -3254,6 +3303,66 @@ model_name = "buffalo_l"
             self.assertEqual({"ok": True, "file_id": 1, "restored_path": "2024/01/IMG_20240102.png"}, handler.body)
             self.assertTrue((target / "2024" / "01" / "IMG_20240102.png").exists())
             self.assertFalse((target / "deleted" / "2024" / "01" / "IMG_20240102.png").exists())
+
+    def test_run_server_undelete_returns_conflict_when_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "remove",
+                        "2024/01/IMG_20240102.png",
+                    ]
+                ),
+                0,
+            )
+            deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.png"
+            (target / LOCK_FILENAME).write_text(
+                "command=import\npid=123\n", encoding="utf-8"
+            )
+            data = json.dumps({"file_id": 1}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+                status = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_undelete_item(handler)  # type: ignore[arg-type]
+
+            self.assertEqual(HTTPStatus.CONFLICT, handler.status)
+            self.assertEqual(False, handler.body["ok"])
+            self.assertIn("Bildesamlingen er låst", str(handler.body["error"]))
+            self.assertTrue(deleted.exists())
 
     def test_run_server_item_page_can_rotate_image_view(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -7516,6 +7625,136 @@ enabled = false
             self.assertIn("filstørrelse: 9 bytes (9 bytes)", stdout)
             self.assertIn("sha256:", stdout)
 
+    def test_remove_stops_when_target_is_locked_without_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            lock_path = target / LOCK_FILENAME
+            lock_path.write_text("command=import\npid=123\n", encoding="utf-8")
+            with sqlite3.connect(target / DB_FILENAME) as conn:
+                row_before = conn.execute(
+                    "SELECT target_path, deleted_at FROM files WHERE id = 1"
+                ).fetchone()
+                commands_before = conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0]
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamlingen er låst", stderr)
+            self.assertTrue(imported.exists())
+            with sqlite3.connect(target / DB_FILENAME) as conn:
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT target_path, deleted_at FROM files WHERE id = 1"
+                    ).fetchone(),
+                    row_before,
+                )
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0],
+                    commands_before,
+                )
+
+    def test_remove_holds_lock_while_moving_and_releases_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            lock_path = target / LOCK_FILENAME
+            observed_lock: list[bool] = []
+            real_move = shutil.move
+
+            def move_with_lock_check(source_path, destination_path):  # noqa: ANN001
+                observed_lock.append(lock_path.exists())
+                return real_move(source_path, destination_path)
+
+            with patch(
+                "bildebank.file_lifecycle.shutil.move",
+                side_effect=move_with_lock_check,
+            ):
+                remove_file_from_browser(target, 1)
+
+            self.assertEqual(observed_lock, [True])
+            self.assertFalse(lock_path.exists())
+
+    def test_remove_releases_lock_when_move_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            lock_path = target / LOCK_FILENAME
+
+            with (
+                patch(
+                    "bildebank.file_lifecycle.shutil.move",
+                    side_effect=OSError("move failed"),
+                ),
+                self.assertRaisesRegex(OSError, "move failed"),
+            ):
+                remove_file_from_browser(target, 1)
+
+            self.assertFalse(lock_path.exists())
+            self.assertTrue(imported.exists())
+            with sqlite3.connect(target / DB_FILENAME) as conn:
+                row = conn.execute(
+                    "SELECT target_path, deleted_at FROM files WHERE id = 1"
+                ).fetchone()
+            self.assertEqual(row, ("2024/01/IMG_20240102.jpg", None))
+
     def test_undelete_restores_removed_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -7548,6 +7787,121 @@ enabled = false
             self.assertIsNone(row["deleted_at"])
             self.assertIsNone(row["deleted_original_target_path"])
             self.assertIsNotNone(browser_item_by_id(target, 1))
+
+    def test_undelete_stops_when_target_is_locked_without_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "remove",
+                        "2024/01/IMG_20240102.jpg",
+                    ]
+                ),
+                0,
+            )
+            deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
+            lock_path = target / LOCK_FILENAME
+            lock_path.write_text("command=import\npid=123\n", encoding="utf-8")
+            with sqlite3.connect(target / DB_FILENAME) as conn:
+                row_before = conn.execute(
+                    "SELECT target_path, deleted_at FROM files WHERE id = 1"
+                ).fetchone()
+                commands_before = conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0]
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "undelete",
+                    "deleted/2024/01/IMG_20240102.jpg",
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamlingen er låst", stderr)
+            self.assertTrue(deleted.exists())
+            with sqlite3.connect(target / DB_FILENAME) as conn:
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT target_path, deleted_at FROM files WHERE id = 1"
+                    ).fetchone(),
+                    row_before,
+                )
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM command_log").fetchone()[0],
+                    commands_before,
+                )
+
+    def test_undelete_holds_lock_while_moving_and_releases_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "remove",
+                        "2024/01/IMG_20240102.jpg",
+                    ]
+                ),
+                0,
+            )
+            lock_path = target / LOCK_FILENAME
+            observed_lock: list[bool] = []
+            real_move = shutil.move
+
+            def move_with_lock_check(source_path, destination_path):  # noqa: ANN001
+                observed_lock.append(lock_path.exists())
+                return real_move(source_path, destination_path)
+
+            with patch(
+                "bildebank.file_lifecycle.shutil.move",
+                side_effect=move_with_lock_check,
+            ):
+                undelete_file_from_browser(target, 1)
+
+            self.assertEqual(observed_lock, [True])
+            self.assertFalse(lock_path.exists())
 
     def test_undelete_rejects_original_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
