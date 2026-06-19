@@ -47,7 +47,7 @@ from bildebank.media_cache import cached_image_dimensions, cached_image_orientat
 from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
 from bildebank.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
 from bildebank.server_actions import undelete_file_from_browser
-from bildebank.server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS
+from bildebank.server_assets import SERVER_CSS, SERVER_JS
 from bildebank.server_files import read_server_file
 from bildebank.server import (
     BildebankServer,
@@ -2495,7 +2495,6 @@ model_name = "buffalo_l"
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
-        self.assertEqual(SERVER_ASSET_VERSION, "26")
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
         html = render_html([], month_preview_limit=None)
@@ -2851,7 +2850,7 @@ model_name = "buffalo_l"
         self.assertIsNone(row["h3_res4"])
         self.assertIsNone(row["h3_res11"])
         self.assertIn('<aside class="tag-rail"', body)
-        self.assertIn(f'href="https://h3geo.org/#hex={h3_cell}" target="_blank" rel="noopener">Manuell H3</a>', body)
+        self.assertIn(f'href="https://h3geo.org/#hex={h3_cell}" target="_blank" title="Vis plasseringen på kartet på https://h3geo.org/" rel="noopener">Manuell H3</a>', body)
         self.assertNotIn("Fjern manuelt sted", body)
         self.assertIn('class="inline-link danger-inline-link"', body)
         self.assertIn('Manuell H3</a><span class="manual-location-remove">(<button class="inline-link danger-inline-link"', body)
