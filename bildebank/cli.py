@@ -1102,6 +1102,8 @@ def run_no_target_command(args: argparse.Namespace) -> int:
     if args.command == "face-config":
         return run_face_config(args.enabled)
 
+    raise ValueError(f"Ukjent kommando uten bildesamling: {args.command}")
+
 
 def run_target_command(args: argparse.Namespace, target: Path) -> int:
     if args.command == "migrate":
@@ -1242,6 +1244,8 @@ def run_face_command(args: argparse.Namespace, target: Path) -> int:
             target,
             all_data=args.all,
         )
+
+    raise ValueError(f"Ukjent ansiktskommando: {args.command}")
 
 
 def run_file_lifecycle_command(args: argparse.Namespace, target: Path) -> int:
