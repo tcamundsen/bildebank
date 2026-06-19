@@ -3,11 +3,19 @@ from __future__ import annotations
 import json
 import time
 from http import HTTPStatus
-from typing import Any
+from io import BufferedIOBase
+from typing import TYPE_CHECKING, Any
 
 BENCHMARK_HEADER = "X-Bildebank-Benchmark"
 
 class ServerResponseMixin:
+    if TYPE_CHECKING:
+        wfile: BufferedIOBase
+
+        def send_response(self, code: int, message: str | None = None) -> None: ...
+        def send_header(self, keyword: str, value: str) -> None: ...
+        def end_headers(self) -> None: ...
+
     def wants_benchmark_timing(self) -> bool:
         headers = getattr(self, "headers", None)
         return headers is not None and headers.get(BENCHMARK_HEADER) == "1"
