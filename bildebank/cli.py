@@ -45,6 +45,7 @@ from .face import (
     suggest_faces,
 )
 from .file_lifecycle import remove_file, undelete_file
+from .formatting import format_bytes
 from .geo import (
     DEFAULT_EXIFTOOL_BATCH_SIZE,
     h3_column_for_resolution,
@@ -3175,17 +3176,6 @@ def print_deleted_item(target: Path, row) -> None:
     print(f"  kildefil: {row['source_path']}")
     print(f"  filstørrelse: {format_bytes(int(row['size_bytes']))} ({row['size_bytes']} bytes)")
     print(f"  sha256: {row['sha256']}")
-
-
-def format_bytes(size: int) -> str:
-    units = ("bytes", "KB", "MB", "GB", "TB")
-    value = float(size)
-    for unit in units:
-        if value < 1024 or unit == units[-1]:
-            if unit == "bytes":
-                return f"{size} bytes"
-            return f"{value:.1f} {unit}"
-        value /= 1024
 
 
 def existing_path_arg(path: Path) -> Path:

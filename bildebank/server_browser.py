@@ -12,8 +12,9 @@ from typing import Any, Callable
 
 from . import db
 from .config import BrowserHotkeyConfig, FaceRecognitionConfig, HOTKEY_KEYS
+from .formatting import format_bytes
 from .geo import H3_COLUMNS, h3_area_label
-from .html_export import display_relative_path, format_bytes, month_key_from_path
+from .html_export import display_relative_path, month_key_from_path
 from .media import media_kind
 from .media_cache import cached_image_dimensions
 from .openclip import relative_to_target

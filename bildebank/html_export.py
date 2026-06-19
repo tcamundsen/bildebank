@@ -11,6 +11,7 @@ from time import perf_counter
 from urllib.parse import quote
 
 from . import db
+from .formatting import format_bytes
 from .media import image_dimensions, media_kind
 from .media_cache import MediaMetadataCache
 from .thumbnails import existing_thumbnail_url
@@ -312,17 +313,6 @@ def relative_to_target(target: Path, path: Path) -> Path:
 
 def display_relative_path(target: Path, path: Path) -> str:
     return relative_to_target(target, path).as_posix()
-
-
-def format_bytes(size: int) -> str:
-    units = ("bytes", "KB", "MB", "GB", "TB")
-    value = float(size)
-    for unit in units:
-        if value < 1024 or unit == units[-1]:
-            if unit == "bytes":
-                return f"{size} bytes"
-            return f"{value:.1f} {unit}"
-        value /= 1024
 
 
 def path_to_url(path: Path) -> str:

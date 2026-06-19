@@ -15,6 +15,7 @@ from urllib.parse import quote
 
 from . import db
 from .config import DEFAULT_FACE_MODEL_NAME, FaceRecognitionConfig
+from .formatting import format_bytes
 from .html_export import render_html
 from .media import IMAGE_EXTENSIONS
 from .media_cache import MediaMetadataCache
@@ -1608,15 +1609,7 @@ def format_person_file_size(path: Path) -> str:
         size = path.stat().st_size
     except OSError:
         return "-"
-    units = ("bytes", "KB", "MB", "GB", "TB")
-    value = float(size)
-    for unit in units:
-        if value < 1024 or unit == units[-1]:
-            if unit == "bytes":
-                return f"{size} bytes"
-            return f"{value:.1f} {unit}"
-        value /= 1024
-    return f"{size} bytes"
+    return format_bytes(size)
 
 
 def safe_filename(value: str) -> str:
