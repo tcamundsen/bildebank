@@ -80,6 +80,10 @@ Bildebrowseren bruker samme underliggende database som `make-browser`, men har
 egen serverflyt med stabile `file_id`-URL-er. Det gjør at et bilde kan bokmerkes
 og åpnes igjen senere.
 
+På siden **Personer** og i bildebrowserens toolbar kan du kjøre
+`face-suggest`. Begge viser samme dialog, lagret threshold og en kort
+oppsummering når jobben er fullført.
+
 ## Stoppe serveren
 
 Stopp serveren i terminalen med:

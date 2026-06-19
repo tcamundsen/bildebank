@@ -926,7 +926,10 @@ def people_page_html(
         {people_face_summary_html(summary)}
         <button class="nav-button" type="button" data-open-face-suggest>Foreslå personer</button>
         {content}
-        {face_suggest_dialog_html(face_config.suggest_threshold if face_config is not None else 0.6)}
+        {face_suggest_dialog_html(
+            face_config.suggest_threshold if face_config is not None else 0.6,
+            return_url="/people",
+        )}
         {person_rename_dialog_html()}
         """,
         face_enabled=True,

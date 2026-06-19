@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "28"
+SERVER_ASSET_VERSION = "29"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -1031,6 +1031,12 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   });
   closeFaceSuggestButton?.addEventListener("click", () => {
     faceSuggestDialog.hidden = true;
+    if (faceSuggestSuccess) faceSuggestSuccess.hidden = true;
+    if (faceSuggestStatus) {
+      faceSuggestStatus.hidden = true;
+      faceSuggestStatus.textContent = "";
+    }
+    closeFaceSuggestButton.textContent = "Avbryt";
   });
   const faceSuggestResult = new URLSearchParams(window.location.hash.slice(1)).get("face-suggest-status");
   if (faceSuggestDialog && faceSuggestStatus && faceSuggestResult) {
