@@ -55,5 +55,50 @@ Skriv rådata til fil når tallene skal sammenlignes over tid:
 .venv/bin/python tools/benchmark_browser.py --url http://127.0.0.1:8765/item/123 --json-output /tmp/bildebank-browser-benchmark.json
 ```
 
+## Suite med flere start-URL-er
+
+En suite er en JSON-liste med navn, start-URL og terskel for hver case:
+
+```json
+[
+  {
+    "name": "vanlig-bildevisning",
+    "url": "http://127.0.0.1:8765/item/123",
+    "threshold_ms": 10
+  },
+  {
+    "name": "filtersok-video",
+    "url": "http://127.0.0.1:8765/filter/type%3Avideo/item/123",
+    "threshold_ms": 15
+  }
+]
+```
+
+Kjør hver case tre ganger:
+
+```bash
+.venv/bin/python tools/benchmark_browser.py --mode server-keepalive --suite benchmark-suite.json
+```
+
+`--repeat` styrer antall kjøringer per case. Samme `--mode`, `--steps`,
+`--warmup` og `--timeout-ms` brukes for alle kjøringene. Beste kjøring velges
+først etter færrest terskelbrudd, deretter lavest p95 og til slutt lavest
+median.
+
+En case er godkjent når beste kjøring har et antall terskelbrudd innenfor
+`--min-failures` og `--max-failures`, inklusive grensene. Standard er 0 til 5.
+Suite-rapporten viser terskel, beste median/p95/maks, terskelbrudd for beste
+kjøring og terskelbrudd for hver repetisjon.
+
+Bruk `--json-output` for å lagre alle kjøringer, valgt beste kjøring og samlet
+pass/fail:
+
+```bash
+.venv/bin/python tools/benchmark_browser.py --mode server --suite benchmark-suite.json --repeat 5 --json-output suite-resultat.json
+```
+
 Exit code er `1` når `--threshold-ms` er satt og minst ett målt steg er tregere
 enn terskelen. Det gjør scriptet egnet som manuell regresjonssjekk.
+
+I suite-modus er exit code `1` når én eller flere cases feiler grensene. Ugyldig
+suiteformat, konfigurasjonsfeil og runtime-feil gir exit code `2`.

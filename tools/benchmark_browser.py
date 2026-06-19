@@ -92,6 +92,41 @@ class ProfileSummary:
     steps: list[ProfileStepResult]
 
 
+BenchmarkResult = BenchmarkSummary | ProfileSummary
+
+
+@dataclass(frozen=True)
+class SuiteCase:
+    name: str
+    url: str
+    threshold_ms: float
+
+
+@dataclass(frozen=True)
+class SuiteCaseResult:
+    name: str
+    url: str
+    threshold_ms: float
+    runs: list[BenchmarkResult]
+    best_run_index: int
+    passed: bool
+
+    @property
+    def best_run(self) -> BenchmarkResult:
+        return self.runs[self.best_run_index]
+
+
+@dataclass(frozen=True)
+class SuiteSummary:
+    suite_path: str
+    mode: str
+    repeat: int
+    min_failures: int
+    max_failures: int
+    passed: bool
+    cases: list[SuiteCaseResult]
+
+
 class NextLinkParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -108,27 +143,34 @@ class NextLinkParser(HTMLParser):
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
-        if args.mode == "profile":
-            summary = run_profile_benchmark(args)
-        elif args.mode == "browser":
-            summary = run_browser_benchmark(args)
-        elif args.mode == "server-keepalive":
-            summary = run_server_keepalive_benchmark(args)
+        if args.suite is not None:
+            suite_summary = run_suite_benchmark(args)
         else:
-            summary = run_server_benchmark(args)
-    except RuntimeError as exc:
+            summary = run_benchmark(args)
+    except (OSError, RuntimeError) as exc:
         print(f"FEIL: {exc}", file=sys.stderr)
         return 2
+
+    if args.suite is not None:
+        print_suite_summary(suite_summary)
+        try:
+            if args.json_output:
+                write_json_output(args.json_output, suite_summary_to_json(suite_summary))
+        except OSError as exc:
+            print(f"FEIL: {exc}", file=sys.stderr)
+            return 2
+        return 0 if suite_summary.passed else 1
 
     if isinstance(summary, ProfileSummary):
         print_profile_summary(summary)
     else:
         print_summary(summary)
-    if args.json_output:
-        Path(args.json_output).write_text(
-            json.dumps(summary_to_json(summary), ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+    try:
+        if args.json_output:
+            write_json_output(args.json_output, summary_to_json(summary))
+    except OSError as exc:
+        print(f"FEIL: {exc}", file=sys.stderr)
+        return 2
     if summary.threshold_failures:
         return 1
     return 0
@@ -142,6 +184,20 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         )
     )
     parser.add_argument("--url", default=DEFAULT_URL, help=f"Startside eller item-URL. Standard: {DEFAULT_URL}")
+    parser.add_argument("--suite", type=Path, help="JSON-fil med benchmark-cases.")
+    parser.add_argument("--repeat", type=positive_int, default=3, help="Kjør hver suite-case N ganger. Standard: 3")
+    parser.add_argument(
+        "--min-failures",
+        type=non_negative_int,
+        default=0,
+        help="Minste tillatte antall terskelbrudd for beste suite-kjøring. Standard: 0",
+    )
+    parser.add_argument(
+        "--max-failures",
+        type=non_negative_int,
+        default=5,
+        help="Største tillatte antall terskelbrudd for beste suite-kjøring. Standard: 5",
+    )
     parser.add_argument("--mode", choices=("browser", "server", "server-keepalive", "profile"), default="browser")
     parser.add_argument("--target", type=Path, help="Bildesamlingsmappe. Kreves for --mode profile.")
     parser.add_argument("--steps", type=positive_int, default=50, help="Antall neste-klikk som måles. Standard: 50")
@@ -157,6 +213,80 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         help="Hvor lenge browser-modus venter etter hvert klikk. Standard: load",
     )
     return parser.parse_args(argv)
+
+
+def run_benchmark(args: argparse.Namespace) -> BenchmarkResult:
+    if args.mode == "profile":
+        return run_profile_benchmark(args)
+    if args.mode == "browser":
+        return run_browser_benchmark(args)
+    if args.mode == "server-keepalive":
+        return run_server_keepalive_benchmark(args)
+    return run_server_benchmark(args)
+
+
+def run_suite_benchmark(args: argparse.Namespace) -> SuiteSummary:
+    if args.suite is None:
+        raise RuntimeError("--suite mangler.")
+    if args.min_failures > args.max_failures:
+        raise RuntimeError("--min-failures kan ikke være større enn --max-failures.")
+    cases = load_suite_cases(args.suite)
+    case_results: list[SuiteCaseResult] = []
+    for case in cases:
+        runs: list[BenchmarkResult] = []
+        for _ in range(args.repeat):
+            run_args = argparse.Namespace(**vars(args))
+            run_args.url = case.url
+            run_args.threshold_ms = case.threshold_ms
+            runs.append(run_benchmark(run_args))
+        best_run_index = min(range(len(runs)), key=lambda index: summary_sort_key(runs[index]))
+        best_run = runs[best_run_index]
+        passed = args.min_failures <= best_run.threshold_failures <= args.max_failures
+        case_results.append(
+            SuiteCaseResult(
+                name=case.name,
+                url=case.url,
+                threshold_ms=case.threshold_ms,
+                runs=runs,
+                best_run_index=best_run_index,
+                passed=passed,
+            )
+        )
+    return SuiteSummary(
+        suite_path=str(args.suite),
+        mode=args.mode,
+        repeat=args.repeat,
+        min_failures=args.min_failures,
+        max_failures=args.max_failures,
+        passed=all(case.passed for case in case_results),
+        cases=case_results,
+    )
+
+
+def load_suite_cases(path: Path) -> list[SuiteCase]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Suite-filen inneholder ugyldig JSON: {path}: {exc}") from exc
+    if not isinstance(payload, list) or not payload:
+        raise RuntimeError("Suite-filen må inneholde en ikke-tom JSON-liste.")
+    cases: list[SuiteCase] = []
+    for index, raw_case in enumerate(payload, start=1):
+        if not isinstance(raw_case, dict):
+            raise RuntimeError(f"Suite-case #{index} må være et JSON-objekt.")
+        name = raw_case.get("name")
+        url = raw_case.get("url")
+        threshold_ms = raw_case.get("threshold_ms")
+        if not isinstance(name, str) or not name.strip():
+            raise RuntimeError(f"Suite-case #{index} mangler gyldig name.")
+        if not isinstance(url, str) or not url.strip():
+            raise RuntimeError(f"Suite-case {name!r} mangler gyldig url.")
+        if isinstance(threshold_ms, bool) or not isinstance(threshold_ms, (int, float)):
+            raise RuntimeError(f"Suite-case {name!r} mangler numerisk threshold_ms.")
+        if threshold_ms < 0:
+            raise RuntimeError(f"Suite-case {name!r} har negativ threshold_ms.")
+        cases.append(SuiteCase(name=name.strip(), url=url.strip(), threshold_ms=float(threshold_ms)))
+    return cases
 
 
 def positive_int(value: str) -> int:
@@ -665,6 +795,34 @@ def percentile(values: list[float], percent: int) -> float | None:
     return sorted_values[index]
 
 
+def summary_median_ms(summary: BenchmarkResult) -> float | None:
+    if isinstance(summary, ProfileSummary):
+        return summary.total["median_ms"]
+    return summary.median_ms
+
+
+def summary_p95_ms(summary: BenchmarkResult) -> float | None:
+    if isinstance(summary, ProfileSummary):
+        return summary.total["p95_ms"]
+    return summary.p95_ms
+
+
+def summary_max_ms(summary: BenchmarkResult) -> float | None:
+    if isinstance(summary, ProfileSummary):
+        return summary.total["max_ms"]
+    return summary.max_ms
+
+
+def summary_sort_key(summary: BenchmarkResult) -> tuple[int, float, float]:
+    p95_ms = summary_p95_ms(summary)
+    median_ms = summary_median_ms(summary)
+    return (
+        summary.threshold_failures,
+        p95_ms if p95_ms is not None else float("inf"),
+        median_ms if median_ms is not None else float("inf"),
+    )
+
+
 def print_summary(summary: BenchmarkSummary) -> None:
     print("Bildebank browser benchmark")
     print(f"  modus: {summary.mode}")
@@ -719,6 +877,27 @@ def print_profile_summary(summary: ProfileSummary) -> None:
         print(f"  terskel: {summary.threshold_ms:.1f} ms, brudd={summary.threshold_failures}")
 
 
+def print_suite_summary(summary: SuiteSummary) -> None:
+    print("Bildebank browser benchmark suite")
+    print(
+        f"  modus: {summary.mode}, repeat={summary.repeat}, "
+        f"tillatte brudd={summary.min_failures}–{summary.max_failures}"
+    )
+    for case in summary.cases:
+        best = case.best_run
+        failures_per_run = ", ".join(str(run.threshold_failures) for run in case.runs)
+        status = "OK" if case.passed else "FEIL"
+        print(
+            f"  {case.name}: terskel={case.threshold_ms:.1f} ms, "
+            f"median={format_ms(summary_median_ms(best))}, "
+            f"p95={format_ms(summary_p95_ms(best))}, "
+            f"maks={format_ms(summary_max_ms(best))}, "
+            f"brudd={best.threshold_failures}, "
+            f"brudd/run=[{failures_per_run}] — {status}"
+        )
+    print(f"  samlet: {'OK' if summary.passed else 'FEIL'}")
+
+
 def format_stats(stats: dict[str, float | None]) -> str:
     return (
         f"median={format_ms(stats['median_ms'])}, "
@@ -747,6 +926,36 @@ def summary_to_json(summary: BenchmarkSummary | ProfileSummary) -> dict[str, Any
     data = asdict(summary)
     data["steps"] = [asdict(step) for step in summary.steps]
     return data
+
+
+def suite_summary_to_json(summary: SuiteSummary) -> dict[str, Any]:
+    return {
+        "suite_path": summary.suite_path,
+        "mode": summary.mode,
+        "repeat": summary.repeat,
+        "min_failures": summary.min_failures,
+        "max_failures": summary.max_failures,
+        "passed": summary.passed,
+        "cases": [
+            {
+                "name": case.name,
+                "url": case.url,
+                "threshold_ms": case.threshold_ms,
+                "passed": case.passed,
+                "best_run_index": case.best_run_index,
+                "best_run": summary_to_json(case.best_run),
+                "runs": [summary_to_json(run) for run in case.runs],
+            }
+            for case in summary.cases
+        ],
+    }
+
+
+def write_json_output(path: str | Path, data: dict[str, Any]) -> None:
+    Path(path).write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 if __name__ == "__main__":
