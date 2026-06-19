@@ -1297,6 +1297,7 @@ def _source_item_controls_html(
     timing_callback: Callable[[str, float], None] | None = None,
 ) -> str:
     from .server_shell import (
+        face_suggest_button_html,
         face_toggle_button_html,
         source_controls_html,
         suggestion_toggle_button_html,
@@ -1311,6 +1312,7 @@ def _source_item_controls_html(
         rotation_buttons=rotation_buttons_html(source, item),
         manual_date_button=manual_date_button_html(item),
         face_toggle_button=face_toggle_button_html(source, item, face_enabled=face_enabled),
+        face_suggest_button=face_suggest_button_html(face_enabled=face_enabled),
         suggestion_toggle_button=suggestion_toggle_button_html(
             source,
             item,
@@ -1476,6 +1478,15 @@ def source_item_page_html(
     start = time.perf_counter()
     info_overlay = image_info_overlay_html()
     manual_date_overlay = manual_date_overlay_html()
+    face_suggest_dialog = ""
+    if face_enabled:
+        from .server_faces import face_suggest_dialog_html
+
+        threshold = face_config.suggest_threshold if face_config is not None else 0.6
+        face_suggest_dialog = face_suggest_dialog_html(
+            threshold,
+            return_url=source_item_url(source, int(item["id"])),
+        )
     tag_controls = _source_item_tag_controls_html(
         target,
         source,
@@ -1539,6 +1550,7 @@ def source_item_page_html(
         {faces_overlay}
         {info_overlay}
         {manual_date_overlay}
+        {face_suggest_dialog}
         """,
     )
     if timing_callback is not None:

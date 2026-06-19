@@ -43,6 +43,7 @@ def index_html(server: Any, *, message: str = "") -> str:
         month_nav,
         face_enabled=server.face_enabled,
         openclip_enabled=server.openclip_enabled,
+        face_config=server.config.face_recognition,
     )
 
 

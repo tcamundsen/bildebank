@@ -934,10 +934,16 @@ def people_page_html(
     )
 
 
-def face_suggest_dialog_html(threshold: float) -> str:
+def face_suggest_dialog_html(threshold: float, *, return_url: str = "") -> str:
+    return_url_input = (
+        f'<input type="hidden" name="return_url" value="{html.escape(return_url)}">'
+        if return_url
+        else ""
+    )
     return f"""
     <div id="faceSuggestDialog" class="modal-overlay" hidden>
       <form class="modal-panel" method="post" action="/people/face-suggest">
+        {return_url_input}
         <h2>Foreslå personer</h2>
         <label for="faceSuggestThreshold">Threshold (0.0–1.0)</label>
         <input id="faceSuggestThreshold" type="number" name="threshold"

@@ -133,6 +133,20 @@ def clear_browser_navigation_cache(server: Any) -> None:
         clear_cache()
 
 
+def local_return_url(value: str) -> str | None:
+    if not value or "\\" in value or any(ord(character) < 32 or ord(character) == 127 for character in value):
+        return None
+    try:
+        parsed = urllib.parse.urlsplit(value)
+    except ValueError:
+        return None
+    if parsed.scheme or parsed.netloc or parsed.fragment:
+        return None
+    if not parsed.path.startswith("/") or parsed.path.startswith("//"):
+        return None
+    return value
+
+
 def hotkey_filter_source_from_url(target: Path, source_url: object) -> BrowserSource | None:
     if not isinstance(source_url, str):
         return None
@@ -627,6 +641,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             )
             return
         params = server_request.read_form_params(self.headers, self.rfile)
+        return_url = local_return_url(first_param(params, "return_url"))
         try:
             threshold = validate_face_suggest_threshold(first_param(params, "threshold"))
         except ValueError as exc:
@@ -648,6 +663,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         clear_face_caches()
         self.server.clear_browser_navigation_cache()
+        if return_url is not None:
+            self.redirect(return_url)
+            return
         message = (
             f"Face-suggest ferdig: personer={stats.persons}, ukjente ansikter={stats.unknown_faces}, "
             f"forslag={stats.suggestions}, threshold={stats.threshold:.3f}"

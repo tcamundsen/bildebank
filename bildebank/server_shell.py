@@ -234,6 +234,15 @@ def suggestion_toggle_button_html(
     return f'<a class="nav-button" href="{html.escape(href)}">{box} Ta med forslag</a>'
 
 
+def face_suggest_button_html(*, face_enabled: bool = True) -> str:
+    if not face_enabled:
+        return ""
+    return (
+        '<button class="nav-button" type="button" data-open-face-suggest '
+        'title="Kjør face-suggest for å finne ansikter">👥✨</button>'
+    )
+
+
 def source_controls_html(
     source: BrowserSource,
     month_nav: dict[str, str | None],
@@ -247,6 +256,7 @@ def source_controls_html(
     manual_person_controls: str = "",
     manual_location_button: str = "",
     face_toggle_button: str = "",
+    face_suggest_button: str = "",
     suggestion_toggle_button: str = "",
     unconfirm_buttons: str = "",
     delete_button: str = "",
@@ -270,6 +280,7 @@ def source_controls_html(
       {manual_person_controls}
       {manual_location_button}
       {face_toggle_button}
+      {face_suggest_button}
       {suggestion_toggle_button}
       {info_button if include_info_button else ""}
       {unconfirm_buttons}
