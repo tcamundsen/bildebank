@@ -1181,14 +1181,14 @@ def run_face_command(args: argparse.Namespace, target: Path) -> int:
 
     if args.command == "face-person-add-face":
         config = load_config(program_repo_root()).face_recognition
-        result = add_face_to_person(target, args.name, args.face_id, config)
-        print_add_face_to_person_result(result)
+        add_result = add_face_to_person(target, args.name, args.face_id, config)
+        print_add_face_to_person_result(add_result)
         return 0
 
     if args.command == "face-person-remove-face":
         config = load_config(program_repo_root()).face_recognition
-        result = remove_face_from_person(target, args.name, args.face_id, config)
-        print_remove_face_from_person_result(result)
+        remove_result = remove_face_from_person(target, args.name, args.face_id, config)
+        print_remove_face_from_person_result(remove_result)
         return 0
 
     if args.command == "face-person-delete":
@@ -1196,8 +1196,8 @@ def run_face_command(args: argparse.Namespace, target: Path) -> int:
 
     if args.command == "face-person-rename":
         config = load_config(program_repo_root()).face_recognition
-        result = rename_person(target, args.old_name, args.new_name, config)
-        print_rename_person_result(result)
+        rename_result = rename_person(target, args.old_name, args.new_name, config)
+        print_rename_person_result(rename_result)
         return 0
 
     if args.command == "face-person-list":
@@ -1227,13 +1227,13 @@ def run_face_command(args: argparse.Namespace, target: Path) -> int:
         return 0
 
     if args.command == "make-people-browser":
-        result = export_people_browser(
+        browser_result = export_people_browser(
             target,
             month_preview_limit=args.month_preview_limit,
             config=load_config(program_repo_root()).face_recognition,
         )
-        print(f"Skrev person-index: {result.index_path}")
-        print(f"Skrev personsider: {len(result.person_pages)}")
+        print(f"Skrev person-index: {browser_result.index_path}")
+        print(f"Skrev personsider: {len(browser_result.person_pages)}")
         return 0
 
     if args.command == "face-reset":
@@ -1270,38 +1270,47 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
         if not (args.command == "unimport" and args.dry_run):
             db.log_command(conn, args.command, vars_for_log(args))
         if args.command == "import":
-            source = existing_path_arg(args.path).resolve()
-            if not source.is_dir():
-                raise ValueError(f"Kilden finnes ikke som mappe: {source}")
-            validate_source_target(source, target)
+            source_path = existing_path_arg(args.path).resolve()
+            if not source_path.is_dir():
+                raise ValueError(f"Kilden finnes ikke som mappe: {source_path}")
+            validate_source_target(source_path, target)
             with TargetLock(target, command="import"):
-                source_id = db.add_named_source(conn, source, args.name)
+                source_id = db.add_named_source(conn, source_path, args.name)
                 conn.commit()
-                print(f"Registrert kilde #{source_id}: {args.name} ({source})")
+                print(f"Registrert kilde #{source_id}: {args.name} ({source_path})")
                 source_row = db.get_source(conn, source_id)
                 if source_row.imported_at is not None:
                     print(f"Kilden er allerede importert: {args.name}")
                     return 0
-                stats = import_source(conn, target, source_row, verbose=not args.quiet)
-            print_summary(stats)
-            return 0 if stats.errors == 0 else 2
+                import_stats = import_source(conn, target, source_row, verbose=not args.quiet)
+            print_summary(import_stats)
+            return 0 if import_stats.errors == 0 else 2
 
         if args.command == "rescan-source":
-            source = resolve_rescan_source(conn, args.name)
-            validate_source_target(source.path, target)
+            selected_source = resolve_rescan_source(conn, args.name)
+            validate_source_target(selected_source.path, target)
             with TargetLock(target, command="rescan-source"):
-                print(f"Scanner kilde på nytt #{source.id}: {source.name} ({source.path})")
-                stats = rescan_source(conn, target, source, verbose=not args.quiet)
-            print_summary(stats)
-            return 0 if stats.errors == 0 else 2
+                print(
+                    f"Scanner kilde på nytt #{selected_source.id}: "
+                    f"{selected_source.name} ({selected_source.path})"
+                )
+                rescan_stats = rescan_source(
+                    conn,
+                    target,
+                    selected_source,
+                    verbose=not args.quiet,
+                )
+            print_summary(rescan_stats)
+            return 0 if rescan_stats.errors == 0 else 2
 
         if args.command == "list-sources":
-            for source in db.get_sources(conn):
-                imported = source.imported_at or "-"
-                superseded_by = source.superseded_by_source_id or "-"
+            for listed_source in db.get_sources(conn):
+                imported = listed_source.imported_at or "-"
+                superseded_by = listed_source.superseded_by_source_id or "-"
                 print(
-                    f"{source.id}\t{source.status}\t"
-                    f"{imported}\t{superseded_by}\t{source.name}\t{source.path}"
+                    f"{listed_source.id}\t{listed_source.status}\t"
+                    f"{imported}\t{superseded_by}\t"
+                    f"{listed_source.name}\t{listed_source.path}"
                 )
             return 0
 
@@ -1317,15 +1326,18 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
 
         if args.command == "show-conflict":
             path = resolve_collection_file_arg(target, args.path)
-            row = db.file_by_target_path(conn, target, path)
-            if row is None:
+            conflict_row = db.file_by_target_path(conn, target, path)
+            if conflict_row is None:
                 raise ValueError(f"Filen finnes ikke i importdatabasen: {path}")
-            rows = name_conflict_group(conn, row)
+            rows = name_conflict_group(conn, conflict_row)
             if len(rows) < 2 or not any(item["name_conflict"] for item in rows):
                 print(f"Filen er ikke del av en navnekollisjon: {path}")
                 return 0
-            print(f"Navnekollisjon: {row['original_filename']}")
-            print(f"Mappe i bildesamlingen: {db.absolute_target_path(target, Path(str(row['target_path']))).parent}")
+            print(f"Navnekollisjon: {conflict_row['original_filename']}")
+            print(
+                "Mappe i bildesamlingen: "
+                f"{db.absolute_target_path(target, Path(str(conflict_row['target_path']))).parent}"
+            )
             with MediaMetadataCache(target, conn) as media_cache:
                 for item in rows:
                     print_name_conflict_item(target, item, media_cache=media_cache)
@@ -1340,19 +1352,23 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
             return 0
 
         if args.command == "unimport":
-            source = resolve_source_by_name(conn, args.name)
-            if source.status == "superseded":
+            selected_source = resolve_source_by_name(conn, args.name)
+            if selected_source.status == "superseded":
                 raise ValueError(
                     "Kan ikke unimportere en superseded kilde. "
-                    f"Kilden er dekket av en annen import: {source.path}"
+                    f"Kilden er dekket av en annen import: {selected_source.path}"
                 )
             with TargetLock(target, command="unimport"):
-                plan = db.build_unimport_plan(conn, target, source)
-                validate_unimport_source_files(conn, source, progress=unimport_source_progress())
+                plan = db.build_unimport_plan(conn, target, selected_source)
+                validate_unimport_source_files(
+                    conn,
+                    selected_source,
+                    progress=unimport_source_progress(),
+                )
                 validate_unimport_target_files(plan, progress=unimport_target_progress())
                 print_unimport_plan(plan)
                 if args.dry_run:
-                    print_unimport_dry_run_note(source)
+                    print_unimport_dry_run_note(selected_source)
                     print("Dry-run: ingen endringer er gjort.")
                     return 0
                 answer = input('Skriv "ja, det vil jeg" for å gjennomføre unimport: ')
@@ -1460,17 +1476,17 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
         if args.command == "refresh-metadata":
             conn.commit()
             conn.close()
-            stats = refresh_non_metadata_files(
+            refresh_stats = refresh_non_metadata_files(
                 target,
                 dry_run=args.dry_run,
                 rescan=args.rescan,
                 verbose=args.verbose,
                 progress=print_refresh_metadata_progress,
             )
-            print_refresh_summary(stats, dry_run=args.dry_run)
-            if stats.stopped:
+            print_refresh_summary(refresh_stats, dry_run=args.dry_run)
+            if refresh_stats.stopped:
                 return 130
-            return 0 if stats.errors == 0 else 2
+            return 0 if refresh_stats.errors == 0 else 2
 
         if args.command == "errors":
             for row in db.errors(
@@ -1479,11 +1495,11 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
                 stage=args.stage,
                 include_resolved=args.include_resolved,
             ):
-                source_path = row["source_path"] or "-"
+                error_source_path = row["source_path"] or "-"
                 resolved = row["resolved_at"] or "-"
                 print(
                     f"{row['id']}\t{row['created_at']}\t{row['stage']}\t"
-                    f"{resolved}\t{source_path}\t{row['message']}"
+                    f"{resolved}\t{error_source_path}\t{row['message']}"
                 )
             return 0
 
@@ -1503,14 +1519,14 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
         if args.command == "make-thumbnails":
             conn.commit()
             conn.close()
-            stats = run_make_thumbnails(
+            thumbnail_stats = run_make_thumbnails(
                 target,
                 limit=args.limit,
                 verbose=args.verbose,
                 progress=print_thumbnail_progress,
             )
-            print_thumbnail_summary(stats)
-            return 0 if stats.errors == 0 else 2
+            print_thumbnail_summary(thumbnail_stats)
+            return 0 if thumbnail_stats.errors == 0 else 2
 
         if args.command == "make-conflict-browser":
             output = args.output.resolve() if args.output else None
@@ -1587,10 +1603,10 @@ def resolve_target(target_arg: Path | None) -> Path:
         if not db.db_path_for_target(target).exists():
             raise ValueError(f"Bildesamlingen er ikke initialisert: {target}")
         return target
-    target = db.find_target()
-    if target is None:
+    found_target = db.find_target()
+    if found_target is None:
         raise ValueError("Fant ingen bildesamling. Kjør kommandoen fra bildesamlingsmappen.")
-    return target
+    return found_target
 
 
 def resolve_source_by_name(conn, name: str) -> db.Source:
@@ -3182,9 +3198,9 @@ def existing_path_arg(path: Path) -> Path:
         if candidate.exists():
             return candidate
     for value in (raw, stripped):
-        candidate = wsl_path_from_windows_path(value)
-        if candidate is not None and candidate.exists():
-            return candidate
+        wsl_candidate = wsl_path_from_windows_path(value)
+        if wsl_candidate is not None and wsl_candidate.exists():
+            return wsl_candidate
     return path
 
 
