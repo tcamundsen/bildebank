@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "29"
+SERVER_ASSET_VERSION = "30"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -1474,15 +1474,22 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     button.addEventListener("click", async () => {
       const fileId = Number(button.dataset.rotateItem);
       const direction = button.dataset.rotateDirection || "";
+      const itemRoot = button.closest("[data-browser-item-id]");
+      const requestBody = {file_id: fileId, direction};
+      if (itemRoot?.dataset.browserSourceUrl) requestBody.source_url = itemRoot.dataset.browserSourceUrl;
       button.disabled = true;
       try {
         const response = await fetch("/api/item-rotate", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({file_id: fileId, direction}),
+          body: JSON.stringify(requestBody),
         });
         const payload = await response.json();
-        if (!payload.ok) throw new Error(payload.error || "Kunne ikke rotere.");
+        if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke rotere.");
+        if (payload.redirect_url) {
+          window.location.href = payload.redirect_url;
+          return;
+        }
         window.location.reload();
       } catch (error) {
         alert(error.message || "Kunne ikke rotere.");

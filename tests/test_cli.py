@@ -2728,6 +2728,8 @@ model_name = "buffalo_l"
         self.assertNotIn("data-browser-source-url", normal_body)
         self.assertIn("browserSourceUrl", SERVER_JS)
         self.assertIn("payload.redirect_url", SERVER_JS)
+        self.assertIn("const itemRoot = button.closest(\"[data-browser-item-id]\");", SERVER_JS)
+        self.assertIn("requestBody.source_url = itemRoot.dataset.browserSourceUrl", SERVER_JS)
 
     def test_run_server_item_page_can_show_hotkey_hints_in_tag_rail(self) -> None:
         h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
@@ -3460,6 +3462,123 @@ model_name = "buffalo_l"
             BildebankRequestHandler.respond_rotate_item(handler)  # type: ignore[arg-type]
 
         self.assertEqual({"ok": True, "file_id": 1, "rotation": 270}, handler.body)
+
+    def test_run_server_rotate_redirects_when_current_item_leaves_filter(self) -> None:
+        cases = (
+            (3, 1, 90, "left", "/filter/is%3Arotated/item/2"),
+            (3, 3, 270, "right", "/filter/is%3Arotated/item/2"),
+            (1, 1, 90, "left", "/filter/is%3Arotated"),
+        )
+        for image_count, file_id, initial_rotation, direction, redirect_url in cases:
+            with self.subTest(
+                image_count=image_count,
+                file_id=file_id,
+                initial_rotation=initial_rotation,
+                direction=direction,
+            ), tempfile.TemporaryDirectory() as tmp:
+                target = Path(tmp) / "target"
+                source = Path(tmp) / "source"
+                source.mkdir()
+                for day in range(1, image_count + 1):
+                    (source / f"IMG_202401{day:02d}.png").write_bytes(minimal_png(100 + day, 80))
+
+                self.assertEqual(run_cli(["create", str(target)]), 0)
+                self.assertEqual(
+                    run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                    0,
+                )
+                conn = db.connect(target)
+                try:
+                    conn.execute(
+                        "UPDATE files SET view_rotation_degrees = 90 WHERE deleted_at IS NULL"
+                    )
+                    conn.execute(
+                        "UPDATE files SET view_rotation_degrees = ? WHERE id = ?",
+                        (initial_rotation, file_id),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+                filter_source = text_filter_browser_source("is:rotated", target)
+                data = json.dumps(
+                    {
+                        "file_id": file_id,
+                        "direction": direction,
+                        "source_url": filter_source.root_url,
+                    }
+                ).encode("utf-8")
+
+                class FakeHandler:
+                    headers = {
+                        "Content-Length": str(len(data)),
+                        "Content-Type": "application/json",
+                    }
+                    rfile = BytesIO(data)
+                    server = SimpleNamespace(target=target)
+                    body: dict[str, object] | None = None
+
+                    def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                        self.body = content
+
+                handler = FakeHandler()
+                BildebankRequestHandler.respond_rotate_item(handler)  # type: ignore[arg-type]
+
+                self.assertEqual(0, handler.body["rotation"])
+                self.assertEqual(redirect_url, handler.body["redirect_url"])
+
+    def test_run_server_rotate_does_not_redirect_while_item_still_matches_filter(self) -> None:
+        cases = (
+            (180, "left", 90),
+            (90, "right", 180),
+            (180, "right", 270),
+        )
+        for initial_rotation, direction, expected_rotation in cases:
+            with self.subTest(initial_rotation=initial_rotation), tempfile.TemporaryDirectory() as tmp:
+                target = Path(tmp) / "target"
+                source = Path(tmp) / "source"
+                source.mkdir()
+                (source / "IMG_20240101.png").write_bytes(minimal_png(100, 80))
+
+                self.assertEqual(run_cli(["create", str(target)]), 0)
+                self.assertEqual(
+                    run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                    0,
+                )
+                conn = db.connect(target)
+                try:
+                    conn.execute(
+                        "UPDATE files SET view_rotation_degrees = ? WHERE id = 1",
+                        (initial_rotation,),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+                filter_source = text_filter_browser_source("is:rotated", target)
+                data = json.dumps(
+                    {
+                        "file_id": 1,
+                        "direction": direction,
+                        "source_url": filter_source.root_url,
+                    }
+                ).encode("utf-8")
+
+                class FakeHandler:
+                    headers = {
+                        "Content-Length": str(len(data)),
+                        "Content-Type": "application/json",
+                    }
+                    rfile = BytesIO(data)
+                    server = SimpleNamespace(target=target)
+                    body: dict[str, object] | None = None
+
+                    def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                        self.body = content
+
+                handler = FakeHandler()
+                BildebankRequestHandler.respond_rotate_item(handler)  # type: ignore[arg-type]
+
+                self.assertEqual(expected_rotation, handler.body["rotation"])
+                self.assertNotIn("redirect_url", handler.body)
 
     def test_run_server_rotate_image_view_rejects_invalid_direction(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

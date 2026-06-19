@@ -156,10 +156,13 @@ def face_suggest_summary(stats: Any) -> str:
     )
 
 
-def hotkey_filter_source_from_url(target: Path, source_url: object) -> BrowserSource | None:
+def filter_source_from_url(target: Path, source_url: object) -> BrowserSource | None:
     if not isinstance(source_url, str):
         return None
-    parsed = urllib.parse.urlsplit(source_url.strip())
+    try:
+        parsed = urllib.parse.urlsplit(source_url.strip())
+    except ValueError:
+        return None
     if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
         return None
     raw_path = parsed.path
@@ -1675,12 +1678,45 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         direction = str(payload.get("direction") or "")
+        filter_source = filter_source_from_url(self.server.target, payload.get("source_url"))
+        previous_filter_item = None
+        next_filter_item = None
+        if filter_source is not None:
+            conn = db.connect(self.server.target)
+            try:
+                filter_item = source_item_by_id(self.server.target, filter_source, file_id, conn=conn)
+                if filter_item is not None:
+                    previous_filter_item, next_filter_item = adjacent_source_items(
+                        self.server.target,
+                        filter_source,
+                        filter_item,
+                        conn=conn,
+                    )
+                else:
+                    filter_source = None
+            finally:
+                conn.close()
         try:
             rotation = server_actions.rotate_file_view(self.server.target, file_id, direction)
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
-        self.respond_json({"ok": True, "file_id": file_id, "rotation": rotation})
+        clear_browser_navigation_cache(self.server)
+        result: dict[str, object] = {"ok": True, "file_id": file_id, "rotation": rotation}
+        if filter_source is not None:
+            conn = db.connect(self.server.target)
+            try:
+                filter_item = source_item_by_id(self.server.target, filter_source, file_id, conn=conn)
+            finally:
+                conn.close()
+            if filter_item is None:
+                if next_filter_item is not None:
+                    result["redirect_url"] = source_item_url(filter_source, int(next_filter_item["id"]))
+                elif previous_filter_item is not None:
+                    result["redirect_url"] = source_item_url(filter_source, int(previous_filter_item["id"]))
+                else:
+                    result["redirect_url"] = filter_source.root_url
+        self.respond_json(result)
 
     def respond_tag_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)
@@ -1782,7 +1818,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         if hotkey.action == "person" and not self.server.face_enabled:
             self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
             return
-        filter_source = hotkey_filter_source_from_url(self.server.target, payload.get("source_url"))
+        filter_source = filter_source_from_url(self.server.target, payload.get("source_url"))
         previous_filter_item = None
         next_filter_item = None
         if filter_source is not None:
