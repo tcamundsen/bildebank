@@ -6,6 +6,7 @@ import sqlite3
 import urllib.parse
 import datetime as dt
 import time
+from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
@@ -1202,7 +1203,7 @@ def item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
-    hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
+    hotkeys: Mapping[str, BrowserHotkeyConfig] | None = None,
 ) -> str:
     return source_item_page_html(
         target,
@@ -1433,7 +1434,7 @@ def source_item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
-    hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
+    hotkeys: Mapping[str, BrowserHotkeyConfig] | None = None,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
     source_item_count_value: int | None = None,
@@ -1711,7 +1712,10 @@ def source_breadcrumb_label(
     return f"{label} ({match_text})", f"{match_text} i filtersøket"
 
 
-def breadcrumb_html(crumbs: list[tuple[str, str | None] | tuple[str, str | None, str | None]], final_html: str) -> str:
+def breadcrumb_html(
+    crumbs: Sequence[tuple[str, str | None] | tuple[str, str | None, str | None]],
+    final_html: str,
+) -> str:
     parts = []
     for crumb in crumbs:
         label, url = crumb[0], crumb[1]
@@ -1814,7 +1818,7 @@ def tag_controls_html(
 
 def hotkey_hints_panel_html(
     target: Path,
-    hotkeys: dict[str, BrowserHotkeyConfig],
+    hotkeys: Mapping[str, BrowserHotkeyConfig],
     *,
     conn: sqlite3.Connection | None = None,
 ) -> str:

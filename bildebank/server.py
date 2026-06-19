@@ -360,6 +360,7 @@ class BildebankServer(ThreadingHTTPServer):
 
 class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     server: BildebankServer
+    server_timing_steps: dict[str, float]
     protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:
