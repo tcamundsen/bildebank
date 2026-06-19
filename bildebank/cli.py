@@ -941,8 +941,15 @@ def add_command(
     description: str | None = None,
     formatter_class: type[argparse.HelpFormatter] | None = None,
 ) -> argparse.ArgumentParser:
-    kwargs = {"formatter_class": formatter_class} if formatter_class is not None else {}
-    return subparsers.add_parser(name, help=help, description=description, usage=usage, **kwargs)
+    if formatter_class is not None:
+        return subparsers.add_parser(
+            name,
+            help=help,
+            description=description,
+            usage=usage,
+            formatter_class=formatter_class,
+        )
+    return subparsers.add_parser(name, help=help, description=description, usage=usage)
 
 
 def bool_arg(value: str) -> bool:
@@ -3310,6 +3317,10 @@ def print_status(conn) -> None:
     counts = db.status_counts(conn)
     media = counts["media"]
     date_sources = counts["date_sources"]
+    if not isinstance(media, dict):
+        raise ValueError("Ugyldig statusdata: media må være en dict.")
+    if not isinstance(date_sources, dict):
+        raise ValueError("Ugyldig statusdata: date_sources må være en dict.")
     print("Bildesamling")
     print(f"  Totalt: {counts['total']}")
     print(f"  Bilder: {media['bilder']}")
