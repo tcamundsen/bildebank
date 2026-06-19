@@ -25,6 +25,7 @@ class BrowserTextFilter:
     camera: str | None = None
     date_source: str | None = None
     deleted: bool = False
+    rotated: bool = False
     extension: str | None = None
     filename: str | None = None
     location: str | None = None
@@ -106,6 +107,7 @@ class FilterParseState:
     camera: str | None = None
     date_source: str | None = None
     deleted: bool = False
+    rotated: bool = False
     extension: str | None = None
     filename: str | None = None
     location: str | None = None
@@ -149,6 +151,7 @@ class FilterParseState:
             camera=self.camera,
             date_source=self.date_source,
             deleted=self.deleted,
+            rotated=self.rotated,
             extension=self.extension,
             filename=self.filename,
             location=self.location,
@@ -295,10 +298,18 @@ def parse_day_filter(state: FilterParseState, key: str, value: str) -> None:
     state.day.set_once("=", parse_filter_integer_range(value, key, 1, 31), key)
 
 
-def parse_deleted_filter(state: FilterParseState, _key: str, value: str) -> None:
-    if value not in {"true", "false"}:
-        raise ValueError("deleted må være true eller false.")
-    state.deleted = value == "true"
+def parse_is_filter(state: FilterParseState, _key: str, value: str) -> None:
+    if value == "deleted":
+        if state.deleted:
+            raise ValueError("is:deleted kan bare brukes én gang.")
+        state.deleted = True
+        return
+    if value == "rotated":
+        if state.rotated:
+            raise ValueError("is:rotated kan bare brukes én gang.")
+        state.rotated = True
+        return
+    raise ValueError(f"Ukjent is-filter: {value}. Gyldige verdier er deleted og rotated.")
 
 
 def parse_extension_filter(state: FilterParseState, key: str, value: str) -> None:
@@ -501,7 +512,7 @@ KEY_VALUE_FILTERS: dict[str, Callable[[FilterParseState, str, str], None]] = {
     "year": parse_year_filter,
     "month": parse_month_filter,
     "day": parse_day_filter,
-    "deleted": parse_deleted_filter,
+    "is": parse_is_filter,
     "extension": parse_extension_filter,
     "filename": parse_simple_text_filter,
     "missing": parse_missing_filter,
@@ -557,6 +568,7 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         camera=text_filter.camera,
         date_source=text_filter.date_source,
         deleted=text_filter.deleted,
+        rotated=text_filter.rotated,
         extension=text_filter.extension,
         filename=text_filter.filename,
         location=text_filter.location,
@@ -650,6 +662,8 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     browser_has_date_sql = f"(({manual_date_sql}) OR {taken_date_sql})"
     if text_filter.deleted:
         where.append("deleted_at IS NOT NULL")
+    if text_filter.rotated:
+        where.append("view_rotation_degrees IS NOT NULL")
     if text_filter_has_date_criteria(text_filter, year_eq, month_eq, day_eq):
         where.append(browser_has_date_sql)
     if text_filter.after is not None:

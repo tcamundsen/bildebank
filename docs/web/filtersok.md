@@ -476,18 +476,29 @@ person:"Ola Nordmann"
 
 Søket bruker personnavn i ansiktsdatabasen. Det matcher bilder der personen er knyttet til et ansikt, inkludert forslag.
 
-### `deleted`
+### `is`
 
-Filtrer på slettede filer.
+Filtrer på filer med en bestemt status.
 
 ```text
-deleted:true
-deleted:false
+is:deleted
+is:rotated
 ```
 
-`deleted:true` viser filer som er markert som slettet.
+`is:deleted` viser filer som er markert som slettet.
 
-`deleted:false` er i praksis standardvisningen, altså aktive filer.
+`is:rotated` viser aktive bilder der brukeren har brukt rotasjon i Bildebank.
+Bildet regnes som rotert selv om det senere er rotert tilbake til 0 grader.
+
+Uten `is:deleted` viser Bildebank bare aktive filer.
+
+Statusfiltrene kan kombineres:
+
+```text
+is:deleted is:rotated
+```
+
+Dette viser slettede bilder der brukeren har brukt rotasjon.
 
 ## Manglende informasjon
 
@@ -610,7 +621,7 @@ person:Viljar month:7
 ### Slettede filer fra en bestemt kilde
 
 ```text
-deleted:true source:"Mobil 2024"
+is:deleted source:"Mobil 2024"
 ```
 
 ## Oversikt over kriterier
@@ -637,5 +648,5 @@ deleted:true source:"Mobil 2024"
 | `source`      | `source:1`, `source:"Mobil 2024"` | kilde-ID eller kildenavn                     |
 | `tag`         | `tag:"Ute av fokus"`              | taggnavn                                     |
 | `person`      | `person:Viljar`                   | personnavn i ansiktsdatabasen                |
-| `deleted`     | `deleted:true`                    | slettede filer                               |
+| `is`          | `is:deleted`, `is:rotated`        | slettet eller rotert i Bildebank             |
 | `missing`     | `missing:gps`                     | `gps`, `date`, `metadata`                    |

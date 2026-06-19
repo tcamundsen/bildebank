@@ -3617,6 +3617,18 @@ model_name = "buffalo_l"
                 )
                 conn.execute(
                     """
+                    UPDATE files
+                    SET view_rotation_degrees = CASE id
+                        WHEN 1 THEN 0
+                        WHEN 2 THEN 90
+                        WHEN 3 THEN 180
+                        WHEN 4 THEN 270
+                    END
+                    WHERE id IN (1, 2, 3, 4)
+                    """
+                )
+                conn.execute(
+                    """
                     INSERT INTO files(
                         target_path, target_path_key, original_filename, stored_filename,
                         sha256, size_bytes, taken_date, date_source, name_conflict
@@ -3630,10 +3642,11 @@ model_name = "buffalo_l"
                     """
                     INSERT INTO files(
                         target_path, target_path_key, original_filename, stored_filename,
-                        sha256, size_bytes, taken_date, date_source, name_conflict, deleted_at
+                        sha256, size_bytes, taken_date, date_source, name_conflict, deleted_at,
+                        view_rotation_degrees
                     ) VALUES(
                         'deleted/2024/01/deleted.jpg', 'deleted/2024/01/deleted.jpg', 'deleted.jpg', 'deleted.jpg',
-                        'deleted-row', 20, '2024-01-03', 'filename', 0, CURRENT_TIMESTAMP
+                        'deleted-row', 20, '2024-01-03', 'filename', 0, CURRENT_TIMESTAMP, 90
                     )
                     """
                 )
@@ -3682,7 +3695,10 @@ model_name = "buffalo_l"
             place_filter = text_filter_browser_source("location:oslo-test", target)
             camera_filter = text_filter_browser_source('camera:"iPhone"', target)
             self.assertTrue(source_has_sql_filter(camera_filter))
-            deleted_filter = text_filter_browser_source("deleted:true")
+            deleted_filter = text_filter_browser_source("is:deleted")
+            rotated_filter = text_filter_browser_source("is:rotated")
+            deleted_rotated_filter = text_filter_browser_source("is:deleted is:rotated")
+            rotated_metadata_filter = text_filter_browser_source("is:rotated date:metadata")
             extension_filter = text_filter_browser_source("extension:jpg")
             filename_filter = text_filter_browser_source("filename:20240102")
             missing_date_filter = text_filter_browser_source("missing:date")
@@ -3748,6 +3764,13 @@ model_name = "buffalo_l"
             place_month = source_month_items(target, place_filter, "2024-01")
             camera_month = source_month_items(target, camera_filter, "2024-01")
             deleted_month = source_month_items(target, deleted_filter, "2024-01")
+            rotated_ids = [
+                item_id
+                for item_id in range(1, 8)
+                if source_item_by_id(target, rotated_filter, item_id) is not None
+            ]
+            deleted_rotated_month = source_month_items(target, deleted_rotated_filter, "2024-01")
+            rotated_metadata_month = source_month_items(target, rotated_metadata_filter, "2024-01")
             extension_month = source_month_items(target, extension_filter, "2024-01")
             filename_month = source_month_items(target, filename_filter, "2024-01")
             missing_date_item = source_item_by_id(target, missing_date_filter, 6)
@@ -3837,6 +3860,9 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in place_month], [2])
         self.assertEqual([item["id"] for item in camera_month], [2])
         self.assertEqual([item["id"] for item in deleted_month], [7])
+        self.assertEqual(rotated_ids, [1, 2, 3, 4])
+        self.assertEqual([item["id"] for item in deleted_rotated_month], [7])
+        self.assertEqual([item["id"] for item in rotated_metadata_month], [2])
         self.assertEqual([item["id"] for item in extension_month], [2])
         self.assertEqual([item["id"] for item in filename_month], [2])
         self.assertIsNotNone(missing_date_item)
@@ -3968,7 +3994,8 @@ model_name = "buffalo_l"
             ("camera:Canon", {"camera": "Canon"}),
             ("location:gps", {"location": "gps"}),
             ("date:manual", {"date_source": "manual"}),
-            ("deleted:true", {"deleted": True}),
+            ("is:deleted", {"deleted": True}),
+            ("is:rotated", {"rotated": True}),
             ("extension:.JPG", {"extension": "jpg"}),
             ("filename:IMG", {"filename": "IMG"}),
             ("missing:metadata", {"missing": "metadata"}),
@@ -4036,7 +4063,9 @@ model_name = "buffalo_l"
             ("day=32", "day må være et heltall fra 1 til 31."),
             ("day<32", "day må være et heltall fra 1 til 31."),
             ("day:julaften", "day må være et heltall fra 1 til 31."),
-            ("deleted:maybe", "deleted må være true eller false."),
+            ("is:other", "Ukjent is-filter: other. Gyldige verdier er deleted og rotated."),
+            ("deleted:true", "Ukjent filter: deleted"),
+            ("deleted:false", "Ukjent filter: deleted"),
             ("extension:..jpg", "extension må være en filendelse"),
             ("missing:camera", "missing må være gps, date eller metadata."),
             ("orientation:square", "orientation må være portrait eller landscape."),
@@ -4072,6 +4101,19 @@ model_name = "buffalo_l"
             with self.subTest(query=query):
                 with self.assertRaisesRegex(ValueError, message):
                     parse_text_filter(query)
+
+        combined_is_filter = parse_text_filter("is:deleted is:rotated")
+        self.assertTrue(combined_is_filter.deleted)
+        self.assertTrue(combined_is_filter.rotated)
+        self.assertEqual(combined_is_filter.query, "is:deleted is:rotated")
+        self.assertEqual(parse_text_filter("  is:deleted  ").query, "is:deleted")
+        self.assertEqual(parse_text_filter("  is:rotated  ").query, "is:rotated")
+        self.assertEqual(text_filter_browser_source("is:deleted").root_url, "/filter/is%3Adeleted")
+        self.assertEqual(text_filter_browser_source("is:rotated").root_url, "/filter/is%3Arotated")
+        self.assertEqual(
+            text_filter_browser_source("is:deleted is:rotated").root_url,
+            "/filter/is%3Adeleted%20is%3Arotated",
+        )
 
     def test_run_server_filter_parser_normalizes_spaces_around_operators(self) -> None:
         for query, canonical_query, attr, expected in (
