@@ -37,6 +37,7 @@ from .thumbnails import existing_thumbnail_url
 
 ShellPageRenderer = Callable[..., str]
 PageRenderer = Callable[[str, str], str]
+Breadcrumb = tuple[str, str | None] | tuple[str, str | None, str | None]
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 MONTH_NAMES = {
     "01": "Januar",
@@ -1676,6 +1677,7 @@ def source_item_breadcrumb_html(
         return breadcrumb_html([(source_label, source.root_url, source_title)], filename_link)
     year, month = month_key.split("-", 1)
     month_name = MONTH_NAMES.get(month, month_key)
+    crumbs: list[Breadcrumb]
     if source == all_browser_source():
         crumbs = [
             ("År", "/years"),
@@ -1713,7 +1715,7 @@ def source_breadcrumb_label(
 
 
 def breadcrumb_html(
-    crumbs: Sequence[tuple[str, str | None] | tuple[str, str | None, str | None]],
+    crumbs: Sequence[Breadcrumb],
     final_html: str,
 ) -> str:
     parts = []
@@ -2698,6 +2700,7 @@ def source_month_breadcrumb_html(
         return html.escape(source.title)
     year, month = month_key.split("-", 1)
     month_name = MONTH_NAMES.get(month, month_key)
+    crumbs: list[Breadcrumb]
     if source == all_browser_source():
         crumbs = [
             ("År", "/years"),

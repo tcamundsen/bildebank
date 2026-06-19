@@ -1170,21 +1170,27 @@ def rebuild_sources_without_kind(conn: sqlite3.Connection) -> None:
         return
     rows = conn.execute("SELECT * FROM sources ORDER BY id").fetchall()
     used: set[str] = set()
-    named_rows: list[tuple[int, str, str | None, str, str | None, str, int | None]] = []
+    named_rows: list[tuple[int, str, str | None, str, str, str | None, str, int | None]] = []
     for row in rows:
         existing_name = row["name"] if "name" in row.keys() else None
         base = str(existing_name).strip() if existing_name else default_source_name(str(row["path"]))
         name = unique_source_name(base, used)
+        raw_path_key = row["path_key"] if "path_key" in row.keys() else path_key(Path(str(row["path"])))
+        source_path_key = str(raw_path_key) if raw_path_key is not None else None
+        raw_imported_at = row["imported_at"]
+        imported_at = str(raw_imported_at) if raw_imported_at is not None else None
+        raw_superseded_by = row["superseded_by_source_id"] if "superseded_by_source_id" in row.keys() else None
+        superseded_by_source_id = optional_int(raw_superseded_by, "superseded_by_source_id")
         named_rows.append(
             (
                 int(row["id"]),
                 str(row["path"]),
-                row["path_key"] if "path_key" in row.keys() else path_key(Path(str(row["path"]))),
+                source_path_key,
                 name,
                 str(row["added_at"]),
-                row["imported_at"],
+                imported_at,
                 str(row["status"]),
-                row["superseded_by_source_id"] if "superseded_by_source_id" in row.keys() else None,
+                superseded_by_source_id,
             )
         )
     conn.executescript(

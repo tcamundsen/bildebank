@@ -5,6 +5,7 @@ import math
 import re
 import sqlite3
 import urllib.parse
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -337,7 +338,7 @@ def geo_place_row_html(row: dict[str, object]) -> str:
     slug = str(row["slug"])
     name = str(row["name"])
     count = require_int(row["count"], "antall bilder")
-    h3_cells = tuple(str(cell) for cell in row["h3_cells"])
+    h3_cells = geo_place_h3_cells(row["h3_cells"])
     url = "/geo/place/" + urllib.parse.quote(slug, safe="")
     h3geo_url = h3geo_place_url(h3_cells)
     if row["kind"] == 'system':
@@ -739,8 +740,14 @@ def geo_place_from_row(row: dict[str, object]) -> PredefinedGeoPlace:
     return PredefinedGeoPlace(
         slug=str(row["slug"]),
         name=str(row["name"]),
-        h3_cells=tuple(str(cell) for cell in row["h3_cells"]),
+        h3_cells=geo_place_h3_cells(row["h3_cells"]),
     )
+
+
+def geo_place_h3_cells(value: object) -> tuple[str, ...]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        raise ValueError("Ugyldige stedsdata: h3_cells må være en liste.")
+    return tuple(str(cell) for cell in value)
 
 
 def custom_geo_places(conn: sqlite3.Connection) -> list[PredefinedGeoPlace]:

@@ -95,7 +95,7 @@ def batched(items: list[Any], batch_size: int) -> list[list[Any]]:
     return [items[index : index + batch_size] for index in range(0, len(items), batch_size)]
 
 
-def exiftool_dates_batch(exiftool_path: Path, paths: list[Path]) -> dict[Path, tuple[str, str, str]]:
+def exiftool_dates_batch(exiftool_path: Path | str, paths: list[Path]) -> dict[Path, tuple[str, str, str]]:
     if not paths:
         return {}
     result = subprocess.run(

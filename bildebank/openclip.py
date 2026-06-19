@@ -501,9 +501,9 @@ def image_embedding(model: Any, preprocess: Any, path: Path) -> list[float]:
         import torch
     except ImportError as exc:
         raise ValueError("OpenCLIP/Pillow mangler. Kjør install-openclip.ps1 fra programmappen.") from exc
-    with Image.open(path) as image:
-        image = ImageOps.exif_transpose(image).convert("RGB")
-        tensor = preprocess(image).unsqueeze(0).to(model_device(model))
+    with Image.open(path) as image_file:
+        normalized_image = ImageOps.exif_transpose(image_file).convert("RGB")
+        tensor = preprocess(normalized_image).unsqueeze(0).to(model_device(model))
     with torch.no_grad():
         embedding = model.encode_image(tensor)
     return normalized_tensor_values(embedding)

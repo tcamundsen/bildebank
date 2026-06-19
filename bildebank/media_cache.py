@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from . import db
 from .media import ImageDimensions, image_dimensions, image_orientation
+from .value_parsing import require_int
+
+
+class MediaMetadataRow(Protocol):
+    def __getitem__(self, key: str) -> object: ...
 
 
 class MediaMetadataCache:
@@ -126,17 +131,18 @@ def media_mtime_ns(path: Path) -> int | None:
         return None
 
 
-def cached_mtime_matches(row: sqlite3.Row, mtime_ns: int | None) -> bool:
-    return row["media_metadata_mtime_ns"] is not None and int(row["media_metadata_mtime_ns"]) == mtime_ns
+def cached_mtime_matches(row: MediaMetadataRow, mtime_ns: int | None) -> bool:
+    cached_mtime_ns = row["media_metadata_mtime_ns"]
+    return cached_mtime_ns is not None and require_int(cached_mtime_ns, "media_metadata_mtime_ns") == mtime_ns
 
 
-def dimensions_from_row(row: sqlite3.Row) -> ImageDimensions | None:
+def dimensions_from_row(row: MediaMetadataRow) -> ImageDimensions | None:
     width = row["media_width"]
     height = row["media_height"]
     if width is None or height is None:
         return None
-    width_int = int(width)
-    height_int = int(height)
+    width_int = require_int(width, "media_width")
+    height_int = require_int(height, "media_height")
     if width_int <= 0 or height_int <= 0:
         return None
     return ImageDimensions(width_int, height_int)

@@ -299,7 +299,7 @@ def unconfirmed_faces_for_item(
             """,
             (int(item["id"]),),
         )
-        faces = [
+        faces: list[dict[str, object]] = [
             {
                 "faceId": int(row["id"]),
                 "score": float(row["detection_score"]),
@@ -311,7 +311,9 @@ def unconfirmed_faces_for_item(
             for row in rows
         ]
         if faces:
-            suggestions_by_face_id: dict[int, list[dict[str, object]]] = {int(face["faceId"]): [] for face in faces}
+            suggestions_by_face_id: dict[int, list[dict[str, object]]] = {
+                require_int(face["faceId"], "faceId"): [] for face in faces
+            }
             placeholders = ",".join("?" for _ in suggestions_by_face_id)
             suggestion_rows = conn.execute(
                 f"""
@@ -334,7 +336,7 @@ def unconfirmed_faces_for_item(
                     }
                 )
             for face in faces:
-                face["suggestions"] = suggestions_by_face_id[int(face["faceId"])]
+                face["suggestions"] = suggestions_by_face_id[require_int(face["faceId"], "faceId")]
     except sqlite3.Error:
         return []
     finally:
