@@ -490,12 +490,14 @@ def people_page_html(
     face_config: FaceRecognitionConfig | None = None,
     *,
     openclip_enabled: bool = True,
+    message: str = "",
 ) -> str:
     return server_faces.people_page_html(
         target,
         face_config,
         shell_page_html=shell_page_html,
         openclip_enabled=openclip_enabled,
+        message=message,
     )
 
 

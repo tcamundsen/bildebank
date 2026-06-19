@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import time
 import urllib.parse
+from dataclasses import replace
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
 from . import db
-from .config import AppConfig, BrowserHotkeyConfig, FaceRecognitionConfig, HOTKEY_KEYS
+from .config import (
+    AppConfig,
+    BrowserHotkeyConfig,
+    FaceRecognitionConfig,
+    HOTKEY_KEYS,
+    set_face_suggest_threshold,
+    validate_face_suggest_threshold,
+)
 from .face import (
     add_face_to_person,
     add_person_to_file,
@@ -17,6 +25,7 @@ from .face import (
     remove_face_from_person,
     remove_person_from_file,
     rename_person,
+    suggest_faces,
 )
 from .geo import (
     H3_COLUMNS,
@@ -491,6 +500,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         self.server_timing_steps = {}
         parsed = urllib.parse.urlparse(self.path)
         try:
+            if parsed.path == "/people/face-suggest":
+                self.respond_face_suggest()
+                return
             if parsed.path == "/geo/place-name":
                 self.respond_set_geo_place_name()
                 return
@@ -602,6 +614,52 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Ukjent endepunkt."}, status=HTTPStatus.NOT_FOUND)
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def respond_face_suggest(self) -> None:
+        if not self.server.face_enabled:
+            self.respond_html(
+                error_html(
+                    ValueError("Ansiktsgjenkjenning er av."),
+                    face_enabled=False,
+                    openclip_enabled=self.server.openclip_enabled,
+                ),
+                status=HTTPStatus.FORBIDDEN,
+            )
+            return
+        params = server_request.read_form_params(self.headers, self.rfile)
+        try:
+            threshold = validate_face_suggest_threshold(first_param(params, "threshold"))
+        except ValueError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=True, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+        set_face_suggest_threshold(server_app.server_program_repo_root(), threshold)
+        face_config = replace(self.server.config.face_recognition, suggest_threshold=threshold)
+        self.server.config = replace(self.server.config, face_recognition=face_config)
+        try:
+            stats = suggest_faces(self.server.target, threshold=threshold, config=face_config)
+        except ValueError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=True, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.BAD_REQUEST,
+            )
+            return
+        clear_face_caches()
+        self.server.clear_browser_navigation_cache()
+        message = (
+            f"Face-suggest ferdig: personer={stats.persons}, ukjente ansikter={stats.unknown_faces}, "
+            f"forslag={stats.suggestions}, threshold={stats.threshold:.3f}"
+        )
+        self.respond_html(
+            people_page_html(
+                self.server.target,
+                face_config,
+                openclip_enabled=self.server.openclip_enabled,
+                message=message,
+            )
+        )
 
     def handle(self) -> None:
         try:

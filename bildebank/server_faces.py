@@ -905,6 +905,7 @@ def people_page_html(
     *,
     shell_page_html: ShellPageRenderer,
     openclip_enabled: bool = True,
+    message: str = "",
 ) -> str:
     people = registered_people_rows(target, face_config)
     summary = people_face_summary(target, face_config)
@@ -918,16 +919,37 @@ def people_page_html(
         "Personer",
         f"""
         <h1>Personer</h1>
+        {f'<p class="assign-status">{html.escape(message)}</p>' if message else ''}
         Kjør <a href="help/face-scan.md">face-scan</a> når du har lagt til nye bilder
         og <a href="help/face-suggest.md">face-suggest</a> når du
         har bekreftet at personer er et bestemt ansikt.
         {people_face_summary_html(summary)}
+        <button class="nav-button" type="button" data-open-face-suggest>Foreslå personer</button>
         {content}
+        {face_suggest_dialog_html(face_config.suggest_threshold if face_config is not None else 0.6)}
         {person_rename_dialog_html()}
         """,
         face_enabled=True,
         openclip_enabled=openclip_enabled,
     )
+
+
+def face_suggest_dialog_html(threshold: float) -> str:
+    return f"""
+    <div id="faceSuggestDialog" class="modal-overlay" hidden>
+      <form class="modal-panel" method="post" action="/people/face-suggest">
+        <h2>Foreslå personer</h2>
+        <label for="faceSuggestThreshold">Threshold (0.0–1.0)</label>
+        <input id="faceSuggestThreshold" type="number" name="threshold"
+               min="0" max="1" step="0.001" value="{threshold:.3f}" required>
+        <p class="meta">Eksisterende forslag bygges på nytt. Nettleseren venter mens jobben kjører.</p>
+        <div class="modal-actions">
+          <button class="nav-button" type="submit">Kjør</button>
+          <button class="nav-button" type="button" data-close-face-suggest>Avbryt</button>
+        </div>
+      </form>
+    </div>
+    """
 
 
 def person_rename_dialog_html() -> str:

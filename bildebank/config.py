@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tomllib
 import datetime as dt
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ class FaceRecognitionConfig:
     model_root: Path = Path(".bildebank-insightface")
     database_dir: Path = Path(".bildebank-faces")
     model_name: str = DEFAULT_FACE_MODEL_NAME
+    suggest_threshold: float = 0.6
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,7 @@ def load_config(repo_root: Path) -> AppConfig:
     migrate_legacy_openclip_section(config_path)
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     face_data = _section(data, "face_recognition")
+    suggest_threshold = validate_face_suggest_threshold(face_data.get("suggest_threshold", 0.6))
     model_root = Path(str(face_data.get("model_root", ".bildebank-insightface")))
     if not model_root.is_absolute():
         model_root = repo_root / model_root
@@ -93,6 +96,7 @@ def load_config(repo_root: Path) -> AppConfig:
             model_root=model_root,
             database_dir=Path(str(face_data.get("database_dir", ".bildebank-faces"))),
             model_name=str(face_data.get("model_name", DEFAULT_FACE_MODEL_NAME)),
+            suggest_threshold=suggest_threshold,
         ),
         openclip=OpenClipConfig(
             enabled=bool(openclip_data.get("enabled", False)),
@@ -369,6 +373,36 @@ def set_face_recognition_model_name(repo_root: Path, model_name: str) -> Path:
     _section(tomllib.loads(text), "face_recognition")
     config_path.write_text(
         _set_toml_string(text, section="face_recognition", key="model_name", value=clean_model_name),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def validate_face_suggest_threshold(value: object) -> float:
+    try:
+        threshold = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Threshold må være et tall mellom 0.0 og 1.0.") from exc
+    if not math.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
+        raise ValueError("Threshold må være et endelig tall mellom 0.0 og 1.0.")
+    return threshold
+
+
+def set_face_suggest_threshold(repo_root: Path, threshold: float) -> Path:
+    clean_threshold = validate_face_suggest_threshold(threshold)
+    config_path = repo_root / CONFIG_FILENAME
+    if not config_path.exists():
+        config_path.write_text(
+            "[face_recognition]\n"
+            f"suggest_threshold = {clean_threshold}\n",
+            encoding="utf-8",
+        )
+        return config_path
+    migrate_legacy_openclip_section(config_path)
+    text = config_path.read_text(encoding="utf-8")
+    _section(tomllib.loads(text), "face_recognition")
+    config_path.write_text(
+        _set_toml_value(text, section="face_recognition", key="suggest_threshold", value=str(clean_threshold)),
         encoding="utf-8",
     )
     return config_path

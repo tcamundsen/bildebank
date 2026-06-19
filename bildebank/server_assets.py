@@ -765,7 +765,8 @@ SERVER_CSS = r"""    :root {
     .modal-panel h2 { margin: 0; font-size: 20px; }
     .modal-panel label { color: var(--muted); font-size: 13px; }
     .modal-panel input[type="text"],
-    .modal-panel input[type="date"] {
+    .modal-panel input[type="date"],
+    .modal-panel input[type="number"] {
       width: 100%;
       box-sizing: border-box;
       min-height: 36px;
@@ -1007,6 +1008,9 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   const personRenameForm = document.querySelector("[data-person-rename-form]");
   const personRenameStatus = document.querySelector("[data-person-rename-status]");
   const closePersonRenameButton = document.querySelector("[data-close-person-rename]");
+  const faceSuggestDialog = document.getElementById("faceSuggestDialog");
+  const openFaceSuggestButton = document.querySelector("[data-open-face-suggest]");
+  const closeFaceSuggestButton = document.querySelector("[data-close-face-suggest]");
   const personRenameNameInput = personRenameForm?.querySelector('input[name="new_name"]');
   const personRenameOldNameInput = personRenameForm?.querySelector('input[name="old_name"]');
   const searchForm = document.querySelector("[data-search-form]");
@@ -1018,6 +1022,13 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   document.addEventListener("submit", event => {
     const message = event.submitter?.dataset.confirmSubmit;
     if (message && !confirm(message)) event.preventDefault();
+  });
+  openFaceSuggestButton?.addEventListener("click", () => {
+    faceSuggestDialog.hidden = false;
+    faceSuggestDialog.querySelector('input[name="threshold"]')?.focus();
+  });
+  closeFaceSuggestButton?.addEventListener("click", () => {
+    faceSuggestDialog.hidden = true;
   });
   function faceStatusMessage(message) {
     const item = document.createElement("p");
