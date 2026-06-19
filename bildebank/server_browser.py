@@ -2191,7 +2191,9 @@ def manual_h3_link_html(label: str, h3_cell: str | None) -> str:
     if not h3_cell:
         return html.escape(label)
     url = "https://h3geo.org/#hex=" + urllib.parse.quote_plus(h3_cell)
-    return f'<a href="{html.escape(url)}" target="_blank" rel="noopener">{html.escape(label)}</a>'
+    return f'<a href="{html.escape(url)}" target="_blank" ' \
+           'title="Vis plasseringen på kartet på https://h3geo.org/" ' \
+           f'rel="noopener">{html.escape(label)}</a>'
 
 
 def manual_h3_status_html(place_name: str | None, h3_cell: str | None = None) -> str:
