@@ -27,3 +27,7 @@ bildebank = "bildebank.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["bildebank*"]
+
+[[tool.mypy.overrides]]
+module = ["h3", "insightface.*", "open_clip", "torch"]
+ignore_missing_imports = true
