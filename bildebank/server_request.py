@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 import urllib.parse
 from http import HTTPStatus
-from typing import Any, BinaryIO
+from typing import Any, Protocol
+
+
+class RequestBodyReader(Protocol):
+    def read(self, size: int = -1, /) -> bytes: ...
 
 
 def first_param(params: dict[str, list[str]], name: str) -> str:
@@ -43,16 +47,16 @@ def parse_file_id(value: str) -> int:
     return file_id
 
 
-def read_request_body(headers: Any, rfile: BinaryIO) -> str:
+def read_request_body(headers: Any, rfile: RequestBodyReader) -> str:
     length = int(headers.get("Content-Length") or "0")
     return rfile.read(length).decode("utf-8") if length > 0 else ""
 
 
-def read_form_params(headers: Any, rfile: BinaryIO) -> dict[str, list[str]]:
+def read_form_params(headers: Any, rfile: RequestBodyReader) -> dict[str, list[str]]:
     return urllib.parse.parse_qs(read_request_body(headers, rfile))
 
 
-def read_json_payload(headers: Any, rfile: BinaryIO) -> dict[str, object]:
+def read_json_payload(headers: Any, rfile: RequestBodyReader) -> dict[str, object]:
     raw = read_request_body(headers, rfile)
     if not raw:
         return {}
@@ -62,7 +66,10 @@ def read_json_payload(headers: Any, rfile: BinaryIO) -> dict[str, object]:
     return payload
 
 
-def read_face_person_payload(headers: Any, rfile: BinaryIO) -> tuple[str, int] | tuple[dict[str, object], HTTPStatus]:
+def read_face_person_payload(
+    headers: Any,
+    rfile: RequestBodyReader,
+) -> tuple[str, int] | tuple[dict[str, object], HTTPStatus]:
     raw = read_request_body(headers, rfile)
     content_type = headers.get("Content-Type", "")
     if "application/json" in content_type:

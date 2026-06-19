@@ -21,7 +21,7 @@ from .config import (
     set_face_recognition_enabled,
     set_face_recognition_model_name,
 )
-from .html_export import format_bytes
+from .formatting import format_bytes
 
 
 ShellPageRenderer = Callable[..., str]

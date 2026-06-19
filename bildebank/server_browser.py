@@ -6,14 +6,16 @@ import sqlite3
 import urllib.parse
 import datetime as dt
 import time
+from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
 from . import db
 from .config import BrowserHotkeyConfig, FaceRecognitionConfig, HOTKEY_KEYS
+from .formatting import format_bytes
 from .geo import H3_COLUMNS, h3_area_label
-from .html_export import display_relative_path, format_bytes, month_key_from_path
+from .html_export import display_relative_path, month_key_from_path
 from .media import media_kind
 from .media_cache import cached_image_dimensions
 from .openclip import relative_to_target
@@ -35,6 +37,7 @@ from .thumbnails import existing_thumbnail_url
 
 ShellPageRenderer = Callable[..., str]
 PageRenderer = Callable[[str, str], str]
+Breadcrumb = tuple[str, str | None] | tuple[str, str | None, str | None]
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 MONTH_NAMES = {
     "01": "Januar",
@@ -1201,7 +1204,7 @@ def item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
-    hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
+    hotkeys: Mapping[str, BrowserHotkeyConfig] | None = None,
 ) -> str:
     return source_item_page_html(
         target,
@@ -1432,7 +1435,7 @@ def source_item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
-    hotkeys: dict[str, BrowserHotkeyConfig] | None = None,
+    hotkeys: Mapping[str, BrowserHotkeyConfig] | None = None,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
     source_item_count_value: int | None = None,
@@ -1674,6 +1677,7 @@ def source_item_breadcrumb_html(
         return breadcrumb_html([(source_label, source.root_url, source_title)], filename_link)
     year, month = month_key.split("-", 1)
     month_name = MONTH_NAMES.get(month, month_key)
+    crumbs: list[Breadcrumb]
     if source == all_browser_source():
         crumbs = [
             ("År", "/years"),
@@ -1710,7 +1714,10 @@ def source_breadcrumb_label(
     return f"{label} ({match_text})", f"{match_text} i filtersøket"
 
 
-def breadcrumb_html(crumbs: list[tuple[str, str | None] | tuple[str, str | None, str | None]], final_html: str) -> str:
+def breadcrumb_html(
+    crumbs: Sequence[Breadcrumb],
+    final_html: str,
+) -> str:
     parts = []
     for crumb in crumbs:
         label, url = crumb[0], crumb[1]
@@ -1813,7 +1820,7 @@ def tag_controls_html(
 
 def hotkey_hints_panel_html(
     target: Path,
-    hotkeys: dict[str, BrowserHotkeyConfig],
+    hotkeys: Mapping[str, BrowserHotkeyConfig],
     *,
     conn: sqlite3.Connection | None = None,
 ) -> str:
@@ -2693,6 +2700,7 @@ def source_month_breadcrumb_html(
         return html.escape(source.title)
     year, month = month_key.split("-", 1)
     month_name = MONTH_NAMES.get(month, month_key)
+    crumbs: list[Breadcrumb]
     if source == all_browser_source():
         crumbs = [
             ("År", "/years"),

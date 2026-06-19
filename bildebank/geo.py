@@ -10,6 +10,7 @@ from typing import Iterable
 from . import db
 from .exiftool import resolve_exiftool_path
 from .progress import ProgressMeter
+from .value_parsing import optional_float, require_float
 
 
 GPS_TAGS = (
@@ -109,10 +110,10 @@ def extract_gps_from_metadata(meta: dict[str, object]) -> GpsData | None:
         return None
 
     try:
-        lat_value = float(lat)
-        lon_value = float(lon)
-        alt_value = float(alt) if alt is not None else None
-    except (TypeError, ValueError) as exc:
+        lat_value = require_float(lat, "GPS-breddegrad")
+        lon_value = require_float(lon, "GPS-lengdegrad")
+        alt_value = optional_float(alt, "GPS-høyde")
+    except ValueError as exc:
         raise ValueError("Ugyldige GPS-koordinater") from exc
 
     if not -90 <= lat_value <= 90:
@@ -130,7 +131,7 @@ def first_metadata_value(meta: dict[str, object], *keys: str) -> object | None:
     return None
 
 
-def h3_cells_for_point(lat: float, lon: float) -> dict[str, str]:
+def h3_cells_for_point(lat: float, lon: float) -> dict[str, str | None]:
     import h3
 
     return {column: h3.latlng_to_cell(lat, lon, resolution) for resolution, column in H3_COLUMNS.items()}
@@ -312,7 +313,9 @@ def scan_geo(
                         error_value = meta.get("Error") if meta else None
                         try:
                             gps = None if meta is None else extract_gps_from_metadata(meta)
-                            cells = None if gps is None else h3_cells_for_point(gps.lat, gps.lon)
+                            cells: dict[str, str | None] | None = (
+                                None if gps is None else h3_cells_for_point(gps.lat, gps.lon)
+                            )
                         except Exception as exc:  # noqa: BLE001 - bad metadata should be recorded per file
                             errors += 1
                             updated += 1

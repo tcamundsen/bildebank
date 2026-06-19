@@ -112,6 +112,7 @@ from .server_search import (
     search_server_images,
 )
 from .target_lock import TargetLockError
+from .value_parsing import require_int
 from .server_filter import text_filter_browser_source
 from .server_response import ServerResponseMixin
 from . import server_request
@@ -182,6 +183,8 @@ def filter_source_from_url(target: Path, source_url: object) -> BrowserSource | 
 
 
 class BildebankServer(ThreadingHTTPServer):
+    server_address: tuple[str, int]
+
     def __init__(self, address: tuple[str, int], target: Path, config: AppConfig) -> None:
         super().__init__(address, BildebankRequestHandler)
         self.target = target
@@ -359,6 +362,7 @@ class BildebankServer(ThreadingHTTPServer):
 
 class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     server: BildebankServer
+    server_timing_steps: dict[str, float]
     protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:
@@ -1545,8 +1549,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
-            file_id = int(payload.get("file_id"))
-        except (TypeError, ValueError):
+            file_id = require_int(payload.get("file_id"), "file_id")
+        except ValueError:
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
@@ -1574,8 +1578,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
-            file_id = int(payload.get("file_id"))
-        except (TypeError, ValueError):
+            file_id = require_int(payload.get("file_id"), "file_id")
+        except ValueError:
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
@@ -1673,8 +1677,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_rotate_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)
         try:
-            file_id = int(payload.get("file_id"))
-        except (TypeError, ValueError):
+            file_id = require_int(payload.get("file_id"), "file_id")
+        except ValueError:
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         direction = str(payload.get("direction") or "")
@@ -1711,9 +1715,15 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 conn.close()
             if filter_item is None:
                 if next_filter_item is not None:
-                    result["redirect_url"] = source_item_url(filter_source, int(next_filter_item["id"]))
+                    result["redirect_url"] = source_item_url(
+                        filter_source,
+                        require_int(next_filter_item["id"], "neste file_id"),
+                    )
                 elif previous_filter_item is not None:
-                    result["redirect_url"] = source_item_url(filter_source, int(previous_filter_item["id"]))
+                    result["redirect_url"] = source_item_url(
+                        filter_source,
+                        require_int(previous_filter_item["id"], "forrige file_id"),
+                    )
                 else:
                     result["redirect_url"] = filter_source.root_url
         self.respond_json(result)
@@ -1721,8 +1731,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_tag_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)
         try:
-            file_id = int(payload.get("file_id"))
-        except (TypeError, ValueError):
+            file_id = require_int(payload.get("file_id"), "file_id")
+        except ValueError:
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         tag_name = str(payload.get("tag_name") or "").strip()
@@ -1740,8 +1750,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_remove_manual_location_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)
         try:
-            file_id = int(payload.get("file_id"))
-        except (TypeError, ValueError):
+            file_id = require_int(payload.get("file_id"), "file_id")
+        except ValueError:
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
@@ -1754,8 +1764,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_manual_date_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)
         try:
-            file_id = int(payload.get("file_id"))
-        except (TypeError, ValueError):
+            file_id = require_int(payload.get("file_id"), "file_id")
+        except ValueError:
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
@@ -1785,8 +1795,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_clear_manual_date_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)
         try:
-            file_id = int(payload.get("file_id"))
-        except (TypeError, ValueError):
+            file_id = require_int(payload.get("file_id"), "file_id")
+        except ValueError:
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
@@ -1806,8 +1816,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             )
             return
         try:
-            file_id = int(payload.get("file_id"))
-        except (TypeError, ValueError):
+            file_id = require_int(payload.get("file_id"), "file_id")
+        except ValueError:
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         key = str(payload.get("key") or "").strip()
@@ -1860,9 +1870,15 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 conn.close()
             if filter_item is None:
                 if next_filter_item is not None:
-                    result["redirect_url"] = source_item_url(filter_source, int(next_filter_item["id"]))
+                    result["redirect_url"] = source_item_url(
+                        filter_source,
+                        require_int(next_filter_item["id"], "neste file_id"),
+                    )
                 elif previous_filter_item is not None:
-                    result["redirect_url"] = source_item_url(filter_source, int(previous_filter_item["id"]))
+                    result["redirect_url"] = source_item_url(
+                        filter_source,
+                        require_int(previous_filter_item["id"], "forrige file_id"),
+                    )
                 else:
                     result["redirect_url"] = filter_source.root_url
         self.respond_json({"ok": True, "key": key, **result})
@@ -1870,8 +1886,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_delete_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)
         try:
-            file_id = int(payload.get("file_id"))
-        except (TypeError, ValueError):
+            file_id = require_int(payload.get("file_id"), "file_id")
+        except ValueError:
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:
@@ -1888,8 +1904,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_undelete_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)
         try:
-            file_id = int(payload.get("file_id"))
-        except (TypeError, ValueError):
+            file_id = require_int(payload.get("file_id"), "file_id")
+        except ValueError:
             self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
             return
         try:

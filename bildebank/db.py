@@ -12,6 +12,8 @@ from pathlib import Path
 from pathlib import PureWindowsPath
 from typing import Any, Iterable
 
+from .value_parsing import optional_int, require_int
+
 
 DB_FILENAME = ".bilder.sqlite3"
 SCHEMA_VERSION = 10
@@ -1168,21 +1170,27 @@ def rebuild_sources_without_kind(conn: sqlite3.Connection) -> None:
         return
     rows = conn.execute("SELECT * FROM sources ORDER BY id").fetchall()
     used: set[str] = set()
-    named_rows: list[tuple[int, str, str | None, str, str | None, str, int | None]] = []
+    named_rows: list[tuple[int, str, str | None, str, str, str | None, str, int | None]] = []
     for row in rows:
         existing_name = row["name"] if "name" in row.keys() else None
         base = str(existing_name).strip() if existing_name else default_source_name(str(row["path"]))
         name = unique_source_name(base, used)
+        raw_path_key = row["path_key"] if "path_key" in row.keys() else path_key(Path(str(row["path"])))
+        source_path_key = str(raw_path_key) if raw_path_key is not None else None
+        raw_imported_at = row["imported_at"]
+        imported_at = str(raw_imported_at) if raw_imported_at is not None else None
+        raw_superseded_by = row["superseded_by_source_id"] if "superseded_by_source_id" in row.keys() else None
+        superseded_by_source_id = optional_int(raw_superseded_by, "superseded_by_source_id")
         named_rows.append(
             (
                 int(row["id"]),
                 str(row["path"]),
-                row["path_key"] if "path_key" in row.keys() else path_key(Path(str(row["path"]))),
+                source_path_key,
                 name,
                 str(row["added_at"]),
-                row["imported_at"],
+                imported_at,
                 str(row["status"]),
-                row["superseded_by_source_id"] if "superseded_by_source_id" in row.keys() else None,
+                superseded_by_source_id,
             )
         )
     conn.executescript(
@@ -2005,7 +2013,10 @@ def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
         "INSERT INTO tags(name, name_key, kind) VALUES(?, ?, ?)",
         (clean_name, name_key, kind),
     )
-    return int(cursor.lastrowid)
+    tag_id = optional_int(cursor.lastrowid, "tag-id")
+    if tag_id is None:
+        raise ValueError("Databasen returnerte ikke id for den nye taggen.")
+    return tag_id
 
 
 def create_user_tag(conn: sqlite3.Connection, name: str) -> int:
@@ -2020,7 +2031,10 @@ def create_user_tag(conn: sqlite3.Connection, name: str) -> int:
         "INSERT INTO tags(name, name_key, kind) VALUES(?, ?, ?)",
         (clean_name, tag_name_key(clean_name), TAG_KIND_USER),
     )
-    return int(cursor.lastrowid)
+    tag_id = optional_int(cursor.lastrowid, "tag-id")
+    if tag_id is None:
+        raise ValueError("Databasen returnerte ikke id for den nye taggen.")
+    return tag_id
 
 
 def rename_user_tag(conn: sqlite3.Connection, *, tag_id: int, new_name: str) -> str:
@@ -2754,8 +2768,8 @@ def geo_missing_files(conn: sqlite3.Connection, *, limit: int, offset: int = 0) 
 
 def normalize_view_rotation(value: object) -> int:
     try:
-        rotation = int(value or 0) % 360
-    except (TypeError, ValueError):
+        rotation = require_int(value or 0, "visningsrotasjon") % 360
+    except ValueError:
         rotation = 0
     return rotation if rotation in {0, 90, 180, 270} else 0
 

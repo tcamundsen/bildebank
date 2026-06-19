@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from .config import AppConfig, FaceRecognitionConfig
+from .config import AppConfig, BrowserHotkeyConfig, FaceRecognitionConfig
 from . import server_app
 from . import server_browser
 from .server_browser import adjacent_browser_items, browser_month_navigation, first_browser_item
@@ -225,7 +226,7 @@ def item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
-    hotkeys: dict[str, object] | None = None,
+    hotkeys: Mapping[str, BrowserHotkeyConfig] | None = None,
 ) -> str:
     return server_browser.item_page_html(
         target,
@@ -256,7 +257,7 @@ def source_item_page_html(
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
-    hotkeys: dict[str, object] | None = None,
+    hotkeys: Mapping[str, BrowserHotkeyConfig] | None = None,
     hide_out_of_focus: bool = False,
     conn: Any | None = None,
     source_item_count_value: int | None = None,
