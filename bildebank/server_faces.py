@@ -949,6 +949,8 @@ def face_suggest_dialog_html(threshold: float, *, return_url: str = "") -> str:
         <input id="faceSuggestThreshold" type="number" name="threshold"
                min="0" max="1" step="0.001" value="{threshold:.3f}" required>
         <p class="meta">Eksisterende forslag bygges på nytt. Nettleseren venter mens jobben kjører.</p>
+        <h3 data-face-suggest-success hidden>Face-suggest fullført</h3>
+        <p class="assign-status" data-face-suggest-status hidden></p>
         <div class="modal-actions">
           <button class="nav-button" type="submit">Kjør</button>
           <button class="nav-button" type="button" data-close-face-suggest>Avbryt</button>

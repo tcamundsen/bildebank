@@ -84,6 +84,8 @@ På siden **Personer** kan du trykke **Foreslå personer** for å kjøre
 `face-suggest`. Velg threshold i dialogen og bekreft kjøringen. Nettleseren
 venter til jobben er ferdig. Verdien lagres som `suggest_threshold` under
 `[face_recognition]` og brukes som utgangspunkt neste gang dialogen åpnes.
+Når jobben er ferdig fra bildebrowseren, åpnes dialogen igjen med en kort
+oppsummering av resultatet. Knappen **Avbryt** heter da **Lukk**.
 
 ## Stoppe serveren
 

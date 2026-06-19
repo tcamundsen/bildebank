@@ -147,6 +147,14 @@ def local_return_url(value: str) -> str | None:
     return value
 
 
+def face_suggest_summary(stats: Any) -> str:
+    return (
+        "Ansiktsforslag: "
+        f"personer={stats.persons}, ukjente_ansikter={stats.unknown_faces}, "
+        f"forslag={stats.suggestions}, threshold={stats.threshold:.3f}"
+    )
+
+
 def hotkey_filter_source_from_url(target: Path, source_url: object) -> BrowserSource | None:
     if not isinstance(source_url, str):
         return None
@@ -663,13 +671,11 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         clear_face_caches()
         self.server.clear_browser_navigation_cache()
+        message = face_suggest_summary(stats)
         if return_url is not None:
-            self.redirect(return_url)
+            fragment = urllib.parse.urlencode({"face-suggest-status": message})
+            self.redirect(f"{return_url}#{fragment}")
             return
-        message = (
-            f"Face-suggest ferdig: personer={stats.persons}, ukjente ansikter={stats.unknown_faces}, "
-            f"forslag={stats.suggestions}, threshold={stats.threshold:.3f}"
-        )
         self.respond_html(
             people_page_html(
                 self.server.target,

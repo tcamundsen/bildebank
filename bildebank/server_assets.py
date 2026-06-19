@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "26"
+SERVER_ASSET_VERSION = "28"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -1011,6 +1011,8 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   const faceSuggestDialog = document.getElementById("faceSuggestDialog");
   const openFaceSuggestButton = document.querySelector("[data-open-face-suggest]");
   const closeFaceSuggestButton = document.querySelector("[data-close-face-suggest]");
+  const faceSuggestSuccess = document.querySelector("[data-face-suggest-success]");
+  const faceSuggestStatus = document.querySelector("[data-face-suggest-status]");
   const personRenameNameInput = personRenameForm?.querySelector('input[name="new_name"]');
   const personRenameOldNameInput = personRenameForm?.querySelector('input[name="old_name"]');
   const searchForm = document.querySelector("[data-search-form]");
@@ -1030,6 +1032,15 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
   closeFaceSuggestButton?.addEventListener("click", () => {
     faceSuggestDialog.hidden = true;
   });
+  const faceSuggestResult = new URLSearchParams(window.location.hash.slice(1)).get("face-suggest-status");
+  if (faceSuggestDialog && faceSuggestStatus && faceSuggestResult) {
+    if (faceSuggestSuccess) faceSuggestSuccess.hidden = false;
+    faceSuggestStatus.textContent = faceSuggestResult;
+    faceSuggestStatus.hidden = false;
+    if (closeFaceSuggestButton) closeFaceSuggestButton.textContent = "Lukk";
+    faceSuggestDialog.hidden = false;
+    history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+  }
   function faceStatusMessage(message) {
     const item = document.createElement("p");
     item.className = "empty";
