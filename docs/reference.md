@@ -56,6 +56,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 ## Ansiktsgjenkjenning
 
 - [`insightface`](insightface.md) - innføring
+- [`export-person`](export-person.md) **`cli`**
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
 - [`face-config`](face-config.md) **`cli`** - gammel kompatibilitetskommando erstattet av [`config`](config.md)
 - [`face-scan`](face-scan.md) **`cli`**

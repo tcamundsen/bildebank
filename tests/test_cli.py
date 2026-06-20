@@ -27,6 +27,7 @@ from bildebank.config import AppConfig, BrowserConfig, BrowserHotkeyConfig, Face
 from bildebank import db
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
+from bildebank.export_person import PersonExportInterrupted, export_person, validate_windows_folder_name
 from bildebank.face import (
     add_person_to_file,
     apply_face_schema,
@@ -12158,6 +12159,203 @@ print(json.dumps([
             self.assertEqual(stdout, "")
             self.assertIn("schema_version=10", stderr)
             self.assertIn("bildebank migrate", stderr)
+
+
+class ExportPersonTests(unittest.TestCase):
+    def make_collection(self, root: Path) -> tuple[Path, AppConfig, dict[str, int]]:
+        target = root / "target"
+        init_database(target)
+        files = {
+            "confirmed": Path("2024/01/same.jpg"),
+            "manual": Path("2024/02/same.jpg"),
+            "suggested": Path("udatert/suggested.jpg"),
+            "hidden": Path("2024/03/hidden.jpg"),
+            "motion": Path("2024/04/PXL.mp4"),
+            "motion_partner": Path("2024/04/PXL.MP.jpg"),
+            "deleted": Path("2024/05/deleted.jpg"),
+        }
+        ids: dict[str, int] = {}
+        for index, (name, relative_path) in enumerate(files.items(), start=1):
+            path = target / relative_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(f"image-{name}".encode())
+            os.utime(path, (1_700_000_000 + index, 1_700_000_000 + index))
+            ids[name] = register_target_file(target, relative_path)
+
+        conn = db.connect(target)
+        try:
+            conn.execute(
+                """
+                UPDATE files
+                SET stored_filename = 'same.jpg',
+                    manual_date_from = '2024-01-01',
+                    manual_date_to = '2024-01-31'
+                WHERE id = ?
+                """,
+                (ids["manual"],),
+            )
+            conn.execute(
+                "UPDATE files SET taken_date = NULL, date_source = 'none' WHERE id = ?",
+                (ids["suggested"],),
+            )
+            db.tag_file(conn, file_id=ids["hidden"], tag_name=db.SYSTEM_TAG_OUT_OF_FOCUS)
+            conn.execute(
+                "UPDATE files SET original_filename = 'PXL.MP', stored_filename = 'PXL.mp4' WHERE id = ?",
+                (ids["motion"],),
+            )
+            conn.execute(
+                "UPDATE files SET original_filename = 'PXL.MP.jpg' WHERE id = ?",
+                (ids["motion_partner"],),
+            )
+            conn.execute(
+                "UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (ids["deleted"],),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        face_conn = connect_face_db(target)
+        try:
+            face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+            for face_id, name in enumerate(
+                ("confirmed", "suggested", "hidden", "motion", "deleted"),
+                start=1,
+            ):
+                file_id = ids[name]
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    ) VALUES(?, ?, ?, 1, 1, 10, 10, 0.9, 'test', ?)
+                    """,
+                    (face_id, file_id, f"key-{file_id}", f"embedding-{face_id}".encode()),
+                )
+            face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+            face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 1, 0.99)")
+            face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.90)")
+            face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 3)")
+            face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 4)")
+            face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 5)")
+            face_conn.execute(
+                "INSERT INTO person_files(person_id, file_id) VALUES(1, ?)",
+                (ids["manual"],),
+            )
+            face_conn.commit()
+        finally:
+            face_conn.close()
+
+        config = AppConfig(
+            face_recognition=FaceRecognitionConfig(enabled=True),
+            browser=BrowserConfig(hide_out_of_focus=True),
+        )
+        return target, config, ids
+
+    def test_export_person_uses_browser_selection_dates_collisions_and_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, config, _ids = self.make_collection(root)
+            destination_root = root / "exports"
+            destination_root.mkdir()
+
+            plan = export_person(target, "Kari", destination_root, config=config)
+
+            self.assertEqual(len(plan.entries), 3)
+            exported = destination_root / "Kari"
+            self.assertEqual((exported / "2024/01/same.jpg").read_bytes(), b"image-confirmed")
+            self.assertEqual((exported / "2024/01/same-1.jpg").read_bytes(), b"image-manual")
+            self.assertEqual((exported / "udatert/suggested.jpg").read_bytes(), b"image-suggested")
+            self.assertFalse((exported / "2024/03/hidden.jpg").exists())
+            self.assertFalse((exported / "2024/04/PXL.mp4").exists())
+            self.assertFalse((exported / "2024/05/deleted.jpg").exists())
+            source_mtime = (target / "2024/01/same.jpg").stat().st_mtime_ns
+            self.assertEqual((exported / "2024/01/same.jpg").stat().st_mtime_ns, source_mtime)
+            self.assertFalse((target / LOCK_FILENAME).exists())
+
+    def test_export_person_dry_run_and_cli_output_create_nothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, config, _ids = self.make_collection(root)
+            destination_root = root / "exports"
+            destination_root.mkdir()
+
+            plan = export_person(target, "Kari", destination_root, config=config, dry_run=True)
+
+            self.assertEqual(len(plan.entries), 3)
+            self.assertFalse((destination_root / "Kari").exists())
+            self.assertEqual(list(destination_root.iterdir()), [])
+
+            with patch("bildebank.cli.load_config", return_value=config):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "export-person",
+                        "Kari",
+                        "--dest",
+                        str(destination_root),
+                        "--dry-run",
+                    ]
+                )
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(stdout.count(" -> "), 3)
+            self.assertIn("Antall bilder: 3", stdout)
+            self.assertFalse((destination_root / "Kari").exists())
+
+    def test_export_person_rejects_invalid_inputs_and_keeps_failed_export(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, config, _ids = self.make_collection(root)
+            destination_root = root / "exports"
+            destination_root.mkdir()
+
+            with self.assertRaisesRegex(ValueError, "finnes ikke"):
+                export_person(target, "Kari", root / "missing", config=config, dry_run=True)
+            with self.assertRaisesRegex(ValueError, "Fant ikke person"):
+                export_person(target, "Ukjent", destination_root, config=config, dry_run=True)
+            empty_face_conn = connect_face_db(target)
+            try:
+                empty_face_conn.execute("INSERT INTO persons(name) VALUES('Tom')")
+                empty_face_conn.commit()
+            finally:
+                empty_face_conn.close()
+            with self.assertRaisesRegex(ValueError, "ingen synlige bilder"):
+                export_person(target, "Tom", destination_root, config=config, dry_run=True)
+            self.assertFalse((destination_root / "Tom").exists())
+            with self.assertRaisesRegex(ValueError, "overlappe"):
+                export_person(target, "Kari", target, config=config, dry_run=True)
+            (destination_root / "Kari").mkdir()
+            with self.assertRaisesRegex(ValueError, "finnes allerede"):
+                export_person(target, "Kari", destination_root, config=config, dry_run=True)
+            with self.assertRaisesRegex(ValueError, "Windows-mappenavn"):
+                validate_windows_folder_name("Kari.")
+            with self.assertRaisesRegex(ValueError, "reservert"):
+                validate_windows_folder_name("CON.txt")
+
+            (destination_root / "Kari").rmdir()
+            with patch("bildebank.export_person.safe_copy", side_effect=OSError("kopifeil")):
+                with self.assertRaisesRegex(RuntimeError, "Ufullstendig eksport er beholdt"):
+                    export_person(target, "Kari", destination_root, config=config)
+            self.assertFalse((destination_root / "Kari").exists())
+            incomplete = list(destination_root.glob(".bildebank-export-person-Kari-incomplete-*"))
+            self.assertEqual(len(incomplete), 1)
+
+            incomplete[0].rename(root / "failed-export")
+            with patch("bildebank.export_person.safe_copy", side_effect=KeyboardInterrupt):
+                with self.assertRaisesRegex(PersonExportInterrupted, "Ufullstendig eksport er beholdt"):
+                    export_person(target, "Kari", destination_root, config=config)
+            self.assertFalse((destination_root / "Kari").exists())
+
+    def test_export_person_parser_help_and_reference(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["export-person", "Kari", "--dest", r"D:\Eksport", "--dry-run"])
+        self.assertEqual(args.command, "export-person")
+        self.assertEqual(args.name, "Kari")
+        self.assertTrue(args.dry_run)
+        self.assertIn("export-person", parser.format_help())
+        reference = Path("docs/reference.md").read_text(encoding="utf-8")
+        self.assertIn("[`export-person`](export-person.md)", reference)
 
 
 if __name__ == "__main__":

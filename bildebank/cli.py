@@ -19,6 +19,7 @@ from .backup import run_backup
 from .config import CONFIG_FILENAME, load_config, set_config_enabled
 from .exiftool import install_managed_exiftool, resolve_exiftool_path, validate_exiftool_install
 from .exiftool_probe import exiftool_metadata_gaps
+from .export_person import PersonExportInterrupted, export_person
 from .face import (
     AddFaceToPersonResult,
     DeletePersonResult,
@@ -158,6 +159,7 @@ HELP_COMMAND_GROUPS = (
             ("face-person-remove-face", "Fjern ett ansikt fra person"),
             ("face-person-delete", "Slett person fra ansiktsdatabasen"),
             ("face-person-rename", "Endre navn på person i ansiktsdatabasen"),
+            ("export-person", "Eksporter bilder av en person"),
             ("face-reset", "Slett ansiktsdata"),
         ),
     ),
@@ -211,6 +213,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return run(args)
+    except PersonExportInterrupted as exc:
+        print(f"Avbrutt. {exc}", file=sys.stderr)
+        return 130
     except KeyboardInterrupt:
         print("Avbrutt.", file=sys.stderr)
         return 130
@@ -796,6 +801,26 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank face-person-list [valg]",
         help="List personer i ansiktsdatabasen",
     )
+    export_person_parser = add_command(
+        subparsers,
+        "export-person",
+        usage="bildebank export-person [valg] navn --dest mappe",
+        help="Eksporter bildene som vises for en person",
+        description="Eksporter bildene som vises på personens side i bildebrowseren.",
+    )
+    export_person_parser.add_argument("name", metavar="navn", help="Personnavn")
+    export_person_parser.add_argument(
+        "--dest",
+        required=True,
+        type=Path,
+        metavar="mappe",
+        help="Eksisterende mappe som personmappen skal opprettes i",
+    )
+    export_person_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Vis planlagte kopier uten å opprette eller endre noe",
+    )
     face_suggest = add_command(
         subparsers,
         "face-suggest",
@@ -1018,6 +1043,7 @@ FACE_COMMANDS = {
     "face-person-delete",
     "face-person-rename",
     "face-person-list",
+    "export-person",
     "face-suggest",
     "make-face-browser",
     "make-person-browser",
@@ -1215,6 +1241,23 @@ def run_face_command(args: argparse.Namespace, target: Path) -> int:
 
     if args.command == "face-person-list":
         print_persons(target)
+        return 0
+
+    if args.command == "export-person":
+        config = load_config(program_repo_root())
+        plan = export_person(
+            target,
+            args.name,
+            args.dest,
+            config=config,
+            dry_run=args.dry_run,
+        )
+        if args.dry_run:
+            for entry in plan.entries:
+                print(f"{entry.source} -> {entry.destination}")
+        print(f"Antall bilder: {len(plan.entries)}")
+        if not args.dry_run:
+            print(f"Eksportert til: {plan.destination}")
         return 0
 
     if args.command == "face-suggest":
