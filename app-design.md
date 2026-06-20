@@ -115,6 +115,11 @@ Enhetstester kan kjøres i WSL under utvikling, men før programmet tas i bruk p
 den faktiske bildesamlingen må importflyten testes i Windows 11 med ekte
 Windows-stier og et lite testsett med bilder og videoer.
 
+Bildebank skal ikke kjøres fra WSL mot en bildesamling som ligger på et
+Windows-filsystem. Alle kommandoer som bruker en slik samling skal avvises,
+også lesekommandoer og serveren. En bildesamling på WSLs eget Linux-filsystem
+kan fortsatt brukes fra WSL.
+
 ## Målmappe
 
 Målmappen skal inneholde alle unike bilder som er kopiert inn fra

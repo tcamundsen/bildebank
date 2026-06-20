@@ -2,6 +2,15 @@
 
 Kort oppskrift for deg som vil installere og kjøre Bildebank fra Linux eller WSL.
 
+## Viktig om WSL
+
+Fra WSL kan Bildebank bare brukes med en bildesamling som ligger på WSLs eget
+Linux-filsystem. Bildebank stopper hvis bildesamlingen ligger på en
+Windows-disk som er montert i WSL. Kjør i så fall Bildebank direkte i Windows.
+
+Dette gjelder plasseringen av selve bildesamlingen. Kildemapper som bare leses
+under import kan fortsatt ligge på en Windows-disk.
+
 ## Krav
 
 Du trenger Git og Python 3.13 eller nyere.

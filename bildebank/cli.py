@@ -72,6 +72,7 @@ from .openclip import (
     search_images,
     torch_gpu_status,
 )
+from .platform_guard import validate_collection_platform
 from .progress import ProgressMeter
 from .program_state import known_targets, program_db_path, record_target_best_effort
 from .server import DEFAULT_HOST, DEFAULT_PORT, run_server as run_local_server
@@ -1030,6 +1031,7 @@ def run(args: argparse.Namespace) -> int:
         return run_no_target_command(args)
 
     target = resolve_target(args.target)
+    validate_collection_platform(target)
     record_target_best_effort(program_repo_root(), target)
 
     if args.command in TARGET_COMMANDS or (
@@ -1052,6 +1054,7 @@ def run(args: argparse.Namespace) -> int:
 def run_no_target_command(args: argparse.Namespace) -> int:
     if args.command == "create":
         target = args.path.resolve()
+        validate_collection_platform(target)
         validate_target_not_in_program_repo(target)
         if db.db_path_for_target(target).exists():
             raise ValueError(f"Bildesamling finnes allerede: {target}")
@@ -1968,6 +1971,10 @@ def run_geo_area(
 
 
 def run_doctor(target_arg: Path | None = None) -> int:
+    target = db.find_target(target_arg)
+    if target is not None:
+        validate_collection_platform(target)
+
     repo_root = program_repo_root()
     config_path = repo_root / CONFIG_FILENAME
     config = load_config(repo_root)
@@ -2042,7 +2049,6 @@ def run_doctor(target_arg: Path | None = None) -> int:
     else:
         doctor_obs("image_search er slått av.")
 
-    target = db.find_target(target_arg)
     if target is not None:
         exists, scanned, faces = face_db_summary(target, face)
         openclip_summary = openclip_db_summary(target)
