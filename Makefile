@@ -19,6 +19,14 @@ cli-help: $(CLI_HELP_STAMPS)
 dead-code:
 	python -m vulture bildebank tests tools --min-confidence 60
 
+mtest:
+	python -m ruff check bildebank tests tools
+	python -m pyflakes bildebank tests tools
+	mypy bildebank/*.py
+
+radontest:
+	python -m radon cc -s -a --min D bildebank/*.py
+
 $(HTML_DIR)/%.html: $(DOCS_DIR)/%.md $(TOOLS_DIR)/gen-html-docs.py $(STAMP_DIR)/%.stamp
 	@mkdir -p $(@D)
 	python $(TOOLS_DIR)/gen-html-docs.py $< $@

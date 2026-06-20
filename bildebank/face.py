@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import importlib
 import os
 import re
 import shutil
@@ -1938,9 +1939,12 @@ def load_face_app(config: FaceRecognitionConfig):
 
 def insightface_runtime_error() -> str | None:
     try:
-        from insightface.app import FaceAnalysis  # noqa: F401
+        app_module = importlib.import_module("insightface.app")
+        getattr(app_module, "FaceAnalysis")
     except ImportError as exc:
         return insightface_import_error_message(exc)
+    except AttributeError as exc:
+        return f"InsightFace er installert, men FaceAnalysis mangler: {exc}"
     return None
 
 
