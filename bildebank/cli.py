@@ -3062,14 +3062,6 @@ def resolve_target_file_arg(target: Path, path: Path) -> Path:
     return resolved
 
 
-def resolve_deleted_file_arg(target: Path, path: Path) -> Path:
-    resolved = resolve_collection_file_arg(target, path)
-    relative_path = relative_collection_path(target, resolved)
-    if len(relative_path.parts) < 2 or relative_path.parts[0] != "deleted":
-        raise ValueError(f"Undelete krever sti under deleted/: {path}")
-    return resolved
-
-
 def resolve_db_file_for_tag_command(conn, target: Path, path: Path):
     resolved = resolve_target_file_arg(target, path)
     row = db.file_by_target_path(conn, target, resolved)
