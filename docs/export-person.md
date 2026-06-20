@@ -18,6 +18,13 @@ D:\Eksport\Tom\2024\01\IMG_1234.jpg
 D:\Eksport\Tom\udatert\gammelt-bilde.jpg
 ```
 
+Eksporten inneholder også en statisk browser som bare viser de eksporterte
+bildene. Åpne den direkte i en nettleser:
+
+```text
+D:\Eksport\Tom\index.html
+```
+
 Bruk `--dry-run` for å kontrollere alle kilde- og målfilene uten å opprette
 mapper eller kopiere filer:
 

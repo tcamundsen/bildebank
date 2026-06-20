@@ -1258,6 +1258,7 @@ def run_face_command(args: argparse.Namespace, target: Path) -> int:
         print(f"Antall bilder: {len(plan.entries)}")
         if not args.dry_run:
             print(f"Eksportert til: {plan.destination}")
+            print(f"Statisk browser: {plan.destination / 'index.html'}")
         return 0
 
     if args.command == "face-suggest":

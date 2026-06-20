@@ -8,7 +8,10 @@ from pathlib import Path
 from . import db
 from .config import AppConfig
 from .face import face_database_dir, face_model_db_filename
+from .formatting import format_bytes
+from .html_export import browser_date_text, path_to_url, render_html
 from .importer import safe_copy
+from .media import media_kind
 from .server_browser import browser_date_for_item, source_items
 from .server_browser_sources import person_browser_source
 from .server_faces import person_by_name
@@ -35,6 +38,7 @@ class PersonExportPlan:
     person_name: str
     destination: Path
     entries: tuple[PersonExportEntry, ...]
+    browser_items: tuple[dict[str, object], ...]
 
 
 class PersonExportInterrupted(KeyboardInterrupt):
@@ -128,20 +132,46 @@ def build_export_plan(
     hashes = file_hashes(target, [int(item["id"]) for item in items])
     used_paths: set[str] = set()
     entries: list[PersonExportEntry] = []
+    browser_items: list[dict[str, object]] = []
     for item in items:
         file_id = int(item["id"])
-        date = valid_export_date(browser_date_for_item(item))
+        browser_date = browser_date_for_item(item)
+        date = valid_export_date(browser_date)
         directory = Path("udatert") if date is None else Path(f"{date.year:04d}", f"{date.month:02d}")
         filename = collision_free_filename(directory, str(item["stored_filename"]), used_paths)
+        relative_destination = directory / filename
         source_path = db.absolute_target_path(target, Path(str(item["target_path"])))
         entries.append(
             PersonExportEntry(
                 source=source_path,
-                destination=destination / directory / filename,
+                destination=destination / relative_destination,
                 expected_hash=hashes[file_id],
             )
         )
-    return PersonExportPlan(person_name, destination, tuple(entries))
+        browser_items.append(export_browser_item(item, relative_destination, browser_date))
+    return PersonExportPlan(person_name, destination, tuple(entries), tuple(browser_items))
+
+
+def export_browser_item(item, relative_destination: Path, browser_date: str) -> dict[str, object]:
+    url = path_to_url(relative_destination)
+    kind = media_kind(relative_destination)
+    return {
+        "fileId": int(item["id"]),
+        "path": relative_destination.as_posix(),
+        "url": url,
+        "thumbnailSrc": url if kind == "image" else "",
+        "kind": kind,
+        "monthKey": browser_date[:7] if valid_export_date(browser_date) is not None else "udatert",
+        "browserDate": browser_date,
+        "dateText": browser_date_text(item),
+        "takenDate": item["taken_date"] or "",
+        "dateSource": item["date_source"],
+        "manualDateFrom": item["manual_date_from"] or "",
+        "manualDateTo": item["manual_date_to"] or "",
+        "manualDateNote": item["manual_date_note"] or "",
+        "name": relative_destination.name,
+        "sizeText": format_bytes(int(item["size_bytes"])),
+    }
 
 
 def file_hashes(target: Path, file_ids: list[int]) -> dict[int, str]:
@@ -186,6 +216,7 @@ def copy_export_plan(plan: PersonExportPlan) -> None:
             temporary_destination = temporary / relative_destination
             temporary_destination.parent.mkdir(parents=True, exist_ok=True)
             safe_copy(entry.source, temporary_destination, entry.expected_hash)
+        write_export_browser(plan, temporary)
         temporary.rename(plan.destination)
     except KeyboardInterrupt as exc:
         raise PersonExportInterrupted(
@@ -195,3 +226,11 @@ def copy_export_plan(plan: PersonExportPlan) -> None:
         raise RuntimeError(
             f"Eksporten feilet. Ufullstendig eksport er beholdt i: {temporary}. {exc}"
         ) from exc
+
+
+def write_export_browser(plan: PersonExportPlan, temporary: Path) -> None:
+    (temporary / "index.html").write_text(
+        render_html(list(plan.browser_items), title=plan.person_name),
+        encoding="utf-8",
+        newline="\n",
+    )

@@ -12255,9 +12255,23 @@ class ExportPersonTests(unittest.TestCase):
     def test_export_person_uses_browser_selection_dates_collisions_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            target, config, _ids = self.make_collection(root)
+            target, config, ids = self.make_collection(root)
             destination_root = root / "exports"
             destination_root.mkdir()
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET stored_filename = 'foreslått bilde.jpg',
+                        manual_date_note = 'Omtrent januar'
+                    WHERE id = ?
+                    """,
+                    (ids["suggested"],),
+                )
+                conn.commit()
+            finally:
+                conn.close()
 
             plan = export_person(target, "Kari", destination_root, config=config)
 
@@ -12265,12 +12279,32 @@ class ExportPersonTests(unittest.TestCase):
             exported = destination_root / "Kari"
             self.assertEqual((exported / "2024/01/same.jpg").read_bytes(), b"image-confirmed")
             self.assertEqual((exported / "2024/01/same-1.jpg").read_bytes(), b"image-manual")
-            self.assertEqual((exported / "udatert/suggested.jpg").read_bytes(), b"image-suggested")
+            self.assertEqual(
+                (exported / "udatert/foreslått bilde.jpg").read_bytes(),
+                b"image-suggested",
+            )
             self.assertFalse((exported / "2024/03/hidden.jpg").exists())
             self.assertFalse((exported / "2024/04/PXL.mp4").exists())
             self.assertFalse((exported / "2024/05/deleted.jpg").exists())
             source_mtime = (target / "2024/01/same.jpg").stat().st_mtime_ns
             self.assertEqual((exported / "2024/01/same.jpg").stat().st_mtime_ns, source_mtime)
+            html = (exported / "index.html").read_text(encoding="utf-8")
+            self.assertIn("<title>Kari</title>", html)
+            self.assertIn('"path": "2024/01/same.jpg"', html)
+            self.assertIn('"path": "2024/01/same-1.jpg"', html)
+            self.assertIn('"url": "udatert/foresl%C3%A5tt%20bilde.jpg"', html)
+            self.assertIn('"thumbnailSrc": "udatert/foresl%C3%A5tt%20bilde.jpg"', html)
+            self.assertIn('"monthKey": "udatert"', html)
+            self.assertIn('"browserDate": "9999-99-99"', html)
+            self.assertIn('"manualDateFrom": "2024-01-01"', html)
+            self.assertIn('"manualDateTo": "2024-01-31"', html)
+            self.assertIn('"dateText": "ca. 2024-01-16 (manuell dato)"', html)
+            self.assertIn('"kind": "image"', html)
+            self.assertIn('"sizeText":', html)
+            self.assertNotIn("hidden.jpg", html)
+            self.assertNotIn("PXL.mp4", html)
+            self.assertNotIn("deleted.jpg", html)
+            self.assertNotIn(str(target), html)
             self.assertFalse((target / LOCK_FILENAME).exists())
 
     def test_export_person_dry_run_and_cli_output_create_nothing(self) -> None:
@@ -12301,7 +12335,23 @@ class ExportPersonTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertEqual(stdout.count(" -> "), 3)
             self.assertIn("Antall bilder: 3", stdout)
+            self.assertNotIn("index.html", stdout)
             self.assertFalse((destination_root / "Kari").exists())
+
+            with patch("bildebank.cli.load_config", return_value=config):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "export-person",
+                        "Kari",
+                        "--dest",
+                        str(destination_root),
+                    ]
+                )
+            self.assertEqual(code, 0, stderr)
+            self.assertIn(f"Statisk browser: {destination_root / 'Kari' / 'index.html'}", stdout)
+            self.assertTrue((destination_root / "Kari" / "index.html").is_file())
 
     def test_export_person_rejects_invalid_inputs_and_keeps_failed_export(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -12342,6 +12392,15 @@ class ExportPersonTests(unittest.TestCase):
             self.assertEqual(len(incomplete), 1)
 
             incomplete[0].rename(root / "failed-export")
+            with patch("bildebank.export_person.write_export_browser", side_effect=OSError("skrivefeil")):
+                with self.assertRaisesRegex(RuntimeError, "Ufullstendig eksport er beholdt"):
+                    export_person(target, "Kari", destination_root, config=config)
+            self.assertFalse((destination_root / "Kari").exists())
+            html_incomplete = list(destination_root.glob(".bildebank-export-person-Kari-incomplete-*"))
+            self.assertEqual(len(html_incomplete), 1)
+            self.assertEqual(len(list(html_incomplete[0].rglob("*.jpg"))), 3)
+
+            html_incomplete[0].rename(root / "failed-html-export")
             with patch("bildebank.export_person.safe_copy", side_effect=KeyboardInterrupt):
                 with self.assertRaisesRegex(PersonExportInterrupted, "Ufullstendig eksport er beholdt"):
                     export_person(target, "Kari", destination_root, config=config)
