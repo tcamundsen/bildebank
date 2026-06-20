@@ -1,0 +1,23 @@
+[
+  {
+    "name": "vanlig-bildevisning",
+    "url": "http://127.0.0.1:8765/item/123",
+    "threshold_ms": 13.0
+  },
+  {
+    "name": "filtersok-image",
+    "url": "http://127.0.0.1:8765/filter/type%3Aimage/item/123",
+    "threshold_ms": 13.0
+  },
+  {
+    "name": "person-browser",
+    "url": "http://127.0.0.1:8765/person/Viljar/no-faces/item/1667",
+    "threshold_ms": 13.0
+  },
+  {
+    "name": "sted-browser",
+    "url": "http://127.0.0.1:8765/geo/place/kj%C3%B8psvik/item/1206",
+    "threshold_ms": 21.0
+  }
+]
+
