@@ -4,6 +4,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 def load_benchmark_module():
@@ -218,6 +219,43 @@ def test_profile_summary_counts_threshold_failures_per_total_time() -> None:
     assert summary.total["median_ms"] == 50.0
     assert summary.connect["max_ms"] == 6.0
     assert summary.adjacent["max_ms"] == 30.0
+
+
+def test_profile_parser_supports_imported_source_item_url(monkeypatch, tmp_path: Path) -> None:
+    benchmark = load_benchmark_module()
+    from bildebank import server_browser
+
+    monkeypatch.setattr(
+        server_browser,
+        "imported_source_by_id",
+        lambda target, source_id: SimpleNamespace(id=source_id, name="Minnekort"),
+    )
+
+    source, file_id = benchmark.profile_source_and_file_id(
+        tmp_path,
+        "http://127.0.0.1:8765/source/7/item/736",
+    )
+
+    assert source.source_id == 7
+    assert source.root_url == "/source/7"
+    assert file_id == 736
+
+
+def test_profile_parser_rejects_unknown_imported_source(monkeypatch, tmp_path: Path) -> None:
+    benchmark = load_benchmark_module()
+    from bildebank import server_browser
+
+    monkeypatch.setattr(server_browser, "imported_source_by_id", lambda target, source_id: None)
+
+    try:
+        benchmark.profile_source_and_file_id(
+            tmp_path,
+            "http://127.0.0.1:8765/source/999/item/736",
+        )
+    except RuntimeError as exc:
+        assert str(exc) == "Fant ikke kilde #999."
+    else:
+        raise AssertionError("Ukjent source-ID skulle gi RuntimeError")
 
 
 def test_parse_args_has_suite_defaults() -> None:

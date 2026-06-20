@@ -117,7 +117,12 @@ def source_has_sql_filter(source: BrowserSource) -> bool:
         from .server_filter import text_filter_has_runtime_filter
 
         return not text_filter_has_runtime_filter(source.text_filter)
-    return source.person_name is not None or source.geo_place_slug is not None or source.text_filter is not None
+    return (
+        source.person_name is not None
+        or source.source_id is not None
+        or source.geo_place_slug is not None
+        or source.text_filter is not None
+    )
 
 
 def source_includes_deleted(source: BrowserSource) -> bool:
@@ -167,6 +172,18 @@ def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
     if source.geo_place_slug is not None:
         place = PredefinedGeoPlace(source.geo_place_slug, source.title, source.geo_place_cells)
         return db.geo_place_where_clause(geo_place_cells_by_column(place))
+    if source.source_id is not None:
+        return (
+            """
+            EXISTS (
+                SELECT 1
+                FROM file_sources
+                WHERE file_sources.source_id = ?
+                  AND file_sources.file_id = files.id
+            )
+            """,
+            (source.source_id,),
+        )
     if source.text_filter is not None:
         from .server_filter import text_filter_where_clause
 

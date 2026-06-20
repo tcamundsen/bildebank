@@ -454,7 +454,12 @@ def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
 
 
 def profile_source_and_file_id(target: Path, url: str) -> tuple[Any, int]:
-    from bildebank.server_browser_sources import all_browser_source, parse_source_path
+    from bildebank.server_browser import imported_source_by_id
+    from bildebank.server_browser_sources import (
+        all_browser_source,
+        imported_source_browser_source,
+        parse_source_path,
+    )
     from bildebank.server_filter import text_filter_browser_source
 
     parsed = urllib.parse.urlparse(url)
@@ -467,25 +472,44 @@ def profile_source_and_file_id(target: Path, url: str) -> tuple[Any, int]:
             raise RuntimeError("Profile-modus trenger en item-URL, for eksempel /filter/type%3Avideo/item/123.")
         query = urllib.parse.unquote(raw_query).strip()
         return text_filter_browser_source(query, target), int(raw_value)
-    raise RuntimeError("Profile-modus støtter foreløpig /item/<id> og /filter/<query>/item/<id>.")
+    if path.startswith("/source/"):
+        raw_source_id, page_mode, raw_value = parse_source_path(path.removeprefix("/source/"))
+        if page_mode != "item":
+            raise RuntimeError("Profile-modus trenger en item-URL, for eksempel /source/7/item/123.")
+        try:
+            source_id = int(urllib.parse.unquote(raw_source_id).strip())
+        except ValueError as exc:
+            raise RuntimeError(f"Ugyldig kilde-ID: {raw_source_id}") from exc
+        imported_source = imported_source_by_id(target, source_id)
+        if imported_source is None:
+            raise RuntimeError(f"Fant ikke kilde #{source_id}.")
+        return imported_source_browser_source(imported_source), int(raw_value)
+    raise RuntimeError(
+        "Profile-modus støtter foreløpig /item/<id>, /filter/<query>/item/<id> "
+        "og /source/<id>/item/<id>."
+    )
 
 
 def profile_cached_month_keys(target: Path, source: Any) -> list[str] | None:
-    from bildebank.server_browser import browser_month_keys
-    from bildebank.server_browser_sources import all_browser_source
+    from bildebank.server_browser import browser_month_keys, source_month_keys
+    from bildebank.server_browser_sources import all_browser_source, source_has_sql_filter
 
-    if source != all_browser_source():
-        return None
-    return browser_month_keys(target)
+    if source == all_browser_source():
+        return browser_month_keys(target)
+    if source_has_sql_filter(source):
+        return source_month_keys(target, source)
+    return None
 
 
 def profile_cached_item_ids(target: Path, source: Any) -> list[int] | None:
-    from bildebank.server_browser import browser_item_ids
-    from bildebank.server_browser_sources import all_browser_source
+    from bildebank.server_browser import browser_item_ids, source_item_ids
+    from bildebank.server_browser_sources import all_browser_source, source_has_sql_filter
 
-    if source != all_browser_source():
-        return None
-    return browser_item_ids(target)
+    if source == all_browser_source():
+        return browser_item_ids(target)
+    if source_has_sql_filter(source):
+        return source_item_ids(target, source)
+    return None
 
 
 def profile_item_positions(item_ids: list[int] | None) -> dict[int, int] | None:

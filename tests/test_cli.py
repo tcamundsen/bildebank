@@ -10,6 +10,7 @@ import unittest
 import datetime as dt
 import os
 import sys
+import time
 import warnings
 import uuid
 import zipfile
@@ -4402,8 +4403,8 @@ model_name = "buffalo_l"
             self.assertIsNotNone(source)
             source_browser = imported_source_browser_source(source)
             with patch(
-                "bildebank.server_browser.adjacent_sql_filtered_source_items",
-                side_effect=AssertionError("SQL filter path should not be used"),
+                "bildebank.server_browser.source_items",
+                side_effect=AssertionError("Imported source should use SQL filter"),
             ):
                 source_item = source_item_by_id(target, source_browser, 1)
                 source_excludes_other_item = source_item_by_id(target, source_browser, 2) is None
@@ -4412,6 +4413,7 @@ model_name = "buffalo_l"
                 source_month_nav = source_month_navigation(target, source_browser, source_item)
                 source_month = source_month_items(target, source_browser, "2024-01")
             self.assertIsNotNone(source_item)
+            self.assertTrue(source_has_sql_filter(source_browser))
             item_body = source_item_page_html(
                 target,
                 source_browser,
@@ -4441,6 +4443,149 @@ model_name = "buffalo_l"
         self.assertIn('href="/source/1">Vis bilder (1)</a>', sources_body)
         self.assertIn("source-a", sources_body)
         self.assertIn("source-b", sources_body)
+
+    def test_imported_source_sql_filter_preserves_order_navigation_and_hidden_items(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source_a = Path(tmp) / "source-a"
+            source_b = Path(tmp) / "source-b"
+            source_a.mkdir()
+            source_b.mkdir()
+            (source_a / "A_20240301.jpg").write_bytes(b"march")
+            (source_a / "B_20240105.jpg").write_bytes(b"january")
+            (source_a / "C_20240202.jpg").write_bytes(b"february")
+            (source_b / "D_20240101.jpg").write_bytes(b"other-source")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-a", "--quiet", str(source_a)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-b", "--quiet", str(source_b)]), 0)
+            conn = db.connect(target)
+            try:
+                imported = db.find_source_by_name(conn, "source-a")
+                self.assertIsNotNone(imported)
+                rows = {
+                    str(row["original_filename"]): int(row["id"])
+                    for row in conn.execute("SELECT id, original_filename FROM files")
+                }
+                db.tag_file(
+                    conn,
+                    file_id=rows["C_20240202.jpg"],
+                    tag_name=db.SYSTEM_TAG_OUT_OF_FOCUS,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            source = imported_source_browser_source(imported)
+            january_id = rows["B_20240105.jpg"]
+            february_id = rows["C_20240202.jpg"]
+            march_id = rows["A_20240301.jpg"]
+            with patch(
+                "bildebank.server_browser.source_items",
+                side_effect=AssertionError("Imported source should not materialize source_items"),
+            ):
+                self.assertEqual(source_item_ids(target, source), [january_id, february_id, march_id])
+                item = source_item_by_id(target, source, february_id)
+                self.assertIsNotNone(item)
+                previous_item, next_item = adjacent_source_items(target, source, item)
+                month_nav = source_month_navigation(target, source, item)
+                self.assertIsNone(source_item_by_id(target, source, rows["D_20240101.jpg"]))
+                self.assertEqual(source_month_keys(target, source), ["2024-01", "2024-02", "2024-03"])
+                self.assertEqual(
+                    [int(row["id"]) for row in source_month_items(target, source, "2024-02")],
+                    [february_id],
+                )
+                self.assertIsNone(source_item_by_id(target, source, february_id, hide_out_of_focus=True))
+                self.assertEqual(
+                    source_item_ids(target, source, hide_out_of_focus=True),
+                    [january_id, march_id],
+                )
+                self.assertEqual(
+                    source_month_keys(target, source, hide_out_of_focus=True),
+                    ["2024-01", "2024-03"],
+                )
+
+        self.assertEqual(int(previous_item["id"]), january_id)
+        self.assertEqual(int(next_item["id"]), march_id)
+        self.assertEqual(
+            month_nav,
+            {
+                "previous_year": None,
+                "next_year": None,
+                "previous_month": "2024-01",
+                "next_month": "2024-03",
+            },
+        )
+
+    def test_imported_source_item_requests_reuse_server_navigation_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source_dir = Path(tmp) / "source"
+            source_dir.mkdir()
+            (source_dir / "A_20240101.jpg").write_bytes(b"one")
+            (source_dir / "B_20240201.jpg").write_bytes(b"two")
+            (source_dir / "C_20240301.jpg").write_bytes(b"three")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source_dir)]), 0)
+            conn = db.connect(target)
+            try:
+                imported = db.find_source_by_name(conn, "source")
+            finally:
+                conn.close()
+            self.assertIsNotNone(imported)
+            source = imported_source_browser_source(imported)
+
+            server = object.__new__(BildebankServer)
+            server.target = target
+            server.config = AppConfig()
+            server._browser_navigation_cache_version = 0
+            server._browser_navigation_db_mtime_ns = db.db_path_for_target(target).stat().st_mtime_ns
+            server._browser_navigation_face_db_mtime_ns = None
+            server._browser_navigation_checked_at = time.monotonic()
+            server._browser_item_ids = {}
+            server._browser_month_keys = {}
+            server._source_item_ids = {}
+            server._source_month_keys = {}
+            server._source_item_counts = {}
+
+            class FakeHandler:
+                def __init__(self) -> None:
+                    self.server = server
+                    self.body = ""
+                    self.status = None
+
+                def respond_html(self, body: str, *, status=HTTPStatus.OK) -> None:
+                    self.body = body
+                    self.status = status
+
+                def respond_text(self, body: str, *, status=HTTPStatus.OK) -> None:
+                    self.body = body
+                    self.status = status
+
+                def record_server_timing(self, name: str, start: float) -> None:
+                    return
+
+            handler = FakeHandler()
+            with (
+                patch("bildebank.server.source_item_ids", wraps=source_item_ids) as item_ids_mock,
+                patch("bildebank.server.source_month_keys", wraps=source_month_keys) as month_keys_mock,
+                patch("bildebank.server.source_item_by_id", side_effect=AssertionError("Handler should use cached IDs")),
+                patch("bildebank.server.adjacent_source_items", side_effect=AssertionError("Handler should use cached IDs")),
+            ):
+                for file_id in (1, 2):
+                    BildebankRequestHandler.respond_browser_source(  # type: ignore[arg-type]
+                        handler,
+                        source,
+                        "item",
+                        str(file_id),
+                        item_not_found_message="Filen finnes ikke for denne kilden.",
+                        invalid_page_message="Ugyldig kildeside.",
+                    )
+                    self.assertEqual(handler.status, HTTPStatus.OK)
+
+            self.assertEqual(item_ids_mock.call_count, 1)
+            self.assertEqual(month_keys_mock.call_count, 1)
 
     def test_tag_cli_and_server_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

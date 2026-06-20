@@ -36,11 +36,18 @@ median for hvert serversteg:
 
 For å se hvor item-siden bruker tid internt, bruk profile-modus. Den går ikke
 via HTTP, men bruker de samme Python-funksjonene som `run-server` bruker for en
-item-side. Profile-modus kjører samme databaseforberedelse som serveren før
-målingen starter:
+item-side. Profile-modus støtter item-URL-er for hele samlingen, filtersøk og
+importerte kilder, inkludert `/source/<id>/item/<id>`. Den kjører samme
+databaseforberedelse som serveren før målingen starter:
 
 ```bash
 .venv/bin/python tools/benchmark_browser.py --mode profile --target /path/to/bildesamling --url http://127.0.0.1:8765/item/123 --steps 100 --warmup 10
+```
+
+For en importert kilde:
+
+```bash
+.venv/bin/python tools/benchmark_browser.py --mode profile --target /path/to/bildesamling --url http://127.0.0.1:8765/source/7/item/736 --steps 100 --warmup 10
 ```
 
 På Windows kan kommandoen for eksempel kjøres slik:
