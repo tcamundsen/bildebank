@@ -22,8 +22,10 @@ hører til et bilde med samme navn. De er fortsatt bevart og kan vises med
 filtersøk, for eksempel `type:video`, `extension:mp4` eller
 `filename:PXL_20250102`.
 
-Browseren kan bla mellom filer, hoppe mellom måneder og år, og vise en enkel
-månedsoversikt. RAW/NEF og PSD vises som fil-lenker, ikke som bildevisning.
+Browseren kan bla mellom filer, hoppe mellom måneder og år, og vise oversikter
+for år, måneder og filer. Stien øverst, for eksempel
+`År / 2024 / Januar / IMG_1234.jpg`, kan brukes til å gå tilbake til en
+oversikt. RAW/NEF og PSD vises som fil-lenker, ikke som bildevisning.
 
 Hvis du importerer flere filer senere, må du kjøre `make-browser` på nytt for å
 oppdatere HTML-filen.

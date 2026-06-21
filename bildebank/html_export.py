@@ -335,7 +335,12 @@ def render_html(
     title: str = "Bildebrowser",
     month_preview_limit: int | None = None,
 ) -> str:
-    items_json = json.dumps(items, ensure_ascii=False)
+    items_json = (
+        json.dumps(items, ensure_ascii=False)
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
     month_preview_limit_json = json.dumps(month_preview_limit)
     escaped_title = html.escape(title)
     return f"""<!doctype html>
@@ -387,6 +392,21 @@ def render_html(
       font-weight: 700;
       margin-right: 12px;
     }}
+    .breadcrumb {{
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }}
+    .breadcrumb a {{
+      color: var(--text);
+      text-decoration: none;
+    }}
+    .breadcrumb a:hover {{ text-decoration: underline; }}
+    .breadcrumb .sep {{
+      color: var(--muted);
+      font-weight: 400;
+    }}
     button {{
       border: 1px solid var(--border);
       background: #303030;
@@ -401,6 +421,26 @@ def render_html(
     button:disabled {{
       opacity: 0.45;
       cursor: default;
+    }}
+    .nav-button-pair {{
+      display: inline-flex;
+      align-items: stretch;
+      gap: 0;
+    }}
+    .nav-button-pair button {{
+      border-radius: 0;
+      justify-content: center;
+    }}
+    .nav-button-pair button + button {{ margin-left: -1px; }}
+    .nav-button-pair button:first-child {{
+      border-top-left-radius: 6px;
+      border-bottom-left-radius: 6px;
+      padding-right: 0;
+    }}
+    .nav-button-pair button:last-child {{
+      border-top-right-radius: 6px;
+      border-bottom-right-radius: 6px;
+      padding-left: 0;
     }}
     .status {{
       color: var(--muted);
@@ -488,6 +528,19 @@ def render_html(
       line-height: 1.35;
       overflow-wrap: anywhere;
     }}
+    .overview-thumb {{
+      position: relative;
+    }}
+    .overview-label {{
+      position: absolute;
+      inset: auto 0 0;
+      padding: 7px 8px;
+      background: rgb(0 0 0 / 78%);
+      color: var(--text);
+      font-weight: 650;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }}
     .file-card {{
       padding: 16px;
       color: var(--muted);
@@ -532,18 +585,26 @@ def render_html(
   <div class="app">
     <header>
       <div class="topline">
-        <div class="title">{escaped_title}</div>
+        <div id="title" class="title">
+          <nav class="breadcrumb" aria-label="Plassering"><span>År</span></nav>
+        </div>
         <span id="status" class="status"></span>
       </div>
-      <div class="controls">
-        <button id="prevYear" type="button">Å-</button>
-        <button id="nextYear" type="button">Å+</button>
-        <button id="prevMonth" type="button">M-</button>
-        <button id="nextMonth" type="button">M+</button>
-        <button id="prevItem" type="button">◀</button>
-        <button id="nextItem" type="button">▶</button>
+      <nav class="controls" aria-label="Navigering">
+        <span class="nav-button-pair" data-nav-button-pair="year">
+          <button id="prevYear" type="button" title="Forrige år">◀ Å</button>
+          <button id="nextYear" type="button" title="Neste år">r ▶</button>
+        </span>
+        <span class="nav-button-pair" data-nav-button-pair="month">
+          <button id="prevMonth" type="button" title="Forrige måned">◀ Mån</button>
+          <button id="nextMonth" type="button" title="Neste måned">ed ▶</button>
+        </span>
+        <span class="nav-button-pair" data-nav-button-pair="item">
+          <button id="prevItem" type="button" title="Forrige bilde">◀ Bil</button>
+          <button id="nextItem" type="button" title="Neste bilde">de ▶</button>
+        </span>
         <span id="position" class="position"></span>
-      </div>
+      </nav>
     </header>
     <main>
       <div id="viewer" class="viewer">
@@ -557,7 +618,22 @@ def render_html(
   <script>
     const embeddedItems = {items_json};
     const MONTH_PREVIEW_LIMIT = {month_preview_limit_json};
-    const state = {{ months: [], monthIndex: 0, itemIndex: 0, viewMode: "item" }};
+    const MONTH_NAMES = {{
+      "01": "Januar",
+      "02": "Februar",
+      "03": "Mars",
+      "04": "April",
+      "05": "Mai",
+      "06": "Juni",
+      "07": "Juli",
+      "08": "August",
+      "09": "September",
+      "10": "Oktober",
+      "11": "November",
+      "12": "Desember"
+    }};
+    const state = {{ months: [], years: [], monthIndex: 0, itemIndex: 0, viewMode: "item" }};
+    const titleEl = document.getElementById("title");
     const statusEl = document.getElementById("status");
     const positionEl = document.getElementById("position");
     const viewer = document.getElementById("viewer");
@@ -606,11 +682,13 @@ def render_html(
     function init() {{
       const items = embeddedItems.slice().sort(compareItems);
       state.months = buildMonths(items);
+      state.years = buildYears(state.months);
       state.monthIndex = 0;
       state.itemIndex = 0;
       state.viewMode = "item";
       statusEl.textContent = `${{items.length}} filer, ${{state.months.length}} måneder`;
       if (items.length === 0) {{
+        renderBreadcrumb();
         setButtonsEnabled(false);
         return;
       }}
@@ -632,7 +710,34 @@ def render_html(
       }}
       return Array.from(map.entries()).map(([key, monthItems]) => ({{ key, items: monthItems }}));
     }}
+    function buildYears(months) {{
+      const map = new Map();
+      for (const month of months) {{
+        const key = yearKeyForMonth(month);
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(month);
+      }}
+      return Array.from(map.entries()).map(([key, yearMonths]) => ({{ key, months: yearMonths }}));
+    }}
+    function yearKeyForMonth(month) {{
+      return /^\\d{{4}}-\\d{{2}}$/.test(month.key) ? month.key.slice(0, 4) : month.key;
+    }}
+    function yearLabel(key) {{
+      if (key === "udatert") return "Udatert";
+      if (key === "ukjent") return "Ukjent";
+      return key;
+    }}
+    function monthLabel(key) {{
+      if (key === "udatert") return "Udatert";
+      if (key === "ukjent") return "Ukjent";
+      return MONTH_NAMES[key.slice(5, 7)] || key;
+    }}
     function currentMonth() {{ return state.months[state.monthIndex] || null; }}
+    function currentYear() {{
+      const month = currentMonth();
+      if (!month) return null;
+      return state.years.find(year => year.key === yearKeyForMonth(month)) || null;
+    }}
     function currentItem() {{
       const month = currentMonth();
       return month ? month.items[state.itemIndex] : null;
@@ -640,11 +745,11 @@ def render_html(
     function moveYear(delta) {{
       const month = currentMonth();
       if (!month) return;
-      const year = month.key.slice(0, 4);
-      const years = Array.from(new Set(state.months.map(item => item.key.slice(0, 4))));
+      const year = yearKeyForMonth(month);
+      const years = state.years.map(item => item.key);
       const nextYear = years[years.indexOf(year) + delta];
       if (!nextYear) return;
-      state.monthIndex = state.months.findIndex(item => item.key.startsWith(nextYear));
+      state.monthIndex = state.months.findIndex(item => yearKeyForMonth(item) === nextYear);
       state.itemIndex = 0;
       state.viewMode = "month";
       render();
@@ -660,7 +765,7 @@ def render_html(
     function moveItem(delta) {{
       const month = currentMonth();
       if (!month) return;
-      if (state.viewMode === "month") {{
+      if (state.viewMode !== "item") {{
         state.itemIndex = delta < 0 ? month.items.length - 1 : 0;
         state.viewMode = "item";
         render();
@@ -679,6 +784,15 @@ def render_html(
       render();
     }}
     function render() {{
+      renderBreadcrumb();
+      if (state.viewMode === "years") {{
+        renderYears();
+        return;
+      }}
+      if (state.viewMode === "year") {{
+        renderYear();
+        return;
+      }}
       if (state.viewMode === "month") {{
         renderMonth();
         return;
@@ -718,6 +832,55 @@ def render_html(
       filenameEl.target = "_blank";
       updateButtons();
     }}
+    function renderYears() {{
+      const grid = document.createElement("div");
+      grid.className = "month-grid";
+      for (const year of state.years) {{
+        const itemCount = year.months.reduce((sum, month) => sum + month.items.length, 0);
+        const button = overviewButton(
+          year.months[0].items[0],
+          `${{yearLabel(year.key)}} (${{itemCount}} filer)`,
+          () => {{
+            state.monthIndex = state.months.indexOf(year.months[0]);
+            state.itemIndex = 0;
+            state.viewMode = year.key === "udatert" || year.key === "ukjent" ? "month" : "year";
+            render();
+          }}
+        );
+        grid.append(button);
+      }}
+      viewer.replaceChildren(grid);
+      positionEl.textContent = `Årsoversikt (${{state.years.length}} valg)`;
+      filenameEl.textContent = "Årsoversikt";
+      filenameEl.removeAttribute("href");
+      filenameEl.removeAttribute("target");
+      updateButtons();
+    }}
+    function renderYear() {{
+      const year = currentYear();
+      if (!year) return;
+      const grid = document.createElement("div");
+      grid.className = "month-grid";
+      for (const month of year.months) {{
+        const button = overviewButton(
+          month.items[0],
+          `${{monthLabel(month.key)}} (${{month.items.length}} filer)`,
+          () => {{
+            state.monthIndex = state.months.indexOf(month);
+            state.itemIndex = 0;
+            state.viewMode = "month";
+            render();
+          }}
+        );
+        grid.append(button);
+      }}
+      viewer.replaceChildren(grid);
+      positionEl.textContent = `${{yearLabel(year.key)}} (${{year.months.length}} måneder)`;
+      filenameEl.textContent = `Årsoversikt: ${{yearLabel(year.key)}}`;
+      filenameEl.removeAttribute("href");
+      filenameEl.removeAttribute("target");
+      updateButtons();
+    }}
     function renderMonth() {{
       const month = currentMonth();
       if (!month) return;
@@ -755,6 +918,108 @@ def render_html(
       filenameEl.removeAttribute("target");
       updateButtons();
     }}
+    function overviewButton(item, labelText, onClick) {{
+      const button = document.createElement("button");
+      button.className = "thumb overview-thumb";
+      button.type = "button";
+      button.title = labelText;
+      button.addEventListener("click", onClick);
+      appendThumbnail(button, item);
+      const label = document.createElement("span");
+      label.className = "overview-label";
+      label.textContent = labelText;
+      button.append(label);
+      return button;
+    }}
+    function appendThumbnail(container, item) {{
+      if (item.kind === "image") {{
+        const img = document.createElement("img");
+        img.src = item.thumbnailSrc || item.url;
+        img.alt = item.name;
+        img.loading = "lazy";
+        container.append(img);
+      }} else {{
+        const label = document.createElement("span");
+        label.className = "thumb-video";
+        label.textContent = `${{item.kind === "video" ? "Video" : "Fil"}}\\n${{item.name}}`;
+        container.append(label);
+      }}
+    }}
+    function showYears(event) {{
+      if (event) event.preventDefault();
+      state.viewMode = "years";
+      render();
+    }}
+    function showYear(yearKey, event) {{
+      if (event) event.preventDefault();
+      const year = state.years.find(candidate => candidate.key === yearKey);
+      if (!year) return;
+      state.monthIndex = state.months.indexOf(year.months[0]);
+      state.itemIndex = 0;
+      state.viewMode = yearKey === "udatert" || yearKey === "ukjent" ? "month" : "year";
+      render();
+    }}
+    function showMonth(monthKey, event) {{
+      if (event) event.preventDefault();
+      const index = state.months.findIndex(month => month.key === monthKey);
+      if (index < 0) return;
+      state.monthIndex = index;
+      state.itemIndex = 0;
+      state.viewMode = "month";
+      render();
+    }}
+    function renderBreadcrumb() {{
+      const nav = document.createElement("nav");
+      nav.className = "breadcrumb";
+      nav.setAttribute("aria-label", "Plassering");
+      const month = currentMonth();
+      const item = currentItem();
+      const yearKey = month ? yearKeyForMonth(month) : "";
+      const parts = [];
+      if (state.viewMode === "years" || !month) {{
+        parts.push({{ label: "År" }});
+      }} else {{
+        parts.push({{ label: "År", action: showYears }});
+        if (yearKey === "udatert" || yearKey === "ukjent") {{
+          parts.push({{
+            label: yearLabel(yearKey),
+            action: state.viewMode === "item" ? event => showMonth(month.key, event) : null
+          }});
+        }} else {{
+          parts.push({{
+            label: yearLabel(yearKey),
+            action: state.viewMode === "year" ? null : event => showYear(yearKey, event)
+          }});
+          if (state.viewMode === "month" || state.viewMode === "item") {{
+            parts.push({{
+              label: monthLabel(month.key),
+              action: state.viewMode === "item" ? event => showMonth(month.key, event) : null
+            }});
+          }}
+        }}
+        if (state.viewMode === "item" && item) parts.push({{ label: item.name }});
+      }}
+      parts.forEach((part, index) => {{
+        if (index > 0) {{
+          const separator = document.createElement("span");
+          separator.className = "sep";
+          separator.textContent = "/";
+          nav.append(separator);
+        }}
+        if (part.action) {{
+          const link = document.createElement("a");
+          link.href = "#";
+          link.textContent = part.label;
+          link.addEventListener("click", part.action);
+          nav.append(link);
+        }} else {{
+          const text = document.createElement("span");
+          text.textContent = part.label;
+          nav.append(text);
+        }}
+      }});
+      titleEl.replaceChildren(nav);
+    }}
     function representativeItems(items, limit) {{
       if (limit === null) return items;
       if (items.length <= limit) return items;
@@ -775,8 +1040,8 @@ def render_html(
     }}
     function updateButtons() {{
       const month = currentMonth();
-      const years = Array.from(new Set(state.months.map(item => item.key.slice(0, 4))));
-      const currentYear = month ? month.key.slice(0, 4) : "";
+      const years = state.years.map(item => item.key);
+      const currentYear = month ? yearKeyForMonth(month) : "";
       const currentYearIndex = years.indexOf(currentYear);
       buttons.prevYear.disabled = currentYearIndex <= 0;
       buttons.nextYear.disabled = currentYearIndex < 0 || currentYearIndex >= years.length - 1;

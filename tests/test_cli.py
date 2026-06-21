@@ -2509,6 +2509,54 @@ model_name = "buffalo_l"
         self.assertLess(month_order, date_order)
         self.assertLess(date_order, path_order)
 
+    def test_static_browser_has_dynamic_year_breadcrumb_and_overviews(self) -> None:
+        html = render_html(
+            [
+                {
+                    "path": "2022/01/<ferie & vinter>.jpg",
+                    "url": "2022/01/%3Cferie%20%26%20vinter%3E.jpg",
+                    "thumbnailSrc": "",
+                    "kind": "image",
+                    "monthKey": "2022-01",
+                    "browserDate": "2022-01-02",
+                    "name": "<ferie & vinter>.jpg",
+                    "sizeText": "1 byte",
+                },
+                {
+                    "path": "udatert/gammelt.jpg",
+                    "url": "udatert/gammelt.jpg",
+                    "thumbnailSrc": "",
+                    "kind": "image",
+                    "monthKey": "udatert",
+                    "browserDate": "9999-99-99",
+                    "name": "gammelt.jpg",
+                    "sizeText": "1 byte",
+                },
+            ]
+        )
+
+        self.assertIn('<nav class="breadcrumb" aria-label="Plassering"><span>År</span></nav>', html)
+        self.assertIn('"01": "Januar"', html)
+        self.assertIn('"12": "Desember"', html)
+        self.assertIn("function renderYears()", html)
+        self.assertIn("function renderYear()", html)
+        self.assertIn('state.viewMode = "years";', html)
+        self.assertIn(
+            'state.viewMode = year.key === "udatert" || year.key === "ukjent" ? "month" : "year";',
+            html,
+        )
+        self.assertIn('parts.push({ label: "År", action: showYears });', html)
+        self.assertIn(
+            'action: state.viewMode === "item" ? event => showMonth(month.key, event) : null',
+            html,
+        )
+        self.assertIn('if (state.viewMode === "item" && item) parts.push({ label: item.name });', html)
+        self.assertIn('link.addEventListener("click", part.action);', html)
+        self.assertIn("text.textContent = part.label;", html)
+        self.assertNotIn("<ferie & vinter>.jpg", html)
+        self.assertIn(r"\u003cferie \u0026 vinter\u003e.jpg", html)
+        self.assertNotIn("data-open-info", html)
+
     def test_media_metadata_cache_stores_dimensions_and_orientation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -10323,8 +10371,11 @@ print(json.dumps([
             self.assertIn("Skrev HTML-browser for person", stdout)
             html = (target / "person-Kari.html").read_text(encoding="utf-8")
             self.assertIn("<title>Kari</title>", html)
-            self.assertIn('<div class="title">Kari</div>', html)
-            self.assertIn("M-", html)
+            self.assertIn('id="title" class="title"', html)
+            self.assertIn('<nav class="breadcrumb" aria-label="Plassering">', html)
+            self.assertIn('parts.push({ label: "År", action: showYears });', html)
+            self.assertIn('title="Forrige måned">◀ Mån</button>', html)
+            self.assertIn('title="Neste måned">ed ▶</button>', html)
             self.assertIn("const embeddedItems", html)
             self.assertIn("IMG_20240102.jpg", html)
             self.assertIn('"kind": "image"', html)
@@ -11380,6 +11431,20 @@ print(json.dumps([
             self.assertIn("const MONTH_PREVIEW_LIMIT = null;", html)
             self.assertIn('state.viewMode = "month";', html)
             self.assertIn("function representativeItems(items, limit)", html)
+            self.assertIn('id="title" class="title"', html)
+            self.assertIn("function renderBreadcrumb()", html)
+            self.assertIn("function renderYears()", html)
+            self.assertIn('"01": "Januar"', html)
+            self.assertIn('<nav class="controls" aria-label="Navigering">', html)
+            self.assertIn('data-nav-button-pair="year"', html)
+            self.assertIn('title="Forrige år">◀ Å</button>', html)
+            self.assertIn('title="Neste år">r ▶</button>', html)
+            self.assertIn('data-nav-button-pair="month"', html)
+            self.assertIn('title="Forrige måned">◀ Mån</button>', html)
+            self.assertIn('title="Neste måned">ed ▶</button>', html)
+            self.assertIn('data-nav-button-pair="item"', html)
+            self.assertIn('title="Forrige bilde">◀ Bil</button>', html)
+            self.assertIn('title="Neste bilde">de ▶</button>', html)
             self.assertNotIn("server-search-link", html)
             self.assertIn('img.loading = "lazy";', html)
             self.assertNotIn('"people":', html)
@@ -12290,6 +12355,9 @@ class ExportPersonTests(unittest.TestCase):
             self.assertEqual((exported / "2024/01/same.jpg").stat().st_mtime_ns, source_mtime)
             html = (exported / "index.html").read_text(encoding="utf-8")
             self.assertIn("<title>Kari</title>", html)
+            self.assertIn('<nav class="breadcrumb" aria-label="Plassering"><span>År</span></nav>', html)
+            self.assertIn("function renderYears()", html)
+            self.assertIn('"01": "Januar"', html)
             self.assertIn('"path": "2024/01/same.jpg"', html)
             self.assertIn('"path": "2024/01/same-1.jpg"', html)
             self.assertIn('"url": "udatert/foresl%C3%A5tt%20bilde.jpg"', html)

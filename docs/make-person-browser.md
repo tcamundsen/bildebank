@@ -32,6 +32,9 @@ redigeringsfunksjoner. Bruk [`run-server`](run-server.md) hvis du vil bekrefte
 ansikter eller arbeide videre med personforslag. Tanken er at den skal kunne brukes
 til å vise bilder på PC-er som ikke har Bildebank installert.
 
+Stien øverst, for eksempel `År / 2024 / Januar / IMG_1234.jpg`, kan brukes til
+å gå tilbake til oversikter for år, måneder og filer.
+
 
 ## Valg
 

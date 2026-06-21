@@ -25,6 +25,9 @@ bildene. Åpne den direkte i en nettleser:
 D:\Eksport\Tom\index.html
 ```
 
+Stien øverst i browseren kan brukes til å gå mellom oversikter for år, måneder
+og filer.
+
 Bruk `--dry-run` for å kontrollere alle kilde- og målfilene uten å opprette
 mapper eller kopiere filer:
 
