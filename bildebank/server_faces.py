@@ -881,12 +881,10 @@ def person_assignment_buttons_html(face_id: int, people: list[dict[str, str]]) -
 
 def people_row_html(person: dict[str, object]) -> str:
     name = str(person["name"])
-    confirmed_count = require_int(person["confirmed_file_count"], "antall bekreftede bilder")
     reference_count = require_int(person["reference_file_count"], "antall referansebilder")
     all_count = require_int(person["all_file_count"], "antall bilder")
     duplicate_count = require_int(person["duplicate_confirmed_file_count"], "antall duplikater")
     max_confirmed_faces = require_int(person["max_confirmed_faces_per_file"], "maks bekreftede ansikter")
-    confirmed_source = person_browser_source(name, include_suggestions=False, show_faces=False)
     all_source = person_browser_source(name, include_suggestions=True, show_faces=False)
     duplicate_warning = ""
     if duplicate_count > 0:
@@ -903,7 +901,6 @@ def people_row_html(person: dict[str, object]) -> str:
         <button class="rename-person-link delete-person-link" type="button" data-delete-person-name="{html.escape(name)}">slett person</button>
       </div>
       {duplicate_warning}
-      <a class="person-link" href="{html.escape(confirmed_source.root_url)}">Bekreftede bilder ({confirmed_count})</a>
       <a class="person-link" href="{html.escape(person_references_url(name))}">Referansebilder ({reference_count})</a>
       <a class="person-link" href="{html.escape(all_source.root_url)}">Bekreftede og forslag ({all_count})</a>
     </div>
