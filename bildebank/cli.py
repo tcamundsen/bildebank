@@ -1244,12 +1244,12 @@ def run_face_command(args: argparse.Namespace, target: Path) -> int:
         return 0
 
     if args.command == "export-person":
-        config = load_config(program_repo_root())
+        app_config = load_config(program_repo_root())
         plan = export_person(
             target,
             args.name,
             args.dest,
-            config=config,
+            config=app_config,
             dry_run=args.dry_run,
         )
         if args.dry_run:
