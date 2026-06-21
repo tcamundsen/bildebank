@@ -3186,6 +3186,122 @@ model_name = "buffalo_l"
         self.assertIn('data-tag-name="Familie" aria-pressed="true"', body)
         self.assertIn("Familie", info_body)
 
+    def test_tag_add_stops_before_database_writes_when_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            lock_path = target / LOCK_FILENAME
+            lock_path.write_text("command=remove\npid=123\n", encoding="utf-8")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "tag-add", "2024/01/IMG_20240102.jpg", "Familie"]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamlingen er låst", stderr)
+            self.assertTrue(lock_path.exists())
+            conn = db.connect(target)
+            try:
+                self.assertIsNone(conn.execute("SELECT id FROM tags WHERE name_key = 'familie'").fetchone())
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM command_log WHERE command = 'tag-add'").fetchone()[0],
+                    0,
+                )
+            finally:
+                conn.close()
+
+    def test_tag_add_rolls_back_and_releases_lock_on_validation_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "tag-add", "2024/01/IMG_20240102.jpg", ""]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Taggnavn kan ikke være tomt", stderr)
+            self.assertFalse((target / LOCK_FILENAME).exists())
+            conn = db.connect(target)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM command_log WHERE command = 'tag-add'").fetchone()[0],
+                    0,
+                )
+            finally:
+                conn.close()
+
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "tag-add",
+                        "2024/01/IMG_20240102.jpg",
+                        "Familie",
+                    ]
+                ),
+                0,
+            )
+
+    def test_run_server_item_tag_returns_conflict_when_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            lock_path = target / LOCK_FILENAME
+            lock_path.write_text("command=remove\npid=123\n", encoding="utf-8")
+            data = json.dumps({"file_id": 1, "tag_name": "Familie", "tagged": True}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+                status = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_tag_item(handler)  # type: ignore[arg-type]
+
+            self.assertEqual(HTTPStatus.CONFLICT, handler.status)
+            self.assertEqual(False, handler.body["ok"])
+            self.assertIn("Bildesamlingen er låst", str(handler.body["error"]))
+            self.assertTrue(lock_path.exists())
+            conn = db.connect(target)
+            try:
+                self.assertIsNone(conn.execute("SELECT id FROM tags WHERE name_key = 'familie'").fetchone())
+            finally:
+                conn.close()
+
     def test_run_server_delete_button_moves_file_to_deleted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

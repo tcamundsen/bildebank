@@ -7,6 +7,7 @@ from . import db
 from .config import BrowserHotkeyConfig, FaceRecognitionConfig
 from .face import AddPersonToFileResult, add_person_to_file
 from .file_lifecycle import remove_file, undelete_file
+from .file_tags import set_file_tag
 from .geo import h3_cells_for_manual_cell
 from .manual_dates import date_range_from_uncertainty
 
@@ -22,25 +23,8 @@ def rotate_file_view(target: Path, file_id: int, direction: str) -> int:
 
 
 def set_tag_on_file(target: Path, file_id: int, tag_name: str, tagged: bool) -> bool:
-    conn = db.connect(target)
-    try:
-        row = conn.execute(
-            """
-            SELECT id, deleted_at
-            FROM files
-            WHERE id = ?
-            """,
-            (file_id,),
-        ).fetchone()
-        if row is None:
-            raise ValueError("Filen finnes ikke i importdatabasen.")
-        if row["deleted_at"] is not None:
-            raise ValueError("Filen er markert som slettet.")
-        db.set_file_tag(conn, file_id=file_id, tag_name=tag_name, tagged=tagged)
-        conn.commit()
-        return tagged
-    finally:
-        conn.close()
+    set_file_tag(target, file_id=file_id, tag_name=tag_name, tagged=tagged)
+    return tagged
 
 
 def set_manual_h3_location_on_file(target: Path, file_id: int, h3_cell: str) -> None:

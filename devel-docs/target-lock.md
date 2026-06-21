@@ -21,13 +21,15 @@ fjernes igjen både ved suksess og feil.
 - `backup` låser kildesamlingen mens backup-speilet oppdateres.
 - `migrate` holder låsen mens hoveddatabasen migreres.
 - `make-thumbnails` holder låsen mens thumbnail-settet oppdateres.
+- `tag-add`, `tag-remove` og tilsvarende weboperasjoner holder låsen fra før
+  filoppslag og validering til etter at taggendringen er committed.
 
 ## Ulåste skriv som må vurderes senere
 
-Følgende skriv er ikke endret i arbeidet med `remove` og `undelete`:
+Følgende skriv bruker fortsatt ikke target-låsen:
 
 - oppfrisking og lagring av mediemetadata i hoveddatabasen;
-- oppretting og fjerning av tagger på filer;
+- oppretting, endring og sletting av selve taggdefinisjonene;
 - GPS-skanning, manuell GPS/H3-plassering og geografiske hjelpetabeller;
 - ansiktsskanning, personer, koblinger og forslag i ansiktsdatabasen;
 - bildeskanning og embeddings i bildesøkdatabasen;

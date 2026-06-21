@@ -46,6 +46,7 @@ from .face import (
     suggest_faces,
 )
 from .file_lifecycle import remove_file, undelete_file
+from .file_tags import set_file_tag
 from .formatting import format_bytes
 from .geo import (
     DEFAULT_EXIFTOOL_BATCH_SIZE,
@@ -1074,6 +1075,9 @@ def run(args: argparse.Namespace) -> int:
     if args.command in {"remove", "undelete"}:
         return run_file_lifecycle_command(args, target)
 
+    if args.command in {"tag-add", "tag-remove"}:
+        return run_tag_mutation_command(args, target)
+
     return run_db_command(args, target)
 
 
@@ -1323,6 +1327,24 @@ def run_file_lifecycle_command(args: argparse.Namespace, target: Path) -> int:
     return 0
 
 
+def run_tag_mutation_command(args: argparse.Namespace, target: Path) -> int:
+    tagged = args.command == "tag-add"
+    result = set_file_tag(
+        target,
+        collection_path=args.path,
+        tag_name=args.tag,
+        tagged=tagged,
+        command_args=vars_for_log(args),
+        path_adapter=existing_path_arg,
+    )
+    if tagged:
+        action = "La til" if result.changed else "Fantes allerede"
+    else:
+        action = "Fjernet" if result.changed else "Fant ikke"
+    print(f"{action}: {result.tag_name} -> {db.absolute_target_path(target, result.target_path)}")
+    return 0
+
+
 def run_db_command(args: argparse.Namespace, target: Path) -> int:
     conn = db.connect(target)
     try:
@@ -1489,22 +1511,6 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
             row = resolve_db_file_for_tag_command(conn, target, args.path)
             for tag in db.tags_for_file(conn, int(row["id"])):
                 print(f"{tag['name']}\t{tag['kind']}")
-            return 0
-
-        if args.command == "tag-add":
-            row = resolve_db_file_for_tag_command(conn, target, args.path)
-            added = db.tag_file(conn, file_id=int(row["id"]), tag_name=args.tag)
-            conn.commit()
-            action = "La til" if added else "Fantes allerede"
-            print(f"{action}: {db.normalize_tag_name(args.tag)} -> {db.absolute_target_path(target, Path(str(row['target_path'])))}")
-            return 0
-
-        if args.command == "tag-remove":
-            row = resolve_db_file_for_tag_command(conn, target, args.path)
-            removed = db.untag_file(conn, file_id=int(row["id"]), tag_name=args.tag)
-            conn.commit()
-            action = "Fjernet" if removed else "Fant ikke"
-            print(f"{action}: {db.normalize_tag_name(args.tag)} -> {db.absolute_target_path(target, Path(str(row['target_path'])))}")
             return 0
 
         if args.command == "tag-files":

@@ -1777,6 +1777,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         try:
             server_actions.set_tag_on_file(self.server.target, file_id, tag_name, tagged)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
