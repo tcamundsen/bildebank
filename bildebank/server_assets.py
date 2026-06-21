@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "30"
+SERVER_ASSET_VERSION = "31"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -990,7 +990,14 @@ SERVER_CSS = r"""    :root {
       .info-row { grid-template-columns: 1fr; gap: 4px; }
     }
 """
-SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
+SERVER_JS = r"""  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || "";
+  function csrfFetch(input, init = {}) {
+    if (String(init.method || "GET").toUpperCase() !== "POST") return fetch(input, init);
+    const headers = new Headers(init.headers || {});
+    headers.set("X-CSRF-Token", csrfToken);
+    return fetch(input, {...init, headers});
+  }
+  const faceOverlay = document.getElementById("faceOverlay");
   const infoOverlay = document.getElementById("infoOverlay");
   const openFacesButton = document.querySelector("[data-open-faces]");
   const closeFacesButton = document.querySelector("[data-close-faces]");
@@ -1059,7 +1066,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     if (!fileId) return;
     faceList.replaceChildren(faceStatusMessage("Laster..."));
     try {
-      const response = await fetch(`/api/item-faces?file_id=${encodeURIComponent(fileId)}`);
+      const response = await csrfFetch(`/api/item-faces?file_id=${encodeURIComponent(fileId)}`);
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke laste ansikter.");
       faceList.innerHTML = payload.html || "";
@@ -1097,7 +1104,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     infoFileId = fileId;
     infoList.replaceChildren(infoStatusRow("Laster..."));
     try {
-      const response = await fetch(`/api/item-info?file_id=${encodeURIComponent(fileId)}`);
+      const response = await csrfFetch(`/api/item-info?file_id=${encodeURIComponent(fileId)}`);
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke laste bildeinfo.");
       infoList.innerHTML = payload.html || "";
@@ -1262,7 +1269,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       if (!fileId || !personName) return;
       button.disabled = true;
       try {
-        const response = await fetch("/api/face-person-remove-file", {
+        const response = await csrfFetch("/api/face-person-remove-file", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({file_id: fileId, person_name: personName}),
@@ -1374,7 +1381,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     if (manualDateStatus) manualDateStatus.textContent = "Lagrer...";
     manualDateForm.querySelectorAll("button, input").forEach(item => item.disabled = true);
     try {
-      const response = await fetch("/api/item-manual-date", {
+      const response = await csrfFetch("/api/item-manual-date", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
@@ -1402,7 +1409,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     if (manualDateStatus) manualDateStatus.textContent = "Fjerner...";
     manualDateForm?.querySelectorAll("button, input").forEach(item => item.disabled = true);
     try {
-      const response = await fetch("/api/item-manual-date-clear", {
+      const response = await csrfFetch("/api/item-manual-date-clear", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({file_id: Number(manualDateFileId)}),
@@ -1432,7 +1439,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       if (!confirm(`Slette personen ${personName} fra ansiktsdatabasen?\n\nDette sletter bekreftede ansiktskoblinger og forslag for personen, men ingen bilder.\n\nTilsvarer:\n${command}`)) return;
       button.disabled = true;
       try {
-        const response = await fetch("/api/face-person-delete", {
+        const response = await csrfFetch("/api/face-person-delete", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({person_name: personName}),
@@ -1456,7 +1463,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     if (personRenameStatus) personRenameStatus.textContent = "Lagrer...";
     personRenameForm.querySelectorAll("button, input").forEach(item => item.disabled = true);
     try {
-      const response = await fetch("/api/face-person-rename", {
+      const response = await csrfFetch("/api/face-person-rename", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({old_name: oldName, new_name: newName}),
@@ -1479,7 +1486,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       if (itemRoot?.dataset.browserSourceUrl) requestBody.source_url = itemRoot.dataset.browserSourceUrl;
       button.disabled = true;
       try {
-        const response = await fetch("/api/item-rotate", {
+        const response = await csrfFetch("/api/item-rotate", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify(requestBody),
@@ -1504,7 +1511,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       const tagged = button.getAttribute("aria-pressed") !== "true";
       button.disabled = true;
       try {
-        const response = await fetch("/api/item-tag", {
+        const response = await csrfFetch("/api/item-tag", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({file_id: fileId, tag_name: tagName, tagged}),
@@ -1550,7 +1557,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     const requestBody = {file_id: fileId, key};
     if (itemRoot?.dataset.browserSourceUrl) requestBody.source_url = itemRoot.dataset.browserSourceUrl;
     try {
-      const response = await fetch("/api/item-hotkey-action", {
+      const response = await csrfFetch("/api/item-hotkey-action", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify(requestBody),
@@ -1583,7 +1590,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     if (!confirm("Fjerne manuell H3-lokasjon fra bildet?")) return;
     button.disabled = true;
     try {
-      const response = await fetch("/api/item-manual-location-remove", {
+      const response = await csrfFetch("/api/item-manual-location-remove", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({file_id: fileId}),
@@ -1607,7 +1614,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       if (!confirm(`Flytte til deleted/?\n\n${path}`)) return;
       button.disabled = true;
       try {
-        const response = await fetch("/api/item-delete", {
+        const response = await csrfFetch("/api/item-delete", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({file_id: fileId}),
@@ -1628,7 +1635,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       if (!confirm(`Flytte tilbake til bildesamlingen?\n\n${path}`)) return;
       button.disabled = true;
       try {
-        const response = await fetch("/api/item-undelete", {
+        const response = await csrfFetch("/api/item-undelete", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({file_id: fileId}),
@@ -1651,7 +1658,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       if (!confirm(`Avbekrefte face-id ${faceId} fra ${personName}?\n\nTilsvarer:\n${command}`)) return;
       button.disabled = true;
       try {
-        const response = await fetch("/api/face-person-remove-face", {
+        const response = await csrfFetch("/api/face-person-remove-face", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({face_id: faceId, person_name: personName}),
@@ -1692,7 +1699,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
       if (status) status.textContent = "Lagrer...";
       form.querySelectorAll("button, select").forEach(item => item.disabled = true);
       try {
-        const response = await fetch("/api/face-person-add-file", {
+        const response = await csrfFetch("/api/face-person-add-file", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({file_id: fileId, person_name: personName}),
@@ -1722,7 +1729,7 @@ SERVER_JS = r"""  const faceOverlay = document.getElementById("faceOverlay");
     status.textContent = "Lagrer...";
     detail.querySelectorAll("button, input").forEach(item => item.disabled = true);
     try {
-      const response = await fetch(endpoint, {
+      const response = await csrfFetch(endpoint, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({face_id: Number(faceId), person_name: personName}),

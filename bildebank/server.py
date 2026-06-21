@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hmac
+import secrets
 import time
 import urllib.parse
+from io import BytesIO
 from dataclasses import replace
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -116,7 +119,7 @@ from .server_search import (
 from .target_lock import TargetLockError
 from .value_parsing import require_int
 from .server_filter import text_filter_browser_source
-from .server_response import ServerResponseMixin
+from .server_response import ServerResponseMixin, add_csrf_to_html
 from . import server_request
 from .server_request import first_param, nonnegative_int_param, parse_file_id, positive_int_param
 from .server_assets import SERVER_CSS, SERVER_JS
@@ -135,6 +138,26 @@ def clear_browser_navigation_cache(server: Any) -> None:
     clear_cache = getattr(server, "clear_browser_navigation_cache", None)
     if clear_cache is not None:
         clear_cache()
+
+
+def validate_csrf_request(handler: Any) -> bool:
+    expected = str(handler.server.csrf_token)
+    length = int(handler.headers.get("Content-Length") or "0")
+    body = handler.rfile.read(length) if length > 0 else b""
+    handler.rfile = BytesIO(body)
+    supplied = str(handler.headers.get("X-CSRF-Token") or "")
+    if not supplied and body:
+        content_type = str(handler.headers.get("Content-Type") or "")
+        if "application/x-www-form-urlencoded" in content_type:
+            params = urllib.parse.parse_qs(body.decode("utf-8"))
+            supplied = first_param(params, "csrf_token")
+    if supplied and hmac.compare_digest(expected, supplied):
+        return True
+    handler.respond_json(
+        {"ok": False, "error": "Ugyldig eller manglende CSRF-token."},
+        status=HTTPStatus.FORBIDDEN,
+    )
+    return False
 
 
 def local_return_url(value: str) -> str | None:
@@ -191,6 +214,7 @@ class BildebankServer(ThreadingHTTPServer):
         super().__init__(address, BildebankRequestHandler)
         self.target = target
         self.config = config
+        self.csrf_token = secrets.token_urlsafe(32)
         self.search_cache = OpenClipSearchCache(config)
         self._browser_navigation_cache_version = 0
         self._browser_navigation_db_mtime_ns: int | None = None
@@ -554,6 +578,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         self.request_started_at = time.perf_counter()
         self.server_timing_steps = {}
+        if not validate_csrf_request(self):
+            return
         parsed = urllib.parse.urlparse(self.path)
         try:
             if parsed.path == "/people/face-suggest":
@@ -670,6 +696,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Ukjent endepunkt."}, status=HTTPStatus.NOT_FOUND)
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def validate_csrf_request(self) -> bool:
+        return validate_csrf_request(self)
 
     def respond_face_suggest(self) -> None:
         if not self.server.face_enabled:
@@ -826,7 +855,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.record_server_timing("source_item_page_html", start)
 
             start = time.perf_counter()
-            encoded = html.encode("utf-8")
+            encoded = add_csrf_to_html(html, self.server.csrf_token).encode("utf-8")
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(encoded)))

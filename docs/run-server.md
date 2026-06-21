@@ -68,9 +68,10 @@ bildebank run-server --no-browser
 ## Teknisk info
 
 Serveren bruker en liten lokal HTTP-server fra Python-standardbiblioteket. Hvis
-behovet vokser, kan vi vurdere FastAPI eller lignende senere. Serveren har ikke
-innebygd sikkerhet, og bør bare kjøres lokalt på PC-en eller på et privat LAN
-der man har kontroll på brukerne.
+behovet vokser, kan vi vurdere FastAPI eller lignende senere. Serveren beskytter
+endreforespørsler mot enkel CSRF, men har ikke innlogging eller tilgangskontroll.
+Den bør derfor bare kjøres lokalt på PC-en eller på et privat LAN der man har
+kontroll på brukerne.
 
 OpenCLIP-modellen ligger i serverprosessen, slik at den kan brukes om igjen
 mellom søk. Serveren håndterer at modellen ikke er lastet ennå, og gir en lesbar

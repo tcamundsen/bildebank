@@ -55,6 +55,7 @@ from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding
 from bildebank.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
 from bildebank.server_actions import remove_file_from_browser, undelete_file_from_browser
 from bildebank.server_assets import SERVER_CSS, SERVER_JS
+from bildebank.server_response import add_csrf_to_html
 from bildebank.server_files import read_server_file
 from bildebank.server import (
     BildebankServer,
@@ -6202,7 +6203,9 @@ model_name = "buffalo_l"
     def test_run_server_api_manual_person_file_is_disabled_when_faces_are_disabled(self) -> None:
         class FakeHandler:
             path = "/api/face-person-add-file"
-            server = SimpleNamespace(face_enabled=False)
+            headers = {"X-CSRF-Token": "test-token"}
+            rfile = BytesIO()
+            server = SimpleNamespace(face_enabled=False, csrf_token="test-token")
             body: dict[str, object] | None = None
             status = None
 
@@ -6215,6 +6218,91 @@ model_name = "buffalo_l"
 
         self.assertEqual(HTTPStatus.FORBIDDEN, handler.status)
         self.assertEqual({"ok": False, "error": "Ansiktsgjenkjenning er av."}, handler.body)
+
+    def test_run_server_rejects_post_without_csrf_token(self) -> None:
+        class FakeHandler:
+            path = "/api/item-tag"
+            headers: dict[str, str] = {}
+            rfile = BytesIO()
+            server = SimpleNamespace(csrf_token="test-token")
+            body: dict[str, object] | None = None
+            status = None
+
+            def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                self.body = content
+                self.status = status
+
+        handler = FakeHandler()
+        BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(HTTPStatus.FORBIDDEN, handler.status)
+        self.assertEqual(
+            {"ok": False, "error": "Ugyldig eller manglende CSRF-token."},
+            handler.body,
+        )
+
+    def test_run_server_generates_one_csrf_token_at_startup(self) -> None:
+        with (
+            patch("bildebank.server.ThreadingHTTPServer.__init__", return_value=None),
+            patch("bildebank.server.secrets.token_urlsafe", return_value="generated-token") as token_urlsafe,
+        ):
+            server = BildebankServer(("127.0.0.1", 0), Path("."), AppConfig())
+
+        self.assertEqual(server.csrf_token, "generated-token")
+        token_urlsafe.assert_called_once_with(32)
+
+    def test_run_server_accepts_csrf_header_and_form_field(self) -> None:
+        def validate(headers: dict[str, str], body: bytes = b"") -> tuple[bool, BytesIO]:
+            class FakeHandler:
+                rfile = BytesIO(body)
+                server = SimpleNamespace(csrf_token="test-token")
+                response = None
+
+                def respond_json(self, content: dict[str, object], *, status=None) -> None:
+                    self.response = (content, status)
+
+            handler = FakeHandler()
+            handler.headers = headers
+            accepted = BildebankRequestHandler.validate_csrf_request(handler)  # type: ignore[arg-type]
+            return accepted, handler.rfile
+
+        header_accepted, _ = validate({"X-CSRF-Token": "test-token"})
+        form = b"csrf_token=test-token&name=Familie"
+        form_accepted, restored_body = validate(
+            {
+                "Content-Length": str(len(form)),
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            form,
+        )
+
+        self.assertTrue(header_accepted)
+        self.assertTrue(form_accepted)
+        self.assertEqual(restored_body.read(), form)
+
+    def test_run_server_html_includes_csrf_meta_and_post_form_fields(self) -> None:
+        content = (
+            "<!doctype html><html><head><title>Test</title></head><body>"
+            '<form method="post" action="/save"></form>'
+            '<form action="/other" method="POST"><button>OK</button></form>'
+            '<form method="get" action="/search"></form>'
+            "</body></html>"
+        )
+
+        rendered = add_csrf_to_html(content, 'token<&"')
+
+        self.assertIn(
+            '<meta name="csrf-token" content="token&lt;&amp;&quot;">',
+            rendered,
+        )
+        self.assertEqual(rendered.count('name="csrf_token"'), 2)
+        self.assertIn(
+            '<input type="hidden" name="csrf_token" value="token&lt;&amp;&quot;">',
+            rendered,
+        )
+        self.assertIn('const csrfToken = document.querySelector', SERVER_JS)
+        self.assertIn('headers.set("X-CSRF-Token", csrfToken);', SERVER_JS)
+        self.assertNotIn('await fetch("/api/', SERVER_JS)
 
     def test_run_server_api_renames_person(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -6342,7 +6430,9 @@ model_name = "buffalo_l"
     def test_run_server_api_rename_person_is_disabled_when_faces_are_disabled(self) -> None:
         class FakeHandler:
             path = "/api/face-person-rename"
-            server = SimpleNamespace(face_enabled=False)
+            headers = {"X-CSRF-Token": "test-token"}
+            rfile = BytesIO()
+            server = SimpleNamespace(face_enabled=False, csrf_token="test-token")
             body: dict[str, object] | None = None
             status = None
 
@@ -6434,7 +6524,9 @@ model_name = "buffalo_l"
     def test_run_server_api_delete_person_is_disabled_when_faces_are_disabled(self) -> None:
         class FakeHandler:
             path = "/api/face-person-delete"
-            server = SimpleNamespace(face_enabled=False)
+            headers = {"X-CSRF-Token": "test-token"}
+            rfile = BytesIO()
+            server = SimpleNamespace(face_enabled=False, csrf_token="test-token")
             body: dict[str, object] | None = None
             status = None
 

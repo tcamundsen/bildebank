@@ -1,12 +1,27 @@
 from __future__ import annotations
 
+import html
 import json
+import re
 import time
 from http import HTTPStatus
 from io import BufferedIOBase
 from typing import TYPE_CHECKING, Any
 
 BENCHMARK_HEADER = "X-Bildebank-Benchmark"
+POST_FORM_RE = re.compile(
+    r"(<form\b(?=[^>]*\bmethod\s*=\s*([\"'])post\2)[^>]*>)",
+    re.IGNORECASE,
+)
+
+
+def add_csrf_to_html(content: str, token: str) -> str:
+    escaped = html.escape(token, quote=True)
+    meta = f'<meta name="csrf-token" content="{escaped}">'
+    if "</head>" in content:
+        content = content.replace("</head>", f"  {meta}\n</head>", 1)
+    hidden = f'<input type="hidden" name="csrf_token" value="{escaped}">'
+    return POST_FORM_RE.sub(lambda match: f"{match.group(1)}{hidden}", content)
 
 class ServerResponseMixin:
     if TYPE_CHECKING:
@@ -34,6 +49,10 @@ class ServerResponseMixin:
         self.send_header("X-Bildebank-Request-Ms", f"{elapsed:.1f}")
 
     def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+        server = getattr(self, "server", None)
+        token = getattr(server, "csrf_token", "")
+        if token:
+            content = add_csrf_to_html(content, str(token))
         self.respond_bytes(content.encode("utf-8"), "text/html; charset=utf-8", status=status)
 
     def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
