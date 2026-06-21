@@ -107,6 +107,7 @@ from . import server_geo
 from .server_geo import DEFAULT_GEO_LIMIT, DEFAULT_GEO_MIN_COUNT, DEFAULT_GEO_RESOLUTION, geo_place_by_slug
 from . import server_markdown
 from . import server_files
+from .file_tags import create_user_tag, delete_user_tag, rename_user_tag
 from .server_search import (
     DEFAULT_SEARCH_LIMIT,
     OpenClipSearchCache,
@@ -1421,12 +1422,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_create_tag(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)
         try:
-            conn = db.connect(self.server.target)
-            try:
-                db.create_user_tag(conn, first_param(params, "name"))
-                conn.commit()
-            finally:
-                conn.close()
+            create_user_tag(self.server.target, first_param(params, "name"))
+        except TargetLockError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.CONFLICT,
+            )
+            return
         except ValueError as exc:
             self.respond_html(
                 error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
@@ -1443,12 +1445,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_text("Ugyldig tagg-id.", status=HTTPStatus.BAD_REQUEST)
             return
         try:
-            conn = db.connect(self.server.target)
-            try:
-                db.rename_user_tag(conn, tag_id=tag_id, new_name=first_param(params, "name"))
-                conn.commit()
-            finally:
-                conn.close()
+            rename_user_tag(self.server.target, tag_id=tag_id, new_name=first_param(params, "name"))
+        except TargetLockError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.CONFLICT,
+            )
+            return
         except ValueError as exc:
             self.respond_html(
                 error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
@@ -1465,12 +1468,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_text("Ugyldig tagg-id.", status=HTTPStatus.BAD_REQUEST)
             return
         try:
-            conn = db.connect(self.server.target)
-            try:
-                db.delete_user_tag(conn, tag_id=tag_id)
-                conn.commit()
-            finally:
-                conn.close()
+            delete_user_tag(self.server.target, tag_id=tag_id)
+        except TargetLockError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.CONFLICT,
+            )
+            return
         except ValueError as exc:
             self.respond_html(
                 error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),

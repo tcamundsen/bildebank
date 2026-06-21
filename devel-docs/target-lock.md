@@ -39,13 +39,14 @@ fjernes igjen både ved suksess og feil.
   embeddings lagres.
 - `image-search` fra CLI og web holder låsen mens embeddings leses og
   søkeresultater lagres. CLI holder den også til `image-search.html` er skrevet.
+- oppretting, endring og sletting av brukertaggdefinisjoner holder låsen fra
+  før databaseoppslag og validering til etter commit.
 
 ## Ulåste skriv som må vurderes senere
 
 Følgende skriv bruker fortsatt ikke target-låsen:
 
 - oppfrisking og lagring av mediemetadata i hoveddatabasen;
-- oppretting, endring og sletting av selve taggdefinisjonene;
 - geografiske hjelpetabeller, som H3-cellenavn og egendefinerte steder;
 
 Disse operasjonene må auditeres separat. Det må avgjøres hvilke som trenger

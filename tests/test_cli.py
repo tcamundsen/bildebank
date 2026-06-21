@@ -5163,6 +5163,49 @@ model_name = "buffalo_l"
         self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
         self.assertIn("Systemtagger kan ikke slettes", str(response["content"]))
 
+    def test_run_server_tag_definition_changes_report_target_lock_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                tag_id = db.create_user_tag(conn, "Familie")
+                conn.commit()
+            finally:
+                conn.close()
+            (target / LOCK_FILENAME).write_text("command=tag-add\n", encoding="utf-8")
+
+            class FakeHandler:
+                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                body = ""
+                status: HTTPStatus | None = None
+
+                def __init__(self, data: bytes) -> None:
+                    self.headers = {"Content-Length": str(len(data))}
+                    self.rfile = BytesIO(data)
+
+                def respond_html(self, content: str, *, status: HTTPStatus) -> None:
+                    self.body = content
+                    self.status = status
+
+                def respond_text(self, content: str, *, status: HTTPStatus) -> None:
+                    self.body = content
+                    self.status = status
+
+                def redirect(self, location: str) -> None:
+                    raise AssertionError(f"Uventet redirect: {location}")
+
+            create_handler = FakeHandler(b"name=Ny")
+            BildebankRequestHandler.respond_create_tag(create_handler)  # type: ignore[arg-type]
+            rename_handler = FakeHandler(f"tag_id={tag_id}&name=Nytt+navn".encode("utf-8"))
+            BildebankRequestHandler.respond_rename_tag(rename_handler)  # type: ignore[arg-type]
+            delete_handler = FakeHandler(f"tag_id={tag_id}".encode("utf-8"))
+            BildebankRequestHandler.respond_delete_tag(delete_handler)  # type: ignore[arg-type]
+
+        for handler in (create_handler, rename_handler, delete_handler):
+            self.assertEqual(handler.status, HTTPStatus.CONFLICT)
+            self.assertIn("Bildesamlingen er låst", handler.body)
+
     def test_run_server_hide_out_of_focus_filters_browser_sources_but_not_tag_view(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

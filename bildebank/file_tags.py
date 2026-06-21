@@ -16,6 +16,39 @@ class SetFileTagResult:
     target_path: Path
 
 
+def create_user_tag(target: Path, name: str) -> int:
+    with TargetLock(target, command="tag-create"):
+        conn = db.connect(target)
+        try:
+            tag_id = db.create_user_tag(conn, name)
+            conn.commit()
+            return tag_id
+        finally:
+            conn.close()
+
+
+def rename_user_tag(target: Path, *, tag_id: int, new_name: str) -> str:
+    with TargetLock(target, command="tag-rename"):
+        conn = db.connect(target)
+        try:
+            clean_name = db.rename_user_tag(conn, tag_id=tag_id, new_name=new_name)
+            conn.commit()
+            return clean_name
+        finally:
+            conn.close()
+
+
+def delete_user_tag(target: Path, *, tag_id: int) -> str:
+    with TargetLock(target, command="tag-delete"):
+        conn = db.connect(target)
+        try:
+            name = db.delete_user_tag(conn, tag_id=tag_id)
+            conn.commit()
+            return name
+        finally:
+            conn.close()
+
+
 def set_file_tag(
     target: Path,
     *,
