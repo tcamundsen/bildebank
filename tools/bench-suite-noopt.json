@@ -2,22 +2,22 @@
   {
     "name": "vanlig-bildevisning",
     "url": "http://127.0.0.1:8765/item/123",
-    "threshold_ms": 10.0
+    "threshold_ms": 3.5
   },
   {
     "name": "filtersok-image",
     "url": "http://127.0.0.1:8765/filter/type%3Aimage/item/123",
-    "threshold_ms": 10.0
+    "threshold_ms": 3.5
   },
   {
     "name": "sted-browser",
     "url": "http://127.0.0.1:8765/geo/place/kj%C3%B8psvik/item/1206",
-    "threshold_ms": 18.0
+    "threshold_ms": 5.6
   },
   {
     "name": "kilde-browser",
     "url": "http://127.0.0.1:8765/source/7/item/736",
-    "threshold_ms": 18.0
+    "threshold_ms": 5.6
   }
 ]
 
