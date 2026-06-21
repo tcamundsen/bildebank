@@ -25,6 +25,9 @@ bildene. Åpne den direkte i en nettleser:
 D:\Eksport\Tom\index.html
 ```
 
+Den statiske browseren følger visningsrotasjonen som er lagret i Bildebank.
+De eksporterte bildefilene er uendrede kopier.
+
 Stien øverst i browseren kan brukes til å gå mellom oversikter for år, måneder
 og filer.
 

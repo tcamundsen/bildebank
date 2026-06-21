@@ -27,6 +27,9 @@ for år, måneder og filer. Stien øverst, for eksempel
 `År / 2024 / Januar / IMG_1234.jpg`, kan brukes til å gå tilbake til en
 oversikt. RAW/NEF og PSD vises som fil-lenker, ikke som bildevisning.
 
+Bildene vises med visningsrotasjonen som er lagret i Bildebank. Rotasjonen
+gjøres bare i HTML-browseren. Selve bildefilene blir ikke endret.
+
 Hvis du importerer flere filer senere, må du kjøre `make-browser` på nytt for å
 oppdatere HTML-filen.
 

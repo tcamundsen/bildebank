@@ -1025,8 +1025,15 @@ def export_face_browser(
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target, config)
     try:
+        view_rotations = file_view_rotations(target)
         with MediaMetadataCache(target) as media_cache:
-            items = face_browser_items(target, conn, limit=limit, media_cache=media_cache)
+            items = face_browser_items(
+                target,
+                conn,
+                limit=limit,
+                media_cache=media_cache,
+                view_rotations=view_rotations,
+            )
     finally:
         conn.close()
     output_path.write_text(render_face_browser_html(items), encoding="utf-8", newline="\n")
@@ -1048,11 +1055,18 @@ def export_person_browser(
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target, config)
     try:
+        view_rotations = file_view_rotations(target)
         person = conn.execute("SELECT id, name FROM persons WHERE name = ?", (clean_name,)).fetchone()
         if person is None:
             raise ValueError(f"Fant ikke person: {clean_name}")
         with MediaMetadataCache(target) as media_cache:
-            items = person_browser_items(target, conn, person_id=int(person["id"]), media_cache=media_cache)
+            items = person_browser_items(
+                target,
+                conn,
+                person_id=int(person["id"]),
+                media_cache=media_cache,
+                view_rotations=view_rotations,
+            )
     finally:
         conn.close()
     output_path.write_text(
@@ -1075,6 +1089,7 @@ def export_people_browser(
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target, config)
     try:
+        view_rotations = file_view_rotations(target)
         people = list(conn.execute("SELECT id, name FROM persons ORDER BY name"))
         index_people: list[dict[str, Any]] = []
         person_pages: list[Path] = []
@@ -1082,7 +1097,13 @@ def export_people_browser(
             for person in people:
                 name = str(person["name"])
                 page_path = target / f"person-{safe_filename(name)}.html"
-                items = person_browser_items(target, conn, person_id=int(person["id"]), media_cache=media_cache)
+                items = person_browser_items(
+                    target,
+                    conn,
+                    person_id=int(person["id"]),
+                    media_cache=media_cache,
+                    view_rotations=view_rotations,
+                )
                 page_path.write_text(
                     render_person_browser_html(name, items, month_preview_limit=month_preview_limit),
                     encoding="utf-8",
@@ -1102,12 +1123,14 @@ def person_browser_items(
     *,
     person_id: int,
     media_cache: MediaMetadataCache | None = None,
+    view_rotations: dict[int, int] | None = None,
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
         SELECT
             'bekreftet' AS status,
             faces.id AS face_id,
+            faces.file_id,
             1.0 AS similarity,
             scanned_files.target_path,
             scanned_files.face_count,
@@ -1126,6 +1149,7 @@ def person_browser_items(
         SELECT
             'forslag' AS status,
             faces.id AS face_id,
+            faces.file_id,
             face_suggestions.similarity,
             scanned_files.target_path,
             scanned_files.face_count,
@@ -1147,6 +1171,8 @@ def person_browser_items(
     own_cache = media_cache is None
     if media_cache is None:
         media_cache = MediaMetadataCache(target)
+    if view_rotations is None:
+        view_rotations = file_view_rotations(target)
     try:
         for row in rows:
             relative_path = relative_to_target(target, Path(str(row["target_path"])))
@@ -1166,6 +1192,7 @@ def person_browser_items(
                     "faceCount": int(row["face_count"]),
                     "dimensions": dimensions,
                     "orientation": orientation,
+                    "viewRotation": view_rotations.get(int(row["file_id"]), 0),
                     "faces": [],
                 },
             )
@@ -1205,7 +1232,7 @@ def person_browser_items(
             try:
                 manual_rows = main_conn.execute(
                     f"""
-                    SELECT target_path
+                    SELECT id, target_path
                     FROM files
                     WHERE deleted_at IS NULL
                       AND id IN ({placeholders})
@@ -1229,6 +1256,7 @@ def person_browser_items(
                         "faceCount": 0,
                         "dimensions": media_cache.image_dimensions(target_path),
                         "orientation": media_cache.image_orientation(target_path),
+                        "viewRotation": view_rotations.get(int(manual_row["id"]), 0),
                         "faces": [],
                     }
             finally:
@@ -1245,6 +1273,7 @@ def face_browser_items(
     *,
     limit: int | None = None,
     media_cache: MediaMetadataCache | None = None,
+    view_rotations: dict[int, int] | None = None,
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
@@ -1269,6 +1298,8 @@ def face_browser_items(
     own_cache = media_cache is None
     if media_cache is None:
         media_cache = MediaMetadataCache(target)
+    if view_rotations is None:
+        view_rotations = file_view_rotations(target)
     try:
         for row in rows:
             relative_path = relative_to_target(target, Path(str(row["target_path"])))
@@ -1284,6 +1315,7 @@ def face_browser_items(
                     "faceCount": int(row["face_count"]),
                     "dimensions": dimensions,
                     "orientation": orientation,
+                    "viewRotation": view_rotations.get(int(row["file_id"]), 0),
                     "faces": [],
                 },
             )
@@ -1304,6 +1336,23 @@ def face_browser_items(
         if own_cache:
             media_cache.close()
     return list(grouped.values())
+
+
+def file_view_rotations(target: Path) -> dict[int, int]:
+    conn = db.connect(target)
+    try:
+        return {
+            int(row["id"]): db.normalize_view_rotation(row["view_rotation_degrees"])
+            for row in conn.execute(
+                """
+                SELECT id, view_rotation_degrees
+                FROM files
+                WHERE deleted_at IS NULL
+                """
+            )
+        }
+    finally:
+        conn.close()
 
 
 def relative_to_target(target: Path, path: Path) -> Path:
@@ -1378,11 +1427,25 @@ def render_face_browser_html(items: list[dict[str, Any]]) -> str:
     .media {{
       position: relative;
       background: #eee;
+      overflow: hidden;
     }}
-    .media img {{
+    .rotation-layer {{
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 100%;
+      height: 100%;
+      transform: translate(-50%, -50%) rotate(var(--view-rotation));
+      transform-origin: center center;
+    }}
+    .rotation-layer.quarter-turn {{
+      width: calc(100% * var(--source-ratio));
+      height: calc(100% / var(--source-ratio));
+    }}
+    .rotation-layer img {{
       display: block;
       width: 100%;
-      height: auto;
+      height: 100%;
     }}
     .box {{
       position: absolute;
@@ -1450,10 +1513,12 @@ def people_index_item(
             else:
                 confirmed += 1
     thumbnail_url = items[0]["url"] if items else None
+    thumbnail_rotation = items[0].get("viewRotation", 0) if items else 0
     return {
         "name": name,
         "pageUrl": path_to_url(relative_to_target(target, page_path)),
         "thumbnailUrl": thumbnail_url,
+        "viewRotation": thumbnail_rotation,
         "imageCount": len(items),
         "confirmed": confirmed,
         "suggested": suggested,
@@ -1531,6 +1596,11 @@ def render_people_index_html(people: list[dict[str, Any]]) -> str:
       object-fit: cover;
       display: block;
     }}
+    .thumb img.view-rotated {{
+      max-width: none;
+      max-height: none;
+      transform-origin: center center;
+    }}
     .meta {{
       padding: 0 10px 10px;
       display: grid;
@@ -1559,6 +1629,29 @@ def render_people_index_html(people: list[dict[str, Any]]) -> str:
   <main>
     {cards}
   </main>
+  <script>
+    for (const img of document.querySelectorAll("img[data-view-rotation]")) {{
+      const rotation = Number(img.dataset.viewRotation || 0);
+      if (![90, 180, 270].includes(rotation)) continue;
+      const resize = () => {{
+        const container = img.parentElement;
+        if (!container || img.naturalWidth <= 0 || img.naturalHeight <= 0) return;
+        const quarterTurn = rotation === 90 || rotation === 270;
+        const rotatedWidth = quarterTurn ? img.naturalHeight : img.naturalWidth;
+        const rotatedHeight = quarterTurn ? img.naturalWidth : img.naturalHeight;
+        const scale = Math.max(
+          container.clientWidth / rotatedWidth,
+          container.clientHeight / rotatedHeight
+        );
+        img.style.width = `${{img.naturalWidth * scale}}px`;
+        img.style.height = `${{img.naturalHeight * scale}}px`;
+        img.style.transform = `rotate(${{rotation}}deg)`;
+      }};
+      img.addEventListener("load", resize);
+      if (typeof ResizeObserver !== "undefined") new ResizeObserver(resize).observe(img.parentElement);
+      requestAnimationFrame(resize);
+    }}
+  </script>
 </body>
 </html>
 """
@@ -1567,7 +1660,11 @@ def render_people_index_html(people: list[dict[str, Any]]) -> str:
 def render_people_index_card(person: dict[str, Any]) -> str:
     thumbnail_url = person.get("thumbnailUrl")
     if thumbnail_url:
-        thumbnail = f'<img src="{html_escape(thumbnail_url)}" alt="">'
+        rotation = db.normalize_view_rotation(person.get("viewRotation", 0))
+        thumbnail = (
+            f'<img class="view-rotated" src="{html_escape(thumbnail_url)}" alt="" '
+            f'data-view-rotation="{rotation}">'
+        )
     else:
         thumbnail = html_escape(str(person["name"])[:1].upper() or "?")
     return f"""<a class="person" href="{html_escape(person['pageUrl'])}">
@@ -1585,10 +1682,13 @@ def render_face_card(item: dict[str, Any]) -> str:
     boxes = "\n".join(render_face_box(face, item["dimensions"], orientation) for face in item["faces"])
     face_count = int(item["faceCount"])
     face_ids = ", ".join(str(face["faceId"]) for face in item["faces"])
+    media_style, layer_class, layer_style = face_rotation_layout(item)
     return f"""<article class="card">
-  <div class="media">
-    <img src="{html_escape(item['url'])}" alt="">
-    {boxes}
+  <div class="media"{media_style}>
+    <div class="{layer_class}"{layer_style}>
+      <img src="{html_escape(item['url'])}" alt="">
+      {boxes}
+    </div>
   </div>
   <div class="meta">
     <div class="path">{html_escape(item['path'])}</div>
@@ -1597,6 +1697,26 @@ def render_face_card(item: dict[str, Any]) -> str:
     <div class="muted">Beste score: {max(float(face['score']) for face in item['faces']):.3f}</div>
   </div>
 </article>"""
+
+
+def face_rotation_layout(item: dict[str, Any]) -> tuple[str, str, str]:
+    dimensions = item.get("dimensions")
+    orientation = int(item.get("orientation", 1))
+    rotation = db.normalize_view_rotation(item.get("viewRotation", 0))
+    if dimensions is None or dimensions.width <= 0 or dimensions.height <= 0:
+        return "", "rotation-layer", f' style="--view-rotation: {rotation}deg;"'
+    width = float(dimensions.width)
+    height = float(dimensions.height)
+    if orientation in {5, 6, 7, 8}:
+        width, height = height, width
+    source_ratio = width / height
+    displayed_ratio = 1.0 / source_ratio if rotation in {90, 270} else source_ratio
+    media_style = f' style="aspect-ratio: {displayed_ratio:.8f};"'
+    layer_class = "rotation-layer quarter-turn" if rotation in {90, 270} else "rotation-layer"
+    layer_style = (
+        f' style="--view-rotation: {rotation}deg; --source-ratio: {source_ratio:.8f};"'
+    )
+    return media_style, layer_class, layer_style
 
 
 def render_face_box(face: dict[str, Any], dimensions, orientation: int = 1) -> str:
@@ -1698,6 +1818,7 @@ def person_browser_json_items(items: list[dict[str, Any]]) -> list[dict[str, Any
             "url": item["url"],
             "thumbnailSrc": item.get("thumbnailSrc", ""),
             "kind": "image",
+            "viewRotation": db.normalize_view_rotation(item.get("viewRotation", 0)),
             "name": item["name"],
             "monthKey": item["monthKey"],
             "takenDate": "",

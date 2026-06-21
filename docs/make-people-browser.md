@@ -17,6 +17,9 @@ options:
 personer som er registrert i ansiktsdatabasen samt filen `personer.html` som
 lenker alle person-sidene.
 
+Personoversikten og personsidene følger visningsrotasjonen som er lagret i
+Bildebank. Bildefilene endres ikke.
+
 ## Valg
 
 ### `--month-preview-limit`

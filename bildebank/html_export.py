@@ -18,6 +18,53 @@ from .thumbnails import existing_thumbnail_url
 from .value_parsing import require_float
 
 
+VIEW_ROTATION_CSS = """
+    img.view-rotated {
+      max-width: none;
+      max-height: none;
+      transform-origin: center center;
+    }
+"""
+
+
+VIEW_ROTATION_JAVASCRIPT = """
+    function normalizedViewRotation(item) {
+      const rotation = Number(item.viewRotation || 0);
+      return [0, 90, 180, 270].includes(rotation) ? rotation : 0;
+    }
+    function applyImageViewRotation(img, item, fit) {
+      const rotation = normalizedViewRotation(item);
+      if (rotation === 0) return;
+      img.classList.add("view-rotated");
+      img.dataset.viewRotation = String(rotation);
+      const resize = () => sizeRotatedImage(img, rotation, fit);
+      img.addEventListener("load", resize);
+      if (typeof ResizeObserver !== "undefined" && img.parentElement) {
+        new ResizeObserver(resize).observe(img.parentElement);
+      }
+      requestAnimationFrame(resize);
+    }
+    function sizeRotatedImage(img, rotation, fit) {
+      const container = img.parentElement;
+      const naturalWidth = img.naturalWidth;
+      const naturalHeight = img.naturalHeight;
+      if (!container || naturalWidth <= 0 || naturalHeight <= 0) return;
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
+      if (containerWidth <= 0 || containerHeight <= 0) return;
+      const quarterTurn = rotation === 90 || rotation === 270;
+      const rotatedWidth = quarterTurn ? naturalHeight : naturalWidth;
+      const rotatedHeight = quarterTurn ? naturalWidth : naturalHeight;
+      const scaleX = containerWidth / rotatedWidth;
+      const scaleY = containerHeight / rotatedHeight;
+      const scale = fit === "cover" ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY);
+      img.style.width = `${naturalWidth * scale}px`;
+      img.style.height = `${naturalHeight * scale}px`;
+      img.style.transform = `rotate(${rotation}deg)`;
+    }
+"""
+
+
 @dataclass
 class BrowserExportTiming:
     steps: list[tuple[str, float]] = field(default_factory=list)
@@ -115,6 +162,7 @@ def row_to_item(
         "url": path_to_url(relative_path),
         "thumbnailSrc": existing_thumbnail_url(target, relative_path) if kind == "image" else "",
         "kind": kind,
+        "viewRotation": db.normalize_view_rotation(row["view_rotation_degrees"]),
         "monthKey": month_key,
         "browserDate": browser_date,
         "dateText": browser_date_text(row),
@@ -305,6 +353,7 @@ def conflict_row_to_item(
         "sourceExists": Path(str(row["source_path"])).exists(),
         "url": path_to_url(relative_path),
         "kind": media_kind(target_path),
+        "viewRotation": db.normalize_view_rotation(row["view_rotation_degrees"]),
     }
 
 
@@ -486,6 +535,7 @@ def render_html(
       object-position: center center;
       display: block;
     }}
+{VIEW_ROTATION_CSS}
     .month-grid {{
       width: 100%;
       height: 100%;
@@ -815,6 +865,7 @@ def render_html(
         const img = document.createElement("img");
         img.src = item.url;
         img.alt = item.name;
+        applyImageViewRotation(img, item, "contain");
         link.append(img);
         viewer.replaceChildren(link);
       }} else {{
@@ -902,6 +953,7 @@ def render_html(
           img.src = item.thumbnailSrc || item.url;
           img.alt = item.name;
           img.loading = "lazy";
+          applyImageViewRotation(img, item, "cover");
           button.append(img);
         }} else {{
           const label = document.createElement("span");
@@ -937,6 +989,7 @@ def render_html(
         img.src = item.thumbnailSrc || item.url;
         img.alt = item.name;
         img.loading = "lazy";
+        applyImageViewRotation(img, item, "cover");
         container.append(img);
       }} else {{
         const label = document.createElement("span");
@@ -1035,6 +1088,7 @@ def render_html(
       }}
       return selected;
     }}
+{VIEW_ROTATION_JAVASCRIPT}
     function setButtonsEnabled(enabled) {{
       for (const button of Object.values(buttons)) button.disabled = !enabled;
     }}
@@ -1201,6 +1255,7 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
       object-position: center center;
       display: block;
     }}
+{VIEW_ROTATION_CSS}
     .file-card {{
       width: 100%;
       height: 100%;
@@ -1332,6 +1387,7 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
         const img = document.createElement("img");
         img.src = item.url;
         img.alt = item.storedFilename;
+        applyImageViewRotation(img, item, "contain");
         link.append(img);
         media.append(link);
       }} else {{
@@ -1373,6 +1429,7 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
       div.append(labelEl, valueEl);
       return div;
     }}
+{VIEW_ROTATION_JAVASCRIPT}
   </script>
 </body>
 </html>

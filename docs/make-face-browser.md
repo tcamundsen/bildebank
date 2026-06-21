@@ -25,6 +25,9 @@ når du vil slå opp `face-id` eller kontrollere ansiktsmarkeringer.
 Standardfilen heter `faces.html`. Den viser bilder der Bildebank har funnet
 ansikter, med boks rundt ansiktene og ansikt-id.
 
+Bildet og ansiktsboksene roteres sammen etter visningsrotasjonen som er lagret
+i Bildebank. Bildefilen endres ikke.
+
 ## Valg
 
 ### `--limit`

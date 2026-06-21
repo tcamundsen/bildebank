@@ -161,6 +161,7 @@ def export_browser_item(item, relative_destination: Path, browser_date: str) -> 
         "url": url,
         "thumbnailSrc": url if kind == "image" else "",
         "kind": kind,
+        "viewRotation": db.normalize_view_rotation(item["view_rotation_degrees"]),
         "monthKey": browser_date[:7] if valid_export_date(browser_date) is not None else "udatert",
         "browserDate": browser_date,
         "dateText": browser_date_text(item),

@@ -10703,6 +10703,16 @@ print(json.dumps([
             self.assertEqual(run_cli(["create", str(target)]), 0)
             image_path.parent.mkdir(parents=True)
             image_path.write_bytes(minimal_png(640, 480))
+            file_id = register_target_file(target, relative_image_path)
+            main_conn = db.connect(target)
+            try:
+                main_conn.execute(
+                    "UPDATE files SET view_rotation_degrees = 90 WHERE id = ?",
+                    (file_id,),
+                )
+                main_conn.commit()
+            finally:
+                main_conn.close()
             config = load_config(self.program_root).face_recognition
 
             conn = sqlite3.connect(face_db_path(target, config))
@@ -10711,18 +10721,18 @@ print(json.dumps([
                 conn.execute(
                     """
                     INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
-                    VALUES(1, ?, ?, 'sha', 'ok', 1)
+                    VALUES(?, ?, ?, 'sha', 'ok', 1)
                     """,
-                    (relative_image_path.as_posix(), db.relative_path_key(relative_image_path)),
+                    (file_id, relative_image_path.as_posix(), db.relative_path_key(relative_image_path)),
                 )
                 conn.execute(
                     """
                     INSERT INTO faces(
                         file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
                         detection_score, embedding_model, embedding
-                    ) VALUES(1, ?, 1, 2, 30, 40, 0.9, 'test', ?)
+                    ) VALUES(?, ?, 1, 2, 30, 40, 0.9, 'test', ?)
                     """,
-                    (db.relative_path_key(relative_image_path), b"embedding"),
+                    (file_id, db.relative_path_key(relative_image_path), b"embedding"),
                 )
                 conn.commit()
             finally:
@@ -10733,6 +10743,9 @@ print(json.dumps([
             self.assertEqual(code, 0, stderr)
             html = (target / "faces.html").read_text(encoding="utf-8")
             self.assertIn("2024/01/IMG_20240102.png", html)
+            self.assertIn('class="rotation-layer quarter-turn"', html)
+            self.assertIn("--view-rotation: 90deg", html)
+            self.assertIn('<div class="box"', html)
 
     def test_make_face_browser_limit_restricts_number_of_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -10858,6 +10871,11 @@ print(json.dumps([
                 run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
                 0,
             )
+            main_conn = db.connect(target)
+            try:
+                file_id = int(main_conn.execute("SELECT id FROM files").fetchone()["id"])
+            finally:
+                main_conn.close()
             with (
                 patch("bildebank.face.load_face_app", return_value=FakeApp()),
                 patch("bildebank.face.read_image", return_value=object()),
@@ -10973,6 +10991,15 @@ print(json.dumps([
             self.assertEqual(run_cli(["--target", str(target), "face-person-add-face", "Kari", "1"]), 0)
             self.assertEqual(run_cli(["--target", str(target), "face-suggest", "--threshold", "0.9"]), 0)
             self.assertFalse((target / "personer.html").exists())
+            main_conn = db.connect(target)
+            try:
+                main_conn.execute(
+                    "UPDATE files SET view_rotation_degrees = 270 WHERE id = ?",
+                    (file_id,),
+                )
+                main_conn.commit()
+            finally:
+                main_conn.close()
 
             code, stdout, stderr = capture_cli(["--target", str(target), "make-person-browser", "Kari"])
 
@@ -10988,6 +11015,7 @@ print(json.dumps([
             self.assertIn("const embeddedItems", html)
             self.assertIn("IMG_20240102.jpg", html)
             self.assertIn('"kind": "image"', html)
+            self.assertIn('"viewRotation": 270', html)
             self.assertNotIn('"faceId": 1', html)
             self.assertNotIn('"status": "bekreftet"', html)
             self.assertNotIn('"faceId": 2', html)
@@ -11008,6 +11036,7 @@ print(json.dumps([
             self.assertIn("Kari", index_html)
             self.assertIn("1 bilder", index_html)
             self.assertIn("1 bekreftet, 1 forslag", index_html)
+            self.assertIn('data-view-rotation="270"', index_html)
 
             config = load_config(self.program_root).face_recognition
             conn = sqlite3.connect(face_db_path(target, config))
@@ -12086,6 +12115,11 @@ print(json.dumps([
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 file_id = int(conn.execute("SELECT id FROM files").fetchone()[0])
+                conn.execute(
+                    "UPDATE files SET view_rotation_degrees = 90 WHERE id = ?",
+                    (file_id,),
+                )
+                conn.commit()
             finally:
                 conn.close()
             face_conn = connect_face_db(target)
@@ -12126,6 +12160,9 @@ print(json.dumps([
             self.assertIn('"path": "2024/01/IMG 20240102.jpg"', html)
             self.assertIn('"url": "2024/01/IMG%2020240102.jpg"', html)
             self.assertIn('"sizeText": "9 bytes"', html)
+            self.assertIn('"viewRotation": 90', html)
+            self.assertIn('applyImageViewRotation(img, item, "contain");', html)
+            self.assertIn('applyImageViewRotation(img, item, "cover");', html)
             self.assertIn("item.sizeText", html)
             self.assertIn("const MONTH_PREVIEW_LIMIT = null;", html)
             self.assertIn('state.viewMode = "month";', html)
@@ -12207,6 +12244,42 @@ print(json.dumps([
             self.assertIn('"path": "2024/01/IMG_20240103.nef"', html)
             self.assertIn('"kind": "file"', html)
             self.assertIn('item.kind === "image"', html)
+
+    def test_static_browser_normalizes_all_view_rotations_and_leaves_video_unrotated(self) -> None:
+        html = render_html(
+            [
+                {
+                    "path": f"2024/01/{rotation}.jpg",
+                    "url": f"{rotation}.jpg",
+                    "thumbnailSrc": f"{rotation}.jpg",
+                    "kind": "image",
+                    "viewRotation": rotation,
+                    "monthKey": "2024-01",
+                    "name": f"{rotation}.jpg",
+                    "sizeText": "1 byte",
+                }
+                for rotation in (0, 90, 180, 270)
+            ]
+            + [
+                {
+                    "path": "2024/01/video.mp4",
+                    "url": "video.mp4",
+                    "thumbnailSrc": "",
+                    "kind": "video",
+                    "viewRotation": 90,
+                    "monthKey": "2024-01",
+                    "name": "video.mp4",
+                    "sizeText": "1 byte",
+                }
+            ]
+        )
+
+        for rotation in (0, 90, 180, 270):
+            self.assertIn(f'"viewRotation": {rotation}', html)
+        self.assertIn("const quarterTurn = rotation === 90 || rotation === 270;", html)
+        self.assertIn('fit === "cover" ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY)', html)
+        self.assertIn('if (item.kind === "video")', html)
+        self.assertIn('} else if (item.kind === "image")', html)
 
     def test_make_browser_help_omits_filters(self) -> None:
         stdout_buffer = StringIO()
@@ -12341,6 +12414,14 @@ print(json.dumps([
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    "UPDATE files SET view_rotation_degrees = 270 WHERE stored_filename = 'IMG_20240102-1.png'"
+                )
+                conn.commit()
+            finally:
+                conn.close()
 
             code, stdout, stderr = capture_cli(["--target", str(target), "make-conflict-browser"])
 
@@ -12353,6 +12434,8 @@ print(json.dumps([
             self.assertIn('"dimensions": "640x480"', html)
             self.assertIn('"dimensions": "320x240"', html)
             self.assertIn('"sourceExists": true', html)
+            self.assertIn('"viewRotation": 270', html)
+            self.assertIn('applyImageViewRotation(img, item, "contain");', html)
 
             custom_output = root / "conflicts.html"
             code, stdout, stderr = capture_cli(
@@ -13158,15 +13241,21 @@ class ExportPersonTests(unittest.TestCase):
                     """,
                     (ids["suggested"],),
                 )
+                conn.execute(
+                    "UPDATE files SET view_rotation_degrees = 180 WHERE id = ?",
+                    (ids["confirmed"],),
+                )
                 conn.commit()
             finally:
                 conn.close()
 
+            source_hash = sha256_file(target / "2024/01/same.jpg")
             plan = export_person(target, "Kari", destination_root, config=config)
 
             self.assertEqual(len(plan.entries), 3)
             exported = destination_root / "Kari"
             self.assertEqual((exported / "2024/01/same.jpg").read_bytes(), b"image-confirmed")
+            self.assertEqual(sha256_file(exported / "2024/01/same.jpg"), source_hash)
             self.assertEqual((exported / "2024/01/same-1.jpg").read_bytes(), b"image-manual")
             self.assertEqual(
                 (exported / "udatert/foreslått bilde.jpg").read_bytes(),
@@ -13192,6 +13281,7 @@ class ExportPersonTests(unittest.TestCase):
             self.assertIn('"manualDateTo": "2024-01-31"', html)
             self.assertIn('"dateText": "ca. 2024-01-16 (manuell dato)"', html)
             self.assertIn('"kind": "image"', html)
+            self.assertIn('"viewRotation": 180', html)
             self.assertIn('"sizeText":', html)
             self.assertNotIn("hidden.jpg", html)
             self.assertNotIn("PXL.mp4", html)

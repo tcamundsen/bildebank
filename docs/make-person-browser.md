@@ -35,6 +35,8 @@ til å vise bilder på PC-er som ikke har Bildebank installert.
 Stien øverst, for eksempel `År / 2024 / Januar / IMG_1234.jpg`, kan brukes til
 å gå tilbake til oversikter for år, måneder og filer.
 
+Bildene vises med visningsrotasjonen som er lagret i Bildebank. Bildefilene
+endres ikke.
 
 ## Valg
 

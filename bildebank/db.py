@@ -2125,6 +2125,7 @@ def conflict_candidate_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
             files.taken_date,
             files.date_source,
             files.name_conflict,
+            files.view_rotation_degrees,
             files.imported_at
         FROM files
         JOIN primary_sources ON primary_sources.file_id = files.id
