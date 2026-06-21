@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hmac
+import ipaddress
 import secrets
+import sys
 import time
 import urllib.parse
 from io import BytesIO
@@ -128,6 +130,27 @@ from .server_assets import SERVER_CSS, SERVER_JS
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS = 1.0
+
+
+def is_local_bind_host(host: str) -> bool:
+    if not host:
+        return False
+    if host.casefold() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_bind_host(host: str, *, allow_remote: bool) -> None:
+    if is_local_bind_host(host) or allow_remote:
+        return
+    raise ValueError(
+        f"Kan ikke starte Bildebank-serveren på {host!r} uten --allow-remote. "
+        "Denne adressen kan gjøre Bildebank tilgjengelig fra andre maskiner på nettverket. "
+        "Angi --allow-remote hvis du vil gjøre dette bevisst."
+    )
 
 
 def client_disconnected_error(exc: OSError) -> bool:
@@ -2091,8 +2114,16 @@ def run_server(
     *,
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
+    allow_remote: bool = False,
     ready: Callable[[str], None] | None = None,
 ) -> None:
+    validate_bind_host(host, allow_remote=allow_remote)
+    if allow_remote and not is_local_bind_host(host):
+        print(
+            f"ADVARSEL: Bildebank-serveren bindes til {host!r} og kan bli tilgjengelig "
+            "fra andre maskiner på nettverket.",
+            file=sys.stderr,
+        )
     db.prepare_database(target)
     server = BildebankServer((host, port), target, config)
     actual_host, actual_port = server.server_address

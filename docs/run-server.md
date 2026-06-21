@@ -7,10 +7,12 @@ usage: bildebank run-server [valg]
 Start Bildebank-server som lar deg se bildene i nettleser.
 
 options:
-  -h, --help    show this help message and exit
-  --host HOST   Adresse serveren lytter på. Standard: 127.0.0.1
-  --port PORT   Port serveren lytter på. Standard: 8765
-  --no-browser  Ikke åpne serveren automatisk i nettleser.
+  -h, --help      show this help message and exit
+  --host HOST     Adresse serveren lytter på. Standard: 127.0.0.1
+  --port PORT     Port serveren lytter på. Standard: 8765
+  --no-browser    Ikke åpne serveren automatisk i nettleser.
+  --allow-remote  Tillat bevisst binding til en adresse som kan nås fra andre
+                  maskiner.
 ```
 <!-- CLI-HELP-END -->
 
@@ -44,11 +46,16 @@ selv: [http://127.0.0.1:8765](http://127.0.0.1:8765/).
 Denne adressen gjør at den kan brukes fra samme PC, men ikke deles på
 nettverket ved et uhell.
 
-Hvis du vil dele bildesamlingen på LAN, må du åpne brannmuren og starte serveren slik:
+Hvis du vil dele bildesamlingen på LAN, må du åpne brannmuren og uttrykkelig
+tillate ekstern binding:
 
 ```powershell
-bildebank run-server --host 0.0.0.0
+bildebank run-server --host 0.0.0.0 --allow-remote
 ```
+
+Uten `--allow-remote` avviser Bildebank alle adresser unntatt `localhost` og
+loopback-adresser som `127.0.0.1` og `::1`. Ekstern binding kan gjøre
+Bildebank tilgjengelig fra andre maskiner på nettverket.
 
 Og så må du finne IP-adressen til PC-en som kjører serveren med `ipconfig`.
 Hvis adressen er 192.168.86.11, så skriver du `http://192.168.86.11:8765/` i

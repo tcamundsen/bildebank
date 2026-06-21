@@ -22,7 +22,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from bildebank.cli import build_parser, main, print_image_search_progress, wsl_path_from_windows_path
+from bildebank.cli import (
+    build_parser,
+    main,
+    print_image_search_progress,
+    run_server_command,
+    wsl_path_from_windows_path,
+)
 from bildebank.config import AppConfig, BrowserConfig, BrowserHotkeyConfig, FaceRecognitionConfig, OpenClipConfig, load_config
 from bildebank import db
 from bildebank.db import DB_FILENAME, init_database
@@ -60,6 +66,9 @@ from bildebank.server_files import read_server_file
 from bildebank.server import (
     BildebankServer,
     BildebankRequestHandler,
+    is_local_bind_host,
+    run_server as run_http_server,
+    validate_bind_host,
 )
 from bildebank.server_pages import (
     app_status_page_html,
@@ -689,7 +698,81 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("--host", stdout)
         self.assertIn("--port", stdout)
         self.assertIn("--no-browser", stdout)
+        self.assertIn("--allow-remote", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_run_server_local_bind_host_detection(self) -> None:
+        cases = {
+            "127.0.0.1": True,
+            "localhost": True,
+            "::1": True,
+            "0.0.0.0": False,
+            "::": False,
+            "": False,
+            "192.168.1.10": False,
+            "10.0.0.5": False,
+            "my-pc": False,
+        }
+
+        for host, expected in cases.items():
+            with self.subTest(host=host):
+                self.assertEqual(is_local_bind_host(host), expected)
+
+    def test_run_server_bind_host_requires_explicit_remote_permission(self) -> None:
+        with self.assertRaisesRegex(ValueError, "--allow-remote"):
+            validate_bind_host("192.168.1.10", allow_remote=False)
+
+        validate_bind_host("192.168.1.10", allow_remote=True)
+        validate_bind_host("127.0.0.1", allow_remote=False)
+
+        args = build_parser().parse_args(
+            ["run-server", "--host", "0.0.0.0", "--allow-remote", "--no-browser"]
+        )
+        self.assertTrue(args.allow_remote)
+        self.assertEqual(args.host, "0.0.0.0")
+
+    def test_run_server_command_forwards_remote_permission(self) -> None:
+        config = AppConfig()
+        with (
+            patch("bildebank.cli.load_config", return_value=config),
+            patch("bildebank.cli.run_local_server") as run_local_server,
+            redirect_stdout(StringIO()),
+        ):
+            result = run_server_command(
+                Path("C:/Users/Tom/Bilder"),
+                host="0.0.0.0",
+                port=8765,
+                browser=False,
+                allow_remote=True,
+            )
+
+        self.assertEqual(result, 0)
+        run_local_server.assert_called_once()
+        self.assertEqual(run_local_server.call_args.kwargs["host"], "0.0.0.0")
+        self.assertTrue(run_local_server.call_args.kwargs["allow_remote"])
+
+    def test_run_server_warns_before_allowed_remote_bind(self) -> None:
+        fake_server = SimpleNamespace(
+            server_address=("0.0.0.0", 8765),
+            serve_forever=lambda: None,
+            server_close=lambda: None,
+        )
+        stderr = StringIO()
+        with (
+            patch("bildebank.server.db.prepare_database"),
+            patch("bildebank.server.BildebankServer", return_value=fake_server) as server_class,
+            redirect_stderr(stderr),
+        ):
+            run_http_server(
+                Path("."),
+                AppConfig(),
+                host="0.0.0.0",
+                allow_remote=True,
+            )
+
+        server_class.assert_called_once_with(("0.0.0.0", 8765), Path("."), AppConfig())
+        self.assertIn("ADVARSEL", stderr.getvalue())
+        self.assertIn("andre maskiner på nettverket", stderr.getvalue())
 
     def test_exiftool_install_help_documents_force(self) -> None:
         stdout_buffer = StringIO()

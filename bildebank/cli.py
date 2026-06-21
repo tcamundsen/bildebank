@@ -733,6 +733,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Ikke åpne serveren automatisk i nettleser.",
     )
+    run_server_parser.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="Tillat bevisst binding til en adresse som kan nås fra andre maskiner.",
+    )
     face_scan = add_command(
         subparsers,
         "face-scan",
@@ -1186,7 +1191,13 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
         )
 
     if args.command == "run-server":
-        return run_server_command(target, host=args.host, port=args.port, browser=not args.no_browser)
+        return run_server_command(
+            target,
+            host=args.host,
+            port=args.port,
+            browser=not args.no_browser,
+            allow_remote=args.allow_remote,
+        )
 
     if args.command == "import":
         return run_named_import_dry_run(target, args)
@@ -2257,7 +2268,14 @@ def run_image_search(target: Path, *, query: str, limit: int, browser: bool = Tr
     return 0
 
 
-def run_server_command(target: Path, *, host: str, port: int, browser: bool = True) -> int:
+def run_server_command(
+    target: Path,
+    *,
+    host: str,
+    port: int,
+    browser: bool = True,
+    allow_remote: bool = False,
+) -> int:
     config = load_config(program_repo_root())
     print("Starter Bildebank-server. Dette kan ta noen sekunder.")
     print(f"Bildesamling: {target}")
@@ -2269,7 +2287,14 @@ def run_server_command(target: Path, *, host: str, port: int, browser: bool = Tr
             print("Åpner nettleser.")
             webbrowser.open(url)
 
-    run_local_server(target, config, host=host, port=port, ready=on_ready)
+    run_local_server(
+        target,
+        config,
+        host=host,
+        port=port,
+        allow_remote=allow_remote,
+        ready=on_ready,
+    )
     return 0
 
 
