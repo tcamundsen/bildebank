@@ -515,7 +515,18 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 if not query:
                     self.respond_html(index_html(self.server, message="Skriv inn et søk."))
                     return
-                stats = search_server_images(self.server, query=query, limit=limit)
+                try:
+                    stats = search_server_images(self.server, query=query, limit=limit)
+                except TargetLockError as exc:
+                    self.respond_html(
+                        error_html(
+                            exc,
+                            face_enabled=self.server.face_enabled,
+                            openclip_enabled=self.server.openclip_enabled,
+                        ),
+                        status=HTTPStatus.CONFLICT,
+                    )
+                    return
                 self.respond_html(search_html(self.server, stats, limit))
                 return
             if parsed.path == "/api/item-info":

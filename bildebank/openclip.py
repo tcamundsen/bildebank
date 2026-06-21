@@ -13,6 +13,7 @@ from . import db
 from .config import OpenClipConfig
 from .media import IMAGE_EXTENSIONS
 from .media_cache import cached_image_dimensions
+from .target_lock import TargetLock
 from .value_parsing import optional_int
 
 
@@ -195,6 +196,17 @@ def scan_images(
     limit: int | None = None,
     progress: ImageScanProgress | None = None,
 ) -> ImageScanStats:
+    with TargetLock(target, command="image-scan"):
+        return _scan_images_unlocked(target, config, limit=limit, progress=progress)
+
+
+def _scan_images_unlocked(
+    target: Path,
+    config: OpenClipConfig,
+    *,
+    limit: int | None = None,
+    progress: ImageScanProgress | None = None,
+) -> ImageScanStats:
     image_rows = active_image_files(target, limit=limit)
     total = len(image_rows)
     stats = ImageScanStats(total=total)
@@ -289,6 +301,24 @@ def scan_images(
 
 
 def search_images(
+    target: Path,
+    config: OpenClipConfig,
+    *,
+    query: str,
+    limit: int = 100,
+    progress: ImageSearchProgress | None = None,
+) -> ImageSearchStats:
+    with TargetLock(target, command="image-search"):
+        return _search_images_unlocked(
+            target,
+            config,
+            query=query,
+            limit=limit,
+            progress=progress,
+        )
+
+
+def _search_images_unlocked(
     target: Path,
     config: OpenClipConfig,
     *,

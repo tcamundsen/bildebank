@@ -20,6 +20,7 @@ from .openclip import (
     text_embedding,
 )
 from .server_browser_sources import all_browser_source, source_item_url
+from .target_lock import TargetLock
 
 
 DEFAULT_SEARCH_LIMIT = 100
@@ -223,13 +224,14 @@ def search_server_images(server: Any, *, query: str, limit: int) -> ServerSearch
     clean_query = query.strip()
     if not clean_query:
         raise ValueError("Søketekst kan ikke være tom.")
-    hidden_file_ids = None
-    if server.config.browser.hide_out_of_focus:
-        from .server_browser import out_of_focus_file_ids
+    with TargetLock(server.target, command="image-search-web"):
+        hidden_file_ids = None
+        if server.config.browser.hide_out_of_focus:
+            from .server_browser import out_of_focus_file_ids
 
-        hidden_file_ids = out_of_focus_file_ids(server.target)
-    results = server.search_cache.search(server.target, clean_query, limit, hidden_file_ids=hidden_file_ids)
-    return ServerSearchStats(clean_query, results)
+            hidden_file_ids = out_of_focus_file_ids(server.target)
+        results = server.search_cache.search(server.target, clean_query, limit, hidden_file_ids=hidden_file_ids)
+        return ServerSearchStats(clean_query, results)
 
 
 def search_start_html(

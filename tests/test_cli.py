@@ -126,7 +126,7 @@ from bildebank.server_search import (
     load_search_embedding_cache,
     search_server_images,
 )
-from bildebank.target_lock import LOCK_FILENAME
+from bildebank.target_lock import LOCK_FILENAME, TargetLockError
 from bildebank.thumbnails import (
     existing_thumbnail_url,
     thumbnail_absolute_path,
@@ -875,6 +875,49 @@ pretrained = "laion2b_s34b_b79k"
                 )
             finally:
                 conn.close()
+
+    def test_run_server_image_search_refuses_to_run_while_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            config = OpenClipConfig()
+            server = SimpleNamespace(
+                target=target,
+                config=AppConfig(openclip=config),
+                search_cache=OpenClipSearchCache(AppConfig(openclip=config)),
+            )
+            (target / LOCK_FILENAME).write_text("command=image-scan\n", encoding="utf-8")
+
+            with self.assertRaises(TargetLockError):
+                search_server_images(server, query="test", limit=10)
+
+    def test_run_server_search_route_reports_target_lock_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            (target / LOCK_FILENAME).write_text("command=image-scan\n", encoding="utf-8")
+
+            class FakeHandler:
+                path = "/search?q=test"
+                server = SimpleNamespace(
+                    target=target,
+                    config=AppConfig(openclip=OpenClipConfig(enabled=True)),
+                    face_enabled=True,
+                    openclip_enabled=True,
+                    search_cache=OpenClipSearchCache(AppConfig(openclip=OpenClipConfig(enabled=True))),
+                )
+                body = ""
+                status: HTTPStatus | None = None
+
+                def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.status, HTTPStatus.CONFLICT)
+        self.assertIn("Bildesamlingen er låst", handler.body)
 
     def test_run_server_image_search_reuses_embedding_cache(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -9820,6 +9863,25 @@ print(json.dumps([
             self.assertEqual(stdout, "")
             self.assertIn("Tekstbasert bildesøk er av", stderr)
             self.assertFalse(openclip_db_path(target).exists())
+
+    def test_image_scan_and_search_refuse_to_run_while_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.enable_openclip_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
+
+            scan_code, _scan_stdout, scan_stderr = capture_cli(
+                ["--target", str(target), "image-scan", "--limit", "1"]
+            )
+            search_code, _search_stdout, search_stderr = capture_cli(
+                ["--target", str(target), "image-search", "strand", "--no-browser"]
+            )
+
+        self.assertEqual(scan_code, 1)
+        self.assertIn("Bildesamlingen er låst", scan_stderr)
+        self.assertEqual(search_code, 1)
+        self.assertIn("Bildesamlingen er låst", search_stderr)
 
     def test_image_search_passes_browser_option_to_runner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -35,6 +35,10 @@ fjernes igjen både ved suksess og feil.
   holder låsen fra før filoppslag og validering til etter commit.
 - visningsrotasjon fra web holder låsen gjennom oppslag, beregning av ny
   rotasjon og commit.
+- `image-scan` holder låsen mens aktive bilder velges, bildefilene leses og
+  embeddings lagres.
+- `image-search` fra CLI og web holder låsen mens embeddings leses og
+  søkeresultater lagres. CLI holder den også til `image-search.html` er skrevet.
 
 ## Ulåste skriv som må vurderes senere
 
@@ -43,7 +47,6 @@ Følgende skriv bruker fortsatt ikke target-låsen:
 - oppfrisking og lagring av mediemetadata i hoveddatabasen;
 - oppretting, endring og sletting av selve taggdefinisjonene;
 - geografiske hjelpetabeller, som H3-cellenavn og egendefinerte steder;
-- bildeskanning og embeddings i bildesøkdatabasen;
 
 Disse operasjonene må auditeres separat. Det må avgjøres hvilke som trenger
 target-lås, hvilke som kan bruke en egen lås per sidedatabase, og hvilke som er
