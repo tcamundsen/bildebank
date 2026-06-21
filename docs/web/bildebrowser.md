@@ -84,6 +84,10 @@ kjører person-browseren som viser bekreftede (av deg) og forslag (fra
 face-suggest) på bilder av denne personen. Dette moduset har du valgt for
 eksempel ved å klikke på knappen med navnet til personen.
 
+- På siden **Personer** åpner **Referansebilder** en oversikt over bildene som
+  har bekreftede ansikter brukt som referanser av `face-suggest`. Tallet
+  **Foreslåtte bilder** under hvert bilde viser hvor mange forslag som peker
+  tilbake på de bekreftede ansiktene i akkurat dette bildet.
 - **Alle bilder** viser det nettop det.
 - **Uten ansiktsmarkeringer** eller **Med ansiktsmarkeringer** tegner en ramme
   rundt ansiktet til personen du viser personbrowseren av.
@@ -92,5 +96,4 @@ eksempel ved å klikke på knappen med navnet til personen.
 - **[ ] Ta med forslag** i verktøylinjen betyr at browseren bare viser bilder
   du har bekreftet. Dette bør ideelt sett bare være 1-5 gode bilder av
   personen.
-
 

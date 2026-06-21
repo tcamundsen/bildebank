@@ -49,6 +49,7 @@ from .server_pages import (
     index_html,
     markdown_doc_page_html,
     people_page_html,
+    person_references_page_html,
     person_not_found_html,
     removed_files_page_html,
     search_html,
@@ -383,6 +384,14 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         self.server.config.face_recognition,
                         openclip_enabled=self.server.openclip_enabled,
                     )
+                )
+                return
+            if parsed.path.startswith("/people/") and parsed.path.endswith("/references"):
+                if not self.server.face_enabled:
+                    self.respond_text("Ansiktsgjenkjenning er av.", status=HTTPStatus.NOT_FOUND)
+                    return
+                self.respond_person_references(
+                    parsed.path.removeprefix("/people/").removesuffix("/references").strip("/")
                 )
                 return
             if parsed.path in {"/sources", "/sources/"}:
@@ -877,6 +886,32 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             hide_out_of_focus=self.server.hide_out_of_focus,
             item_not_found_message="Filen finnes ikke for denne personen.",
             invalid_page_message="Ugyldig personside.",
+        )
+
+    def respond_person_references(self, raw_name: str) -> None:
+        person_name = urllib.parse.unquote(raw_name).strip()
+        if not person_name:
+            self.respond_text("Personnavn mangler.", status=HTTPStatus.BAD_REQUEST)
+            return
+        person = person_by_name(self.server.target, person_name, self.server.config.face_recognition)
+        if person is None:
+            self.respond_html(
+                person_not_found_html(
+                    person_name,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                ),
+                status=HTTPStatus.NOT_FOUND,
+            )
+            return
+        canonical_name = str(person["name"])
+        self.respond_html(
+            person_references_page_html(
+                self.server.target,
+                canonical_name,
+                self.server.config.face_recognition,
+                openclip_enabled=self.server.openclip_enabled,
+            )
         )
 
     def respond_filter(self, query: str) -> None:

@@ -5155,7 +5155,12 @@ model_name = "buffalo_l"
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(4, 3)")
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(5, 4)")
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(6, 5)")
-                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(2, 2, 0.91)")
+                face_conn.execute(
+                    """
+                    INSERT INTO face_suggestions(person_id, face_id, reference_face_id, similarity)
+                    VALUES(2, 2, 1, 0.91)
+                    """
+                )
                 face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(3, 1)")
                 face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(6, 1)")
                 face_conn.commit()
@@ -5304,6 +5309,7 @@ model_name = "buffalo_l"
         self.assertIn("Identifiser", face_body)
         self.assertIn("Forslag:", face_body)
         self.assertIn("Ola Nordmann <strong>0.910</strong>", face_body)
+        self.assertIn("(referanse face-id 1)", face_body)
         self.assertIn('data-face-id="2"', face_body)
         self.assertIn('data-person-name="Kari"', face_body)
         self.assertIn('data-person-name="Ola Nordmann"', face_body)
@@ -10072,14 +10078,18 @@ print(json.dumps([
             try:
                 suggestion = conn.execute(
                     """
-                    SELECT persons.name, face_suggestions.face_id, face_suggestions.similarity
+                    SELECT
+                        persons.name,
+                        face_suggestions.face_id,
+                        face_suggestions.reference_face_id,
+                        face_suggestions.similarity
                     FROM face_suggestions
                     JOIN persons ON persons.id = face_suggestions.person_id
                     """
                 ).fetchone()
                 self.assertIsNotNone(suggestion)
-                self.assertEqual((suggestion[0], suggestion[1]), ("Kari", 3))
-                self.assertAlmostEqual(suggestion[2], 1.0)
+                self.assertEqual((suggestion[0], suggestion[1], suggestion[2]), ("Kari", 3, 1))
+                self.assertAlmostEqual(suggestion[3], 1.0)
             finally:
                 conn.close()
 
@@ -10537,7 +10547,7 @@ print(json.dumps([
             self.assertIn("Face-scan-resultater er beholdt", stdout)
             conn = sqlite3.connect(face_db_path(target, config))
             try:
-                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "4")
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "5")
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 0)
@@ -10614,7 +10624,7 @@ print(json.dumps([
 
             conn = connect_face_db(target)
             try:
-                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "4")
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "5")
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 0)
                 legacy_tables = {
@@ -10700,11 +10710,57 @@ print(json.dumps([
 
             conn = connect_face_db(target)
             try:
-                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "4")
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "5")
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM persons").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_face_schema_v4_migration_adds_reference_face_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            conn = sqlite3.connect(face_db_path(target))
+            try:
+                conn.executescript(
+                    """
+                    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                    CREATE TABLE persons (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    );
+                    CREATE TABLE face_suggestions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        person_id INTEGER NOT NULL,
+                        face_id INTEGER NOT NULL,
+                        similarity REAL NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(person_id, face_id)
+                    );
+                    INSERT INTO meta(key, value) VALUES('schema_version', '4');
+                    INSERT INTO persons(id, name) VALUES(1, 'Kari');
+                    INSERT INTO face_suggestions(person_id, face_id, similarity)
+                    VALUES(1, 10, 0.95);
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            conn = connect_face_db(target)
+            try:
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "5")
+                columns = {row[1] for row in conn.execute("PRAGMA table_info(face_suggestions)")}
+                self.assertIn("reference_face_id", columns)
+                suggestion = conn.execute(
+                    "SELECT person_id, face_id, reference_face_id, similarity FROM face_suggestions"
+                ).fetchone()
+                self.assertEqual(tuple(suggestion), (1, 10, None, 0.95))
+                indexes = {row[1] for row in conn.execute("PRAGMA index_list(face_suggestions)")}
+                self.assertIn("idx_face_suggestions_reference_face_id", indexes)
             finally:
                 conn.close()
 
@@ -10721,7 +10777,7 @@ print(json.dumps([
                 with self.assertRaisesRegex(ValueError, "legacy-gruppetabeller"):
                     apply_face_schema(conn)
 
-                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "4")
+                self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "5")
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_runs").fetchone()[0], 1)
             finally:
                 conn.close()

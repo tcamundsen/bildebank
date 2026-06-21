@@ -503,5 +503,21 @@ def people_page_html(
     )
 
 
+def person_references_page_html(
+    target: Path,
+    person_name: str,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    openclip_enabled: bool = True,
+) -> str:
+    return server_faces.person_references_page_html(
+        target,
+        person_name,
+        face_config,
+        shell_page_html=shell_page_html,
+        openclip_enabled=openclip_enabled,
+    )
+
+
 def person_month_page_html(target: Path, person_name: str, month_key: str, items: list[Any]) -> str:
     return server_browser.person_month_page_html(target, person_name, month_key, items, page_html=page_html)

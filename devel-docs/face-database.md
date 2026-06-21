@@ -14,7 +14,7 @@ tidkrevende å bygge på nytt:
 
 ## Dagens versjon
 
-Dagens face-schema er `FACE_SCHEMA_VERSION = 4` i `bildebank/face.py`.
+Dagens face-schema er `FACE_SCHEMA_VERSION = 5` i `bildebank/face.py`.
 
 Face-schema-versjonen lagres i:
 
@@ -22,11 +22,11 @@ Face-schema-versjonen lagres i:
 meta.schema_version
 ```
 
-Nye face-databaser opprettes direkte som v4.
+Nye face-databaser opprettes direkte som v5.
 
-## Tabeller i v4
+## Tabeller i v5
 
-V4 inneholder disse hovedtabellene:
+V5 inneholder disse hovedtabellene:
 
 - `meta`
 - `scanned_files`
@@ -42,7 +42,8 @@ V4 inneholder disse hovedtabellene:
 `person_faces` lagrer bekreftede koblinger mellom person og face-id.
 `person_files` lagrer manuelle bekreftelser på at en person er i en fil,
 uten å bekrefte et bestemt face-id.
-`face_suggestions` lagrer beregnede forslag.
+`face_suggestions` lagrer beregnede forslag. `reference_face_id` peker på det
+bekreftede ansiktet som ga høyest similarity for forslaget.
 
 `person_files` har disse kolonnene:
 
@@ -94,7 +95,7 @@ skal ikke forsøke å reparere gamle absolutte `target_path`-verdier ved åpning
 databasen. Slike databaser må migreres eller regenereres før de brukes med
 gjeldende kode.
 
-## Migrering v2 til v3 og v3 til v4
+## Migrering v2 til v3, v3 til v4 og v4 til v5
 
 V2 hadde tabeller for gruppeflyten:
 
@@ -110,10 +111,11 @@ V3 fjerner gruppetabellene.
 Migreringen skjer i `apply_face_schema()`:
 
 - les `meta.schema_version`
-- hvis versjonen er 0, opprett v4 direkte
+- hvis versjonen er 0, opprett v5 direkte
 - hvis versjonen er 2, kjør `migrate_face_schema_v2_to_v3()`
 - hvis versjonen er 3, kjør `migrate_face_schema_v3_to_v4()`
-- sett `meta.schema_version = 4`
+- hvis versjonen er 4, kjør `migrate_face_schema_v4_to_v5()`
+- sett `meta.schema_version = 5`
 - valider gjeldende face-schema
 
 `migrate_face_schema_v2_to_v3()` gjør bare dette:
@@ -131,12 +133,16 @@ forslag.
 `file_id`. Den endrer ikke eksisterende personer, ansiktskoblinger eller
 forslag.
 
+`migrate_face_schema_v4_to_v5()` legger til `reference_face_id` i
+`face_suggestions` og en indeks på kolonnen. Eksisterende forslag beholder
+verdien `NULL` frem til `face-suggest` kjøres på nytt.
+
 ## Validering
 
 Etter schema-oppretting eller migrering kjører `validate_current_face_schema()`.
 
-For v4 skal legacy-gruppetabellene ikke finnes. Hvis en database sier
-`schema_version=4`, men fortsatt inneholder gruppetabeller, skal programmet
+For v5 skal legacy-gruppetabellene ikke finnes. Hvis en database sier
+`schema_version=5`, men fortsatt inneholder gruppetabeller, skal programmet
 feile tydelig i stedet for å slette tabellene lydløst.
 
 Dette følger samme prinsipp som hoveddatabasen:

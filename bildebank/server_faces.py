@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import sqlite3
+import urllib.parse
 from functools import lru_cache
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,8 +13,8 @@ from .config import FaceRecognitionConfig
 from .face import FACE_SCHEMA_VERSION, active_image_files, apply_face_schema, face_db_path, face_schema_version, normalize_person_name
 from .html_export import browser_face_items_from_metadata, face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
-from .server_browser import items_by_file_ids, rotation_style_attr
-from .server_browser_sources import BrowserSource, person_browser_source, person_item_url, person_url
+from .server_browser import items_by_file_ids, rotation_style_attr, thumbnail_media_html
+from .server_browser_sources import BrowserSource, person_browser_source, person_item_url, person_url, source_item_url
 from .value_parsing import require_float, require_int
 
 
@@ -320,6 +321,7 @@ def unconfirmed_faces_for_item(
                 SELECT
                     face_suggestions.face_id,
                     persons.name,
+                    face_suggestions.reference_face_id,
                     face_suggestions.similarity
                 FROM face_suggestions
                 JOIN persons ON persons.id = face_suggestions.person_id
@@ -332,6 +334,9 @@ def unconfirmed_faces_for_item(
                 suggestions_by_face_id[int(row["face_id"])].append(
                     {
                         "name": str(row["name"]),
+                        "referenceFaceId": (
+                            None if row["reference_face_id"] is None else int(row["reference_face_id"])
+                        ),
                         "similarity": float(row["similarity"]),
                     }
                 )
@@ -510,6 +515,7 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
                 {
                     "name": str(person["name"]),
                     "confirmed_file_count": len(confirmed_counts_by_file),
+                    "reference_file_count": len(confirmed_counts_by_file),
                     "all_file_count": len(
                         active_confirmed_file_id_set | active_suggested_file_id_set | active_manual_file_id_set
                     ),
@@ -876,6 +882,7 @@ def person_assignment_buttons_html(face_id: int, people: list[dict[str, str]]) -
 def people_row_html(person: dict[str, object]) -> str:
     name = str(person["name"])
     confirmed_count = require_int(person["confirmed_file_count"], "antall bekreftede bilder")
+    reference_count = require_int(person["reference_file_count"], "antall referansebilder")
     all_count = require_int(person["all_file_count"], "antall bilder")
     duplicate_count = require_int(person["duplicate_confirmed_file_count"], "antall duplikater")
     max_confirmed_faces = require_int(person["max_confirmed_faces_per_file"], "maks bekreftede ansikter")
@@ -897,9 +904,110 @@ def people_row_html(person: dict[str, object]) -> str:
       </div>
       {duplicate_warning}
       <a class="person-link" href="{html.escape(confirmed_source.root_url)}">Bekreftede bilder ({confirmed_count})</a>
+      <a class="person-link" href="{html.escape(person_references_url(name))}">Referansebilder ({reference_count})</a>
       <a class="person-link" href="{html.escape(all_source.root_url)}">Bekreftede og forslag ({all_count})</a>
     </div>
     """
+
+
+def person_references_url(person_name: str) -> str:
+    return "/people/" + urllib.parse.quote(person_name, safe="") + "/references"
+
+
+def person_reference_items(
+    target: Path,
+    person_name: str,
+    face_config: FaceRecognitionConfig | None = None,
+) -> list[tuple[Any, int]]:
+    person = person_by_name(target, person_name, face_config)
+    if person is None:
+        return []
+    conn = sqlite3.connect(current_face_db_path(target, face_config))
+    conn.row_factory = sqlite3.Row
+    try:
+        confirmed_rows = list(
+            conn.execute(
+                """
+                SELECT faces.file_id, person_faces.face_id
+                FROM person_faces
+                JOIN faces ON faces.id = person_faces.face_id
+                WHERE person_faces.person_id = ?
+                ORDER BY faces.file_id, person_faces.face_id
+                """,
+                (int(person["id"]),),
+            )
+        )
+        if not confirmed_rows:
+            return []
+        reference_face_ids = [int(row["face_id"]) for row in confirmed_rows]
+        placeholders = ",".join("?" for _ in reference_face_ids)
+        suggestion_counts = {
+            int(row["reference_face_id"]): int(row["suggestion_count"])
+            for row in conn.execute(
+                f"""
+                SELECT reference_face_id, COUNT(*) AS suggestion_count
+                FROM face_suggestions
+                WHERE person_id = ?
+                  AND reference_face_id IN ({placeholders})
+                GROUP BY reference_face_id
+                """,
+                (int(person["id"]), *reference_face_ids),
+            )
+        }
+    finally:
+        conn.close()
+
+    counts_by_file_id: dict[int, int] = {}
+    for row in confirmed_rows:
+        file_id = int(row["file_id"])
+        face_id = int(row["face_id"])
+        counts_by_file_id[file_id] = counts_by_file_id.get(file_id, 0) + suggestion_counts.get(face_id, 0)
+    items = items_by_file_ids(target, list(counts_by_file_id))
+    return [(item, counts_by_file_id[int(item["id"])]) for item in items]
+
+
+def person_reference_card_html(target: Path, person_name: str, item: Any, suggestion_count: int) -> str:
+    source = person_browser_source(person_name, include_suggestions=False, show_faces=True)
+    return f"""
+    <article class="item">
+      <a class="thumb-link" href="{html.escape(source_item_url(source, int(item["id"])))}">
+        {thumbnail_media_html(target, item)}
+      </a>
+      <div class="text">
+        <div class="score">Foreslåtte bilder: {suggestion_count}</div>
+      </div>
+    </article>
+    """
+
+
+def person_references_page_html(
+    target: Path,
+    person_name: str,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    shell_page_html: ShellPageRenderer,
+    openclip_enabled: bool = True,
+) -> str:
+    references = person_reference_items(target, person_name, face_config)
+    cards = "\n".join(
+        person_reference_card_html(target, person_name, item, suggestion_count)
+        for item, suggestion_count in references
+    )
+    content = (
+        f'<section class="month-grid-server">{cards}</section>'
+        if cards
+        else '<p class="meta">Ingen referansebilder for denne personen ennå.</p>'
+    )
+    return shell_page_html(
+        f"Referansebilder: {person_name}",
+        f"""
+        <h1>Referansebilder: {html.escape(person_name)}</h1>
+        <p class="meta">Tallet viser hvor mange foreslåtte bilder hvert bekreftede ansikt er brukt som referanse for.</p>
+        {content}
+        """,
+        face_enabled=True,
+        openclip_enabled=openclip_enabled,
+    )
 
 
 def people_page_html(
@@ -1109,7 +1217,14 @@ def face_suggestion_summary_html(suggestions: list[object]) -> str:
             similarity = require_float(suggestion.get("similarity", 0.0), "similarity")
         except ValueError:
             similarity = 0.0
-        parts.append(f"<span>{name} <strong>{similarity:.3f}</strong></span>")
+        reference_face_id = suggestion.get("referenceFaceId")
+        reference_text = ""
+        if reference_face_id is not None:
+            try:
+                reference_text = f" (referanse face-id {require_int(reference_face_id, 'referenceFaceId')})"
+            except ValueError:
+                pass
+        parts.append(f"<span>{name} <strong>{similarity:.3f}</strong>{reference_text}</span>")
     if not parts:
         return '<p class="face-suggestion-summary no-suggestion">Ingen forslag for dette ansiktet.</p>'
     return '<p class="face-suggestion-summary">Forslag: ' + ", ".join(parts) + "</p>"

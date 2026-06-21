@@ -26,7 +26,7 @@ from .thumbnails import existing_thumbnail_url
 LEGACY_FACE_DB_FILENAME = ".bilder-faces.sqlite3"
 LEGACY_FACE_DB_MODEL_NAME = "buffalo_l"
 FACE_DB_DIRNAME = ".bildebank-faces"
-FACE_SCHEMA_VERSION = 4
+FACE_SCHEMA_VERSION = 5
 FACE_MODEL_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 FACE_SUGGEST_BATCH_SIZE = 5000
 
@@ -240,6 +240,9 @@ def migrate_face_schema(conn: sqlite3.Connection, version: int) -> None:
     if version == 3:
         migrate_face_schema_v3_to_v4(conn)
         version = 4
+    if version == 4:
+        migrate_face_schema_v4_to_v5(conn)
+        version = 5
     if version != FACE_SCHEMA_VERSION:
         raise ValueError(f"Kan ikke migrere face-database med schema_version={version}.")
 
@@ -261,6 +264,26 @@ def migrate_face_schema_v3_to_v4(conn: sqlite3.Connection) -> None:
         );
 
         CREATE INDEX IF NOT EXISTS idx_person_files_file_id ON person_files(file_id);
+        """
+    )
+
+
+def migrate_face_schema_v4_to_v5(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS face_suggestions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+            face_id INTEGER NOT NULL,
+            similarity REAL NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(person_id, face_id)
+        );
+
+        ALTER TABLE face_suggestions ADD COLUMN reference_face_id INTEGER;
+
+        CREATE INDEX IF NOT EXISTS idx_face_suggestions_reference_face_id
+        ON face_suggestions(reference_face_id);
         """
     )
 
@@ -366,12 +389,15 @@ def create_current_face_schema(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
             face_id INTEGER NOT NULL,
+            reference_face_id INTEGER,
             similarity REAL NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(person_id, face_id)
         );
 
         CREATE INDEX IF NOT EXISTS idx_face_suggestions_face_id ON face_suggestions(face_id);
+        CREATE INDEX IF NOT EXISTS idx_face_suggestions_reference_face_id
+        ON face_suggestions(reference_face_id);
         """
     )
 
@@ -624,6 +650,7 @@ def suggest_faces(
 
         progress_stats = FaceSuggestProgressStats(threshold=threshold)
         known_person_ids: list[int] = []
+        known_face_ids: list[int] = []
         known_person_id_set: set[int] = set()
         known_vectors: list[Any] = []
         known_total = int(
@@ -641,7 +668,7 @@ def suggest_faces(
         for index, row in enumerate(
             conn.execute(
                 """
-                SELECT persons.id AS person_id, faces.embedding
+                SELECT persons.id AS person_id, faces.id AS face_id, faces.embedding
                 FROM persons
                 JOIN person_faces ON person_faces.person_id = persons.id
                 JOIN faces ON faces.id = person_faces.face_id
@@ -652,6 +679,7 @@ def suggest_faces(
         ):
             person_id = int(row["person_id"])
             known_person_ids.append(person_id)
+            known_face_ids.append(int(row["face_id"]))
             known_person_id_set.add(person_id)
             known_vectors.append(embedding_array_from_blob(row["embedding"], np))
             progress_stats.known_faces = index
@@ -705,15 +733,20 @@ def suggest_faces(
                 best_indexes = scores.argmax(axis=1)
                 best_scores = scores[np.arange(scores.shape[0]), best_indexes]
                 rows_to_insert = [
-                    (known_person_ids[int(best_index)], int(face["id"]), float(best_score))
+                    (
+                        known_person_ids[int(best_index)],
+                        int(face["id"]),
+                        known_face_ids[int(best_index)],
+                        float(best_score),
+                    )
                     for face, best_index, best_score in zip(batch, best_indexes, best_scores)
                     if float(best_score) > 0.0 and float(best_score) >= threshold
                 ]
                 if rows_to_insert:
                     conn.executemany(
                         """
-                        INSERT INTO face_suggestions(person_id, face_id, similarity)
-                        VALUES(?, ?, ?)
+                        INSERT INTO face_suggestions(person_id, face_id, reference_face_id, similarity)
+                        VALUES(?, ?, ?, ?)
                         """,
                         rows_to_insert,
                     )
