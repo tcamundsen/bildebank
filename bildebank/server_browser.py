@@ -1814,7 +1814,7 @@ def item_side_panel_html(
         else gps_location_badge_html(item, extra_html=location_controls)
     )
     date_status = date_status_badge_html(item)
-    return f'<aside class="tag-rail" aria-label="Tagger">{extra_html}{"".join(buttons)}{date_status}{location_status}{suffix_html}</aside>'
+    return f'<aside class="tag-rail" aria-label="Tagger">{date_status}{"".join(buttons)}{location_status}{extra_html}{suffix_html}</aside>'
 
 
 def hotkey_hints_panel_html(

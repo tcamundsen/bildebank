@@ -2153,7 +2153,7 @@ model_name = "buffalo_l"
             self.assertIn("date-status-badge", body)
             self.assertIn("ca. 2004-07-15", body)
             self.assertIn("Opprinnelig: 2026-01-02", body)
-            self.assertLess(body.index("tag-toggle"), body.index("date-status-badge"))
+            self.assertLess(body.index("date-status-badge"), body.index("tag-toggle"))
             self.assertIn("ca. 2004-07-15", info_body)
             self.assertIn("Kamera hadde feil dato", info_body)
             self.assertIn("Opprinnelig dato", info_body)
@@ -3415,7 +3415,7 @@ model_name = "buffalo_l"
         self.assertIn('data-tag-name="Familie"', body)
         self.assertIn('aria-pressed="false"', body)
         self.assertLess(body.index('data-tag-name="Ute av fokus"'), body.index('data-tag-name="Familie"'))
-        self.assertLess(body.index('data-tag-name="Familie"'), body.index('class="date-status-badge"'))
+        self.assertLess(body.index('class="date-status-badge"'), body.index('data-tag-name="Familie"'))
         self.assertLess(body.index('data-tag-name="Familie"'), body.index('class="location-status-badge"'))
         self.assertIn("/api/item-tag", SERVER_JS)
         self.assertIn("stage-shell", SERVER_CSS)
@@ -5734,7 +5734,7 @@ model_name = "buffalo_l"
         confirmed_faces_start = tag_rail_html.index("Referanseansikt")
         date_status_start = tag_rail_html.index("date-status-badge")
         assumed_people_html = tag_rail_html[assumed_people_start:faces_button_start]
-        confirmed_faces_html = tag_rail_html[confirmed_faces_start:date_status_start]
+        confirmed_faces_html = tag_rail_html[confirmed_faces_start:]
         self.assertIn("Kari", assumed_people_html)
         self.assertIn("Anne Begge", assumed_people_html)
         self.assertIn("Ola Nordmann", assumed_people_html)
@@ -5759,7 +5759,7 @@ model_name = "buffalo_l"
         self.assertNotIn("Per Manual", confirmed_faces_html)
         self.assertLess(assumed_people_start, faces_button_start)
         self.assertLess(faces_button_start, confirmed_faces_start)
-        self.assertLess(confirmed_faces_start, date_status_start)
+        self.assertLess(date_status_start, confirmed_faces_start)
         self.assertNotIn("Person i bildet", body)
         self.assertIn("Velg person", tag_rail_html)
         self.assertIn("Legg til", tag_rail_html)
