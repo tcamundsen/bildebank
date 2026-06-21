@@ -62,7 +62,7 @@ from bildebank.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_ta
 from bildebank.server_actions import remove_file_from_browser, undelete_file_from_browser
 from bildebank.server_assets import SERVER_CSS, SERVER_JS
 from bildebank.server_response import add_csrf_to_html
-from bildebank.server_files import read_server_file
+from bildebank.server_files import read_server_file, server_file_path_by_id
 from bildebank.server import (
     BildebankServer,
     BildebankRequestHandler,
@@ -4890,6 +4890,53 @@ model_name = "buffalo_l"
         self.assertIn("/filter/filename%3APXL_20250102_123.mp4/item/", image_body)
         self.assertEqual(motion_file.content_type, "video/mp4")
         self.assertEqual(motion_file.content[4:8], b"ftyp")
+
+    def test_server_file_path_by_id_stays_inside_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            init_database(target)
+            relative_path = Path("2024/01/image.jpg")
+            image_path = target / relative_path
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"image")
+            file_id = register_target_file(target, relative_path)
+
+            self.assertEqual(server_file_path_by_id(target, file_id), image_path.resolve())
+
+    def test_server_file_path_by_id_rejects_missing_file_id(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+
+            with self.assertRaisesRegex(FileNotFoundError, "Filen finnes ikke"):
+                server_file_path_by_id(target, 999)
+
+    def test_server_file_path_by_id_rejects_database_path_outside_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            init_database(target)
+            relative_path = Path("2024/01/image.jpg")
+            image_path = target / relative_path
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"image")
+            file_id = register_target_file(target, relative_path)
+            db.prepare_database(target)
+            outside_path = root / "outside.jpg"
+            outside_path.write_bytes(b"outside")
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    "UPDATE files SET target_path = ? WHERE id = ?",
+                    (str(outside_path), file_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with self.assertRaisesRegex(PermissionError, "Ugyldig filsti i databasen"):
+                server_file_path_by_id(target, file_id)
 
     def test_run_server_motion_video_lookup_skips_non_motion_partner_images(self) -> None:
         class ExplodingConnection:

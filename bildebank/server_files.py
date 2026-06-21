@@ -45,4 +45,10 @@ def server_file_path_by_id(target: Path, file_id: int) -> Path:
         conn.close()
     if row is None:
         raise FileNotFoundError("Filen finnes ikke.")
-    return db.absolute_target_path(target, Path(str(row["target_path"])))
+    raw_path = Path(str(row["target_path"]))
+    path = db.absolute_target_path(target, raw_path).resolve()
+    try:
+        path.relative_to(target.resolve())
+    except ValueError as exc:
+        raise PermissionError("Ugyldig filsti i databasen.") from exc
+    return path
