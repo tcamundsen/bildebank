@@ -20,6 +20,7 @@ from .geo import (
     h3_resolution_label,
     predefined_geo_place,
 )
+from .target_lock import TargetLock
 from .value_parsing import require_int
 
 DEFAULT_GEO_RESOLUTION = 7
@@ -805,12 +806,13 @@ def parse_geo_place_cells(value: str) -> list[str]:
 
 def set_geo_place_name(target: Path, h3_cell: str, name: str) -> None:
     h3_resolution_any(h3_cell)
-    conn = db.connect(target)
-    try:
-        db.set_geo_place_name(conn, h3_cell, name)
-        conn.commit()
-    finally:
-        conn.close()
+    with TargetLock(target, command="geo-place-name"):
+        conn = db.connect(target)
+        try:
+            db.set_geo_place_name(conn, h3_cell, name)
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def save_custom_geo_place(
@@ -828,30 +830,32 @@ def save_custom_geo_place(
     if predefined_geo_place(slug) is not None:
         raise ValueError("Slug er reservert for et innebygd sted.")
     h3_cells = parse_geo_place_cells(raw_h3_cells)
-    conn = db.connect(target)
-    try:
-        db.rename_custom_geo_place(
-            conn,
-            old_slug=original_slug,
-            slug=slug,
-            name=name,
-            h3_cells=h3_cells,
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    with TargetLock(target, command="geo-custom-place-save"):
+        conn = db.connect(target)
+        try:
+            db.rename_custom_geo_place(
+                conn,
+                old_slug=original_slug,
+                slug=slug,
+                name=name,
+                h3_cells=h3_cells,
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def delete_custom_geo_place(target: Path, raw_slug: str) -> None:
     slug = normalize_geo_place_slug(raw_slug)
     if predefined_geo_place(slug) is not None:
         raise ValueError("Innebygde steder kan ikke slettes.")
-    conn = db.connect(target)
-    try:
-        db.delete_custom_geo_place(conn, slug)
-        conn.commit()
-    finally:
-        conn.close()
+    with TargetLock(target, command="geo-custom-place-delete"):
+        conn = db.connect(target)
+        try:
+            db.delete_custom_geo_place(conn, slug)
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def geo_child_area_items(target: Path, *, h3_cell: str, resolution: int) -> list[Any]:

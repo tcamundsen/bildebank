@@ -28,6 +28,7 @@ from bildebank.media import sha256_file
 from bildebank.server import (
     BildebankRequestHandler,
 )
+from bildebank.server_app import delete_h3_cell_name, save_h3_cell_name
 from bildebank.server_pages import (
     custom_geo_places_page_html,
     geo_area_page_html,
@@ -41,7 +42,14 @@ from bildebank.server_browser import (
     source_month_navigation,
 )
 from bildebank.server_browser_sources import geo_place_browser_source, source_item_url
-from bildebank.server_geo import geo_place_by_slug, geo_place_cells_by_column, geo_place_items
+from bildebank.server_geo import (
+    delete_custom_geo_place,
+    geo_place_by_slug,
+    geo_place_cells_by_column,
+    geo_place_items,
+    save_custom_geo_place,
+    set_geo_place_name,
+)
 from bildebank.target_lock import LOCK_FILENAME, TargetLockError
 
 
@@ -640,6 +648,103 @@ class GeoTests(unittest.TestCase):
 
             with self.assertRaises(TargetLockError):
                 scan_geo(target, exiftool_path="exiftool", batch_size=1)
+
+    def test_geo_helper_table_writes_refuse_to_run_while_target_is_locked(self) -> None:
+        first_cell = PREDEFINED_GEO_PLACES[0].h3_cells[0]
+        second_cell = PREDEFINED_GEO_PLACES[0].h3_cells[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                db.set_geo_place_name(conn, first_cell, "Opprinnelig")
+                db.set_custom_geo_place(
+                    conn,
+                    slug="min_plass",
+                    name="Min plass",
+                    h3_cells=[first_cell],
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            (target / LOCK_FILENAME).write_text("command=import\n", encoding="utf-8")
+
+            operations = (
+                lambda: set_geo_place_name(target, first_cell, "Endret"),
+                lambda: save_h3_cell_name(
+                    target,
+                    original_h3_cell=first_cell,
+                    h3_cell=second_cell,
+                    name="Flyttet",
+                ),
+                lambda: delete_h3_cell_name(target, h3_cell=first_cell),
+                lambda: save_custom_geo_place(
+                    target,
+                    raw_original_slug="min_plass",
+                    raw_slug="ny_plass",
+                    name="Ny plass",
+                    raw_h3_cells=second_cell,
+                ),
+                lambda: delete_custom_geo_place(target, "min_plass"),
+            )
+            for operation in operations:
+                with self.assertRaises(TargetLockError):
+                    operation()
+
+            conn = db.connect(target)
+            try:
+                place_name = db.geo_place_name(conn, first_cell)
+                original_place = db.custom_geo_place(conn, "min_plass")
+                renamed_place = db.custom_geo_place(conn, "ny_plass")
+            finally:
+                conn.close()
+
+        self.assertEqual(place_name, "Opprinnelig")
+        self.assertIsNotNone(original_place)
+        self.assertIsNone(renamed_place)
+
+    def test_h3_cell_name_move_rolls_back_and_releases_lock_on_database_error(self) -> None:
+        first_cell = PREDEFINED_GEO_PLACES[0].h3_cells[0]
+        second_cell = PREDEFINED_GEO_PLACES[0].h3_cells[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                db.set_geo_place_name(conn, first_cell, "Opprinnelig")
+                conn.commit()
+            finally:
+                conn.close()
+
+            original_set_geo_place_name = db.set_geo_place_name
+            call_count = 0
+
+            def fail_second_write(conn: object, h3_cell: str, name: str) -> str | None:
+                nonlocal call_count
+                call_count += 1
+                if call_count == 2:
+                    raise RuntimeError("simulert databasefeil")
+                return original_set_geo_place_name(conn, h3_cell, name)  # type: ignore[arg-type]
+
+            with patch("bildebank.server_app.db.set_geo_place_name", side_effect=fail_second_write):
+                with self.assertRaisesRegex(RuntimeError, "simulert databasefeil"):
+                    save_h3_cell_name(
+                        target,
+                        original_h3_cell=first_cell,
+                        h3_cell=second_cell,
+                        name="Flyttet",
+                    )
+
+            conn = db.connect(target)
+            try:
+                original_name = db.geo_place_name(conn, first_cell)
+                new_name = db.geo_place_name(conn, second_cell)
+            finally:
+                conn.close()
+
+            self.assertEqual(original_name, "Opprinnelig")
+            self.assertIsNone(new_name)
+            self.assertFalse((target / LOCK_FILENAME).exists())
 
     def test_geo_scan_does_not_update_files_when_batch_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

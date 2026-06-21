@@ -1263,6 +1263,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
         try:
             server_geo.set_geo_place_name(self.server.target, h3_cell, name)
+        except TargetLockError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
             return
@@ -1279,6 +1282,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 name=first_param(params, "name"),
                 raw_h3_cells=first_param(params, "h3_cells"),
             )
+        except TargetLockError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.CONFLICT,
+            )
+            return
         except ValueError as exc:
             self.respond_html(
                 error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
@@ -1294,6 +1303,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 self.server.target,
                 first_param(params, "original_slug") or first_param(params, "slug"),
             )
+        except TargetLockError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.CONFLICT,
+            )
+            return
         except ValueError as exc:
             self.respond_html(
                 error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
@@ -1386,6 +1401,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 h3_cell=first_param(params, "h3_cell"),
                 name=first_param(params, "name"),
             )
+        except TargetLockError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.CONFLICT,
+            )
+            return
         except ValueError as exc:
             self.respond_html(
                 error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
@@ -1401,6 +1422,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 self.server.target,
                 h3_cell=first_param(params, "original_h3_cell") or first_param(params, "h3_cell"),
             )
+        except TargetLockError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.CONFLICT,
+            )
+            return
         except ValueError as exc:
             self.respond_html(
                 error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),

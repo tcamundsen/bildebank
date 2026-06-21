@@ -22,6 +22,7 @@ from .config import (
     set_face_recognition_model_name,
 )
 from .formatting import format_bytes
+from .target_lock import TargetLock
 
 
 ShellPageRenderer = Callable[..., str]
@@ -610,30 +611,32 @@ def save_h3_cell_name(target: Path, *, h3_cell: str, name: str, original_h3_cell
     if not clean_name:
         raise ValueError("Navn mangler.")
     h3_resolution_for_named_place(clean_h3_cell)
-    conn = db.connect(target)
-    try:
-        if clean_original_h3_cell and clean_original_h3_cell != clean_h3_cell:
-            h3_resolution_for_named_place(clean_original_h3_cell)
-            if db.geo_place_name(conn, clean_original_h3_cell) is None:
-                raise ValueError("H3-cellen som skulle oppdateres finnes ikke.")
-            if db.geo_place_name(conn, clean_h3_cell) is not None:
-                raise ValueError("H3-cellen er allerede navngitt.")
-            db.set_geo_place_name(conn, clean_original_h3_cell, "")
-        db.set_geo_place_name(conn, clean_h3_cell, clean_name)
-        conn.commit()
-    finally:
-        conn.close()
+    with TargetLock(target, command="h3-cell-name-save"):
+        conn = db.connect(target)
+        try:
+            if clean_original_h3_cell and clean_original_h3_cell != clean_h3_cell:
+                h3_resolution_for_named_place(clean_original_h3_cell)
+                if db.geo_place_name(conn, clean_original_h3_cell) is None:
+                    raise ValueError("H3-cellen som skulle oppdateres finnes ikke.")
+                if db.geo_place_name(conn, clean_h3_cell) is not None:
+                    raise ValueError("H3-cellen er allerede navngitt.")
+                db.set_geo_place_name(conn, clean_original_h3_cell, "")
+            db.set_geo_place_name(conn, clean_h3_cell, clean_name)
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def delete_h3_cell_name(target: Path, *, h3_cell: str) -> None:
     clean_h3_cell = h3_cell.strip()
     h3_resolution_for_named_place(clean_h3_cell)
-    conn = db.connect(target)
-    try:
-        db.set_geo_place_name(conn, clean_h3_cell, "")
-        conn.commit()
-    finally:
-        conn.close()
+    with TargetLock(target, command="h3-cell-name-delete"):
+        conn = db.connect(target)
+        try:
+            db.set_geo_place_name(conn, clean_h3_cell, "")
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def app_status_face_model_row_html(config: FaceRecognitionConfig) -> str:
