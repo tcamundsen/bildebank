@@ -12163,6 +12163,12 @@ print(json.dumps([
             self.assertIn('"viewRotation": 90', html)
             self.assertIn('applyImageViewRotation(img, item, "contain");', html)
             self.assertIn('applyImageViewRotation(img, item, "cover");', html)
+            self.assertNotIn("padding: 10px;\n      overflow: hidden;", html)
+            self.assertNotIn("border-radius: 8px;\n      overflow: hidden;\n    }\n    .media-link", html)
+            self.assertIn("html, body {\n      width: 100%;\n      height: 100%;\n      overflow: hidden;", html)
+            self.assertIn("height: 100dvh;", html)
+            self.assertIn("width: auto;\n      height: auto;\n      max-width: 100%;\n      max-height: 100%;", html)
+            self.assertNotIn("max-height: calc(100vh - 10rem);", html)
             self.assertIn("item.sizeText", html)
             self.assertIn("const MONTH_PREVIEW_LIMIT = null;", html)
             self.assertIn('state.viewMode = "month";', html)
@@ -12278,6 +12284,16 @@ print(json.dumps([
             self.assertIn(f'"viewRotation": {rotation}', html)
         self.assertIn("const quarterTurn = rotation === 90 || rotation === 270;", html)
         self.assertIn('fit === "cover" ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY)', html)
+        self.assertIn('container.classList.add("view-rotation-container");', html)
+        self.assertIn('translate(-50%, -50%) rotate(${rotation}deg)', html)
+        self.assertLess(
+            html.index("link.append(img);"),
+            html.index('applyImageViewRotation(img, item, "contain");'),
+        )
+        self.assertLess(
+            html.index("button.append(img);"),
+            html.index('applyImageViewRotation(img, item, "cover");'),
+        )
         self.assertIn('if (item.kind === "video")', html)
         self.assertIn('} else if (item.kind === "image")', html)
 

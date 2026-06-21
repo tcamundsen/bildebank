@@ -19,7 +19,14 @@ from .value_parsing import require_float
 
 
 VIEW_ROTATION_CSS = """
+    .view-rotation-container {
+      position: relative;
+      overflow: hidden;
+    }
     img.view-rotated {
+      position: absolute;
+      left: 50%;
+      top: 50%;
       max-width: none;
       max-height: none;
       transform-origin: center center;
@@ -35,12 +42,15 @@ VIEW_ROTATION_JAVASCRIPT = """
     function applyImageViewRotation(img, item, fit) {
       const rotation = normalizedViewRotation(item);
       if (rotation === 0) return;
+      const container = img.parentElement;
+      if (!container) return;
+      container.classList.add("view-rotation-container");
       img.classList.add("view-rotated");
       img.dataset.viewRotation = String(rotation);
       const resize = () => sizeRotatedImage(img, rotation, fit);
       img.addEventListener("load", resize);
-      if (typeof ResizeObserver !== "undefined" && img.parentElement) {
-        new ResizeObserver(resize).observe(img.parentElement);
+      if (typeof ResizeObserver !== "undefined") {
+        new ResizeObserver(resize).observe(container);
       }
       requestAnimationFrame(resize);
     }
@@ -60,7 +70,7 @@ VIEW_ROTATION_JAVASCRIPT = """
       const scale = fit === "cover" ? Math.max(scaleX, scaleY) : Math.min(scaleX, scaleY);
       img.style.width = `${naturalWidth * scale}px`;
       img.style.height = `${naturalHeight * scale}px`;
-      img.style.transform = `rotate(${rotation}deg)`;
+      img.style.transform = `translate(-50%, -50%) rotate(${rotation}deg)`;
     }
 """
 
@@ -409,17 +419,23 @@ def render_html(
       --accent: #7db7ff;
     }}
     * {{ box-sizing: border-box; }}
+    html, body {{
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }}
     body {{
       margin: 0;
-      min-height: 100vh;
       background: var(--bg);
       color: var(--text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }}
     .app {{
-      min-height: 100vh;
+      height: 100vh;
+      height: 100dvh;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr) auto;
+      overflow: hidden;
     }}
     header, footer {{
       background: var(--panel);
@@ -503,7 +519,6 @@ def render_html(
       min-height: 0;
       display: grid;
       place-items: center;
-      padding: 10px;
       overflow: hidden;
     }}
     .viewer {{
@@ -514,8 +529,6 @@ def render_html(
       display: grid;
       place-items: center;
       background: #0e0e0e;
-      border: 1px solid var(--border);
-      border-radius: 8px;
       overflow: hidden;
     }}
     .media-link {{
@@ -527,10 +540,12 @@ def render_html(
       place-items: center;
     }}
     .viewer img, .viewer video {{
-      max-width: 100vw;
-      max-height: calc(100vh - 10rem);
-      width: 100%;
-      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
       object-fit: contain;
       object-position: center center;
       display: block;
@@ -865,8 +880,8 @@ def render_html(
         const img = document.createElement("img");
         img.src = item.url;
         img.alt = item.name;
-        applyImageViewRotation(img, item, "contain");
         link.append(img);
+        applyImageViewRotation(img, item, "contain");
         viewer.replaceChildren(link);
       }} else {{
         const link = document.createElement("a");
@@ -953,8 +968,8 @@ def render_html(
           img.src = item.thumbnailSrc || item.url;
           img.alt = item.name;
           img.loading = "lazy";
-          applyImageViewRotation(img, item, "cover");
           button.append(img);
+          applyImageViewRotation(img, item, "cover");
         }} else {{
           const label = document.createElement("span");
           label.className = "thumb-video";
@@ -989,8 +1004,8 @@ def render_html(
         img.src = item.thumbnailSrc || item.url;
         img.alt = item.name;
         img.loading = "lazy";
-        applyImageViewRotation(img, item, "cover");
         container.append(img);
+        applyImageViewRotation(img, item, "cover");
       }} else {{
         const label = document.createElement("span");
         label.className = "thumb-video";
@@ -1387,8 +1402,8 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
         const img = document.createElement("img");
         img.src = item.url;
         img.alt = item.storedFilename;
-        applyImageViewRotation(img, item, "contain");
         link.append(img);
+        applyImageViewRotation(img, item, "contain");
         media.append(link);
       }} else {{
         const link = document.createElement("a");
