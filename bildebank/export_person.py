@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +25,8 @@ WINDOWS_RESERVED_NAMES = frozenset(
     | {f"COM{number}" for number in range(1, 10)}
     | {f"LPT{number}" for number in range(1, 10)}
 )
+EXPORT_FINALIZE_ATTEMPTS = 20
+EXPORT_FINALIZE_RETRY_SECONDS = 0.25
 
 
 @dataclass(frozen=True)
@@ -218,7 +221,7 @@ def copy_export_plan(plan: PersonExportPlan) -> None:
             temporary_destination.parent.mkdir(parents=True, exist_ok=True)
             safe_copy(entry.source, temporary_destination, entry.expected_hash)
         write_export_browser(plan, temporary)
-        temporary.rename(plan.destination)
+        finalize_export_directory(temporary, plan.destination)
     except KeyboardInterrupt as exc:
         raise PersonExportInterrupted(
             f"Eksporten ble avbrutt. Ufullstendig eksport er beholdt i: {temporary}"
@@ -227,6 +230,17 @@ def copy_export_plan(plan: PersonExportPlan) -> None:
         raise RuntimeError(
             f"Eksporten feilet. Ufullstendig eksport er beholdt i: {temporary}. {exc}"
         ) from exc
+
+
+def finalize_export_directory(temporary: Path, destination: Path) -> None:
+    for attempt in range(EXPORT_FINALIZE_ATTEMPTS):
+        try:
+            temporary.rename(destination)
+            return
+        except PermissionError:
+            if destination.exists() or attempt == EXPORT_FINALIZE_ATTEMPTS - 1:
+                raise
+            time.sleep(EXPORT_FINALIZE_RETRY_SECONDS)
 
 
 def write_export_browser(plan: PersonExportPlan, temporary: Path) -> None:

@@ -27,7 +27,12 @@ from bildebank.config import AppConfig, BrowserConfig, BrowserHotkeyConfig, Face
 from bildebank import db
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
-from bildebank.export_person import PersonExportInterrupted, export_person, validate_windows_folder_name
+from bildebank.export_person import (
+    PersonExportInterrupted,
+    export_person,
+    finalize_export_directory,
+    validate_windows_folder_name,
+)
 from bildebank.face import (
     add_person_to_file,
     apply_face_schema,
@@ -13403,6 +13408,35 @@ class ExportPersonTests(unittest.TestCase):
                 with self.assertRaisesRegex(PersonExportInterrupted, "Ufullstendig eksport er beholdt"):
                     export_person(target, "Kari", destination_root, config=config)
             self.assertFalse((destination_root / "Kari").exists())
+
+    def test_export_person_retries_transient_windows_directory_rename_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temporary = root / ".incomplete"
+            destination = root / "Anders"
+            temporary.mkdir()
+            real_rename = Path.rename
+            attempts = 0
+
+            def transient_rename(path: Path, target: Path) -> Path:
+                nonlocal attempts
+                attempts += 1
+                if attempts < 3:
+                    error = PermissionError(13, "Ingen tilgang", str(path), 5)
+                    error.winerror = 5
+                    raise error
+                return real_rename(path, target)
+
+            with (
+                patch("pathlib.Path.rename", transient_rename),
+                patch("bildebank.export_person.time.sleep") as sleep,
+            ):
+                finalize_export_directory(temporary, destination)
+
+            self.assertEqual(attempts, 3)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertTrue(destination.is_dir())
+            self.assertFalse(temporary.exists())
 
     def test_export_person_parser_help_and_reference(self) -> None:
         parser = build_parser()
