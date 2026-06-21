@@ -10,6 +10,7 @@ from .file_lifecycle import remove_file, undelete_file
 from .file_tags import set_file_tag
 from .geo import h3_cells_for_manual_cell
 from .manual_dates import date_range_from_uncertainty
+from .target_lock import TargetLock
 
 
 def rotate_file_view(target: Path, file_id: int, direction: str) -> int:
@@ -32,27 +33,29 @@ def set_manual_h3_location_on_file(target: Path, file_id: int, h3_cell: str) -> 
     if not clean_h3_cell:
         raise ValueError("Aktiv manuell H3-celle er ikke satt.")
     cells = h3_cells_for_manual_cell(clean_h3_cell)
-    conn = db.connect(target)
-    try:
-        if not db.set_file_manual_h3_location(
-            conn,
-            file_id=file_id,
-            h3_cells=cells,
-        ):
-            raise ValueError("Filen finnes ikke i importdatabasen.")
-        conn.commit()
-    finally:
-        conn.close()
+    with TargetLock(target, command="manual-h3-set"):
+        conn = db.connect(target)
+        try:
+            if not db.set_file_manual_h3_location(
+                conn,
+                file_id=file_id,
+                h3_cells=cells,
+            ):
+                raise ValueError("Filen finnes ikke i importdatabasen.")
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def remove_manual_h3_location_from_file(target: Path, file_id: int) -> None:
-    conn = db.connect(target)
-    try:
-        if not db.remove_file_manual_h3_location(conn, file_id=file_id):
-            raise ValueError("Filen finnes ikke i importdatabasen.")
-        conn.commit()
-    finally:
-        conn.close()
+    with TargetLock(target, command="manual-h3-remove"):
+        conn = db.connect(target)
+        try:
+            if not db.remove_file_manual_h3_location(conn, file_id=file_id):
+                raise ValueError("Filen finnes ikke i importdatabasen.")
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def set_manual_date_on_file(

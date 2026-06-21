@@ -23,6 +23,10 @@ fjernes igjen både ved suksess og feil.
 - `make-thumbnails` holder låsen mens thumbnail-settet oppdateres.
 - `tag-add`, `tag-remove` og tilsvarende weboperasjoner holder låsen fra før
   filoppslag og validering til etter at taggendringen er committed.
+- `geo-scan` holder låsen fra før første databaseoppslag til siste batch er
+  committed.
+- setting og fjerning av manuell H3-lokasjon holder låsen fra før filoppslag
+  og validering til etter commit.
 
 ## Ulåste skriv som må vurderes senere
 
@@ -30,7 +34,7 @@ Følgende skriv bruker fortsatt ikke target-låsen:
 
 - oppfrisking og lagring av mediemetadata i hoveddatabasen;
 - oppretting, endring og sletting av selve taggdefinisjonene;
-- GPS-skanning, manuell GPS/H3-plassering og geografiske hjelpetabeller;
+- geografiske hjelpetabeller, som H3-cellenavn og egendefinerte steder;
 - ansiktsskanning, personer, koblinger og forslag i ansiktsdatabasen;
 - bildeskanning og embeddings i bildesøkdatabasen;
 - manuell dato og visningsrotasjon fra webgrensesnittet.

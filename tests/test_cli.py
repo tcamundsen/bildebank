@@ -2959,6 +2959,48 @@ model_name = "buffalo_l"
         self.assertEqual(handler.body["redirect_url"], "/filter/missing%3Agps/item/2")
         self.assertEqual(row["gps_source"], "manual-h3")
 
+    def test_run_server_manual_h3_hotkey_reports_target_lock_conflict(self) -> None:
+        import h3
+
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240101.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            (target / LOCK_FILENAME).write_text("command=geo-scan\n", encoding="utf-8")
+            data = json.dumps({"file_id": 1, "key": "1"}).encode("utf-8")
+            hotkeys = {"1": BrowserHotkeyConfig(action="h3", h3_cell=h3_cell)}
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(
+                    target=target,
+                    face_enabled=True,
+                    config=AppConfig(browser=BrowserConfig(hotkey_hints_enabled=True, hotkeys=hotkeys)),
+                )
+                body: dict[str, object] | None = None
+                status: HTTPStatus | None = None
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_hotkey_action(handler)  # type: ignore[arg-type]
+            row = browser_item_by_id(target, 1)
+
+        self.assertEqual(handler.status, HTTPStatus.CONFLICT)
+        self.assertIn("Bildesamlingen er låst", str(handler.body["error"]))
+        self.assertIsNone(row["gps_source"])
+
     def test_run_server_hotkey_action_redirects_to_previous_filter_item_from_last_match(self) -> None:
         import h3
 
@@ -3079,6 +3121,53 @@ model_name = "buffalo_l"
         self.assertIsNone(row["gps_scanned_at"])
         self.assertIsNone(row["h3_res0"])
         self.assertIsNone(row["h3_res3"])
+
+    def test_run_server_manual_location_remove_reports_target_lock_conflict(self) -> None:
+        import h3
+
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                db.set_file_manual_h3_location(
+                    conn,
+                    file_id=1,
+                    h3_cells={"h3_res0": h3.cell_to_parent(h3_cell, 0), "h3_res3": h3_cell},
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            (target / LOCK_FILENAME).write_text("command=geo-scan\n", encoding="utf-8")
+            data = json.dumps({"file_id": 1}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+                status: HTTPStatus | None = None
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_remove_manual_location_item(handler)  # type: ignore[arg-type]
+            row = browser_item_by_id(target, 1)
+
+        self.assertEqual(handler.status, HTTPStatus.CONFLICT)
+        self.assertIn("Bildesamlingen er låst", str(handler.body["error"]))
+        self.assertEqual(row["gps_source"], "manual-h3")
 
     def test_run_server_item_page_lists_defined_tags_before_geo_info(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

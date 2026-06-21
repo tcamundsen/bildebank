@@ -1794,6 +1794,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         try:
             server_actions.remove_manual_h3_location_from_file(self.server.target, file_id)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1891,6 +1894,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 hotkey,
                 face_config=self.server.config.face_recognition,
             )
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return

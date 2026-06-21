@@ -10,6 +10,7 @@ from typing import Iterable
 from . import db
 from .exiftool import resolve_exiftool_path
 from .progress import ProgressMeter
+from .target_lock import TargetLock
 from .value_parsing import optional_float, require_float
 
 
@@ -238,6 +239,32 @@ def read_gps_metadata_batch(exiftool_path: Path | str, paths: list[Path]) -> dic
 
 
 def scan_geo(
+    target: Path,
+    *,
+    force: bool = False,
+    only_missing: bool = True,
+    override_manual_h3: bool = False,
+    limit: int | None = None,
+    verbose: bool = False,
+    exiftool_path: Path | str | None = None,
+    batch_size: int = DEFAULT_EXIFTOOL_BATCH_SIZE,
+    repo_root: Path | None = None,
+) -> GeoScanStats:
+    with TargetLock(target, command="geo-scan"):
+        return _scan_geo_unlocked(
+            target,
+            force=force,
+            only_missing=only_missing,
+            override_manual_h3=override_manual_h3,
+            limit=limit,
+            verbose=verbose,
+            exiftool_path=exiftool_path,
+            batch_size=batch_size,
+            repo_root=repo_root,
+        )
+
+
+def _scan_geo_unlocked(
     target: Path,
     *,
     force: bool = False,

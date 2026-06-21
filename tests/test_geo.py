@@ -42,6 +42,7 @@ from bildebank.server_browser import (
 )
 from bildebank.server_browser_sources import geo_place_browser_source, source_item_url
 from bildebank.server_geo import geo_place_by_slug, geo_place_cells_by_column, geo_place_items
+from bildebank.target_lock import LOCK_FILENAME, TargetLockError
 
 
 def capture_cli(args: list[str]) -> tuple[int, str, str]:
@@ -629,6 +630,16 @@ class GeoTests(unittest.TestCase):
         self.assertEqual(float(row["gps_lon"]), 10.74609)
         self.assertTrue(row["h3_res7"])
         self.assertTrue(row["h3_res11"])
+
+    def test_geo_scan_refuses_to_run_while_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            register_target_file(target, Path("2024/01/image.jpg"))
+            (target / LOCK_FILENAME).write_text("command=import\n", encoding="utf-8")
+
+            with self.assertRaises(TargetLockError):
+                scan_geo(target, exiftool_path="exiftool", batch_size=1)
 
     def test_geo_scan_does_not_update_files_when_batch_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
