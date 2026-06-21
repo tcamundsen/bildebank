@@ -27,6 +27,14 @@ fjernes igjen både ved suksess og feil.
   committed.
 - setting og fjerning av manuell H3-lokasjon holder låsen fra før filoppslag
   og validering til etter commit.
+- `face-scan`, `face-suggest`, `face-reset` og alle endringer av personer,
+  ansiktskoblinger og manuelle person-i-bilde-koblinger holder låsen gjennom
+  hele operasjonen. Den sammensatte weboperasjonen som oppretter en person og
+  kobler et ansikt bruker én lås og én transaksjon.
+- `date-set`, `date-clear` og tilsvarende weboperasjoner for manuell dato
+  holder låsen fra før filoppslag og validering til etter commit.
+- visningsrotasjon fra web holder låsen gjennom oppslag, beregning av ny
+  rotasjon og commit.
 
 ## Ulåste skriv som må vurderes senere
 
@@ -35,9 +43,7 @@ Følgende skriv bruker fortsatt ikke target-låsen:
 - oppfrisking og lagring av mediemetadata i hoveddatabasen;
 - oppretting, endring og sletting av selve taggdefinisjonene;
 - geografiske hjelpetabeller, som H3-cellenavn og egendefinerte steder;
-- ansiktsskanning, personer, koblinger og forslag i ansiktsdatabasen;
 - bildeskanning og embeddings i bildesøkdatabasen;
-- manuell dato og visningsrotasjon fra webgrensesnittet.
 
 Disse operasjonene må auditeres separat. Det må avgjøres hvilke som trenger
 target-lås, hvilke som kan bruke en egen lås per sidedatabase, og hvilke som er

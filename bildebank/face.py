@@ -10,8 +10,9 @@ import warnings
 from collections.abc import Callable
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Concatenate, ParamSpec, TypeVar
 from urllib.parse import quote
 
 from . import db
@@ -20,6 +21,7 @@ from .formatting import format_bytes
 from .html_export import render_html
 from .media import IMAGE_EXTENSIONS
 from .media_cache import MediaMetadataCache
+from .target_lock import TargetLock
 from .thumbnails import existing_thumbnail_url
 
 
@@ -29,6 +31,8 @@ FACE_DB_DIRNAME = ".bildebank-faces"
 FACE_SCHEMA_VERSION = 5
 FACE_MODEL_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 FACE_SUGGEST_BATCH_SIZE = 5000
+P = ParamSpec("P")
+R = TypeVar("R")
 
 
 @dataclass
@@ -140,6 +144,23 @@ class FaceSuggestProgressStats:
 
 
 FaceSuggestProgress = Callable[[str, int, int, FaceSuggestProgressStats, Path | None], None]
+
+
+def target_locked_face_write(
+    command: str,
+) -> Callable[
+    [Callable[Concatenate[Path, P], R]],
+    Callable[Concatenate[Path, P], R],
+]:
+    def decorator(func: Callable[Concatenate[Path, P], R]) -> Callable[Concatenate[Path, P], R]:
+        @wraps(func)
+        def locked(target: Path, *args: P.args, **kwargs: P.kwargs) -> R:
+            with TargetLock(target, command=command):
+                return func(target, *args, **kwargs)
+
+        return locked
+
+    return decorator
 
 
 def face_database_dir(target: Path, config: FaceRecognitionConfig | None = None) -> Path:
@@ -428,6 +449,7 @@ def face_db_summary(target: Path, config: FaceRecognitionConfig | None = None) -
         conn.close()
 
 
+@target_locked_face_write("face-person-create")
 def create_person(target: Path, name: str, config: FaceRecognitionConfig | None = None) -> int:
     clean_name = normalize_person_name(name)
     conn = connect_face_db(target, config)
@@ -447,6 +469,44 @@ def create_person(target: Path, name: str, config: FaceRecognitionConfig | None 
         conn.close()
 
 
+@target_locked_face_write("face-person-create-add-face")
+def create_person_and_add_face(
+    target: Path,
+    person_name: str,
+    face_id: int,
+    config: FaceRecognitionConfig | None = None,
+) -> AddFaceToPersonResult:
+    clean_name = normalize_person_name(person_name)
+    conn = connect_face_db(target, config)
+    try:
+        require_face(conn, face_id)
+        row = conn.execute("SELECT id FROM persons WHERE name = ?", (clean_name,)).fetchone()
+        if row is None:
+            person_id = int(
+                conn.execute(
+                    "INSERT INTO persons(name) VALUES(?) RETURNING id",
+                    (clean_name,),
+                ).fetchone()["id"]
+            )
+        else:
+            person_id = int(row["id"])
+        conn.execute(
+            "DELETE FROM person_faces WHERE face_id = ? AND person_id != ?",
+            (face_id, person_id),
+        )
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO person_faces(person_id, face_id) VALUES(?, ?)",
+            (person_id, face_id),
+        )
+        conn.execute("DELETE FROM face_suggestions WHERE face_id = ?", (face_id,))
+        conn.execute("UPDATE persons SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (person_id,))
+        conn.commit()
+        return AddFaceToPersonResult(clean_name, face_id, bool(cur.rowcount))
+    finally:
+        conn.close()
+
+
+@target_locked_face_write("face-person-add-face")
 def add_face_to_person(
     target: Path,
     person_name: str,
@@ -474,6 +534,7 @@ def add_face_to_person(
         conn.close()
 
 
+@target_locked_face_write("face-person-remove-face")
 def remove_face_from_person(
     target: Path,
     person_name: str,
@@ -501,6 +562,7 @@ def remove_face_from_person(
         conn.close()
 
 
+@target_locked_face_write("face-person-add-file")
 def add_person_to_file(
     target: Path,
     person_name: str,
@@ -523,6 +585,7 @@ def add_person_to_file(
         conn.close()
 
 
+@target_locked_face_write("face-person-remove-file")
 def remove_person_from_file(
     target: Path,
     person_name: str,
@@ -545,6 +608,7 @@ def remove_person_from_file(
         conn.close()
 
 
+@target_locked_face_write("face-person-delete")
 def delete_person(target: Path, person_name: str, config: FaceRecognitionConfig | None = None) -> DeletePersonResult:
     clean_name = normalize_person_name(person_name)
     conn = connect_face_db(target, config)
@@ -578,6 +642,7 @@ def delete_person(target: Path, person_name: str, config: FaceRecognitionConfig 
         conn.close()
 
 
+@target_locked_face_write("face-person-rename")
 def rename_person(
     target: Path,
     old_name: str,
@@ -604,6 +669,7 @@ def rename_person(
         conn.close()
 
 
+@target_locked_face_write("face-reset")
 def reset_face_database(
     target: Path,
     *,
@@ -634,6 +700,19 @@ def reset_face_database(
         conn.close()
 
 
+@target_locked_face_write("face-reset-all")
+def delete_face_database(
+    target: Path,
+    config: FaceRecognitionConfig | None = None,
+) -> Path | None:
+    path = face_db_path(target, config)
+    if not path.exists():
+        return None
+    path.unlink()
+    return path
+
+
+@target_locked_face_write("face-suggest")
 def suggest_faces(
     target: Path,
     *,
@@ -1728,6 +1807,7 @@ def count_rows_if_table_exists(conn: sqlite3.Connection, table: str) -> int:
     return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
 
+@target_locked_face_write("face-scan")
 def scan_faces(
     target: Path,
     config: FaceRecognitionConfig,

@@ -14,13 +14,14 @@ from .target_lock import TargetLock
 
 
 def rotate_file_view(target: Path, file_id: int, direction: str) -> int:
-    conn = db.connect(target)
-    try:
-        rotation = db.rotate_file_view(conn, file_id, direction)
-        conn.commit()
-        return rotation
-    finally:
-        conn.close()
+    with TargetLock(target, command="rotate-view"):
+        conn = db.connect(target)
+        try:
+            rotation = db.rotate_file_view(conn, file_id, direction)
+            conn.commit()
+            return rotation
+        finally:
+            conn.close()
 
 
 def set_tag_on_file(target: Path, file_id: int, tag_name: str, tagged: bool) -> bool:
@@ -76,52 +77,54 @@ def set_manual_date_on_file(
         date_from=date_from,
         date_to=date_to,
     )
-    conn = db.connect(target)
-    try:
-        row = conn.execute(
-            """
-            SELECT id, deleted_at
-            FROM files
-            WHERE id = ?
-            """,
-            (file_id,),
-        ).fetchone()
-        if row is None:
-            raise ValueError("Filen finnes ikke i importdatabasen.")
-        if row["deleted_at"] is not None:
-            raise ValueError("Filen er markert som slettet.")
-        db.set_manual_date(
-            conn,
-            file_id=file_id,
-            date_from=start.isoformat(),
-            date_to=end.isoformat(),
-            note=note,
-        )
-        conn.commit()
-        return start, end
-    finally:
-        conn.close()
+    with TargetLock(target, command="manual-date-set"):
+        conn = db.connect(target)
+        try:
+            row = conn.execute(
+                """
+                SELECT id, deleted_at
+                FROM files
+                WHERE id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Filen finnes ikke i importdatabasen.")
+            if row["deleted_at"] is not None:
+                raise ValueError("Filen er markert som slettet.")
+            db.set_manual_date(
+                conn,
+                file_id=file_id,
+                date_from=start.isoformat(),
+                date_to=end.isoformat(),
+                note=note,
+            )
+            conn.commit()
+            return start, end
+        finally:
+            conn.close()
 
 
 def clear_manual_date_on_file(target: Path, file_id: int) -> None:
-    conn = db.connect(target)
-    try:
-        row = conn.execute(
-            """
-            SELECT id, deleted_at
-            FROM files
-            WHERE id = ?
-            """,
-            (file_id,),
-        ).fetchone()
-        if row is None:
-            raise ValueError("Filen finnes ikke i importdatabasen.")
-        if row["deleted_at"] is not None:
-            raise ValueError("Filen er markert som slettet.")
-        db.clear_manual_date(conn, file_id=file_id)
-        conn.commit()
-    finally:
-        conn.close()
+    with TargetLock(target, command="manual-date-clear"):
+        conn = db.connect(target)
+        try:
+            row = conn.execute(
+                """
+                SELECT id, deleted_at
+                FROM files
+                WHERE id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Filen finnes ikke i importdatabasen.")
+            if row["deleted_at"] is not None:
+                raise ValueError("Filen er markert som slettet.")
+            db.clear_manual_date(conn, file_id=file_id)
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def apply_browser_hotkey_to_file(

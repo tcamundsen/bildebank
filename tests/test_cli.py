@@ -2108,6 +2108,30 @@ model_name = "buffalo_l"
             self.assertEqual(browser_month_items(target, "2004-07"), [])
             self.assertEqual([item["stored_filename"] for item in browser_month_items(target, "2026-01")], ["IMG_20260102.jpg"])
 
+    def test_manual_date_cli_commands_refuse_to_run_while_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20260102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            imported = target / "2026" / "01" / "IMG_20260102.jpg"
+            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
+
+            set_code, _set_stdout, set_stderr = capture_cli(
+                ["--target", str(target), "date-set", str(imported), "--date", "2004-07-15"]
+            )
+            clear_code, _clear_stdout, clear_stderr = capture_cli(
+                ["--target", str(target), "date-clear", str(imported)]
+            )
+
+        self.assertEqual(set_code, 1)
+        self.assertIn("Bildesamlingen er låst", set_stderr)
+        self.assertEqual(clear_code, 1)
+        self.assertIn("Bildesamlingen er låst", clear_stderr)
+
     def test_run_server_item_page_has_manual_date_controls(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -2256,6 +2280,40 @@ model_name = "buffalo_l"
         self.assertIsNone(row["manual_date_from"])
         self.assertIsNone(row["manual_date_to"])
         self.assertIsNone(row["manual_date_note"])
+
+    def test_run_server_manual_date_endpoints_report_target_lock_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
+
+            set_data = json.dumps({"file_id": 1, "mode": "exact", "date": "2004-07-15"}).encode("utf-8")
+            clear_data = json.dumps({"file_id": 1}).encode("utf-8")
+
+            class FakeHandler:
+                def __init__(self, data: bytes) -> None:
+                    self.headers = {
+                        "Content-Length": str(len(data)),
+                        "Content-Type": "application/json",
+                    }
+                    self.rfile = BytesIO(data)
+                    self.server = SimpleNamespace(target=target)
+                    self.body: dict[str, object] | None = None
+                    self.status: HTTPStatus | None = None
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+            set_handler = FakeHandler(set_data)
+            BildebankRequestHandler.respond_manual_date_item(set_handler)  # type: ignore[arg-type]
+            clear_handler = FakeHandler(clear_data)
+            BildebankRequestHandler.respond_clear_manual_date_item(clear_handler)  # type: ignore[arg-type]
+
+        self.assertEqual(set_handler.status, HTTPStatus.CONFLICT)
+        self.assertIn("Bildesamlingen er låst", str(set_handler.body["error"]))
+        self.assertEqual(clear_handler.status, HTTPStatus.CONFLICT)
+        self.assertIn("Bildesamlingen er låst", str(clear_handler.body["error"]))
 
     def test_run_server_manual_date_endpoint_rejects_deleted_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3689,6 +3747,33 @@ model_name = "buffalo_l"
         self.assertIn("function fitQuarterTurnMedia()", SERVER_JS)
         self.assertIn("const availableHeight = Math.max(stageRect.height, 1);", SERVER_JS)
         self.assertIn("const maxOriginalWidth = Math.max(Math.min(availableHeight, availableWidth * ratio), 1);", SERVER_JS)
+
+    def test_run_server_rotate_reports_target_lock_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
+            data = json.dumps({"file_id": 1, "direction": "right"}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+                status: HTTPStatus | None = None
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_rotate_item(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.status, HTTPStatus.CONFLICT)
+        self.assertIn("Bildesamlingen er låst", str(handler.body["error"]))
 
     def test_run_server_rotate_image_view_wraps_left(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5701,6 +5786,36 @@ model_name = "buffalo_l"
                 )
             finally:
                 face_conn.close()
+
+    def test_run_server_api_face_write_reports_target_lock_conflict(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / LOCK_FILENAME).write_text("command=face-scan\n", encoding="utf-8")
+            data = json.dumps({"face_id": 1, "person_name": "Kari"}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(
+                    target=target,
+                    config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)),
+                )
+                body: dict[str, object] | None = None
+                status: HTTPStatus | None = None
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_create_person_and_add_face(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.status, HTTPStatus.CONFLICT)
+        self.assertIn("Bildesamlingen er låst", str(handler.body["error"]))
 
     def test_run_server_api_removes_face_from_person(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -9667,6 +9782,25 @@ print(json.dumps([
             self.assertIn("Feil: InsightFace er installert, men OpenCV mangler Linux-biblioteket libGL.so.1.", stderr)
             self.assertIn("sudo apt install libgl1", stderr)
 
+    def test_face_scan_and_suggest_refuse_to_run_while_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.enable_face_recognition_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / LOCK_FILENAME).write_text("command=import\n", encoding="utf-8")
+
+            scan_code, _scan_stdout, scan_stderr = capture_cli(
+                ["--target", str(target), "face-scan", "--limit", "1"]
+            )
+            suggest_code, _suggest_stdout, suggest_stderr = capture_cli(
+                ["--target", str(target), "face-suggest"]
+            )
+
+        self.assertEqual(scan_code, 1)
+        self.assertIn("Bildesamlingen er låst", scan_stderr)
+        self.assertEqual(suggest_code, 1)
+        self.assertIn("Bildesamlingen er låst", suggest_stderr)
+
     def test_image_commands_require_enabled_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -10652,6 +10786,23 @@ print(json.dumps([
             self.assertEqual(code, 0, stderr)
             self.assertIn("Slettet face-database", stdout)
             self.assertFalse(face_db.exists())
+
+    def test_face_reset_all_refuses_to_delete_database_while_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.enable_face_recognition_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            config = load_config(self.program_root).face_recognition
+            face_db = face_db_path(target, config)
+            face_db.write_bytes(b"face-data")
+            (target / LOCK_FILENAME).write_text("command=face-scan\n", encoding="utf-8")
+
+            with patch("builtins.input", return_value="ja, slett ansiktsdata"):
+                code, _stdout, stderr = capture_cli(["--target", str(target), "face-reset", "--all"])
+
+            self.assertEqual(code, 1)
+            self.assertIn("Bildesamlingen er låst", stderr)
+            self.assertTrue(face_db.exists())
 
     def test_face_reset_can_keep_scan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

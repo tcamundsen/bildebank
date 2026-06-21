@@ -20,7 +20,7 @@ from .config import (
 from .face import (
     add_face_to_person,
     add_person_to_file,
-    create_person,
+    create_person_and_add_face,
     delete_person,
     remove_face_from_person,
     remove_person_from_file,
@@ -680,6 +680,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         self.server.config = replace(self.server.config, face_recognition=face_config)
         try:
             stats = suggest_faces(self.server.target, threshold=threshold, config=face_config)
+        except TargetLockError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=True, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.CONFLICT,
+            )
+            return
         except ValueError as exc:
             self.respond_html(
                 error_html(exc, face_enabled=True, openclip_enabled=self.server.openclip_enabled),
@@ -1536,6 +1542,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             config = self.server.config.face_recognition
             result = add_face_to_person(self.server.target, person_name, face_id, config)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1561,6 +1570,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             config = self.server.config.face_recognition
             result = remove_face_from_person(self.server.target, person_name, face_id, config)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1591,6 +1603,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             config = self.server.config.face_recognition
             result = add_person_to_file(self.server.target, person_name, file_id, config)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1620,6 +1635,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             config = self.server.config.face_recognition
             result = remove_person_from_file(self.server.target, person_name, file_id, config)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1642,8 +1660,10 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         person_name, face_id = payload
         try:
             config = self.server.config.face_recognition
-            create_person(self.server.target, person_name, config)
-            result = add_face_to_person(self.server.target, person_name, face_id, config)
+            result = create_person_and_add_face(self.server.target, person_name, face_id, config)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1673,6 +1693,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             config = self.server.config.face_recognition
             result = rename_person(self.server.target, old_name, new_name, config)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1695,6 +1718,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             config = self.server.config.face_recognition
             result = delete_person(self.server.target, person_name, config)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1737,6 +1763,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 conn.close()
         try:
             rotation = server_actions.rotate_file_view(self.server.target, file_id, direction)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1820,6 +1849,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 date_to=str(payload.get("date_to") or ""),
                 note=str(payload.get("note") or ""),
             )
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -1842,6 +1874,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         try:
             server_actions.clear_manual_date_on_file(self.server.target, file_id)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return

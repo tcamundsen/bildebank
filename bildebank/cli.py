@@ -30,6 +30,7 @@ from .face import (
     RenamePersonResult,
     add_face_to_person,
     create_person,
+    delete_face_database,
     delete_person,
     export_face_browser,
     export_people_browser,
@@ -1348,7 +1349,9 @@ def run_tag_mutation_command(args: argparse.Namespace, target: Path) -> int:
 def run_db_command(args: argparse.Namespace, target: Path) -> int:
     conn = db.connect(target)
     try:
-        if not (args.command == "unimport" and args.dry_run):
+        if args.command not in {"date-set", "date-clear"} and not (
+            args.command == "unimport" and args.dry_run
+        ):
             db.log_command(conn, args.command, vars_for_log(args))
         if args.command == "import":
             source_path = existing_path_arg(args.path).resolve()
@@ -1480,16 +1483,18 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
             return 0
 
         if args.command == "date-set":
-            row = resolve_db_file_for_tag_command(conn, target, args.path)
             date_from, date_to = manual_date_range_from_args(args)
-            db.set_manual_date(
-                conn,
-                file_id=int(row["id"]),
-                date_from=date_from.isoformat(),
-                date_to=date_to.isoformat(),
-                note=args.note,
-            )
-            conn.commit()
+            with TargetLock(target, command="date-set"):
+                db.log_command(conn, args.command, vars_for_log(args))
+                row = resolve_db_file_for_tag_command(conn, target, args.path)
+                db.set_manual_date(
+                    conn,
+                    file_id=int(row["id"]),
+                    date_from=date_from.isoformat(),
+                    date_to=date_to.isoformat(),
+                    note=args.note,
+                )
+                conn.commit()
             print(f"Manuell dato satt: {manual_date_range_text(date_from, date_to)}")
             print(f"Fil: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
             if args.note:
@@ -1497,9 +1502,11 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
             return 0
 
         if args.command == "date-clear":
-            row = resolve_db_file_for_tag_command(conn, target, args.path)
-            db.clear_manual_date(conn, file_id=int(row["id"]))
-            conn.commit()
+            with TargetLock(target, command="date-clear"):
+                db.log_command(conn, args.command, vars_for_log(args))
+                row = resolve_db_file_for_tag_command(conn, target, args.path)
+                db.clear_manual_date(conn, file_id=int(row["id"]))
+                conn.commit()
             print(f"Manuell dato fjernet: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
             return 0
 
@@ -2593,8 +2600,11 @@ def run_face_reset(
         print("Avbrutt. Ingen endringer er gjort.")
         return 0
     if mode == "all":
-        path.unlink()
-        print(f"Slettet face-database: {path}")
+        deleted_path = delete_face_database(target, config)
+        if deleted_path is None:
+            print(f"Fant ingen face-database: {path}")
+            return 0
+        print(f"Slettet face-database: {deleted_path}")
         print("Alle ansiktsdata er slettet.")
         return 0
     result = reset_face_database(target, mode=mode, config=config)
