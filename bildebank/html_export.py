@@ -511,10 +511,6 @@ def render_html(
       color: var(--muted);
       font-size: 14px;
     }}
-    .position {{
-      color: var(--accent);
-      font-weight: 650;
-    }}
     main {{
       min-height: 0;
       display: grid;
@@ -668,7 +664,6 @@ def render_html(
           <button id="prevItem" type="button" title="Forrige bilde">◀ Bil</button>
           <button id="nextItem" type="button" title="Neste bilde">de ▶</button>
         </span>
-        <span id="position" class="position"></span>
       </nav>
     </header>
     <main>
@@ -700,7 +695,6 @@ def render_html(
     const state = {{ months: [], years: [], monthIndex: 0, itemIndex: 0, viewMode: "item" }};
     const titleEl = document.getElementById("title");
     const statusEl = document.getElementById("status");
-    const positionEl = document.getElementById("position");
     const viewer = document.getElementById("viewer");
     const filenameEl = document.getElementById("filename");
     const buttons = {{
@@ -892,7 +886,6 @@ def render_html(
         viewer.replaceChildren(link);
       }}
       const month = currentMonth();
-      positionEl.textContent = `${{month.key}} ${{state.itemIndex + 1}}/${{month.items.length}}`;
       filenameEl.textContent = `${{htmlDecode(item.path)}} (${{item.sizeText}})`;
       filenameEl.href = item.url;
       filenameEl.target = "_blank";
@@ -916,7 +909,6 @@ def render_html(
         grid.append(button);
       }}
       viewer.replaceChildren(grid);
-      positionEl.textContent = `Årsoversikt (${{state.years.length}} valg)`;
       filenameEl.textContent = "Årsoversikt";
       filenameEl.removeAttribute("href");
       filenameEl.removeAttribute("target");
@@ -941,7 +933,6 @@ def render_html(
         grid.append(button);
       }}
       viewer.replaceChildren(grid);
-      positionEl.textContent = `${{yearLabel(year.key)}} (${{year.months.length}} måneder)`;
       filenameEl.textContent = `Årsoversikt: ${{yearLabel(year.key)}}`;
       filenameEl.removeAttribute("href");
       filenameEl.removeAttribute("target");
@@ -979,7 +970,6 @@ def render_html(
         grid.append(button);
       }}
       viewer.replaceChildren(grid);
-      positionEl.textContent = `${{month.key}} oversikt (${{month.items.length}} filer)`;
       filenameEl.textContent = `Månedsoversikt: ${{month.key}}`;
       filenameEl.removeAttribute("href");
       filenameEl.removeAttribute("target");
@@ -1191,10 +1181,6 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
       color: var(--muted);
       font-size: 14px;
     }}
-    .position {{
-      color: var(--accent);
-      font-weight: 650;
-    }}
     button {{
       border: 1px solid var(--border);
       background: #303030;
@@ -1323,7 +1309,6 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
       <div class="controls">
         <button id="prevConflict" type="button">Forrige konflikt</button>
         <button id="nextConflict" type="button">Neste konflikt</button>
-        <span id="position" class="position"></span>
       </div>
     </header>
     <main id="main">
@@ -1335,7 +1320,6 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
     const state = {{ index: 0 }};
     const main = document.getElementById("main");
     const statusEl = document.getElementById("status");
-    const positionEl = document.getElementById("position");
     const buttons = {{
       prev: document.getElementById("prevConflict"),
       next: document.getElementById("nextConflict")
@@ -1364,7 +1348,6 @@ def render_conflicts_html(conflicts: list[dict]) -> str:
     }}
     function render() {{
       const conflict = conflicts[state.index];
-      positionEl.textContent = `${{state.index + 1}}/${{conflicts.length}}`;
       buttons.prev.disabled = state.index <= 0;
       buttons.next.disabled = state.index >= conflicts.length - 1;
 

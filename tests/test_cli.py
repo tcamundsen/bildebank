@@ -12192,6 +12192,8 @@ print(json.dumps([
             self.assertIn('data-nav-button-pair="item"', html)
             self.assertIn('title="Forrige bilde">◀ Bil</button>', html)
             self.assertIn('title="Neste bilde">de ▶</button>', html)
+            self.assertNotIn('id="position"', html)
+            self.assertNotIn("positionEl", html)
             self.assertNotIn("server-search-link", html)
             self.assertIn('img.loading = "lazy";', html)
             self.assertNotIn('"people":', html)
@@ -12457,6 +12459,8 @@ print(json.dumps([
             self.assertIn('"sourceExists": true', html)
             self.assertIn('"viewRotation": 270', html)
             self.assertIn('applyImageViewRotation(img, item, "contain");', html)
+            self.assertNotIn('id="position"', html)
+            self.assertNotIn("positionEl", html)
 
             custom_output = root / "conflicts.html"
             code, stdout, stderr = capture_cli(
