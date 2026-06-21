@@ -689,6 +689,7 @@ def build_parser() -> argparse.ArgumentParser:
         "image-scan",
         usage="bildebank image-scan [valg]",
         help="Scan bilder for tekstbasert bildesøk",
+        description="Scan bilder for tekstbasert bildesøk",
     )
     image_scan.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal scannes")
     image_search = add_command(

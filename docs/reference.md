@@ -27,8 +27,8 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 - [`show-source`](show-source.md) **`web`**
 - [`check-source`](check-source.md) **`cli`**
 - [`rescan-source`](rescan-source.md) **`cli`**
-- [`date-set`](date-set.md) **`cli`**
-- [`date-clear`](date-clear.md) **`cli`**
+- [`date-set`](date-set.md) **`web`**
+- [`date-clear`](date-clear.md) **`web`**
 
 ## Rydde
 
@@ -100,5 +100,7 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 - [`report`](report.md)
 
 ## Tekstbasert bildesøk
+
+- [`image-scan`](image-scan.md) **`cli`**
 
 Se den samlede innføringen: [`openclip`](openclip.md).

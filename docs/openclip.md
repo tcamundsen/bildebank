@@ -1,10 +1,15 @@
 # OpenCLIP
 
-OpenCLIP brukes til tekstbasert bildesøk. Målet er å kunne søke etter
-innhold i bilder med vanlige ord. Eksempel:
+OpenCLIP brukes til tekstbasert bildesøk. Søk kan nå gjøres i nettleseren
+etter at du har kjørt [`image-scan`](image-scan.md).
+
+Dette dokumentet har en del teknisk informasjon, samt beskriver søk
+fra PowerShell.
+
+Du må bruke engelsk tekst i søkefeltet. Eksempel:
 
 ```powershell
-bildebank image-search "strand"
+bildebank image-search "beach"
 ```
 
 OpenCLIP er separat fra ansiktsgjenkjenning. Ansiktsgjenkjenning bruker
