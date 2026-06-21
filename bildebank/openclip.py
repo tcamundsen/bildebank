@@ -660,7 +660,11 @@ def export_image_search_html(
 def image_result_html(target: Path, result: ImageSearchResult) -> str:
     relative = relative_to_target(target, result.target_path)
     url = path_to_url(relative)
-    dimensions = cached_image_dimensions(target, db.absolute_target_path(target, result.target_path))
+    dimensions = cached_image_dimensions(
+        target,
+        db.absolute_target_path(target, result.target_path),
+        target_locked=True,
+    )
     size = f"{dimensions.width} x {dimensions.height}" if dimensions else "-"
     path_text = display_relative_path(target, result.target_path)
     return f"""    <div class="item">

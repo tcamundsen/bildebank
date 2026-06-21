@@ -540,6 +540,11 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 self.respond_file(parsed.path.removeprefix("/file/"))
                 return
             self.respond_file(parsed.path.lstrip("/"))
+        except TargetLockError as exc:
+            self.respond_html(
+                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
+                status=HTTPStatus.CONFLICT,
+            )
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
             self.respond_html(
                 error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),

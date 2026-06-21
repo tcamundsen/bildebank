@@ -6,6 +6,7 @@ from typing import Any, Protocol
 
 from . import db
 from .media import ImageDimensions, image_dimensions, image_orientation
+from .target_lock import TargetLock
 from .value_parsing import require_int
 
 
@@ -14,27 +15,45 @@ class MediaMetadataRow(Protocol):
 
 
 class MediaMetadataCache:
-    def __init__(self, target: Path, conn: sqlite3.Connection | None = None) -> None:
+    def __init__(
+        self,
+        target: Path,
+        conn: sqlite3.Connection | None = None,
+        *,
+        target_locked: bool = False,
+    ) -> None:
         self.target = target
         self.conn = conn if conn is not None else db.connect(target)
         self._owns_conn = conn is None
+        self._target_locked = target_locked
+        self._target_lock: TargetLock | None = None
         self._dirty = False
         self._rows = self._load_rows()
 
     def close(self) -> None:
-        if self._dirty:
-            self.conn.commit()
-        if self._owns_conn:
-            self.conn.close()
+        try:
+            if self._dirty:
+                self.conn.commit()
+            if self._owns_conn:
+                self.conn.close()
+        finally:
+            if self._target_lock is not None:
+                self._target_lock.__exit__(None, None, None)
+                self._target_lock = None
 
     def __enter__(self) -> "MediaMetadataCache":
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:
         if exc_type is not None:
-            if self._owns_conn:
-                self.conn.rollback()
-                self.conn.close()
+            try:
+                if self._owns_conn:
+                    self.conn.rollback()
+                    self.conn.close()
+            finally:
+                if self._target_lock is not None:
+                    self._target_lock.__exit__(exc_type, exc, traceback)
+                    self._target_lock = None
             return
         self.close()
 
@@ -45,6 +64,11 @@ class MediaMetadataCache:
         if row is not None and cached_mtime_matches(row, mtime_ns):
             return dimensions_from_row(row)
 
+        self._ensure_target_lock()
+        mtime_ns = media_mtime_ns(path)
+        row = self._reload_row(path_key)
+        if row is not None and cached_mtime_matches(row, mtime_ns):
+            return dimensions_from_row(row)
         dimensions = image_dimensions(path)
         if row is not None:
             self.conn.execute(
@@ -75,6 +99,11 @@ class MediaMetadataCache:
         if row is not None and cached_mtime_matches(row, mtime_ns) and row["media_orientation"] is not None:
             return int(row["media_orientation"])
 
+        self._ensure_target_lock()
+        mtime_ns = media_mtime_ns(path)
+        row = self._reload_row(path_key)
+        if row is not None and cached_mtime_matches(row, mtime_ns) and row["media_orientation"] is not None:
+            return int(row["media_orientation"])
         orientation = image_orientation(path)
         if row is not None:
             self.conn.execute(
@@ -113,14 +142,56 @@ class MediaMetadataCache:
         except ValueError:
             return None
 
+    def _ensure_target_lock(self) -> None:
+        if self._target_locked or self._target_lock is not None:
+            return
+        target_lock = TargetLock(self.target, command="media-metadata-cache")
+        target_lock.__enter__()
+        self._target_lock = target_lock
 
-def cached_image_dimensions(target: Path, path: Path) -> ImageDimensions | None:
-    with MediaMetadataCache(target) as cache:
+    def _reload_row(self, path_key: str | None) -> dict[str, Any] | None:
+        if path_key is None:
+            return None
+        row = self.conn.execute(
+            """
+            SELECT
+                id,
+                target_path_key,
+                media_width,
+                media_height,
+                media_orientation,
+                media_metadata_mtime_ns
+            FROM files
+            WHERE target_path_key = ?
+              AND deleted_at IS NULL
+            """,
+            (path_key,),
+        ).fetchone()
+        if row is None:
+            self._rows.pop(path_key, None)
+            return None
+        loaded = dict(row)
+        self._rows[path_key] = loaded
+        return loaded
+
+
+def cached_image_dimensions(
+    target: Path,
+    path: Path,
+    *,
+    target_locked: bool = False,
+) -> ImageDimensions | None:
+    with MediaMetadataCache(target, target_locked=target_locked) as cache:
         return cache.image_dimensions(path)
 
 
-def cached_image_orientation(target: Path, path: Path) -> int:
-    with MediaMetadataCache(target) as cache:
+def cached_image_orientation(
+    target: Path,
+    path: Path,
+    *,
+    target_locked: bool = False,
+) -> int:
+    with MediaMetadataCache(target, target_locked=target_locked) as cache:
         return cache.image_orientation(path)
 
 

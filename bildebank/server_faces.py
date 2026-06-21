@@ -15,6 +15,7 @@ from .html_export import browser_face_items_from_metadata, face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
 from .server_browser import items_by_file_ids, rotation_style_attr, thumbnail_media_html
 from .server_browser_sources import BrowserSource, person_browser_source, person_item_url, person_url, source_item_url
+from .target_lock import TargetLock
 from .value_parsing import require_float, require_int
 
 
@@ -1245,10 +1246,40 @@ def cached_face_box_media_metadata(target: Path, item: Any) -> tuple[ImageDimens
     if cached_orientation is not None:
         return cached_dimensions, cached_orientation
 
-    dimensions = image_dimensions(target_path)
-    orientation = image_orientation(target_path)
-    update_face_box_media_metadata(target, int(item["id"]), dimensions, orientation, mtime_ns)
-    return dimensions, orientation
+    with TargetLock(target, command="media-metadata-cache"):
+        conn = db.connect(target)
+        try:
+            current = conn.execute(
+                """
+                SELECT
+                    id, target_path, media_width, media_height,
+                    media_orientation, media_metadata_mtime_ns
+                FROM files
+                WHERE id = ?
+                  AND deleted_at IS NULL
+                """,
+                (int(item["id"]),),
+            ).fetchone()
+            if current is None:
+                return None, 1
+            target_path = db.absolute_target_path(target, Path(str(current["target_path"])))
+            mtime_ns = file_mtime_ns(target_path)
+            cached_dimensions, cached_orientation = face_box_media_metadata_from_item(current, mtime_ns)
+            if cached_orientation is not None:
+                return cached_dimensions, cached_orientation
+            dimensions = image_dimensions(target_path)
+            orientation = image_orientation(target_path)
+            _update_face_box_media_metadata(
+                conn,
+                int(current["id"]),
+                dimensions,
+                orientation,
+                mtime_ns,
+            )
+            conn.commit()
+            return dimensions, orientation
+        finally:
+            conn.close()
 
 
 def face_box_media_metadata_from_item(item: Any, mtime_ns: int | None) -> tuple[ImageDimensions | None, int | None]:
@@ -1287,25 +1318,37 @@ def update_face_box_media_metadata(
     orientation: int,
     mtime_ns: int | None,
 ) -> None:
-    conn = db.connect(target)
-    try:
-        conn.execute(
-            """
-            UPDATE files
-            SET media_width = ?,
-                media_height = ?,
-                media_orientation = ?,
-                media_metadata_mtime_ns = ?
-            WHERE id = ?
-            """,
-            (
-                dimensions.width if dimensions is not None else None,
-                dimensions.height if dimensions is not None else None,
-                orientation,
-                mtime_ns,
-                file_id,
-            ),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    with TargetLock(target, command="media-metadata-cache"):
+        conn = db.connect(target)
+        try:
+            _update_face_box_media_metadata(conn, file_id, dimensions, orientation, mtime_ns)
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def _update_face_box_media_metadata(
+    conn: sqlite3.Connection,
+    file_id: int,
+    dimensions: ImageDimensions | None,
+    orientation: int,
+    mtime_ns: int | None,
+) -> None:
+    conn.execute(
+        """
+        UPDATE files
+        SET media_width = ?,
+            media_height = ?,
+            media_orientation = ?,
+            media_metadata_mtime_ns = ?
+        WHERE id = ?
+          AND deleted_at IS NULL
+        """,
+        (
+            dimensions.width if dimensions is not None else None,
+            dimensions.height if dimensions is not None else None,
+            orientation,
+            mtime_ns,
+            file_id,
+        ),
+    )

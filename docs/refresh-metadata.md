@@ -23,5 +23,8 @@ eksempel kameradata.
 Kommandoen lagrer databaseendringer underveis. Hvis du avbryter med Ctrl+C,
 blir metadata som allerede er behandlet lagret så langt det var mulig.
 
+Kommandoen låser bildesamlingen mens den arbeider, fordi filer kan bli flyttet.
+Andre kommandoer som endrer samlingen må vente til den er ferdig.
+
 Start med `--dry-run` for å se hva som ville skjedd uten å endre filer eller
 database.

@@ -43,13 +43,9 @@ fjernes igjen både ved suksess og feil.
   før databaseoppslag og validering til etter commit.
 - lagring og sletting av H3-cellenavn og egendefinerte steder holder låsen fra
   før første databaseoppslag til etter commit.
-
-## Ulåste skriv som må vurderes senere
-
-Følgende skriv bruker fortsatt ikke target-låsen:
-
-- oppfrisking og lagring av mediemetadata i hoveddatabasen;
-
-Denne operasjonen må auditeres separat. Det må avgjøres om den trenger
-target-lås eller er trygg med bare SQLite-transaksjoner. Denne oversikten gir
-ikke i seg selv garanti mot samtidig skriving for operasjonen.
+- `refresh-metadata` holder låsen fra før filer og database leses til siste
+  databaseendring er committed. Låsen beholdes over del-commits og
+  filflyttinger. `--dry-run` skriver ikke og tar derfor ikke låsen.
+- lazy lagring av avledet mediemetadata (bredde, høyde og orientering) tar
+  låsen ved cache-miss før filen leses og holder den til cacheoppdateringen er
+  committed. Cache-hit er skrivefri og tar ikke låsen.

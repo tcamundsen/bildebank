@@ -11,6 +11,7 @@ from typing import Callable, TextIO
 from . import db
 from .media import MediaDate, camera_info, is_supported_media, media_date, sha256_file, stored_media_filename
 from .progress import ProgressMeter
+from .target_lock import TargetLock
 
 
 COMMIT_EVERY = 200
@@ -509,6 +510,32 @@ def refresh_non_metadata_files(
     rescan: bool = False,
     verbose: bool = False,
     progress: MetadataRefreshProgress | None = None,
+) -> MetadataRefreshStats:
+    if dry_run:
+        return _refresh_non_metadata_files_unlocked(
+            target,
+            dry_run=True,
+            rescan=rescan,
+            verbose=verbose,
+            progress=progress,
+        )
+    with TargetLock(target, command="refresh-metadata"):
+        return _refresh_non_metadata_files_unlocked(
+            target,
+            dry_run=False,
+            rescan=rescan,
+            verbose=verbose,
+            progress=progress,
+        )
+
+
+def _refresh_non_metadata_files_unlocked(
+    target: Path,
+    *,
+    dry_run: bool,
+    rescan: bool,
+    verbose: bool,
+    progress: MetadataRefreshProgress | None,
 ) -> MetadataRefreshStats:
     stats = MetadataRefreshStats()
     conn = db.connect(target)

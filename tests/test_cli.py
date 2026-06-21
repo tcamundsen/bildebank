@@ -118,7 +118,14 @@ from bildebank.server_browser_sources import (
     tag_browser_source,
 )
 from bildebank.server_filter import parse_text_filter, text_filter_browser_source
-from bildebank.server_faces import cached_person_file_ids, face_overlay_content_html, person_file_ids, person_items
+from bildebank.server_faces import (
+    cached_face_box_media_metadata,
+    cached_person_file_ids,
+    face_overlay_content_html,
+    person_file_ids,
+    person_items,
+    update_face_box_media_metadata,
+)
 from bildebank.server_geo import geo_component_pixel_coordinates
 from bildebank.server_search import (
     DEFAULT_SEARCH_LIMIT,
@@ -2689,6 +2696,113 @@ model_name = "buffalo_l"
         self.assertEqual(orientation, 1)
         self.assertEqual(row[:3], (100, 80, 1))
         self.assertIsNotNone(row[3])
+
+    def test_media_metadata_cache_miss_requires_target_lock_but_hit_is_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            target_path = target / "2024" / "01" / "IMG_20240102.png"
+            lock_path = target / LOCK_FILENAME
+            lock_path.write_text("command=remove\n", encoding="utf-8")
+
+            with self.assertRaises(TargetLockError):
+                cached_image_dimensions(target, target_path)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                uncached = conn.execute(
+                    "SELECT media_width, media_height, media_metadata_mtime_ns FROM files"
+                ).fetchone()
+            finally:
+                conn.close()
+            self.assertEqual(uncached, (None, None, None))
+
+            lock_path.unlink()
+            self.assertEqual(cached_image_dimensions(target, target_path), ImageDimensions(100, 80))
+            lock_path.write_text("command=remove\n", encoding="utf-8")
+
+            self.assertEqual(cached_image_dimensions(target, target_path), ImageDimensions(100, 80))
+
+    def test_face_box_media_metadata_write_requires_target_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
+
+            with self.assertRaises(TargetLockError):
+                update_face_box_media_metadata(
+                    target,
+                    1,
+                    ImageDimensions(100, 80),
+                    1,
+                    123,
+                )
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                row = conn.execute(
+                    """
+                    SELECT media_width, media_height, media_orientation, media_metadata_mtime_ns
+                    FROM files
+                    """
+                ).fetchone()
+            finally:
+                conn.close()
+
+            self.assertEqual(row, (None, None, None, None))
+
+    def test_face_box_media_metadata_cache_locks_before_reading_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            conn = db.connect(target)
+            try:
+                item = dict(
+                    conn.execute(
+                        """
+                        SELECT
+                            id, target_path, media_width, media_height,
+                            media_orientation, media_metadata_mtime_ns
+                        FROM files
+                        """
+                    ).fetchone()
+                )
+            finally:
+                conn.close()
+            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
+
+            with (
+                patch(
+                    "bildebank.server_faces.image_dimensions",
+                    side_effect=AssertionError("filen skal ikke leses uten lås"),
+                ),
+                self.assertRaises(TargetLockError),
+            ):
+                cached_face_box_media_metadata(target, item)
 
     def test_run_server_item_page_has_image_info_overlay(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -11680,6 +11794,33 @@ print(json.dumps([
                 self.assertEqual(row[2], "metadata")
             finally:
                 conn.close()
+
+    def test_refresh_metadata_refuses_to_run_while_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "refresh-metadata"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamlingen er låst", stderr)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "refresh-metadata", "--dry-run"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Dry-run", stdout)
 
     def test_refresh_metadata_rescan_fills_camera_for_existing_metadata_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
