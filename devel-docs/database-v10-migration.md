@@ -20,3 +20,13 @@ databaseendring.
 
 Eksisterende filer får derfor `NULL` i kamerakolonnene frem til metadata
 oppdateres eksplisitt.
+
+## Validering og reparasjon av v10
+
+Vanlig databaseåpning er skrivefri. Runtime validerer at taggtabellene,
+systemtaggene og en kanonisk `meta.collection_id` finnes, men oppretter eller
+normaliserer dem ikke. Avvik gir beskjed om å kjøre `bildebank migrate`.
+
+`bildebank migrate --check` inspiserer slike avvik uten å endre databasen.
+`bildebank migrate` reparerer dem under target-lås og database-transaksjon,
+med backup før endringen. Schema-versjonen forblir 10.

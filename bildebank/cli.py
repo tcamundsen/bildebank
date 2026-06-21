@@ -2968,7 +2968,11 @@ def run_migrate(target: Path, *, check: bool) -> int:
     print(f"Database: {db.db_path_for_target(target)}")
     print(f"Nåværende schema_version: {plan.current_version}")
     print(f"Ny schema_version: {plan.target_version}")
-    if plan.current_version == plan.target_version and not plan.refreshes_performance_indexes:
+    if (
+        plan.current_version == plan.target_version
+        and not plan.refreshes_performance_indexes
+        and not plan.internal_repairs
+    ):
         print("Databasen er allerede migrert.")
         return 0
 
@@ -2997,6 +3001,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  legge til kamerakolonner i files")
     if plan.refreshes_performance_indexes:
         print("  oppdatere manglende ytelsesindekser")
+    for repair in plan.internal_repairs:
+        print(f"  reparere intern v10-struktur: {repair}")
     print("Vil lage backup før endring.")
     if check:
         print("Ingen endringer er gjort (--check).")
@@ -3041,6 +3047,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Kjør bildebank refresh-metadata --rescan for å fylle kameradata for eksisterende filer.")
     if result.refreshes_performance_indexes:
         print("Oppdaterer manglende ytelsesindekser.")
+    if result.internal_repairs:
+        print("Reparerer intern v10-struktur.")
     print(f"Setter schema_version={result.target_version}.")
     print("Ferdig. Databasen er migrert.")
     if result.cleans_gps_errors:

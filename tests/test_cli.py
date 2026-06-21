@@ -96,6 +96,7 @@ from bildebank.server_browser import (
     image_info_content_html,
     month_key_for_item,
     motion_video_for_image,
+    out_of_focus_file_ids,
     person_item_by_id,
     person_month_items,
     person_month_navigation,
@@ -5353,7 +5354,7 @@ model_name = "buffalo_l"
         self.assertIn('data-tag-name="Ute av fokus" aria-pressed="false" data-tag-hide-redirect="/item/1"', second_body)
         self.assertIn("tagHideRedirect", SERVER_JS)
 
-    def test_system_tag_promotes_existing_user_tag(self) -> None:
+    def test_migrate_promotes_existing_user_tag_to_system_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -5376,6 +5377,13 @@ model_name = "buffalo_l"
             finally:
                 conn.close()
 
+            code, stdout, stderr = capture_cli(["--target", str(target), "status"])
+            self.assertEqual(code, 1)
+            self.assertIn("bildebank migrate", stderr)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+            self.assertEqual(code, 0, stderr)
+
             conn = db.connect(target)
             try:
                 row = conn.execute("SELECT name, kind FROM tags WHERE name_key = ?", (db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS),)).fetchone()
@@ -5387,7 +5395,7 @@ model_name = "buffalo_l"
         self.assertEqual(row["kind"], db.TAG_KIND_SYSTEM)
         self.assertEqual(int(linked["count"]), 1)
 
-    def test_existing_tags_table_without_kind_gets_system_tag(self) -> None:
+    def test_migrate_adds_kind_to_existing_tags_table_and_seeds_system_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             self.assertEqual(run_cli(["create", str(target)]), 0)
@@ -5414,6 +5422,13 @@ model_name = "buffalo_l"
                 conn.commit()
             finally:
                 conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "status"])
+            self.assertEqual(code, 1)
+            self.assertIn("bildebank migrate", stderr)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+            self.assertEqual(code, 0, stderr)
 
             conn = db.connect(target)
             try:
@@ -7419,7 +7434,7 @@ model_name = "buffalo_l"
             self.assertEqual(stdout, "")
             self.assertIn("Bildesamling finnes allerede", stderr)
 
-    def test_opening_current_database_without_collection_id_repairs_it(self) -> None:
+    def test_opening_current_database_without_collection_id_requires_migrate_without_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -7432,17 +7447,43 @@ model_name = "buffalo_l"
             finally:
                 conn.close()
 
-            self.assertEqual(run_cli(["--target", str(target), "status"]), 0)
+            database_path = target / DB_FILENAME
+            before = database_path.read_bytes()
+            before_mtime = database_path.stat().st_mtime_ns
+            code, stdout, stderr = capture_cli(["--target", str(target), "status"])
 
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
-                repaired_collection_id = conn.execute(
+                collection_id = conn.execute(
                     "SELECT value FROM meta WHERE key = 'collection_id'"
-                ).fetchone()[0]
+                ).fetchone()
             finally:
                 conn.close()
 
-            self.assertEqual(str(uuid.UUID(repaired_collection_id)), repaired_collection_id)
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("meta.collection_id", stderr)
+            self.assertIn("bildebank migrate", stderr)
+            self.assertIsNone(collection_id)
+            self.assertEqual(database_path.read_bytes(), before)
+            self.assertEqual(database_path.stat().st_mtime_ns, before_mtime)
+
+    def test_status_and_browser_database_preparation_do_not_write_current_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            database_path = target / DB_FILENAME
+            before = database_path.read_bytes()
+            before_mtime = database_path.stat().st_mtime_ns
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "status"])
+            db.prepare_database(target)
+            out_of_focus_file_ids(target)
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Importerte filer: 0", stdout)
+            self.assertEqual(database_path.read_bytes(), before)
+            self.assertEqual(database_path.stat().st_mtime_ns, before_mtime)
 
     def test_where_is_works_without_target(self) -> None:
         code, stdout, stderr = capture_cli(["where-is"])
@@ -12376,6 +12417,131 @@ print(json.dumps([
                         "select 1 from sqlite_master where type = 'index' and name = 'idx_file_sources_source_id_file_id'"
                     ).fetchone()
                 )
+            finally:
+                conn.close()
+
+    def test_migrate_check_reports_internal_v10_repairs_without_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute("DELETE FROM tags WHERE name_key = 'ute av fokus'")
+                conn.execute("DELETE FROM meta WHERE key = 'collection_id'")
+                conn.execute("DROP INDEX idx_file_tags_tag_id_file_id")
+                conn.commit()
+            finally:
+                conn.close()
+            database_path = target / DB_FILENAME
+            before = database_path.read_bytes()
+            before_mtime = database_path.stat().st_mtime_ns
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate", "--check"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("reparere intern v10-struktur", stdout)
+            self.assertIn("systemtaggen", stdout)
+            self.assertIn("meta.collection_id", stdout)
+            self.assertIn("idx_file_tags_tag_id_file_id", stdout)
+            self.assertIn("Ingen endringer er gjort (--check).", stdout)
+            self.assertEqual(database_path.read_bytes(), before)
+            self.assertEqual(database_path.stat().st_mtime_ns, before_mtime)
+            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-10-*")))
+
+    def test_migrate_repairs_internal_v10_structure_and_preserves_tags_and_links(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename, stored_filename,
+                        sha256, size_bytes, date_source
+                    )
+                    VALUES('2024/01/image.jpg', '2024/01/image.jpg', 'image.jpg',
+                           'image.jpg', 'abc', 3, 'filename')
+                    """
+                )
+                user_tag_id = conn.execute(
+                    "INSERT INTO tags(name, name_key, kind) VALUES('Familie', 'familie', 'user')"
+                ).lastrowid
+                conn.execute("INSERT INTO file_tags(file_id, tag_id) VALUES(1, ?)", (user_tag_id,))
+                conn.execute("DELETE FROM tags WHERE name_key = 'ute av fokus'")
+                conn.execute(
+                    "UPDATE meta SET value = ? WHERE key = 'collection_id'",
+                    (str(uuid.uuid4()).upper(),),
+                )
+                conn.execute("DROP TABLE file_tags")
+                conn.execute(
+                    """
+                    CREATE TABLE file_tags (
+                        file_id INTEGER NOT NULL,
+                        tag_id INTEGER NOT NULL,
+                        created_at TEXT
+                    )
+                    """
+                )
+                conn.execute("INSERT INTO file_tags(file_id, tag_id) VALUES(1, ?)", (user_tag_id,))
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Reparerer intern v10-struktur.", stdout)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-10-*"))), 1)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                collection_id = conn.execute(
+                    "SELECT value FROM meta WHERE key = 'collection_id'"
+                ).fetchone()[0]
+                system_tag = conn.execute(
+                    "SELECT name, kind FROM tags WHERE name_key = 'ute av fokus'"
+                ).fetchone()
+                user_tag = conn.execute(
+                    "SELECT name, kind FROM tags WHERE id = ?",
+                    (user_tag_id,),
+                ).fetchone()
+                link = conn.execute(
+                    "SELECT file_id, tag_id FROM file_tags WHERE tag_id = ?",
+                    (user_tag_id,),
+                ).fetchone()
+                index_exists = conn.execute(
+                    """
+                    SELECT 1 FROM sqlite_master
+                    WHERE type = 'index' AND name = 'idx_file_tags_tag_id_file_id'
+                    """
+                ).fetchone()
+            finally:
+                conn.close()
+
+            self.assertEqual(str(uuid.UUID(collection_id)), collection_id)
+            self.assertEqual(system_tag, (db.SYSTEM_TAG_OUT_OF_FOCUS, db.TAG_KIND_SYSTEM))
+            self.assertEqual(user_tag, ("Familie", db.TAG_KIND_USER))
+            self.assertEqual(link, (1, user_tag_id))
+            self.assertIsNotNone(index_exists)
+
+    def test_migrate_repairs_missing_tag_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute("DROP TABLE file_tags")
+                conn.execute("DROP TABLE tags")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
+
+            self.assertEqual(code, 0, stderr)
+            conn = db.connect(target)
+            try:
+                db.validate_current_schema(conn)
             finally:
                 conn.close()
 

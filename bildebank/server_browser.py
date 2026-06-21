@@ -526,7 +526,6 @@ def query_motion_video_file_ids(conn: sqlite3.Connection) -> tuple[int, ...]:
 def out_of_focus_file_ids(target: Path) -> set[int]:
     conn = db.connect(target)
     try:
-        db.create_tags_schema(conn)
         rows = conn.execute(
             """
             SELECT file_tags.file_id

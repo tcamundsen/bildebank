@@ -12,6 +12,9 @@ options:
 <!-- CLI-HELP-END -->
 
 `migrate` oppgraderer Bildebank-databasen i en bildesamling til nytt format.
+Kommandoen reparerer også manglende intern databasestruktur når databasen
+allerede har gjeldende format. Dette kan for eksempel være manglende
+taggtabeller, systemtagger, indekser eller samlingsidentitet.
 
 ## Når trenger du migrate?
 
@@ -30,6 +33,8 @@ bildebank migrate
 ## Hva gjør --check?
 
 `--check` viser om databasen trenger migrering, uten å endre databasen.
+Den viser også om intern struktur i en database med gjeldende versjon må
+repareres.
 
 Det er trygt å kjøre:
 

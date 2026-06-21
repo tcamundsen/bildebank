@@ -59,14 +59,7 @@ def plan_backup(source_dir: Path, backup_parent_arg: Path, *, ensure_collection_
     conn = db.connect(source, require_current=False)
     try:
         db.require_current_schema(conn)
-        if ensure_collection_id:
-            collection_id = db.set_collection_id(conn)
-            conn.commit()
-        else:
-            stored_collection_id = db.get_meta(conn, db.COLLECTION_ID_META_KEY)
-            if stored_collection_id is None:
-                raise ValueError("Databasen mangler collection_id. Kjør bildebank status før dry-run av backup.")
-            collection_id = stored_collection_id
+        collection_id = db.validate_collection_id(conn)
     finally:
         conn.close()
 

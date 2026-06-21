@@ -143,6 +143,7 @@ class MigrationPlan:
     cleans_gps_errors: bool = False
     refreshes_performance_indexes: bool = False
     adds_camera_columns: bool = False
+    internal_repairs: tuple[str, ...] = ()
 
 
 def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection:
@@ -162,8 +163,6 @@ def prepare_database(target: Path) -> None:
     conn = connect(target, require_current=False)
     try:
         require_current_schema(conn, full=True)
-        set_collection_id(conn)
-        conn.commit()
         _PREPARED_TARGETS.add(str(target.resolve()))
     finally:
         conn.close()
@@ -186,17 +185,14 @@ def schema_version(conn: sqlite3.Connection) -> int:
 def require_current_schema(conn: sqlite3.Connection, *, full: bool = True) -> None:
     version = schema_version(conn)
     if version == SCHEMA_VERSION:
-        create_tags_schema(conn)
-        set_collection_id(conn)
-        conn.commit()
         if full:
             try:
                 validate_current_schema(conn)
             except ValueError as exc:
                 raise SchemaMigrationRequired(
-                    f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v9-struktur.\n"
+                    f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v10-struktur.\n"
                     f"{exc}\n"
-                    "Kjør bildebank migrate før du gjør endringer."
+                    "Kjør bildebank migrate."
                 ) from exc
         return
     if version < SCHEMA_VERSION:
@@ -256,7 +252,8 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
 
 def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
     if table_exists(conn, "files"):
-        conn.executescript(
+        execute_sql_statements(
+            conn,
             f"""
         CREATE INDEX IF NOT EXISTS idx_files_active_browser_order
         ON files ({BROWSER_DATE_ORDER_SQL}, target_path_key)
@@ -278,7 +275,8 @@ def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
         """
         )
     if table_exists(conn, "file_sources"):
-        conn.executescript(
+        execute_sql_statements(
+            conn,
             """
         CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_id
         ON file_sources(source_id, id);
@@ -288,13 +286,20 @@ def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
         """
         )
     if table_exists(conn, "errors"):
-        conn.executescript(
+        execute_sql_statements(
+            conn,
             """
         CREATE INDEX IF NOT EXISTS idx_errors_unresolved_stage_id
         ON errors(stage, id DESC)
         WHERE resolved_at IS NULL;
         """
         )
+
+
+def execute_sql_statements(conn: sqlite3.Connection, script: str) -> None:
+    for statement in script.split(";"):
+        if statement.strip():
+            conn.execute(statement)
 
 
 def drop_performance_indexes(conn: sqlite3.Connection) -> None:
@@ -502,7 +507,7 @@ def create_geo_places_schema(conn: sqlite3.Connection) -> None:
 
 
 def create_tags_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(
+    conn.execute(
         """
         CREATE TABLE IF NOT EXISTS tags (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -510,17 +515,23 @@ def create_tags_schema(conn: sqlite3.Connection) -> None:
             name_key TEXT NOT NULL UNIQUE,
             kind TEXT NOT NULL DEFAULT 'user',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS file_tags (
             file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
             tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY(file_id, tag_id)
-        );
-
+        )
+        """
+    )
+    conn.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_file_tags_tag_id_file_id
-        ON file_tags(tag_id, file_id);
+        ON file_tags(tag_id, file_id)
         """
     )
     ensure_column(conn, "tags", "kind", "TEXT NOT NULL DEFAULT 'user'")
@@ -576,7 +587,12 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             )
         if version == SCHEMA_VERSION:
             if validate:
-                validate_current_schema(conn, require_performance_indexes=False)
+                validate_current_schema(
+                    conn,
+                    require_performance_indexes=False,
+                    require_internal_structure=False,
+                )
+            internal_repairs = current_schema_internal_repairs(conn)
             return MigrationPlan(
                 current_version=version,
                 target_version=SCHEMA_VERSION,
@@ -584,6 +600,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
                 refreshes_performance_indexes=bool(missing_performance_indexes(conn)),
+                internal_repairs=internal_repairs,
             )
         if version in {5, 6, 7, 8, 9}:
             if validate:
@@ -592,6 +609,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                     require_performance_indexes=False,
                     require_manual_date_columns=version >= 9,
                     require_camera_columns=version >= 10,
+                    require_internal_structure=False,
                 )
             return MigrationPlan(
                 current_version=version,
@@ -646,13 +664,19 @@ def migrate_database(target: Path) -> MigrationPlan:
         version = schema_version(conn)
         if version == SCHEMA_VERSION:
             refreshes_performance_indexes = bool(missing_performance_indexes(conn))
+            internal_repairs = current_schema_internal_repairs(conn)
             try:
                 conn.execute("BEGIN IMMEDIATE")
-                validate_current_schema(conn, require_performance_indexes=False)
+                validate_current_schema(
+                    conn,
+                    require_performance_indexes=False,
+                    require_internal_structure=False,
+                )
+                repair_current_schema_internal_structure(conn)
                 drop_performance_indexes(conn)
                 ensure_performance_indexes(conn)
                 validate_current_schema(conn)
-                set_collection_id(conn)
+                validate_database_health(conn)
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -664,6 +688,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 duplicate_findings=count_rows(conn, "duplicate_findings"),
                 creates_file_sources=False,
                 refreshes_performance_indexes=refreshes_performance_indexes,
+                internal_repairs=internal_repairs,
             )
         if version in {5, 6, 7, 8, 9}:
             imported_files = count_rows(conn, "files")
@@ -673,6 +698,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 ensure_compatible_columns(conn)
+                set_collection_id(conn)
                 validate_current_schema(conn, require_performance_indexes=False)
                 drop_performance_indexes(conn)
                 ensure_performance_indexes(conn)
@@ -681,13 +707,8 @@ def migrate_database(target: Path) -> MigrationPlan:
                 set_meta(conn, "schema_version", str(SCHEMA_VERSION))
                 log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
                 validate_current_schema(conn)
-                foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
-                if foreign_key_errors:
-                    raise ValueError(f"foreign_key_check feilet: {foreign_key_errors[0]}")
-                integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
-                if integrity != "ok":
-                    raise ValueError(f"integrity_check feilet: {integrity}")
                 set_collection_id(conn)
+                validate_database_health(conn)
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -723,6 +744,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             conn.execute("PRAGMA foreign_keys = OFF")
             conn.execute("BEGIN IMMEDIATE")
             ensure_compatible_columns(conn)
+            set_collection_id(conn)
             create_file_sources_schema(conn)
             if "kind" in table_columns(conn, "file_sources"):
                 validate_legacy_file_sources_schema(conn)
@@ -744,13 +766,8 @@ def migrate_database(target: Path) -> MigrationPlan:
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
             validate_current_schema(conn)
-            foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
-            if foreign_key_errors:
-                raise ValueError(f"foreign_key_check feilet: {foreign_key_errors[0]}")
-            integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
-            if integrity != "ok":
-                raise ValueError(f"integrity_check feilet: {integrity}")
             set_collection_id(conn)
+            validate_database_health(conn)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -872,6 +889,7 @@ def validate_current_schema(
     require_performance_indexes: bool = True,
     require_manual_date_columns: bool = True,
     require_camera_columns: bool = True,
+    require_internal_structure: bool = True,
 ) -> None:
     if not table_exists(conn, "sources"):
         raise ValueError("Databasen mangler tabellen sources.")
@@ -910,8 +928,232 @@ def validate_current_schema(
     validate_file_sources_schema(conn)
     if schema_version(conn) >= 5:
         validate_relative_target_paths(conn)
+    if require_internal_structure:
+        validate_tags_schema(conn)
+        validate_collection_id(conn)
     if require_performance_indexes:
         validate_performance_indexes(conn)
+
+
+def validate_tags_schema(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "tags"):
+        raise ValueError("Databasen mangler tabellen tags.")
+    if not table_exists(conn, "file_tags"):
+        raise ValueError("Databasen mangler tabellen file_tags.")
+
+    validate_tags_schema_structure(conn)
+
+    for name in SYSTEM_TAG_NAMES:
+        row = conn.execute(
+            "SELECT name, kind FROM tags WHERE name_key = ?",
+            (tag_name_key(name),),
+        ).fetchone()
+        if row is None or row["name"] != name or row["kind"] != TAG_KIND_SYSTEM:
+            raise ValueError(f"Databasen mangler systemtaggen {name!r} med kind=system.")
+
+
+def validate_tags_schema_structure(conn: sqlite3.Connection) -> None:
+    expected_columns = {
+        "tags": {"id", "name", "name_key", "kind", "created_at"},
+        "file_tags": {"file_id", "tag_id", "created_at"},
+    }
+    for table, expected in expected_columns.items():
+        missing = sorted(expected - table_columns(conn, table))
+        if missing:
+            raise ValueError(f"{table} mangler forventede kolonner: {', '.join(missing)}")
+
+    tag_indexes = list(conn.execute("PRAGMA index_list(tags)"))
+    if not any(
+        bool(index["unique"])
+        and [row["name"] for row in conn.execute(f"PRAGMA index_info({index['name']})")] == ["name_key"]
+        for index in tag_indexes
+    ):
+        raise ValueError("tags mangler unik nøkkel for name_key.")
+
+    file_tag_info = list(conn.execute("PRAGMA table_info(file_tags)"))
+    primary_key = [
+        row["name"]
+        for row in sorted(file_tag_info, key=lambda row: int(row["pk"]))
+        if int(row["pk"]) > 0
+    ]
+    if primary_key != ["file_id", "tag_id"]:
+        raise ValueError("file_tags mangler primærnøkkel for (file_id, tag_id).")
+
+    foreign_keys = {
+        (str(row["from"]), str(row["table"]), str(row["to"]), str(row["on_delete"]).upper())
+        for row in conn.execute("PRAGMA foreign_key_list(file_tags)")
+    }
+    expected_foreign_keys = {
+        ("file_id", "files", "id", "CASCADE"),
+        ("tag_id", "tags", "id", "CASCADE"),
+    }
+    if not expected_foreign_keys <= foreign_keys:
+        raise ValueError("file_tags mangler forventede foreign keys.")
+
+    index_columns = [
+        row["name"]
+        for row in conn.execute("PRAGMA index_info(idx_file_tags_tag_id_file_id)")
+    ]
+    if index_columns != ["tag_id", "file_id"]:
+        raise ValueError("Databasen mangler indeksen idx_file_tags_tag_id_file_id.")
+
+
+def validate_collection_id(conn: sqlite3.Connection) -> str:
+    value = get_meta(conn, COLLECTION_ID_META_KEY)
+    if value is None:
+        raise ValueError("Databasen mangler meta.collection_id.")
+    try:
+        normalized = str(uuid.UUID(value))
+    except ValueError as exc:
+        raise ValueError(f"Ugyldig collection_id i databasen: {value}") from exc
+    if normalized != value:
+        raise ValueError(f"collection_id er ikke kanonisk UUID: {value}")
+    return value
+
+
+def current_schema_internal_repairs(conn: sqlite3.Connection) -> tuple[str, ...]:
+    repairs: list[str] = []
+    tags_exists = table_exists(conn, "tags")
+    file_tags_exists = table_exists(conn, "file_tags")
+    if not tags_exists:
+        repairs.append("Databasen mangler tabellen tags.")
+    if not file_tags_exists:
+        repairs.append("Databasen mangler tabellen file_tags.")
+    if tags_exists and file_tags_exists:
+        try:
+            validate_tags_schema_structure(conn)
+        except ValueError as exc:
+            repairs.append(str(exc))
+        if {"name", "name_key", "kind"} <= table_columns(conn, "tags"):
+            for name in SYSTEM_TAG_NAMES:
+                row = conn.execute(
+                    "SELECT name, kind FROM tags WHERE name_key = ?",
+                    (tag_name_key(name),),
+                ).fetchone()
+                if row is None or row["name"] != name or row["kind"] != TAG_KIND_SYSTEM:
+                    repairs.append(f"Databasen mangler systemtaggen {name!r} med kind=system.")
+    try:
+        validate_collection_id(conn)
+    except ValueError as exc:
+        repairs.append(str(exc))
+    return tuple(repairs)
+
+
+def repair_current_schema_internal_structure(conn: sqlite3.Connection) -> None:
+    repair_tags_schema(conn)
+    value = get_meta(conn, COLLECTION_ID_META_KEY)
+    if value is None:
+        set_meta(conn, COLLECTION_ID_META_KEY, str(uuid.uuid4()))
+    else:
+        try:
+            normalized = str(uuid.UUID(value))
+        except ValueError:
+            normalized = str(uuid.uuid4())
+        if normalized != value:
+            set_meta(conn, COLLECTION_ID_META_KEY, normalized)
+
+
+def repair_tags_schema(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "tags") or not table_exists(conn, "file_tags"):
+        create_tags_schema(conn)
+    if "kind" not in table_columns(conn, "tags"):
+        ensure_column(conn, "tags", "kind", "TEXT NOT NULL DEFAULT 'user'")
+    if {"file_id", "tag_id"} <= table_columns(conn, "file_tags"):
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_file_tags_tag_id_file_id
+            ON file_tags(tag_id, file_id)
+            """
+        )
+    try:
+        validate_tags_schema_structure(conn)
+        seed_system_tags(conn)
+        return
+    except ValueError:
+        pass
+
+    tag_columns = table_columns(conn, "tags")
+    if not {"id", "name"} <= tag_columns:
+        raise ValueError("Kan ikke reparere tags uten kolonnene id og name.")
+    file_tag_columns = table_columns(conn, "file_tags")
+    if not {"file_id", "tag_id"} <= file_tag_columns:
+        raise ValueError("Kan ikke reparere file_tags uten kolonnene file_id og tag_id.")
+
+    tag_rows = list(conn.execute("SELECT * FROM tags ORDER BY id"))
+    file_tag_rows = list(conn.execute("SELECT * FROM file_tags ORDER BY file_id, tag_id"))
+    conn.execute("DROP TABLE IF EXISTS file_tags_v10_repair")
+    conn.execute("DROP TABLE IF EXISTS tags_v10_repair")
+    conn.execute(
+        """
+        CREATE TABLE tags_v10_repair (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            name_key TEXT NOT NULL UNIQUE,
+            kind TEXT NOT NULL DEFAULT 'user',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE file_tags_v10_repair (
+            file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+            tag_id INTEGER NOT NULL REFERENCES tags_v10_repair(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY(file_id, tag_id)
+        )
+        """
+    )
+    for row in tag_rows:
+        name = normalize_tag_name(str(row["name"]))
+        name_key = str(row["name_key"]) if "name_key" in tag_columns else tag_name_key(name)
+        kind = str(row["kind"]) if "kind" in tag_columns else tag_kind_for_name(name)
+        created_at = (
+            str(row["created_at"])
+            if "created_at" in tag_columns
+            else datetime.now().isoformat(timespec="seconds")
+        )
+        conn.execute(
+            """
+            INSERT INTO tags_v10_repair(id, name, name_key, kind, created_at)
+            VALUES(?, ?, ?, ?, ?)
+            """,
+            (int(row["id"]), name, name_key, kind, created_at),
+        )
+    for row in file_tag_rows:
+        created_at = (
+            str(row["created_at"])
+            if "created_at" in file_tag_columns
+            else datetime.now().isoformat(timespec="seconds")
+        )
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO file_tags_v10_repair(file_id, tag_id, created_at)
+            VALUES(?, ?, ?)
+            """,
+            (int(row["file_id"]), int(row["tag_id"]), created_at),
+        )
+
+    conn.execute("DROP TABLE file_tags")
+    conn.execute("DROP TABLE tags")
+    conn.execute("ALTER TABLE tags_v10_repair RENAME TO tags")
+    conn.execute("ALTER TABLE file_tags_v10_repair RENAME TO file_tags")
+    conn.execute(
+        """
+        CREATE INDEX idx_file_tags_tag_id_file_id
+        ON file_tags(tag_id, file_id)
+        """
+    )
+    seed_system_tags(conn)
+
+
+def validate_database_health(conn: sqlite3.Connection) -> None:
+    foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+    if foreign_key_errors:
+        raise ValueError(f"foreign_key_check feilet: {foreign_key_errors[0]}")
+    integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    if integrity != "ok":
+        raise ValueError(f"integrity_check feilet: {integrity}")
 
 
 def validate_performance_indexes(conn: sqlite3.Connection) -> None:
@@ -2000,7 +2242,6 @@ def is_system_tag_name(name: str) -> bool:
 
 
 def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
-    create_tags_schema(conn)
     clean_name = normalize_tag_name(name)
     name_key = clean_name.casefold()
     kind = tag_kind_for_name(clean_name)
@@ -2020,7 +2261,6 @@ def ensure_tag(conn: sqlite3.Connection, name: str) -> int:
 
 
 def create_user_tag(conn: sqlite3.Connection, name: str) -> int:
-    create_tags_schema(conn)
     clean_name = normalize_tag_name(name)
     if is_system_tag_name(clean_name):
         raise ValueError("Systemtagger kan ikke opprettes som brukertagger.")
@@ -2038,7 +2278,6 @@ def create_user_tag(conn: sqlite3.Connection, name: str) -> int:
 
 
 def rename_user_tag(conn: sqlite3.Connection, *, tag_id: int, new_name: str) -> str:
-    create_tags_schema(conn)
     clean_name = normalize_tag_name(new_name)
     if is_system_tag_name(clean_name):
         raise ValueError("Brukertagger kan ikke endres til systemtagg-navn.")
@@ -2056,7 +2295,6 @@ def rename_user_tag(conn: sqlite3.Connection, *, tag_id: int, new_name: str) -> 
 
 
 def delete_user_tag(conn: sqlite3.Connection, *, tag_id: int) -> str:
-    create_tags_schema(conn)
     row = conn.execute("SELECT name, kind FROM tags WHERE id = ?", (tag_id,)).fetchone()
     if row is None:
         raise ValueError("Taggen finnes ikke.")
@@ -2069,7 +2307,6 @@ def delete_user_tag(conn: sqlite3.Connection, *, tag_id: int) -> str:
 
 
 def tag_file(conn: sqlite3.Connection, *, file_id: int, tag_name: str) -> bool:
-    create_tags_schema(conn)
     if conn.execute("SELECT 1 FROM files WHERE id = ?", (file_id,)).fetchone() is None:
         raise ValueError(f"Filen finnes ikke i importdatabasen: #{file_id}")
     tag_id = ensure_tag(conn, tag_name)
@@ -2087,7 +2324,6 @@ def set_file_tag(conn: sqlite3.Connection, *, file_id: int, tag_name: str, tagge
 
 
 def untag_file(conn: sqlite3.Connection, *, file_id: int, tag_name: str) -> bool:
-    create_tags_schema(conn)
     row = conn.execute("SELECT id, kind FROM tags WHERE name_key = ?", (tag_name_key(tag_name),)).fetchone()
     if row is None:
         return False
@@ -2108,7 +2344,6 @@ def untag_file(conn: sqlite3.Connection, *, file_id: int, tag_name: str) -> bool
 
 
 def tags(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
-    create_tags_schema(conn)
     return conn.execute(
         """
         SELECT tags.id, tags.name, tags.name_key, tags.kind, tags.created_at, COUNT(file_tags.file_id) AS file_count
@@ -2121,7 +2356,6 @@ def tags(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
 
 
 def tags_for_file(conn: sqlite3.Connection, file_id: int) -> list[sqlite3.Row]:
-    create_tags_schema(conn)
     return list(
         conn.execute(
             """
@@ -2137,7 +2371,6 @@ def tags_for_file(conn: sqlite3.Connection, file_id: int) -> list[sqlite3.Row]:
 
 
 def tagged_files(conn: sqlite3.Connection, tag_name: str) -> list[sqlite3.Row]:
-    create_tags_schema(conn)
     return list(
         conn.execute(
             f"""
