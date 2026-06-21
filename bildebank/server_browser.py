@@ -1337,7 +1337,7 @@ def _source_item_controls_html(
     return controls
 
 
-def _source_item_tag_controls_html(
+def _source_item_side_panel_html(
     target: Path,
     source: BrowserSource,
     item: Any,
@@ -1357,7 +1357,7 @@ def _source_item_tag_controls_html(
         next_item,
         hide_out_of_focus=hide_out_of_focus,
     )
-    tag_controls = tag_controls_html(
+    side_panel = item_side_panel_html(
         target,
         item,
         out_of_focus_redirect_url=out_of_focus_redirect_url,
@@ -1367,7 +1367,7 @@ def _source_item_tag_controls_html(
     )
     if timing_callback is not None:
         timing_callback("html_tag_controls", timing_start)
-    return tag_controls
+    return side_panel
 
 
 def _source_item_header_html(
@@ -1489,7 +1489,7 @@ def source_item_page_html(
             threshold,
             return_url=source_item_url(source, int(item["id"])),
         )
-    tag_controls = _source_item_tag_controls_html(
+    side_panel = _source_item_side_panel_html(
         target,
         source,
         item,
@@ -1539,7 +1539,7 @@ def source_item_page_html(
         <main class="server-browser" data-browser-item-id="{int(item["id"])}"{source_url_attr}{hotkeys_enabled_attr}>
           {header_html}
           <div class="stage-shell">
-            {tag_controls}
+            {side_panel}
             <section class="stage">
               {media}
             </section>
@@ -1771,7 +1771,7 @@ def hidden_after_out_of_focus_tag_redirect_url(
     return source.root_url
 
 
-def tag_controls_html(
+def item_side_panel_html(
     target: Path,
     item: Any,
     *,

@@ -83,7 +83,7 @@ class FaceSuggestServerTests(unittest.TestCase):
     @patch("bildebank.server_browser.motion_video_for_image", return_value=None)
     @patch("bildebank.server_browser.all_browser_item_link_url", return_value="/item/7")
     @patch("bildebank.server_browser._source_item_header_html", side_effect=lambda *args, **kwargs: args[3])
-    @patch("bildebank.server_browser._source_item_tag_controls_html", return_value="")
+    @patch("bildebank.server_browser._source_item_side_panel_html", return_value="")
     @patch("bildebank.server_browser._source_item_face_html", return_value=("", "", "", False))
     def test_browser_toolbar_contains_face_suggest_modal_and_return_url(
         self,
