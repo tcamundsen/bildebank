@@ -1350,28 +1350,39 @@ def run_face_command(args: argparse.Namespace, target: Path) -> int:
     if args.command == "make-face-browser":
         config = load_config(program_repo_root()).face_recognition
         output = args.output.resolve() if args.output else None
-        output_path = export_face_browser(target, output, limit=args.limit, config=config)
+        with TargetLock(target, command="make-face-browser"):
+            output_path = export_face_browser(
+                target,
+                output,
+                limit=args.limit,
+                config=config,
+                target_locked=True,
+            )
         print(f"Skrev HTML-browser for ansikter: {output_path}")
         return 0
 
     if args.command == "make-person-browser":
         output = args.output.resolve() if args.output else None
-        output_path = export_person_browser(
-            target,
-            args.name,
-            output,
-            month_preview_limit=args.month_preview_limit,
-            config=load_config(program_repo_root()).face_recognition,
-        )
+        with TargetLock(target, command="make-person-browser"):
+            output_path = export_person_browser(
+                target,
+                args.name,
+                output,
+                month_preview_limit=args.month_preview_limit,
+                config=load_config(program_repo_root()).face_recognition,
+                target_locked=True,
+            )
         print(f"Skrev HTML-browser for person: {output_path}")
         return 0
 
     if args.command == "make-people-browser":
-        browser_result = export_people_browser(
-            target,
-            month_preview_limit=args.month_preview_limit,
-            config=load_config(program_repo_root()).face_recognition,
-        )
+        with TargetLock(target, command="make-people-browser"):
+            browser_result = export_people_browser(
+                target,
+                month_preview_limit=args.month_preview_limit,
+                config=load_config(program_repo_root()).face_recognition,
+                target_locked=True,
+            )
         print(f"Skrev person-index: {browser_result.index_path}")
         print(f"Skrev personsider: {len(browser_result.person_pages)}")
         return 0
@@ -1660,12 +1671,13 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
             output = args.output.resolve() if args.output else None
             conn.commit()
             conn.close()
-            output_path = export_html(
-                target,
-                output,
-                month_preview_limit=args.month_preview_limit,
-                debug_timing=args.debug,
-            )
+            with TargetLock(target, command="make-browser"):
+                output_path = export_html(
+                    target,
+                    output,
+                    month_preview_limit=args.month_preview_limit,
+                    debug_timing=args.debug,
+                )
             print(f"Skrev HTML-browser: {output_path}")
             return 0
 
@@ -1685,7 +1697,8 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
             output = args.output.resolve() if args.output else None
             conn.commit()
             conn.close()
-            output_path = export_html_conflicts(target, output)
+            with TargetLock(target, command="make-conflict-browser"):
+                output_path = export_html_conflicts(target, output, target_locked=True)
             print(f"Skrev HTML-browser for navnekollisjoner: {output_path}")
             return 0
 

@@ -1018,6 +1018,7 @@ def export_face_browser(
     *,
     limit: int | None = None,
     config: FaceRecognitionConfig | None = None,
+    target_locked: bool = False,
 ) -> Path:
     output_path = output or (target / "faces.html")
     path = face_db_path(target, config)
@@ -1026,7 +1027,7 @@ def export_face_browser(
     conn = connect_face_db(target, config)
     try:
         view_rotations = file_view_rotations(target)
-        with MediaMetadataCache(target) as media_cache:
+        with MediaMetadataCache(target, target_locked=target_locked) as media_cache:
             items = face_browser_items(
                 target,
                 conn,
@@ -1047,6 +1048,7 @@ def export_person_browser(
     *,
     month_preview_limit: int | None = None,
     config: FaceRecognitionConfig | None = None,
+    target_locked: bool = False,
 ) -> Path:
     clean_name = normalize_person_name(person_name)
     output_path = output or (target / f"person-{safe_filename(clean_name)}.html")
@@ -1059,7 +1061,7 @@ def export_person_browser(
         person = conn.execute("SELECT id, name FROM persons WHERE name = ?", (clean_name,)).fetchone()
         if person is None:
             raise ValueError(f"Fant ikke person: {clean_name}")
-        with MediaMetadataCache(target) as media_cache:
+        with MediaMetadataCache(target, target_locked=target_locked) as media_cache:
             items = person_browser_items(
                 target,
                 conn,
@@ -1082,6 +1084,7 @@ def export_people_browser(
     *,
     month_preview_limit: int | None = None,
     config: FaceRecognitionConfig | None = None,
+    target_locked: bool = False,
 ) -> PeopleBrowserResult:
     output_path = target / "personer.html"
     path = face_db_path(target, config)
@@ -1093,7 +1096,7 @@ def export_people_browser(
         people = list(conn.execute("SELECT id, name FROM persons ORDER BY name"))
         index_people: list[dict[str, Any]] = []
         person_pages: list[Path] = []
-        with MediaMetadataCache(target) as media_cache:
+        with MediaMetadataCache(target, target_locked=target_locked) as media_cache:
             for person in people:
                 name = str(person["name"])
                 page_path = target / f"person-{safe_filename(name)}.html"

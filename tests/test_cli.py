@@ -2855,6 +2855,20 @@ model_name = "buffalo_l"
         self.assertIn('"manualDateFrom": "2004-06-01"', html)
         self.assertIn('"manualDateTo": "2004-08-31"', html)
 
+    def test_make_browser_requires_target_lock_before_writing_html(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
+
+            with patch("bildebank.cli.recover_pending_file_moves"):
+                code, stdout, stderr = capture_cli(["--target", str(target), "make-browser"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamlingen er låst", stderr)
+            self.assertFalse((target / "index.html").exists())
+
     def test_server_month_thumbnails_clip_rotated_images(self) -> None:
         self.assertIn(".thumb-link {", SERVER_CSS)
         self.assertIn("aspect-ratio: 4 / 3;", SERVER_CSS)
@@ -11018,6 +11032,21 @@ print(json.dumps([
             self.assertIn("class=\"box\"", html)
             self.assertIn("left: ", html)
 
+    def test_make_face_browser_requires_target_lock_before_writing_html(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.enable_face_recognition_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
+
+            with patch("bildebank.cli.recover_pending_file_moves"):
+                code, stdout, stderr = capture_cli(["--target", str(target), "make-face-browser"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamlingen er låst", stderr)
+            self.assertFalse((target / "faces.html").exists())
+
     def test_face_scan_prints_file_path_when_image_fails(self) -> None:
         class FakeApp:
             def get(self, image):
@@ -13334,6 +13363,20 @@ print(json.dumps([
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser for navnekollisjoner", stdout)
             self.assertTrue(custom_output.exists())
+
+    def test_make_conflict_browser_requires_target_lock_before_writing_html(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
+
+            with patch("bildebank.cli.recover_pending_file_moves"):
+                code, stdout, stderr = capture_cli(["--target", str(target), "make-conflict-browser"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamlingen er låst", stderr)
+            self.assertFalse((target / "name-conflicts.html").exists())
 
     def test_writing_command_requires_explicit_migration_for_old_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -140,11 +140,16 @@ def print_browser_export_timing(timing: BrowserExportTiming, *, item_count: int)
     print(f"  items: {item_count}", file=sys.stderr)
 
 
-def export_html_conflicts(target: Path, output: Path | None = None) -> Path:
+def export_html_conflicts(
+    target: Path,
+    output: Path | None = None,
+    *,
+    target_locked: bool = False,
+) -> Path:
     output_path = output or (target / "name-conflicts.html")
     conn = db.connect(target)
     try:
-        with MediaMetadataCache(target, conn) as media_cache:
+        with MediaMetadataCache(target, conn, target_locked=target_locked) as media_cache:
             conflicts = conflict_groups(target, list(db.conflict_candidate_files(conn)), media_cache=media_cache)
     finally:
         conn.close()
