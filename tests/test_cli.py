@@ -7995,6 +7995,15 @@ model_name = "buffalo_l"
         self.assertIn("  OBS: ingen aktiv bildesamling funnet.", stdout)
         self.assertEqual(stderr, "")
 
+    def test_doctor_deep_is_explicit_and_not_added_to_face_status(self) -> None:
+        default_args = build_parser().parse_args(["doctor"])
+        deep_args = build_parser().parse_args(["doctor", "--deep"])
+        face_status_args = build_parser().parse_args(["face-status"])
+
+        self.assertFalse(default_args.deep)
+        self.assertTrue(deep_args.deep)
+        self.assertFalse(hasattr(face_status_args, "deep"))
+
     def test_face_status_is_doctor_alias(self) -> None:
         with patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
             code, stdout, stderr = capture_cli(["face-status"])
@@ -8152,11 +8161,11 @@ enabled = true
 
         self.assertEqual(code, 0, stderr)
         self.assertIn(
-            "FEIL: 1 databaseført(e) fil(er) mangler på disk.",
+            "FEIL: 1 aktiv(e) databasefil(er) mangler på disk.",
             stdout,
         )
         self.assertIn(
-            "INFO: file #1 (aktiv): 2024/01/missing.jpg",
+            "INFO: file #1: 2024/01/missing.jpg",
             stdout,
         )
         self.assertIn("Undersøk filene og sikkerhetskopien", stdout)
@@ -8187,6 +8196,26 @@ enabled = true
                         "filename",
                     ),
                 )
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename,
+                        stored_filename, sha256, size_bytes, date_source,
+                        deleted_at
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    (
+                        "deleted/2024/01/missing.jpg",
+                        db.relative_path_key(
+                            Path("deleted/2024/01/missing.jpg")
+                        ),
+                        "missing.jpg",
+                        "missing.jpg",
+                        "deleted-missing-file-sha256",
+                        123,
+                        "filename",
+                    ),
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -8194,17 +8223,91 @@ enabled = true
             with (
                 patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
                 patch("bildebank.cli.python_module_available", return_value=False),
+                patch("bildebank.cli.sha256_file") as hash_file,
             ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "doctor"]
                 )
 
         self.assertEqual(code, 0, stderr)
+        hash_file.assert_not_called()
         self.assertIn(
-            "OK: alle 1 databaseførte filer finnes på disk",
+            "OK: alle 1 aktive databasefiler finnes på disk",
             stdout,
         )
-        self.assertNotIn("databaseført(e) fil(er) mangler på disk", stdout)
+        self.assertNotIn("aktiv(e) databasefil(er) mangler på disk", stdout)
+        self.assertNotIn("Dyp filintegritet:", stdout)
+
+    def test_doctor_deep_reports_missing_unreadable_and_wrong_hash(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            good_path = target / "2024" / "01" / "good.jpg"
+            changed_path = target / "2024" / "01" / "changed.jpg"
+            unreadable_path = target / "2024" / "01" / "unreadable.jpg"
+            for path, content in (
+                (good_path, b"good"),
+                (changed_path, b"before"),
+                (unreadable_path, b"unreadable"),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+                register_target_file(target, path.relative_to(target))
+
+            changed_path.write_bytes(b"after")
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename,
+                        stored_filename, sha256, size_bytes, date_source
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "2024/01/missing.jpg",
+                        db.relative_path_key(Path("2024/01/missing.jpg")),
+                        "missing.jpg",
+                        "missing.jpg",
+                        "missing-file-sha256",
+                        123,
+                        "filename",
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            database_path = target / DB_FILENAME
+            database_before = database_path.read_bytes()
+
+            def hash_or_fail(path: Path) -> str:
+                if path.name == "unreadable.jpg":
+                    raise OSError("ingen lesetilgang")
+                return sha256_file(path)
+
+            with (
+                patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli.python_module_available", return_value=False),
+                patch("bildebank.cli.sha256_file", side_effect=hash_or_fail),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor", "--deep"]
+                )
+
+            database_after = database_path.read_bytes()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("Dyp filintegritet:", stdout)
+        self.assertIn("INFO: aktive databasefiler kontrollert: 4", stdout)
+        self.assertIn("FEIL: 1 aktiv(e) fil(er) mangler på disk.", stdout)
+        self.assertIn("FEIL: 1 aktiv(e) fil(er) kunne ikke leses.", stdout)
+        self.assertIn("unreadable.jpg (ingen lesetilgang)", stdout)
+        self.assertIn("FEIL: 1 aktiv(e) fil(er) har feil SHA-256.", stdout)
+        self.assertIn("changed.jpg", stdout)
+        self.assertEqual(database_after, database_before)
 
     def test_face_config_creates_config_file(self) -> None:
         code, stdout, stderr = capture_cli(["face-config", "true"])

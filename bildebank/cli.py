@@ -665,11 +665,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Vis hva som ville blitt gjort uten å kopiere eller endre filer",
     )
-    add_command(
+    doctor = add_command(
         subparsers,
         "doctor",
         usage="bildebank doctor [valg]",
         help="Vis diagnose for installasjon og aktiv bildesamling",
+    )
+    doctor.add_argument(
+        "--deep",
+        action="store_true",
+        help="Kjør tregere filintegritetssjekker.",
     )
     add_command(
         subparsers,
@@ -1179,7 +1184,7 @@ def run_no_target_command(args: argparse.Namespace) -> int:
         return run_where_is()
 
     if args.command in {"doctor", "face-status"}:
-        return run_doctor(args.target)
+        return run_doctor(args.target, deep=getattr(args, "deep", False))
 
     if args.command == "config":
         return run_config(args.section, enabled=args.action == "enable")
@@ -2039,7 +2044,7 @@ def run_geo_area(
     return 0
 
 
-def run_doctor(target_arg: Path | None = None) -> int:
+def run_doctor(target_arg: Path | None = None, *, deep: bool = False) -> int:
     target = db.find_target(target_arg)
     if target is not None:
         validate_collection_platform(target)
@@ -2139,7 +2144,11 @@ def run_doctor(target_arg: Path | None = None) -> int:
         print()
         print("Databaseintegritet:")
         doctor_check_duplicate_active_sha256(target)
-        doctor_check_file_storage(target)
+        doctor_check_active_files_exist(target)
+        if deep:
+            print()
+            print("Dyp filintegritet:")
+            doctor_deep_check_active_file_hashes(target)
     else:
         print()
         print("Aktiv bildesamling:")
@@ -2182,55 +2191,126 @@ def doctor_check_duplicate_active_sha256(target: Path) -> None:
         )
 
 
-def doctor_check_file_storage(target: Path) -> None:
+def doctor_check_active_files_exist(target: Path) -> None:
     conn = db.connect(target)
     try:
-        rows = db.file_storage_rows(conn)
+        rows = db.active_file_integrity_rows(conn)
     finally:
         conn.close()
 
     target_root = target.resolve()
-    missing: list[tuple[int, Path, bool]] = []
-    invalid: list[tuple[int, Path, bool]] = []
+    missing: list[tuple[int, Path]] = []
+    invalid: list[tuple[int, Path]] = []
     for row in rows:
         target_path = Path(str(row["target_path"]))
         resolved_path = db.absolute_target_path(target, target_path).resolve()
-        deleted = row["deleted_at"] is not None
         try:
             resolved_path.relative_to(target_root)
         except ValueError:
-            invalid.append((int(row["id"]), target_path, deleted))
+            invalid.append((int(row["id"]), target_path))
             continue
         if not resolved_path.is_file():
-            missing.append((int(row["id"]), target_path, deleted))
+            missing.append((int(row["id"]), target_path))
 
     if not missing and not invalid:
-        doctor_ok(f"alle {len(rows)} databaseførte filer finnes på disk")
+        doctor_ok(f"alle {len(rows)} aktive databasefiler finnes på disk")
         return
 
     if missing:
         doctor_error(
-            f"{len(missing)} databaseført(e) fil(er) mangler på disk."
+            f"{len(missing)} aktiv(e) databasefil(er) mangler på disk."
         )
-        for file_id, target_path, deleted in missing:
-            status = "slettet" if deleted else "aktiv"
-            doctor_info(
-                f"file #{file_id} ({status}): {target_path.as_posix()}"
-            )
+        for file_id, target_path in missing[:20]:
+            doctor_info(f"file #{file_id}: {target_path.as_posix()}")
+        doctor_report_omitted_details(len(missing))
 
     if invalid:
         doctor_error(
-            f"{len(invalid)} databaseført(e) filsti(er) peker utenfor bildesamlingen."
+            f"{len(invalid)} aktiv(e) databasefilsti(er) peker utenfor bildesamlingen."
         )
-        for file_id, target_path, deleted in invalid:
-            status = "slettet" if deleted else "aktiv"
-            doctor_info(
-                f"file #{file_id} ({status}): {target_path.as_posix()}"
-            )
+        for file_id, target_path in invalid[:20]:
+            doctor_info(f"file #{file_id}: {target_path.as_posix()}")
+        doctor_report_omitted_details(len(invalid))
 
     doctor_advice(
         "Undersøk filene og sikkerhetskopien før du endrer databasen."
     )
+
+
+def doctor_deep_check_active_file_hashes(target: Path) -> None:
+    conn = db.connect(target)
+    try:
+        rows = db.active_file_integrity_rows(conn)
+    finally:
+        conn.close()
+
+    target_root = target.resolve()
+    missing: list[tuple[int, Path]] = []
+    unreadable: list[tuple[int, Path, str]] = []
+    wrong_hash: list[tuple[int, Path, str, str]] = []
+
+    for row in rows:
+        file_id = int(row["id"])
+        target_path = Path(str(row["target_path"]))
+        resolved_path = db.absolute_target_path(target, target_path).resolve()
+        try:
+            resolved_path.relative_to(target_root)
+        except ValueError:
+            unreadable.append(
+                (file_id, target_path, "filstien peker utenfor bildesamlingen")
+            )
+            continue
+
+        if not resolved_path.is_file():
+            missing.append((file_id, target_path))
+            continue
+
+        try:
+            actual_sha256 = sha256_file(resolved_path)
+        except OSError as exc:
+            unreadable.append((file_id, target_path, str(exc)))
+            continue
+
+        expected_sha256 = str(row["sha256"])
+        if actual_sha256 != expected_sha256:
+            wrong_hash.append(
+                (file_id, target_path, expected_sha256, actual_sha256)
+            )
+
+    doctor_info(f"aktive databasefiler kontrollert: {len(rows)}")
+    if not missing and not unreadable and not wrong_hash:
+        doctor_ok(f"SHA-256 stemmer for alle {len(rows)} aktive filer")
+        return
+
+    if missing:
+        doctor_error(f"{len(missing)} aktiv(e) fil(er) mangler på disk.")
+        for file_id, target_path in missing[:20]:
+            doctor_info(f"file #{file_id}: {target_path.as_posix()}")
+        doctor_report_omitted_details(len(missing))
+
+    if unreadable:
+        doctor_error(f"{len(unreadable)} aktiv(e) fil(er) kunne ikke leses.")
+        for file_id, target_path, error in unreadable[:20]:
+            doctor_info(f"file #{file_id}: {target_path.as_posix()} ({error})")
+        doctor_report_omitted_details(len(unreadable))
+
+    if wrong_hash:
+        doctor_error(f"{len(wrong_hash)} aktiv(e) fil(er) har feil SHA-256.")
+        for file_id, target_path, expected, actual in wrong_hash[:20]:
+            doctor_info(
+                f"file #{file_id}: {target_path.as_posix()} "
+                f"(database={expected}, disk={actual})"
+            )
+        doctor_report_omitted_details(len(wrong_hash))
+
+    doctor_advice(
+        "Undersøk filene og sikkerhetskopien før du endrer databasen."
+    )
+
+
+def doctor_report_omitted_details(total: int) -> None:
+    if total > 20:
+        doctor_info(f"... og {total - 20} til")
 
 
 def run_face_config(enabled: bool) -> int:

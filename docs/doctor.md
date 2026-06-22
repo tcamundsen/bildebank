@@ -5,6 +5,7 @@ usage: bildebank doctor [valg]
 
 options:
   -h, --help  show this help message and exit
+  --deep      Kjør tregere filintegritetssjekker.
 ```
 <!-- CLI-HELP-END -->
 
@@ -24,5 +25,9 @@ tekstbasert bildesøk, aktiv bildesamling og om databaseførte bildefiler
 faktisk finnes i samlingen. Hvis for eksempel
 `face_recognition` er slått på, men InsightFace mangler eller ikke kan lastes,
 viser kommandoen en `FEIL:`-linje og et råd om hva du bør gjøre videre.
+
+`bildebank doctor --deep` leser i tillegg alle aktive filer og kontrollerer
+SHA-256 mot databasen. Denne kontrollen kan ta lang tid for en stor samling.
+Den rapporterer feil, men endrer ikke databasen eller filene.
 
 Det gamle navnet `face-status` virker fortsatt som alias.

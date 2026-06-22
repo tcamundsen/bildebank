@@ -1853,12 +1853,13 @@ def duplicate_active_sha256_files(conn: sqlite3.Connection) -> list[sqlite3.Row]
     )
 
 
-def file_storage_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+def active_file_integrity_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(
         conn.execute(
             """
-            SELECT id, target_path, deleted_at
+            SELECT id, target_path, sha256, size_bytes
             FROM files
+            WHERE deleted_at IS NULL
             ORDER BY id
             """
         )
