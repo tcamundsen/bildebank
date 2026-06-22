@@ -76,6 +76,7 @@ from .openclip import (
     torch_gpu_status,
 )
 from .platform_guard import validate_collection_platform
+from .pending_deletes import cleanup_pending_deletes, list_pending_deletes
 from .progress import ProgressMeter
 from .program_state import known_targets, program_db_path, record_target_best_effort
 from .server import DEFAULT_HOST, DEFAULT_PORT, run_server as run_local_server
@@ -125,6 +126,7 @@ HELP_COMMAND_GROUPS = (
             ("undelete", "Flytt en slettet fil tilbake fra deleted/"),
             ("unimport", "Reverser en tidligere importert kilde"),
             ("list-removed", "List filer som er slettet med `remove`"),
+            ("cleanup-pending-deletes", "Kontroller eller kjør ventende filsletting"),
         ),
     ),
     (
@@ -407,6 +409,32 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank list-removed [valg]",
         help="List filer som er slettet med `remove`",
         description="List filener som er slettet med `remove`",
+    )
+    cleanup_pending = add_command(
+        subparsers,
+        "cleanup-pending-deletes",
+        usage="bildebank cleanup-pending-deletes [valg]",
+        help="Kontroller eller kjør ventende filsletting",
+        description=(
+            "Vis pending-delete-køen, eller prøv eksplisitt å slette filer "
+            "som ikke lenger har database-referanser."
+        ),
+    )
+    cleanup_mode = cleanup_pending.add_mutually_exclusive_group()
+    cleanup_mode.add_argument(
+        "--list",
+        action="store_true",
+        help="Vis pending filer og siste feilmelding. Dette er standard.",
+    )
+    cleanup_mode.add_argument(
+        "--apply",
+        action="store_true",
+        help="Prøv å slette pending filer.",
+    )
+    cleanup_pending.add_argument(
+        "--limit",
+        type=positive_int_arg,
+        help="Maks antall pending filer som forsøkes med --apply.",
     )
     non_metadata = add_command(
         subparsers,
@@ -1043,6 +1071,7 @@ TARGET_COMMANDS = {
     "geo-area",
     "run-server",
     "check-source",
+    "cleanup-pending-deletes",
 }
 
 IMAGE_COMMANDS = {"image-scan", "image-search"}
@@ -1203,6 +1232,13 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
             browser=not args.no_browser,
             allow_remote=args.allow_remote,
             preview_images=args.preview_images,
+        )
+
+    if args.command == "cleanup-pending-deletes":
+        return run_cleanup_pending_deletes(
+            target,
+            apply=args.apply,
+            limit=args.limit,
         )
 
     if args.command == "import":
@@ -2306,6 +2342,43 @@ def run_server_command(
     return 0
 
 
+def run_cleanup_pending_deletes(
+    target: Path,
+    *,
+    apply: bool,
+    limit: int | None,
+) -> int:
+    if not apply:
+        rows = list_pending_deletes(target)
+        if not rows:
+            print("Ingen pending filslettinger.")
+            return 0
+        for row in rows:
+            print(f"#{row.id}\t{row.path.as_posix()}")
+            print(f"  årsak: {row.reason}")
+            print(f"  forsøk: {row.attempts}")
+            if row.source_id is not None:
+                print(f"  kilde-id: {row.source_id}")
+            if row.last_error:
+                print(f"  siste feil: {row.last_error}")
+        return 0
+
+    results = cleanup_pending_deletes(target, limit=limit)
+    deleted = sum(result.outcome == "deleted" for result in results)
+    missing = sum(result.outcome == "missing" for result in results)
+    failed = sum(result.outcome == "failed" for result in results)
+    for result in results:
+        if result.outcome == "failed":
+            print(f"FEIL\t{result.path.as_posix()}\t{result.error}")
+        else:
+            print(f"{result.outcome.upper()}\t{result.path.as_posix()}")
+    print(
+        "Pending filsletting: "
+        f"kontrollert={len(results)}, slettet={deleted}, manglet={missing}, feil={failed}"
+    )
+    return 0 if failed == 0 else 2
+
+
 def print_image_search_progress(
     stage: str,
     current: int,
@@ -3032,10 +3105,12 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  fylle h3_res10 og h3_res11 for eksisterende GPS-posisjoner")
     if plan.adds_camera_columns:
         print("  legge til kamerakolonner i files")
+    if plan.creates_pending_file_deletes:
+        print("  opprette pending_file_deletes")
     if plan.refreshes_performance_indexes:
         print("  oppdatere manglende ytelsesindekser")
     for repair in plan.internal_repairs:
-        print(f"  reparere intern v10-struktur: {repair}")
+        print(f"  reparere intern v{plan.target_version}-struktur: {repair}")
     print("Vil lage backup før endring.")
     if check:
         print("Ingen endringer er gjort (--check).")
@@ -3078,10 +3153,12 @@ def run_migrate(target: Path, *, check: bool) -> int:
     if result.adds_camera_columns:
         print("Legger til kamerakolonner i files.")
         print("Kjør bildebank refresh-metadata --rescan for å fylle kameradata for eksisterende filer.")
+    if result.creates_pending_file_deletes:
+        print("Oppretter pending_file_deletes.")
     if result.refreshes_performance_indexes:
         print("Oppdaterer manglende ytelsesindekser.")
     if result.internal_repairs:
-        print("Reparerer intern v10-struktur.")
+        print(f"Reparerer intern v{result.target_version}-struktur.")
     print(f"Setter schema_version={result.target_version}.")
     print("Ferdig. Databasen er migrert.")
     if result.cleans_gps_errors:

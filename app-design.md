@@ -90,12 +90,13 @@ lagring uten å kreve en separat databaseserver.
 
 ## Databaseversjoner
 
-- gjeldende schema er v10
+- gjeldende schema er v11
 - historiske migreringer ligger i devel-docs/database-v4-migration.md og
   devel-docs/database-v5-migration.md, devel-docs/database-v6-migration.md og
   devel-docs/database-v7-migration.md, devel-docs/database-v8-migration.md,
-  devel-docs/database-v9-migration.md og devel-docs/database-v10-migration.md
-- ny runtime-kode skal anta v10, med mindre oppgaven eksplisitt gjelder
+  devel-docs/database-v9-migration.md, devel-docs/database-v10-migration.md
+  og devel-docs/database-v11-migration.md
+- ny runtime-kode skal anta v11, med mindre oppgaven eksplisitt gjelder
   migrering
 
 ## Plattform

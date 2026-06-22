@@ -35,6 +35,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 - [`remove`](remove.md) **`web`**
 - [`undelete`](undelete.md) **`web`**
 - [`unimport`](unimport.md) **`cli`**
+- [`cleanup-pending-deletes`](cleanup-pending-deletes.md) **`cli`**
 - [`list-removed`](list-removed.md) **`web`**
 
 ## Programmet
