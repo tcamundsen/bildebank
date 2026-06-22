@@ -86,6 +86,57 @@ def test_pending_delete_path_is_unique(tmp_path: Path) -> None:
     assert rows[0].reason == "oppdatert årsak"
 
 
+def test_migrate_repairs_legacy_pending_source_foreign_key(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    db.init_database(target)
+    conn = db.connect(target)
+    try:
+        source_id = conn.execute(
+            """
+            INSERT INTO sources(path, path_key, name)
+            VALUES('/source', '/source', 'source')
+            """
+        ).lastrowid
+        conn.execute("DROP TABLE pending_file_deletes")
+        conn.execute(
+            """
+            CREATE TABLE pending_file_deletes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                path TEXT NOT NULL UNIQUE,
+                reason TEXT NOT NULL,
+                source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                last_error TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO pending_file_deletes(path, reason, source_id)
+            VALUES('2024/01/image.jpg', 'unimport', ?)
+            """,
+            (source_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    db.migrate_database(target)
+
+    conn = db.connect(target)
+    try:
+        assert conn.execute(
+            "PRAGMA foreign_key_list(pending_file_deletes)"
+        ).fetchall() == []
+        assert conn.execute(
+            "SELECT source_id FROM pending_file_deletes"
+        ).fetchone()[0] == source_id
+    finally:
+        conn.close()
+
+
 def test_pending_delete_keeps_file_that_still_has_database_reference(tmp_path: Path) -> None:
     target = tmp_path / "target"
     db.init_database(target)

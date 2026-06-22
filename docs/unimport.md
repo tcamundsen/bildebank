@@ -56,6 +56,21 @@ bildesamlingen.
 Hvis den samme filen også finnes i en annen import, blir filen liggende. Da fjernes
 bare henvisningen til importen du angrer.
 
+Filer som mister den siste importkoblingen legges først i Bildebanks
+`pending_file_deletes`-kø i samme databasetransaksjon som importkoblingene
+fjernes. Databasen lagres før Bildebank prøver fysisk sletting.
+
+Hvis Windows eller et annet program midlertidig låser en fil, er unimporten
+fortsatt registrert. Filen blir stående i køen med feilmelding og kan prøves
+igjen senere:
+
+```powershell
+bildebank cleanup-pending-deletes --apply
+```
+
+`--dry-run` viser hvilke filer som ville blitt lagt i køen, og hvilke som
+beholdes fordi andre importer fortsatt refererer til dem.
+
 ## Dette er en destruktiv kommando
 
 `unimport` kan fjerne filer fra den aktive bildesamlingen. Derfor er kommandoen

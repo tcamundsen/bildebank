@@ -35,31 +35,49 @@ def enqueue_pending_delete(
     reason: str,
     source_id: int | None = None,
 ) -> PendingFileDelete:
+    with TargetLock(target, command="pending-delete-enqueue"):
+        conn = db.connect(target)
+        try:
+            pending = enqueue_pending_delete_in_transaction(
+                conn,
+                target,
+                path,
+                reason=reason,
+                source_id=source_id,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return pending
+
+
+def enqueue_pending_delete_in_transaction(
+    conn: sqlite3.Connection,
+    target: Path,
+    path: Path,
+    *,
+    reason: str,
+    source_id: int | None = None,
+) -> PendingFileDelete:
     relative_path, _ = managed_pending_delete_path(target, path)
     clean_reason = reason.strip()
     if not clean_reason:
         raise ValueError("Pending-delete krever en årsak.")
-    with TargetLock(target, command="pending-delete-enqueue"):
-        conn = db.connect(target)
-        try:
-            conn.execute(
-                """
-                INSERT INTO pending_file_deletes(path, reason, source_id)
-                VALUES(?, ?, ?)
-                ON CONFLICT(path) DO UPDATE SET
-                    reason = excluded.reason,
-                    source_id = COALESCE(excluded.source_id, pending_file_deletes.source_id),
-                    updated_at = CURRENT_TIMESTAMP
-                """,
-                (relative_path.as_posix(), clean_reason, source_id),
-            )
-            row = conn.execute(
-                "SELECT * FROM pending_file_deletes WHERE path = ?",
-                (relative_path.as_posix(),),
-            ).fetchone()
-            conn.commit()
-        finally:
-            conn.close()
+    conn.execute(
+        """
+        INSERT INTO pending_file_deletes(path, reason, source_id)
+        VALUES(?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+            reason = excluded.reason,
+            source_id = COALESCE(excluded.source_id, pending_file_deletes.source_id),
+            updated_at = CURRENT_TIMESTAMP
+        """,
+        (relative_path.as_posix(), clean_reason, source_id),
+    )
+    row = conn.execute(
+        "SELECT * FROM pending_file_deletes WHERE path = ?",
+        (relative_path.as_posix(),),
+    ).fetchone()
     if row is None:
         raise ValueError("Klarte ikke å legge filen i pending-delete-køen.")
     return pending_delete_from_row(row)
@@ -93,20 +111,28 @@ def cleanup_pending_deletes(
     target: Path,
     *,
     limit: int | None = None,
+    pending_ids: tuple[int, ...] | None = None,
 ) -> list[PendingDeleteResult]:
     if limit is not None and limit <= 0:
         raise ValueError("limit må være større enn 0.")
     with TargetLock(target, command="cleanup-pending-deletes"):
         conn = db.connect(target)
         try:
-            sql = "SELECT id FROM pending_file_deletes ORDER BY id"
+            sql = "SELECT id FROM pending_file_deletes"
             params: tuple[int, ...] = ()
+            if pending_ids is not None:
+                if not pending_ids:
+                    return []
+                placeholders = ",".join("?" for _ in pending_ids)
+                sql += f" WHERE id IN ({placeholders})"
+                params = pending_ids
+            sql += " ORDER BY id"
             if limit is not None:
                 sql += " LIMIT ?"
-                params = (limit,)
-            pending_ids = [int(row["id"]) for row in conn.execute(sql, params)]
+                params = (*params, limit)
+            selected_ids = [int(row["id"]) for row in conn.execute(sql, params)]
             results: list[PendingDeleteResult] = []
-            for pending_id in pending_ids:
+            for pending_id in selected_ids:
                 result = _try_pending_delete(conn, target, pending_id)
                 if result is not None:
                     results.append(result)
@@ -133,10 +159,13 @@ def managed_pending_delete_path(target: Path, path: Path) -> tuple[Path, Path]:
     ):
         raise ValueError(f"Ugyldig pending-delete-sti: {path}")
     first = lexical_relative.parts[0]
-    if not ((len(first) == 4 and first.isdigit()) or first == "udatert"):
+    if not (
+        (len(first) == 4 and first.isdigit())
+        or first in {"udatert", "deleted"}
+    ):
         raise ValueError(
             "Pending-delete kan bare brukes for ordinære mediefiler under "
-            "årsmappene eller udatert/."
+            "årsmappene, udatert/ eller deleted/."
         )
     for parent in [unresolved, *unresolved.parents]:
         if parent == target_root.parent:

@@ -474,7 +474,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             path TEXT NOT NULL UNIQUE,
             reason TEXT NOT NULL,
-            source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL,
+            source_id INTEGER,
             attempts INTEGER NOT NULL DEFAULT 0,
             last_error TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -597,7 +597,7 @@ def create_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             path TEXT NOT NULL UNIQUE,
             reason TEXT NOT NULL,
-            source_id INTEGER REFERENCES sources(id) ON DELETE SET NULL,
+            source_id INTEGER,
             attempts INTEGER NOT NULL DEFAULT 0,
             last_error TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1002,6 +1002,10 @@ def validate_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
         for index in indexes
     ):
         raise ValueError("pending_file_deletes mangler unik nøkkel for path.")
+    if conn.execute("PRAGMA foreign_key_list(pending_file_deletes)").fetchall():
+        raise ValueError(
+            "pending_file_deletes har gammel foreign key for source_id."
+        )
 
 
 def validate_tags_schema(conn: sqlite3.Connection) -> None:
@@ -1117,7 +1121,7 @@ def current_schema_internal_repairs(conn: sqlite3.Connection) -> tuple[str, ...]
 
 def repair_current_schema_internal_structure(conn: sqlite3.Connection) -> None:
     repair_tags_schema(conn)
-    create_pending_file_deletes_schema(conn)
+    repair_pending_file_deletes_schema(conn)
     value = get_meta(conn, COLLECTION_ID_META_KEY)
     if value is None:
         set_meta(conn, COLLECTION_ID_META_KEY, str(uuid.uuid4()))
@@ -1128,6 +1132,62 @@ def repair_current_schema_internal_structure(conn: sqlite3.Connection) -> None:
             normalized = str(uuid.uuid4())
         if normalized != value:
             set_meta(conn, COLLECTION_ID_META_KEY, normalized)
+
+
+def repair_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "pending_file_deletes"):
+        create_pending_file_deletes_schema(conn)
+        return
+    try:
+        validate_pending_file_deletes_schema(conn)
+        return
+    except ValueError:
+        pass
+    required = {
+        "id",
+        "path",
+        "reason",
+        "source_id",
+        "attempts",
+        "last_error",
+        "created_at",
+        "updated_at",
+    }
+    missing = sorted(required - table_columns(conn, "pending_file_deletes"))
+    if missing:
+        raise ValueError(
+            "Kan ikke reparere pending_file_deletes; mangler kolonner: "
+            f"{', '.join(missing)}"
+        )
+    conn.execute("DROP TABLE IF EXISTS pending_file_deletes_v11_repair")
+    conn.execute(
+        """
+        CREATE TABLE pending_file_deletes_v11_repair (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL UNIQUE,
+            reason TEXT NOT NULL,
+            source_id INTEGER,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO pending_file_deletes_v11_repair(
+            id, path, reason, source_id, attempts, last_error, created_at, updated_at
+        )
+        SELECT id, path, reason, source_id, attempts, last_error, created_at, updated_at
+        FROM pending_file_deletes
+        ORDER BY id
+        """
+    )
+    conn.execute("DROP TABLE pending_file_deletes")
+    conn.execute(
+        "ALTER TABLE pending_file_deletes_v11_repair RENAME TO pending_file_deletes"
+    )
 
 
 def repair_tags_schema(conn: sqlite3.Connection) -> None:
@@ -1633,7 +1693,9 @@ class UnimportPlan:
     source_file_count: int
     active_remove_count: int
     active_keep_count: int
+    file_ids_to_delete: tuple[int, ...]
     target_paths_to_delete: tuple[Path, ...]
+    target_paths_to_keep: tuple[Path, ...]
 
 
 def row_to_source(row: sqlite3.Row) -> Source:
@@ -1933,27 +1995,34 @@ def build_unimport_plan(conn: sqlite3.Connection, target: Path, source: Source) 
     active_remove_file_ids: set[int] = set()
     active_keep_file_ids: set[int] = set()
     target_paths_to_delete: list[Path] = []
+    target_paths_to_keep: list[Path] = []
     seen_delete_file_ids: set[int] = set()
+    seen_keep_file_ids: set[int] = set()
 
     for row in rows:
-        if row["deleted_at"] is not None:
-            continue
         file_id = int(row["file_id"])
         total_sources = total_sources_by_file_id[file_id]
         if total_sources == source_counts[file_id]:
-            active_remove_file_ids.add(file_id)
+            if row["deleted_at"] is None:
+                active_remove_file_ids.add(file_id)
             if file_id not in seen_delete_file_ids:
                 target_paths_to_delete.append(absolute_target_path(target, Path(str(row["target_path"]))))
                 seen_delete_file_ids.add(file_id)
         else:
-            active_keep_file_ids.add(file_id)
+            if row["deleted_at"] is None:
+                active_keep_file_ids.add(file_id)
+            if file_id not in seen_keep_file_ids:
+                target_paths_to_keep.append(absolute_target_path(target, Path(str(row["target_path"]))))
+                seen_keep_file_ids.add(file_id)
 
     return UnimportPlan(
         source=source,
         source_file_count=len(rows),
         active_remove_count=len(active_remove_file_ids),
         active_keep_count=len(active_keep_file_ids),
+        file_ids_to_delete=tuple(sorted(seen_delete_file_ids)),
         target_paths_to_delete=tuple(target_paths_to_delete),
+        target_paths_to_keep=tuple(target_paths_to_keep),
     )
 
 
@@ -1975,29 +2044,6 @@ def unimport_total_sources_by_file_id(conn: sqlite3.Connection, source_id: int) 
 
 def apply_unimport(conn: sqlite3.Connection, plan: UnimportPlan) -> None:
     source_id = plan.source.id
-    file_ids_to_delete = [
-        int(row["id"])
-        for row in conn.execute(
-            """
-            SELECT files.id
-            FROM files
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM file_sources other_sources
-                WHERE other_sources.file_id = files.id
-                  AND other_sources.source_id != ?
-            )
-              AND EXISTS (
-                SELECT 1
-                FROM file_sources source_rows
-                WHERE source_rows.file_id = files.id
-                  AND source_rows.source_id = ?
-            )
-            """,
-            (source_id, source_id),
-        )
-    ]
-
     conn.execute(
         """
         UPDATE sources
@@ -2008,10 +2054,18 @@ def apply_unimport(conn: sqlite3.Connection, plan: UnimportPlan) -> None:
         """,
         (source_id,),
     )
+    conn.execute("DELETE FROM errors WHERE source_id = ?", (source_id,))
     conn.execute("DELETE FROM file_sources WHERE source_id = ?", (source_id,))
-    if file_ids_to_delete:
-        placeholders = ",".join("?" for _ in file_ids_to_delete)
-        conn.execute(f"DELETE FROM files WHERE id IN ({placeholders})", file_ids_to_delete)
+    if plan.file_ids_to_delete:
+        placeholders = ",".join("?" for _ in plan.file_ids_to_delete)
+        conn.execute(
+            f"DELETE FROM file_tags WHERE file_id IN ({placeholders})",
+            plan.file_ids_to_delete,
+        )
+        conn.execute(
+            f"DELETE FROM files WHERE id IN ({placeholders})",
+            plan.file_ids_to_delete,
+        )
     conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
 
 

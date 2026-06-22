@@ -82,6 +82,7 @@ from .program_state import known_targets, program_db_path, record_target_best_ef
 from .server import DEFAULT_HOST, DEFAULT_PORT, run_server as run_local_server
 from .target_lock import TargetLock
 from .thumbnails import ThumbnailStats, run_make_thumbnails
+from .unimport import run_unimport as execute_unimport
 
 
 THUMBNAIL_PROGRESS: ProgressMeter | None = None
@@ -1116,6 +1117,9 @@ def run(args: argparse.Namespace) -> int:
     if args.command in {"remove", "undelete"}:
         return run_file_lifecycle_command(args, target)
 
+    if args.command == "unimport":
+        return run_unimport_command(target, args)
+
     if args.command in {"tag-add", "tag-remove"}:
         return run_tag_mutation_command(args, target)
 
@@ -1382,6 +1386,42 @@ def run_file_lifecycle_command(args: argparse.Namespace, target: Path) -> int:
     return 0
 
 
+def run_unimport_command(target: Path, args: argparse.Namespace) -> int:
+    def confirm(plan: db.UnimportPlan) -> bool:
+        print_unimport_plan(target, plan)
+        return input('Skriv "ja, det vil jeg" for å gjennomføre unimport: ') == "ja, det vil jeg"
+
+    result = execute_unimport(
+        target,
+        args.name,
+        config=load_config(program_repo_root()),
+        dry_run=args.dry_run,
+        confirm=confirm,
+        source_progress=unimport_source_progress(),
+        target_progress=unimport_target_progress(),
+    )
+    if args.dry_run:
+        print_unimport_plan(target, result.plan)
+        print_unimport_dry_run_note(result.plan.source)
+        print("Dry-run: ingen endringer er gjort.")
+        return 0
+    if not result.applied:
+        print("Avbrutt. Ingen endringer er gjort.")
+        return 0
+
+    failed = [item for item in result.cleanup_results if item.outcome == "failed"]
+    print("Unimport gjennomført.")
+    print("Kilden er fjernet fra kildelisten.")
+    if failed:
+        print(
+            f"{len(failed)} fil(er) kunne ikke slettes og ligger fortsatt i "
+            "pending-delete-køen."
+        )
+        for item in failed:
+            print(f"  {item.path.as_posix()}: {item.error}")
+    return 0
+
+
 def run_tag_mutation_command(args: argparse.Namespace, target: Path) -> int:
     tagged = args.command == "tag-add"
     result = set_file_tag(
@@ -1487,39 +1527,6 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
             if not rows:
                 raise ValueError(f"Filen finnes ikke i importdatabasen: {path}")
             print_source_items(target, rows)
-            return 0
-
-        if args.command == "unimport":
-            selected_source = resolve_source_by_name(conn, args.name)
-            if selected_source.status == "superseded":
-                raise ValueError(
-                    "Kan ikke unimportere en superseded kilde. "
-                    f"Kilden er dekket av en annen import: {selected_source.path}"
-                )
-            with TargetLock(target, command="unimport"):
-                plan = db.build_unimport_plan(conn, target, selected_source)
-                validate_unimport_source_files(
-                    conn,
-                    selected_source,
-                    progress=unimport_source_progress(),
-                )
-                validate_unimport_target_files(plan, progress=unimport_target_progress())
-                print_unimport_plan(plan)
-                if args.dry_run:
-                    print_unimport_dry_run_note(selected_source)
-                    print("Dry-run: ingen endringer er gjort.")
-                    return 0
-                answer = input('Skriv "ja, det vil jeg" for å gjennomføre unimport: ')
-                if answer != "ja, det vil jeg":
-                    conn.rollback()
-                    print("Avbrutt. Ingen endringer er gjort.")
-                    return 0
-                db.apply_unimport(conn, plan)
-                for target_path in plan.target_paths_to_delete:
-                    target_path.unlink()
-                conn.commit()
-            print("Unimport gjennomført.")
-            print("Kilden er fjernet fra kildelisten.")
             return 0
 
         if args.command == "list-removed":
@@ -1769,68 +1776,6 @@ def run_rescan_source_dry_run(target: Path, args: argparse.Namespace) -> int:
         conn.close()
 
 
-def validate_unimport_source_files(
-    conn,
-    source: db.Source,
-    *,
-    progress: ProgressMeter | None = None,
-) -> None:
-    rows = db.source_file_sources(conn, source.id)
-    total = len(rows)
-    if progress is not None:
-        progress.message(f"Unimport: kontrollerer {total} kildefiler.")
-        if total == 0:
-            progress.update(0, 0, action="kildefiler", eta=True)
-    try:
-        for index, row in enumerate(rows, start=1):
-            source_path = Path(str(row["source_path"]))
-            if not source_path.exists():
-                raise ValueError(
-                    f"Kildefil mangler: {source_path}\n"
-                    "Sjekk at riktig mappe, USB-disk, CD eller minnekort er tilgjengelig, "
-                    "og at det har samme stasjon/path som da importen ble kjørt."
-                )
-            if not source_path.is_file():
-                raise ValueError(f"Kildefil er ikke en fil: {source_path}")
-            size_bytes = source_path.stat().st_size
-            if size_bytes != int(row["size_bytes"]):
-                raise ValueError(
-                    f"Kildefil har endret størrelse: {source_path} "
-                    f"(nå {size_bytes}, forventet {row['size_bytes']})"
-                )
-            file_hash = sha256_file(source_path)
-            if file_hash != row["sha256"]:
-                raise ValueError(f"Kildefil har endret innhold: {source_path}")
-            if progress is not None:
-                progress.update(index, total, action="kildefiler", eta=True)
-    finally:
-        if progress is not None:
-            progress.done()
-
-
-def validate_unimport_target_files(
-    plan: db.UnimportPlan,
-    *,
-    progress: ProgressMeter | None = None,
-) -> None:
-    total = len(plan.target_paths_to_delete)
-    if progress is not None:
-        progress.message(f"Unimport: kontrollerer {total} målfil(er) som kan fjernes.")
-        if total == 0:
-            progress.update(0, 0, action="målfiler", eta=True)
-    try:
-        for index, target_path in enumerate(plan.target_paths_to_delete, start=1):
-            if not target_path.exists():
-                raise ValueError(f"Målfilen som skulle fjernes finnes ikke: {target_path}")
-            if not target_path.is_file():
-                raise ValueError(f"Målfilen som skulle fjernes er ikke en fil: {target_path}")
-            if progress is not None:
-                progress.update(index, total, action="målfiler", eta=True)
-    finally:
-        if progress is not None:
-            progress.done()
-
-
 def unimport_source_progress() -> ProgressMeter:
     global UNIMPORT_SOURCE_PROGRESS
     UNIMPORT_SOURCE_PROGRESS = ProgressMeter("Unimport")
@@ -1843,14 +1788,27 @@ def unimport_target_progress() -> ProgressMeter:
     return UNIMPORT_TARGET_PROGRESS
 
 
-def print_unimport_plan(plan: db.UnimportPlan) -> None:
+def print_unimport_plan(target: Path, plan: db.UnimportPlan) -> None:
     print(f"Kilde: {plan.source.name or plan.source.path}")
     print(f"Registrerte kildefiler kontrollert: {plan.source_file_count}")
+    print(f"Items/importkoblinger som fjernes: {plan.source_file_count}")
     print(f"Filer som fjernes fra aktiv samling: {plan.active_remove_count}")
     print(
         "Filer som blir liggende fordi de også finnes i andre kilder: "
         f"{plan.active_keep_count}"
     )
+    print("Filer som legges i pending_file_deletes:")
+    if plan.target_paths_to_delete:
+        for path in plan.target_paths_to_delete:
+            print(f"  {db.target_relative_path(target, path).as_posix()}")
+    else:
+        print("  ingen")
+    print("Filer som beholdes fordi de fortsatt har referanser:")
+    if plan.target_paths_to_keep:
+        for path in plan.target_paths_to_keep:
+            print(f"  {db.target_relative_path(target, path).as_posix()}")
+    else:
+        print("  ingen")
 
 
 def print_unimport_dry_run_note(source: db.Source) -> None:
