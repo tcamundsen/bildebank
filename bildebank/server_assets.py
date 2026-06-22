@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "31"
+SERVER_ASSET_VERSION = "32"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -1028,9 +1028,40 @@ SERVER_JS = r"""  const csrfToken = document.querySelector('meta[name="csrf-toke
   let infoLoaded = false;
   let infoFileId = "";
   let manualDateFileId = "";
+  function isSettingsForm(form) {
+    if (!form) return false;
+    const action = new URL(form.getAttribute("action") || form.action || window.location.href, window.location.href);
+    return action.pathname.startsWith("/settings/");
+  }
+  function setSettingsScrollField(form) {
+    if (!isSettingsForm(form)) return;
+    let input = form.querySelector('input[name="scroll_y"]');
+    if (!input) {
+      input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "scroll_y";
+      form.appendChild(input);
+    }
+    input.value = String(Math.max(0, Math.round(window.scrollY || 0)));
+  }
+  const settingsScrollRestore = document.querySelector("[data-settings-scroll-restore]");
+  if (settingsScrollRestore) {
+    const scrollY = Number(settingsScrollRestore.dataset.settingsScrollRestore || 0);
+    if (Number.isFinite(scrollY) && scrollY > 0) {
+      requestAnimationFrame(() => window.scrollTo({top: scrollY, left: 0}));
+    }
+  }
+  document.addEventListener("change", event => {
+    const form = event.target?.form;
+    if (form) setSettingsScrollField(form);
+  }, true);
   document.addEventListener("submit", event => {
     const message = event.submitter?.dataset.confirmSubmit;
-    if (message && !confirm(message)) event.preventDefault();
+    if (message && !confirm(message)) {
+      event.preventDefault();
+      return;
+    }
+    setSettingsScrollField(event.target);
   });
   openFaceSuggestButton?.addEventListener("click", () => {
     faceSuggestDialog.hidden = false;

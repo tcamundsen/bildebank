@@ -36,6 +36,7 @@ def app_status_page_html(
     *,
     shell_page_html: ShellPageRenderer,
     module_available_func: ModuleAvailable | None = None,
+    scroll_y: int | None = None,
 ) -> str:
     if config is None:
         config = AppConfig()
@@ -68,9 +69,15 @@ def app_status_page_html(
             app_status_row_html("OpenCLIP-device", config.openclip.device),
         )
     )
+    scroll_restore = (
+        f'<div data-settings-scroll-restore="{int(scroll_y)}" hidden></div>'
+        if scroll_y is not None and scroll_y > 0
+        else ""
+    )
     return shell_page_html(
         "Innstillinger",
         f"""
+        {scroll_restore}
         <nav class="subnav">
           <a href="/settings/removed">Slettede bilder</a>
           <a href="/sources" title='Lister output fra "bildebank list-sources"'>Importerte mapper</a>

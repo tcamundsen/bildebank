@@ -1427,9 +1427,13 @@ pretrained = "laion2b_s34b_b79k"
             with (
                 patch("bildebank.server_app.module_available", side_effect=lambda name: name == "open_clip"),
             ):
-                body = app_status_page_html(target, config)
+                body = app_status_page_html(target, config, scroll_y=312)
 
         self.assertIn("<h1>Innstillinger</h1>", body)
+        self.assertIn('data-settings-scroll-restore="312"', body)
+        self.assertIn("function setSettingsScrollField", SERVER_JS)
+        self.assertIn('input[name="scroll_y"]', SERVER_JS)
+        self.assertIn("window.scrollTo", SERVER_JS)
         self.assertIn("Bildebank-versjon", body)
         self.assertIn("Bildesamling", body)
         self.assertLess(body.index("Bildesamling"), body.index("Skjul bilder tagget"))
@@ -1710,6 +1714,26 @@ pretrained = "laion2b_s34b_b79k"
         self.assertTrue(config.face_recognition.enabled)
         self.assertTrue(handler.server.config.face_recognition.enabled)
         self.assertEqual(handler.location, "/settings")
+
+    def test_run_server_settings_post_redirect_preserves_scroll_position(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = b"enabled=false&enabled=true&scroll_y=312"
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=False)))
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_face_config(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.location, "/settings?scroll=312")
 
     def test_run_server_hide_out_of_focus_post_updates_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

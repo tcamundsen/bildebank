@@ -308,12 +308,13 @@ def shell_page_html(
     )
 
 
-def app_status_page_html(target: Path, config: AppConfig | None = None) -> str:
+def app_status_page_html(target: Path, config: AppConfig | None = None, *, scroll_y: int | None = None) -> str:
     return server_app.app_status_page_html(
         target,
         config,
         shell_page_html=shell_page_html,
         module_available_func=server_app.module_available,
+        scroll_y=scroll_y,
     )
 
 

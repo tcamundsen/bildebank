@@ -133,6 +133,19 @@ PREVIEW_MAX_SIZE = 1600
 BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS = 1.0
 
 
+def settings_redirect_location(params: dict[str, list[str]]) -> str:
+    raw_scroll_y = first_param(params, "scroll_y").strip()
+    if not raw_scroll_y:
+        return "/settings"
+    try:
+        scroll_y = int(raw_scroll_y)
+    except ValueError:
+        return "/settings"
+    if scroll_y <= 0:
+        return "/settings"
+    return f"/settings?scroll={scroll_y}"
+
+
 def is_local_bind_host(host: str) -> bool:
     if not host:
         return False
@@ -469,7 +482,14 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 )
                 return
             if parsed.path == "/settings":
-                self.respond_html(app_status_page_html(self.server.target, self.server.config))
+                params = urllib.parse.parse_qs(parsed.query)
+                self.respond_html(
+                    app_status_page_html(
+                        self.server.target,
+                        self.server.config,
+                        scroll_y=nonnegative_int_param(params, "scroll", 0),
+                    )
+                )
                 return
             if parsed.path in {"/settings/h3-cells", "/settings/h3-cells/"}:
                 self.respond_html(
@@ -1393,7 +1413,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             server_app.server_program_repo_root(),
             enabled,
         )
-        self.redirect("/settings")
+        self.redirect(settings_redirect_location(params))
 
     def respond_set_hide_out_of_focus(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)
@@ -1404,7 +1424,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             enabled,
         )
         clear_browser_navigation_cache(self.server)
-        self.redirect("/settings")
+        self.redirect(settings_redirect_location(params))
 
     def respond_set_manual_person_controls(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)
@@ -1414,7 +1434,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             server_app.server_program_repo_root(),
             enabled,
         )
-        self.redirect("/settings")
+        self.redirect(settings_redirect_location(params))
 
     def respond_set_hotkey(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)
@@ -1448,7 +1468,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         except ValueError as exc:
             self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
             return
-        self.redirect("/settings")
+        self.redirect(settings_redirect_location(params))
 
     def respond_set_hotkey_hints(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)
@@ -1458,7 +1478,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             server_app.server_program_repo_root(),
             enabled,
         )
-        self.redirect("/settings")
+        self.redirect(settings_redirect_location(params))
 
     def respond_set_h3_cell_name(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)
@@ -1512,7 +1532,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             server_app.server_program_repo_root(),
             model_name,
         )
-        self.redirect("/settings")
+        self.redirect(settings_redirect_location(params))
 
     def respond_create_tag(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)
