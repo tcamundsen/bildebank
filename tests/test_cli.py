@@ -109,6 +109,7 @@ from bildebank.server_browser import (
     browser_year_month_cards,
     date_source_text,
     image_info_content_html,
+    item_media_html,
     month_key_for_item,
     motion_video_for_image,
     out_of_focus_file_ids,
@@ -698,8 +699,16 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("--host", stdout)
         self.assertIn("--port", stdout)
         self.assertIn("--no-browser", stdout)
+        self.assertIn("--preview-images", stdout)
         self.assertIn("--allow-remote", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_run_server_preview_images_is_explicit_and_defaults_to_false(self) -> None:
+        default_args = build_parser().parse_args(["run-server"])
+        preview_args = build_parser().parse_args(["run-server", "--preview-images"])
+
+        self.assertFalse(default_args.preview_images)
+        self.assertTrue(preview_args.preview_images)
 
     def test_run_server_local_bind_host_detection(self) -> None:
         cases = {
@@ -744,12 +753,14 @@ pretrained = "laion2b_s34b_b79k"
                 port=8765,
                 browser=False,
                 allow_remote=True,
+                preview_images=True,
             )
 
         self.assertEqual(result, 0)
         run_local_server.assert_called_once()
         self.assertEqual(run_local_server.call_args.kwargs["host"], "0.0.0.0")
         self.assertTrue(run_local_server.call_args.kwargs["allow_remote"])
+        self.assertTrue(run_local_server.call_args.kwargs["preview_images"])
 
     def test_run_server_warns_before_allowed_remote_bind(self) -> None:
         fake_server = SimpleNamespace(
@@ -770,9 +781,142 @@ pretrained = "laion2b_s34b_b79k"
                 allow_remote=True,
             )
 
-        server_class.assert_called_once_with(("0.0.0.0", 8765), Path("."), AppConfig())
+        server_class.assert_called_once_with(
+            ("0.0.0.0", 8765),
+            Path("."),
+            AppConfig(),
+            preview_images=False,
+        )
         self.assertIn("ADVARSEL", stderr.getvalue())
         self.assertIn("andre maskiner på nettverket", stderr.getvalue())
+
+    def test_run_server_display_returns_original_when_preview_images_is_false(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            image_path = target / "2024" / "01" / "image.png"
+            write_test_image(image_path)
+            file_id = register_target_file(target, Path("2024/01/image.png"))
+            original = image_path.read_bytes()
+
+            class FakeHandler:
+                server = SimpleNamespace(target=target, preview_images=False)
+                content = b""
+                content_type = ""
+                status = HTTPStatus.OK
+
+                def respond_bytes(
+                    self,
+                    content: bytes,
+                    content_type: str,
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.content = content
+                    self.content_type = content_type
+                    self.status = status
+
+                def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+                def respond_file(self, encoded_relative_path: str) -> None:
+                    BildebankRequestHandler.respond_file(self, encoded_relative_path)  # type: ignore[arg-type]
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_display(handler, str(file_id))  # type: ignore[arg-type]
+
+        self.assertEqual(handler.content, original)
+        self.assertEqual(handler.content_type, "image/png")
+        self.assertEqual(handler.status, HTTPStatus.OK)
+
+    def test_run_server_display_returns_scaled_jpeg_when_preview_images_is_true(self) -> None:
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            image_path = target / "2024" / "01" / "image.png"
+            write_test_image(image_path, size=(3000, 1000))
+            file_id = register_target_file(target, Path("2024/01/image.png"))
+
+            class FakeHandler:
+                server = SimpleNamespace(target=target, preview_images=True)
+                content = b""
+                content_type = ""
+                status = HTTPStatus.OK
+
+                def respond_bytes(
+                    self,
+                    content: bytes,
+                    content_type: str,
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.content = content
+                    self.content_type = content_type
+                    self.status = status
+
+                def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+                def respond_preview_image(self, requested_file_id: int) -> None:
+                    BildebankRequestHandler.respond_preview_image(self, requested_file_id)  # type: ignore[arg-type]
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_display(handler, str(file_id))  # type: ignore[arg-type]
+            with Image.open(BytesIO(handler.content)) as preview:
+                preview_format = preview.format
+                preview_size = preview.size
+
+        self.assertEqual(handler.content_type, "image/jpeg")
+        self.assertEqual(handler.status, HTTPStatus.OK)
+        self.assertEqual(preview_format, "JPEG")
+        self.assertEqual(preview_size, (1600, 533))
+
+    def test_run_server_display_rejects_non_image_without_crashing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_path = target / "2024" / "01" / "video.mp4"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_bytes(b"not an image")
+            file_id = register_target_file(target, Path("2024/01/video.mp4"))
+
+            class FakeHandler:
+                server = SimpleNamespace(target=target, preview_images=True)
+                body = ""
+                status = HTTPStatus.OK
+
+                def respond_bytes(self, content: bytes, content_type: str, *, status=HTTPStatus.OK) -> None:
+                    raise AssertionError("Non-image should not return preview bytes")
+
+                def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+                def respond_preview_image(self, requested_file_id: int) -> None:
+                    BildebankRequestHandler.respond_preview_image(self, requested_file_id)  # type: ignore[arg-type]
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_display(handler, str(file_id))  # type: ignore[arg-type]
+
+        self.assertEqual(handler.status, HTTPStatus.BAD_REQUEST)
+        self.assertIn("ikke et bilde", handler.body)
+
+    def test_run_server_image_html_uses_display_source_and_original_link(self) -> None:
+        body = item_media_html(
+            Path("."),
+            {
+                "id": 7,
+                "target_path": "2024/01/image.jpg",
+                "stored_filename": "image.jpg",
+                "view_rotation_degrees": 0,
+            },
+        )
+
+        self.assertIn('href="/file/7"', body)
+        self.assertIn('src="/display/7"', body)
+        self.assertNotIn('src="/file/7"', body)
 
     def test_exiftool_install_help_documents_force(self) -> None:
         stdout_buffer = StringIO()
@@ -6816,7 +6960,7 @@ model_name = "buffalo_l"
         self.assertNotIn("Med ansiktsmarkering", plain_body)
         self.assertNotIn('<div class="person-face-box"', plain_body)
         self.assertNotIn('<span class="person-face-label">face-id 1</span>', plain_body)
-        self.assertIn('<img src="/file/1"', plain_body)
+        self.assertIn('<img src="/display/1"', plain_body)
         suggested_controls_start = suggested_body.index('<nav class="controls"')
         suggested_controls_end = suggested_body.index("</nav>", suggested_controls_start)
         suggested_controls_html = suggested_body[suggested_controls_start:suggested_controls_end]

@@ -129,6 +129,7 @@ from .server_assets import SERVER_CSS, SERVER_JS
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
+PREVIEW_MAX_SIZE = 1600
 BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS = 1.0
 
 
@@ -233,10 +234,17 @@ def filter_source_from_url(target: Path, source_url: object) -> BrowserSource | 
 class BildebankServer(ThreadingHTTPServer):
     server_address: tuple[str, int]
 
-    def __init__(self, address: tuple[str, int], target: Path, config: AppConfig) -> None:
+    def __init__(
+        self,
+        address: tuple[str, int],
+        target: Path,
+        config: AppConfig,
+        preview_images: bool = False,
+    ) -> None:
         super().__init__(address, BildebankRequestHandler)
         self.target = target
         self.config = config
+        self.preview_images = preview_images
         self.csrf_token = secrets.token_urlsafe(32)
         self.search_cache = OpenClipSearchCache(config)
         self._browser_navigation_cache_version = 0
@@ -582,6 +590,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/item-faces":
                 self.respond_item_faces(parsed.query)
+                return
+            if parsed.path.startswith("/display/"):
+                self.respond_display(parsed.path.removeprefix("/display/"))
                 return
             if parsed.path.startswith("/file/"):
                 self.respond_file(parsed.path.removeprefix("/file/"))
@@ -1567,6 +1578,51 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         self.redirect("/tags")
 
+    def respond_display(self, raw_file_id: str) -> None:
+        try:
+            file_id = parse_file_id(raw_file_id)
+        except ValueError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
+            return
+        if not self.server.preview_images:
+            self.respond_file(str(file_id))
+            return
+        self.respond_preview_image(file_id)
+
+    def respond_preview_image(self, file_id: int) -> None:
+        item = item_by_id(self.server.target, file_id)
+        if item is None:
+            self.respond_text("Filen finnes ikke.", status=HTTPStatus.NOT_FOUND)
+            return
+        target_path = Path(str(item["target_path"]))
+        absolute_path = db.absolute_target_path(self.server.target, target_path)
+        if not absolute_path.is_file():
+            self.respond_text("Bildefilen finnes ikke på disk.", status=HTTPStatus.NOT_FOUND)
+            return
+        try:
+            from PIL import Image, ImageOps, UnidentifiedImageError
+        except ImportError as exc:
+            self.respond_text(
+                f"Pillow mangler, kan ikke lage preview-bilde: {exc}",
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+            return
+        try:
+            with Image.open(absolute_path) as image:
+                preview = ImageOps.exif_transpose(image)
+                preview.thumbnail((PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE))
+                if preview.mode != "RGB":
+                    preview = preview.convert("RGB")
+                output = BytesIO()
+                preview.save(output, format="JPEG", quality=85)
+        except UnidentifiedImageError:
+            self.respond_text("Filen er ikke et bilde.", status=HTTPStatus.BAD_REQUEST)
+            return
+        except OSError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        self.respond_bytes(output.getvalue(), "image/jpeg")
+
     def respond_file(self, encoded_relative_path: str) -> None:
         try:
             served_file = server_files.read_server_file(self.server.target, encoded_relative_path)
@@ -2115,6 +2171,7 @@ def run_server(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     allow_remote: bool = False,
+    preview_images: bool = False,
     ready: Callable[[str], None] | None = None,
 ) -> None:
     validate_bind_host(host, allow_remote=allow_remote)
@@ -2125,7 +2182,7 @@ def run_server(
             file=sys.stderr,
         )
     db.prepare_database(target)
-    server = BildebankServer((host, port), target, config)
+    server = BildebankServer((host, port), target, config, preview_images=preview_images)
     actual_host, actual_port = server.server_address
     url = f"http://{actual_host}:{actual_port}/"
     if ready is not None:

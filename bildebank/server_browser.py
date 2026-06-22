@@ -1942,13 +1942,14 @@ def item_media_html(target: Path, item: Any) -> str:
     file_id = int(item["id"])
     target_path = Path(str(item["target_path"]))
     url = f"/file/{file_id}"
+    display_url = f"/display/{file_id}"
     name = html.escape(str(item["stored_filename"]))
     kind = media_kind(target_path)
     if kind == "video":
         return f'<video src="{url}" controls></video>'
     if kind != "image":
         return f'<a class="file-card" href="{url}" target="_blank">Fil<br>{name}</a>'
-    return f'<a href="{url}" target="_blank"{media_link_class_attr(item)}><img src="{url}" alt="{name}"{rotation_style_attr(item, target)}></a>'
+    return f'<a href="{url}" target="_blank"{media_link_class_attr(item)}><img src="{display_url}" alt="{name}"{rotation_style_attr(item, target)}></a>'
 
 
 def person_item_page_html(

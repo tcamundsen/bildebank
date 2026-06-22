@@ -734,6 +734,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ikke åpne serveren automatisk i nettleser.",
     )
     run_server_parser.add_argument(
+        "--preview-images",
+        action="store_true",
+        help="Bruk nedskalerte preview-bilder i hovedvisningen.",
+    )
+    run_server_parser.add_argument(
         "--allow-remote",
         action="store_true",
         help="Tillat bevisst binding til en adresse som kan nås fra andre maskiner.",
@@ -1197,6 +1202,7 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
             port=args.port,
             browser=not args.no_browser,
             allow_remote=args.allow_remote,
+            preview_images=args.preview_images,
         )
 
     if args.command == "import":
@@ -2275,6 +2281,7 @@ def run_server_command(
     port: int,
     browser: bool = True,
     allow_remote: bool = False,
+    preview_images: bool = False,
 ) -> int:
     config = load_config(program_repo_root())
     print("Starter Bildebank-server. Dette kan ta noen sekunder.")
@@ -2293,6 +2300,7 @@ def run_server_command(
         host=host,
         port=port,
         allow_remote=allow_remote,
+        preview_images=preview_images,
         ready=on_ready,
     )
     return 0

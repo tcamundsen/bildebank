@@ -7,12 +7,13 @@ usage: bildebank run-server [valg]
 Start Bildebank-server som lar deg se bildene i nettleser.
 
 options:
-  -h, --help      show this help message and exit
-  --host HOST     Adresse serveren lytter på. Standard: 127.0.0.1
-  --port PORT     Port serveren lytter på. Standard: 8765
-  --no-browser    Ikke åpne serveren automatisk i nettleser.
-  --allow-remote  Tillat bevisst binding til en adresse som kan nås fra andre
-                  maskiner.
+  -h, --help        show this help message and exit
+  --host HOST       Adresse serveren lytter på. Standard: 127.0.0.1
+  --port PORT       Port serveren lytter på. Standard: 8765
+  --no-browser      Ikke åpne serveren automatisk i nettleser.
+  --preview-images  Bruk nedskalerte preview-bilder i hovedvisningen.
+  --allow-remote    Tillat bevisst binding til en adresse som kan nås fra
+                    andre maskiner.
 ```
 <!-- CLI-HELP-END -->
 
@@ -71,6 +72,14 @@ Hvis du ikke vil åpne nettleseren automatisk:
 ```powershell
 bildebank run-server --no-browser
 ```
+
+Hvis du vil bruke dynamisk nedskalerte bilder i hovedvisningen:
+
+```powershell
+bildebank run-server --preview-images
+```
+
+Bildet åpnes fortsatt i original størrelse når du klikker på det.
 
 ## Teknisk info
 
