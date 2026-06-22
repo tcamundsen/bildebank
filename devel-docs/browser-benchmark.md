@@ -44,6 +44,15 @@ databaseforberedelse som serveren før målingen starter:
 .venv/bin/python tools/benchmark_browser.py --mode profile --target /path/to/bildesamling --url http://127.0.0.1:8765/item/123 --steps 100 --warmup 10
 ```
 
+For å måle selve hurtigtast-API-et fra en konkret item-side eller filterside,
+bruk `hotkey`-modus. Startsiden hentes først for å lese `file_id`, CSRF-token
+og eventuell filterkontekst. Deretter måles gjentatte kall til
+`/api/item-hotkey-action` med `X-Bildebank-Benchmark: 1`:
+
+```bash
+.venv/bin/python tools/benchmark_browser.py --mode hotkey --url http://127.0.0.1:8765/filter/person%3AViljar%20person%3AVictoria/item/123 --hotkey 1 --steps 20 --warmup 3
+```
+
 For en importert kilde:
 
 ```bash

@@ -2095,7 +2095,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         self.respond_json({"ok": True, "file_id": file_id})
 
     def respond_hotkey_action(self) -> None:
+        def record_timing(name: str, start: float) -> None:
+            recorder = getattr(self, "record_server_timing", None)
+            if recorder is not None:
+                recorder(name, start)
+
+        start = time.perf_counter()
         payload = BildebankRequestHandler.read_json_payload(self)
+        record_timing("hotkey_read_payload", start)
+
+        start = time.perf_counter()
         if not self.server.config.browser.hotkey_hints_enabled:
             self.respond_json(
                 {"ok": False, "error": "Hurtigtaster er slått av."},
@@ -2115,10 +2124,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         if hotkey.action == "person" and not self.server.face_enabled:
             self.respond_json({"ok": False, "error": "Ansiktsgjenkjenning er av."}, status=HTTPStatus.FORBIDDEN)
             return
+        record_timing("hotkey_validate", start)
+
+        start = time.perf_counter()
         filter_source = filter_source_from_url(self.server.target, payload.get("source_url"))
+        record_timing("hotkey_filter_parse", start)
+
         previous_filter_item = None
         next_filter_item = None
         if filter_source is not None:
+            start = time.perf_counter()
             conn = db.connect(self.server.target)
             try:
                 filter_item = source_item_by_id(self.server.target, filter_source, file_id, conn=conn)
@@ -2133,32 +2148,40 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     filter_source = None
             finally:
                 conn.close()
+            record_timing("hotkey_filter_before", start)
         try:
+            start = time.perf_counter()
             result = server_actions.apply_browser_hotkey_to_file(
                 self.server.target,
                 file_id,
                 hotkey,
                 face_config=self.server.config.face_recognition,
             )
+            record_timing("hotkey_apply", start)
         except TargetLockError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
             return
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
+        start = time.perf_counter()
         if hotkey.action == "manual_date":
             clear_browser_navigation_cache(self.server)
         if hotkey.action == "person":
             clear_face_caches()
             result["person_url"] = person_item_url(str(result["person_name"]), file_id, show_faces=False)
             result["confirmed"] = True
+        record_timing("hotkey_post_apply", start)
         if filter_source is not None:
+            start = time.perf_counter()
             conn = db.connect(self.server.target)
             try:
                 filter_item = source_item_by_id(self.server.target, filter_source, file_id, conn=conn)
             finally:
                 conn.close()
+            record_timing("hotkey_filter_after", start)
             if filter_item is None:
+                start = time.perf_counter()
                 if next_filter_item is not None:
                     result["redirect_url"] = source_item_url(
                         filter_source,
@@ -2171,6 +2194,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     )
                 else:
                     result["redirect_url"] = filter_source.root_url
+                record_timing("hotkey_redirect", start)
         self.respond_json({"ok": True, "key": key, **result})
 
     def respond_delete_item(self) -> None:

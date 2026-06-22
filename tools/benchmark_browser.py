@@ -7,6 +7,7 @@ import json
 import statistics
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
@@ -26,6 +27,14 @@ SERVER_TIMING_STEP_ORDER = (
     "month_nav",
     "source_item_page_html",
     "encode/respond_before_write",
+    "hotkey_read_payload",
+    "hotkey_validate",
+    "hotkey_filter_parse",
+    "hotkey_filter_before",
+    "hotkey_apply",
+    "hotkey_post_apply",
+    "hotkey_filter_after",
+    "hotkey_redirect",
     "total",
 )
 
@@ -140,6 +149,25 @@ class NextLinkParser(HTMLParser):
             self.next_href = attr["href"]
 
 
+class ItemPageParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.csrf_token: str | None = None
+        self.file_id: int | None = None
+        self.source_url: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr = dict(attrs)
+        if tag == "meta" and attr.get("name") == "csrf-token" and attr.get("content"):
+            self.csrf_token = attr["content"]
+        if attr.get("data-browser-item-id") and self.file_id is None:
+            try:
+                self.file_id = int(str(attr["data-browser-item-id"]))
+            except ValueError:
+                pass
+            self.source_url = attr.get("data-browser-source-url")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
@@ -198,10 +226,15 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         default=5,
         help="Største tillatte antall terskelbrudd for beste suite-kjøring. Standard: 5",
     )
-    parser.add_argument("--mode", choices=("browser", "server", "server-keepalive", "profile"), default="browser")
+    parser.add_argument(
+        "--mode",
+        choices=("browser", "server", "server-keepalive", "profile", "hotkey"),
+        default="browser",
+    )
     parser.add_argument("--target", type=Path, help="Bildesamlingsmappe. Kreves for --mode profile.")
     parser.add_argument("--steps", type=positive_int, default=50, help="Antall neste-klikk som måles. Standard: 50")
     parser.add_argument("--warmup", type=non_negative_int, default=5, help="Antall oppvarmingsklikk før måling. Standard: 5")
+    parser.add_argument("--hotkey", default="1", help="Hurtigtast som måles med --mode hotkey. Standard: 1")
     parser.add_argument("--threshold-ms", type=float, help="Returner exit code 1 hvis ett eller flere steg er tregere.")
     parser.add_argument("--json-output", help="Skriv rådata og oppsummering til JSON-fil.")
     parser.add_argument("--timeout-ms", type=positive_int, default=10_000, help="Timeout per side/klikk. Standard: 10000")
@@ -218,6 +251,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 def run_benchmark(args: argparse.Namespace) -> BenchmarkResult:
     if args.mode == "profile":
         return run_profile_benchmark(args)
+    if args.mode == "hotkey":
+        return run_hotkey_benchmark(args)
     if args.mode == "browser":
         return run_browser_benchmark(args)
     if args.mode == "server-keepalive":
@@ -398,6 +433,79 @@ def run_server_keepalive_benchmark(args: argparse.Namespace) -> BenchmarkSummary
         return build_summary("server-keepalive", args, steps)
     finally:
         conn.close()
+
+
+def run_hotkey_benchmark(args: argparse.Namespace) -> BenchmarkSummary:
+    html = fetch_text(args.url, args.timeout_ms)
+    item_page = parse_item_page(html)
+    if item_page.file_id is None:
+        raise RuntimeError("Fant ikke data-browser-item-id på startsiden.")
+    if not item_page.csrf_token:
+        raise RuntimeError("Fant ikke CSRF-token på startsiden.")
+    for _ in range(args.warmup):
+        post_hotkey_step(args.url, item_page, args.hotkey, 0, args.timeout_ms)
+    steps: list[StepResult] = []
+    for index in range(1, args.steps + 1):
+        steps.append(post_hotkey_step(args.url, item_page, args.hotkey, index, args.timeout_ms))
+    return build_summary("hotkey", args, steps)
+
+
+def parse_item_page(html: str) -> ItemPageParser:
+    parser = ItemPageParser()
+    parser.feed(html)
+    return parser
+
+
+def post_hotkey_step(
+    url: str,
+    item_page: ItemPageParser,
+    key: str,
+    index: int,
+    timeout_ms: int,
+) -> StepResult:
+    payload: dict[str, object] = {"file_id": item_page.file_id, "key": key}
+    if item_page.source_url:
+        payload["source_url"] = item_page.source_url
+    body = json.dumps(payload).encode("utf-8")
+    request = urllib.request.Request(
+        urllib.parse.urljoin(url, "/api/item-hotkey-action"),
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-CSRF-Token": item_page.csrf_token or "",
+            BENCHMARK_HEADER: "1",
+        },
+        method="POST",
+    )
+    start = time.perf_counter()
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_ms / 1000.0) as response:
+            first_byte_ms = elapsed_ms(start)
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status} fra /api/item-hotkey-action")
+            server_ms = (
+                float(response.headers["X-Bildebank-Request-Ms"])
+                if "X-Bildebank-Request-Ms" in response.headers
+                else None
+            )
+            server_timing = parse_server_timing_header(response.headers.get("Server-Timing", ""))
+            read_start = time.perf_counter()
+            content = response.read()
+            read_ms = elapsed_ms(read_start)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {exc.code} fra /api/item-hotkey-action: {detail}") from exc
+    total_ms = elapsed_ms(start)
+    return StepResult(
+        index=index,
+        elapsed_ms=total_ms,
+        url=url,
+        first_byte_ms=first_byte_ms,
+        read_ms=read_ms,
+        body_bytes=len(content),
+        server_ms=server_ms,
+        server_timing_ms=server_timing,
+    )
 
 
 def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:

@@ -3385,9 +3385,13 @@ model_name = "buffalo_l"
                     config=AppConfig(browser=BrowserConfig(hotkey_hints_enabled=True, hotkeys=hotkeys)),
                 )
                 body: dict[str, object] | None = None
+                timings: list[str] = []
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
                     self.body = content
+
+                def record_server_timing(self, name: str, start: float) -> None:
+                    self.timings.append(name)
 
             handler = FakeHandler()
             BildebankRequestHandler.respond_hotkey_action(handler)  # type: ignore[arg-type]
@@ -3409,6 +3413,16 @@ model_name = "buffalo_l"
                 conn.close()
 
         self.assertEqual(handler.body, {"ok": True, "key": "1", "action": "h3", "file_id": 1, "gps_source": "manual-h3"})
+        self.assertEqual(
+            handler.timings,
+            [
+                "hotkey_read_payload",
+                "hotkey_validate",
+                "hotkey_filter_parse",
+                "hotkey_apply",
+                "hotkey_post_apply",
+            ],
+        )
         self.assertEqual(row["gps_source"], "manual-h3")
         self.assertIsNone(row["gps_alt"])
         self.assertIsNone(row["gps_error"])

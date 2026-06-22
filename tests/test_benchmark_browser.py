@@ -32,6 +32,21 @@ def test_next_link_parser_finds_next_navigation_link() -> None:
     assert parser.next_href == "/item/3"
 
 
+def test_item_page_parser_finds_hotkey_request_context() -> None:
+    benchmark = load_benchmark_module()
+    parser = benchmark.parse_item_page(
+        """
+        <meta name="csrf-token" content="csrf-123">
+        <main data-browser-item-id="42" data-browser-source-url="/filter/person%3AViljar">
+        </main>
+        """
+    )
+
+    assert parser.csrf_token == "csrf-123"
+    assert parser.file_id == 42
+    assert parser.source_url == "/filter/person%3AViljar"
+
+
 def test_benchmark_summary_counts_threshold_failures_and_percentiles() -> None:
     benchmark = load_benchmark_module()
     args = benchmark.parse_args(["--mode", "server", "--steps", "3", "--warmup", "0", "--threshold-ms", "200"])
