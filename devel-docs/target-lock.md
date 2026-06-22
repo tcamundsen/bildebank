@@ -10,6 +10,11 @@ target-låsen før databaseoppslag og validering. Låsen skal holdes under
 filflyttingen, gjennom databaseoppdateringen og til etter commit. Låsen skal
 fjernes igjen både ved suksess og feil.
 
+Fra schema v12 skal slike operasjoner først skrive en `pending_file_moves`-rad
+og committe den før fysisk flytting. Oppstartsrecovery av `pending_file_moves`
+tar også target-låsen før den eventuelt fullfører eller aborterer en entydig
+flytting.
+
 ## Beskyttede operasjoner
 
 - `import` og `rescan-source` holder target-låsen mens filer kopieres og

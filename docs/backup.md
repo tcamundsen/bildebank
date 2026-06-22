@@ -146,6 +146,9 @@ filer i bildesamlingen, og senere oppdaterer backupen, så vil backupen også
 bli oppdatert til den nye tilstanden. Derfor bør du ha flere backup-disker
 som ikke oppdateres samtidig.
 
+Det beste er nok å bruke et dedikert backup-verktøy som tar backup av hele
+bilde-samlingen, eller hele PCen.
+
 ## Backup-medier
 
 Gode råd:

@@ -37,7 +37,7 @@ def remove_file(
             else:
                 row = conn.execute(
                     """
-                    SELECT id, target_path, deleted_at
+                    SELECT id, target_path, deleted_at, sha256
                     FROM files
                     WHERE id = ?
                     """,
@@ -60,6 +60,16 @@ def remove_file(
                 raise ValueError(f"Slettemål finnes allerede: {deleted_path}")
 
             deleted_path.parent.mkdir(parents=True, exist_ok=True)
+            move_id = db.create_pending_file_move(
+                conn,
+                file_id=int(row["id"]),
+                target_root=target,
+                from_path=original_path,
+                to_path=deleted_path,
+                sha256=str(row["sha256"]),
+                operation="remove",
+            )
+            conn.commit()
             shutil.move(str(original_path), str(deleted_path))
             db.mark_file_deleted(
                 conn,
@@ -68,6 +78,7 @@ def remove_file(
                 deleted_path=deleted_path,
                 original_target_path=original_path,
             )
+            db.complete_pending_file_move(conn, move_id=move_id)
             conn.commit()
             return db.target_relative_path(target, deleted_path)
         finally:
@@ -106,7 +117,7 @@ def undelete_file(
             else:
                 row = conn.execute(
                     """
-                    SELECT id, target_path, deleted_at, deleted_original_target_path
+                    SELECT id, target_path, deleted_at, deleted_original_target_path, sha256
                     FROM files
                     WHERE id = ?
                     """,
@@ -136,6 +147,16 @@ def undelete_file(
                 raise ValueError(f"Målfilen finnes allerede: {restored_path}")
 
             restored_path.parent.mkdir(parents=True, exist_ok=True)
+            move_id = db.create_pending_file_move(
+                conn,
+                file_id=int(row["id"]),
+                target_root=target,
+                from_path=deleted_path,
+                to_path=restored_path,
+                sha256=str(row["sha256"]),
+                operation="undelete",
+            )
+            conn.commit()
             shutil.move(str(deleted_path), str(restored_path))
             db.mark_file_undeleted(
                 conn,
@@ -143,6 +164,7 @@ def undelete_file(
                 target_root=target,
                 restored_path=restored_path,
             )
+            db.complete_pending_file_move(conn, move_id=move_id)
             conn.commit()
             return db.target_relative_path(target, restored_path)
         finally:

@@ -627,6 +627,7 @@ def refresh_non_metadata_file(
         destination_dir, current_path.name, file_hash
     )
 
+    move_id: int | None = None
     if already_present:
         if db.path_key(destination_path) == db.path_key(current_path):
             stats.already_correct += 1
@@ -641,6 +642,16 @@ def refresh_non_metadata_file(
     else:
         if not dry_run:
             destination_path.parent.mkdir(parents=True, exist_ok=True)
+            move_id = db.create_pending_file_move(
+                conn,
+                file_id=int(row["id"]),
+                target_root=target,
+                from_path=current_path,
+                to_path=destination_path,
+                sha256=file_hash,
+                operation="refresh-metadata",
+            )
+            conn.commit()
             shutil.move(str(current_path), str(destination_path))
         stats.moved += 1
         if verbose:
@@ -660,6 +671,8 @@ def refresh_non_metadata_file(
             camera_make=camera.make if camera is not None else None,
             camera_model=camera.model if camera is not None else None,
         )
+        if move_id is not None:
+            db.complete_pending_file_move(conn, move_id=move_id)
         db.resolve_errors_for_path(conn, stage="refresh-metadata", source_path=current_path)
 
 

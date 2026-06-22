@@ -47,6 +47,7 @@ from .face import (
     suggest_faces,
 )
 from .file_lifecycle import remove_file, undelete_file
+from .file_moves import recover_pending_file_moves
 from .file_tags import set_file_tag
 from .formatting import format_bytes
 from .geo import (
@@ -1106,6 +1107,8 @@ def run(args: argparse.Namespace) -> int:
 
     target = resolve_target(args.target)
     validate_collection_platform(target)
+    if should_recover_pending_file_moves(args):
+        recover_pending_file_moves(target)
     record_target_best_effort(program_repo_root(), target)
 
     if args.command in TARGET_COMMANDS or (
@@ -1184,7 +1187,11 @@ def run_no_target_command(args: argparse.Namespace) -> int:
         return run_where_is()
 
     if args.command in {"doctor", "face-status"}:
-        return run_doctor(args.target, deep=getattr(args, "deep", False))
+        target = db.find_target(args.target)
+        if target is not None:
+            validate_collection_platform(target)
+            recover_pending_file_moves(target)
+        return run_doctor(target, deep=getattr(args, "deep", False))
 
     if args.command == "config":
         return run_config(args.section, enabled=args.action == "enable")
@@ -1193,6 +1200,14 @@ def run_no_target_command(args: argparse.Namespace) -> int:
         return run_face_config(args.enabled)
 
     raise ValueError(f"Ukjent kommando uten bildesamling: {args.command}")
+
+
+def should_recover_pending_file_moves(args: argparse.Namespace) -> bool:
+    if args.command == "migrate":
+        return False
+    if getattr(args, "dry_run", False):
+        return False
+    return True
 
 
 def run_target_command(args: argparse.Namespace, target: Path) -> int:
@@ -2143,6 +2158,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False) -> int:
             doctor_obs(f"openclip-database finnes ikke ennå: {openclip_db_path(target)}")
         print()
         print("Databaseintegritet:")
+        doctor_check_pending_file_moves(target)
         doctor_check_duplicate_active_sha256(target)
         doctor_check_active_files_exist(target)
         doctor_check_orphan_files(target)
@@ -2190,6 +2206,26 @@ def doctor_check_duplicate_active_sha256(target: Path) -> None:
             f"  file #{int(row['id'])}: "
             f"{Path(str(row['target_path'])).as_posix()}"
         )
+
+
+def doctor_check_pending_file_moves(target: Path) -> None:
+    conn = db.connect(target)
+    try:
+        rows = db.prepared_pending_file_moves(conn)
+    finally:
+        conn.close()
+
+    if not rows:
+        doctor_ok("ingen uavklarte filflyttinger")
+        return
+    doctor_error(f"{len(rows)} uavklarte filflytting(er) i pending_file_moves.")
+    for row in rows[:20]:
+        doctor_info(
+            f"pending_file_moves #{row['id']}: {row['operation']} "
+            f"{row['from_path']} -> {row['to_path']}"
+        )
+    doctor_report_omitted_details(len(rows))
+    doctor_advice("Kjør en Bildebank-kommando på nytt etter at filtilstanden er rettet.")
 
 
 def doctor_check_active_files_exist(target: Path) -> None:
@@ -3319,6 +3355,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  legge til kamerakolonner i files")
     if plan.creates_pending_file_deletes:
         print("  opprette pending_file_deletes")
+    if plan.creates_pending_file_moves:
+        print("  opprette pending_file_moves")
     if plan.refreshes_performance_indexes:
         print("  oppdatere manglende ytelsesindekser")
     for repair in plan.internal_repairs:
@@ -3367,6 +3405,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Kjør bildebank refresh-metadata --rescan for å fylle kameradata for eksisterende filer.")
     if result.creates_pending_file_deletes:
         print("Oppretter pending_file_deletes.")
+    if result.creates_pending_file_moves:
+        print("Oppretter pending_file_moves.")
     if result.refreshes_performance_indexes:
         print("Oppdaterer manglende ytelsesindekser.")
     if result.internal_repairs:

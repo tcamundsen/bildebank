@@ -16,7 +16,7 @@ from .value_parsing import optional_int, require_int
 
 
 DB_FILENAME = ".bilder.sqlite3"
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 GPS_ERROR_EXIFTOOL = "exiftool_error"
 GPS_ERROR_FILE_MISSING = "file_missing"
 TAG_KIND_USER = "user"
@@ -145,6 +145,7 @@ class MigrationPlan:
     refreshes_performance_indexes: bool = False
     adds_camera_columns: bool = False
     creates_pending_file_deletes: bool = False
+    creates_pending_file_moves: bool = False
     internal_repairs: tuple[str, ...] = ()
 
 
@@ -226,6 +227,7 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
     create_geo_places_schema(conn)
     create_tags_schema(conn)
     create_pending_file_deletes_schema(conn)
+    create_pending_file_moves_schema(conn)
     if table_exists(conn, "errors"):
         ensure_column(conn, "errors", "resolved_at", "TEXT")
     if table_exists(conn, "files"):
@@ -490,6 +492,20 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS pending_file_moves (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL,
+            from_path TEXT NOT NULL,
+            to_path TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            state TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at TEXT,
+            last_error TEXT
+        );
         """
     )
     ensure_compatible_columns(conn)
@@ -617,6 +633,26 @@ def create_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
     )
 
 
+def create_pending_file_moves_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pending_file_moves (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_id INTEGER NOT NULL,
+            from_path TEXT NOT NULL,
+            to_path TEXT NOT NULL,
+            sha256 TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            state TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at TEXT,
+            last_error TEXT
+        )
+        """
+    )
+
+
 def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
     conn = connect(target, require_current=False)
     try:
@@ -631,6 +667,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                     conn,
                     require_performance_indexes=False,
                     require_pending_file_deletes=False,
+                    require_pending_file_moves=False,
                     require_internal_structure=False,
                 )
             internal_repairs = current_schema_internal_repairs(conn)
@@ -643,7 +680,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 refreshes_performance_indexes=bool(missing_performance_indexes(conn)),
                 internal_repairs=internal_repairs,
             )
-        if version in {5, 6, 7, 8, 9, 10}:
+        if version in {5, 6, 7, 8, 9, 10, 11}:
             if validate:
                 validate_current_schema(
                     conn,
@@ -651,6 +688,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                     require_manual_date_columns=version >= 9,
                     require_camera_columns=version >= 10,
                     require_pending_file_deletes=version >= 11,
+                    require_pending_file_moves=version >= 12,
                     require_internal_structure=False,
                 )
             return MigrationPlan(
@@ -663,7 +701,8 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 backfills_h3_10_11=needs_h3_10_11_backfill(conn),
                 refreshes_performance_indexes=version == 8,
                 adds_camera_columns=version < 10,
-                creates_pending_file_deletes=True,
+                creates_pending_file_deletes=version < 11,
+                creates_pending_file_moves=True,
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -689,6 +728,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             backfills_h3_10_11=needs_h3_10_11_backfill(conn),
             adds_camera_columns=True,
             creates_pending_file_deletes=True,
+            creates_pending_file_moves=True,
         )
     finally:
         conn.close()
@@ -715,6 +755,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                     conn,
                     require_performance_indexes=False,
                     require_pending_file_deletes=False,
+                    require_pending_file_moves=False,
                     require_internal_structure=False,
                 )
                 repair_current_schema_internal_structure(conn)
@@ -735,7 +776,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 refreshes_performance_indexes=refreshes_performance_indexes,
                 internal_repairs=internal_repairs,
             )
-        if version in {5, 6, 7, 8, 9, 10}:
+        if version in {5, 6, 7, 8, 9, 10, 11}:
             imported_files = count_rows(conn, "files")
             duplicate_findings = count_rows(conn, "duplicate_findings")
             cleans_gps_errors = has_legacy_gps_errors(conn)
@@ -768,7 +809,8 @@ def migrate_database(target: Path) -> MigrationPlan:
                 backfills_h3_10_11=backfills_h3_10_11,
                 refreshes_performance_indexes=version == 8,
                 adds_camera_columns=version < 10,
-                creates_pending_file_deletes=True,
+                creates_pending_file_deletes=version < 11,
+                creates_pending_file_moves=True,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -836,6 +878,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             refreshes_performance_indexes=version == 8,
             adds_camera_columns=True,
             creates_pending_file_deletes=True,
+            creates_pending_file_moves=True,
         )
     finally:
         conn.close()
@@ -937,6 +980,7 @@ def validate_current_schema(
     require_manual_date_columns: bool = True,
     require_camera_columns: bool = True,
     require_pending_file_deletes: bool = True,
+    require_pending_file_moves: bool = True,
     require_internal_structure: bool = True,
 ) -> None:
     if not table_exists(conn, "sources"):
@@ -973,6 +1017,8 @@ def validate_current_schema(
             )
     if require_pending_file_deletes:
         validate_pending_file_deletes_schema(conn)
+    if require_pending_file_moves:
+        validate_pending_file_moves_schema(conn)
     if table_exists(conn, "errors") and conn.execute("PRAGMA foreign_key_list(errors)").fetchall():
         raise ValueError("errors har gammel foreign key til sources. Kjør bildebank migrate.")
     validate_file_sources_schema(conn)
@@ -1015,6 +1061,30 @@ def validate_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
     if conn.execute("PRAGMA foreign_key_list(pending_file_deletes)").fetchall():
         raise ValueError(
             "pending_file_deletes har gammel foreign key for source_id."
+        )
+
+
+def validate_pending_file_moves_schema(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "pending_file_moves"):
+        raise ValueError("Databasen mangler tabellen pending_file_moves.")
+    expected_columns = {
+        "id",
+        "file_id",
+        "from_path",
+        "to_path",
+        "sha256",
+        "operation",
+        "state",
+        "created_at",
+        "updated_at",
+        "completed_at",
+        "last_error",
+    }
+    missing = sorted(expected_columns - table_columns(conn, "pending_file_moves"))
+    if missing:
+        raise ValueError(
+            "pending_file_moves mangler forventede kolonner: "
+            f"{', '.join(missing)}"
         )
 
 
@@ -1103,6 +1173,13 @@ def current_schema_internal_repairs(conn: sqlite3.Connection) -> tuple[str, ...]
             validate_pending_file_deletes_schema(conn)
         except ValueError as exc:
             repairs.append(str(exc))
+    if not table_exists(conn, "pending_file_moves"):
+        repairs.append("Databasen mangler tabellen pending_file_moves.")
+    else:
+        try:
+            validate_pending_file_moves_schema(conn)
+        except ValueError as exc:
+            repairs.append(str(exc))
     tags_exists = table_exists(conn, "tags")
     file_tags_exists = table_exists(conn, "file_tags")
     if not tags_exists:
@@ -1132,6 +1209,7 @@ def current_schema_internal_repairs(conn: sqlite3.Connection) -> tuple[str, ...]
 def repair_current_schema_internal_structure(conn: sqlite3.Connection) -> None:
     repair_tags_schema(conn)
     repair_pending_file_deletes_schema(conn)
+    repair_pending_file_moves_schema(conn)
     value = get_meta(conn, COLLECTION_ID_META_KEY)
     if value is None:
         set_meta(conn, COLLECTION_ID_META_KEY, str(uuid.uuid4()))
@@ -1198,6 +1276,13 @@ def repair_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         "ALTER TABLE pending_file_deletes_v11_repair RENAME TO pending_file_deletes"
     )
+
+
+def repair_pending_file_moves_schema(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "pending_file_moves"):
+        create_pending_file_moves_schema(conn)
+        return
+    validate_pending_file_moves_schema(conn)
 
 
 def repair_tags_schema(conn: sqlite3.Connection) -> None:
@@ -3284,6 +3369,100 @@ def clean_manual_date_note(note: str | None) -> str | None:
         return None
     clean = " ".join(note.strip().split())
     return clean or None
+
+
+def create_pending_file_move(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    target_root: Path,
+    from_path: Path,
+    to_path: Path,
+    sha256: str,
+    operation: str,
+) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO pending_file_moves(
+            file_id, from_path, to_path, sha256, operation, state
+        )
+        VALUES(?, ?, ?, ?, ?, 'prepared')
+        """,
+        (
+            file_id,
+            target_relative_path(target_root, from_path).as_posix(),
+            target_relative_path(target_root, to_path).as_posix(),
+            sha256,
+            operation,
+        ),
+    )
+    return int(cursor.lastrowid)
+
+
+def prepared_pending_file_moves(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT id, file_id, from_path, to_path, sha256, operation, state,
+                   created_at, updated_at, completed_at, last_error
+            FROM pending_file_moves
+            WHERE state = 'prepared'
+              AND completed_at IS NULL
+            ORDER BY id
+            """
+        )
+    )
+
+
+def complete_pending_file_move(conn: sqlite3.Connection, *, move_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE pending_file_moves
+        SET state = 'completed',
+            updated_at = CURRENT_TIMESTAMP,
+            completed_at = CURRENT_TIMESTAMP,
+            last_error = NULL
+        WHERE id = ?
+          AND state = 'prepared'
+          AND completed_at IS NULL
+        """,
+        (move_id,),
+    )
+
+
+def abort_pending_file_move(conn: sqlite3.Connection, *, move_id: int) -> None:
+    conn.execute(
+        """
+        UPDATE pending_file_moves
+        SET state = 'aborted',
+            updated_at = CURRENT_TIMESTAMP,
+            completed_at = CURRENT_TIMESTAMP,
+            last_error = NULL
+        WHERE id = ?
+          AND state = 'prepared'
+          AND completed_at IS NULL
+        """,
+        (move_id,),
+    )
+
+
+def fail_pending_file_move(
+    conn: sqlite3.Connection,
+    *,
+    move_id: int,
+    error: str,
+) -> None:
+    conn.execute(
+        """
+        UPDATE pending_file_moves
+        SET updated_at = CURRENT_TIMESTAMP,
+            last_error = ?
+        WHERE id = ?
+          AND state = 'prepared'
+          AND completed_at IS NULL
+        """,
+        (error, move_id),
+    )
 
 
 def mark_file_deleted(
