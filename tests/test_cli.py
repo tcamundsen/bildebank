@@ -8115,6 +8115,97 @@ enabled = true
         self.assertIn("  Råd: Kjør setup-windows.ps1 på nytt", stdout)
         self.assertEqual(stderr, "")
 
+    def test_doctor_reports_database_file_missing_on_disk(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename,
+                        stored_filename, sha256, size_bytes, date_source
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "2024/01/missing.jpg",
+                        db.relative_path_key(Path("2024/01/missing.jpg")),
+                        "missing.jpg",
+                        "missing.jpg",
+                        "missing-file-sha256",
+                        123,
+                        "filename",
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli.python_module_available", return_value=False),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: 1 databaseført(e) fil(er) mangler på disk.",
+            stdout,
+        )
+        self.assertIn(
+            "INFO: file #1 (aktiv): 2024/01/missing.jpg",
+            stdout,
+        )
+        self.assertIn("Undersøk filene og sikkerhetskopien", stdout)
+
+    def test_doctor_reports_database_files_present_on_disk(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            stored_path = target / "2024" / "01" / "present.jpg"
+            stored_path.parent.mkdir(parents=True)
+            stored_path.write_bytes(b"present")
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename,
+                        stored_filename, sha256, size_bytes, date_source
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        "2024/01/present.jpg",
+                        db.relative_path_key(Path("2024/01/present.jpg")),
+                        "present.jpg",
+                        "present.jpg",
+                        "present-file-sha256",
+                        stored_path.stat().st_size,
+                        "filename",
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli.python_module_available", return_value=False),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "OK: alle 1 databaseførte filer finnes på disk",
+            stdout,
+        )
+        self.assertNotIn("databaseført(e) fil(er) mangler på disk", stdout)
+
     def test_face_config_creates_config_file(self) -> None:
         code, stdout, stderr = capture_cli(["face-config", "true"])
 

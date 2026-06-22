@@ -1853,6 +1853,18 @@ def duplicate_active_sha256_files(conn: sqlite3.Connection) -> list[sqlite3.Row]
     )
 
 
+def file_storage_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT id, target_path, deleted_at
+            FROM files
+            ORDER BY id
+            """
+        )
+    )
+
+
 def get_file_source_for_source_path(
     conn: sqlite3.Connection, source_id: int, source_path_key: str
 ) -> sqlite3.Row | None:

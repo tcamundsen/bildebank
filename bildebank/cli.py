@@ -2139,6 +2139,7 @@ def run_doctor(target_arg: Path | None = None) -> int:
         print()
         print("Databaseintegritet:")
         doctor_check_duplicate_active_sha256(target)
+        doctor_check_file_storage(target)
     else:
         print()
         print("Aktiv bildesamling:")
@@ -2179,6 +2180,57 @@ def doctor_check_duplicate_active_sha256(target: Path) -> None:
             f"  file #{int(row['id'])}: "
             f"{Path(str(row['target_path'])).as_posix()}"
         )
+
+
+def doctor_check_file_storage(target: Path) -> None:
+    conn = db.connect(target)
+    try:
+        rows = db.file_storage_rows(conn)
+    finally:
+        conn.close()
+
+    target_root = target.resolve()
+    missing: list[tuple[int, Path, bool]] = []
+    invalid: list[tuple[int, Path, bool]] = []
+    for row in rows:
+        target_path = Path(str(row["target_path"]))
+        resolved_path = db.absolute_target_path(target, target_path).resolve()
+        deleted = row["deleted_at"] is not None
+        try:
+            resolved_path.relative_to(target_root)
+        except ValueError:
+            invalid.append((int(row["id"]), target_path, deleted))
+            continue
+        if not resolved_path.is_file():
+            missing.append((int(row["id"]), target_path, deleted))
+
+    if not missing and not invalid:
+        doctor_ok(f"alle {len(rows)} databaseførte filer finnes på disk")
+        return
+
+    if missing:
+        doctor_error(
+            f"{len(missing)} databaseført(e) fil(er) mangler på disk."
+        )
+        for file_id, target_path, deleted in missing:
+            status = "slettet" if deleted else "aktiv"
+            doctor_info(
+                f"file #{file_id} ({status}): {target_path.as_posix()}"
+            )
+
+    if invalid:
+        doctor_error(
+            f"{len(invalid)} databaseført(e) filsti(er) peker utenfor bildesamlingen."
+        )
+        for file_id, target_path, deleted in invalid:
+            status = "slettet" if deleted else "aktiv"
+            doctor_info(
+                f"file #{file_id} ({status}): {target_path.as_posix()}"
+            )
+
+    doctor_advice(
+        "Undersøk filene og sikkerhetskopien før du endrer databasen."
+    )
 
 
 def run_face_config(enabled: bool) -> int:
