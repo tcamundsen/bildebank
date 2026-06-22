@@ -1508,7 +1508,7 @@ pretrained = "laion2b_s34b_b79k"
             deleted_path = target / "2024/01/deleted.png"
             active_path.parent.mkdir(parents=True)
             active_path.write_bytes(minimal_png(100, 80))
-            deleted_path.write_bytes(minimal_png(100, 80))
+            deleted_path.write_bytes(minimal_png(101, 80))
             active_id = register_target_file(target, Path("2024/01/active.png"))
             deleted_id = register_target_file(target, Path("2024/01/deleted.png"))
             cells = h3_cells_for_point(59.91273, 10.74609)

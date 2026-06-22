@@ -40,6 +40,7 @@ PERFORMANCE_INDEX_NAMES = (
     "idx_files_active_browser_order",
     "idx_files_active_date_source_order",
     "idx_files_active_target_path_key",
+    "idx_files_sha256_active_unique",
     *(f"idx_files_{column}" for column in H3_FILE_COLUMNS),
     *(f"idx_files_{column}_browser_order" for column in H3_FILE_COLUMNS),
     "idx_files_gps",
@@ -191,7 +192,7 @@ def require_current_schema(conn: sqlite3.Connection, *, full: bool = True) -> No
                 validate_current_schema(conn)
             except ValueError as exc:
                 raise SchemaMigrationRequired(
-                    f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v10-struktur.\n"
+                    f"Databasen har schema_version={SCHEMA_VERSION}, men mangler forventet v{SCHEMA_VERSION}-struktur.\n"
                     f"{exc}\n"
                     "Kjør bildebank migrate."
                 ) from exc
@@ -254,6 +255,7 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
 
 def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
     if table_exists(conn, "files"):
+        validate_no_duplicate_active_sha256(conn)
         execute_sql_statements(
             conn,
             f"""
@@ -267,6 +269,10 @@ def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_files_active_target_path_key
         ON files(target_path_key)
+        WHERE deleted_at IS NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_files_sha256_active_unique
+        ON files(sha256)
         WHERE deleted_at IS NULL;
 
         {h3_file_index_sql()}
@@ -398,6 +404,10 @@ def apply_schema(conn: sqlite3.Connection) -> None:
         );
 
         CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_files_sha256_active_unique
+        ON files(sha256)
+        WHERE deleted_at IS NULL;
 
         CREATE INDEX IF NOT EXISTS idx_files_active_browser_order
         ON files ({BROWSER_DATE_ORDER_SQL}, target_path_key)
@@ -1297,6 +1307,27 @@ def validate_performance_indexes(conn: sqlite3.Connection) -> None:
     missing = missing_performance_indexes(conn)
     if missing:
         raise ValueError(f"Databasen mangler ytelsesindeks: {missing[0]}. Kjør bildebank migrate.")
+
+
+def validate_no_duplicate_active_sha256(conn: sqlite3.Connection) -> None:
+    row = conn.execute(
+        """
+        SELECT sha256, COUNT(*) AS file_count
+        FROM files
+        WHERE deleted_at IS NULL
+        GROUP BY sha256
+        HAVING COUNT(*) > 1
+        ORDER BY sha256
+        LIMIT 1
+        """
+    ).fetchone()
+    if row is None:
+        return
+    raise ValueError(
+        "Kan ikke opprette unik indeks for aktive filer: "
+        f"{int(row['file_count'])} aktive files-rader har samme sha256={row['sha256']}. "
+        "Kjør bildebank doctor og rett duplikatene før du prøver migrate på nytt."
+    )
 
 
 def missing_performance_indexes(conn: sqlite3.Connection) -> list[str]:

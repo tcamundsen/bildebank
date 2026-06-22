@@ -61,7 +61,14 @@ def capture_cli(args: list[str]) -> tuple[int, str, str]:
     return code, stdout.getvalue(), stderr.getvalue()
 
 
-def register_target_file(target: Path, relative_path: Path, *, content: bytes = b"image") -> int:
+def register_target_file(
+    target: Path,
+    relative_path: Path,
+    *,
+    content: bytes | None = None,
+) -> int:
+    if content is None:
+        content = f"image:{relative_path.as_posix()}".encode()
     path = target / relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)

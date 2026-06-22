@@ -16,3 +16,18 @@ mangler. Feil beholder raden og oppdaterer `attempts`, `last_error` og
 
 Migrering fra v10 oppretter bare tabellen. Ingen eksisterende filer legges
 automatisk i køen.
+
+## Unik SHA-256 for aktive filer
+
+`files` har i tillegg en partiell unik indeks:
+
+```sql
+CREATE UNIQUE INDEX idx_files_sha256_active_unique
+ON files(sha256)
+WHERE deleted_at IS NULL;
+```
+
+Den eksisterende ikke-unike `idx_files_sha256` beholdes. Før migrering
+oppretter den nye indeksen, avvises databasen med beskjed om å kjøre
+`bildebank doctor` hvis flere aktive `files`-rader har samme SHA-256.
+Slettede rader omfattes ikke av unikheten.
