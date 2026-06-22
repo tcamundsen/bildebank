@@ -1866,6 +1866,13 @@ def active_file_integrity_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     )
 
 
+def file_target_path_keys(conn: sqlite3.Connection) -> set[str]:
+    return {
+        str(row["target_path_key"])
+        for row in conn.execute("SELECT target_path_key FROM files")
+    }
+
+
 def get_file_source_for_source_path(
     conn: sqlite3.Connection, source_id: int, source_path_key: str
 ) -> sqlite3.Row | None:

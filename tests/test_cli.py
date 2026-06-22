@@ -8325,6 +8325,48 @@ enabled = true
         self.assertIn("changed.jpg", stdout)
         self.assertEqual(database_after, database_before)
 
+    def test_doctor_reports_orphan_file_in_collection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            registered_path = target / "2024" / "01" / "registered.jpg"
+            registered_path.parent.mkdir(parents=True)
+            registered_path.write_bytes(b"registered")
+            register_target_file(
+                target,
+                registered_path.relative_to(target),
+            )
+            orphan_path = target / "2024" / "01" / "orphan.jpg"
+            orphan_path.write_bytes(b"orphan")
+            (target / "2024" / "01" / "notes.txt").write_text(
+                "ikke media",
+                encoding="utf-8",
+            )
+
+            with (
+                patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli.python_module_available", return_value=False),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertNotIn("Dyp filintegritet:", stdout)
+        self.assertNotIn("Doctor SHA-256:", stdout)
+        self.assertIn("Doctor orphan: scannet=1", stdout)
+        self.assertIn(
+            "Doctor orphan: ferdig scannet 2 mediefiler.",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: 1 orphan-fil(er) finnes i samlingen uten databasepost.",
+            stdout,
+        )
+        self.assertIn("INFO: orphan: 2024/01/orphan.jpg", stdout)
+        self.assertNotIn("orphan: 2024/01/registered.jpg", stdout)
+        self.assertNotIn("orphan: 2024/01/notes.txt", stdout)
+
     def test_face_config_creates_config_file(self) -> None:
         code, stdout, stderr = capture_cli(["face-config", "true"])
 

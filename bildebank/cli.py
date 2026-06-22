@@ -2145,6 +2145,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False) -> int:
         print("Databaseintegritet:")
         doctor_check_duplicate_active_sha256(target)
         doctor_check_active_files_exist(target)
+        doctor_check_orphan_files(target)
         if deep:
             print()
             print("Dyp filintegritet:")
@@ -2331,6 +2332,66 @@ def doctor_deep_check_active_file_hashes(target: Path) -> None:
     doctor_advice(
         "Undersøk filene og sikkerhetskopien før du endrer databasen."
     )
+
+
+def doctor_check_orphan_files(target: Path) -> None:
+    conn = db.connect(target)
+    try:
+        referenced_path_keys = db.file_target_path_keys(conn)
+    finally:
+        conn.close()
+
+    orphan_files = doctor_find_orphan_files(target, referenced_path_keys)
+    if not orphan_files:
+        doctor_ok("ingen orphan-filer funnet i samlingen")
+        return
+
+    doctor_error(
+        f"{len(orphan_files)} orphan-fil(er) finnes i samlingen uten databasepost."
+    )
+    for relative_path in orphan_files[:20]:
+        doctor_info(f"orphan: {relative_path.as_posix()}")
+    doctor_report_omitted_details(len(orphan_files))
+    doctor_advice(
+        "Undersøk filene og sikkerhetskopien før du endrer databasen."
+    )
+
+
+def doctor_find_orphan_files(
+    target: Path,
+    referenced_path_keys: set[str],
+) -> list[Path]:
+    managed_roots = sorted(
+        (
+            path
+            for path in target.iterdir()
+            if path.is_dir()
+            and (
+                path.name in {"udatert", "deleted"}
+                or (len(path.name) == 4 and path.name.isdigit())
+            )
+        ),
+        key=lambda path: path.name,
+    )
+    orphan_files: list[Path] = []
+    scanned = 0
+    progress = ProgressMeter("Doctor orphan")
+    progress.update_count(0, action="scannet", force=True)
+    for managed_root in managed_roots:
+        for dirpath, _, filenames in os.walk(managed_root):
+            for filename in filenames:
+                path = Path(dirpath) / filename
+                if not is_supported_media(path):
+                    continue
+                scanned += 1
+                relative_path = db.target_relative_path(target, path)
+                if db.relative_path_key(relative_path) not in referenced_path_keys:
+                    orphan_files.append(relative_path)
+                progress.update_count(scanned, action="scannet")
+    progress.done(
+        f"Doctor orphan: ferdig scannet {scanned} mediefiler."
+    )
+    return sorted(orphan_files, key=lambda path: path.as_posix())
 
 
 def doctor_report_omitted_details(total: int) -> None:
