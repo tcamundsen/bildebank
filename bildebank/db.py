@@ -1795,6 +1795,33 @@ def files_by_hash(conn: sqlite3.Connection, sha256: str) -> list[sqlite3.Row]:
     )
 
 
+def duplicate_active_sha256_files(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            WITH duplicate_hashes AS (
+                SELECT sha256, COUNT(*) AS duplicate_count
+                FROM files
+                WHERE deleted_at IS NULL
+                GROUP BY sha256
+                HAVING COUNT(*) > 1
+            )
+            SELECT
+                files.id,
+                files.sha256,
+                files.target_path,
+                files.size_bytes,
+                files.imported_at,
+                duplicate_hashes.duplicate_count
+            FROM files
+            JOIN duplicate_hashes ON duplicate_hashes.sha256 = files.sha256
+            WHERE files.deleted_at IS NULL
+            ORDER BY files.sha256, files.id
+            """
+        )
+    )
+
+
 def get_file_source_for_source_path(
     conn: sqlite3.Connection, source_id: int, source_path_key: str
 ) -> sqlite3.Row | None:

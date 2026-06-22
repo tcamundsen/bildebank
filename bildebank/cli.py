@@ -2136,6 +2136,9 @@ def run_doctor(target_arg: Path | None = None) -> int:
             doctor_info(f"bildesøk: {openclip_summary.search_runs}")
         else:
             doctor_obs(f"openclip-database finnes ikke ennå: {openclip_db_path(target)}")
+        print()
+        print("Databaseintegritet:")
+        doctor_check_duplicate_active_sha256(target)
     else:
         print()
         print("Aktiv bildesamling:")
@@ -2143,6 +2146,39 @@ def run_doctor(target_arg: Path | None = None) -> int:
         doctor_advice("Kjør kommandoen fra en bildesamling, eller bruk `--target`.")
         doctor_advice('Eksempel: "bildebank --target C:\\bildesamling doctor"')
     return 0
+
+
+def doctor_check_duplicate_active_sha256(target: Path) -> None:
+    conn = db.connect(target)
+    try:
+        rows = db.duplicate_active_sha256_files(conn)
+    finally:
+        conn.close()
+
+    if not rows:
+        doctor_ok("ingen duplikate aktive SHA-256-verdier i files")
+        return
+
+    duplicate_hash_count = len({str(row["sha256"]) for row in rows})
+    doctor_error(
+        f"{duplicate_hash_count} SHA-256-verdi(er) finnes på flere aktive filer."
+    )
+    doctor_advice(
+        "Ikke legg på UNIQUE-index for aktive files.sha256 før dette er ryddet."
+    )
+
+    current_sha256 = None
+    for row in rows:
+        sha256 = str(row["sha256"])
+        if sha256 != current_sha256:
+            current_sha256 = sha256
+            doctor_info(
+                f"sha256={sha256} ({int(row['duplicate_count'])} aktive filer)"
+            )
+        doctor_info(
+            f"  file #{int(row['id'])}: "
+            f"{Path(str(row['target_path'])).as_posix()}"
+        )
 
 
 def run_face_config(enabled: bool) -> int:
