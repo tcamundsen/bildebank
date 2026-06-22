@@ -37,7 +37,7 @@ class BrowserTextFilter:
     missing: str | None = None
     orientation: str | None = None
     path: str | None = None
-    person: str | None = None
+    persons: tuple[str, ...] = ()
     size_gt: int | None = None
     size_gte: int | None = None
     size_lt: int | None = None
@@ -117,7 +117,7 @@ class FilterParseState:
     missing: str | None = None
     orientation: str | None = None
     path: str | None = None
-    person: str | None = None
+    persons: list[str] = field(default_factory=list)
     size: NumericComparison = field(default_factory=NumericComparison)
     source: str | None = None
     tag: str | None = None
@@ -161,7 +161,7 @@ class FilterParseState:
             missing=self.missing,
             orientation=self.orientation,
             path=self.path,
-            person=self.person,
+            persons=tuple(self.persons),
             size_gt=self.size.gt,
             size_gte=self.size.gte,
             size_lt=self.size.lt,
@@ -264,6 +264,10 @@ def parse_date_filter(state: FilterParseState, key: str, value: str) -> None:
 
 def parse_simple_text_filter(state: FilterParseState, key: str, value: str) -> None:
     state.set_once(key, value)
+
+
+def parse_person_filter(state: FilterParseState, _key: str, value: str) -> None:
+    state.persons.append(value)
 
 
 def parse_location_filter(state: FilterParseState, _key: str, value: str) -> None:
@@ -518,7 +522,7 @@ KEY_VALUE_FILTERS: dict[str, Callable[[FilterParseState, str, str], None]] = {
     "missing": parse_missing_filter,
     "orientation": parse_orientation_filter,
     "path": parse_simple_text_filter,
-    "person": parse_simple_text_filter,
+    "person": parse_person_filter,
     "source": parse_simple_text_filter,
     "tag": parse_simple_text_filter,
     "type": parse_type_filter,
@@ -580,7 +584,7 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         missing=text_filter.missing,
         orientation=text_filter.orientation,
         path=text_filter.path,
-        person=text_filter.person,
+        persons=text_filter.persons,
         size_gt=text_filter.size_gt,
         size_gte=text_filter.size_gte,
         size_lt=text_filter.size_lt,
@@ -769,9 +773,10 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     if text_filter.path is not None:
         where.append("lower(target_path) LIKE ?")
         params.append(like_contains_param(text_filter.path.replace("\\", "/")))
-    if text_filter.person is not None:
+    for person in text_filter.persons:
+        person_name = person.strip().lower()
         where.append(person_where_clause())
-        params.append(text_filter.person.strip().lower())
+        params.extend((person_name, person_name))
     if text_filter.source is not None:
         source_filter, source_params = source_where_clause(text_filter.source)
         where.append(source_filter)
@@ -913,6 +918,12 @@ def person_where_clause() -> str:
         JOIN face_db.faces ON face_db.faces.id = person_matches.face_id
         WHERE face_db.faces.file_id = files.id
           AND lower(face_db.persons.name) = ?
+        UNION ALL
+        SELECT 1
+        FROM face_db.persons
+        JOIN face_db.person_files ON face_db.person_files.person_id = face_db.persons.id
+        WHERE face_db.person_files.file_id = files.id
+          AND lower(face_db.persons.name) = ?
     )
     """
 
@@ -934,7 +945,7 @@ def text_filter_shows_motion_videos(text_filter: BrowserTextFilter) -> bool:
 
 
 def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTextFilter) -> None:
-    if text_filter.person is None:
+    if not text_filter.persons:
         return
     from .face import connect_face_db, face_db_path
 
@@ -1023,7 +1034,11 @@ def filter_help_html() -> str:
       <dl class="info-list">
         <div class="info-row">
           <dt>Bilder fra 2024</dt>
-          <dd><a href="/filter/year:2024"><code>year:2024</code></a>></dd>
+          <dd><a href="/filter/year:2024"><code>year:2024</code></a></dd>
+        </div>
+        <div class="info-row">
+          <dt>Alle bilder med Per og Kari</dt>
+          <dd><a href="/filter/month:12 day:24"><code>person:Per person:Kari</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Alle julaftener</dt>

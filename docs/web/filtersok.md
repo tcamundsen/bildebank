@@ -472,9 +472,16 @@ Filtrer etter personnavn i ansiktsdatabasen.
 ```text
 person:Viljar
 person:"Ola Nordmann"
+person:Viljar person:Jill
 ```
 
-Søket bruker personnavn i ansiktsdatabasen. Det matcher bilder der personen er knyttet til et ansikt, inkludert forslag.
+Søket bruker personnavn i ansiktsdatabasen. Det matcher bilder der personen er knyttet til et bekreftet ansikt, et forslag eller en manuell kobling under “Personer i bildet”.
+
+Flere `person:`-kriterier kan kombineres. Da må alle personene finnes i bildet:
+
+```text
+person:Viljar person:Jill
+```
 
 ### `is`
 
@@ -617,6 +624,12 @@ tag:"Ute av fokus"
 
 ```text
 person:Viljar month:7
+```
+
+### Bilder med to bestemte personer
+
+```text
+person:Viljar person:Jill
 ```
 
 ### Slettede filer fra en bestemt kilde

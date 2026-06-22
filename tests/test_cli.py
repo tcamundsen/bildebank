@@ -4574,6 +4574,7 @@ model_name = "buffalo_l"
             face_conn = connect_face_db(target)
             try:
                 face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Viljar')")
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(2, 'Jill')")
                 face_conn.execute(
                     """
                     INSERT INTO faces(
@@ -4596,6 +4597,7 @@ model_name = "buffalo_l"
                 )
                 face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
                 face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)")
+                face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(2, 2)")
                 face_conn.commit()
             finally:
                 face_conn.close()
@@ -4640,6 +4642,7 @@ model_name = "buffalo_l"
             size_lte_filter = text_filter_browser_source("size<=2MB")
             path_filter = text_filter_browser_source("path:2024/01")
             person_filter = text_filter_browser_source("person:viljar")
+            person_both_filter = text_filter_browser_source("person:viljar person:jill")
             source_name_filter = text_filter_browser_source("source:source")
             tag_filter = text_filter_browser_source("tag:ute-av-fokus")
             type_file_filter = text_filter_browser_source("type:file")
@@ -4713,6 +4716,8 @@ model_name = "buffalo_l"
             path_month = source_month_items(target, path_filter, "2024-01")
             person_january_month = source_month_items(target, person_filter, "2024-01")
             person_december_month = source_month_items(target, person_filter, "2024-12")
+            person_both_january_month = source_month_items(target, person_both_filter, "2024-01")
+            person_both_december_month = source_month_items(target, person_both_filter, "2024-12")
             source_name_month = source_month_items(target, source_name_filter, "2024-01")
             tag_month = source_month_items(target, tag_filter, "2024-01")
             type_file_item = source_item_by_id(target, type_file_filter, 6)
@@ -4763,6 +4768,7 @@ model_name = "buffalo_l"
             empty_body = empty_source_html(text_filter_browser_source("before:1900-01-01"))
 
         self.assertEqual(source_filter.root_url, "/filter/after%3A2023-12-01%20before%3A2024-12-12")
+        self.assertEqual(person_both_filter.root_url, "/filter/person%3Aviljar%20person%3Ajill")
         self.assertTrue(date_filter_excludes_after_boundary)
         self.assertTrue(date_filter_excludes_before_boundary)
         self.assertEqual([item["id"] for item in date_month], [2])
@@ -4805,6 +4811,8 @@ model_name = "buffalo_l"
         self.assertEqual([item["id"] for item in path_month], [2])
         self.assertEqual([item["id"] for item in person_january_month], [2])
         self.assertEqual([item["id"] for item in person_december_month], [3])
+        self.assertEqual([item["id"] for item in person_both_january_month], [2])
+        self.assertEqual([item["id"] for item in person_both_december_month], [])
         self.assertEqual([item["id"] for item in source_name_month], [2])
         self.assertEqual([item["id"] for item in tag_month], [2])
         self.assertIsNotNone(type_file_item)
@@ -4853,7 +4861,7 @@ model_name = "buffalo_l"
         self.assertEqual(text_filter.camera, "iPhone 17")
         self.assertEqual(text_filter.date_source, "metadata")
         self.assertEqual(text_filter.filename, "IMG")
-        self.assertIsNone(text_filter.person)
+        self.assertEqual(text_filter.persons, ())
         self.assertEqual(text_filter.size_gt, 2 * 1024 * 1024)
         self.assertEqual(text_filter.size_lt, int(2.5 * 1024 * 1024 * 1024))
         self.assertEqual(text_filter.width_gt, 1024)
@@ -4877,7 +4885,8 @@ model_name = "buffalo_l"
         self.assertEqual(parse_text_filter("year:2024").year_eq, 2024)
         self.assertEqual(parse_text_filter("year=2024").year, 2024)
         self.assertEqual(parse_text_filter("year=2024").year_eq, 2024)
-        self.assertEqual(parse_text_filter("person:Viljar").person, "Viljar")
+        self.assertEqual(parse_text_filter("person:Viljar").persons, ("Viljar",))
+        self.assertEqual(parse_text_filter("person:Viljar person:Jill").persons, ("Viljar", "Jill"))
         year_range = parse_text_filter("year>2020 year<2025")
         year_inclusive_range = parse_text_filter("year>=2020 year<=2025")
         month_range = parse_text_filter("month>6 month<10")
@@ -4919,7 +4928,7 @@ model_name = "buffalo_l"
             ("missing:metadata", {"missing": "metadata"}),
             ("orientation:portrait", {"orientation": "portrait"}),
             ("path:2024/01", {"path": "2024/01"}),
-            ("person:Viljar", {"person": "Viljar"}),
+            ("person:Viljar", {"persons": ("Viljar",)}),
             ("source:phone", {"source": "phone"}),
             ("tag:ute-av-fokus", {"tag": "ute-av-fokus"}),
             ("type:video", {"media_type": "video"}),
@@ -4987,7 +4996,6 @@ model_name = "buffalo_l"
             ("extension:..jpg", "extension må være en filendelse"),
             ("missing:camera", "missing må være gps, date eller metadata."),
             ("orientation:square", "orientation må være portrait eller landscape."),
-            ("person:Viljar person:Kari", "person kan bare brukes én gang."),
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
             ("size>2MB size>3MB", "size> kan bare brukes én gang."),
             ("size>=2MB size>=3MB", "size>= kan bare brukes én gang."),
