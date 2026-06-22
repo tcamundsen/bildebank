@@ -31,3 +31,15 @@ Den eksisterende ikke-unike `idx_files_sha256` beholdes. Før migrering
 oppretter den nye indeksen, avvises databasen med beskjed om å kjøre
 `bildebank doctor` hvis flere aktive `files`-rader har samme SHA-256.
 Slettede rader omfattes ikke av unikheten.
+
+## Slettede duplikater ved ny import
+
+En `files`-rad som er markert slettet og peker til `deleted/`, deltar fortsatt
+i SHA-256-basert duplikatgjenkjenning. Hvis en senere import inneholder samme
+filinnhold, skal den nye `file_sources`-raden kobles til den slettede
+`files`-raden. Bildet skal ikke aktiveres eller kopieres inn på nytt.
+
+Dette bevarer brukerens sletting på tvers av senere importer. `unimport` av én
+av kildene skal beholde den slettede filen så lenge en annen kilde fortsatt
+refererer til den. Når siste kilde unimporteres, fjernes `files`-raden og filen
+under `deleted/` legges i `pending_file_deletes` for fysisk opprydding.

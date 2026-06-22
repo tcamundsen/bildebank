@@ -8,6 +8,7 @@ from bildebank import db
 from bildebank.cli import main
 from bildebank.config import AppConfig
 from bildebank.face import connect_face_db
+from bildebank.file_lifecycle import remove_file
 from bildebank.openclip import connect_openclip_db
 from bildebank.pending_deletes import cleanup_pending_deletes, list_pending_deletes
 from bildebank.unimport import run_unimport
@@ -137,6 +138,92 @@ def test_unimport_dry_run_changes_neither_database_nor_filesystem(
     assert imported.exists()
     assert result.plan.target_paths_to_delete == (imported,)
     assert result.plan.target_paths_to_keep == ()
+
+
+def test_deleted_duplicate_stays_deleted_until_last_source_is_unimported(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    source_a = tmp_path / "source-a"
+    source_b = tmp_path / "source-b"
+    source_a.mkdir()
+    source_b.mkdir()
+    (source_a / "IMG_20240102.jpg").write_bytes(b"same image")
+    (source_b / "COPY_20240102.jpg").write_bytes(b"same image")
+
+    assert run_cli(["create", str(target)]) == 0
+    for source in (source_a, source_b):
+        if source == source_b:
+            remove_file(target, file_id=1)
+        assert (
+            run_cli(
+                [
+                    "--target",
+                    str(target),
+                    "import",
+                    "--name",
+                    source.name,
+                    "--quiet",
+                    str(source),
+                ]
+            )
+            == 0
+        )
+
+    deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
+    conn = db.connect(target)
+    try:
+        file_row = conn.execute(
+            "SELECT id, target_path, deleted_at FROM files"
+        ).fetchone()
+        source_count = conn.execute(
+            "SELECT COUNT(*) FROM file_sources WHERE file_id = ?",
+            (file_row["id"],),
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert file_row["target_path"] == "deleted/2024/01/IMG_20240102.jpg"
+    assert file_row["deleted_at"] is not None
+    assert source_count == 2
+    assert deleted.exists()
+
+    first = run_unimport(
+        target,
+        source_a.name,
+        config=AppConfig(),
+        dry_run=False,
+        confirm=lambda _plan: True,
+    )
+
+    assert first.plan.active_keep_count == 0
+    assert first.plan.target_paths_to_keep == (deleted,)
+    assert deleted.exists()
+    conn = db.connect(target)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 1
+        assert conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+    second = run_unimport(
+        target,
+        source_b.name,
+        config=AppConfig(),
+        dry_run=False,
+        confirm=lambda _plan: True,
+    )
+
+    assert second.plan.active_remove_count == 0
+    assert second.plan.target_paths_to_delete == (deleted,)
+    assert not deleted.exists()
+    conn = db.connect(target)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
+    finally:
+        conn.close()
+    assert list_pending_deletes(target) == []
 
 
 def test_unimport_removes_item_dependent_face_and_openclip_rows(
