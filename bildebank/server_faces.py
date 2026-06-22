@@ -1033,7 +1033,10 @@ def people_page_html(
         og <a href="help/face-suggest.md">face-suggest</a> når du
         har bekreftet at personer er et bestemt ansikt.
         {people_face_summary_html(summary)}
-        <button class="nav-button" type="button" data-open-face-suggest>Foreslå personer</button>
+        <button class="nav-button" type="button"
+        title="Kjør face-suggest for å finne ansikter" data-open-face-suggest>Foreslå personer</button>
+        <a class="nav-button" href="/people/missing-suggestions"
+        title="Se alle bildene som face-scan har funnet et ansikt som face-suggest ikke har forslag til">Ansikter uten forslag</a>
         {content}
         {face_suggest_dialog_html(
             face_config.suggest_threshold if face_config is not None else 0.6,

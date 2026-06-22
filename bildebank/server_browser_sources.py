@@ -15,6 +15,7 @@ class BrowserSource:
     title: str
     root_url: str
     person_name: str | None = None
+    missing_face_suggestions: bool = False
     include_suggestions: bool = True
     source_id: int | None = None
     show_faces: bool = True
@@ -75,7 +76,15 @@ def person_browser_source(person_name: str, *, include_suggestions: bool, show_f
     if not show_faces:
         title = f"{title} - uten ansiktsmarkering"
         root_url = f"{root_url}/no-faces"
-    return BrowserSource(title, root_url, person_name, include_suggestions, show_faces=show_faces)
+    return BrowserSource(title, root_url, person_name=person_name, include_suggestions=include_suggestions, show_faces=show_faces)
+
+
+def missing_face_suggestions_browser_source() -> BrowserSource:
+    return BrowserSource(
+        "Ansikter uten forslag",
+        "/people/missing-suggestions",
+        missing_face_suggestions=True,
+    )
 
 
 def imported_source_browser_source(source: db.Source | sqlite3.Row) -> BrowserSource:
@@ -105,6 +114,7 @@ def tag_browser_source(tag_name: str) -> BrowserSource:
 def is_filtered_source(source: BrowserSource) -> bool:
     return (
         source.person_name is not None
+        or source.missing_face_suggestions
         or source.source_id is not None
         or source.geo_place_slug is not None
         or source.tag_name is not None
@@ -119,6 +129,7 @@ def source_has_sql_filter(source: BrowserSource) -> bool:
         return not text_filter_has_runtime_filter(source.text_filter)
     return (
         source.person_name is not None
+        or source.missing_face_suggestions
         or source.source_id is not None
         or source.geo_place_slug is not None
         or source.text_filter is not None
@@ -172,6 +183,27 @@ def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
     if source.geo_place_slug is not None:
         place = PredefinedGeoPlace(source.geo_place_slug, source.title, source.geo_place_cells)
         return db.geo_place_where_clause(geo_place_cells_by_column(place))
+    if source.missing_face_suggestions:
+        return (
+            """
+            EXISTS (
+                SELECT 1
+                FROM face_db.faces
+                WHERE face_db.faces.file_id = files.id
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM face_db.person_faces
+                    WHERE face_db.person_faces.face_id = face_db.faces.id
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM face_db.face_suggestions
+                    WHERE face_db.face_suggestions.face_id = face_db.faces.id
+                  )
+            )
+            """,
+            (),
+        )
     if source.source_id is not None:
         return (
             """

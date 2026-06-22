@@ -92,6 +92,7 @@ from .server_browser_sources import (
     all_browser_source,
     geo_place_browser_source,
     imported_source_browser_source,
+    missing_face_suggestions_browser_source,
     parse_person_path,
     parse_source_path,
     person_browser_source,
@@ -454,6 +455,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         openclip_enabled=self.server.openclip_enabled,
                     )
                 )
+                return
+            if parsed.path == "/people/missing-suggestions" or parsed.path.startswith("/people/missing-suggestions/"):
+                if not self.server.face_enabled:
+                    self.respond_text("Ansiktsgjenkjenning er av.", status=HTTPStatus.NOT_FOUND)
+                    return
+                self.respond_missing_face_suggestions(parsed.path.removeprefix("/people/missing-suggestions"))
                 return
             if parsed.path.startswith("/people/") and parsed.path.endswith("/references"):
                 if not self.server.face_enabled:
@@ -1021,6 +1028,21 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 self.server.config.face_recognition,
                 openclip_enabled=self.server.openclip_enabled,
             )
+        )
+
+    def respond_missing_face_suggestions(self, raw_path: str) -> None:
+        source_part, page_mode, raw_value = parse_source_path("missing-suggestions" + raw_path)
+        if source_part != "missing-suggestions":
+            self.respond_text("Ugyldig ansiktsside.", status=HTTPStatus.NOT_FOUND)
+            return
+        self.respond_browser_source(
+            missing_face_suggestions_browser_source(),
+            page_mode,
+            raw_value,
+            face_config=self.server.config.face_recognition,
+            hide_out_of_focus=self.server.hide_out_of_focus,
+            item_not_found_message="Filen finnes ikke i denne ansiktsvisningen.",
+            invalid_page_message="Ugyldig ansiktsside.",
         )
 
     def respond_filter(self, query: str) -> None:

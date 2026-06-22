@@ -779,6 +779,7 @@ def adjacent_source_items(
         )
     if (
         source.person_name is not None
+        or source.missing_face_suggestions
         or source.source_id is not None
         or source.tag_name is not None
         or source.text_filter is not None
@@ -943,6 +944,7 @@ def source_month_keys(
         return sql_filtered_source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus, conn=conn)
     if (
         source.person_name is not None
+        or source.missing_face_suggestions
         or source.source_id is not None
         or source.tag_name is not None
         or source.text_filter is not None
@@ -2983,6 +2985,8 @@ def attach_source_sql_filter_databases(
     face_config: FaceRecognitionConfig | None = None,
 ) -> None:
     if source.person_name is not None:
+        attach_face_database(conn, target, face_config)
+    if source.missing_face_suggestions:
         attach_face_database(conn, target, face_config)
     if source.text_filter is None:
         return

@@ -8,15 +8,18 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from bildebank import db
 from bildebank.config import (
     AppConfig,
     FaceRecognitionConfig,
     load_config,
     set_face_suggest_threshold,
 )
-from bildebank.face import FaceSuggestStats
+from bildebank.face import FaceSuggestStats, connect_face_db
 from bildebank.server import BildebankRequestHandler
 from bildebank.server_assets import SERVER_JS
+from bildebank.server_browser import source_item_ids
+from bildebank.server_browser_sources import missing_face_suggestions_browser_source
 from bildebank.server_pages import people_page_html
 from bildebank.server_pages import item_page_html
 
@@ -49,6 +52,7 @@ class FaceSuggestServerTests(unittest.TestCase):
                 FaceRecognitionConfig(enabled=True, suggest_threshold=0.725),
             )
         self.assertIn("Foreslå personer", body)
+        self.assertIn('href="/people/missing-suggestions"', body)
         self.assertIn('action="/people/face-suggest"', body)
         self.assertIn('name="return_url" value="/people"', body)
         self.assertIn('value="0.725"', body)
@@ -219,6 +223,88 @@ class FaceSuggestServerTests(unittest.TestCase):
         self.assertEqual(handler.response[1], HTTPStatus.BAD_REQUEST)
         self.assertIn("Kjør bildebank face-scan først.", handler.response[0])
         save.assert_called_once()
+
+    def test_missing_face_suggestions_source_selects_unconfirmed_faces_without_suggestions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            db.init_database(target)
+            main_conn = db.connect(target)
+            try:
+                for file_id, name in ((1, "missing.jpg"), (2, "suggested.jpg"), (3, "confirmed.jpg")):
+                    relative_path = Path("2024/01") / name
+                    (target / relative_path).parent.mkdir(parents=True, exist_ok=True)
+                    (target / relative_path).write_bytes(b"image")
+                    main_conn.execute(
+                        """
+                        INSERT INTO files(
+                            id, target_path, target_path_key, original_filename, stored_filename,
+                            sha256, size_bytes, taken_date, date_source
+                        )
+                        VALUES(?, ?, ?, ?, ?, ?, 5, '2024-01-01', 'metadata')
+                        """,
+                        (
+                            file_id,
+                            relative_path.as_posix(),
+                            relative_path.as_posix(),
+                            name,
+                            name,
+                            f"sha-{file_id}",
+                        ),
+                    )
+                main_conn.commit()
+            finally:
+                main_conn.close()
+
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                for face_id, file_id in ((1, 1), (2, 2), (3, 3), (4, 1)):
+                    face_conn.execute(
+                        """
+                        INSERT INTO faces(
+                            id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                            detection_score, embedding_model, embedding
+                        )
+                        VALUES(?, ?, ?, 1, 2, 10, 20, 0.9, 'test', ?)
+                        """,
+                        (face_id, file_id, f"face-{face_id}", f"embedding-{face_id}".encode()),
+                    )
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.9)")
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 3)")
+                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 4, 0.8)")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            self.assertEqual(source_item_ids(target, missing_face_suggestions_browser_source()), [1])
+
+    def test_get_route_dispatches_missing_face_suggestions_browser(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        handler.path = "/people/missing-suggestions/item/7"
+        handler.server = SimpleNamespace(face_enabled=True)
+        handler.respond_missing_face_suggestions = Mock()
+
+        handler.do_GET()
+
+        handler.respond_missing_face_suggestions.assert_called_once_with("/item/7")
+
+    def test_missing_face_suggestions_handler_accepts_item_path(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        handler.server = SimpleNamespace(
+            target=Path("target"),
+            config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)),
+            hide_out_of_focus=False,
+        )
+        handler.respond_text = Mock()
+        handler.respond_browser_source = Mock()
+
+        handler.respond_missing_face_suggestions("/item/7")
+
+        handler.respond_text.assert_not_called()
+        source, page_mode, raw_value = handler.respond_browser_source.call_args.args[:3]
+        self.assertEqual(source.root_url, "/people/missing-suggestions")
+        self.assertEqual(page_mode, "item")
+        self.assertEqual(raw_value, "7")
 
 
 if __name__ == "__main__":
