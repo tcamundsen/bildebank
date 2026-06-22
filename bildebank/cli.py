@@ -32,7 +32,6 @@ from .face import (
     create_person,
     delete_face_database,
     delete_person,
-    export_face_browser,
     export_people_browser,
     export_person_browser,
     face_db_path,
@@ -182,7 +181,6 @@ HELP_COMMAND_GROUPS = (
             ("make-thumbnails", "Lag thumbnails for rask månedsvisning"),
             ("make-browser", "Lag index.html for nettleseren"),
             ("make-conflict-browser", "Lag HTML-side for navnekollisjoner"),
-            ("make-face-browser", "Lag HTML-side for scannede ansikter"),
             ("make-people-browser", "Lag HTML-sider for alle personer"),
             ("make-person-browser", "Lag HTML-side for en person"),
         ),
@@ -887,28 +885,6 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="NAVN",
         help="Bruk face-database for denne InsightFace-modellen uten å endre config-filen",
     )
-    face_browser = add_command(
-        subparsers,
-        "make-face-browser",
-        usage="bildebank make-face-browser [valg]",
-        help="Debug: lag HTML-side for scannede ansikter. Ikke ment for vanlig bruk.",
-        description=(
-            "Debug-verktøy. Denne kommandoen lager faces.html for kontroll av "
-            "scannede ansikter, men er ikke ment for vanlig bruk."
-        ),
-    )
-    face_browser.add_argument(
-        "--limit",
-        type=positive_int_arg,
-        help="Maks antall bilder som tas med. Anbefales fordi siden kan bli svært stor.",
-    )
-    face_browser.add_argument(
-        "-o",
-        "--output",
-        dest="output",
-        type=Path,
-        help="Skriv HTML-filen hit. Standard: faces.html i bildesamlingen.",
-    )
     person_browser = add_command(
         subparsers,
         "make-person-browser",
@@ -1094,7 +1070,6 @@ FACE_COMMANDS = {
     "face-person-list",
     "export-person",
     "face-suggest",
-    "make-face-browser",
     "make-person-browser",
     "make-people-browser",
     "face-reset",
@@ -1346,20 +1321,6 @@ def run_face_command(args: argparse.Namespace, target: Path) -> int:
 
     if args.command == "face-suggest":
         return run_face_suggest(target, threshold=args.threshold, model=args.model)
-
-    if args.command == "make-face-browser":
-        config = load_config(program_repo_root()).face_recognition
-        output = args.output.resolve() if args.output else None
-        with TargetLock(target, command="make-face-browser"):
-            output_path = export_face_browser(
-                target,
-                output,
-                limit=args.limit,
-                config=config,
-                target_locked=True,
-            )
-        print(f"Skrev HTML-browser for ansikter: {output_path}")
-        return 0
 
     if args.command == "make-person-browser":
         output = args.output.resolve() if args.output else None

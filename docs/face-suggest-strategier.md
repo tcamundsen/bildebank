@@ -24,8 +24,8 @@ bilder i lav oppløsning kan gjøre resultatene fra `face-suggest` dårligere.
 bildebank face-person-add-face "Kari" 798
 ```
 
-`face-id` finner du i `faces.html`, i personsidene, eller i vanlig `index.html`
-med knappen `Ansikter i bildet`.
+`face-id` finner du i `face-suggest`, i personsidene, eller i vanlig
+`index.html` med knappen `Ansikter i bildet`.
 
 ## Gi variasjon
 
@@ -145,7 +145,7 @@ scanne alle bildene på nytt.
 
 For hver viktig person:
 
-1. Finn 2-3 sikre ansikter i `faces.html`, personsidene eller vanlig `index.html`.
+1. Finn 2-3 sikre ansikter i `face-suggest`, personsidene eller vanlig `index.html`.
 2. Legg dem til med `face-person-add-face`.
 3. Kjør `face-suggest`.
 4. Se gjennom personsiden i `personer.html`.

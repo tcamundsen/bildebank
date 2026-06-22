@@ -942,7 +942,9 @@ def require_person(conn: sqlite3.Connection, name: str) -> int:
 def require_face(conn: sqlite3.Connection, face_id: int) -> None:
     row = conn.execute("SELECT id FROM faces WHERE id = ?", (face_id,)).fetchone()
     if row is None:
-        raise ValueError(f"Fant ikke ansikt-id {face_id}. Kjør make-face-browser for å se id-er.")
+        raise ValueError(
+            f"Fant ikke ansikt-id {face_id}. Bruk face-suggest, personsider eller vanlig bildebrowser for å se id-er."
+        )
 
 
 def require_active_file(target: Path, file_id: int) -> None:
@@ -1010,35 +1012,6 @@ def face_report(
         )
     finally:
         conn.close()
-
-
-def export_face_browser(
-    target: Path,
-    output: Path | None = None,
-    *,
-    limit: int | None = None,
-    config: FaceRecognitionConfig | None = None,
-    target_locked: bool = False,
-) -> Path:
-    output_path = output or (target / "faces.html")
-    path = face_db_path(target, config)
-    if not path.exists():
-        raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
-    conn = connect_face_db(target, config)
-    try:
-        view_rotations = file_view_rotations(target)
-        with MediaMetadataCache(target, target_locked=target_locked) as media_cache:
-            items = face_browser_items(
-                target,
-                conn,
-                limit=limit,
-                media_cache=media_cache,
-                view_rotations=view_rotations,
-            )
-    finally:
-        conn.close()
-    output_path.write_text(render_face_browser_html(items), encoding="utf-8", newline="\n")
-    return output_path
 
 
 def export_person_browser(
@@ -1270,77 +1243,6 @@ def person_browser_items(
     return list(grouped.values())
 
 
-def face_browser_items(
-    target: Path,
-    conn: sqlite3.Connection,
-    *,
-    limit: int | None = None,
-    media_cache: MediaMetadataCache | None = None,
-    view_rotations: dict[int, int] | None = None,
-) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT
-            scanned_files.file_id,
-            scanned_files.target_path,
-            scanned_files.face_count,
-            faces.id AS face_id,
-            faces.bbox_x,
-            faces.bbox_y,
-            faces.bbox_width,
-            faces.bbox_height,
-            faces.detection_score,
-            faces.embedding_model
-        FROM scanned_files
-        JOIN faces ON faces.file_id = scanned_files.file_id
-        WHERE scanned_files.status = 'ok'
-        ORDER BY scanned_files.target_path, faces.id
-        """
-    )
-    grouped: dict[str, dict[str, Any]] = {}
-    own_cache = media_cache is None
-    if media_cache is None:
-        media_cache = MediaMetadataCache(target)
-    if view_rotations is None:
-        view_rotations = file_view_rotations(target)
-    try:
-        for row in rows:
-            relative_path = db.relative_path(Path(str(row["target_path"])))
-            target_path = db.absolute_target_path(target, relative_path)
-            key = relative_path.as_posix()
-            dimensions = media_cache.image_dimensions(target_path)
-            orientation = media_cache.image_orientation(target_path)
-            item = grouped.setdefault(
-                key,
-                {
-                    "path": relative_path.as_posix(),
-                    "url": path_to_url(relative_path),
-                    "faceCount": int(row["face_count"]),
-                    "dimensions": dimensions,
-                    "orientation": orientation,
-                    "viewRotation": view_rotations.get(int(row["file_id"]), 0),
-                    "faces": [],
-                },
-            )
-            item["faces"].append(
-                {
-                    "faceId": int(row["face_id"]),
-                    "x": float(row["bbox_x"]),
-                    "y": float(row["bbox_y"]),
-                    "width": float(row["bbox_width"]),
-                    "height": float(row["bbox_height"]),
-                    "score": float(row["detection_score"]),
-                    "model": str(row["embedding_model"]),
-                }
-            )
-            if limit is not None and len(grouped) >= limit:
-                break
-    finally:
-        if own_cache:
-            media_cache.close()
-    return list(grouped.values())
-
-
 def file_view_rotations(target: Path) -> dict[int, int]:
     conn = db.connect(target)
     try:
@@ -1374,118 +1276,6 @@ def display_relative_path(target: Path, path: Path) -> str:
 
 def path_to_url(path: Path) -> str:
     return "/".join(quote(part) for part in path.parts)
-
-
-def render_face_browser_html(items: list[dict[str, Any]]) -> str:
-    cards = "\n".join(render_face_card(item) for item in items)
-    if not cards:
-        cards = '<p class="empty">Ingen ansikter funnet ennå.</p>'
-    return f"""<!doctype html>
-<html lang="no">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ansikter</title>
-  <style>
-    :root {{
-      color-scheme: light;
-      --bg: #f7f7f5;
-      --text: #202020;
-      --muted: #666;
-      --border: #d8d8d2;
-      --panel: #fff;
-      --accent: #ff1f1f;
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }}
-    header {{
-      padding: 16px;
-      border-bottom: 1px solid var(--border);
-      background: var(--panel);
-      position: sticky;
-      top: 0;
-      z-index: 2;
-    }}
-    h1 {{
-      margin: 0;
-      font-size: 20px;
-    }}
-    main {{
-      padding: 16px;
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 16px;
-    }}
-    .card {{
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-    }}
-    .media {{
-      position: relative;
-      background: #eee;
-      overflow: hidden;
-    }}
-    .rotation-layer {{
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: 100%;
-      height: 100%;
-      transform: translate(-50%, -50%) rotate(var(--view-rotation));
-      transform-origin: center center;
-    }}
-    .rotation-layer.quarter-turn {{
-      width: calc(100% * var(--source-ratio));
-      height: calc(100% / var(--source-ratio));
-    }}
-    .rotation-layer img {{
-      display: block;
-      width: 100%;
-      height: 100%;
-    }}
-    .box {{
-      position: absolute;
-      border: 3px solid var(--accent);
-      background: rgb(255 31 31 / 12%);
-      pointer-events: none;
-    }}
-    .meta {{
-      padding: 10px;
-      display: grid;
-      gap: 4px;
-      font-size: 13px;
-    }}
-    .path {{
-      overflow-wrap: anywhere;
-      font-weight: 600;
-    }}
-    .muted {{
-      color: var(--muted);
-    }}
-    .empty {{
-      grid-column: 1 / -1;
-      margin: 0;
-      color: var(--muted);
-    }}
-  </style>
-</head>
-<body>
-  <header>
-    <h1>Ansikter ({len(items)} bilder)</h1>
-  </header>
-  <main>
-    {cards}
-  </main>
-</body>
-</html>
-"""
 
 
 def render_person_browser_html(
@@ -1678,66 +1468,6 @@ def render_people_index_card(person: dict[str, Any]) -> str:
     <div class="detail">{int(person['confirmed'])} bekreftet, {int(person['suggested'])} forslag</div>
   </div>
 </a>"""
-
-
-def render_face_card(item: dict[str, Any]) -> str:
-    orientation = int(item.get("orientation", 1))
-    boxes = "\n".join(render_face_box(face, item["dimensions"], orientation) for face in item["faces"])
-    face_count = int(item["faceCount"])
-    face_ids = ", ".join(str(face["faceId"]) for face in item["faces"])
-    media_style, layer_class, layer_style = face_rotation_layout(item)
-    return f"""<article class="card">
-  <div class="media"{media_style}>
-    <div class="{layer_class}"{layer_style}>
-      <img src="{html_escape(item['url'])}" alt="">
-      {boxes}
-    </div>
-  </div>
-  <div class="meta">
-    <div class="path">{html_escape(item['path'])}</div>
-    <div>{face_count} ansikt{'er' if face_count != 1 else ''}</div>
-    <div class="muted">Ansikt-id: {html_escape(face_ids)}</div>
-    <div class="muted">Beste score: {max(float(face['score']) for face in item['faces']):.3f}</div>
-  </div>
-</article>"""
-
-
-def face_rotation_layout(item: dict[str, Any]) -> tuple[str, str, str]:
-    dimensions = item.get("dimensions")
-    orientation = int(item.get("orientation", 1))
-    rotation = db.normalize_view_rotation(item.get("viewRotation", 0))
-    if dimensions is None or dimensions.width <= 0 or dimensions.height <= 0:
-        return "", "rotation-layer", f' style="--view-rotation: {rotation}deg;"'
-    width = float(dimensions.width)
-    height = float(dimensions.height)
-    if orientation in {5, 6, 7, 8}:
-        width, height = height, width
-    source_ratio = width / height
-    displayed_ratio = 1.0 / source_ratio if rotation in {90, 270} else source_ratio
-    media_style = f' style="aspect-ratio: {displayed_ratio:.8f};"'
-    layer_class = "rotation-layer quarter-turn" if rotation in {90, 270} else "rotation-layer"
-    layer_style = (
-        f' style="--view-rotation: {rotation}deg; --source-ratio: {source_ratio:.8f};"'
-    )
-    return media_style, layer_class, layer_style
-
-
-def render_face_box(face: dict[str, Any], dimensions, orientation: int = 1) -> str:
-    percent = face_box_percent(face, dimensions, orientation)
-    if percent is None:
-        left = top = width = height = 0.0
-    else:
-        left, top, width, height = percent
-    return (
-        '<div class="box" '
-        f'title="score {float(face["score"]):.3f}" '
-        'style="'
-        f'left: {left:.4f}%; '
-        f'top: {top:.4f}%; '
-        f'width: {width:.4f}%; '
-        f'height: {height:.4f}%;'
-        '"></div>'
-    )
 
 
 def face_box_percent(

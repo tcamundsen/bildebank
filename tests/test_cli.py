@@ -611,7 +611,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_removed_group_commands_are_unavailable(self) -> None:
-        for command in ("face-group", "face-person-add-group"):
+        for command in ("face-group", "face-person-add-group", "make-face-browser"):
             with self.subTest(command=command):
                 stdout_buffer = StringIO()
                 stderr_buffer = StringIO()
@@ -623,19 +623,6 @@ pretrained = "laion2b_s34b_b79k"
                 stderr = stderr_buffer.getvalue()
                 self.assertIn("invalid choice", stderr)
                 self.assertIn(command, stderr)
-
-    def test_make_face_browser_help_marks_command_as_debug(self) -> None:
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
-            main(["make-face-browser", "-h"])
-
-        self.assertEqual(raised.exception.code, 0)
-        stdout = stdout_buffer.getvalue()
-        self.assertIn("Debug", stdout)
-        self.assertIn("--limit", stdout)
-        self.assertIn("ikke ment for vanlig bruk", stdout.lower())
-        self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_make_people_browser_help(self) -> None:
         stdout_buffer = StringIO()
@@ -11078,32 +11065,6 @@ print(json.dumps([
             self.assertIn("Bilder med ansikter, men ingen bekreftet person: 1", stdout)
             self.assertIn("IMG_20240102.jpg", stdout)
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "make-face-browser"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Skrev HTML-browser for ansikter", stdout)
-            html = (target / "faces.html").read_text(encoding="utf-8")
-            self.assertIn("Ansikter (1 bilder)", html)
-            self.assertIn("IMG_20240102.jpg", html)
-            self.assertIn("Ansikt-id: 1", html)
-            self.assertIn("class=\"box\"", html)
-            self.assertIn("left: ", html)
-
-    def test_make_face_browser_requires_target_lock_before_writing_html(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            self.enable_face_recognition_config()
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
-
-            with patch("bildebank.cli.recover_pending_file_moves"):
-                code, stdout, stderr = capture_cli(["--target", str(target), "make-face-browser"])
-
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("Bildesamlingen er låst", stderr)
-            self.assertFalse((target / "faces.html").exists())
-
     def test_face_scan_prints_file_path_when_image_fails(self) -> None:
         class FakeApp:
             def get(self, image):
@@ -11588,104 +11549,6 @@ print(json.dumps([
                 self.assertAlmostEqual(suggestion[3], 1.0)
             finally:
                 conn.close()
-
-    def test_make_face_browser_uses_relative_face_paths(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            image_path = target / "2024" / "01" / "IMG_20240102.png"
-            relative_image_path = Path("2024/01/IMG_20240102.png")
-
-            self.enable_face_recognition_config()
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            image_path.parent.mkdir(parents=True)
-            image_path.write_bytes(minimal_png(640, 480))
-            file_id = register_target_file(target, relative_image_path)
-            main_conn = db.connect(target)
-            try:
-                main_conn.execute(
-                    "UPDATE files SET view_rotation_degrees = 90 WHERE id = ?",
-                    (file_id,),
-                )
-                main_conn.commit()
-            finally:
-                main_conn.close()
-            config = load_config(self.program_root).face_recognition
-
-            conn = sqlite3.connect(face_db_path(target, config))
-            try:
-                apply_face_schema(conn)
-                conn.execute(
-                    """
-                    INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
-                    VALUES(?, ?, ?, 'sha', 'ok', 1)
-                    """,
-                    (file_id, relative_image_path.as_posix(), db.relative_path_key(relative_image_path)),
-                )
-                conn.execute(
-                    """
-                    INSERT INTO faces(
-                        file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
-                        detection_score, embedding_model, embedding
-                    ) VALUES(?, ?, 1, 2, 30, 40, 0.9, 'test', ?)
-                    """,
-                    (file_id, db.relative_path_key(relative_image_path), b"embedding"),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "make-face-browser", "--limit", "1"])
-
-            self.assertEqual(code, 0, stderr)
-            html = (target / "faces.html").read_text(encoding="utf-8")
-            self.assertIn("2024/01/IMG_20240102.png", html)
-            self.assertIn('class="rotation-layer quarter-turn"', html)
-            self.assertIn("--view-rotation: 90deg", html)
-            self.assertIn('<div class="box"', html)
-
-    def test_make_face_browser_limit_restricts_number_of_images(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            self.enable_face_recognition_config()
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            first = target / "first.jpg"
-            second = target / "second.jpg"
-            first.write_bytes(b"first")
-            second.write_bytes(b"second")
-            config = load_config(self.program_root).face_recognition
-            conn = connect_face_db(target, config)
-            try:
-                for file_id, path in ((1, first), (2, second)):
-                    relative_path = path.relative_to(target)
-                    conn.execute(
-                        """
-                        INSERT INTO scanned_files(file_id, target_path, target_path_key, sha256, status, face_count)
-                        VALUES(?, ?, ?, ?, 'ok', 1)
-                        """,
-                        (file_id, relative_path.as_posix(), db.relative_path_key(relative_path), f"hash-{file_id}"),
-                    )
-                    conn.execute(
-                        """
-                        INSERT INTO faces(
-                            file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
-                            detection_score, embedding_model, embedding
-                        ) VALUES(?, ?, 1, 2, 10, 20, 0.9, 'test-model', ?)
-                        """,
-                        (file_id, db.relative_path_key(relative_path), b"embedding"),
-                    )
-                conn.commit()
-            finally:
-                conn.close()
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "make-face-browser", "--limit", "1"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Skrev HTML-browser for ansikter", stdout)
-            html = (target / "faces.html").read_text(encoding="utf-8")
-            self.assertIn("first.jpg", html)
-            self.assertNotIn("second.jpg", html)
 
     def test_read_image_uses_unicode_safe_file_reading(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
