@@ -2134,20 +2134,32 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         next_filter_item = None
         if filter_source is not None:
             start = time.perf_counter()
-            conn = db.connect(self.server.target)
-            try:
-                filter_item = source_item_by_id(self.server.target, filter_source, file_id, conn=conn)
-                if filter_item is not None:
-                    previous_filter_item, next_filter_item = adjacent_source_items(
-                        self.server.target,
-                        filter_source,
-                        filter_item,
-                        conn=conn,
+            cached_source_item_order = getattr(self.server, "source_item_order", None)
+            if source_has_sql_filter(filter_source) and cached_source_item_order is not None:
+                item_ids, item_positions = cached_source_item_order(filter_source)
+                if file_id in item_positions:
+                    previous_filter_item, next_filter_item = adjacent_items_from_id_order(
+                        item_ids,
+                        file_id,
+                        item_positions,
                     )
                 else:
                     filter_source = None
-            finally:
-                conn.close()
+            else:
+                conn = db.connect(self.server.target)
+                try:
+                    filter_item = source_item_by_id(self.server.target, filter_source, file_id, conn=conn)
+                    if filter_item is not None:
+                        previous_filter_item, next_filter_item = adjacent_source_items(
+                            self.server.target,
+                            filter_source,
+                            filter_item,
+                            conn=conn,
+                        )
+                    else:
+                        filter_source = None
+                finally:
+                    conn.close()
             record_timing("hotkey_filter_before", start)
         try:
             start = time.perf_counter()
