@@ -2201,16 +2201,22 @@ def doctor_check_active_files_exist(target: Path) -> None:
     target_root = target.resolve()
     missing: list[tuple[int, Path]] = []
     invalid: list[tuple[int, Path]] = []
-    for row in rows:
+    progress = ProgressMeter("Doctor filer")
+    progress.update(0, len(rows), action="kontrollert", force=True)
+    for current, row in enumerate(rows, start=1):
         target_path = Path(str(row["target_path"]))
         resolved_path = db.absolute_target_path(target, target_path).resolve()
         try:
             resolved_path.relative_to(target_root)
         except ValueError:
             invalid.append((int(row["id"]), target_path))
-            continue
-        if not resolved_path.is_file():
-            missing.append((int(row["id"]), target_path))
+        else:
+            if not resolved_path.is_file():
+                missing.append((int(row["id"]), target_path))
+        progress.update(current, len(rows), action="kontrollert")
+    progress.done(
+        f"Doctor filer: ferdig kontrollert {len(rows)}/{len(rows)} filer."
+    )
 
     if not missing and not invalid:
         doctor_ok(f"alle {len(rows)} aktive databasefiler finnes på disk")
@@ -2249,7 +2255,15 @@ def doctor_deep_check_active_file_hashes(target: Path) -> None:
     unreadable: list[tuple[int, Path, str]] = []
     wrong_hash: list[tuple[int, Path, str, str]] = []
 
-    for row in rows:
+    progress = ProgressMeter("Doctor SHA-256")
+    progress.update(
+        0,
+        len(rows),
+        action="kontrollert",
+        eta=True,
+        force=True,
+    )
+    for current, row in enumerate(rows, start=1):
         file_id = int(row["id"])
         target_path = Path(str(row["target_path"]))
         resolved_path = db.absolute_target_path(target, target_path).resolve()
@@ -2259,23 +2273,34 @@ def doctor_deep_check_active_file_hashes(target: Path) -> None:
             unreadable.append(
                 (file_id, target_path, "filstien peker utenfor bildesamlingen")
             )
-            continue
-
-        if not resolved_path.is_file():
-            missing.append((file_id, target_path))
-            continue
-
-        try:
-            actual_sha256 = sha256_file(resolved_path)
-        except OSError as exc:
-            unreadable.append((file_id, target_path, str(exc)))
-            continue
-
-        expected_sha256 = str(row["sha256"])
-        if actual_sha256 != expected_sha256:
-            wrong_hash.append(
-                (file_id, target_path, expected_sha256, actual_sha256)
-            )
+        else:
+            if not resolved_path.is_file():
+                missing.append((file_id, target_path))
+            else:
+                try:
+                    actual_sha256 = sha256_file(resolved_path)
+                except OSError as exc:
+                    unreadable.append((file_id, target_path, str(exc)))
+                else:
+                    expected_sha256 = str(row["sha256"])
+                    if actual_sha256 != expected_sha256:
+                        wrong_hash.append(
+                            (
+                                file_id,
+                                target_path,
+                                expected_sha256,
+                                actual_sha256,
+                            )
+                        )
+        progress.update(
+            current,
+            len(rows),
+            action="kontrollert",
+            eta=True,
+        )
+    progress.done(
+        f"Doctor SHA-256: ferdig kontrollert {len(rows)}/{len(rows)} filer."
+    )
 
     doctor_info(f"aktive databasefiler kontrollert: {len(rows)}")
     if not missing and not unreadable and not wrong_hash:

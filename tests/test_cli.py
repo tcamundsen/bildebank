@@ -8160,6 +8160,11 @@ enabled = true
                 )
 
         self.assertEqual(code, 0, stderr)
+        self.assertIn("Doctor filer: kontrollert=1/1", stdout)
+        self.assertIn(
+            "Doctor filer: ferdig kontrollert 1/1 filer.",
+            stdout,
+        )
         self.assertIn(
             "FEIL: 1 aktiv(e) databasefil(er) mangler på disk.",
             stdout,
@@ -8231,6 +8236,11 @@ enabled = true
 
         self.assertEqual(code, 0, stderr)
         hash_file.assert_not_called()
+        self.assertIn("Doctor filer: kontrollert=1/1", stdout)
+        self.assertIn(
+            "Doctor filer: ferdig kontrollert 1/1 filer.",
+            stdout,
+        )
         self.assertIn(
             "OK: alle 1 aktive databasefiler finnes på disk",
             stdout,
@@ -8301,6 +8311,12 @@ enabled = true
 
         self.assertEqual(code, 0, stderr)
         self.assertIn("Dyp filintegritet:", stdout)
+        self.assertIn("Doctor SHA-256: kontrollert=1/4", stdout)
+        self.assertIn("Doctor SHA-256: kontrollert=4/4", stdout)
+        self.assertIn(
+            "Doctor SHA-256: ferdig kontrollert 4/4 filer.",
+            stdout,
+        )
         self.assertIn("INFO: aktive databasefiler kontrollert: 4", stdout)
         self.assertIn("FEIL: 1 aktiv(e) fil(er) mangler på disk.", stdout)
         self.assertIn("FEIL: 1 aktiv(e) fil(er) kunne ikke leses.", stdout)

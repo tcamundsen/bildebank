@@ -28,6 +28,8 @@ viser kommandoen en `FEIL:`-linje og et råd om hva du bør gjøre videre.
 
 `bildebank doctor --deep` leser i tillegg alle aktive filer og kontrollerer
 SHA-256 mot databasen. Denne kontrollen kan ta lang tid for en stor samling.
-Den rapporterer feil, men endrer ikke databasen eller filene.
+Doctor viser fremdrift mens den leter etter manglende filer og mens den
+kontrollerer SHA-256. Den rapporterer feil, men endrer ikke databasen eller
+filene.
 
 Det gamle navnet `face-status` virker fortsatt som alias.
