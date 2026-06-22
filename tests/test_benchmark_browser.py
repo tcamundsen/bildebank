@@ -39,12 +39,18 @@ def test_item_page_parser_finds_hotkey_request_context() -> None:
         <meta name="csrf-token" content="csrf-123">
         <main data-browser-item-id="42" data-browser-source-url="/filter/person%3AViljar">
         </main>
+        <button data-tag-toggle="42" data-tag-name="Familie" aria-pressed="false">Familie</button>
+        <button data-tag-toggle="42" data-tag-name="Ute av fokus" aria-pressed="true">Ute av fokus</button>
         """
     )
 
     assert parser.csrf_token == "csrf-123"
     assert parser.file_id == 42
     assert parser.source_url == "/filter/person%3AViljar"
+    assert parser.tags == [
+        {"file_id": 42, "tag_name": "Familie", "tagged": True},
+        {"file_id": 42, "tag_name": "Ute av fokus", "tagged": False},
+    ]
 
 
 def test_benchmark_summary_counts_threshold_failures_and_percentiles() -> None:

@@ -53,6 +53,13 @@ og eventuell filterkontekst. Deretter måles gjentatte kall til
 .venv/bin/python tools/benchmark_browser.py --mode hotkey --url http://127.0.0.1:8765/filter/person%3AViljar%20person%3AVictoria/item/123 --hotkey 1 --steps 20 --warmup 3
 ```
 
+For å måle tagg-API-et fra en konkret item-side, bruk `tag`-modus. Uten
+`--tag` brukes første taggknapp på siden:
+
+```bash
+.venv/bin/python tools/benchmark_browser.py --mode tag --url http://127.0.0.1:8765/item/123 --tag "Familie" --steps 20 --warmup 3
+```
+
 For en importert kilde:
 
 ```bash

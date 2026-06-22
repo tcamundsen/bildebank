@@ -35,6 +35,9 @@ SERVER_TIMING_STEP_ORDER = (
     "hotkey_post_apply",
     "hotkey_filter_after",
     "hotkey_redirect",
+    "tag_read_payload",
+    "tag_validate",
+    "tag_apply",
     "total",
 )
 
@@ -155,6 +158,7 @@ class ItemPageParser(HTMLParser):
         self.csrf_token: str | None = None
         self.file_id: int | None = None
         self.source_url: str | None = None
+        self.tags: list[dict[str, object]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr = dict(attrs)
@@ -166,6 +170,13 @@ class ItemPageParser(HTMLParser):
             except ValueError:
                 pass
             self.source_url = attr.get("data-browser-source-url")
+        if tag == "button" and attr.get("data-tag-toggle") and attr.get("data-tag-name"):
+            try:
+                file_id = int(str(attr["data-tag-toggle"]))
+            except ValueError:
+                return
+            pressed = attr.get("aria-pressed") == "true"
+            self.tags.append({"file_id": file_id, "tag_name": attr["data-tag-name"], "tagged": not pressed})
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -228,13 +239,14 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=("browser", "server", "server-keepalive", "profile", "hotkey"),
+        choices=("browser", "server", "server-keepalive", "profile", "hotkey", "tag"),
         default="browser",
     )
     parser.add_argument("--target", type=Path, help="Bildesamlingsmappe. Kreves for --mode profile.")
     parser.add_argument("--steps", type=positive_int, default=50, help="Antall neste-klikk som måles. Standard: 50")
     parser.add_argument("--warmup", type=non_negative_int, default=5, help="Antall oppvarmingsklikk før måling. Standard: 5")
     parser.add_argument("--hotkey", default="1", help="Hurtigtast som måles med --mode hotkey. Standard: 1")
+    parser.add_argument("--tag", help="Taggnavn som måles med --mode tag. Standard: første taggknapp på siden.")
     parser.add_argument("--threshold-ms", type=float, help="Returner exit code 1 hvis ett eller flere steg er tregere.")
     parser.add_argument("--json-output", help="Skriv rådata og oppsummering til JSON-fil.")
     parser.add_argument("--timeout-ms", type=positive_int, default=10_000, help="Timeout per side/klikk. Standard: 10000")
@@ -253,6 +265,8 @@ def run_benchmark(args: argparse.Namespace) -> BenchmarkResult:
         return run_profile_benchmark(args)
     if args.mode == "hotkey":
         return run_hotkey_benchmark(args)
+    if args.mode == "tag":
+        return run_tag_benchmark(args)
     if args.mode == "browser":
         return run_browser_benchmark(args)
     if args.mode == "server-keepalive":
@@ -450,6 +464,29 @@ def run_hotkey_benchmark(args: argparse.Namespace) -> BenchmarkSummary:
     return build_summary("hotkey", args, steps)
 
 
+def run_tag_benchmark(args: argparse.Namespace) -> BenchmarkSummary:
+    html = fetch_text(args.url, args.timeout_ms)
+    item_page = parse_item_page(html)
+    if not item_page.csrf_token:
+        raise RuntimeError("Fant ikke CSRF-token på startsiden.")
+    tag_payload = select_tag_payload(item_page, args.tag)
+    for _ in range(args.warmup):
+        post_tag_step(args.url, item_page.csrf_token, tag_payload, 0, args.timeout_ms)
+    steps: list[StepResult] = []
+    for index in range(1, args.steps + 1):
+        steps.append(post_tag_step(args.url, item_page.csrf_token, tag_payload, index, args.timeout_ms))
+    return build_summary("tag", args, steps)
+
+
+def select_tag_payload(item_page: ItemPageParser, tag_name: str | None) -> dict[str, object]:
+    if not item_page.tags:
+        raise RuntimeError("Fant ingen taggknapper på startsiden.")
+    for tag in item_page.tags:
+        if tag_name is None or tag.get("tag_name") == tag_name:
+            return dict(tag)
+    raise RuntimeError(f"Fant ikke taggknapp for {tag_name!r} på startsiden.")
+
+
 def parse_item_page(html: str) -> ItemPageParser:
     parser = ItemPageParser()
     parser.feed(html)
@@ -466,13 +503,48 @@ def post_hotkey_step(
     payload: dict[str, object] = {"file_id": item_page.file_id, "key": key}
     if item_page.source_url:
         payload["source_url"] = item_page.source_url
+    return post_json_api_step(
+        url,
+        "/api/item-hotkey-action",
+        item_page.csrf_token or "",
+        payload,
+        index,
+        timeout_ms,
+    )
+
+
+def post_tag_step(
+    url: str,
+    csrf_token: str,
+    payload: dict[str, object],
+    index: int,
+    timeout_ms: int,
+) -> StepResult:
+    return post_json_api_step(
+        url,
+        "/api/item-tag",
+        csrf_token,
+        payload,
+        index,
+        timeout_ms,
+    )
+
+
+def post_json_api_step(
+    url: str,
+    path: str,
+    csrf_token: str,
+    payload: dict[str, object],
+    index: int,
+    timeout_ms: int,
+) -> StepResult:
     body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
-        urllib.parse.urljoin(url, "/api/item-hotkey-action"),
+        urllib.parse.urljoin(url, path),
         data=body,
         headers={
             "Content-Type": "application/json",
-            "X-CSRF-Token": item_page.csrf_token or "",
+            "X-CSRF-Token": csrf_token,
             BENCHMARK_HEADER: "1",
         },
         method="POST",
@@ -482,7 +554,7 @@ def post_hotkey_step(
         with urllib.request.urlopen(request, timeout=timeout_ms / 1000.0) as response:
             first_byte_ms = elapsed_ms(start)
             if response.status >= 400:
-                raise RuntimeError(f"HTTP {response.status} fra /api/item-hotkey-action")
+                raise RuntimeError(f"HTTP {response.status} fra {path}")
             server_ms = (
                 float(response.headers["X-Bildebank-Request-Ms"])
                 if "X-Bildebank-Request-Ms" in response.headers
@@ -494,7 +566,7 @@ def post_hotkey_step(
             read_ms = elapsed_ms(read_start)
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"HTTP {exc.code} fra /api/item-hotkey-action: {detail}") from exc
+        raise RuntimeError(f"HTTP {exc.code} fra {path}: {detail}") from exc
     total_ms = elapsed_ms(start)
     return StepResult(
         index=index,

@@ -3752,9 +3752,13 @@ model_name = "buffalo_l"
                 rfile = BytesIO(data)
                 server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
                 body: dict[str, object] | None = None
+                timings: list[str] = []
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
                     self.body = content
+
+                def record_server_timing(self, name: str, start: float) -> None:
+                    self.timings.append(name)
 
             handler = FakeHandler()
             BildebankRequestHandler.respond_tag_item(handler)  # type: ignore[arg-type]
@@ -3764,6 +3768,7 @@ model_name = "buffalo_l"
             info_body = image_info_content_html(target, item)
 
         self.assertEqual({"ok": True, "file_id": 1, "tag_name": db.SYSTEM_TAG_OUT_OF_FOCUS, "tagged": True}, handler.body)
+        self.assertEqual(handler.timings, ["tag_read_payload", "tag_validate", "tag_apply"])
         self.assertIn('class="tag-toggle active"', body)
         self.assertIn('aria-pressed="true"', body)
         self.assertIn("Ute av fokus", info_body)

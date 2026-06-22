@@ -2004,7 +2004,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         self.respond_json(result)
 
     def respond_tag_item(self) -> None:
+        def record_timing(name: str, start: float) -> None:
+            recorder = getattr(self, "record_server_timing", None)
+            if recorder is not None:
+                recorder(name, start)
+
+        start = time.perf_counter()
         payload = BildebankRequestHandler.read_json_payload(self)
+        record_timing("tag_read_payload", start)
+
+        start = time.perf_counter()
         try:
             file_id = require_int(payload.get("file_id"), "file_id")
         except ValueError:
@@ -2015,8 +2024,11 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         if not tag_name:
             self.respond_json({"ok": False, "error": "Taggnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
             return
+        record_timing("tag_validate", start)
         try:
+            start = time.perf_counter()
             server_actions.set_tag_on_file(self.server.target, file_id, tag_name, tagged)
+            record_timing("tag_apply", start)
         except TargetLockError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
             return
