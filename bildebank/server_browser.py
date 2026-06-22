@@ -2744,7 +2744,7 @@ def thumbnail_media_html(target: Path, item: Any) -> str:
         return f'<div class="video-thumb">Video<br>{name}</div>'
     if kind != "image":
         return f'<div class="video-thumb">Fil<br>{name}</div>'
-    relative_path = db.target_relative_path(target, target_path)
+    relative_path = db.relative_path(target_path)
     thumbnail_src = "/file/" + existing_thumbnail_url(target, relative_path)
     return f'<img src="{html.escape(thumbnail_src)}" alt="{name}" loading="lazy"{rotation_style_attr(item)}>'
 

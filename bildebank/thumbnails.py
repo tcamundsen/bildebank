@@ -117,7 +117,7 @@ def active_thumbnail_candidates(target: Path) -> list[Path]:
             ORDER BY target_path_key
             """
         )
-        return [db.target_relative_path(target, Path(str(row["target_path"]))) for row in rows]
+        return [db.relative_path(Path(str(row["target_path"]))) for row in rows]
     finally:
         conn.close()
 

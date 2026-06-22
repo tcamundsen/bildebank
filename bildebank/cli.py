@@ -2938,14 +2938,14 @@ def print_face_report(target: Path, report: FaceReport, *, config=None) -> None:
         print()
         print("Flest ansikter:")
         for row in report.top_files:
-            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-            print(f"  {row['face_count']}\t{db.target_relative_path(target, target_path).as_posix()}")
+            target_path = db.relative_path(Path(str(row["target_path"])))
+            print(f"  {row['face_count']}\t{target_path.as_posix()}")
     if report.errors:
         print()
         print("Siste scan-feil:")
         for row in report.errors:
-            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-            print(f"  {db.target_relative_path(target, target_path).as_posix()}\t{row['error_message']}")
+            target_path = db.relative_path(Path(str(row["target_path"])))
+            print(f"  {target_path.as_posix()}\t{row['error_message']}")
 
 
 def run_face_reset(

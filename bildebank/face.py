@@ -1178,7 +1178,7 @@ def person_browser_items(
         view_rotations = file_view_rotations(target)
     try:
         for row in rows:
-            relative_path = relative_to_target(target, Path(str(row["target_path"])))
+            relative_path = db.relative_path(Path(str(row["target_path"])))
             target_path = db.absolute_target_path(target, relative_path)
             key = relative_path.as_posix()
             dimensions = media_cache.image_dimensions(target_path)
@@ -1244,7 +1244,7 @@ def person_browser_items(
                     tuple(manual_file_ids),
                 )
                 for manual_row in manual_rows:
-                    relative_path = relative_to_target(target, Path(str(manual_row["target_path"])))
+                    relative_path = db.relative_path(Path(str(manual_row["target_path"])))
                     key = relative_path.as_posix()
                     if key in grouped:
                         continue
@@ -1305,7 +1305,7 @@ def face_browser_items(
         view_rotations = file_view_rotations(target)
     try:
         for row in rows:
-            relative_path = relative_to_target(target, Path(str(row["target_path"])))
+            relative_path = db.relative_path(Path(str(row["target_path"])))
             target_path = db.absolute_target_path(target, relative_path)
             key = relative_path.as_posix()
             dimensions = media_cache.image_dimensions(target_path)
