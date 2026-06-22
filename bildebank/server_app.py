@@ -20,6 +20,7 @@ from .config import (
     set_browser_manual_person_controls_enabled,
     set_face_recognition_enabled,
     set_face_recognition_model_name,
+    set_image_search_enabled,
 )
 from .formatting import format_bytes
 from .target_lock import TargetLock
@@ -63,7 +64,7 @@ def app_status_page_html(
             app_status_manual_person_controls_row_html(config.browser.manual_person_controls_enabled),
             app_status_row_html("InsightFace installert", yes_no(insightface_installed)),
             app_status_row_html("OpenCLIP tilgjengelig", yes_no(module_available_func("open_clip"))),
-            app_status_row_html("OpenCLIP aktivert", yes_no(config.openclip.enabled)),
+            app_status_image_search_row_html(config.openclip.enabled),
             app_status_row_html("OpenCLIP-modell", config.openclip.model_name),
             app_status_row_html("OpenCLIP-pretrained", config.openclip.pretrained),
             app_status_row_html("OpenCLIP-device", config.openclip.device),
@@ -128,6 +129,14 @@ def update_face_enabled_config(config: AppConfig, repo_root: Path, enabled: bool
     return replace(
         config,
         face_recognition=replace(config.face_recognition, enabled=enabled),
+    )
+
+
+def update_image_search_enabled_config(config: AppConfig, repo_root: Path, enabled: bool) -> AppConfig:
+    set_image_search_enabled(repo_root, enabled)
+    return replace(
+        config,
+        openclip=replace(config.openclip, enabled=enabled),
     )
 
 
@@ -228,6 +237,26 @@ def app_status_face_config_row_html(enabled: bool, *, insightface_installed: boo
             <span class="app-toggle-status">{status}</span>
           </label>
           {install_note}
+        </form>
+      </dd>
+    </div>
+    """
+
+
+def app_status_image_search_row_html(enabled: bool) -> str:
+    checked = " checked" if enabled else ""
+    status = "På" if enabled else "Av"
+    return f"""
+    <div class="info-row">
+      <dt>Bildesøk aktivert</dt>
+      <dd>
+        <form action="/settings/image-search" method="post" class="app-toggle-form">
+          <input type="hidden" name="enabled" value="false">
+          <label class="app-toggle">
+            <input type="checkbox" name="enabled" value="true"{checked} onchange="this.form.submit()">
+            <span class="app-toggle-track" aria-hidden="true"><span></span></span>
+            <span class="app-toggle-status">{status}</span>
+          </label>
         </form>
       </dd>
     </div>

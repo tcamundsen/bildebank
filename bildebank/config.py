@@ -213,6 +213,10 @@ def set_face_recognition_enabled(repo_root: Path, enabled: bool) -> Path:
     return set_config_enabled(repo_root, "face_recognition", enabled)
 
 
+def set_image_search_enabled(repo_root: Path, enabled: bool) -> Path:
+    return set_config_enabled(repo_root, "image_search", enabled)
+
+
 def set_browser_hide_out_of_focus(repo_root: Path, enabled: bool) -> Path:
     config_path = repo_root / CONFIG_FILENAME
     if not config_path.exists():

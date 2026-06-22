@@ -1482,10 +1482,11 @@ pretrained = "laion2b_s34b_b79k"
         self.assertNotIn("app-toggle-submit", body)
         self.assertIn("<dd>ja</dd>", body)
         self.assertIn("InsightFace installert", body)
-        self.assertIn("OpenCLIP aktivert", body)
         self.assertNotIn('href="/date-source/filename">Dato fra filnavn</a>', body)
         self.assertNotIn('href="/date-source/mtime">Dato fra mtime</a>', body)
         self.assertIn("OpenCLIP tilgjengelig", body)
+        self.assertIn("Bildesøk aktivert", body)
+        self.assertIn('action="/settings/image-search"', body)
         self.assertIn("Test-Model", body)
         self.assertIn("test-weights", body)
         self.assertIn("cpu", body)
@@ -1734,6 +1735,35 @@ pretrained = "laion2b_s34b_b79k"
                 BildebankRequestHandler.respond_set_face_config(handler)  # type: ignore[arg-type]
 
         self.assertEqual(handler.location, "/settings?scroll=312")
+
+    def test_run_server_image_search_post_updates_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = b"enabled=false&enabled=true"
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig(openclip=OpenClipConfig(enabled=False)))
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_image_search(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+            config_text = (root / "bildebank-config.toml").read_text(encoding="utf-8")
+
+        self.assertTrue(config.openclip.enabled)
+        self.assertTrue(handler.server.config.openclip.enabled)
+        self.assertIsInstance(handler.server.search_cache, OpenClipSearchCache)
+        self.assertEqual(handler.location, "/settings")
+        self.assertIn("[image_search]", config_text)
+        self.assertIn("enabled = true", config_text)
+        self.assertNotIn("[openclip]", config_text)
 
     def test_run_server_hide_out_of_focus_post_updates_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

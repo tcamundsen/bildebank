@@ -651,6 +651,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/settings/face-config":
                 self.respond_set_face_config()
                 return
+            if parsed.path == "/settings/image-search":
+                self.respond_set_image_search()
+                return
             if parsed.path == "/settings/hide-out-of-focus":
                 self.respond_set_hide_out_of_focus()
                 return
@@ -1413,6 +1416,17 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             server_app.server_program_repo_root(),
             enabled,
         )
+        self.redirect(settings_redirect_location(params))
+
+    def respond_set_image_search(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
+        self.server.config = server_app.update_image_search_enabled_config(
+            self.server.config,
+            server_app.server_program_repo_root(),
+            enabled,
+        )
+        self.server.search_cache = OpenClipSearchCache(self.server.config)
         self.redirect(settings_redirect_location(params))
 
     def respond_set_hide_out_of_focus(self) -> None:
