@@ -159,11 +159,13 @@ from bildebank.thumbnails import (
 )
 from tests.test_media import (
     jpeg_with_xmp_date,
+    jpeg_with_exif_datetime,
     jpeg_with_exif_camera,
     minimal_avi_with_creation_date,
     minimal_avi_with_idit_outside_info,
     minimal_mp4_with_creation_date,
     minimal_png,
+    minimal_tiff_with_datetime,
 )
 
 
@@ -12500,6 +12502,36 @@ print(json.dumps([
 
             self.assertTrue((target / "2007" / "10" / "oktnov07 063.avi").exists())
 
+    def test_import_nef_uses_tiff_metadata_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "DSC_0170.JPG").write_bytes(jpeg_with_exif_datetime("2019:03:03 12:00:00"))
+            (source / "DSC_0170.NEF").write_bytes(minimal_tiff_with_datetime("2019:03:03 12:00:00"))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            self.assertTrue((target / "2019" / "03" / "DSC_0170.JPG").exists())
+            self.assertTrue((target / "2019" / "03" / "DSC_0170.NEF").exists())
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                rows = conn.execute(
+                    "SELECT stored_filename, taken_date, date_source FROM files ORDER BY stored_filename"
+                ).fetchall()
+            finally:
+                conn.close()
+            self.assertEqual(
+                rows,
+                [
+                    ("DSC_0170.JPG", "2019-03-03", "metadata"),
+                    ("DSC_0170.NEF", "2019-03-03", "metadata"),
+                ],
+            )
+
     def test_non_metadata_lists_files_not_placed_by_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -12543,6 +12575,18 @@ print(json.dumps([
             self.assertIn("JPEG metadata:", stdout)
             self.assertIn("APP1", stdout)
             self.assertIn("XMP dato: 2007-03-12", stdout)
+
+    def test_inspect_metadata_shows_tiff_raw_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "DSC_0170.NEF"
+            path.write_bytes(minimal_tiff_with_datetime("2019:03:03 12:00:00"))
+
+            code, stdout, stderr = capture_cli(["inspect-metadata", str(path)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Valgt dato: 2019-03-03", stdout)
+            self.assertIn("TIFF/RAW metadata:", stdout)
+            self.assertIn("TIFF/RAW dato: 2019-03-03", stdout)
 
     def test_refresh_metadata_moves_non_metadata_file_when_metadata_becomes_readable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

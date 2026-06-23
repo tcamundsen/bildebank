@@ -164,6 +164,46 @@ def jpeg_with_exif_camera(make: str, model: str) -> bytes:
     return b"\xff\xd8" + segment + b"\xff\xd9"
 
 
+def minimal_tiff_with_datetime(date: str) -> bytes:
+    date_bytes = date.encode("ascii") + b"\x00"
+    tiff_header = b"MM\x00*\x00\x00\x00\x08"
+    ifd0_offset = 8
+    ifd0_size = 2 + 12 + 4
+    date_offset = ifd0_offset + ifd0_size
+    ifd0 = (
+        (1).to_bytes(2, "big")
+        + (0x0132).to_bytes(2, "big")
+        + (2).to_bytes(2, "big")
+        + len(date_bytes).to_bytes(4, "big")
+        + date_offset.to_bytes(4, "big")
+        + (0).to_bytes(4, "big")
+    )
+    return tiff_header + ifd0 + date_bytes
+
+
+def minimal_tiff_with_camera(make: str, model: str) -> bytes:
+    make_bytes = make.encode("ascii") + b"\x00"
+    model_bytes = model.encode("ascii") + b"\x00"
+    tiff_header = b"MM\x00*\x00\x00\x00\x08"
+    ifd0_offset = 8
+    ifd0_size = 2 + 2 * 12 + 4
+    make_offset = ifd0_offset + ifd0_size
+    model_offset = make_offset + len(make_bytes)
+    ifd0 = (
+        (2).to_bytes(2, "big")
+        + (0x010F).to_bytes(2, "big")
+        + (2).to_bytes(2, "big")
+        + len(make_bytes).to_bytes(4, "big")
+        + make_offset.to_bytes(4, "big")
+        + (0x0110).to_bytes(2, "big")
+        + (2).to_bytes(2, "big")
+        + len(model_bytes).to_bytes(4, "big")
+        + model_offset.to_bytes(4, "big")
+        + (0).to_bytes(4, "big")
+    )
+    return tiff_header + ifd0 + make_bytes + model_bytes
+
+
 def minimal_png(width: int, height: int) -> bytes:
     signature = b"\x89PNG\r\n\x1a\n"
     ihdr_payload = (
@@ -277,6 +317,26 @@ class MediaDateTests(unittest.TestCase):
             self.assertEqual(result.date, dt.date(2016, 1, 29))
             self.assertEqual(result.source, "metadata")
 
+    def test_nef_tiff_metadata_date_is_used_before_filename_or_mtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "IMG_20240102.NEF"
+            path.write_bytes(minimal_tiff_with_datetime("2019:03:03 12:34:56"))
+
+            result = media_date(path)
+
+            self.assertEqual(result.date, dt.date(2019, 3, 3))
+            self.assertEqual(result.source, "metadata")
+
+    def test_non_tiff_nef_falls_through_to_filename_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "IMG_20240102.NEF"
+            path.write_bytes(b"not a tiff raw file")
+
+            result = media_date(path)
+
+            self.assertEqual(result.date, dt.date(2024, 1, 2))
+            self.assertEqual(result.source, "filename")
+
     def test_jpeg_exif_orientation_is_read(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "rotated.jpg"
@@ -295,6 +355,18 @@ class MediaDateTests(unittest.TestCase):
         assert result is not None
         self.assertEqual(result.make, "Canon")
         self.assertEqual(result.model, "EOS 80D")
+
+    def test_tiff_raw_camera_is_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "camera.NEF"
+            path.write_bytes(minimal_tiff_with_camera("NIKON CORPORATION", "NIKON D90"))
+
+            result = camera_info(path)
+
+        self.assertIsNotNone(result)
+        assert result is not None
+        self.assertEqual(result.make, "NIKON CORPORATION")
+        self.assertEqual(result.model, "NIKON D90")
 
     def test_png_dimensions_are_read_without_external_dependencies(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

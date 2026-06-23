@@ -225,14 +225,21 @@ def image_orientation(path: Path) -> int:
 
 
 def camera_info(path: Path) -> CameraInfo | None:
-    if not is_jpeg_file(path):
+    if is_jpeg_file(path):
+        for segment in _jpeg_app1_segments(path):
+            if not segment.startswith(b"Exif\x00\x00"):
+                continue
+            info = _camera_info_from_tiff(segment[6:])
+            if info is not None:
+                return info
         return None
-    for segment in _jpeg_app1_segments(path):
-        if not segment.startswith(b"Exif\x00\x00"):
-            continue
-        info = _camera_info_from_tiff(segment[6:])
-        if info is not None:
-            return info
+
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if is_tiff_header(data):
+        return _camera_info_from_tiff(data)
     return None
 
 
@@ -252,6 +259,8 @@ def inspect_metadata(path: Path) -> MetadataInspection:
 
     if is_jpeg_file(path):
         lines.extend(inspect_jpeg_metadata(path))
+    elif is_tiff_file(path):
+        lines.extend(inspect_tiff_metadata(path))
     elif path.suffix.lower() == ".avi":
         lines.extend(inspect_avi_metadata(path))
     else:
@@ -281,6 +290,11 @@ def explain_date(path: Path) -> DateExplanation:
     candidates.append(DateCandidate("metadata", video_date, "Video metadata"))
     if video_date is not None:
         return DateExplanation(path, is_supported_media(path), MediaDate(video_date, "metadata"), tuple(candidates))
+
+    tiff_date = tiff_metadata_date(path)
+    candidates.append(DateCandidate("metadata", tiff_date, "TIFF/RAW metadata"))
+    if tiff_date is not None:
+        return DateExplanation(path, is_supported_media(path), MediaDate(tiff_date, "metadata"), tuple(candidates))
 
     filename_date = date_from_filename(path.name)
     candidates.append(DateCandidate("filename", filename_date, "Dato i filnavn"))
@@ -346,6 +360,44 @@ def jpeg_exif_date(path: Path) -> dt.date | None:
         if marker == 0xE1 and segment.startswith(b"Exif\x00\x00"):
             return _date_from_tiff(segment[6:])
     return None
+
+
+def tiff_metadata_date(path: Path) -> dt.date | None:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if not is_tiff_header(data):
+        return None
+    return _date_from_tiff(data)
+
+
+def is_tiff_file(path: Path) -> bool:
+    try:
+        with path.open("rb") as fh:
+            return is_tiff_header(fh.read(4))
+    except OSError:
+        return False
+
+
+def is_tiff_header(data: bytes) -> bool:
+    return len(data) >= 4 and data[:4] in {b"II*\x00", b"MM\x00*"}
+
+
+def inspect_tiff_metadata(path: Path) -> list[str]:
+    lines = ["TIFF/RAW metadata:"]
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        return lines + [f"  Kunne ikke lese fil: {exc}"]
+    if not is_tiff_header(data):
+        return lines + ["  Ikke en lesbar TIFF/RAW-fil."]
+    info = _camera_info_from_tiff(data)
+    lines.append(f"  TIFF/RAW dato: {tiff_metadata_date(path) or '-'}")
+    lines.append(f"  Kamera make: {info.make if info and info.make else '-'}")
+    lines.append(f"  Kamera model: {info.model if info and info.model else '-'}")
+    lines.extend(inspect_text_dates(path))
+    return lines
 
 
 def inspect_jpeg_metadata(path: Path) -> list[str]:
