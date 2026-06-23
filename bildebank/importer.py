@@ -9,7 +9,15 @@ from pathlib import Path
 from typing import Callable, TextIO
 
 from . import db
-from .media import MediaDate, camera_info, is_supported_media, media_date, sha256_file, stored_media_filename
+from .media import (
+    MediaDate,
+    camera_info,
+    is_supported_media,
+    media_date,
+    metadata_datetime,
+    sha256_file,
+    stored_media_filename,
+)
 from .progress import ProgressMeter
 from .target_lock import TargetLock
 
@@ -370,6 +378,7 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
 
     date = media_date(path)
     camera = camera_info(path)
+    metadata_dt = metadata_datetime(path)
     destination_dir = destination_directory(target, date)
     destination_dir.mkdir(parents=True, exist_ok=True)
     stored_filename = stored_media_filename(path.name)
@@ -392,6 +401,7 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
             name_conflict=name_conflict,
             camera_make=camera.make if camera is not None else None,
             camera_model=camera.model if camera is not None else None,
+            metadata_datetime=_datetime_string(metadata_dt),
         )
         stats.skipped_existing += 1
         if name_conflict:
@@ -414,6 +424,7 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
         name_conflict=name_conflict,
         camera_make=camera.make if camera is not None else None,
         camera_model=camera.model if camera is not None else None,
+        metadata_datetime=_datetime_string(metadata_dt),
     )
     stats.imported += 1
     if name_conflict:
@@ -459,6 +470,10 @@ def destination_directory(target: Path, date: MediaDate) -> Path:
 
 def _date_string(date: MediaDate) -> str | None:
     return date.date.isoformat() if date.date else None
+
+
+def _datetime_string(value) -> str | None:
+    return value.isoformat(sep=" ") if value is not None else None
 
 
 def find_existing_or_available_destination(
@@ -606,6 +621,7 @@ def refresh_non_metadata_file(
 
     date = media_date(current_path)
     camera = camera_info(current_path)
+    metadata_dt = metadata_datetime(current_path)
     if date.source != "metadata" or date.date is None:
         if verbose:
             print(f"INGEN_METADATA\t{current_path}", flush=True)
@@ -670,6 +686,7 @@ def refresh_non_metadata_file(
             name_conflict=name_conflict,
             camera_make=camera.make if camera is not None else None,
             camera_model=camera.model if camera is not None else None,
+            metadata_datetime=_datetime_string(metadata_dt),
         )
         if move_id is not None:
             db.complete_pending_file_move(conn, move_id=move_id)

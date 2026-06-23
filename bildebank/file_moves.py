@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from . import db
-from .media import camera_info, media_date, sha256_file
+from .media import camera_info, media_date, metadata_datetime, sha256_file
 from .target_lock import TargetLock
 
 
@@ -111,6 +111,7 @@ def _complete_database_move(
                 f"Kan ikke fullføre refresh-metadata recovery for {to_path}: metadata-dato mangler."
             )
         camera = camera_info(to_path)
+        metadata_dt = metadata_datetime(to_path)
         db.update_file_placement(
             conn,
             file_id=file_id,
@@ -122,6 +123,7 @@ def _complete_database_move(
             name_conflict=to_path.name != from_path.name,
             camera_make=camera.make if camera is not None else None,
             camera_model=camera.model if camera is not None else None,
+            metadata_datetime=metadata_dt.isoformat(sep=" ") if metadata_dt is not None else None,
         )
         db.resolve_errors_for_path(conn, stage="refresh-metadata", source_path=from_path)
         return

@@ -3331,6 +3331,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  opprette pending_file_deletes")
     if plan.creates_pending_file_moves:
         print("  opprette pending_file_moves")
+    if plan.adds_metadata_datetime_column:
+        print("  legge til metadata_datetime i files")
     if plan.refreshes_performance_indexes:
         print("  oppdatere manglende ytelsesindekser")
     for repair in plan.internal_repairs:
@@ -3381,6 +3383,9 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Oppretter pending_file_deletes.")
     if result.creates_pending_file_moves:
         print("Oppretter pending_file_moves.")
+    if result.adds_metadata_datetime_column:
+        print("Legger til metadata_datetime i files.")
+        print("Kjør bildebank refresh-metadata --rescan for å fylle tidspunkt for eksisterende filer.")
     if result.refreshes_performance_indexes:
         print("Oppdaterer manglende ytelsesindekser.")
     if result.internal_repairs:

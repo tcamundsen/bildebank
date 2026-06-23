@@ -273,6 +273,24 @@ def media_date(path: Path) -> MediaDate:
     return explain_date(path).selected
 
 
+def metadata_datetime(path: Path) -> dt.datetime | None:
+    if is_jpeg_file(path):
+        for segment in _jpeg_app1_segments(path):
+            if segment.startswith(b"Exif\x00\x00"):
+                parsed = _datetime_from_tiff(segment[6:])
+                if parsed is not None:
+                    return parsed
+        return None
+
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if is_tiff_header(data):
+        return _datetime_from_tiff(data)
+    return None
+
+
 def explain_date(path: Path) -> DateExplanation:
     candidates: list[DateCandidate] = []
 
@@ -393,7 +411,9 @@ def inspect_tiff_metadata(path: Path) -> list[str]:
     if not is_tiff_header(data):
         return lines + ["  Ikke en lesbar TIFF/RAW-fil."]
     info = _camera_info_from_tiff(data)
+    metadata_dt = metadata_datetime(path)
     lines.append(f"  TIFF/RAW dato: {tiff_metadata_date(path) or '-'}")
+    lines.append(f"  TIFF/RAW tidspunkt: {metadata_dt.isoformat(sep=' ') if metadata_dt else '-'}")
     lines.append(f"  Kamera make: {info.make if info and info.make else '-'}")
     lines.append(f"  Kamera model: {info.model if info and info.model else '-'}")
     lines.extend(inspect_text_dates(path))
@@ -412,6 +432,8 @@ def inspect_jpeg_metadata(path: Path) -> list[str]:
         prefix = printable_sample(segment[:80])
         lines.append(f"  {label}: {len(segment)} bytes: {prefix}")
     lines.append(f"  EXIF dato: {jpeg_exif_date(path) or '-'}")
+    metadata_dt = metadata_datetime(path)
+    lines.append(f"  EXIF tidspunkt: {metadata_dt.isoformat(sep=' ') if metadata_dt else '-'}")
     lines.append(f"  XMP dato: {jpeg_xmp_date(path) or '-'}")
     lines.extend(inspect_text_dates(path))
     return lines
@@ -615,6 +637,36 @@ def _date_from_tiff(tiff: bytes) -> dt.date | None:
     return None
 
 
+def _datetime_from_tiff(tiff: bytes) -> dt.datetime | None:
+    if len(tiff) < 8:
+        return None
+    endian_marker = tiff[:2]
+    if endian_marker == b"II":
+        endian = "<"
+    elif endian_marker == b"MM":
+        endian = ">"
+    else:
+        return None
+    if struct.unpack(endian + "H", tiff[2:4])[0] != 42:
+        return None
+
+    first_ifd = struct.unpack(endian + "I", tiff[4:8])[0]
+    values = _read_ifd_values(tiff, first_ifd, endian)
+    for tag in (0x9003, 0x9004, 0x0132):
+        parsed = _parse_exif_datetime(values.get(tag))
+        if parsed is not None:
+            return parsed
+
+    exif_offset = values.get(0x8769)
+    if isinstance(exif_offset, int):
+        exif_values = _read_ifd_values(tiff, exif_offset, endian)
+        for tag in (0x9003, 0x9004, 0x0132):
+            parsed = _parse_exif_datetime(exif_values.get(tag))
+            if parsed is not None:
+                return parsed
+    return None
+
+
 def _orientation_from_tiff(tiff: bytes) -> int | None:
     if len(tiff) < 8:
         return None
@@ -688,6 +740,9 @@ def _type_size(typ: int) -> int:
 
 
 def _parse_exif_date(value: bytes | int | None) -> dt.date | None:
+    parsed = _parse_exif_datetime(value)
+    if parsed is not None:
+        return parsed.date()
     if not isinstance(value, bytes):
         return None
     text = value.rstrip(b"\x00").decode("ascii", errors="ignore")
@@ -696,6 +751,30 @@ def _parse_exif_date(value: bytes | int | None) -> dt.date | None:
         return None
     try:
         return dt.date(int(match.group("y")), int(match.group("m")), int(match.group("d")))
+    except ValueError:
+        return None
+
+
+def _parse_exif_datetime(value: bytes | int | None) -> dt.datetime | None:
+    if not isinstance(value, bytes):
+        return None
+    text = value.rstrip(b"\x00").decode("ascii", errors="ignore").strip()
+    match = re.match(
+        r"(?P<y>\d{4})[:/-](?P<m>\d{2})[:/-](?P<d>\d{2})"
+        r"(?:[ T](?P<h>\d{2}):(?P<min>\d{2}):(?P<s>\d{2}))?",
+        text,
+    )
+    if not match or match.group("h") is None:
+        return None
+    try:
+        return dt.datetime(
+            int(match.group("y")),
+            int(match.group("m")),
+            int(match.group("d")),
+            int(match.group("h")),
+            int(match.group("min")),
+            int(match.group("s")),
+        )
     except ValueError:
         return None
 

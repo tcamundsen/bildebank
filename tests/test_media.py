@@ -5,7 +5,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from bildebank.media import camera_info, image_dimensions, image_orientation, is_supported_media, media_date, media_kind
+from bildebank.media import (
+    camera_info,
+    image_dimensions,
+    image_orientation,
+    is_supported_media,
+    media_date,
+    media_kind,
+    metadata_datetime,
+)
 
 
 def atom(atom_type: bytes, payload: bytes) -> bytes:
@@ -317,6 +325,13 @@ class MediaDateTests(unittest.TestCase):
             self.assertEqual(result.date, dt.date(2016, 1, 29))
             self.assertEqual(result.source, "metadata")
 
+    def test_jpeg_exif_metadata_datetime_is_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "camera.jpg"
+            path.write_bytes(jpeg_with_exif_datetime("2019:03:03 12:34:56"))
+
+            self.assertEqual(metadata_datetime(path), dt.datetime(2019, 3, 3, 12, 34, 56))
+
     def test_nef_tiff_metadata_date_is_used_before_filename_or_mtime(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "IMG_20240102.NEF"
@@ -326,6 +341,13 @@ class MediaDateTests(unittest.TestCase):
 
             self.assertEqual(result.date, dt.date(2019, 3, 3))
             self.assertEqual(result.source, "metadata")
+
+    def test_tiff_raw_metadata_datetime_is_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "IMG_20240102.NEF"
+            path.write_bytes(minimal_tiff_with_datetime("2019:03:03 12:34:56"))
+
+            self.assertEqual(metadata_datetime(path), dt.datetime(2019, 3, 3, 12, 34, 56))
 
     def test_non_tiff_nef_falls_through_to_filename_date(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

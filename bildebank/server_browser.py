@@ -55,6 +55,7 @@ MONTH_NAMES = {
 }
 FILE_COLUMNS = (
     "id, target_path, target_path_key, original_filename, stored_filename, taken_date, date_source, "
+    "metadata_datetime, "
     "manual_date_from, manual_date_to, manual_date_note, "
     "camera_make, camera_model, "
     "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_source, "
@@ -408,7 +409,7 @@ def all_source_where(
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
 ) -> tuple[str, tuple[object, ...]]:
-    base_sql, params = motion_video_id_filter_sql(target, "deleted_at IS NULL", (), conn=conn)
+    base_sql, params = hidden_sidecar_id_filter_sql(target, "deleted_at IS NULL", (), conn=conn)
     if not hide_out_of_focus:
         return base_sql, params
     return f"{base_sql} AND {OUT_OF_FOCUS_FILTER_SQL}", (*params, *OUT_OF_FOCUS_FILTER_PARAMS)
@@ -435,7 +436,21 @@ def with_motion_video_filter(
 ) -> tuple[str, tuple[object, ...]]:
     if include_motion:
         return where_sql, params
-    return motion_video_id_filter_sql(target, f"({where_sql})", params, conn=conn)
+    return hidden_sidecar_id_filter_sql(target, f"({where_sql})", params, conn=conn)
+
+
+def hidden_sidecar_id_filter_sql(
+    target: Path,
+    where_sql: str,
+    params: tuple[object, ...],
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> tuple[str, tuple[object, ...]]:
+    hidden_ids = sorted(motion_video_file_ids(target, conn=conn) | raw_sidecar_file_ids(target, conn=conn))
+    if not hidden_ids:
+        return where_sql, params
+    placeholders = ",".join("?" for _ in hidden_ids)
+    return f"({where_sql}) AND id NOT IN ({placeholders})", (*params, *hidden_ids)
 
 
 def motion_video_id_filter_sql(
@@ -455,9 +470,9 @@ def motion_video_id_filter_sql(
 def source_shows_motion_videos(source: BrowserSource) -> bool:
     if source.text_filter is None:
         return False
-    from .server_filter import text_filter_shows_motion_videos
+    from .server_filter import text_filter_shows_motion_videos, text_filter_shows_sidecar_files
 
-    return text_filter_shows_motion_videos(source.text_filter)
+    return text_filter_shows_motion_videos(source.text_filter) or text_filter_shows_sidecar_files(source.text_filter)
 
 
 def filter_out_of_focus_items(target: Path, source: BrowserSource, items: list[Any], hide_out_of_focus: bool) -> list[Any]:
@@ -470,7 +485,7 @@ def filter_out_of_focus_items(target: Path, source: BrowserSource, items: list[A
 def filter_motion_video_items(target: Path, items: list[Any], *, include_motion: bool = False) -> list[Any]:
     if include_motion or not items:
         return items
-    hidden_ids = motion_video_file_ids(target)
+    hidden_ids = motion_video_file_ids(target) | raw_sidecar_file_ids(target)
     return [item for item in items if int(item["id"]) not in hidden_ids]
 
 
@@ -521,6 +536,79 @@ def query_motion_video_file_ids(conn: sqlite3.Connection) -> tuple[int, ...]:
         for row in rows
         if f"{str(row['original_filename'])}.jpg".casefold() in image_originals
     )
+
+
+def raw_sidecar_file_ids(target: Path, *, conn: sqlite3.Connection | None = None) -> set[int]:
+    if conn is not None:
+        return set(query_raw_sidecar_file_ids(conn))
+    db_path = db.db_path_for_target(target)
+    try:
+        mtime_ns = db_path.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = 0
+    return set(cached_raw_sidecar_file_ids(str(target.resolve()), mtime_ns))
+
+
+@lru_cache(maxsize=8)
+def cached_raw_sidecar_file_ids(target_path: str, db_mtime_ns: int) -> tuple[int, ...]:
+    target = Path(target_path)
+    conn = db.connect(target)
+    try:
+        return query_raw_sidecar_file_ids(conn)
+    finally:
+        conn.close()
+
+
+def query_raw_sidecar_file_ids(conn: sqlite3.Connection) -> tuple[int, ...]:
+    groups = raw_sidecar_groups(conn)
+    return tuple(sorted(next(iter(raw_ids)) for raw_ids, image_ids in groups.values() if len(raw_ids) == 1 and len(image_ids) == 1))
+
+
+def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, str], tuple[set[int], set[int]]]:
+    groups: dict[tuple[int, str, str, str], tuple[set[int], set[int]]] = {}
+    for row in conn.execute(
+        """
+        SELECT
+            files.id,
+            files.original_filename,
+            files.metadata_datetime,
+            file_sources.source_id,
+            file_sources.source_path_key
+        FROM files
+        JOIN file_sources ON file_sources.file_id = files.id
+        WHERE files.deleted_at IS NULL
+          AND files.date_source = 'metadata'
+          AND files.metadata_datetime IS NOT NULL
+          AND (
+              lower(files.original_filename) LIKE '%.nef'
+              OR lower(files.original_filename) LIKE '%.jpg'
+              OR lower(files.original_filename) LIKE '%.jpeg'
+          )
+        """
+    ):
+        original_filename = str(row["original_filename"])
+        suffix = Path(original_filename).suffix.casefold()
+        if suffix not in {".nef", ".jpg", ".jpeg"}:
+            continue
+        key = (
+            int(row["source_id"]),
+            source_parent_path_key(str(row["source_path_key"])),
+            Path(original_filename).stem.casefold(),
+            str(row["metadata_datetime"]),
+        )
+        raw_ids, image_ids = groups.setdefault(key, (set(), set()))
+        if suffix == ".nef":
+            raw_ids.add(int(row["id"]))
+        else:
+            image_ids.add(int(row["id"]))
+    return groups
+
+
+def source_parent_path_key(source_path_key: str) -> str:
+    normalized = source_path_key.replace("\\", "/").rstrip("/")
+    if "/" not in normalized:
+        return ""
+    return normalized.rsplit("/", 1)[0].casefold()
 
 
 def out_of_focus_file_ids(target: Path) -> set[int]:
@@ -1512,6 +1600,8 @@ def source_item_page_html(
     start = time.perf_counter()
     motion_video = motion_video_for_image(target, item, conn=conn)
     motion_video_link = motion_video_link_html(motion_video) if motion_video is not None else ""
+    raw_sidecar = raw_sidecar_for_image(target, item, conn=conn)
+    raw_sidecar_link = raw_sidecar_link_html(raw_sidecar) if raw_sidecar is not None else ""
     if timing_callback is not None:
         timing_callback("html_motion_video", start)
     source_url_attr = ""
@@ -1549,6 +1639,7 @@ def source_item_page_html(
           <footer class="browser-footer">
             <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
             {motion_video_link}
+            {raw_sidecar_link}
           </footer>
         </main>
         {faces_overlay}
@@ -1627,6 +1718,38 @@ def motion_video_for_image(target: Path, item: Any, *, conn: sqlite3.Connection 
             conn.close()
 
 
+def raw_sidecar_for_image(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> Any | None:
+    if not is_image_item(item):
+        return None
+    try:
+        image_id = int(item["id"])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
+    try:
+        raw_id: int | None = None
+        for raw_ids, image_ids in raw_sidecar_groups(conn).values():
+            if image_id not in image_ids or len(raw_ids) != 1 or len(image_ids) != 1:
+                continue
+            raw_id = next(iter(raw_ids))
+            break
+        if raw_id is None:
+            return None
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND id = ?
+            """,
+            (raw_id,),
+        ).fetchone()
+    finally:
+        if owned_conn:
+            conn.close()
+
+
 def original_filename_for_item(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> str | None:
     try:
         return str(item["original_filename"])
@@ -1646,6 +1769,12 @@ def motion_video_link_html(motion_video: Any) -> str:
     filename = str(motion_video["stored_filename"])
     url = "/filter/" + urllib.parse.quote(f"filename:{filename}", safe="") + f"/item/{int(motion_video['id'])}"
     return f'<a class="filename" href="{html.escape(url)}">Motion-video: {html.escape(filename)}</a>'
+
+
+def raw_sidecar_link_html(raw_sidecar: Any) -> str:
+    filename = str(raw_sidecar["stored_filename"])
+    url = "/filter/" + urllib.parse.quote(f"filename:{filename}", safe="") + f"/item/{int(raw_sidecar['id'])}"
+    return f'<a class="filename" href="{html.escape(url)}">RAW-fil: {html.escape(filename)}</a>'
 
 
 def source_item_breadcrumb_html(

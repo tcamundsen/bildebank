@@ -46,6 +46,12 @@ ikke gjenkjennes av insightface. Visningen av denne kan slås av og på i
 Og info om bildet som vises får du ved å klikke på filnavnet til bildet,
 som vises øverst på skjermen.
 
+Når en `.NEF`-fil hører trygt sammen med en `.JPG`-fil fra samme mappe og samme
+import, skjules `.NEF`-filen fra vanlig bildebladning og vises som lenke på
+JPG-bildets side. RAW-filen er fortsatt bevart i bildesamlingen og kan finnes
+med filtersøk, for eksempel `extension:nef`, `type:file` eller
+`filename:DSC_0170`.
+
 ## Hurtigtaster
 
 
@@ -96,4 +102,3 @@ eksempel ved å klikke på knappen med navnet til personen.
 - **[ ] Ta med forslag** i verktøylinjen betyr at browseren bare viser bilder
   du har bekreftet. Dette bør ideelt sett bare være 1-5 gode bilder av
   personen.
-

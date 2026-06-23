@@ -944,6 +944,15 @@ def text_filter_shows_motion_videos(text_filter: BrowserTextFilter) -> bool:
     )
 
 
+def text_filter_shows_sidecar_files(text_filter: BrowserTextFilter) -> bool:
+    return (
+        text_filter.media_type == "file"
+        or text_filter.extension is not None
+        or text_filter.filename is not None
+        or text_filter.path is not None
+    )
+
+
 def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTextFilter) -> None:
     if not text_filter.persons:
         return
