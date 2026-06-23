@@ -564,7 +564,14 @@ def query_raw_sidecar_file_ids(conn: sqlite3.Connection) -> tuple[int, ...]:
     return tuple(sorted(next(iter(raw_ids)) for raw_ids, image_ids in groups.values() if len(raw_ids) == 1 and len(image_ids) == 1))
 
 
-def raw_sidecar_id_by_image_id(target: Path, image_id: int) -> int | None:
+def raw_sidecar_id_by_image_id(
+    target: Path,
+    image_id: int,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> int | None:
+    if conn is not None:
+        return query_raw_sidecar_ids_by_image_id(conn).get(image_id)
     db_path = db.db_path_for_target(target)
     try:
         mtime_ns = db_path.stat().st_mtime_ns
@@ -1758,7 +1765,7 @@ def raw_sidecar_for_image(target: Path, item: Any, *, conn: sqlite3.Connection |
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
-        raw_id = raw_sidecar_id_by_image_id(target, image_id)
+        raw_id = raw_sidecar_id_by_image_id(target, image_id, conn=conn)
         if raw_id is None:
             return None
         return conn.execute(

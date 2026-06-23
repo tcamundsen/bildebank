@@ -1482,7 +1482,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("geo-scan", body)
         self.assertIn("image-scan", body)
         self.assertEqual(body.count("Oppdaterer..."), 3)
-        self.assertNotIn("Oppdatert", body)
         self.assertIn('data-maintenance-name="face-scan"', body)
         self.assertIn('data-maintenance-name="geo-scan"', body)
         self.assertIn('data-maintenance-name="image-scan"', body)

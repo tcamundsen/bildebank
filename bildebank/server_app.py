@@ -247,7 +247,7 @@ def thumbnail_maintenance_status_html() -> str:
         <div><dt>Mangler</dt><dd data-thumbnail-missing>-</dd></div>
         <div><dt>Totalt</dt><dd data-thumbnail-total>-</dd></div>
       </dl>
-      <button type="button" class="maintenance-action" data-count-thumbnails>Tell thumbnails</button>
+      <button type="button" class="maintenance-action" title="Sjekk på disk hvor mange bilder som har thumbnails" data-count-thumbnails>Tell thumbnails</button>
     </article>
     """
 
