@@ -1766,10 +1766,17 @@ def raw_sidecar_for_image_id(conn: sqlite3.Connection, image_id: int) -> Any | N
 
 
 def raw_sidecar_for_image_source(conn: sqlite3.Connection, image_source: Any) -> Any | None:
-    original_filename = str(image_source["original_filename"])
-    stem = Path(original_filename).stem.casefold()
+    source_path_key = str(image_source["source_path_key"])
+    stem = source_path_stem(source_path_key)
     parent_key = source_parent_path_key(str(image_source["source_path_key"]))
-    candidate_names = (f"{stem}.nef", f"{stem}.jpg", f"{stem}.jpeg")
+    candidate_keys = source_sibling_path_keys(
+        source_path_key,
+        stem,
+        (".nef", ".NEF", ".jpg", ".JPG", ".jpeg", ".JPEG"),
+    )
+    if not candidate_keys:
+        return None
+    placeholders = ",".join("?" for _ in candidate_keys)
     raw_ids: set[int] = set()
     image_ids: set[int] = set()
     raw_by_id: dict[int, Any] = {}
@@ -1778,16 +1785,16 @@ def raw_sidecar_for_image_source(conn: sqlite3.Connection, image_source: Any) ->
         SELECT {FILE_COLUMNS}, source_path_key
         FROM (
             SELECT files.*, file_sources.source_path_key AS source_path_key
-            FROM files
-            JOIN file_sources ON file_sources.file_id = files.id
-            WHERE files.deleted_at IS NULL
+            FROM file_sources
+            JOIN files ON files.id = file_sources.file_id
+            WHERE file_sources.source_id = ?
+              AND file_sources.source_path_key IN ({placeholders})
+              AND files.deleted_at IS NULL
               AND files.date_source = 'metadata'
               AND files.metadata_datetime = ?
-              AND file_sources.source_id = ?
-              AND lower(files.original_filename) IN (?, ?, ?)
         )
         """,
-        (str(image_source["metadata_datetime"]), int(image_source["source_id"]), *candidate_names),
+        (int(image_source["source_id"]), *candidate_keys, str(image_source["metadata_datetime"])),
     ):
         if source_parent_path_key(str(row["source_path_key"])) != parent_key:
             continue
@@ -1801,6 +1808,26 @@ def raw_sidecar_for_image_source(conn: sqlite3.Connection, image_source: Any) ->
     if int(image_source["id"]) not in image_ids or len(raw_ids) != 1 or len(image_ids) != 1:
         return None
     return raw_by_id[next(iter(raw_ids))]
+
+
+def source_path_stem(source_path_key: str) -> str:
+    filename = source_path_key.replace("\\", "/").rsplit("/", 1)[-1]
+    if "." not in filename:
+        return filename
+    return filename.rsplit(".", 1)[0]
+
+
+def source_sibling_path_keys(source_path_key: str, stem: str, suffixes: Sequence[str]) -> tuple[str, ...]:
+    separator_index = max(source_path_key.rfind("/"), source_path_key.rfind("\\"))
+    prefix = source_path_key[: separator_index + 1] if separator_index >= 0 else ""
+    seen: set[str] = set()
+    keys: list[str] = []
+    for suffix in suffixes:
+        key = f"{prefix}{stem}{suffix}"
+        if key not in seen:
+            seen.add(key)
+            keys.append(key)
+    return tuple(keys)
 
 
 def original_filename_for_item(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> str | None:
