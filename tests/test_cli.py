@@ -60,7 +60,7 @@ from bildebank.media_cache import cached_image_dimensions, cached_image_orientat
 from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
 from bildebank.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
 from bildebank.server_actions import remove_file_from_browser, undelete_file_from_browser
-from bildebank.server_assets import SERVER_CSS, SERVER_JS
+from bildebank.server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS
 from bildebank.server_response import add_csrf_to_html
 from bildebank.server_files import read_server_file, server_file_path_by_id
 from bildebank.server import (
@@ -1500,6 +1500,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("data-maintenance-name", SERVER_JS)
         self.assertIn('window.addEventListener("load", scheduleMaintenanceStatusesLoad', SERVER_JS)
         self.assertIn("setTimeout(loadMaintenanceStatuses, 0)", SERVER_JS)
+        self.assertEqual(SERVER_ASSET_VERSION, "34")
         self.assertIn("bildebank ${payload.name}", SERVER_JS)
         self.assertIn("bilder trenger ${payload.name}", SERVER_JS)
         self.assertIn("/api/maintenance/thumbnails", SERVER_JS)
