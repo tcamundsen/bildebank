@@ -1123,6 +1123,61 @@ SERVER_JS = r"""  const csrfToken = document.querySelector('meta[name="csrf-toke
       requestAnimationFrame(() => window.scrollTo({top: scrollY, left: 0}));
     }
   }
+  function setMaintenanceStatusMessage(status, payload) {
+    if (!status) return;
+    if (Number(payload.missing) === 0) {
+      status.textContent = "Oppdatert";
+      return;
+    }
+    status.replaceChildren(
+      document.createTextNode(`${payload.missing} bilder trenger ${payload.name}, kjør `),
+      Object.assign(document.createElement("code"), {textContent: `bildebank ${payload.name}`}),
+      document.createTextNode(" fra PowerShell.")
+    );
+  }
+  function updateMaintenanceRow(row, payload) {
+    const status = row?.querySelector("[data-maintenance-status]");
+    const current = row?.querySelector("[data-maintenance-current]");
+    const missing = row?.querySelector("[data-maintenance-missing]");
+    const total = row?.querySelector("[data-maintenance-total]");
+    if (current) current.textContent = String(payload.current);
+    if (missing) missing.textContent = String(payload.missing);
+    if (total) total.textContent = String(payload.total);
+    setMaintenanceStatusMessage(status, payload);
+  }
+  function loadMaintenanceStatuses() {
+    const maintenanceRows = Array.from(document.querySelectorAll("[data-maintenance-name]"));
+    if (maintenanceRows.length === 0) return;
+    maintenanceRows.forEach(row => {
+      const status = row.querySelector("[data-maintenance-status]");
+      if (status) status.textContent = "Oppdaterer...";
+    });
+    csrfFetch("/api/maintenance/statuses")
+      .then(async response => {
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke hente vedlikeholdsstatus.");
+        const statuses = new Map((payload.statuses || []).map(status => [status.name, status]));
+        maintenanceRows.forEach(row => {
+          const name = row.dataset.maintenanceName || "";
+          const status = statuses.get(name);
+          if (status) updateMaintenanceRow(row, status);
+        });
+      })
+      .catch(error => {
+        maintenanceRows.forEach(row => {
+          const status = row.querySelector("[data-maintenance-status]");
+          if (status) status.textContent = error.message || "Kunne ikke hente vedlikeholdsstatus.";
+        });
+      });
+  }
+  function scheduleMaintenanceStatusesLoad() {
+    requestAnimationFrame(() => setTimeout(loadMaintenanceStatuses, 0));
+  }
+  if (document.readyState === "complete") {
+    scheduleMaintenanceStatusesLoad();
+  } else {
+    window.addEventListener("load", scheduleMaintenanceStatusesLoad, {once: true});
+  }
   const countThumbnailsButton = document.querySelector("[data-count-thumbnails]");
   countThumbnailsButton?.addEventListener("click", async () => {
     const row = countThumbnailsButton.closest("[data-thumbnail-maintenance]");

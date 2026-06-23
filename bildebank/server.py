@@ -621,6 +621,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/api/maintenance/thumbnails":
                 self.respond_thumbnail_maintenance()
                 return
+            if parsed.path == "/api/maintenance/statuses":
+                self.respond_maintenance_statuses()
+                return
             if parsed.path.startswith("/display/"):
                 self.respond_display(parsed.path.removeprefix("/display/"))
                 return
@@ -1763,6 +1766,22 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 "total": status.total,
                 "current": status.scanned,
                 "missing": status.missing,
+            }
+        )
+
+    def respond_maintenance_statuses(self) -> None:
+        try:
+            statuses = server_app.maintenance_statuses(self.server.target, self.server.config)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        except Exception as exc:  # noqa: BLE001 - API should return JSON errors
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        self.respond_json(
+            {
+                "ok": True,
+                "statuses": [server_app.maintenance_status_to_json(status) for status in statuses],
             }
         )
 

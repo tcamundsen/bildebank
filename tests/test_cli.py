@@ -1460,6 +1460,7 @@ pretrained = "laion2b_s34b_b79k"
 
             with (
                 patch("bildebank.server_app.module_available", side_effect=lambda name: name == "open_clip"),
+                patch("bildebank.server_app.maintenance_statuses", side_effect=AssertionError("maintenance count")),
                 patch("bildebank.server_app.active_thumbnail_candidates", side_effect=AssertionError("thumbnail count")),
             ):
                 body = app_status_page_html(target, config, scroll_y=312)
@@ -1480,6 +1481,14 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("face-scan", body)
         self.assertIn("geo-scan", body)
         self.assertIn("image-scan", body)
+        self.assertEqual(body.count("Oppdaterer..."), 3)
+        self.assertNotIn("Oppdatert", body)
+        self.assertIn('data-maintenance-name="face-scan"', body)
+        self.assertIn('data-maintenance-name="geo-scan"', body)
+        self.assertIn('data-maintenance-name="image-scan"', body)
+        self.assertIn("<dt>Scannet</dt><dd data-maintenance-current>-</dd>", body)
+        self.assertIn("<dt>Mangler</dt><dd data-maintenance-missing>-</dd>", body)
+        self.assertIn("<dt>Totalt</dt><dd data-maintenance-total>-</dd>", body)
         self.assertIn("thumbnails", body)
         self.assertIn("Ikke telt ennå", body)
         self.assertIn("Tell thumbnails", body)
@@ -1487,6 +1496,12 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("<dt>Oppdatert</dt><dd data-thumbnail-current>-</dd>", body)
         self.assertIn("<dt>Mangler</dt><dd data-thumbnail-missing>-</dd>", body)
         self.assertIn("<dt>Totalt</dt><dd data-thumbnail-total>-</dd>", body)
+        self.assertIn("/api/maintenance/statuses", SERVER_JS)
+        self.assertIn("data-maintenance-name", SERVER_JS)
+        self.assertIn('window.addEventListener("load", scheduleMaintenanceStatusesLoad', SERVER_JS)
+        self.assertIn("setTimeout(loadMaintenanceStatuses, 0)", SERVER_JS)
+        self.assertIn("bildebank ${payload.name}", SERVER_JS)
+        self.assertIn("bilder trenger ${payload.name}", SERVER_JS)
         self.assertIn("/api/maintenance/thumbnails", SERVER_JS)
         self.assertIn("Teller thumbnails...", SERVER_JS)
         self.assertIn("bildebank make-thumbnails", SERVER_JS)
@@ -1557,7 +1572,6 @@ pretrained = "laion2b_s34b_b79k"
             config = AppConfig(openclip=OpenClipConfig(model_name="Test-Model", pretrained="test-weights"))
 
             statuses = {status.name: status for status in maintenance_statuses(target, config)}
-            body = app_status_page_html(target, config)
 
         self.assertEqual(statuses["face-scan"].total, 2)
         self.assertEqual(statuses["face-scan"].scanned, 0)
@@ -1568,9 +1582,56 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual(statuses["image-scan"].total, 2)
         self.assertEqual(statuses["image-scan"].scanned, 0)
         self.assertEqual(statuses["image-scan"].missing, 2)
-        self.assertIn("2 bilder trenger face-scan, kjør <code>bildebank face-scan</code> fra PowerShell.", body)
-        self.assertIn("1 bilder trenger geo-scan, kjør <code>bildebank geo-scan</code> fra PowerShell.", body)
-        self.assertIn("2 bilder trenger image-scan, kjør <code>bildebank image-scan</code> fra PowerShell.", body)
+
+    def test_run_server_maintenance_statuses_api_counts_scan_needs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            insert_test_file(target, "2024/01/current.png", sha256="sha-current", gps_scanned=True)
+            insert_test_file(target, "2024/01/missing.png", sha256="sha-missing")
+            insert_test_file(target, "2024/01/deleted.png", sha256="sha-deleted", deleted=True)
+            config = AppConfig(openclip=OpenClipConfig(model_name="Test-Model", pretrained="test-weights"))
+            response: dict[str, object] = {}
+            handler = object.__new__(BildebankRequestHandler)
+            handler.server = SimpleNamespace(target=target, config=config)
+
+            def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                response["content"] = content
+                response["status"] = status
+
+            handler.respond_json = fake_respond_json  # type: ignore[method-assign]
+            handler.respond_maintenance_statuses()
+
+        self.assertEqual(response["status"], HTTPStatus.OK)
+        self.assertEqual(
+            response["content"],
+            {
+                "ok": True,
+                "statuses": [
+                    {
+                        "name": "face-scan",
+                        "total": 2,
+                        "current": 0,
+                        "missing": 2,
+                        "help_path": "/help/face-scan.md",
+                    },
+                    {
+                        "name": "geo-scan",
+                        "total": 2,
+                        "current": 1,
+                        "missing": 1,
+                        "help_path": "/help/geo-scan.md",
+                    },
+                    {
+                        "name": "image-scan",
+                        "total": 2,
+                        "current": 0,
+                        "missing": 2,
+                        "help_path": "/help/image-scan.md",
+                    },
+                ],
+            },
+        )
 
     def test_run_server_thumbnail_maintenance_api_counts_missing_current_and_active_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1648,12 +1709,10 @@ pretrained = "laion2b_s34b_b79k"
                 conn.close()
 
             statuses = {status.name: status for status in maintenance_statuses(target, config)}
-            body = app_status_page_html(target, config)
 
         self.assertEqual(statuses["image-scan"].total, 2)
         self.assertEqual(statuses["image-scan"].scanned, 1)
         self.assertEqual(statuses["image-scan"].missing, 1)
-        self.assertIn("1 bilder trenger image-scan, kjør <code>bildebank image-scan</code> fra PowerShell.", body)
 
     def test_run_server_settings_maintenance_status_shows_updated_when_current(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1686,11 +1745,9 @@ pretrained = "laion2b_s34b_b79k"
             with patch("bildebank.server_app.face_scan_maintenance_status") as face_status:
                 face_status.return_value = MaintenanceStatus("face-scan", 1, 1, 0, "/help/face-scan.md")
                 statuses = {status.name: status for status in maintenance_statuses(target, config)}
-                body = app_status_page_html(target, config)
 
         self.assertEqual(statuses["geo-scan"].missing, 0)
         self.assertEqual(statuses["image-scan"].missing, 0)
-        self.assertGreaterEqual(body.count("Oppdatert"), 3)
 
     def test_run_server_settings_hotkey_tag_select_keeps_missing_selected_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

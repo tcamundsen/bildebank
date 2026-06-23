@@ -42,6 +42,13 @@ class MaintenanceStatus:
     help_path: str
 
 
+MAINTENANCE_STATUS_PLACEHOLDERS: tuple[MaintenanceStatus, ...] = (
+    MaintenanceStatus("face-scan", 0, 0, 0, "/help/face-scan.md"),
+    MaintenanceStatus("geo-scan", 0, 0, 0, "/help/geo-scan.md"),
+    MaintenanceStatus("image-scan", 0, 0, 0, "/help/image-scan.md"),
+)
+
+
 def app_status_page_html(
     target: Path,
     config: AppConfig | None = None,
@@ -58,7 +65,6 @@ def app_status_page_html(
     named_h3_cells = app_status_named_h3_cells(target)
     registered_people = app_status_registered_people(target, config.face_recognition)
     defined_tags = app_status_defined_tags(target)
-    maintenance_rows = maintenance_statuses(target, config)
     rows = "\n".join(
         (
             app_status_row_html("Bildesamling", str(target)),
@@ -95,7 +101,7 @@ def app_status_page_html(
           <a href="/settings/removed">Slettede bilder</a>
           <a href="/sources" title='Lister output fra "bildebank list-sources"'>Importerte mapper</a>
         </nav>
-        {maintenance_statuses_html(maintenance_rows)}
+        {maintenance_statuses_html()}
         <h2>Innstillinger</h2>
         <dl class="info-list app-status">
           {rows}
@@ -108,11 +114,7 @@ def app_status_page_html(
 
 def maintenance_statuses(target: Path, config: AppConfig) -> tuple[MaintenanceStatus, ...]:
     if not db.db_path_for_target(target).is_file():
-        return (
-            MaintenanceStatus("face-scan", 0, 0, 0, "/help/face-scan.md"),
-            MaintenanceStatus("geo-scan", 0, 0, 0, "/help/geo-scan.md"),
-            MaintenanceStatus("image-scan", 0, 0, 0, "/help/image-scan.md"),
-        )
+        return MAINTENANCE_STATUS_PLACEHOLDERS
     return (
         face_scan_maintenance_status(target, config),
         geo_scan_maintenance_status(target),
@@ -178,9 +180,22 @@ def image_scan_maintenance_status(target: Path, config: AppConfig) -> Maintenanc
     return MaintenanceStatus("image-scan", total, scanned, max(total - scanned, 0), "/help/image-scan.md")
 
 
-def maintenance_statuses_html(statuses: tuple[MaintenanceStatus, ...]) -> str:
+def maintenance_status_to_json(status: MaintenanceStatus) -> dict[str, object]:
+    return {
+        "name": status.name,
+        "total": status.total,
+        "current": status.scanned,
+        "missing": status.missing,
+        "help_path": status.help_path,
+    }
+
+
+def maintenance_statuses_html(statuses: tuple[MaintenanceStatus, ...] | None = None) -> str:
+    loading = statuses is None
+    if statuses is None:
+        statuses = MAINTENANCE_STATUS_PLACEHOLDERS
     rows = "\n".join(
-        [*(maintenance_status_html(status) for status in statuses), thumbnail_maintenance_status_html()]
+        [*(maintenance_status_html(status, loading=loading) for status in statuses), thumbnail_maintenance_status_html()]
     )
     return f"""
     <section class="maintenance-status" aria-labelledby="maintenance-heading">
@@ -192,22 +207,31 @@ def maintenance_statuses_html(statuses: tuple[MaintenanceStatus, ...]) -> str:
     """
 
 
-def maintenance_status_html(status: MaintenanceStatus) -> str:
-    if status.missing == 0:
+def maintenance_status_html(status: MaintenanceStatus, *, loading: bool = False) -> str:
+    if loading:
+        status_html = "Oppdaterer..."
+        scanned = missing = total = "-"
+    elif status.missing == 0:
         status_html = "Oppdatert"
+        scanned = str(status.scanned)
+        missing = str(status.missing)
+        total = str(status.total)
     else:
         status_html = (
             f"{status.missing} bilder trenger {html.escape(status.name)}, kjør "
             f"<code>bildebank {html.escape(status.name)}</code> fra PowerShell."
         )
+        scanned = str(status.scanned)
+        missing = str(status.missing)
+        total = str(status.total)
     return f"""
-    <article class="maintenance-row">
+    <article class="maintenance-row" data-maintenance-name="{html.escape(status.name)}">
       <h3><a href="{html.escape(status.help_path)}">{html.escape(status.name)}</a></h3>
-      <p class="status">{status_html}</p>
+      <p class="status" data-maintenance-status>{status_html}</p>
       <dl class="maintenance-counts">
-        <div><dt>Scannet</dt><dd>{status.scanned}</dd></div>
-        <div><dt>Mangler</dt><dd>{status.missing}</dd></div>
-        <div><dt>Totalt</dt><dd>{status.total}</dd></div>
+        <div><dt>Scannet</dt><dd data-maintenance-current>{scanned}</dd></div>
+        <div><dt>Mangler</dt><dd data-maintenance-missing>{missing}</dd></div>
+        <div><dt>Totalt</dt><dd data-maintenance-total>{total}</dd></div>
       </dl>
     </article>
     """
