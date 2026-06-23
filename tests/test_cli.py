@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sqlite3
 import struct
@@ -1507,8 +1508,36 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("bildebank make-thumbnails", SERVER_JS)
         self.assertIn(".maintenance-row", SERVER_CSS)
         self.assertIn("grid-template-columns: minmax(110px, 150px)", SERVER_CSS)
-        self.assertLess(body.index("Bildesamling"), body.index("Skjul bilder tagget"))
-        self.assertLess(body.index("Skjul bilder tagget"), body.index("Bildebank-versjon"))
+        settings_start = body.index('<dl class="info-list app-status">')
+        settings_html = body[settings_start : body.index("</dl>", settings_start)]
+        settings_labels = re.findall(r"<dt>(.*?)</dt>", settings_html)
+        self.assertEqual(
+            settings_labels,
+            [
+                "Bildesamling",
+                "Bildebank-versjon",
+                "Skjul bilder tagget “Ute av fokus”",
+                "Hurtigtaster 1-5",
+                "InsightFace aktivert",
+                "InsightFace-modell",
+                "InsightFace installert",
+                "GUI for manuell bekrefting av person i bildet",
+                "OpenCLIP tilgjengelig",
+                "Bildesøk aktivert",
+                "OpenCLIP-modell",
+                "OpenCLIP-pretrained",
+                "OpenCLIP-device",
+            ],
+        )
+        self.assertEqual(
+            settings_labels[4:8],
+            [
+                "InsightFace aktivert",
+                "InsightFace-modell",
+                "InsightFace installert",
+                "GUI for manuell bekrefting av person i bildet",
+            ],
+        )
         self.assertIn('action="/settings/hide-out-of-focus"', body)
         self.assertNotIn('action="/settings/manual-h3-cell"', body)
         self.assertNotIn("Aktiv manuell H3-celle", body)
@@ -1545,8 +1574,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('action="/settings/manual-person-controls"', body)
         self.assertIn('<span class="app-toggle-status">Av</span>', body)
 
-        self.assertLess(body.index("InsightFace-modell"), body.index("GUI for manuell bekrefting av person"))
-        self.assertLess(body.index("GUI for manuell bekrefting av person"), body.index("InsightFace installert"))
         self.assertIn('<option value="antelopev2">antelopev2</option>', body)
         self.assertIn('<option value="buffalo_l" selected>buffalo_l</option>', body)
         self.assertIn("må installeres for å scanne ansikter i nye bilder.", body)

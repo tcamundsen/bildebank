@@ -68,6 +68,7 @@ def app_status_page_html(
     rows = "\n".join(
         (
             app_status_row_html("Bildesamling", str(target)),
+            app_status_row_html("Bildebank-versjon", __version__),
             app_status_hide_out_of_focus_row_html(config.browser.hide_out_of_focus),
             app_status_hotkeys_row_html(
                 config.browser.hotkeys or {},
@@ -76,11 +77,10 @@ def app_status_page_html(
                 defined_tags,
                 hints_enabled=config.browser.hotkey_hints_enabled,
             ),
-            app_status_row_html("Bildebank-versjon", __version__),
             app_status_face_config_row_html(config.face_recognition.enabled, insightface_installed=insightface_installed),
             app_status_face_model_row_html(config.face_recognition),
-            app_status_manual_person_controls_row_html(config.browser.manual_person_controls_enabled),
             app_status_row_html("InsightFace installert", yes_no(insightface_installed)),
+            app_status_manual_person_controls_row_html(config.browser.manual_person_controls_enabled),
             app_status_row_html("OpenCLIP tilgjengelig", yes_no(module_available_func("open_clip"))),
             app_status_image_search_row_html(config.openclip.enabled),
             app_status_row_html("OpenCLIP-modell", config.openclip.model_name),
