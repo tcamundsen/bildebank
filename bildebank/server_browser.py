@@ -1728,26 +1728,79 @@ def raw_sidecar_for_image(target: Path, item: Any, *, conn: sqlite3.Connection |
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
-        raw_id: int | None = None
-        for raw_ids, image_ids in raw_sidecar_groups(conn).values():
-            if image_id not in image_ids or len(raw_ids) != 1 or len(image_ids) != 1:
-                continue
-            raw_id = next(iter(raw_ids))
-            break
-        if raw_id is None:
-            return None
-        return conn.execute(
-            f"""
-            SELECT {FILE_COLUMNS}
-            FROM files
-            WHERE deleted_at IS NULL
-              AND id = ?
-            """,
-            (raw_id,),
-        ).fetchone()
+        return raw_sidecar_for_image_id(conn, image_id)
     finally:
         if owned_conn:
             conn.close()
+
+
+def raw_sidecar_for_image_id(conn: sqlite3.Connection, image_id: int) -> Any | None:
+    image_sources = list(
+        conn.execute(
+            """
+            SELECT
+                files.id,
+                files.original_filename,
+                files.metadata_datetime,
+                file_sources.source_id,
+                file_sources.source_path_key
+            FROM files
+            JOIN file_sources ON file_sources.file_id = files.id
+            WHERE files.deleted_at IS NULL
+              AND files.id = ?
+              AND files.date_source = 'metadata'
+              AND files.metadata_datetime IS NOT NULL
+              AND (
+                  lower(files.original_filename) LIKE '%.jpg'
+                  OR lower(files.original_filename) LIKE '%.jpeg'
+              )
+            """,
+            (image_id,),
+        )
+    )
+    for image_source in image_sources:
+        raw = raw_sidecar_for_image_source(conn, image_source)
+        if raw is not None:
+            return raw
+    return None
+
+
+def raw_sidecar_for_image_source(conn: sqlite3.Connection, image_source: Any) -> Any | None:
+    original_filename = str(image_source["original_filename"])
+    stem = Path(original_filename).stem.casefold()
+    parent_key = source_parent_path_key(str(image_source["source_path_key"]))
+    candidate_names = (f"{stem}.nef", f"{stem}.jpg", f"{stem}.jpeg")
+    raw_ids: set[int] = set()
+    image_ids: set[int] = set()
+    raw_by_id: dict[int, Any] = {}
+    for row in conn.execute(
+        f"""
+        SELECT {FILE_COLUMNS}, source_path_key
+        FROM (
+            SELECT files.*, file_sources.source_path_key AS source_path_key
+            FROM files
+            JOIN file_sources ON file_sources.file_id = files.id
+            WHERE files.deleted_at IS NULL
+              AND files.date_source = 'metadata'
+              AND files.metadata_datetime = ?
+              AND file_sources.source_id = ?
+              AND lower(files.original_filename) IN (?, ?, ?)
+        )
+        """,
+        (str(image_source["metadata_datetime"]), int(image_source["source_id"]), *candidate_names),
+    ):
+        if source_parent_path_key(str(row["source_path_key"])) != parent_key:
+            continue
+        suffix = Path(str(row["original_filename"])).suffix.casefold()
+        file_id = int(row["id"])
+        if suffix == ".nef":
+            raw_ids.add(file_id)
+            raw_by_id[file_id] = row
+        elif suffix in {".jpg", ".jpeg"}:
+            image_ids.add(file_id)
+    if int(image_source["id"]) not in image_ids or len(raw_ids) != 1 or len(image_ids) != 1:
+        return None
+    return raw_by_id[next(iter(raw_ids))]
 
 
 def original_filename_for_item(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> str | None:

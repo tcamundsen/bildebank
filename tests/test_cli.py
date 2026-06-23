@@ -98,7 +98,7 @@ from bildebank.server_pages import (
     year_months_page_html,
     years_page_html,
 )
-from bildebank.server_app import MaintenanceStatus, maintenance_statuses
+from bildebank.server_app import MaintenanceStatus, maintenance_statuses, thumbnail_maintenance_status
 from bildebank.server_browser import (
     adjacent_browser_items,
     adjacent_person_items,
@@ -1459,6 +1459,7 @@ pretrained = "laion2b_s34b_b79k"
 
             with (
                 patch("bildebank.server_app.module_available", side_effect=lambda name: name == "open_clip"),
+                patch("bildebank.server_app.active_thumbnail_candidates", side_effect=AssertionError("thumbnail count")),
             ):
                 body = app_status_page_html(target, config, scroll_y=312)
 
@@ -1474,9 +1475,20 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('href="/help/face-scan.md"', body)
         self.assertIn('href="/help/geo-scan.md"', body)
         self.assertIn('href="/help/image-scan.md"', body)
+        self.assertIn('href="/help/make-thumbnails.md"', body)
         self.assertIn("face-scan", body)
         self.assertIn("geo-scan", body)
         self.assertIn("image-scan", body)
+        self.assertIn("thumbnails", body)
+        self.assertIn("Ikke telt ennå", body)
+        self.assertIn("Tell thumbnails", body)
+        self.assertIn("data-count-thumbnails", body)
+        self.assertIn("<dt>Oppdatert</dt><dd data-thumbnail-current>-</dd>", body)
+        self.assertIn("<dt>Mangler</dt><dd data-thumbnail-missing>-</dd>", body)
+        self.assertIn("<dt>Totalt</dt><dd data-thumbnail-total>-</dd>", body)
+        self.assertIn("/api/maintenance/thumbnails", SERVER_JS)
+        self.assertIn("Teller thumbnails...", SERVER_JS)
+        self.assertIn("bildebank make-thumbnails", SERVER_JS)
         self.assertIn(".maintenance-row", SERVER_CSS)
         self.assertIn("grid-template-columns: minmax(110px, 150px)", SERVER_CSS)
         self.assertLess(body.index("Bildesamling"), body.index("Skjul bilder tagget"))
@@ -1558,6 +1570,41 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("2 bilder trenger face-scan, kjør <code>bildebank face-scan</code> fra PowerShell.", body)
         self.assertIn("1 bilder trenger geo-scan, kjør <code>bildebank geo-scan</code> fra PowerShell.", body)
         self.assertIn("2 bilder trenger image-scan, kjør <code>bildebank image-scan</code> fra PowerShell.", body)
+
+    def test_run_server_thumbnail_maintenance_api_counts_missing_current_and_active_images(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            insert_test_file(target, "2024/01/current.jpg", sha256="sha-current")
+            insert_test_file(target, "2024/01/missing.png", sha256="sha-missing")
+            insert_test_file(target, "2024/01/deleted.jpg", sha256="sha-deleted", deleted=True)
+            insert_test_file(target, "2024/01/not-image.txt", sha256="sha-text")
+            current_original = target / "2024/01/current.jpg"
+            thumb_path = thumbnail_absolute_path(target, Path("2024/01/current.jpg"))
+            thumb_path.parent.mkdir(parents=True)
+            thumb_path.write_bytes(b"thumb")
+            os.utime(thumb_path, ns=(current_original.stat().st_mtime_ns, current_original.stat().st_mtime_ns))
+
+            status = thumbnail_maintenance_status(target)
+            response: dict[str, object] = {}
+            handler = object.__new__(BildebankRequestHandler)
+            handler.server = SimpleNamespace(target=target)
+
+            def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                response["content"] = content
+                response["status"] = status
+
+            handler.respond_json = fake_respond_json  # type: ignore[method-assign]
+            handler.respond_thumbnail_maintenance()
+
+        self.assertEqual(status.total, 2)
+        self.assertEqual(status.scanned, 1)
+        self.assertEqual(status.missing, 1)
+        self.assertEqual(response["status"], HTTPStatus.OK)
+        self.assertEqual(
+            response["content"],
+            {"ok": True, "name": "thumbnails", "total": 2, "current": 1, "missing": 1},
+        )
 
     def test_run_server_settings_image_scan_status_counts_current_embeddings(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5303,12 +5350,16 @@ model_name = "buffalo_l"
             extension_items = source_month_items(target, extension_source, "2019-03")
             filename_items = source_month_items(target, filename_source, "2019-03")
             image_item = month_items[0]
-            image_body = item_page_html(
-                target,
-                image_item,
-                *adjacent_browser_items(target, image_item),
-                browser_month_navigation(target, image_item),
-            )
+            previous_item, next_item = adjacent_browser_items(target, image_item)
+            month_nav = browser_month_navigation(target, image_item)
+            with patch("bildebank.server_browser.raw_sidecar_groups", side_effect=AssertionError("global raw scan")):
+                image_body = item_page_html(
+                    target,
+                    image_item,
+                    previous_item,
+                    next_item,
+                    month_nav,
+                )
 
         self.assertEqual([item["stored_filename"] for item in month_items], ["DSC_0170.JPG"])
         self.assertEqual([item["stored_filename"] for item in type_file_items], ["DSC_0170.NEF"])

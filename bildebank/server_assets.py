@@ -808,7 +808,7 @@ SERVER_CSS = r"""    :root {
     }
     .maintenance-row {
       display: grid;
-      grid-template-columns: minmax(110px, 150px) minmax(170px, 1fr) minmax(260px, auto);
+      grid-template-columns: minmax(110px, 150px) minmax(170px, 1fr) minmax(260px, auto) auto;
       gap: 12px;
       align-items: center;
       padding: 10px 12px;
@@ -847,6 +847,17 @@ SERVER_CSS = r"""    :root {
       margin: 0;
       font-weight: 700;
     }
+    .maintenance-action {
+      min-height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      background: #181818;
+      color: var(--text);
+      font: inherit;
+      white-space: nowrap;
+    }
+    .maintenance-action:disabled { opacity: 0.65; cursor: default; }
     .info-row {
       display: grid;
       grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
@@ -1112,6 +1123,42 @@ SERVER_JS = r"""  const csrfToken = document.querySelector('meta[name="csrf-toke
       requestAnimationFrame(() => window.scrollTo({top: scrollY, left: 0}));
     }
   }
+  const countThumbnailsButton = document.querySelector("[data-count-thumbnails]");
+  countThumbnailsButton?.addEventListener("click", async () => {
+    const row = countThumbnailsButton.closest("[data-thumbnail-maintenance]");
+    const status = row?.querySelector("[data-thumbnail-status]");
+    const current = row?.querySelector("[data-thumbnail-current]");
+    const missing = row?.querySelector("[data-thumbnail-missing]");
+    const total = row?.querySelector("[data-thumbnail-total]");
+    const originalText = countThumbnailsButton.textContent;
+    countThumbnailsButton.disabled = true;
+    countThumbnailsButton.textContent = "Teller thumbnails...";
+    if (status) status.textContent = "Teller thumbnails...";
+    try {
+      const response = await csrfFetch("/api/maintenance/thumbnails");
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke telle thumbnails.");
+      if (current) current.textContent = String(payload.current);
+      if (missing) missing.textContent = String(payload.missing);
+      if (total) total.textContent = String(payload.total);
+      if (status) {
+        if (Number(payload.missing) === 0) {
+          status.textContent = "Oppdatert";
+        } else {
+          status.replaceChildren(
+            document.createTextNode(`${payload.missing} bilder mangler thumbnails, kjør `),
+            Object.assign(document.createElement("code"), {textContent: "bildebank make-thumbnails"}),
+            document.createTextNode(" fra PowerShell.")
+          );
+        }
+      }
+    } catch (error) {
+      if (status) status.textContent = error.message || "Kunne ikke telle thumbnails.";
+    } finally {
+      countThumbnailsButton.disabled = false;
+      countThumbnailsButton.textContent = originalText || "Tell thumbnails";
+    }
+  });
   document.addEventListener("change", event => {
     const form = event.target?.form;
     if (form) setSettingsScrollField(form);

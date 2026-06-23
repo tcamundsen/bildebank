@@ -618,6 +618,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/api/item-faces":
                 self.respond_item_faces(parsed.query)
                 return
+            if parsed.path == "/api/maintenance/thumbnails":
+                self.respond_thumbnail_maintenance()
+                return
             if parsed.path.startswith("/display/"):
                 self.respond_display(parsed.path.removeprefix("/display/"))
                 return
@@ -1743,6 +1746,25 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": "Filen finnes ikke."}, status=HTTPStatus.NOT_FOUND)
             return
         self.respond_json({"ok": True, "html": face_overlay_content_html(self.server.target, item, self.server.config.face_recognition)})
+
+    def respond_thumbnail_maintenance(self) -> None:
+        try:
+            status = server_app.thumbnail_maintenance_status(self.server.target)
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        except Exception as exc:  # noqa: BLE001 - API should return JSON errors
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        self.respond_json(
+            {
+                "ok": True,
+                "name": status.name,
+                "total": status.total,
+                "current": status.scanned,
+                "missing": status.missing,
+            }
+        )
 
     def respond_add_face_to_person(self) -> None:
         payload = BildebankRequestHandler.read_face_person_payload(self)

@@ -9,6 +9,8 @@ from typing import Any, Callable
 
 from . import __version__, db
 from .geo import h3_column_for_resolution, h3_resolution
+from .media import IMAGE_EXTENSIONS
+from .thumbnails import active_thumbnail_candidates, thumbnail_absolute_path, thumbnail_is_current
 from .config import (
     AppConfig,
     BrowserHotkeyConfig,
@@ -118,6 +120,19 @@ def maintenance_statuses(target: Path, config: AppConfig) -> tuple[MaintenanceSt
     )
 
 
+def thumbnail_maintenance_status(target: Path) -> MaintenanceStatus:
+    total = scanned = 0
+    for relative_path in active_thumbnail_candidates(target):
+        original_path = db.absolute_target_path(target, relative_path)
+        if original_path.suffix.lower() not in IMAGE_EXTENSIONS:
+            continue
+        total += 1
+        thumb_path = thumbnail_absolute_path(target, relative_path)
+        if thumbnail_is_current(original_path, thumb_path):
+            scanned += 1
+    return MaintenanceStatus("thumbnails", total, scanned, max(total - scanned, 0), "/help/make-thumbnails.md")
+
+
 def face_scan_maintenance_status(target: Path, config: AppConfig) -> MaintenanceStatus:
     try:
         from .server_faces import people_face_summary
@@ -164,7 +179,9 @@ def image_scan_maintenance_status(target: Path, config: AppConfig) -> Maintenanc
 
 
 def maintenance_statuses_html(statuses: tuple[MaintenanceStatus, ...]) -> str:
-    rows = "\n".join(maintenance_status_html(status) for status in statuses)
+    rows = "\n".join(
+        [*(maintenance_status_html(status) for status in statuses), thumbnail_maintenance_status_html()]
+    )
     return f"""
     <section class="maintenance-status" aria-labelledby="maintenance-heading">
       <h2 id="maintenance-heading">Vedlikehold</h2>
@@ -192,6 +209,21 @@ def maintenance_status_html(status: MaintenanceStatus) -> str:
         <div><dt>Mangler</dt><dd>{status.missing}</dd></div>
         <div><dt>Totalt</dt><dd>{status.total}</dd></div>
       </dl>
+    </article>
+    """
+
+
+def thumbnail_maintenance_status_html() -> str:
+    return """
+    <article class="maintenance-row" data-thumbnail-maintenance>
+      <h3><a href="/help/make-thumbnails.md">thumbnails</a></h3>
+      <p class="status" data-thumbnail-status>Ikke telt ennå</p>
+      <dl class="maintenance-counts">
+        <div><dt>Oppdatert</dt><dd data-thumbnail-current>-</dd></div>
+        <div><dt>Mangler</dt><dd data-thumbnail-missing>-</dd></div>
+        <div><dt>Totalt</dt><dd data-thumbnail-total>-</dd></div>
+      </dl>
+      <button type="button" class="maintenance-action" data-count-thumbnails>Tell thumbnails</button>
     </article>
     """
 
