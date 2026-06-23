@@ -3410,7 +3410,10 @@ def create_pending_file_move(
             operation,
         ),
     )
-    return int(cursor.lastrowid)
+    move_id = optional_int(cursor.lastrowid, "ventende filflytting-id")
+    if move_id is None:
+        raise ValueError("Databasen returnerte ikke id for den nye ventende filflyttingen.")
+    return move_id
 
 
 def prepared_pending_file_moves(conn: sqlite3.Connection) -> list[sqlite3.Row]:
