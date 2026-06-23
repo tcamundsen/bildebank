@@ -117,6 +117,7 @@ from bildebank.server_browser import (
     person_item_by_id,
     person_month_items,
     person_month_navigation,
+    raw_sidecar_id_by_image_id,
     source_item_by_id,
     source_item_count,
     source_item_ids,
@@ -5352,6 +5353,7 @@ model_name = "buffalo_l"
             image_item = month_items[0]
             previous_item, next_item = adjacent_browser_items(target, image_item)
             month_nav = browser_month_navigation(target, image_item)
+            self.assertIsNotNone(raw_sidecar_id_by_image_id(target, int(image_item["id"])))
             with patch("bildebank.server_browser.raw_sidecar_groups", side_effect=AssertionError("global raw scan")):
                 image_body = item_page_html(
                     target,

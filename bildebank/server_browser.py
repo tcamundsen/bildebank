@@ -564,6 +564,36 @@ def query_raw_sidecar_file_ids(conn: sqlite3.Connection) -> tuple[int, ...]:
     return tuple(sorted(next(iter(raw_ids)) for raw_ids, image_ids in groups.values() if len(raw_ids) == 1 and len(image_ids) == 1))
 
 
+def raw_sidecar_id_by_image_id(target: Path, image_id: int) -> int | None:
+    db_path = db.db_path_for_target(target)
+    try:
+        mtime_ns = db_path.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = 0
+    return cached_raw_sidecar_ids_by_image_id(str(target.resolve()), mtime_ns).get(image_id)
+
+
+@lru_cache(maxsize=8)
+def cached_raw_sidecar_ids_by_image_id(target_path: str, db_mtime_ns: int) -> dict[int, int]:
+    target = Path(target_path)
+    conn = db.connect(target)
+    try:
+        return query_raw_sidecar_ids_by_image_id(conn)
+    finally:
+        conn.close()
+
+
+def query_raw_sidecar_ids_by_image_id(conn: sqlite3.Connection) -> dict[int, int]:
+    pairs: dict[int, int] = {}
+    for raw_ids, image_ids in raw_sidecar_groups(conn).values():
+        if len(raw_ids) != 1 or len(image_ids) != 1:
+            continue
+        image_id = next(iter(image_ids))
+        if image_id not in pairs:
+            pairs[image_id] = next(iter(raw_ids))
+    return pairs
+
+
 def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, str], tuple[set[int], set[int]]]:
     groups: dict[tuple[int, str, str, str], tuple[set[int], set[int]]] = {}
     for row in conn.execute(
@@ -1728,106 +1758,21 @@ def raw_sidecar_for_image(target: Path, item: Any, *, conn: sqlite3.Connection |
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
-        return raw_sidecar_for_image_id(conn, image_id)
+        raw_id = raw_sidecar_id_by_image_id(target, image_id)
+        if raw_id is None:
+            return None
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND id = ?
+            """,
+            (raw_id,),
+        ).fetchone()
     finally:
         if owned_conn:
             conn.close()
-
-
-def raw_sidecar_for_image_id(conn: sqlite3.Connection, image_id: int) -> Any | None:
-    image_sources = list(
-        conn.execute(
-            """
-            SELECT
-                files.id,
-                files.original_filename,
-                files.metadata_datetime,
-                file_sources.source_id,
-                file_sources.source_path_key
-            FROM files
-            JOIN file_sources ON file_sources.file_id = files.id
-            WHERE files.deleted_at IS NULL
-              AND files.id = ?
-              AND files.date_source = 'metadata'
-              AND files.metadata_datetime IS NOT NULL
-              AND (
-                  lower(files.original_filename) LIKE '%.jpg'
-                  OR lower(files.original_filename) LIKE '%.jpeg'
-              )
-            """,
-            (image_id,),
-        )
-    )
-    for image_source in image_sources:
-        raw = raw_sidecar_for_image_source(conn, image_source)
-        if raw is not None:
-            return raw
-    return None
-
-
-def raw_sidecar_for_image_source(conn: sqlite3.Connection, image_source: Any) -> Any | None:
-    source_path_key = str(image_source["source_path_key"])
-    stem = source_path_stem(source_path_key)
-    parent_key = source_parent_path_key(str(image_source["source_path_key"]))
-    candidate_keys = source_sibling_path_keys(
-        source_path_key,
-        stem,
-        (".nef", ".NEF", ".jpg", ".JPG", ".jpeg", ".JPEG"),
-    )
-    if not candidate_keys:
-        return None
-    placeholders = ",".join("?" for _ in candidate_keys)
-    raw_ids: set[int] = set()
-    image_ids: set[int] = set()
-    raw_by_id: dict[int, Any] = {}
-    for row in conn.execute(
-        f"""
-        SELECT {FILE_COLUMNS}, source_path_key
-        FROM (
-            SELECT files.*, file_sources.source_path_key AS source_path_key
-            FROM file_sources
-            JOIN files ON files.id = file_sources.file_id
-            WHERE file_sources.source_id = ?
-              AND file_sources.source_path_key IN ({placeholders})
-              AND files.deleted_at IS NULL
-              AND files.date_source = 'metadata'
-              AND files.metadata_datetime = ?
-        )
-        """,
-        (int(image_source["source_id"]), *candidate_keys, str(image_source["metadata_datetime"])),
-    ):
-        if source_parent_path_key(str(row["source_path_key"])) != parent_key:
-            continue
-        suffix = Path(str(row["original_filename"])).suffix.casefold()
-        file_id = int(row["id"])
-        if suffix == ".nef":
-            raw_ids.add(file_id)
-            raw_by_id[file_id] = row
-        elif suffix in {".jpg", ".jpeg"}:
-            image_ids.add(file_id)
-    if int(image_source["id"]) not in image_ids or len(raw_ids) != 1 or len(image_ids) != 1:
-        return None
-    return raw_by_id[next(iter(raw_ids))]
-
-
-def source_path_stem(source_path_key: str) -> str:
-    filename = source_path_key.replace("\\", "/").rsplit("/", 1)[-1]
-    if "." not in filename:
-        return filename
-    return filename.rsplit(".", 1)[0]
-
-
-def source_sibling_path_keys(source_path_key: str, stem: str, suffixes: Sequence[str]) -> tuple[str, ...]:
-    separator_index = max(source_path_key.rfind("/"), source_path_key.rfind("\\"))
-    prefix = source_path_key[: separator_index + 1] if separator_index >= 0 else ""
-    seen: set[str] = set()
-    keys: list[str] = []
-    for suffix in suffixes:
-        key = f"{prefix}{stem}{suffix}"
-        if key not in seen:
-            seen.add(key)
-            keys.append(key)
-    return tuple(keys)
 
 
 def original_filename_for_item(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> str | None:
