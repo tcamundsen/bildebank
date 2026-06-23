@@ -30,7 +30,7 @@ from bildebank.cli import (
     wsl_path_from_windows_path,
 )
 from bildebank.config import AppConfig, BrowserConfig, BrowserHotkeyConfig, FaceRecognitionConfig, OpenClipConfig, load_config
-from bildebank import db
+from bildebank import db, server_browser
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
 from bildebank.export_person import (
@@ -6114,11 +6114,29 @@ model_name = "buffalo_l"
                 previous_item, next_item = adjacent_source_items(target, imported_source, item, conn=conn)
                 month_nav = source_month_navigation(target, imported_source, item)
 
-                with patch(
-                    "bildebank.server_browser.db.connect",
-                    side_effect=AssertionError("opened nested connection"),
+                with (
+                    patch(
+                        "bildebank.server_browser.db.connect",
+                        side_effect=AssertionError("opened nested connection"),
+                    ),
+                    patch(
+                        "bildebank.server_browser.query_raw_sidecar_ids_by_image_id",
+                        wraps=server_browser.query_raw_sidecar_ids_by_image_id,
+                    ) as raw_sidecar_ids,
                 ):
                     body = source_item_page_html(
+                        target,
+                        imported_source,
+                        item,
+                        previous_item,
+                        next_item,
+                        month_nav,
+                        face_enabled=False,
+                        openclip_enabled=False,
+                        hide_out_of_focus=True,
+                        conn=conn,
+                    )
+                    source_item_page_html(
                         target,
                         imported_source,
                         item,
@@ -6135,6 +6153,7 @@ model_name = "buffalo_l"
 
         self.assertIn("Synlige bilder", body)
         self.assertIn('href="/item/1">Synlige bilder</a>', body)
+        self.assertEqual(raw_sidecar_ids.call_count, 1)
 
     def test_run_server_out_of_focus_button_redirects_to_adjacent_visible_item(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

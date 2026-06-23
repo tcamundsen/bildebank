@@ -38,6 +38,8 @@ from .thumbnails import existing_thumbnail_url
 ShellPageRenderer = Callable[..., str]
 PageRenderer = Callable[[str, str], str]
 Breadcrumb = tuple[str, str | None] | tuple[str, str | None, str | None]
+RAW_SIDECAR_IDS_CACHE_MAX_SIZE = 8
+RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE: dict[tuple[str, int], dict[int, int]] = {}
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 MONTH_NAMES = {
     "01": "Januar",
@@ -570,14 +572,26 @@ def raw_sidecar_id_by_image_id(
     *,
     conn: sqlite3.Connection | None = None,
 ) -> int | None:
-    if conn is not None:
-        return query_raw_sidecar_ids_by_image_id(conn).get(image_id)
     db_path = db.db_path_for_target(target)
     try:
         mtime_ns = db_path.stat().st_mtime_ns
     except OSError:
         mtime_ns = 0
-    return cached_raw_sidecar_ids_by_image_id(str(target.resolve()), mtime_ns).get(image_id)
+    cache_key = (str(target.resolve()), mtime_ns)
+    cached = RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.get(cache_key)
+    if cached is not None:
+        return cached.get(image_id)
+    if conn is not None:
+        cached = query_raw_sidecar_ids_by_image_id(conn)
+        if len(RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE) >= RAW_SIDECAR_IDS_CACHE_MAX_SIZE:
+            RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.pop(next(iter(RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE)))
+        RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE[cache_key] = cached
+        return cached.get(image_id)
+    cached = cached_raw_sidecar_ids_by_image_id(*cache_key)
+    if len(RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE) >= RAW_SIDECAR_IDS_CACHE_MAX_SIZE:
+        RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.pop(next(iter(RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE)))
+    RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE[cache_key] = cached
+    return cached.get(image_id)
 
 
 @lru_cache(maxsize=8)
