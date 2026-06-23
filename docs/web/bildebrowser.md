@@ -5,11 +5,11 @@ Oversikt over alle kommandoer [finner du her](../reference.md).
 
 Her beskrives funksjonene til bildebrowseren vi får fra [`run-server`](../run-server.md).
 
-Vinduet som åpnes når du starter serveren viser en side der du ser første
-bilde fra hvert år du har bilder fra. Når du klikker et bilde sendes du
-til månedsvisningen som viser et bilde for hver måned du har bilder fra. Og
-klikk på et bilde på månedsvisningen åpner bildesiden som er den visningen
-du kommer til å jobbe mest i.
+Vinduet som åpnes når du starter serveren viser en side der du ser første bilde
+fra hvert år du har bilder fra. Når du klikker et bilde sendes du til
+månedsvisningen som viser et bilde for hver måned du har bilder fra.  Når du
+klikker på et bilde i månedsvisningen, åpnes bildesiden. Dette er visningen du
+kommer til å jobbe mest i.
 
 Du kan bla i bildene med knappene med piler på nest øverste linje på siden.
 Men aller enklest er det å bruke tastaturet:
@@ -24,18 +24,12 @@ Men aller enklest er det å bruke tastaturet:
 | Page Down | Neste år |
 
 
-Hold musepekeren over knapper og lenker, så får du i de fleste tilfellen
-opp en liten hjelpetekst som forklarer knappen.
+Hold musepekeren over knapper og lenker, så får du i de fleste tilfellene opp
+en liten hjelpetekst.
 
 Knappene med avkrysningsboks til venstre for bildet brukes for å sette
 tagger på bildet som vises. Du kan definere egne tagger ved å klikke
 [Tagger](/tags)-lenken øverst og til høyre på siden.
-
-For å gjøre lasting av månedsvisningen raskere kan du laga thumbsnails
-av bildene med å kjøre [`make-thumbnails`](../make-thumbnails.md).
-
-For at geo-lokalisering skal fungere må [`geo-scan'](../geo-scan.md)
-være kjørt.
 
 Under **Personer i bildet** i venstrepanelet kan du trykke **[+]** for å få
 opp **Velg person**, **Legg til** og **Ferdig**. Dette brukes til å markere at
@@ -43,17 +37,9 @@ en person er i bildet manuelt, noe som er nyttig hvis ansiktet til personen
 ikke gjenkjennes av insightface. Visningen av denne kan slås av og på i
 [innstillinger](/settings).
 
-Og info om bildet som vises får du ved å klikke på filnavnet til bildet,
-som vises øverst på skjermen.
-
-Når en `.NEF`-fil hører trygt sammen med en `.JPG`-fil fra samme mappe og samme
-import, skjules `.NEF`-filen fra vanlig bildebladning og vises som lenke på
-JPG-bildets side. RAW-filen er fortsatt bevart i bildesamlingen og kan finnes
-med filtersøk, for eksempel `extension:nef`, `type:file` eller
-`filename:DSC_0170`.
+Du får mer informasjon om bildet ved å klikke på filnavnet øverst på skjermen.
 
 ## Hurtigtaster
-
 
 Tastene `1`, `2`, `3`, `4` og `5` kan settes opp i **Innstillinger**. Hver
 tast kan ha sin egen handling:
@@ -85,7 +71,7 @@ bildefilen i samlingen endres ikke.
 
 
 ## Personbrowser
-Hvis det står navnet til en person øverst til venstre i finduet er det fordi du
+Hvis det står navnet til en person øverst til venstre i vinduet er det fordi du
 kjører person-browseren som viser bekreftede (av deg) og forslag (fra
 face-suggest) på bilder av denne personen. Dette moduset har du valgt for
 eksempel ved å klikke på knappen med navnet til personen.
@@ -94,11 +80,13 @@ eksempel ved å klikke på knappen med navnet til personen.
   har bekreftede ansikter brukt som referanser av `face-suggest`. Tallet
   **Foreslåtte bilder** under hvert bilde viser hvor mange forslag som peker
   tilbake på de bekreftede ansiktene i akkurat dette bildet.
-- **Alle bilder** viser det nettop det.
-- **Uten ansiktsmarkeringer** eller **Med ansiktsmarkeringer** tegner en ramme
-  rundt ansiktet til personen du viser personbrowseren av.
+- **Alle bilder** viser nettopp det. Hvis du viser et bilde via et filtersøk
+  eller person-browseren, lar **Alle bilder**-lenken deg se bildet der det
+  står i hele samlingen.
+- Knappen 👤 slår av og på en ramme rundt ansiktet til personen du viser
+  personbrowseren av.
 - **[✓] Ta med forslag** i verktøylinjen betyr at browseren også viser
   forslagene fra `face-suggest`.
 - **[ ] Ta med forslag** i verktøylinjen betyr at browseren bare viser bilder
   du har bekreftet. Dette bør ideelt sett bare være 1-5 gode bilder av
-  personen.
+personen.

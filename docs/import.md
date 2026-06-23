@@ -21,13 +21,6 @@ options:
 `import` registrerer en kilde og importerer støttede bilder og videoer derfra
 til bildesamlingen. Kilden kan være en mappe, USB-brikke, CD eller disk.
 
-Bildebank kan også importere RAW/NEF og PSD-filer. De brukes i duplikatsjekk og
-sortering, men vises ikke som vanlige bilder i nettleseren.
-
-Google/Pixel motion-videoer kan ligge som `.MP`-filer. Når filen faktisk er en
-MP4-video, importerer Bildebank den som video og lagrer kopien med `.mp4` i
-bildesamlingen. Kildemappen endres ikke.
-
 Bildene kopieres inn i bildesamlingen og plasseres etter dato, for eksempel:
 
 ```text
@@ -37,7 +30,20 @@ udatert
 ```
 
 Bildebank prøver først å finne dato i metadata. Hvis det ikke går, kan programmet
-bruke dato fra filens endringstidspunkt eller filnavnet
+bruke dato fra filens endringstidspunkt eller filnavnet.
+
+`.NEF`, `.RAW` og `.PSD` importeres og bevares, men vises som
+fil-lenker/filkort, ikke som vanlige bilder. `.NEF` kan i tillegg skjules fra
+vanlig bildeblaing når den trygt hører sammen med en `.JPG`; da vises den som
+lenke på JPG-bildets side.
+
+Når dette skjer , er `.NEF`-filen er fortsatt bevart i bildesamlingen og kan
+finnes med filtersøk, for eksempel `extension:nef`, `type:file` eller
+`filename:DSC_0170`.
+
+Google/Pixel motion-videoer kan ligge som `.MP`-filer. Når filen faktisk er en
+MP4-video, importerer Bildebank den som video og lagrer kopien med `.mp4` i
+bildesamlingen. Kildemappen endres ikke.
 
 ## Valg
 
