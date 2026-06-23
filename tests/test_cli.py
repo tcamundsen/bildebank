@@ -9807,7 +9807,7 @@ enabled = false
             real_move = shutil.move
 
             def move_then_crash(source_path, destination_path):  # noqa: ANN001
-                result = real_move(source_path, destination_path)
+                real_move(source_path, destination_path)
                 raise RuntimeError("crash after move")
 
             with patch("bildebank.file_lifecycle.shutil.move", side_effect=move_then_crash):
@@ -13039,7 +13039,7 @@ print(json.dumps([
             real_move = shutil.move
 
             def move_then_crash(source_path, destination_path):  # noqa: ANN001
-                result = real_move(source_path, destination_path)
+                real_move(source_path, destination_path)
                 raise RuntimeError("crash after move")
 
             with patch("bildebank.importer.shutil.move", side_effect=move_then_crash):
