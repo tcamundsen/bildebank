@@ -1,23 +1,23 @@
 Litt skriblerier om programmet [kan du lese her](om-bildebank.md).
 Oversikt over alle kommandoer [finner du her](../reference.md).
 
-# Bildebrowseren
+# Bildebrowser
 
 Her beskrives funksjonene til bildebrowseren vi får fra [`run-server`](../run-server.md).
 
 Vinduet som åpnes når du starter serveren viser en side der du ser første bilde
 fra hvert år du har bilder fra. Når du klikker et bilde sendes du til
-månedsvisningen som viser et bilde for hver måned du har bilder fra.  Når du
+månedsvisningen, som viser et bilde for hver måned du har bilder fra. Når du
 klikker på et bilde i månedsvisningen, åpnes bildesiden. Dette er visningen du
-kommer til å jobbe mest i.
+kommer til å bruke mest.
 
-Du kan bla i bildene med knappene med piler på nest øverste linje på siden.
+Du kan bla i filene med pilknappene på nest øverste linje på siden.
 Men aller enklest er det å bruke tastaturet:
 
 | Tast | Hva skjer |
 | --- | --- |
-| Pil venstre | Forrige fil |
-| Pil høyre | Neste fil |
+| Pil venstre | Forrige bilde eller fil |
+| Pil høyre | Neste bilde eller fil |
 | Pil opp | Forrige måned |
 | Pil ned | Neste måned |
 | Page Up | Forrige år |
@@ -39,6 +39,11 @@ ikke gjenkjennes av insightface. Visningen av denne kan slås av og på i
 
 Du får mer informasjon om bildet ved å klikke på filnavnet øverst på skjermen.
 
+`.NEF`, `.RAW` og `.PSD` vises som lenker til filer, ikke som vanlige bilder.
+Når en `.NEF`-fil hører trygt sammen med en `.JPG`-fil fra samme mappe og samme
+import, skjules `.NEF`-filen fra vanlig bildevisning. Da vises den i stedet
+som en lenke på JPG-bildets side.
+
 ## Hurtigtaster
 
 Tastene `1`, `2`, `3`, `4` og `5` kan settes opp i **Innstillinger**. Hver
@@ -57,11 +62,10 @@ som for eksempel `1: H3 til Brevik`, `3: Legg til Viljar` eller
 
 ## Manuell dato
 
-Knappen 📅 lar deg sette manuell dato for bildet.
-Du kan velge eksakt dato, usikker dato eller et datointervall, og legge inn et
-notat. Bildebank lagrer dette i databasen og bruker datoen i bildebrowserens
+Knappen 📅 lar deg sette manuell dato for bildet. Du kan velge eksakt dato,
+usikker dato eller et datointervall, og legge inn et notat. Bildebank lagrer
+dette i databasen og bruker datoen i bildebrowserens
 sortering og månedsvisning. Bildefilen flyttes ikke og endres ikke.
-
 
 ## Rotere bilder
 
@@ -69,11 +73,11 @@ På bildesider kan du bruke knappene **↺** og **↻** for å rotere
 visningen av bildet. Bildebank lagrer bare rotasjonen i databasen. Selve
 bildefilen i samlingen endres ikke.
 
-
 ## Personbrowser
+
 Hvis det står navnet til en person øverst til venstre i vinduet er det fordi du
-kjører person-browseren som viser bekreftede (av deg) og forslag (fra
-face-suggest) på bilder av denne personen. Dette moduset har du valgt for
+kjører personbrowseren, som viser bilder du har bekreftet og forslag fra
+`face-suggest` for denne personen. Dette moduset har du valgt for
 eksempel ved å klikke på knappen med navnet til personen.
 
 - På siden **Personer** åpner **Referansebilder** en oversikt over bildene som
@@ -81,7 +85,7 @@ eksempel ved å klikke på knappen med navnet til personen.
   **Foreslåtte bilder** under hvert bilde viser hvor mange forslag som peker
   tilbake på de bekreftede ansiktene i akkurat dette bildet.
 - **Alle bilder** viser nettopp det. Hvis du viser et bilde via et filtersøk
-  eller person-browseren, lar **Alle bilder**-lenken deg se bildet der det
+  eller personbrowseren, lar **Alle bilder**-lenken deg se bildet der det
   står i hele samlingen.
 - Knappen 👤 slår av og på en ramme rundt ansiktet til personen du viser
   personbrowseren av.
@@ -89,4 +93,4 @@ eksempel ved å klikke på knappen med navnet til personen.
   forslagene fra `face-suggest`.
 - **[ ] Ta med forslag** i verktøylinjen betyr at browseren bare viser bilder
   du har bekreftet. Dette bør ideelt sett bare være 1-5 gode bilder av
-personen.
+  personen.
