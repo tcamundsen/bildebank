@@ -85,6 +85,7 @@ class FaceSuggestServerTests(unittest.TestCase):
         return handler
 
     @patch("bildebank.server_browser.motion_video_for_image", return_value=None)
+    @patch("bildebank.server_browser.raw_sidecar_for_image", return_value=None)
     @patch("bildebank.server_browser.all_browser_item_link_url", return_value="/item/7")
     @patch("bildebank.server_browser._source_item_header_html", side_effect=lambda *args, **kwargs: args[3])
     @patch("bildebank.server_browser._source_item_side_panel_html", return_value="")
@@ -95,6 +96,7 @@ class FaceSuggestServerTests(unittest.TestCase):
         _tags: Mock,
         _header: Mock,
         _all_items: Mock,
+        _raw_sidecar: Mock,
         _motion: Mock,
     ) -> None:
         item = {"id": 7, "target_path": "target/2020/01/image.jpg", "stored_filename": "image.jpg"}

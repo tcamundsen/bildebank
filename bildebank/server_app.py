@@ -3,7 +3,7 @@ from __future__ import annotations
 import html
 import importlib.util
 import urllib.parse
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -31,6 +31,15 @@ ModuleAvailable = Callable[[str], bool]
 MAX_NAMED_H3_RESOLUTION = 11
 
 
+@dataclass(frozen=True)
+class MaintenanceStatus:
+    name: str
+    total: int
+    scanned: int
+    missing: int
+    help_path: str
+
+
 def app_status_page_html(
     target: Path,
     config: AppConfig | None = None,
@@ -47,6 +56,7 @@ def app_status_page_html(
     named_h3_cells = app_status_named_h3_cells(target)
     registered_people = app_status_registered_people(target, config.face_recognition)
     defined_tags = app_status_defined_tags(target)
+    maintenance_rows = maintenance_statuses(target, config)
     rows = "\n".join(
         (
             app_status_row_html("Bildesamling", str(target)),
@@ -83,7 +93,8 @@ def app_status_page_html(
           <a href="/settings/removed">Slettede bilder</a>
           <a href="/sources" title='Lister output fra "bildebank list-sources"'>Importerte mapper</a>
         </nav>
-        <h1>Innstillinger</h1>
+        {maintenance_statuses_html(maintenance_rows)}
+        <h2>Innstillinger</h2>
         <dl class="info-list app-status">
           {rows}
         </dl>
@@ -91,6 +102,98 @@ def app_status_page_html(
         face_enabled=config.face_recognition.enabled,
         openclip_enabled=config.openclip.enabled,
     )
+
+
+def maintenance_statuses(target: Path, config: AppConfig) -> tuple[MaintenanceStatus, ...]:
+    if not db.db_path_for_target(target).is_file():
+        return (
+            MaintenanceStatus("face-scan", 0, 0, 0, "/help/face-scan.md"),
+            MaintenanceStatus("geo-scan", 0, 0, 0, "/help/geo-scan.md"),
+            MaintenanceStatus("image-scan", 0, 0, 0, "/help/image-scan.md"),
+        )
+    return (
+        face_scan_maintenance_status(target, config),
+        geo_scan_maintenance_status(target),
+        image_scan_maintenance_status(target, config),
+    )
+
+
+def face_scan_maintenance_status(target: Path, config: AppConfig) -> MaintenanceStatus:
+    try:
+        from .server_faces import people_face_summary
+
+        summary = people_face_summary(target, config.face_recognition)
+        total = summary.total_images
+        scanned = summary.scanned_images
+        missing = summary.unscanned_images
+    except Exception:  # noqa: BLE001 - settings should still render without a valid face database
+        total = scanned = missing = 0
+    return MaintenanceStatus("face-scan", total, scanned, missing, "/help/face-scan.md")
+
+
+def geo_scan_maintenance_status(target: Path) -> MaintenanceStatus:
+    conn = db.connect(target)
+    try:
+        stats = db.geo_stats(conn)
+    finally:
+        conn.close()
+    total = int(stats["total"])
+    scanned = int(stats["scanned"])
+    return MaintenanceStatus("geo-scan", total, scanned, max(total - scanned, 0), "/help/geo-scan.md")
+
+
+def image_scan_maintenance_status(target: Path, config: AppConfig) -> MaintenanceStatus:
+    from .openclip import active_image_files, connect_openclip_db, has_current_embedding, openclip_db_path
+
+    image_rows = active_image_files(target)
+    total = len(image_rows)
+    if total == 0:
+        return MaintenanceStatus("image-scan", 0, 0, 0, "/help/image-scan.md")
+    if not openclip_db_path(target).is_file():
+        return MaintenanceStatus("image-scan", total, 0, total, "/help/image-scan.md")
+    conn = connect_openclip_db(target)
+    try:
+        scanned = sum(
+            1
+            for row in image_rows
+            if has_current_embedding(conn, int(row["id"]), str(row["sha256"]), config.openclip)
+        )
+    finally:
+        conn.close()
+    return MaintenanceStatus("image-scan", total, scanned, max(total - scanned, 0), "/help/image-scan.md")
+
+
+def maintenance_statuses_html(statuses: tuple[MaintenanceStatus, ...]) -> str:
+    rows = "\n".join(maintenance_status_html(status) for status in statuses)
+    return f"""
+    <section class="maintenance-status" aria-labelledby="maintenance-heading">
+      <h2 id="maintenance-heading">Vedlikehold</h2>
+      <div class="maintenance-list">
+        {rows}
+      </div>
+    </section>
+    """
+
+
+def maintenance_status_html(status: MaintenanceStatus) -> str:
+    if status.missing == 0:
+        status_html = "Oppdatert"
+    else:
+        status_html = (
+            f"{status.missing} bilder trenger {html.escape(status.name)}, kjør "
+            f"<code>bildebank {html.escape(status.name)}</code> fra PowerShell."
+        )
+    return f"""
+    <article class="maintenance-row">
+      <h3><a href="{html.escape(status.help_path)}">{html.escape(status.name)}</a></h3>
+      <p class="status">{status_html}</p>
+      <dl class="maintenance-counts">
+        <div><dt>Scannet</dt><dd>{status.scanned}</dd></div>
+        <div><dt>Mangler</dt><dd>{status.missing}</dd></div>
+        <div><dt>Totalt</dt><dd>{status.total}</dd></div>
+      </dl>
+    </article>
+    """
 
 
 def removed_files_page_html(

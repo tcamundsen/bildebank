@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "32"
+SERVER_ASSET_VERSION = "33"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -794,6 +794,59 @@ SERVER_CSS = r"""    :root {
     .manual-date-modes input { width: auto; }
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
     .info-list { display: grid; gap: 0; margin: 0; }
+    .maintenance-status {
+      margin: 18px 0 24px;
+      padding-bottom: 4px;
+    }
+    .maintenance-status h2 {
+      margin: 0 0 10px;
+      font-size: 20px;
+    }
+    .maintenance-list {
+      display: grid;
+      gap: 8px;
+    }
+    .maintenance-row {
+      display: grid;
+      grid-template-columns: minmax(110px, 150px) minmax(170px, 1fr) minmax(260px, auto);
+      gap: 12px;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+    }
+    .maintenance-row h3 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+    .maintenance-row .status {
+      margin: 0;
+      font-size: 14px;
+    }
+    .maintenance-counts {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin: 0;
+      min-width: 0;
+    }
+    .maintenance-counts div {
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 5px;
+      align-items: baseline;
+      white-space: nowrap;
+    }
+    .maintenance-counts dt {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .maintenance-counts dd {
+      margin: 0;
+      font-weight: 700;
+    }
     .info-row {
       display: grid;
       grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
@@ -973,6 +1026,14 @@ SERVER_CSS = r"""    :root {
     .assign-status { color: var(--muted); font-size: 13px; min-height: 1.3em; }
     @media (max-width: 640px) {
       .shell { padding: 16px; }
+      .maintenance-row {
+        grid-template-columns: 1fr;
+        align-items: start;
+      }
+      .maintenance-counts {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+      }
       .search { grid-template-columns: 1fr; }
       .browser-header { align-items: stretch; }
       .stage-shell { grid-template-columns: 1fr; }

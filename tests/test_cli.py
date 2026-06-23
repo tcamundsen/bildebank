@@ -98,6 +98,7 @@ from bildebank.server_pages import (
     year_months_page_html,
     years_page_html,
 )
+from bildebank.server_app import MaintenanceStatus, maintenance_statuses
 from bildebank.server_browser import (
     adjacent_browser_items,
     adjacent_person_items,
@@ -205,6 +206,49 @@ def write_test_image(path: Path, *, size: tuple[int, int] = (8, 8), color: tuple
     path.parent.mkdir(parents=True, exist_ok=True)
     image = Image.new("RGB", size, color)
     image.save(path)
+
+
+def insert_test_file(
+    target: Path,
+    relative_path: str,
+    *,
+    sha256: str | None = None,
+    deleted: bool = False,
+    gps_scanned: bool = False,
+) -> int:
+    file_path = target / relative_path
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    if not file_path.exists():
+        file_path.write_bytes(minimal_png(10 + len(relative_path), 10))
+    if sha256 is None:
+        sha256 = uuid.uuid4().hex
+    conn = db.connect(target)
+    try:
+        row = conn.execute(
+            """
+            INSERT INTO files(
+                target_path, target_path_key, original_filename, stored_filename,
+                sha256, size_bytes, taken_date, date_source, name_conflict,
+                deleted_at, gps_scanned_at
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, 'filename', 0, ?, ?)
+            RETURNING id
+            """,
+            (
+                relative_path,
+                relative_path.casefold(),
+                Path(relative_path).name,
+                Path(relative_path).name,
+                sha256,
+                file_path.stat().st_size,
+                "2024-01-02",
+                "2024-02-03 04:05:06" if deleted else None,
+                "2024-02-03 04:05:06" if gps_scanned else None,
+            ),
+        ).fetchone()
+        conn.commit()
+        return int(row[0])
+    finally:
+        conn.close()
 
 
 def register_target_file(target: Path, relative_path: Path, *, source: Path | None = None) -> int:
@@ -1418,13 +1462,23 @@ pretrained = "laion2b_s34b_b79k"
             ):
                 body = app_status_page_html(target, config, scroll_y=312)
 
-        self.assertIn("<h1>Innstillinger</h1>", body)
+        self.assertIn("<h2>Innstillinger</h2>", body)
         self.assertIn('data-settings-scroll-restore="312"', body)
         self.assertIn("function setSettingsScrollField", SERVER_JS)
         self.assertIn('input[name="scroll_y"]', SERVER_JS)
         self.assertIn("window.scrollTo", SERVER_JS)
         self.assertIn("Bildebank-versjon", body)
         self.assertIn("Bildesamling", body)
+        self.assertIn("Vedlikehold", body)
+        self.assertLess(body.index("Vedlikehold"), body.index("Bildesamling"))
+        self.assertIn('href="/help/face-scan.md"', body)
+        self.assertIn('href="/help/geo-scan.md"', body)
+        self.assertIn('href="/help/image-scan.md"', body)
+        self.assertIn("face-scan", body)
+        self.assertIn("geo-scan", body)
+        self.assertIn("image-scan", body)
+        self.assertIn(".maintenance-row", SERVER_CSS)
+        self.assertIn("grid-template-columns: minmax(110px, 150px)", SERVER_CSS)
         self.assertLess(body.index("Bildesamling"), body.index("Skjul bilder tagget"))
         self.assertLess(body.index("Skjul bilder tagget"), body.index("Bildebank-versjon"))
         self.assertIn('action="/settings/hide-out-of-focus"', body)
@@ -1479,6 +1533,116 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Test-Model", body)
         self.assertIn("test-weights", body)
         self.assertIn("cpu", body)
+
+    def test_run_server_settings_maintenance_status_counts_scan_needs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            insert_test_file(target, "2024/01/current.png", sha256="sha-current", gps_scanned=True)
+            insert_test_file(target, "2024/01/missing.png", sha256="sha-missing")
+            insert_test_file(target, "2024/01/deleted.png", sha256="sha-deleted", deleted=True)
+            config = AppConfig(openclip=OpenClipConfig(model_name="Test-Model", pretrained="test-weights"))
+
+            statuses = {status.name: status for status in maintenance_statuses(target, config)}
+            body = app_status_page_html(target, config)
+
+        self.assertEqual(statuses["face-scan"].total, 2)
+        self.assertEqual(statuses["face-scan"].scanned, 0)
+        self.assertEqual(statuses["face-scan"].missing, 2)
+        self.assertEqual(statuses["geo-scan"].total, 2)
+        self.assertEqual(statuses["geo-scan"].scanned, 1)
+        self.assertEqual(statuses["geo-scan"].missing, 1)
+        self.assertEqual(statuses["image-scan"].total, 2)
+        self.assertEqual(statuses["image-scan"].scanned, 0)
+        self.assertEqual(statuses["image-scan"].missing, 2)
+        self.assertIn("2 bilder trenger face-scan, kjør <code>bildebank face-scan</code> fra PowerShell.", body)
+        self.assertIn("1 bilder trenger geo-scan, kjør <code>bildebank geo-scan</code> fra PowerShell.", body)
+        self.assertIn("2 bilder trenger image-scan, kjør <code>bildebank image-scan</code> fra PowerShell.", body)
+
+    def test_run_server_settings_image_scan_status_counts_current_embeddings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            current_id = insert_test_file(target, "2024/01/current.png", sha256="sha-current")
+            stale_id = insert_test_file(target, "2024/01/stale.png", sha256="sha-stale")
+            config = AppConfig(openclip=OpenClipConfig(model_name="Test-Model", pretrained="test-weights"))
+            conn = connect_openclip_db(target)
+            try:
+                conn.executemany(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256, model_name, pretrained, embedding
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            current_id,
+                            "2024/01/current.png",
+                            "2024/01/current.png",
+                            "sha-current",
+                            "Test-Model",
+                            "test-weights",
+                            embedding_blob([1.0, 0.0]),
+                        ),
+                        (
+                            stale_id,
+                            "2024/01/stale.png",
+                            "2024/01/stale.png",
+                            "old-sha",
+                            "Test-Model",
+                            "test-weights",
+                            embedding_blob([0.0, 1.0]),
+                        ),
+                    ],
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            statuses = {status.name: status for status in maintenance_statuses(target, config)}
+            body = app_status_page_html(target, config)
+
+        self.assertEqual(statuses["image-scan"].total, 2)
+        self.assertEqual(statuses["image-scan"].scanned, 1)
+        self.assertEqual(statuses["image-scan"].missing, 1)
+        self.assertIn("1 bilder trenger image-scan, kjør <code>bildebank image-scan</code> fra PowerShell.", body)
+
+    def test_run_server_settings_maintenance_status_shows_updated_when_current(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = insert_test_file(target, "2024/01/current.png", sha256="sha-current", gps_scanned=True)
+            config = AppConfig(openclip=OpenClipConfig(model_name="Test-Model", pretrained="test-weights"))
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256, model_name, pretrained, embedding
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        file_id,
+                        "2024/01/current.png",
+                        "2024/01/current.png",
+                        "sha-current",
+                        "Test-Model",
+                        "test-weights",
+                        embedding_blob([1.0, 0.0]),
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with patch("bildebank.server_app.face_scan_maintenance_status") as face_status:
+                face_status.return_value = MaintenanceStatus("face-scan", 1, 1, 0, "/help/face-scan.md")
+                statuses = {status.name: status for status in maintenance_statuses(target, config)}
+                body = app_status_page_html(target, config)
+
+        self.assertEqual(statuses["geo-scan"].missing, 0)
+        self.assertEqual(statuses["image-scan"].missing, 0)
+        self.assertGreaterEqual(body.count("Oppdatert"), 3)
 
     def test_run_server_settings_hotkey_tag_select_keeps_missing_selected_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
