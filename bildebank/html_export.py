@@ -714,6 +714,67 @@ def render_html(
         moveYear(1);
       }}
     }});
+    function attachSwipeNavigation(container, onSwipe) {{
+      if (!container) return;
+      const minDistance = 60;
+      const maxTapDrift = 10;
+      let start = null;
+      let suppressNextClick = false;
+      function startSwipe(x, y, pointerId = null) {{
+        start = {{ x, y, pointerId }};
+      }}
+      function finishSwipe(x, y, pointerId = null) {{
+        if (!start) return false;
+        if (start.pointerId !== null && pointerId !== null && start.pointerId !== pointerId) return false;
+        const dx = x - start.x;
+        const dy = y - start.y;
+        start = null;
+        const absX = Math.abs(dx);
+        const absY = Math.abs(dy);
+        if (absX <= maxTapDrift && absY <= maxTapDrift) return false;
+        if (absX < minDistance || absX <= absY * 1.4) return false;
+        suppressNextClick = true;
+        onSwipe(dx < 0 ? 1 : -1);
+        return true;
+      }}
+      container.addEventListener("click", event => {{
+        if (!suppressNextClick) return;
+        suppressNextClick = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }}, true);
+      if (window.PointerEvent) {{
+        container.addEventListener("pointerdown", event => {{
+          if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+          startSwipe(event.clientX, event.clientY, event.pointerId);
+        }});
+        container.addEventListener("pointerup", event => {{
+          if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+          if (finishSwipe(event.clientX, event.clientY, event.pointerId)) event.preventDefault();
+        }});
+        container.addEventListener("pointercancel", () => {{
+          start = null;
+        }});
+        return;
+      }}
+      container.addEventListener("touchstart", event => {{
+        if (event.changedTouches.length !== 1) return;
+        const touch = event.changedTouches[0];
+        startSwipe(touch.clientX, touch.clientY);
+      }}, {{ passive: true }});
+      container.addEventListener("touchend", event => {{
+        if (event.changedTouches.length !== 1) return;
+        const touch = event.changedTouches[0];
+        if (finishSwipe(touch.clientX, touch.clientY)) event.preventDefault();
+      }}, {{ passive: false }});
+      container.addEventListener("touchcancel", () => {{
+        start = null;
+      }}, {{ passive: true }});
+    }}
+    attachSwipeNavigation(viewer, direction => {{
+      if (state.viewMode !== "item") return;
+      moveItem(direction);
+    }});
     init();
     function init() {{
       const items = embeddedItems.slice().sort(compareItems);

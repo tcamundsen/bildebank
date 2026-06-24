@@ -2359,6 +2359,11 @@ model_name = "buffalo_l"
         self.assertIn("ArrowDown", SERVER_JS)
         self.assertIn("PageUp", SERVER_JS)
         self.assertIn("PageDown", SERVER_JS)
+        self.assertIn("function attachSwipeNavigation", SERVER_JS)
+        self.assertIn("window.PointerEvent", SERVER_JS)
+        self.assertIn('event.pointerType !== "touch" && event.pointerType !== "pen"', SERVER_JS)
+        self.assertIn('container.addEventListener("touchstart"', SERVER_JS)
+        self.assertIn('direction > 0 ? \'[data-key-nav="next"]\' : \'[data-key-nav="previous"]\'', SERVER_JS)
 
     def test_run_server_item_breadcrumb_day_links_to_first_item_on_same_date(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3357,6 +3362,11 @@ model_name = "buffalo_l"
         self.assertIn('if (state.viewMode === "item" && item) parts.push({ label: item.name });', html)
         self.assertIn('link.addEventListener("click", part.action);', html)
         self.assertIn("text.textContent = part.label;", html)
+        self.assertIn("function attachSwipeNavigation", html)
+        self.assertIn("window.PointerEvent", html)
+        self.assertIn('event.pointerType !== "touch" && event.pointerType !== "pen"', html)
+        self.assertIn('container.addEventListener("touchstart"', html)
+        self.assertIn("moveItem(direction);", html)
         self.assertNotIn("<ferie & vinter>.jpg", html)
         self.assertIn(r"\u003cferie \u0026 vinter\u003e.jpg", html)
         self.assertNotIn("data-open-info", html)
