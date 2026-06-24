@@ -240,7 +240,7 @@ def maintenance_status_html(status: MaintenanceStatus, *, loading: bool = False)
 def thumbnail_maintenance_status_html() -> str:
     return """
     <article class="maintenance-row" data-thumbnail-maintenance>
-      <h3><a href="/help/make-thumbnails.md">thumbnails</a></h3>
+      <h3><a href="/help/make-thumbnails.md">make-thumbnails</a></h3>
       <p class="status" data-thumbnail-status>Ikke telt ennå</p>
       <dl class="maintenance-counts">
         <div><dt>Oppdatert</dt><dd data-thumbnail-current>-</dd></div>
