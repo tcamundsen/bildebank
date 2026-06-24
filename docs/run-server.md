@@ -14,6 +14,8 @@ options:
   --preview-images  Bruk nedskalerte preview-bilder i hovedvisningen.
   --read-only       Vis bilder og metadata, men blokker innstillinger,
                     administrasjon og endringer.
+  --lan-share       Del read-only på privat LAN med preview-bilder. Avviser
+                    --host, men kan brukes med --port.
   --allow-remote    Tillat bevisst binding til en adresse som kan nås fra
                     andre maskiner.
 ```
@@ -75,6 +77,26 @@ Read-only-modus lar andre bla, søke, se personer og åpne bildeinfo. Den
 blokkerer innstillinger, administrasjon og endringer i database og bildefiler.
 Dette er fortsatt bare ment for privat LAN. Det er ikke innlogging eller en
 sikkerhetsmodell for internett.
+
+Kortformen for trygg visning på privat LAN er:
+
+```powershell
+bildebank run-server --lan-share
+```
+
+Dette er det samme som:
+
+```powershell
+bildebank run-server --host 0.0.0.0 --allow-remote --preview-images --read-only
+```
+
+`--lan-share` kan brukes sammen med `--port`, men ikke sammen med `--host`.
+Når serveren starter, skriver Bildebank ut hele adressen du kan åpne på andre
+enheter, for eksempel `http://192.168.86.11:8765/`.
+
+Advarsel: Serveren kan nås av alle på samme LAN. Bildene kan dermed bli
+eksponert til alle på samme nettverk. Ikke bruk `--lan-share` på offentlige
+nettverk, gjestenett eller nettverk du ikke stoler på.
 
 Hvis du vil velge port:
 

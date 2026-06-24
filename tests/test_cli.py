@@ -25,6 +25,7 @@ from unittest.mock import patch
 
 from bildebank.cli import (
     build_parser,
+    lan_share_urls,
     main,
     print_image_search_progress,
     run_server_command,
@@ -736,6 +737,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("--no-browser", stdout)
         self.assertIn("--preview-images", stdout)
         self.assertIn("--read-only", stdout)
+        self.assertIn("--lan-share", stdout)
         self.assertIn("--allow-remote", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
@@ -752,6 +754,23 @@ pretrained = "laion2b_s34b_b79k"
 
         self.assertFalse(default_args.read_only)
         self.assertTrue(read_only_args.read_only)
+
+    def test_run_server_lan_share_is_explicit_and_rejects_host(self) -> None:
+        args = build_parser().parse_args(["run-server", "--lan-share", "--port", "8766"])
+        self.assertTrue(args.lan_share)
+        self.assertIsNone(args.host)
+        self.assertEqual(args.port, 8766)
+
+        stderr = StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            main(["run-server", "--lan-share", "--host", "0.0.0.0"])
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--lan-share kan ikke brukes sammen med --host", stderr.getvalue())
+
+    def test_lan_share_urls_use_private_ipv4_addresses(self) -> None:
+        with patch("bildebank.cli.local_lan_ipv4_addresses", return_value=["192.168.86.11"]):
+            self.assertEqual(lan_share_urls(8766), ["http://192.168.86.11:8766/"])
 
     def test_run_server_local_bind_host_detection(self) -> None:
         cases = {
@@ -787,9 +806,11 @@ pretrained = "laion2b_s34b_b79k"
         config = AppConfig()
         with (
             patch("bildebank.cli.load_config", return_value=config),
+            patch("bildebank.cli.lan_share_urls", return_value=["http://192.168.86.11:8765/"]),
             patch("bildebank.cli.run_local_server") as run_local_server,
-            redirect_stdout(StringIO()),
+            redirect_stdout(StringIO()) as stdout,
         ):
+            run_local_server.side_effect = lambda *args, **kwargs: kwargs["ready"]("http://0.0.0.0:8765/")
             result = run_server_command(
                 Path("C:/Users/Tom/Bilder"),
                 host="0.0.0.0",
@@ -798,6 +819,7 @@ pretrained = "laion2b_s34b_b79k"
                 allow_remote=True,
                 preview_images=True,
                 read_only=True,
+                lan_share=True,
             )
 
         self.assertEqual(result, 0)
@@ -806,6 +828,11 @@ pretrained = "laion2b_s34b_b79k"
         self.assertTrue(run_local_server.call_args.kwargs["allow_remote"])
         self.assertTrue(run_local_server.call_args.kwargs["preview_images"])
         self.assertTrue(run_local_server.call_args.kwargs["read_only"])
+        output = stdout.getvalue()
+        self.assertIn("LAN-share er aktiv", output)
+        self.assertIn("Serveren kan nås av alle på samme LAN", output)
+        self.assertIn("Ikke bruk --lan-share på offentlige nettverk", output)
+        self.assertIn("http://192.168.86.11:8765/", output)
 
     def test_run_server_warns_before_allowed_remote_bind(self) -> None:
         fake_server = SimpleNamespace(

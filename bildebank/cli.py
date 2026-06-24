@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import ipaddress
 import importlib.util
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -214,6 +216,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     args = parser.parse_args(argv)
+    validate_parsed_args(parser, args)
 
     try:
         return run(args)
@@ -229,6 +232,11 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"Feil: {exc}", file=sys.stderr)
         return 1
+
+
+def validate_parsed_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    if getattr(args, "command", None) == "run-server" and args.lan_share and args.host is not None:
+        parser.error("--lan-share kan ikke brukes sammen med --host. Bruk --port hvis du vil velge port.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -752,7 +760,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_server_parser.add_argument(
         "--host",
-        default=DEFAULT_HOST,
         help=f"Adresse serveren lytter på. Standard: {DEFAULT_HOST}",
     )
     run_server_parser.add_argument(
@@ -775,6 +782,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--read-only",
         action="store_true",
         help="Vis bilder og metadata, men blokker innstillinger, administrasjon og endringer.",
+    )
+    run_server_parser.add_argument(
+        "--lan-share",
+        action="store_true",
+        help="Del read-only på privat LAN med preview-bilder. Avviser --host, men kan brukes med --port.",
     )
     run_server_parser.add_argument(
         "--allow-remote",
@@ -1229,14 +1241,16 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
         )
 
     if args.command == "run-server":
+        lan_share = args.lan_share
         return run_server_command(
             target,
-            host=args.host,
+            host="0.0.0.0" if lan_share else (args.host or DEFAULT_HOST),
             port=args.port,
             browser=not args.no_browser,
-            allow_remote=args.allow_remote,
-            preview_images=args.preview_images,
-            read_only=args.read_only,
+            allow_remote=args.allow_remote or lan_share,
+            preview_images=args.preview_images or lan_share,
+            read_only=args.read_only or lan_share,
+            lan_share=lan_share,
         )
 
     if args.command == "cleanup-pending-deletes":
@@ -2547,6 +2561,7 @@ def run_server_command(
     allow_remote: bool = False,
     preview_images: bool = False,
     read_only: bool = False,
+    lan_share: bool = False,
 ) -> int:
     config = load_config(program_repo_root())
     print("Starter Bildebank-server. Dette kan ta noen sekunder.")
@@ -2554,6 +2569,8 @@ def run_server_command(
 
     def on_ready(url: str) -> None:
         print(f"Bildebank-serveren er klar: {url}")
+        if lan_share:
+            print_lan_share_warning(port)
         print("Trykk Ctrl-C for å stoppe serveren.")
         if browser:
             print("Åpner nettleser.")
@@ -2570,6 +2587,70 @@ def run_server_command(
         ready=on_ready,
     )
     return 0
+
+
+def print_lan_share_warning(port: int) -> None:
+    print("LAN-share er aktiv: read-only, preview-bilder og tilgang fra andre enheter på LAN.")
+    print(
+        "ADVARSEL: Serveren kan nås av alle på samme LAN. "
+        "Bildene kan dermed bli eksponert til alle på samme nettverk."
+    )
+    print("Ikke bruk --lan-share på offentlige nettverk, gjestenett eller nettverk du ikke stoler på.")
+    urls = lan_share_urls(port)
+    if not urls:
+        print(f"Fant ikke lokal LAN-adresse automatisk. Finn IP-adressen med ipconfig og åpne http://<IP-adresse>:{port}/")
+        return
+    if len(urls) == 1:
+        print(f"Åpne denne adressen på andre enheter: {urls[0]}")
+        return
+    print("Åpne en av disse adressene på andre enheter:")
+    for url in urls:
+        print(f"  {url}")
+
+
+def lan_share_urls(port: int) -> list[str]:
+    return [f"http://{address}:{port}/" for address in local_lan_ipv4_addresses()]
+
+
+def local_lan_ipv4_addresses() -> list[str]:
+    addresses: set[str] = set()
+    add_primary_lan_ipv4_address(addresses)
+    add_hostname_lan_ipv4_addresses(addresses)
+    return sorted(addresses, key=ipv4_sort_key)
+
+
+def add_primary_lan_ipv4_address(addresses: set[str]) -> None:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("192.0.2.1", 80))
+            add_lan_ipv4_address(addresses, sock.getsockname()[0])
+    except OSError:
+        return
+
+
+def add_hostname_lan_ipv4_addresses(addresses: set[str]) -> None:
+    try:
+        infos = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET, socket.SOCK_STREAM)
+    except OSError:
+        return
+    for info in infos:
+        add_lan_ipv4_address(addresses, str(info[4][0]))
+
+
+def add_lan_ipv4_address(addresses: set[str], raw_address: str) -> None:
+    try:
+        address = ipaddress.ip_address(raw_address)
+    except ValueError:
+        return
+    if address.version != 4 or address.is_loopback:
+        return
+    if address.is_private or address.is_link_local:
+        addresses.add(str(address))
+
+
+def ipv4_sort_key(raw_address: str) -> tuple[int, int, int, int]:
+    first, second, third, fourth = raw_address.split(".")
+    return int(first), int(second), int(third), int(fourth)
 
 
 def run_cleanup_pending_deletes(
