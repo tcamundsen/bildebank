@@ -1710,7 +1710,9 @@ SERVER_JS = r"""  const csrfToken = document.querySelector('meta[name="csrf-toke
           window.location.href = `/tag/${encodedTag}`;
           return;
         }
-        window.location.reload();
+        button.setAttribute("aria-pressed", payload.tagged ? "true" : "false");
+        button.classList.toggle("active", Boolean(payload.tagged));
+        button.disabled = false;
       } catch (error) {
         alert(error.message || "Kunne ikke lagre tagg.");
         button.disabled = false;

@@ -4116,6 +4116,9 @@ model_name = "buffalo_l"
         self.assertNotIn('class="date-status-badge"', body)
         self.assertLess(body.index('data-tag-name="Familie"'), body.index('class="location-status-badge"'))
         self.assertIn("/api/item-tag", SERVER_JS)
+        tag_handler = SERVER_JS[SERVER_JS.index('document.querySelectorAll("[data-tag-toggle]') : SERVER_JS.index("function updateHotkeyForm")]
+        self.assertIn('button.classList.toggle("active", Boolean(payload.tagged));', tag_handler)
+        self.assertNotIn("window.location.reload();", tag_handler)
         self.assertIn("stage-shell", SERVER_CSS)
         self.assertIn("tag-rail", SERVER_CSS)
         self.assertIn(".tag-toggle::before", SERVER_CSS)
