@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "39"
+SERVER_ASSET_VERSION = "40"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -522,6 +522,8 @@ SERVER_CSS = r"""    :root {
       place-items: center;
       background: var(--stage);
       overflow: hidden;
+      touch-action: pan-y;
+      overscroll-behavior: contain;
     }
     .stage .media-link {
       display: grid;
@@ -532,6 +534,8 @@ SERVER_CSS = r"""    :root {
       height: 100%;
       max-width: 100%;
       max-height: 100%;
+      user-select: none;
+      -webkit-user-drag: none;
     }
     .stage .media-link.quarter-turn {
       position: relative;
@@ -556,6 +560,8 @@ SERVER_CSS = r"""    :root {
       object-fit: contain;
       display: block;
       transform-origin: center center;
+      user-select: none;
+      -webkit-user-drag: none;
     }
     .stage img[data-view-rotation="90"],
     .stage img[data-view-rotation="270"] {
@@ -1950,7 +1956,7 @@ SERVER_JS = r"""  const csrfToken = document.querySelector('meta[name="csrf-toke
   }
   function attachSwipeNavigation(container, onSwipe) {
     if (!container) return;
-    const minDistance = 60;
+    const minDistance = 40;
     const maxTapDrift = 10;
     const verticalDominanceRatio = 0.75;
     let start = null;
@@ -1981,6 +1987,11 @@ SERVER_JS = r"""  const csrfToken = document.querySelector('meta[name="csrf-toke
     if (window.PointerEvent) {
       container.addEventListener("pointerdown", event => {
         if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+        try {
+          container.setPointerCapture(event.pointerId);
+        } catch {
+          // Some WebKit versions throw when capture is not available for this pointer.
+        }
         startSwipe(event.clientX, event.clientY, event.pointerId);
       });
       container.addEventListener("pointerup", event => {
