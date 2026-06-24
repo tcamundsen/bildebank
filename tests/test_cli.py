@@ -834,6 +834,30 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Ikke bruk --lan-share på offentlige nettverk", output)
         self.assertIn("http://192.168.86.11:8765/", output)
 
+    def test_run_server_lan_share_opens_localhost_in_browser(self) -> None:
+        config = AppConfig()
+        with (
+            patch("bildebank.cli.load_config", return_value=config),
+            patch("bildebank.cli.lan_share_urls", return_value=["http://192.168.86.11:8766/"]),
+            patch("bildebank.cli.run_local_server") as run_local_server,
+            patch("bildebank.cli.webbrowser.open") as open_browser,
+            redirect_stdout(StringIO()),
+        ):
+            run_local_server.side_effect = lambda *args, **kwargs: kwargs["ready"]("http://0.0.0.0:8766/")
+            result = run_server_command(
+                Path("C:/Users/Tom/Bilder"),
+                host="0.0.0.0",
+                port=8766,
+                browser=True,
+                allow_remote=True,
+                preview_images=True,
+                read_only=True,
+                lan_share=True,
+            )
+
+        self.assertEqual(result, 0)
+        open_browser.assert_called_once_with("http://127.0.0.1:8766/")
+
     def test_run_server_warns_before_allowed_remote_bind(self) -> None:
         fake_server = SimpleNamespace(
             server_address=("0.0.0.0", 8765),

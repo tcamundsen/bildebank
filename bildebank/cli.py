@@ -2573,8 +2573,9 @@ def run_server_command(
             print_lan_share_warning(port)
         print("Trykk Ctrl-C for å stoppe serveren.")
         if browser:
+            browser_url = f"http://127.0.0.1:{port}/" if lan_share else url
             print("Åpner nettleser.")
-            webbrowser.open(url)
+            webbrowser.open(browser_url)
 
     run_local_server(
         target,
