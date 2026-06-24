@@ -111,6 +111,10 @@ Hvis `enabled = false`, skjuler `run-server` bildesøk-knappen og kommandoene
 `image-scan` og `image-search` sier fra at tekstbasert bildesøk er slått av.
 Eksisterende OpenCLIP-database og embeddings slettes ikke.
 
+Når du åpner **Bildesøk** i `run-server`, begynner serveren å laste
+OpenCLIP-modellen i bakgrunnen. Første søk kan fortsatt måtte vente hvis
+modellen ikke er ferdig lastet.
+
 ## CPU eller GPU
 
 Som standard bruker OpenCLIP:

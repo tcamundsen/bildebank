@@ -114,7 +114,11 @@ def source_action_links_html(
     all_items_url: str | None = None,
     all_items_label: str = "Alle bilder",
 ) -> str:
-    search_link = '<a class="server-search-link" href="/search">Bildesøk</a>' if openclip_enabled else ""
+    search_link = (
+        '<a class="server-search-link" href="/search" data-search-preload>Bildesøk</a>'
+        if openclip_enabled
+        else ""
+    )
     return f"""
     <div class="top-actions">
       {source_top_links_html(

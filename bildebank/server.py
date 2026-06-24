@@ -690,6 +690,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 query = first_param(params, "q").strip()
                 limit = positive_int_param(params, "limit", DEFAULT_SEARCH_LIMIT)
                 if not query:
+                    self.server.search_cache.preload_model_async()
                     self.respond_html(index_html(self.server, message="Skriv inn et søk."))
                     return
                 try:
@@ -711,6 +712,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/item-faces":
                 self.respond_item_faces(parsed.query)
+                return
+            if parsed.path == "/api/search-preload":
+                self.respond_search_preload()
                 return
             if parsed.path == "/api/maintenance/thumbnails":
                 self.respond_thumbnail_maintenance()
@@ -921,6 +925,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 read_only=getattr(self.server, "read_only", False),
             )
         )
+
+    def respond_search_preload(self) -> None:
+        if not self.server.openclip_enabled:
+            self.respond_json({"ok": False, "error": "Tekstbasert bildesøk er av."}, status=HTTPStatus.NOT_FOUND)
+            return
+        status = self.server.search_cache.preload_model_async()
+        self.respond_json({"ok": True, "status": status, "loaded": self.server.search_cache.loaded})
 
     def handle(self) -> None:
         try:

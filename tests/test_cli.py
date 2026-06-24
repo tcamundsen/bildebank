@@ -1198,12 +1198,50 @@ pretrained = "laion2b_s34b_b79k"
             target = Path(tmp)
             init_database(target)
             body = sources_page_html(target, face_enabled=False, openclip_enabled=False)
+            enabled_body = sources_page_html(target, openclip_enabled=True)
 
         self.assertIn('<header class="browser-header">', body)
         self.assertIn('href="/">Alle bilder</a>', body)
         self.assertIn('href="/geo">Steder</a>', body)
+        self.assertIn('href="/search" data-search-preload>Bildesøk</a>', enabled_body)
+        self.assertIn('fetch("/api/search-preload", {keepalive: true})', SERVER_JS)
+        self.assertIn('link.addEventListener("pointerdown", preloadSearchModel)', SERVER_JS)
         self.assertNotIn('href="/people">Personer</a>', body)
         self.assertNotIn('href="/search">Bildesøk</a>', body)
+
+    def test_openclip_search_cache_can_preload_model(self) -> None:
+        config = OpenClipConfig(enabled=True)
+        cache = OpenClipSearchCache(AppConfig(openclip=config))
+        with patch("bildebank.server_search.load_text_model", return_value=("model", "tokenizer")) as load_model:
+            cache.preload_model()
+
+        load_model.assert_called_once_with(config)
+        self.assertTrue(cache.loaded)
+
+    def test_run_server_search_preload_endpoint_starts_background_load(self) -> None:
+        class FakeSearchCache:
+            loaded = False
+            started = False
+
+            def preload_model_async(self) -> str:
+                self.started = True
+                return "loading"
+
+        class FakeHandler:
+            server = SimpleNamespace(openclip_enabled=True, search_cache=FakeSearchCache())
+            body: dict[str, object] | None = None
+            status = HTTPStatus.OK
+
+            def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                self.body = content
+                self.status = status
+
+        handler = FakeHandler()
+        BildebankRequestHandler.respond_search_preload(handler)  # type: ignore[arg-type]
+
+        self.assertTrue(handler.server.search_cache.started)
+        self.assertEqual(handler.status, HTTPStatus.OK)
+        self.assertEqual(handler.body, {"ok": True, "status": "loading", "loaded": False})
 
     def test_run_server_image_search_stores_relative_result_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1603,7 +1641,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("data-maintenance-name", SERVER_JS)
         self.assertIn('window.addEventListener("load", scheduleMaintenanceStatusesLoad', SERVER_JS)
         self.assertIn("setTimeout(loadMaintenanceStatuses, 0)", SERVER_JS)
-        self.assertEqual(SERVER_ASSET_VERSION, "40")
+        self.assertEqual(SERVER_ASSET_VERSION, "41")
         self.assertIn("bildebank ${payload.name}", SERVER_JS)
         self.assertIn("bilder trenger ${payload.name}", SERVER_JS)
         self.assertIn("/api/maintenance/thumbnails", SERVER_JS)
@@ -2593,7 +2631,7 @@ model_name = "buffalo_l"
             body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
 
         self.assertIn('<a class="server-search-link" href="/geo">Steder</a>', body)
-        self.assertLess(body.index('href="/geo">Steder'), body.index('href="/search">Bildesøk'))
+        self.assertLess(body.index('href="/geo">Steder'), body.index('href="/search"'))
 
     def test_run_server_geo_pages_use_stored_geo_data(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -1548,7 +1548,7 @@ def empty_browser_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
-    search_link = '<p><a href="/search">Bildesøk</a></p>' if openclip_enabled else ""
+    search_link = '<p><a href="/search" data-search-preload>Bildesøk</a></p>' if openclip_enabled else ""
     return shell_page_html(
         "Bildebrowser",
         f"""

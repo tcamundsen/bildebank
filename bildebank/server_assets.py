@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "40"
+SERVER_ASSET_VERSION = "41"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -1609,6 +1609,16 @@ SERVER_JS = r"""  const csrfToken = document.querySelector('meta[name="csrf-toke
   searchForm?.addEventListener("submit", () => {
     if (searchForm.dataset.modelLoaded === "true") return;
     if (searchLoading) searchLoading.hidden = false;
+  });
+  let searchPreloadStarted = false;
+  function preloadSearchModel() {
+    if (searchPreloadStarted) return;
+    searchPreloadStarted = true;
+    fetch("/api/search-preload", {keepalive: true}).catch(() => {});
+  }
+  document.querySelectorAll("[data-search-preload]").forEach(link => {
+    link.addEventListener("pointerdown", preloadSearchModel);
+    link.addEventListener("click", preloadSearchModel);
   });
   closePersonRenameButton?.addEventListener("click", closePersonRenameDialog);
   document.querySelectorAll("[data-open-person-rename]").forEach(button => {
