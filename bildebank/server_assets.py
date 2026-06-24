@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "41"
+SERVER_ASSET_VERSION = "43"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -651,7 +651,11 @@ SERVER_CSS = r"""    :root {
     }
     .year-month-grid-server {
       grid-template-columns: repeat(6, minmax(120px, 1fr));
+      gap: 10px;
+      padding: 8px 12px;
     }
+    .year-month-grid-server .text { padding: 6px 8px; font-size: 13px; line-height: 1.2; }
+    .year-month-grid-server .score { margin-top: 2px; }
     .month-browser .month-grid-server { overflow: visible; }
     .thumb-link {
       display: grid;

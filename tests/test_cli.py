@@ -1641,7 +1641,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("data-maintenance-name", SERVER_JS)
         self.assertIn('window.addEventListener("load", scheduleMaintenanceStatusesLoad', SERVER_JS)
         self.assertIn("setTimeout(loadMaintenanceStatuses, 0)", SERVER_JS)
-        self.assertEqual(SERVER_ASSET_VERSION, "41")
+        self.assertEqual(SERVER_ASSET_VERSION, "43")
         self.assertIn("bildebank ${payload.name}", SERVER_JS)
         self.assertIn("bilder trenger ${payload.name}", SERVER_JS)
         self.assertIn("/api/maintenance/thumbnails", SERVER_JS)
@@ -3476,6 +3476,8 @@ model_name = "buffalo_l"
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr);", SERVER_CSS)
         self.assertIn(".year-month-grid-server", SERVER_CSS)
         self.assertIn("grid-template-columns: repeat(6, minmax(120px, 1fr));", SERVER_CSS)
+        self.assertIn("gap: 10px;", SERVER_CSS)
+        self.assertIn(".year-month-grid-server .text { padding: 6px 8px; font-size: 13px; line-height: 1.2; }", SERVER_CSS)
         self.assertIn("grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
 
