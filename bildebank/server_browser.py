@@ -2835,15 +2835,48 @@ def years_page_html(
         for card in browser_year_cards(target, hide_out_of_focus=hide_out_of_focus)
     )
     content = cards if cards else '<p class="meta">Ingen filer i bildesamlingen.</p>'
+    controls = years_navigation_controls_html(target, hide_out_of_focus=hide_out_of_focus)
     return shell_page_html(
         "År",
         f"""
         <h1>År</h1>
+        {controls}
         <section class="month-grid-server">{content}</section>
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
     )
+
+
+def years_navigation_controls_html(target: Path, *, hide_out_of_focus: bool = False) -> str:
+    from .server_shell import nav_button, nav_disabled
+
+    month_keys = browser_month_keys(target, hide_out_of_focus=hide_out_of_focus)
+    first_month = month_keys[0] if month_keys else None
+    first_year = first_month[:4] if first_month is not None else None
+
+    def year_button(target_year: str | None, label: str, key_nav: str, tooltip: str) -> str:
+        if target_year is None:
+            return nav_disabled(label)
+        return nav_button(source_year_url(all_browser_source(), target_year), label, key_nav, tooltip)
+
+    def month_button(month_key: str | None, label: str, key_nav: str, tooltip: str) -> str:
+        if month_key is None:
+            return nav_disabled(label)
+        return nav_button(source_month_url(all_browser_source(), month_key), label, key_nav, tooltip)
+
+    return f"""
+    <nav class="controls" aria-label="Navigering">
+      <span class="nav-button-pair" data-nav-button-pair="year">
+        {year_button(None, "◀ Å", "previous-year", "Forrige år")}
+        {year_button(first_year, "r ▶", "next-year", "Neste år")}
+      </span>
+      <span class="nav-button-pair" data-nav-button-pair="month">
+        {month_button(None, "◀ Mån", "previous-month", "Forrige måned")}
+        {month_button(first_month, "ed ▶", "next-month", "Neste måned")}
+      </span>
+    </nav>
+    """
 
 
 def year_months_page_html(
@@ -2876,23 +2909,60 @@ def year_months_page_html(
 
 
 def year_navigation_controls_html(target: Path, year: str, *, hide_out_of_focus: bool = False) -> str:
+    return source_year_navigation_controls_html(
+        target,
+        all_browser_source(),
+        year,
+        hide_out_of_focus=hide_out_of_focus,
+    )
+
+
+def source_year_navigation_controls_html(
+    target: Path,
+    source: BrowserSource,
+    year: str,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+) -> str:
     from .server_shell import nav_button, nav_disabled
 
-    years = [str(card["year"]) for card in browser_year_cards(target, hide_out_of_focus=hide_out_of_focus)]
+    month_keys = source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
+    years = sorted({key[:4] for key in month_keys})
     previous_year = next((candidate for candidate in reversed(years) if candidate < year), None)
     next_year = next((candidate for candidate in years if candidate > year), None)
+    previous_month = last_month_before_year(month_keys, year)
+    next_month = first_month_in_year(month_keys, year)
+    previous_year_overview_url = None
+    if previous_year is None and years and year == years[0]:
+        previous_year_overview_url = source.root_url if is_filtered_source(source) else "/years"
 
     def year_button(target_year: str | None, label: str, key_nav: str, tooltip: str) -> str:
         if target_year is None:
             return nav_disabled(label)
-        url = "/years/" + urllib.parse.quote(target_year, safe="")
-        return nav_button(url, label, key_nav, tooltip)
+        return nav_button(source_year_url(source, target_year), label, key_nav, tooltip)
+
+    def previous_year_button() -> str:
+        if previous_year is not None:
+            return year_button(previous_year, "◀ Å", "previous-year", "Forrige år")
+        if previous_year_overview_url is not None:
+            return nav_button(previous_year_overview_url, "◀ Å", "previous-year", "Forrige år")
+        return nav_disabled("◀ Å")
+
+    def month_button(month_key: str | None, label: str, key_nav: str, tooltip: str) -> str:
+        if month_key is None:
+            return nav_disabled(label)
+        return nav_button(source_month_url(source, month_key), label, key_nav, tooltip)
 
     return f"""
     <nav class="controls" aria-label="Navigering">
       <span class="nav-button-pair" data-nav-button-pair="year">
-        {year_button(previous_year, "◀ Å", "previous-year", "Forrige år")}
+        {previous_year_button()}
         {year_button(next_year, "r ▶", "next-year", "Neste år")}
+      </span>
+      <span class="nav-button-pair" data-nav-button-pair="month">
+        {month_button(previous_month, "◀ Mån", "previous-month", "Forrige måned")}
+        {month_button(next_month, "ed ▶", "next-month", "Neste måned")}
       </span>
     </nav>
     """
@@ -2922,6 +2992,13 @@ def source_year_months_page_html(
         )
     )
     content = cards if cards else '<p class="meta">Ingen bilder dette året.</p>'
+    controls = source_year_navigation_controls_html(
+        target,
+        source,
+        year,
+        face_config,
+        hide_out_of_focus=hide_out_of_focus,
+    )
     return page_html(
         f"{source.title}: {year}",
         f"""
@@ -2936,6 +3013,7 @@ def source_year_months_page_html(
                   face_config,
                   hide_out_of_focus=hide_out_of_focus,
               ),
+              controls=controls,
               face_enabled=face_enabled,
               openclip_enabled=openclip_enabled,
           )}
@@ -3493,6 +3571,10 @@ def first_month_in_year(keys: list[str], year: str | None) -> str | None:
     if year is None:
         return None
     return next((key for key in keys if key.startswith(year)), None)
+
+
+def last_month_before_year(keys: list[str], year: str) -> str | None:
+    return next((key for key in reversed(keys) if key[:4] < year), None)
 
 
 def browser_month_items(target: Path, month_key: str, *, hide_out_of_focus: bool = False) -> list[Any]:
