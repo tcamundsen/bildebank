@@ -634,6 +634,9 @@ SERVER_CSS = r"""    :root {
       padding: 12px;
       overflow: auto;
     }
+    .year-month-grid-server {
+      grid-template-columns: repeat(6, minmax(120px, 1fr));
+    }
     .month-browser .month-grid-server { overflow: visible; }
     .thumb-link {
       display: grid;
@@ -1016,6 +1019,7 @@ SERVER_CSS = r"""    :root {
         flex-wrap: wrap;
       }
       .search { grid-template-columns: 1fr; }
+      .year-month-grid-server { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
       .browser-header { align-items: stretch; }
       .stage-shell { grid-template-columns: 1fr; }
       .tag-rail { width: auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border); }

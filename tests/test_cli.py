@@ -2722,6 +2722,7 @@ model_name = "buffalo_l"
         self.assertIn('href="/month/2005-03"', year_body)
         self.assertIn('href="/month/2005-04"', year_body)
         self.assertIn('href="/month/2005-05"', year_body)
+        self.assertIn('<section class="month-grid-server year-month-grid-server">', year_body)
         self.assertIn('src="/file/2005/03/IMG_20050302.jpg"', year_body)
         self.assertIn(">2005-04</div>", year_body)
         self.assertIn(">1 bilde</div>", year_body)
@@ -3296,6 +3297,9 @@ model_name = "buffalo_l"
         self.assertIn(".server-browser.month-browser", SERVER_CSS)
         self.assertIn("min-height: 100vh;", SERVER_CSS)
         self.assertIn("grid-template-rows: max-content minmax(0, 1fr);", SERVER_CSS)
+        self.assertIn(".year-month-grid-server", SERVER_CSS)
+        self.assertIn("grid-template-columns: repeat(6, minmax(120px, 1fr));", SERVER_CSS)
+        self.assertIn("grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
@@ -5837,6 +5841,7 @@ model_name = "buffalo_l"
         self.assertIn('href="/source/1">Kilde: source-a</a><span class="sep">/</span>2024</nav>', year_body)
         self.assertIn('href="/source/1/month/2024-01"', year_body)
         self.assertNotIn('href="/source/1/month/2024-02"', year_body)
+        self.assertIn('<section class="month-grid-server year-month-grid-server">', year_body)
         self.assertNotIn('<footer class="browser-footer">', year_body)
         self.assertIn('href="/source/1/item/1"', month_body)
         self.assertIn('href="/source/1/year/2024">2024</a>', month_body)

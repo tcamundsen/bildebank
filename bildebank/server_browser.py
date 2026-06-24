@@ -2852,7 +2852,7 @@ def year_months_page_html(
         escaped_year,
         f"""
         <h1>{escaped_year}</h1>
-        <section class="month-grid-server">{content}</section>
+        <section class="month-grid-server year-month-grid-server">{content}</section>
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
@@ -2901,7 +2901,7 @@ def source_year_months_page_html(
               face_enabled=face_enabled,
               openclip_enabled=openclip_enabled,
           )}
-          <section class="month-grid-server">{content}</section>
+          <section class="month-grid-server year-month-grid-server">{content}</section>
         </main>
         """,
     )
