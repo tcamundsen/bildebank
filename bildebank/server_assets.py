@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "36"
+SERVER_ASSET_VERSION = "37"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -164,9 +164,16 @@ SERVER_CSS = r"""    :root {
     .geo-hex { fill: #2f6f73; stroke: #8fd8dd; stroke-width: 2; }
     .geo-hex-link:hover .geo-hex { fill: #3f858a; }
     .geo-hex-count { fill: var(--text); font-size: 13px; font-weight: 700; pointer-events: none; }
-    .server-browser { height: 100vh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+    .server-browser {
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
     .server-browser.month-browser {
       min-height: 100vh;
+      min-height: 100dvh;
       height: auto;
       overflow: visible;
       grid-template-rows: max-content minmax(0, 1fr);
@@ -552,6 +559,7 @@ SERVER_CSS = r"""    :root {
     .stage img[data-view-rotation="90"],
     .stage img[data-view-rotation="270"] {
       max-width: min(calc(100vh - 10rem), var(--quarter-turn-width, 100%));
+      max-width: min(calc(100dvh - 10rem), var(--quarter-turn-width, 100%));
       max-height: none;
     }
     .person-media[data-view-rotation="90"],
