@@ -2884,9 +2884,8 @@ def source_year_months_page_html(
         )
     )
     content = cards if cards else '<p class="meta">Ingen bilder dette året.</p>'
-    escaped_year = html.escape(year)
     return page_html(
-        f"{source.title}: {escaped_year}",
+        f"{source.title}: {year}",
         f"""
         <main class="server-browser">
           {app_header_html(
@@ -2903,9 +2902,6 @@ def source_year_months_page_html(
               openclip_enabled=openclip_enabled,
           )}
           <section class="month-grid-server">{content}</section>
-          <footer class="browser-footer">
-            <span class="filename">Årsoversikt: {escaped_year}</span>
-          </footer>
         </main>
         """,
     )
@@ -3015,9 +3011,6 @@ def source_month_page_html(
               openclip_enabled=openclip_enabled,
           )}
           <section class="month-grid-server">{cards}</section>
-          <footer class="browser-footer">
-            <span class="filename">Månedsoversikt: {html.escape(month_key)}</span>
-          </footer>
         </main>
         """,
     )

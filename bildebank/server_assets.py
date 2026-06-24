@@ -164,12 +164,12 @@ SERVER_CSS = r"""    :root {
     .geo-hex { fill: #2f6f73; stroke: #8fd8dd; stroke-width: 2; }
     .geo-hex-link:hover .geo-hex { fill: #3f858a; }
     .geo-hex-count { fill: var(--text); font-size: 13px; font-weight: 700; pointer-events: none; }
-    .server-browser { height: 100vh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+    .server-browser { height: 100vh; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); }
     .server-browser.month-browser {
       min-height: 100vh;
       height: auto;
       overflow: visible;
-      grid-template-rows: max-content minmax(0, 1fr) max-content;
+      grid-template-rows: max-content minmax(0, 1fr);
     }
     .browser-header {
       background: var(--panel);
@@ -677,24 +677,6 @@ SERVER_CSS = r"""    :root {
     .score { color: var(--muted); margin-top: 4px; }
     .error { color: var(--danger); }
     .message { color: var(--muted); }
-    .browser-footer {
-      background: var(--panel);
-      border-top: 1px solid var(--border);
-      padding: 8px 12px;
-      font-size: 13px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 14px;
-      align-items: center;
-      min-width: 0;
-    }
-    .filename {
-      min-width: 0;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-      color: var(--muted);
-    }
     .face-overlay {
       position: fixed;
       inset: 0;

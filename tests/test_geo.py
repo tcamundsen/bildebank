@@ -523,7 +523,7 @@ class GeoTests(unittest.TestCase):
         self.assertEqual(month_navigation["previous_month"], None)
         self.assertEqual(source_item_url(source, first_id), "/geo/place/kreta/item/" + str(first_id))
         self.assertIn('href="/geo/place/kreta/item/', month_html)
-        self.assertIn("Månedsoversikt: 2024-01", month_html)
+        self.assertNotIn("Månedsoversikt: 2024-01", month_html)
 
     def test_unknown_geo_place_slug_returns_404(self) -> None:
         response: dict[str, object] = {}

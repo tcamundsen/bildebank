@@ -439,10 +439,10 @@ def render_html(
       height: 100vh;
       height: 100dvh;
       display: grid;
-      grid-template-rows: auto minmax(0, 1fr) auto;
+      grid-template-rows: auto minmax(0, 1fr);
       overflow: hidden;
     }}
-    header, footer {{
+    header {{
       background: var(--panel);
       border-color: var(--border);
     }}
@@ -621,30 +621,6 @@ def render_html(
       line-height: 1.5;
       padding: 24px;
     }}
-    footer {{
-      border-top: 1px solid var(--border);
-      padding: 8px 12px;
-      font-size: 13px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px 14px;
-      align-items: center;
-      min-width: 0;
-    }}
-    footer a {{
-      color: var(--muted);
-      text-decoration: none;
-    }}
-    footer a:hover {{
-      color: var(--accent);
-      text-decoration: underline;
-    }}
-    .filename {{
-      min-width: 0;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }}
   </style>
 </head>
 <body>
@@ -676,9 +652,6 @@ def render_html(
         <div class="empty">Ingen filer i indeksen.</div>
       </div>
     </main>
-    <footer>
-      <a id="filename" class="filename" href="#">Ingen fil valgt</a>
-    </footer>
   </div>
   <script>
     const embeddedItems = {items_json};
@@ -701,7 +674,6 @@ def render_html(
     const titleEl = document.getElementById("title");
     const statusEl = document.getElementById("status");
     const viewer = document.getElementById("viewer");
-    const filenameEl = document.getElementById("filename");
     const buttons = {{
       prevYear: document.getElementById("prevYear"),
       nextYear: document.getElementById("nextYear"),
@@ -890,10 +862,6 @@ def render_html(
         link.textContent = `Fil\\n${{item.name}}`;
         viewer.replaceChildren(link);
       }}
-      const month = currentMonth();
-      filenameEl.textContent = `${{htmlDecode(item.path)}} (${{item.sizeText}})`;
-      filenameEl.href = item.url;
-      filenameEl.target = "_blank";
       updateButtons();
     }}
     function renderYears() {{
@@ -914,9 +882,6 @@ def render_html(
         grid.append(button);
       }}
       viewer.replaceChildren(grid);
-      filenameEl.textContent = "Årsoversikt";
-      filenameEl.removeAttribute("href");
-      filenameEl.removeAttribute("target");
       updateButtons();
     }}
     function renderYear() {{
@@ -938,9 +903,6 @@ def render_html(
         grid.append(button);
       }}
       viewer.replaceChildren(grid);
-      filenameEl.textContent = `Årsoversikt: ${{yearLabel(year.key)}}`;
-      filenameEl.removeAttribute("href");
-      filenameEl.removeAttribute("target");
       updateButtons();
     }}
     function renderMonth() {{
@@ -975,9 +937,6 @@ def render_html(
         grid.append(button);
       }}
       viewer.replaceChildren(grid);
-      filenameEl.textContent = `Månedsoversikt: ${{month.key}}`;
-      filenameEl.removeAttribute("href");
-      filenameEl.removeAttribute("target");
       updateButtons();
     }}
     function overviewButton(item, labelText, onClick) {{
@@ -1121,11 +1080,6 @@ def render_html(
         state.monthIndex === state.months.length - 1 &&
         month &&
         state.itemIndex === month.items.length - 1;
-    }}
-    function htmlDecode(value) {{
-      const textarea = document.createElement("textarea");
-      textarea.innerHTML = value;
-      return textarea.value;
     }}
   </script>
 </body>

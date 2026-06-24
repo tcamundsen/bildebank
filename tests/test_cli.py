@@ -2352,6 +2352,7 @@ model_name = "buffalo_l"
         self.assertIn('data-nav-button-pair="item"', body)
         self.assertIn('href="/static/server.css?v=', body)
         self.assertIn('src="/static/server.js?v=', body)
+        self.assertNotIn('<footer class="browser-footer">', body)
         self.assertIn("ArrowLeft", SERVER_JS)
         self.assertIn("ArrowRight", SERVER_JS)
         self.assertIn("ArrowUp", SERVER_JS)
@@ -2667,6 +2668,7 @@ model_name = "buffalo_l"
         self.assertIn('data-nav-button-pair="month"', body)
         self.assertIn('data-nav-button-pair="item"', body)
         self.assertIn('<main class="server-browser month-browser">', body)
+        self.assertNotIn('<footer class="browser-footer">', body)
 
     def test_run_server_years_pages_link_to_years_and_months(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3293,7 +3295,7 @@ model_name = "buffalo_l"
         self.assertIn("overflow: hidden;", SERVER_CSS)
         self.assertIn(".server-browser.month-browser", SERVER_CSS)
         self.assertIn("min-height: 100vh;", SERVER_CSS)
-        self.assertIn("grid-template-rows: max-content minmax(0, 1fr) max-content;", SERVER_CSS)
+        self.assertIn("grid-template-rows: max-content minmax(0, 1fr);", SERVER_CSS)
         self.assertIn(".month-browser .month-grid-server { overflow: visible; }", SERVER_CSS)
 
     def test_static_browser_sorts_by_taken_date_inside_month(self) -> None:
@@ -3354,6 +3356,11 @@ model_name = "buffalo_l"
         self.assertNotIn("<ferie & vinter>.jpg", html)
         self.assertIn(r"\u003cferie \u0026 vinter\u003e.jpg", html)
         self.assertNotIn("data-open-info", html)
+        self.assertNotIn("<footer", html)
+        self.assertNotIn('id="filename"', html)
+        self.assertNotIn("filenameEl", html)
+        self.assertNotIn("Årsoversikt:", html)
+        self.assertNotIn("Månedsoversikt:", html)
 
     def test_media_metadata_cache_stores_dimensions_and_orientation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -5830,9 +5837,11 @@ model_name = "buffalo_l"
         self.assertIn('href="/source/1">Kilde: source-a</a><span class="sep">/</span>2024</nav>', year_body)
         self.assertIn('href="/source/1/month/2024-01"', year_body)
         self.assertNotIn('href="/source/1/month/2024-02"', year_body)
+        self.assertNotIn('<footer class="browser-footer">', year_body)
         self.assertIn('href="/source/1/item/1"', month_body)
         self.assertIn('href="/source/1/year/2024">2024</a>', month_body)
         self.assertIn('<span class="sep">/</span>Januar</nav>', month_body)
+        self.assertNotIn('<footer class="browser-footer">', month_body)
         self.assertIn("<h1>Importerte mapper</h1>", sources_body)
         self.assertIn('href="/source/1">Vis bilder (1)</a>', sources_body)
         self.assertIn("source-a", sources_body)
@@ -13576,7 +13585,6 @@ print(json.dumps([
             self.assertIn("height: 100dvh;", html)
             self.assertIn("width: auto;\n      height: auto;\n      max-width: 100%;\n      max-height: 100%;", html)
             self.assertNotIn("max-height: calc(100vh - 10rem);", html)
-            self.assertIn("item.sizeText", html)
             self.assertIn("const MONTH_PREVIEW_LIMIT = null;", html)
             self.assertIn('state.viewMode = "month";', html)
             self.assertIn("function representativeItems(items, limit)", html)
