@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "38"
+SERVER_ASSET_VERSION = "39"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -1952,6 +1952,7 @@ SERVER_JS = r"""  const csrfToken = document.querySelector('meta[name="csrf-toke
     if (!container) return;
     const minDistance = 60;
     const maxTapDrift = 10;
+    const verticalDominanceRatio = 0.75;
     let start = null;
     let suppressNextClick = false;
     function startSwipe(x, y, pointerId = null) {
@@ -1966,7 +1967,7 @@ SERVER_JS = r"""  const csrfToken = document.querySelector('meta[name="csrf-toke
       const absX = Math.abs(dx);
       const absY = Math.abs(dy);
       if (absX <= maxTapDrift && absY <= maxTapDrift) return false;
-      if (absX < minDistance || absX <= absY * 1.4) return false;
+      if (absX < minDistance || absX <= absY * verticalDominanceRatio) return false;
       suppressNextClick = true;
       onSwipe(dx < 0 ? 1 : -1);
       return true;
