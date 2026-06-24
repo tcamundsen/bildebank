@@ -490,18 +490,6 @@ SERVER_CSS = r"""    :root {
       background: rgb(125 183 255 / 18%);
     }
     .tag-toggle:disabled { opacity: 0.65; cursor: default; }
-    .date-status-badge {
-      display: grid;
-      gap: 3px;
-      padding: 4px 4px 8px;
-      color: var(--text);
-      font-size: 12px;
-      line-height: 1.25;
-      text-align: center;
-      overflow-wrap: anywhere;
-    }
-    .date-status-main { font-weight: 700; }
-    .date-status-original { color: var(--muted); }
     .location-status-badge {
       display: flex;
       flex-wrap: wrap;

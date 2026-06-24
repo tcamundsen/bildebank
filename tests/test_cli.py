@@ -2329,6 +2329,7 @@ model_name = "buffalo_l"
         self.assertIn('href="/years">År</a>', body)
         self.assertIn('href="/years/2024">2024</a>', body)
         self.assertIn('href="/month/2024-01">Januar</a>', body)
+        self.assertIn('href="/item/2">2</a>', body)
         self.assertIn('data-open-info data-info-item="2"', body)
         self.assertIn('aria-label="Åpne bildeinfo for IMG_20240102.jpg"', body)
         self.assertIn("/file/2", body)
@@ -2357,6 +2358,81 @@ model_name = "buffalo_l"
         self.assertIn("ArrowDown", SERVER_JS)
         self.assertIn("PageUp", SERVER_JS)
         self.assertIn("PageDown", SERVER_JS)
+
+    def test_run_server_item_breadcrumb_day_links_to_first_item_on_same_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "A_20240102.jpg").write_bytes(b"image-a")
+            (source / "B_20240102.jpg").write_bytes(b"image-b")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            conn = db.connect(target)
+            try:
+                rows = {
+                    str(row["stored_filename"]): int(row["id"])
+                    for row in conn.execute("SELECT id, stored_filename FROM files")
+                }
+            finally:
+                conn.close()
+            first_id = rows["A_20240102.jpg"]
+            second_id = rows["B_20240102.jpg"]
+            item = browser_item_by_id(target, second_id)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+
+        self.assertIn(
+            f'href="/month/2024-01">Januar</a><span class="sep">/</span><a href="/item/{first_id}">2</a>',
+            body,
+        )
+        self.assertIn(f'data-open-info data-info-item="{second_id}"', body)
+
+    def test_run_server_source_item_breadcrumb_day_uses_source_prefix(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source_a = Path(tmp) / "source-a"
+            source_b = Path(tmp) / "source-b"
+            source_a.mkdir()
+            source_b.mkdir()
+            (source_a / "A_20240102.jpg").write_bytes(b"image-a")
+            (source_a / "B_20240102.jpg").write_bytes(b"image-b")
+            (source_b / "0_20240102.jpg").write_bytes(b"other-source")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-a", "--quiet", str(source_a)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-b", "--quiet", str(source_b)]), 0)
+            conn = db.connect(target)
+            try:
+                imported = db.find_source_by_name(conn, "source-a")
+                self.assertIsNotNone(imported)
+                rows = {
+                    str(row["stored_filename"]): int(row["id"])
+                    for row in conn.execute("SELECT id, stored_filename FROM files")
+                }
+            finally:
+                conn.close()
+            source = imported_source_browser_source(imported)
+            first_id = rows["A_20240102.jpg"]
+            second_id = rows["B_20240102.jpg"]
+            item = source_item_by_id(target, source, second_id)
+            self.assertIsNotNone(item)
+            body = source_item_page_html(
+                target,
+                source,
+                item,
+                *adjacent_source_items(target, source, item),
+                source_month_navigation(target, source, item),
+            )
+
+        self.assertIn(
+            f'href="/source/1/month/2024-01">Januar</a><span class="sep">/</span><a href="/source/1/item/{first_id}">2</a>',
+            body,
+        )
 
     def test_run_server_top_steder_link_points_to_geo_not_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2717,10 +2793,8 @@ model_name = "buffalo_l"
                 browser_month_navigation(target, manual_items[0]),
             )
             info_body = image_info_content_html(target, manual_items[0])
-            self.assertIn("date-status-badge", body)
-            self.assertIn("ca. 2004-07-15", body)
-            self.assertIn("Opprinnelig: 2026-01-02", body)
-            self.assertLess(body.index("date-status-badge"), body.index("tag-toggle"))
+            self.assertNotIn("date-status-badge", body)
+            self.assertNotIn("Opprinnelig: 2026-01-02", body)
             self.assertIn("ca. 2004-07-15", info_body)
             self.assertIn("Kamera hadde feil dato", info_body)
             self.assertIn("Opprinnelig dato", info_body)
@@ -3634,7 +3708,7 @@ model_name = "buffalo_l"
         self.assertIn("<span>3:</span> Legg til Viljar", tag_rail_body)
         self.assertIn("<span>4:</span> Sett tagg Familie", tag_rail_body)
         self.assertIn("<span>5:</span> Sett dato til 30.12.48 ±1w", tag_rail_body)
-        self.assertLess(tag_rail_body.index("date-status-badge"), tag_rail_body.index('class="hotkey-hints"'))
+        self.assertNotIn("date-status-badge", tag_rail_body)
         self.assertLess(tag_rail_body.index("location-status-badge"), tag_rail_body.index('class="hotkey-hints"'))
         self.assertTrue(tag_rail_body.strip().endswith("</section>"))
         self.assertIn('data-browser-hotkeys-enabled="true"', body)
@@ -4010,7 +4084,7 @@ model_name = "buffalo_l"
         self.assertIn('data-tag-name="Familie"', body)
         self.assertIn('aria-pressed="false"', body)
         self.assertLess(body.index('data-tag-name="Ute av fokus"'), body.index('data-tag-name="Familie"'))
-        self.assertLess(body.index('class="date-status-badge"'), body.index('data-tag-name="Familie"'))
+        self.assertNotIn('class="date-status-badge"', body)
         self.assertLess(body.index('data-tag-name="Familie"'), body.index('class="location-status-badge"'))
         self.assertIn("/api/item-tag", SERVER_JS)
         self.assertIn("stage-shell", SERVER_CSS)
@@ -6476,7 +6550,7 @@ model_name = "buffalo_l"
         assumed_people_start = tag_rail_html.index("Personer i bildet")
         faces_button_start = tag_rail_html.index("Bekreft ansikt")
         confirmed_faces_start = tag_rail_html.index("Referanseansikt")
-        date_status_start = tag_rail_html.index("date-status-badge")
+        self.assertNotIn("date-status-badge", tag_rail_html)
         assumed_people_html = tag_rail_html[assumed_people_start:faces_button_start]
         confirmed_faces_html = tag_rail_html[confirmed_faces_start:]
         self.assertIn("Kari", assumed_people_html)
@@ -6503,7 +6577,6 @@ model_name = "buffalo_l"
         self.assertNotIn("Per Manual", confirmed_faces_html)
         self.assertLess(assumed_people_start, faces_button_start)
         self.assertLess(faces_button_start, confirmed_faces_start)
-        self.assertLess(date_status_start, confirmed_faces_start)
         self.assertNotIn("Person i bildet", body)
         self.assertIn("Velg person", tag_rail_html)
         self.assertIn("Legg til", tag_rail_html)

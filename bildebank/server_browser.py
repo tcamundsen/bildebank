@@ -197,6 +197,204 @@ def first_unfiltered_source_item(target: Path, *, hide_out_of_focus: bool = Fals
         conn.close()
 
 
+def first_source_day_item(
+    target: Path,
+    source: BrowserSource,
+    day_key: str,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> Any | None:
+    if not valid_day_key(day_key):
+        return None
+    if source_has_sql_filter(source):
+        return first_sql_filtered_source_day_item(
+            target,
+            source,
+            day_key,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+            conn=conn,
+        )
+    if (
+        source.person_name is not None
+        or source.source_id is not None
+        or source.tag_name is not None
+        or source.text_filter is not None
+    ):
+        month_key = day_key[:7]
+        return next(
+            (
+                item
+                for item in source_month_items(
+                    target,
+                    source,
+                    month_key,
+                    face_config,
+                    hide_out_of_focus=hide_out_of_focus,
+                )
+                if browser_date_for_item(item) == day_key
+            ),
+            None,
+        )
+    return first_unfiltered_source_day_item(target, day_key, hide_out_of_focus=hide_out_of_focus, conn=conn)
+
+
+def first_sql_filtered_source_day_item(
+    target: Path,
+    source: BrowserSource,
+    day_key: str,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> Any | None:
+    where_sql, params = source_sql_filter(source)
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
+    where_sql, params = with_motion_video_filter(
+        target,
+        where_sql,
+        params,
+        include_motion=source_shows_motion_videos(source),
+        conn=conn,
+    )
+    where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
+    deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
+    try:
+        attach_source_sql_filter_databases(conn, target, source, face_config)
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE {deleted_sql}
+              AND ({where_sql})
+              AND {db.BROWSER_DATE_ORDER_SQL} = ?
+            ORDER BY {ITEM_ORDER_SQL}
+            LIMIT 1
+            """,
+            (*params, day_key),
+        ).fetchone()
+    finally:
+        if owned_conn:
+            conn.close()
+
+
+def first_unfiltered_source_day_item(
+    target: Path,
+    day_key: str,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> Any | None:
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
+    try:
+        where_sql = "deleted_at IS NULL"
+        params: tuple[object, ...] = ()
+        if hide_out_of_focus:
+            where_sql = f"{where_sql} AND {OUT_OF_FOCUS_FILTER_SQL}"
+            params = (*params, *OUT_OF_FOCUS_FILTER_PARAMS)
+        hidden_ids = sorted(hidden_sidecar_file_ids_for_day(conn, day_key))
+        if hidden_ids:
+            placeholders = ",".join("?" for _ in hidden_ids)
+            where_sql = f"({where_sql}) AND id NOT IN ({placeholders})"
+            params = (*params, *hidden_ids)
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE {where_sql}
+              AND {db.BROWSER_DATE_ORDER_SQL} = ?
+            ORDER BY {ITEM_ORDER_SQL}
+            LIMIT 1
+            """,
+            (*params, day_key),
+        ).fetchone()
+    finally:
+        if owned_conn:
+            conn.close()
+
+
+def hidden_sidecar_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -> set[int]:
+    return query_motion_video_file_ids_for_day(conn, day_key) | query_raw_sidecar_file_ids_for_day(conn, day_key)
+
+
+def query_motion_video_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -> set[int]:
+    image_originals = {
+        str(row["original_filename"]).casefold()
+        for row in conn.execute(
+            f"""
+            SELECT original_filename
+            FROM files
+            WHERE deleted_at IS NULL
+              AND {db.BROWSER_DATE_ORDER_SQL} = ?
+              AND lower(original_filename) LIKE '%.mp.jpg'
+            """,
+            (day_key,),
+        )
+    }
+    rows = conn.execute(
+        f"""
+        SELECT id, original_filename
+        FROM files
+        WHERE deleted_at IS NULL
+          AND {db.BROWSER_DATE_ORDER_SQL} = ?
+          AND lower(original_filename) LIKE '%.mp'
+          AND lower(stored_filename) LIKE '%.mp4'
+        """,
+        (day_key,),
+    )
+    return {
+        int(row["id"])
+        for row in rows
+        if f"{str(row['original_filename'])}.jpg".casefold() in image_originals
+    }
+
+
+def query_raw_sidecar_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -> set[int]:
+    groups: dict[tuple[int, str, str, str], tuple[set[int], set[int]]] = {}
+    for row in conn.execute(
+        f"""
+        SELECT
+            files.id,
+            files.original_filename,
+            files.metadata_datetime,
+            file_sources.source_id,
+            file_sources.source_path_key
+        FROM files
+        JOIN file_sources ON file_sources.file_id = files.id
+        WHERE files.deleted_at IS NULL
+          AND {db.BROWSER_DATE_ORDER_SQL} = ?
+          AND files.date_source = 'metadata'
+          AND files.metadata_datetime IS NOT NULL
+          AND (
+              lower(files.original_filename) LIKE '%.nef'
+              OR lower(files.original_filename) LIKE '%.jpg'
+              OR lower(files.original_filename) LIKE '%.jpeg'
+          )
+        """,
+        (day_key,),
+    ):
+        original_filename = str(row["original_filename"])
+        suffix = Path(original_filename).suffix.casefold()
+        if suffix not in {".nef", ".jpg", ".jpeg"}:
+            continue
+        key = (
+            int(row["source_id"]),
+            source_parent_path_key(str(row["source_path_key"])),
+            Path(original_filename).stem.casefold(),
+            str(row["metadata_datetime"]),
+        )
+        raw_ids, image_ids = groups.setdefault(key, (set(), set()))
+        if suffix == ".nef":
+            raw_ids.add(int(row["id"]))
+        else:
+            image_ids.add(int(row["id"]))
+    return {next(iter(raw_ids)) for raw_ids, image_ids in groups.values() if len(raw_ids) == 1 and len(image_ids) == 1}
+
+
 def sql_filtered_source_item_by_id(
     target: Path,
     source: BrowserSource,
@@ -935,6 +1133,16 @@ def valid_month_key(value: str) -> bool:
         return False
     year, month = value.split("-", 1)
     return year.isdigit() and month.isdigit() and 1 <= int(month) <= 12
+
+
+def valid_day_key(value: str) -> bool:
+    if len(value) != 10 or value[4] != "-" or value[7] != "-":
+        return False
+    try:
+        dt.date.fromisoformat(value)
+    except ValueError:
+        return False
+    return True
 
 
 @lru_cache(maxsize=8)
@@ -1853,6 +2061,19 @@ def source_item_breadcrumb_html(
         return breadcrumb_html([(source_label, source.root_url, source_title)], filename_link)
     year, month = month_key.split("-", 1)
     month_name = MONTH_NAMES.get(month, month_key)
+    browser_date = browser_date_for_item(item)
+    day_crumb: Breadcrumb | None = None
+    if valid_day_key(browser_date):
+        first_day_item = first_source_day_item(
+            target,
+            source,
+            browser_date,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+            conn=conn,
+        )
+        if first_day_item is not None:
+            day_crumb = (str(int(browser_date[8:10])), source_item_url(source, int(first_day_item["id"])))
     crumbs: list[Breadcrumb]
     if source == all_browser_source():
         crumbs = [
@@ -1866,6 +2087,8 @@ def source_item_breadcrumb_html(
             (year, source_year_url(source, year)),
             (month_name, source_month_url(source, month_key)),
         ]
+    if day_crumb is not None:
+        crumbs.append(day_crumb)
     return breadcrumb_html(crumbs, filename_link)
 
 
@@ -1990,8 +2213,7 @@ def item_side_panel_html(
         if gps_source_is_manual_h3(item)
         else gps_location_badge_html(item, extra_html=location_controls)
     )
-    date_status = date_status_badge_html(item)
-    return f'<aside class="tag-rail" aria-label="Tagger">{date_status}{"".join(buttons)}{location_status}{extra_html}{suffix_html}</aside>'
+    return f'<aside class="tag-rail" aria-label="Tagger">{"".join(buttons)}{location_status}{extra_html}{suffix_html}</aside>'
 
 
 def hotkey_hints_panel_html(
@@ -2075,22 +2297,6 @@ def active_tag_name_keys_for_file(conn: sqlite3.Connection, file_id: int) -> set
         (file_id,),
     )
     return {str(row["name_key"]) for row in rows}
-
-
-def date_status_badge_html(item: Any) -> str:
-    date_text = image_date_text(item)
-    manual_text = manual_date_text(item)
-    original = ""
-    if manual_text:
-        original_date = str(item["taken_date"] or "-")
-        original_source = date_source_text(str(item["date_source"] or ""))
-        original = f'<span class="date-status-original">Opprinnelig: {html.escape(original_date)} ({html.escape(original_source)})</span>'
-    return (
-        '<div class="date-status-badge">'
-        f'<span class="date-status-main">{html.escape(date_text)}</span>'
-        f' {original}'
-        '</div>'
-    )
 
 
 def source_item_media_html(
