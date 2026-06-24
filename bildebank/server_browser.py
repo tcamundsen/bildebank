@@ -1246,7 +1246,18 @@ def browser_year_cards(target: Path, *, hide_out_of_focus: bool = False) -> list
         first_items = browser_month_items(target, year_months[0], hide_out_of_focus=hide_out_of_focus)
         if not first_items:
             continue
-        cards.append({"year": year, "month_count": len(year_months), "item": representative_image_item(first_items)})
+        item_count = len(first_items) + sum(
+            len(browser_month_items(target, month_key, hide_out_of_focus=hide_out_of_focus))
+            for month_key in year_months[1:]
+        )
+        cards.append(
+            {
+                "year": year,
+                "month_count": len(year_months),
+                "item_count": item_count,
+                "item": representative_image_item(first_items),
+            }
+        )
     return cards
 
 
@@ -3047,15 +3058,17 @@ def source_year_breadcrumb_html(
 def year_card_html(target: Path, card: dict[str, Any]) -> str:
     year = str(card["year"])
     month_count = int(card["month_count"])
+    item_count = int(card["item_count"])
     item = card["item"]
     month_label = "måned" if month_count == 1 else "måneder"
+    image_label = "bilde" if item_count == 1 else "bilder"
     media = thumbnail_media_html(target, item)
     return f"""
     <article class="item">
       <a class="thumb-link" href="/years/{html.escape(urllib.parse.quote(year))}">{media}</a>
       <div class="text">
         <div class="path">{html.escape(year)}</div>
-        <div class="score">{month_count} {month_label}</div>
+        <div class="score">{month_count} {month_label}, {item_count} {image_label}</div>
       </div>
     </article>
     """
