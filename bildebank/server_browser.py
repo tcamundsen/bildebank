@@ -1663,6 +1663,7 @@ def _source_item_controls_html(
     month_nav: dict[str, str | None],
     face_config: FaceRecognitionConfig | None,
     *,
+    associated_file_buttons: str,
     face_enabled: bool,
     person_has_confirmed_face: bool,
     hide_out_of_focus: bool,
@@ -1684,6 +1685,7 @@ def _source_item_controls_html(
         next_item,
         rotation_buttons=rotation_buttons_html(source, item),
         manual_date_button=manual_date_button_html(item),
+        associated_file_buttons=associated_file_buttons,
         face_toggle_button=face_toggle_button_html(source, item, face_enabled=face_enabled),
         face_suggest_button=face_suggest_button_html(face_enabled=face_enabled),
         suggestion_toggle_button=suggestion_toggle_button_html(
@@ -1837,6 +1839,12 @@ def source_item_page_html(
     )
     if timing_callback is not None:
         timing_callback("html_hotkey_hints", start)
+    start = time.perf_counter()
+    motion_video = motion_video_for_image(target, item, conn=conn)
+    raw_sidecar = raw_sidecar_for_image(target, item, conn=conn)
+    associated_file_buttons = associated_file_buttons_html(motion_video, raw_sidecar)
+    if timing_callback is not None:
+        timing_callback("html_associated_files", start)
     controls = _source_item_controls_html(
         target,
         source,
@@ -1845,6 +1853,7 @@ def source_item_page_html(
         next_item,
         month_nav,
         face_config,
+        associated_file_buttons=associated_file_buttons,
         face_enabled=face_enabled,
         person_has_confirmed_face=person_has_confirmed_face,
         hide_out_of_focus=hide_out_of_focus,
@@ -1881,13 +1890,6 @@ def source_item_page_html(
     if timing_callback is not None:
         timing_callback("html_all_items_link", start)
     all_items_label = "Synlige bilder" if hide_out_of_focus else "Alle bilder"
-    start = time.perf_counter()
-    motion_video = motion_video_for_image(target, item, conn=conn)
-    motion_video_link = motion_video_link_html(motion_video) if motion_video is not None else ""
-    raw_sidecar = raw_sidecar_for_image(target, item, conn=conn)
-    raw_sidecar_link = raw_sidecar_link_html(raw_sidecar) if raw_sidecar is not None else ""
-    if timing_callback is not None:
-        timing_callback("html_motion_video", start)
     source_url_attr = ""
     if source.text_filter is not None:
         source_url_attr = f' data-browser-source-url="{html.escape(source.root_url)}"'
@@ -1923,8 +1925,6 @@ def source_item_page_html(
           </div>
           <footer class="browser-footer">
             <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
-            {motion_video_link}
-            {raw_sidecar_link}
           </footer>
         </main>
         {faces_overlay}
@@ -2045,16 +2045,22 @@ def original_filename_for_item(target: Path, item: Any, *, conn: sqlite3.Connect
             conn.close()
 
 
-def motion_video_link_html(motion_video: Any) -> str:
-    filename = str(motion_video["stored_filename"])
-    url = "/filter/" + urllib.parse.quote(f"filename:{filename}", safe="") + f"/item/{int(motion_video['id'])}"
-    return f'<a class="filename" href="{html.escape(url)}">Motion-video: {html.escape(filename)}</a>'
+def associated_file_buttons_html(*associated_files: Any | None) -> str:
+    return "\n".join(
+        associated_file_button_html(associated_file)
+        for associated_file in associated_files
+        if associated_file is not None
+    )
 
 
-def raw_sidecar_link_html(raw_sidecar: Any) -> str:
-    filename = str(raw_sidecar["stored_filename"])
-    url = "/filter/" + urllib.parse.quote(f"filename:{filename}", safe="") + f"/item/{int(raw_sidecar['id'])}"
-    return f'<a class="filename" href="{html.escape(url)}">RAW-fil: {html.escape(filename)}</a>'
+def associated_file_button_html(associated_file: Any) -> str:
+    filename = str(associated_file["stored_filename"])
+    extension = Path(filename).suffix.upper() or "Fil"
+    url = "/filter/" + urllib.parse.quote(f"filename:{filename}", safe="") + f"/item/{int(associated_file['id'])}"
+    return (
+        f'<a class="nav-button associated-file-button" href="{html.escape(url)}" '
+        f'title="Åpne tilknyttet fil {html.escape(filename)}">{html.escape(extension)}</a>'
+    )
 
 
 def source_item_breadcrumb_html(

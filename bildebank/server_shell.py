@@ -253,6 +253,7 @@ def source_controls_html(
     info_button: str = "",
     rotation_buttons: str = "",
     manual_date_button: str = "",
+    associated_file_buttons: str = "",
     manual_person_controls: str = "",
     manual_location_button: str = "",
     face_toggle_button: str = "",
@@ -277,6 +278,7 @@ def source_controls_html(
       </span>
       {rotation_buttons}
       {manual_date_button}
+      {associated_file_buttons}
       {manual_person_controls}
       {manual_location_button}
       {face_toggle_button}

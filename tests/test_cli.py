@@ -5546,8 +5546,12 @@ model_name = "buffalo_l"
             [item["stored_filename"] for item in filename_items],
             ["PXL_20250102_123.MP.jpg", "PXL_20250102_123.mp4"],
         )
-        self.assertIn("Motion-video: PXL_20250102_123.mp4", image_body)
+        controls_start = image_body.index('<nav class="controls"')
+        controls_end = image_body.index("</nav>", controls_start)
+        controls_html = image_body[controls_start:controls_end]
+        self.assertIn(".MP4</a>", controls_html)
         self.assertIn("/filter/filename%3APXL_20250102_123.mp4/item/", image_body)
+        self.assertNotIn("Motion-video: PXL_20250102_123.mp4", image_body)
         self.assertEqual(motion_file.content_type, "video/mp4")
         self.assertEqual(motion_file.content[4:8], b"ftyp")
 
@@ -5601,8 +5605,12 @@ model_name = "buffalo_l"
             [item["stored_filename"] for item in filename_items],
             ["DSC_0170.JPG", "DSC_0170.NEF"],
         )
-        self.assertIn("RAW-fil: DSC_0170.NEF", image_body)
+        controls_start = image_body.index('<nav class="controls"')
+        controls_end = image_body.index("</nav>", controls_start)
+        controls_html = image_body[controls_start:controls_end]
+        self.assertIn(".NEF</a>", controls_html)
         self.assertIn("/filter/filename%3ADSC_0170.NEF/item/", image_body)
+        self.assertNotIn("RAW-fil: DSC_0170.NEF", image_body)
         self.assertEqual(response["status"], HTTPStatus.OK)
         content = response["content"]
         assert isinstance(content, dict)
