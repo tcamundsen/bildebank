@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "37"
+SERVER_ASSET_VERSION = "38"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;
@@ -20,6 +20,7 @@ SERVER_CSS = r"""    :root {
     body {
       margin: 0;
       min-height: 100vh;
+      min-height: 100dvh;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg);
       color: var(--text);
