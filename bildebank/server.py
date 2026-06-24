@@ -69,6 +69,7 @@ from .server_pages import (
 from .server_browser import (
     adjacent_items_from_id_order,
     adjacent_source_items,
+    browser_date_for_item,
     browser_item_by_id,
     browser_item_ids,
     browser_month_keys,
@@ -84,6 +85,7 @@ from .server_browser import (
     source_month_keys,
     source_month_items,
     source_month_navigation,
+    valid_day_key,
     valid_month_key,
     valid_year_key,
 )
@@ -245,6 +247,34 @@ def filter_source_from_url(target: Path, source_url: object) -> BrowserSource | 
     return source if source.root_url == raw_path else None
 
 
+def first_day_item_ids_for_order(target: Path, item_ids: list[int]) -> dict[str, int]:
+    if not item_ids:
+        return {}
+    dates_by_id: dict[int, str] = {}
+    conn = db.connect(target)
+    try:
+        for index in range(0, len(item_ids), 900):
+            chunk = item_ids[index : index + 900]
+            placeholders = ",".join("?" for _ in chunk)
+            for row in conn.execute(
+                f"""
+                SELECT id, {db.BROWSER_DATE_ORDER_SQL} AS browser_date
+                FROM files
+                WHERE id IN ({placeholders})
+                """,
+                chunk,
+            ):
+                dates_by_id[int(row["id"])] = str(row["browser_date"])
+    finally:
+        conn.close()
+    first_by_day: dict[str, int] = {}
+    for file_id in item_ids:
+        day_key = dates_by_id.get(file_id, "")
+        if valid_day_key(day_key) and day_key not in first_by_day:
+            first_by_day[day_key] = file_id
+    return first_by_day
+
+
 class BildebankServer(ThreadingHTTPServer):
     server_address: tuple[str, int]
 
@@ -270,6 +300,8 @@ class BildebankServer(ThreadingHTTPServer):
         self._source_item_ids: dict[tuple[BrowserSource, bool], tuple[int, list[int], dict[int, int]]] = {}
         self._source_month_keys: dict[tuple[BrowserSource, bool], tuple[int, list[str]]] = {}
         self._source_item_counts: dict[tuple[BrowserSource, bool], tuple[int, int]] = {}
+        self._browser_first_day_item_ids: dict[bool, tuple[int, dict[str, int]]] = {}
+        self._source_first_day_item_ids: dict[tuple[BrowserSource, bool], tuple[int, dict[str, int]]] = {}
 
     @property
     def face_enabled(self) -> bool:
@@ -316,6 +348,20 @@ class BildebankServer(ThreadingHTTPServer):
             self._browser_item_ids[hide_out_of_focus] = cached
         return cached[1], cached[2]
 
+    def browser_first_day_item_id(self, day_key: str, *, hide_out_of_focus: bool = False) -> int | None:
+        version = self.browser_navigation_cache_version()
+        if not hasattr(self, "_browser_first_day_item_ids"):
+            self._browser_first_day_item_ids = {}
+        cached = self._browser_first_day_item_ids.get(hide_out_of_focus)
+        if cached is None or cached[0] != version:
+            item_ids = self.browser_item_ids(hide_out_of_focus=hide_out_of_focus)
+            cached = (
+                version,
+                first_day_item_ids_for_order(self.target, item_ids),
+            )
+            self._browser_first_day_item_ids[hide_out_of_focus] = cached
+        return cached[1].get(day_key)
+
     def source_month_keys(self, source: BrowserSource, *, hide_out_of_focus: bool = False) -> list[str]:
         version = self.browser_navigation_cache_version()
         cache_key = (source, hide_out_of_focus)
@@ -351,6 +397,27 @@ class BildebankServer(ThreadingHTTPServer):
             )
             self._source_item_ids[cache_key] = cached
         return cached[1], cached[2]
+
+    def source_first_day_item_id(
+        self,
+        source: BrowserSource,
+        day_key: str,
+        *,
+        hide_out_of_focus: bool = False,
+    ) -> int | None:
+        version = self.browser_navigation_cache_version()
+        cache_key = (source, hide_out_of_focus)
+        if not hasattr(self, "_source_first_day_item_ids"):
+            self._source_first_day_item_ids = {}
+        cached = self._source_first_day_item_ids.get(cache_key)
+        if cached is None or cached[0] != version:
+            item_ids = self.source_item_order(source, hide_out_of_focus=hide_out_of_focus)[0]
+            cached = (
+                version,
+                first_day_item_ids_for_order(self.target, item_ids),
+            )
+            self._source_first_day_item_ids[cache_key] = cached
+        return cached[1].get(day_key)
 
     def source_item_count(self, source: BrowserSource, *, hide_out_of_focus: bool = False) -> int:
         version = self.browser_navigation_cache_version()
@@ -403,6 +470,8 @@ class BildebankServer(ThreadingHTTPServer):
             getattr(self, "_source_item_ids", {}).clear()
             getattr(self, "_source_month_keys", {}).clear()
             getattr(self, "_source_item_counts", {}).clear()
+            getattr(self, "_browser_first_day_item_ids", {}).clear()
+            getattr(self, "_source_first_day_item_ids", {}).clear()
             version += 1
             self._browser_navigation_cache_version = version
         return version
@@ -413,6 +482,8 @@ class BildebankServer(ThreadingHTTPServer):
         getattr(self, "_source_item_ids", {}).clear()
         getattr(self, "_source_month_keys", {}).clear()
         getattr(self, "_source_item_counts", {}).clear()
+        getattr(self, "_browser_first_day_item_ids", {}).clear()
+        getattr(self, "_source_first_day_item_ids", {}).clear()
         self._browser_navigation_cache_version = getattr(self, "_browser_navigation_cache_version", 0) + 1
         try:
             self._browser_navigation_db_mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
@@ -905,6 +976,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 self.record_server_timing("month_nav", start)
 
             start = time.perf_counter()
+            first_day_item_id = self.server.browser_first_day_item_id(
+                browser_date_for_item(item),
+                hide_out_of_focus=self.server.hide_out_of_focus,
+            )
+            self.record_server_timing("first_day_item", start)
+
+            start = time.perf_counter()
             html = source_item_page_html(
                 self.server.target,
                 source,
@@ -920,6 +998,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 hotkeys=self.server.config.browser.hotkeys,
                 hide_out_of_focus=self.server.hide_out_of_focus,
                 conn=conn,
+                first_day_item_id=first_day_item_id,
                 timing_callback=self.record_server_timing,
             )
             self.record_server_timing("source_item_page_html", start)
@@ -1266,6 +1345,18 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         month_key_for_item(self.server.target, item),
                     )
                     self.record_server_timing("month_nav", start)
+                    start = time.perf_counter()
+                    source_first_day_item_id = getattr(self.server, "source_first_day_item_id", None)
+                    first_day_item_id = (
+                        source_first_day_item_id(
+                            source,
+                            browser_date_for_item(item),
+                            hide_out_of_focus=hide_out_of_focus,
+                        )
+                        if source_first_day_item_id is not None
+                        else None
+                    )
+                    self.record_server_timing("first_day_item", start)
                 else:
                     start = time.perf_counter()
                     previous_item, next_item = adjacent_source_items(
@@ -1287,6 +1378,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         conn=conn,
                     )
                     self.record_server_timing("month_nav", start)
+                    first_day_item_id = None
                 start = time.perf_counter()
                 self.respond_html(
                     source_item_page_html(
@@ -1309,6 +1401,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                             if source.text_filter is not None
                             else None
                         ),
+                        first_day_item_id=first_day_item_id,
                         timing_callback=self.record_server_timing,
                     )
                 )

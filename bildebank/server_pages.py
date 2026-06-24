@@ -261,6 +261,7 @@ def source_item_page_html(
     hide_out_of_focus: bool = False,
     conn: Any | None = None,
     source_item_count_value: int | None = None,
+    first_day_item_id: int | None = None,
     timing_callback: Any | None = None,
 ) -> str:
     return server_browser.source_item_page_html(
@@ -280,6 +281,7 @@ def source_item_page_html(
         hide_out_of_focus=hide_out_of_focus,
         conn=conn,
         source_item_count_value=source_item_count_value,
+        first_day_item_id=first_day_item_id,
         timing_callback=timing_callback,
     )
 

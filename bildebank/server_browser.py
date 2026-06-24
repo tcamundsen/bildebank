@@ -1733,6 +1733,7 @@ def _source_item_header_html(
     hide_out_of_focus: bool,
     conn: sqlite3.Connection | None,
     source_item_count_value: int | None,
+    first_day_item_id: int | None = None,
     timing_callback: Callable[[str, float], None] | None = None,
 ) -> str:
     from .server_shell import app_header_html
@@ -1746,6 +1747,7 @@ def _source_item_header_html(
         hide_out_of_focus=hide_out_of_focus,
         conn=conn,
         source_item_count_value=source_item_count_value,
+        first_day_item_id=first_day_item_id,
     )
     if timing_callback is not None:
         timing_callback("html_breadcrumb", start)
@@ -1786,6 +1788,7 @@ def source_item_page_html(
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
     source_item_count_value: int | None = None,
+    first_day_item_id: int | None = None,
     timing_callback: Callable[[str, float], None] | None = None,
 ) -> str:
     target_path = Path(str(item["target_path"]))
@@ -1880,6 +1883,7 @@ def source_item_page_html(
         hide_out_of_focus=hide_out_of_focus,
         conn=conn,
         source_item_count_value=source_item_count_value,
+        first_day_item_id=first_day_item_id,
         timing_callback=timing_callback,
     )
     start = time.perf_counter()
@@ -2039,6 +2043,7 @@ def source_item_breadcrumb_html(
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
     source_item_count_value: int | None = None,
+    first_day_item_id: int | None = None,
 ) -> str:
     month_key = month_key_for_item(target, item)
     filename = html.escape(str(item["stored_filename"]))
@@ -2063,16 +2068,18 @@ def source_item_breadcrumb_html(
     browser_date = browser_date_for_item(item)
     day_crumb: Breadcrumb | None = None
     if valid_day_key(browser_date):
-        first_day_item = first_source_day_item(
-            target,
-            source,
-            browser_date,
-            face_config,
-            hide_out_of_focus=hide_out_of_focus,
-            conn=conn,
-        )
-        if first_day_item is not None:
-            day_crumb = (str(int(browser_date[8:10])), source_item_url(source, int(first_day_item["id"])))
+        if first_day_item_id is None:
+            first_day_item = first_source_day_item(
+                target,
+                source,
+                browser_date,
+                face_config,
+                hide_out_of_focus=hide_out_of_focus,
+                conn=conn,
+            )
+            first_day_item_id = int(first_day_item["id"]) if first_day_item is not None else None
+        if first_day_item_id is not None:
+            day_crumb = (str(int(browser_date[8:10])), source_item_url(source, first_day_item_id))
     crumbs: list[Breadcrumb]
     if source == all_browser_source():
         crumbs = [
