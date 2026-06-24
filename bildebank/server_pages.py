@@ -227,6 +227,7 @@ def item_page_html(
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
     hotkeys: Mapping[str, BrowserHotkeyConfig] | None = None,
+    read_only: bool = False,
 ) -> str:
     return server_browser.item_page_html(
         target,
@@ -241,6 +242,7 @@ def item_page_html(
         manual_person_controls_enabled=manual_person_controls_enabled,
         hotkey_hints_enabled=hotkey_hints_enabled,
         hotkeys=hotkeys,
+        read_only=read_only,
     )
 
 
@@ -263,6 +265,7 @@ def source_item_page_html(
     source_item_count_value: int | None = None,
     first_day_item_id: int | None = None,
     timing_callback: Any | None = None,
+    read_only: bool = False,
 ) -> str:
     return server_browser.source_item_page_html(
         target,
@@ -283,6 +286,7 @@ def source_item_page_html(
         source_item_count_value=source_item_count_value,
         first_day_item_id=first_day_item_id,
         timing_callback=timing_callback,
+        read_only=read_only,
     )
 
 
@@ -496,6 +500,7 @@ def people_page_html(
     *,
     openclip_enabled: bool = True,
     message: str = "",
+    read_only: bool = False,
 ) -> str:
     return server_faces.people_page_html(
         target,
@@ -503,6 +508,7 @@ def people_page_html(
         shell_page_html=shell_page_html,
         openclip_enabled=openclip_enabled,
         message=message,
+        read_only=read_only,
     )
 
 

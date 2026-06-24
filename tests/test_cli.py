@@ -735,6 +735,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("--port", stdout)
         self.assertIn("--no-browser", stdout)
         self.assertIn("--preview-images", stdout)
+        self.assertIn("--read-only", stdout)
         self.assertIn("--allow-remote", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
@@ -744,6 +745,13 @@ pretrained = "laion2b_s34b_b79k"
 
         self.assertFalse(default_args.preview_images)
         self.assertTrue(preview_args.preview_images)
+
+    def test_run_server_read_only_is_explicit_and_defaults_to_false(self) -> None:
+        default_args = build_parser().parse_args(["run-server"])
+        read_only_args = build_parser().parse_args(["run-server", "--read-only"])
+
+        self.assertFalse(default_args.read_only)
+        self.assertTrue(read_only_args.read_only)
 
     def test_run_server_local_bind_host_detection(self) -> None:
         cases = {
@@ -789,6 +797,7 @@ pretrained = "laion2b_s34b_b79k"
                 browser=False,
                 allow_remote=True,
                 preview_images=True,
+                read_only=True,
             )
 
         self.assertEqual(result, 0)
@@ -796,6 +805,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual(run_local_server.call_args.kwargs["host"], "0.0.0.0")
         self.assertTrue(run_local_server.call_args.kwargs["allow_remote"])
         self.assertTrue(run_local_server.call_args.kwargs["preview_images"])
+        self.assertTrue(run_local_server.call_args.kwargs["read_only"])
 
     def test_run_server_warns_before_allowed_remote_bind(self) -> None:
         fake_server = SimpleNamespace(
@@ -821,9 +831,51 @@ pretrained = "laion2b_s34b_b79k"
             Path("."),
             AppConfig(),
             preview_images=False,
+            read_only=False,
         )
         self.assertIn("ADVARSEL", stderr.getvalue())
         self.assertIn("andre maskiner på nettverket", stderr.getvalue())
+
+    def test_run_server_creates_server_in_read_only_mode(self) -> None:
+        fake_server = SimpleNamespace(
+            server_address=("127.0.0.1", 8765),
+            serve_forever=lambda: None,
+            server_close=lambda: None,
+        )
+        with (
+            patch("bildebank.server.db.prepare_database"),
+            patch("bildebank.server.BildebankServer", return_value=fake_server) as server_class,
+        ):
+            run_http_server(Path("."), AppConfig(), read_only=True)
+
+        server_class.assert_called_once_with(
+            ("127.0.0.1", 8765),
+            Path("."),
+            AppConfig(),
+            preview_images=False,
+            read_only=True,
+        )
+
+    def test_read_only_blocks_admin_gets_and_posts_before_csrf(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        handler.server = SimpleNamespace(read_only=True)
+        handler.path = "/settings"
+        handler.text_response = None
+        handler.json_response = None
+        handler.respond_text = lambda content, *, status=HTTPStatus.OK: setattr(
+            handler, "text_response", (content, status)
+        )
+        handler.respond_json = lambda content, *, status=HTTPStatus.OK: setattr(
+            handler, "json_response", (content, status)
+        )
+
+        BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
+        self.assertEqual(handler.text_response[1], HTTPStatus.FORBIDDEN)
+
+        handler.path = "/api/item-tag"
+        BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+        self.assertEqual(handler.json_response[1], HTTPStatus.FORBIDDEN)
+        self.assertIn("read-only", handler.json_response[0]["error"])
 
     def test_run_server_display_returns_original_when_preview_images_is_false(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

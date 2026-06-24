@@ -772,6 +772,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Bruk nedskalerte preview-bilder i hovedvisningen.",
     )
     run_server_parser.add_argument(
+        "--read-only",
+        action="store_true",
+        help="Vis bilder og metadata, men blokker innstillinger, administrasjon og endringer.",
+    )
+    run_server_parser.add_argument(
         "--allow-remote",
         action="store_true",
         help="Tillat bevisst binding til en adresse som kan nås fra andre maskiner.",
@@ -1231,6 +1236,7 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
             browser=not args.no_browser,
             allow_remote=args.allow_remote,
             preview_images=args.preview_images,
+            read_only=args.read_only,
         )
 
     if args.command == "cleanup-pending-deletes":
@@ -2540,6 +2546,7 @@ def run_server_command(
     browser: bool = True,
     allow_remote: bool = False,
     preview_images: bool = False,
+    read_only: bool = False,
 ) -> int:
     config = load_config(program_repo_root())
     print("Starter Bildebank-server. Dette kan ta noen sekunder.")
@@ -2559,6 +2566,7 @@ def run_server_command(
         port=port,
         allow_remote=allow_remote,
         preview_images=preview_images,
+        read_only=read_only,
         ready=on_ready,
     )
     return 0

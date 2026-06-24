@@ -51,6 +51,11 @@ class FaceSuggestServerTests(unittest.TestCase):
                 Path("."),
                 FaceRecognitionConfig(enabled=True, suggest_threshold=0.725),
             )
+            read_only_body = people_page_html(
+                Path("."),
+                FaceRecognitionConfig(enabled=True, suggest_threshold=0.725),
+                read_only=True,
+            )
         self.assertIn("Foreslå personer", body)
         self.assertIn('href="/people/missing-suggestions"', body)
         self.assertIn('action="/people/face-suggest"', body)
@@ -61,6 +66,11 @@ class FaceSuggestServerTests(unittest.TestCase):
         self.assertIn("Face-suggest fullført", body)
         self.assertIn("data-face-suggest-success", body)
         self.assertIn("data-face-suggest-status", body)
+
+        self.assertNotIn('action="/people/face-suggest"', read_only_body)
+        self.assertNotIn('href="/people/missing-suggestions"', read_only_body)
+        self.assertNotIn("data-open-face-suggest", read_only_body)
+        self.assertNotIn("personRenameDialog", read_only_body)
 
     def make_handler(self, *, enabled: bool, threshold: str = "0.65", return_url: str = ""):
         data = f"threshold={threshold}&return_url={return_url}".encode()
@@ -117,9 +127,28 @@ class FaceSuggestServerTests(unittest.TestCase):
         )
         self.assertIn("👥✨", body)
         self.assertIn('title="Kjør face-suggest for å finne ansikter"', body)
+        self.assertIn('data-open-manual-date', body)
+        self.assertIn('data-rotate-item="7"', body)
+        self.assertIn('data-delete-item="7"', body)
         self.assertIn('action="/people/face-suggest"', body)
         self.assertIn('value="0.725"', body)
         self.assertIn('name="return_url" value="/item/7"', body)
+
+        read_only_body = item_page_html(
+            Path("target"),
+            item,
+            None,
+            None,
+            month_nav,
+            face_enabled=True,
+            face_config=FaceRecognitionConfig(enabled=True, suggest_threshold=0.725),
+            read_only=True,
+        )
+        self.assertNotIn("👥✨", read_only_body)
+        self.assertNotIn("faceSuggestDialog", read_only_body)
+        self.assertNotIn('data-open-manual-date', read_only_body)
+        self.assertNotIn('data-rotate-item="7"', read_only_body)
+        self.assertNotIn('data-delete-item="7"', read_only_body)
 
         disabled_body = item_page_html(
             Path("target"),

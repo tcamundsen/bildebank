@@ -125,7 +125,7 @@ from .server_search import (
 from .target_lock import TargetLockError
 from .value_parsing import require_int
 from .server_filter import text_filter_browser_source
-from .server_response import ServerResponseMixin, add_csrf_to_html
+from .server_response import ServerResponseMixin, add_csrf_to_html, read_only_html
 from . import server_request
 from .server_request import first_param, nonnegative_int_param, parse_file_id, positive_int_param
 from .server_assets import SERVER_CSS, SERVER_JS
@@ -285,11 +285,13 @@ class BildebankServer(ThreadingHTTPServer):
         target: Path,
         config: AppConfig,
         preview_images: bool = False,
+        read_only: bool = False,
     ) -> None:
         super().__init__(address, BildebankRequestHandler)
         self.target = target
         self.config = config
         self.preview_images = preview_images
+        self.read_only = read_only
         self.csrf_token = secrets.token_urlsafe(32)
         self.search_cache = OpenClipSearchCache(config)
         self._browser_navigation_cache_version = 0
@@ -508,11 +510,30 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     server_timing_steps: dict[str, float]
     protocol_version = "HTTP/1.1"
 
+    def read_only_get_blocked(self, path: str) -> bool:
+        return (
+            path in {"/settings", "/sources", "/sources/", "/tags", "/tags/", "/api/maintenance/statuses"}
+            or path.startswith("/settings/")
+            or path.startswith("/people/missing-suggestions")
+            or path.startswith("/geo/custom-places")
+            or path.startswith("/api/maintenance/")
+        )
+
+    def respond_read_only_forbidden(self, path: str) -> None:
+        message = "Serveren kjører i read-only-modus."
+        if path.startswith("/api/"):
+            self.respond_json({"ok": False, "error": message}, status=HTTPStatus.FORBIDDEN)
+            return
+        self.respond_text(message, status=HTTPStatus.FORBIDDEN)
+
     def do_GET(self) -> None:
         self.request_started_at = time.perf_counter()
         self.server_timing_steps = {}
         parsed = urllib.parse.urlparse(self.path)
         try:
+            if getattr(self.server, "read_only", False) and self.read_only_get_blocked(parsed.path):
+                self.respond_read_only_forbidden(parsed.path)
+                return
             if parsed.path == "/":
                 self.respond_browser_root()
                 return
@@ -525,6 +546,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         self.server.target,
                         self.server.config.face_recognition,
                         openclip_enabled=self.server.openclip_enabled,
+                        read_only=getattr(self.server, "read_only", False),
                     )
                 )
                 return
@@ -717,9 +739,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         self.request_started_at = time.perf_counter()
         self.server_timing_steps = {}
+        parsed = urllib.parse.urlparse(self.path)
+        if getattr(self.server, "read_only", False):
+            self.respond_read_only_forbidden(parsed.path)
+            return
         if not validate_csrf_request(self):
             return
-        parsed = urllib.parse.urlparse(self.path)
         try:
             if parsed.path == "/people/face-suggest":
                 self.respond_face_suggest()
@@ -893,6 +918,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 face_config,
                 openclip_enabled=self.server.openclip_enabled,
                 message=message,
+                read_only=getattr(self.server, "read_only", False),
             )
         )
 
@@ -1001,10 +1027,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 conn=conn,
                 first_day_item_id=first_day_item_id,
                 timing_callback=self.record_server_timing,
+                read_only=getattr(self.server, "read_only", False),
             )
             self.record_server_timing("source_item_page_html", start)
 
             start = time.perf_counter()
+            if getattr(self.server, "read_only", False):
+                html = read_only_html(html)
             encoded = add_csrf_to_html(html, self.server.csrf_token).encode("utf-8")
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1404,6 +1433,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         ),
                         first_day_item_id=first_day_item_id,
                         timing_callback=self.record_server_timing,
+                        read_only=getattr(self.server, "read_only", False),
                     )
                 )
                 self.record_server_timing("source_item_page_html", start)
@@ -2411,6 +2441,7 @@ def run_server(
     port: int = DEFAULT_PORT,
     allow_remote: bool = False,
     preview_images: bool = False,
+    read_only: bool = False,
     ready: Callable[[str], None] | None = None,
 ) -> None:
     validate_bind_host(host, allow_remote=allow_remote)
@@ -2421,7 +2452,7 @@ def run_server(
             file=sys.stderr,
         )
     db.prepare_database(target)
-    server = BildebankServer((host, port), target, config, preview_images=preview_images)
+    server = BildebankServer((host, port), target, config, preview_images=preview_images, read_only=read_only)
     actual_host, actual_port = server.server_address
     url = f"http://{actual_host}:{actual_port}/"
     if ready is not None:

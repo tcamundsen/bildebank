@@ -13,6 +13,10 @@ POST_FORM_RE = re.compile(
     r"(<form\b(?=[^>]*\bmethod\s*=\s*([\"'])post\2)[^>]*>)",
     re.IGNORECASE,
 )
+SETTINGS_LINK_RE = re.compile(
+    r"\s*<a\b[^>]*\bhref\s*=\s*([\"'])/settings\1[^>]*>Innstillinger</a>",
+    re.IGNORECASE,
+)
 
 
 def add_csrf_to_html(content: str, token: str) -> str:
@@ -22,6 +26,10 @@ def add_csrf_to_html(content: str, token: str) -> str:
         content = content.replace("</head>", f"  {meta}\n</head>", 1)
     hidden = f'<input type="hidden" name="csrf_token" value="{escaped}">'
     return POST_FORM_RE.sub(lambda match: f"{match.group(1)}{hidden}", content)
+
+
+def read_only_html(content: str) -> str:
+    return SETTINGS_LINK_RE.sub("", content)
 
 class ServerResponseMixin:
     if TYPE_CHECKING:
@@ -50,6 +58,8 @@ class ServerResponseMixin:
 
     def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
         server = getattr(self, "server", None)
+        if getattr(server, "read_only", False):
+            content = read_only_html(content)
         token = getattr(server, "csrf_token", "")
         if token:
             content = add_csrf_to_html(content, str(token))

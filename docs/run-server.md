@@ -12,6 +12,8 @@ options:
   --port PORT       Port serveren lytter på. Standard: 8765
   --no-browser      Ikke åpne serveren automatisk i nettleser.
   --preview-images  Bruk nedskalerte preview-bilder i hovedvisningen.
+  --read-only       Vis bilder og metadata, men blokker innstillinger,
+                    administrasjon og endringer.
   --allow-remote    Tillat bevisst binding til en adresse som kan nås fra
                     andre maskiner.
 ```
@@ -61,6 +63,18 @@ Bildebank tilgjengelig fra andre maskiner på nettverket.
 Og så må du finne IP-adressen til PC-en som kjører serveren med `ipconfig`.
 Hvis adressen er 192.168.86.11, så skriver du `http://192.168.86.11:8765/` i
 adressefeltet til nettleseren.
+
+Hvis andre enheter bare skal se på bilder og metadata, bruk read-only sammen
+med LAN-innstillingene:
+
+```powershell
+bildebank run-server --host 0.0.0.0 --allow-remote --read-only
+```
+
+Read-only-modus lar andre bla, søke, se personer og åpne bildeinfo. Den
+blokkerer innstillinger, administrasjon og endringer i database og bildefiler.
+Dette er fortsatt bare ment for privat LAN. Det er ikke innlogging eller en
+sikkerhetsmodell for internett.
 
 Hvis du vil velge port:
 

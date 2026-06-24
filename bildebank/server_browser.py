@@ -1575,6 +1575,7 @@ def item_page_html(
     manual_person_controls_enabled: bool = True,
     hotkey_hints_enabled: bool = False,
     hotkeys: Mapping[str, BrowserHotkeyConfig] | None = None,
+    read_only: bool = False,
 ) -> str:
     return source_item_page_html(
         target,
@@ -1590,6 +1591,7 @@ def item_page_html(
         manual_person_controls_enabled=manual_person_controls_enabled,
         hotkey_hints_enabled=hotkey_hints_enabled,
         hotkeys=hotkeys,
+        read_only=read_only,
     )
 
 
@@ -1601,6 +1603,7 @@ def _source_item_face_html(
     *,
     face_enabled: bool,
     manual_person_controls_enabled: bool,
+    face_edit_controls_enabled: bool = True,
     timing_callback: Callable[[str, float], None] | None = None,
 ) -> tuple[str, str, str, bool]:
     if not face_enabled:
@@ -1643,7 +1646,7 @@ def _source_item_face_html(
         file_id=int(item["id"]),
         manual_remove_enabled=manual_person_controls_enabled,
     )
-    show_unconfirmed_faces = source.person_name is None
+    show_unconfirmed_faces = source.person_name is None and face_edit_controls_enabled
     unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
     face_rail_html += faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
     face_rail_html += confirmed_face_people_text_html(confirmed_face_people_data)
@@ -1669,6 +1672,7 @@ def _source_item_controls_html(
     hide_out_of_focus: bool,
     conn: sqlite3.Connection | None,
     timing_callback: Callable[[str, float], None] | None = None,
+    read_only: bool = False,
 ) -> str:
     from .server_shell import (
         face_suggest_button_html,
@@ -1683,11 +1687,11 @@ def _source_item_controls_html(
         month_nav,
         previous_item,
         next_item,
-        rotation_buttons=rotation_buttons_html(source, item),
-        manual_date_button=manual_date_button_html(item),
+        rotation_buttons="" if read_only else rotation_buttons_html(source, item),
+        manual_date_button="" if read_only else manual_date_button_html(item),
         associated_file_buttons=associated_file_buttons,
         face_toggle_button=face_toggle_button_html(source, item, face_enabled=face_enabled),
-        face_suggest_button=face_suggest_button_html(face_enabled=face_enabled),
+        face_suggest_button="" if read_only else face_suggest_button_html(face_enabled=face_enabled),
         suggestion_toggle_button=suggestion_toggle_button_html(
             source,
             item,
@@ -1703,7 +1707,7 @@ def _source_item_controls_html(
             ),
         ),
         unconfirm_buttons="",
-        delete_button=delete_button_html(source, item, previous_item, next_item),
+        delete_button="" if read_only else delete_button_html(source, item, previous_item, next_item),
     )
     if timing_callback is not None:
         timing_callback("html_controls", start)
@@ -1723,6 +1727,7 @@ def _source_item_side_panel_html(
     conn: sqlite3.Connection | None,
     timing_start: float,
     timing_callback: Callable[[str, float], None] | None = None,
+    read_only: bool = False,
 ) -> str:
     out_of_focus_redirect_url = hidden_after_out_of_focus_tag_redirect_url(
         source,
@@ -1737,6 +1742,7 @@ def _source_item_side_panel_html(
         extra_html=face_rail_html,
         suffix_html=suffix_html,
         conn=conn,
+        read_only=read_only,
     )
     if timing_callback is not None:
         timing_callback("html_tag_controls", timing_start)
@@ -1760,6 +1766,7 @@ def _source_item_header_html(
     source_item_count_value: int | None,
     first_day_item_id: int | None = None,
     timing_callback: Callable[[str, float], None] | None = None,
+    read_only: bool = False,
 ) -> str:
     from .server_shell import app_header_html
 
@@ -1815,6 +1822,7 @@ def source_item_page_html(
     source_item_count_value: int | None = None,
     first_day_item_id: int | None = None,
     timing_callback: Callable[[str, float], None] | None = None,
+    read_only: bool = False,
 ) -> str:
     target_path = Path(str(item["target_path"]))
     start = time.perf_counter()
@@ -1827,13 +1835,14 @@ def source_item_page_html(
         item,
         face_config,
         face_enabled=face_enabled,
-        manual_person_controls_enabled=manual_person_controls_enabled,
+        manual_person_controls_enabled=manual_person_controls_enabled and not read_only,
+        face_edit_controls_enabled=not read_only,
         timing_callback=timing_callback,
     )
     start = time.perf_counter()
     hotkey_hints_html = (
         hotkey_hints_panel_html(target, hotkeys or {}, conn=conn)
-        if hotkey_hints_enabled
+        if hotkey_hints_enabled and not read_only
         else ""
     )
     if timing_callback is not None:
@@ -1858,12 +1867,13 @@ def source_item_page_html(
         hide_out_of_focus=hide_out_of_focus,
         conn=conn,
         timing_callback=timing_callback,
+        read_only=read_only,
     )
     start = time.perf_counter()
     info_overlay = image_info_overlay_html()
-    manual_date_overlay = manual_date_overlay_html()
+    manual_date_overlay = "" if read_only else manual_date_overlay_html()
     face_suggest_dialog = ""
-    if face_enabled:
+    if face_enabled and not read_only:
         from .server_faces import face_suggest_dialog_html
 
         threshold = face_config.suggest_threshold if face_config is not None else 0.6
@@ -1883,6 +1893,7 @@ def source_item_page_html(
         conn=conn,
         timing_start=start,
         timing_callback=timing_callback,
+        read_only=read_only,
     )
     start = time.perf_counter()
     all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
@@ -1892,7 +1903,7 @@ def source_item_page_html(
     source_url_attr = ""
     if source.text_filter is not None:
         source_url_attr = f' data-browser-source-url="{html.escape(source.root_url)}"'
-    hotkeys_enabled_attr = ' data-browser-hotkeys-enabled="true"' if hotkey_hints_enabled else ""
+    hotkeys_enabled_attr = ' data-browser-hotkeys-enabled="true"' if hotkey_hints_enabled and not read_only else ""
     header_html = _source_item_header_html(
         target,
         source,
@@ -2210,16 +2221,17 @@ def item_side_panel_html(
     extra_html: str = "",
     suffix_html: str = "",
     conn: sqlite3.Connection | None = None,
+    read_only: bool = False,
 ) -> str:
     file_id = int(item["id"])
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
-        defined_tags = tag_control_rows(conn)
+        defined_tags = [] if read_only else tag_control_rows(conn)
         active_names = active_tag_name_keys_for_file(conn, file_id)
         manual_h3_name = manual_h3_place_name(conn, item)
         manual_h3_cell_value = manual_h3_cell(item)
-        location_controls = remove_manual_location_button_html(item)
+        location_controls = "" if read_only else remove_manual_location_button_html(item)
     finally:
         if owned_conn:
             conn.close()

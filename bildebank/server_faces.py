@@ -1015,6 +1015,7 @@ def people_page_html(
     shell_page_html: ShellPageRenderer,
     openclip_enabled: bool = True,
     message: str = "",
+    read_only: bool = False,
 ) -> str:
     people = registered_people_rows(target, face_config)
     summary = people_face_summary(target, face_config)
@@ -1033,16 +1034,14 @@ def people_page_html(
         og <a href="help/face-suggest.md">face-suggest</a> når du
         har bekreftet at personer er et bestemt ansikt.
         {people_face_summary_html(summary)}
-        <button class="nav-button" type="button"
-        title="Kjør face-suggest for å finne ansikter" data-open-face-suggest>Foreslå personer</button>
-        <a class="nav-button" href="/people/missing-suggestions"
-        title="Se alle bildene som face-scan har funnet et ansikt som face-suggest ikke har forslag til">Ansikter uten forslag</a>
+        {"" if read_only else '<button class="nav-button" type="button" title="Kjør face-suggest for å finne ansikter" data-open-face-suggest>Foreslå personer</button>'}
+        {"" if read_only else '<a class="nav-button" href="/people/missing-suggestions" title="Se alle bildene som face-scan har funnet et ansikt som face-suggest ikke har forslag til">Ansikter uten forslag</a>'}
         {content}
-        {face_suggest_dialog_html(
+        {"" if read_only else face_suggest_dialog_html(
             face_config.suggest_threshold if face_config is not None else 0.6,
             return_url="/people",
         )}
-        {person_rename_dialog_html()}
+        {"" if read_only else person_rename_dialog_html()}
         """,
         face_enabled=True,
         openclip_enabled=openclip_enabled,
