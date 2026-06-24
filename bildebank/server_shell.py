@@ -9,6 +9,7 @@ from .server_browser_sources import (
     person_browser_source,
     source_item_url,
     source_month_url,
+    source_year_url,
 )
 
 
@@ -265,12 +266,15 @@ def source_controls_html(
     suggestion_toggle_button: str = "",
     unconfirm_buttons: str = "",
     delete_button: str = "",
+    year_links_to_year_pages: bool = False,
 ) -> str:
+    previous_year_link = source_year_nav_link if year_links_to_year_pages else source_month_nav_link
+    next_year_link = source_year_nav_link if year_links_to_year_pages else source_month_nav_link
     return f"""
     <nav class="controls" aria-label="Navigering">
       <span class="nav-button-pair" data-nav-button-pair="year">
-        {source_month_nav_link(source, month_nav["previous_year"], "◀ Å", "previous-year", "Forrige år")}
-        {source_month_nav_link(source, month_nav["next_year"], "r ▶", "next-year", "Neste år")}
+        {previous_year_link(source, month_nav["previous_year"], "◀ Å", "previous-year", "Forrige år")}
+        {next_year_link(source, month_nav["next_year"], "r ▶", "next-year", "Neste år")}
       </span>
       <span class="nav-button-pair" data-nav-button-pair="month">
         {source_month_nav_link(source, month_nav["previous_month"], "◀ Mån", "previous-month", "Forrige måned")}
@@ -305,3 +309,9 @@ def source_month_nav_link(source: BrowserSource, month_key: str | None, label: s
     if month_key is None:
         return nav_disabled(label)
     return nav_button(source_month_url(source, month_key), label, key_nav, tooltip)
+
+
+def source_year_nav_link(source: BrowserSource, month_key: str | None, label: str, key_nav: str, tooltip: str) -> str:
+    if month_key is None:
+        return nav_disabled(label)
+    return nav_button(source_year_url(source, month_key[:4]), label, key_nav, tooltip)

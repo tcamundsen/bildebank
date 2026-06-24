@@ -3028,6 +3028,7 @@ def source_month_page_html(
         previous_item,
         next_item,
         suggestion_toggle_button=suggestion_toggle_button_html(source, None, face_enabled=face_enabled),
+        year_links_to_year_pages=True,
     )
     return page_html(
         f"{source.title}: {month_key}",

@@ -2476,7 +2476,7 @@ model_name = "buffalo_l"
         self.assertIn("/file/2", body)
         self.assertIn("/month/2023-12", body)
         self.assertIn("/month/2024-02", body)
-        self.assertIn("/month/2025-01", body)
+        self.assertIn('href="/month/2025-01" title="Neste år" data-key-nav="next-year">r ▶</a>', body)
         self.assertIn("/search", body)
         self.assertIn('href="/settings">Innstillinger</a>', body)
         self.assertNotIn("Dato fra filnavn", body)
@@ -2802,9 +2802,12 @@ model_name = "buffalo_l"
             "de ▶",
         ):
             self.assertIn(label, body)
-        self.assertIn("/month/2023-12", body)
-        self.assertIn("/month/2024-02", body)
-        self.assertIn("/month/2025-01", body)
+        self.assertIn('href="/years/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>', body)
+        self.assertIn('href="/years/2025" title="Neste år" data-key-nav="next-year">r ▶</a>', body)
+        self.assertIn('href="/month/2023-12" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>', body)
+        self.assertIn('href="/month/2024-02" title="Neste måned" data-key-nav="next-month">ed ▶</a>', body)
+        self.assertNotIn('href="/month/2023-12" title="Forrige år"', body)
+        self.assertNotIn('href="/month/2025-01" title="Neste år"', body)
         self.assertIn('href="/years">År</a>', body)
         self.assertIn('href="/years/2024">2024</a>', body)
         self.assertIn('<span class="sep">/</span>Januar</nav>', body)
@@ -5958,7 +5961,9 @@ model_name = "buffalo_l"
             source_b = Path(tmp) / "source-b"
             source_a.mkdir()
             source_b.mkdir()
+            (source_a / "IMG_20230101.jpg").write_bytes(b"image-old")
             (source_a / "IMG_20240102.jpg").write_bytes(b"image-a")
+            (source_a / "IMG_20250104.jpg").write_bytes(b"image-new")
             (source_b / "IMG_20240203.jpg").write_bytes(b"image-b")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
@@ -5975,8 +5980,8 @@ model_name = "buffalo_l"
                 "bildebank.server_browser.source_items",
                 side_effect=AssertionError("Imported source should use SQL filter"),
             ):
-                source_item = source_item_by_id(target, source_browser, 1)
-                source_excludes_other_item = source_item_by_id(target, source_browser, 2) is None
+                source_item = source_item_by_id(target, source_browser, 2)
+                source_excludes_other_item = source_item_by_id(target, source_browser, 4) is None
                 self.assertIsNotNone(source_item)
                 source_adjacent = adjacent_source_items(target, source_browser, source_item)
                 source_month_nav = source_month_navigation(target, source_browser, source_item)
@@ -5999,7 +6004,7 @@ model_name = "buffalo_l"
         self.assertEqual(len(source_month), 1)
         self.assertEqual(len(summaries), 2)
         self.assertIn("Kilde: source-a", item_body)
-        self.assertIn('href="/item/1">Alle bilder</a>', item_body)
+        self.assertIn('href="/item/2">Alle bilder</a>', item_body)
         self.assertIn('href="/source/1/year/2024">2024</a>', item_body)
         self.assertNotIn("IMG_20240203", item_body)
         self.assertIn('href="/source/1">Kilde: source-a</a><span class="sep">/</span>2024</nav>', year_body)
@@ -6007,12 +6012,16 @@ model_name = "buffalo_l"
         self.assertNotIn('href="/source/1/month/2024-02"', year_body)
         self.assertIn('<section class="month-grid-server year-month-grid-server">', year_body)
         self.assertNotIn('<footer class="browser-footer">', year_body)
-        self.assertIn('href="/source/1/item/1"', month_body)
+        self.assertIn('href="/source/1/item/2"', month_body)
         self.assertIn('href="/source/1/year/2024">2024</a>', month_body)
+        self.assertIn('href="/source/1/year/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>', month_body)
+        self.assertIn('href="/source/1/year/2025" title="Neste år" data-key-nav="next-year">r ▶</a>', month_body)
+        self.assertNotIn('href="/source/1/month/2023-01" title="Forrige år"', month_body)
+        self.assertNotIn('href="/source/1/month/2025-01" title="Neste år"', month_body)
         self.assertIn('<span class="sep">/</span>Januar</nav>', month_body)
         self.assertNotIn('<footer class="browser-footer">', month_body)
         self.assertIn("<h1>Importerte mapper</h1>", sources_body)
-        self.assertIn('href="/source/1">Vis bilder (1)</a>', sources_body)
+        self.assertIn('href="/source/1">Vis bilder (3)</a>', sources_body)
         self.assertIn("source-a", sources_body)
         self.assertIn("source-b", sources_body)
 
