@@ -4,7 +4,7 @@ import html
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "34"
+SERVER_ASSET_VERSION = "35"
 SERVER_CSS = r"""    :root {
       color-scheme: dark;
       --bg: #171717;

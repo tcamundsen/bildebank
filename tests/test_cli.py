@@ -1500,7 +1500,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("data-maintenance-name", SERVER_JS)
         self.assertIn('window.addEventListener("load", scheduleMaintenanceStatusesLoad', SERVER_JS)
         self.assertIn("setTimeout(loadMaintenanceStatuses, 0)", SERVER_JS)
-        self.assertEqual(SERVER_ASSET_VERSION, "34")
+        self.assertEqual(SERVER_ASSET_VERSION, "35")
         self.assertIn("bildebank ${payload.name}", SERVER_JS)
         self.assertIn("bilder trenger ${payload.name}", SERVER_JS)
         self.assertIn("/api/maintenance/thumbnails", SERVER_JS)
