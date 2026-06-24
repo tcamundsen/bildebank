@@ -478,6 +478,29 @@ def item_by_id(
             conn.close()
 
 
+def active_item_by_id_including_hidden(
+    target: Path,
+    file_id: int,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> Any | None:
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
+    try:
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE id = ?
+              AND deleted_at IS NULL
+            """,
+            (file_id,),
+        ).fetchone()
+    finally:
+        if owned_conn:
+            conn.close()
+
+
 def browser_item_by_id(target: Path, file_id: int, *, hide_out_of_focus: bool = False) -> Any | None:
     return source_item_by_id(target, all_browser_source(), file_id, hide_out_of_focus=hide_out_of_focus)
 

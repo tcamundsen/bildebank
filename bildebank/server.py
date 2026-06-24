@@ -67,6 +67,7 @@ from .server_pages import (
     years_page_html,
 )
 from .server_browser import (
+    active_item_by_id_including_hidden,
     adjacent_items_from_id_order,
     adjacent_source_items,
     browser_date_for_item,
@@ -1821,7 +1822,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         except ValueError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
-        item = browser_item_by_id(self.server.target, file_id)
+        item = active_item_by_id_including_hidden(self.server.target, file_id)
         if item is None:
             self.respond_json({"ok": False, "error": "Filen finnes ikke."}, status=HTTPStatus.NOT_FOUND)
             return

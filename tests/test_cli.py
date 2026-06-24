@@ -3587,6 +3587,36 @@ model_name = "buffalo_l"
         self.assertIn("<dt>Filnavn</dt>", str(content["html"]))
         self.assertIn("IMG_20240102.png", str(content["html"]))
 
+    def test_run_server_item_info_api_rejects_unknown_and_deleted_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            handler = object.__new__(BildebankRequestHandler)
+            handler.server = SimpleNamespace(target=target)
+            responses: list[tuple[dict[str, object], HTTPStatus]] = []
+
+            def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                responses.append((content, status))
+
+            handler.respond_json = fake_respond_json  # type: ignore[method-assign]
+            handler.respond_item_info("file_id=999")
+
+            with db.connect(target) as conn:
+                conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 1")
+            handler.respond_item_info("file_id=1")
+
+        self.assertEqual(len(responses), 2)
+        for content, status in responses:
+            self.assertEqual(status, HTTPStatus.NOT_FOUND)
+            self.assertIs(content["ok"], False)
+            self.assertEqual(content["error"], "Filen finnes ikke.")
+
     def test_run_server_item_page_omits_geo_info_without_h3_cells(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -5541,6 +5571,17 @@ model_name = "buffalo_l"
             extension_items = source_month_items(target, extension_source, "2019-03")
             filename_items = source_month_items(target, filename_source, "2019-03")
             image_item = month_items[0]
+            nef_item = extension_items[0]
+            response: dict[str, object] = {}
+            handler = object.__new__(BildebankRequestHandler)
+            handler.server = SimpleNamespace(target=target)
+
+            def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                response["content"] = content
+                response["status"] = status
+
+            handler.respond_json = fake_respond_json  # type: ignore[method-assign]
+            handler.respond_item_info(f"file_id={nef_item['id']}")
             previous_item, next_item = adjacent_browser_items(target, image_item)
             month_nav = browser_month_navigation(target, image_item)
             self.assertIsNotNone(raw_sidecar_id_by_image_id(target, int(image_item["id"])))
@@ -5562,6 +5603,16 @@ model_name = "buffalo_l"
         )
         self.assertIn("RAW-fil: DSC_0170.NEF", image_body)
         self.assertIn("/filter/filename%3ADSC_0170.NEF/item/", image_body)
+        self.assertEqual(response["status"], HTTPStatus.OK)
+        content = response["content"]
+        assert isinstance(content, dict)
+        self.assertIs(content["ok"], True)
+        nef_info_html = str(content["html"])
+        self.assertIn("<dt>Filnavn</dt>", nef_info_html)
+        self.assertIn("DSC_0170.NEF", nef_info_html)
+        self.assertIn("<dt>Filstørrelse</dt>", nef_info_html)
+        self.assertIn("<dt>Kilder</dt>", nef_info_html)
+        self.assertIn(source.name, nef_info_html)
 
     def test_run_server_nef_sidecar_requires_same_source_folder(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
