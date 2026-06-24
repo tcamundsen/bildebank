@@ -6023,7 +6023,7 @@ model_name = "buffalo_l"
         self.assertEqual(len(source_month), 1)
         self.assertEqual(len(summaries), 2)
         self.assertIn("Kilde: source-a", item_body)
-        self.assertIn('href="/item/2">Alle bilder</a>', item_body)
+        self.assertIn('href="/item/2">Åpne i alle bilder</a>', item_body)
         self.assertIn('href="/source/1/year/2024">2024</a>', item_body)
         self.assertIn('href="/source/1/year/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>', item_body)
         self.assertIn('href="/source/1/year/2025" title="Neste år" data-key-nav="next-year">r ▶</a>', item_body)
@@ -6257,7 +6257,7 @@ model_name = "buffalo_l"
             self.assertIn("Ute av fokus\t0\tsystem", stdout)
 
         self.assertIn("Tagg: familie", item_body)
-        self.assertIn('href="/item/1">Alle bilder</a>', item_body)
+        self.assertIn('href="/item/1">Åpne i alle bilder</a>', item_body)
         self.assertIn('href="/tag/familie/year/2024">2024</a>', item_body)
         self.assertIn('href="/tag/familie/item/1"', month_body)
         self.assertEqual(len(tag_month), 1)
@@ -6503,8 +6503,8 @@ model_name = "buffalo_l"
         self.assertIsNone(filtered_source_item)
         self.assertIsNotNone(tag_item)
         self.assertEqual([int(item["id"]) for item in tag_month_items], [1])
-        self.assertIn('href="/">Synlige bilder</a>', tag_item_body)
-        self.assertNotIn('href="/item/1">Synlige bilder</a>', tag_item_body)
+        self.assertIn('href="/">Åpne i alle bilder</a>', tag_item_body)
+        self.assertNotIn('href="/item/1">Åpne i alle bilder</a>', tag_item_body)
 
     def test_source_item_page_uses_existing_connection_for_all_items_link(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -6563,8 +6563,8 @@ model_name = "buffalo_l"
             finally:
                 conn.close()
 
-        self.assertIn("Synlige bilder", body)
-        self.assertIn('href="/item/1">Synlige bilder</a>', body)
+        self.assertIn("Åpne i alle bilder", body)
+        self.assertIn('href="/item/1">Åpne i alle bilder</a>', body)
         self.assertEqual(raw_sidecar_ids.call_count, 1)
 
     def test_run_server_out_of_focus_button_redirects_to_adjacent_visible_item(self) -> None:
@@ -7758,7 +7758,7 @@ model_name = "buffalo_l"
 
         self.assertIn(">Kari<", body)
         self.assertIn("/person/Kari/month/2024-02", body)
-        self.assertIn('href="/item/1">Alle bilder</a>', body)
+        self.assertIn('href="/item/1">Åpne i alle bilder</a>', body)
         controls_start = body.index('<nav class="controls"')
         controls_end = body.index("</nav>", controls_start)
         controls_html = body[controls_start:controls_end]
@@ -7809,7 +7809,7 @@ model_name = "buffalo_l"
         )
         self.assertNotIn("face-toggle-icon-active", plain_controls_html)
         self.assertIn('<a class="nav-button" href="/person/Kari/confirmed/no-faces/item/1">[✓] Ta med forslag</a>', plain_controls_html)
-        self.assertIn('href="/item/1">Alle bilder</a>', plain_body)
+        self.assertIn('href="/item/1">Åpne i alle bilder</a>', plain_body)
         self.assertNotIn("Med ansiktsmarkering", plain_body)
         self.assertNotIn('<div class="person-face-box"', plain_body)
         self.assertNotIn('<span class="person-face-label">face-id 1</span>', plain_body)

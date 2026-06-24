@@ -1900,7 +1900,7 @@ def source_item_page_html(
     all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
     if timing_callback is not None:
         timing_callback("html_all_items_link", start)
-    all_items_label = "Synlige bilder" if hide_out_of_focus else "Alle bilder"
+    all_items_label = "Åpne i alle bilder"
     source_url_attr = ""
     if source.text_filter is not None:
         source_url_attr = f' data-browser-source-url="{html.escape(source.root_url)}"'
