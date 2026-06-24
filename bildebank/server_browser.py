@@ -253,14 +253,13 @@ def first_sql_filtered_source_day_item(
     where_sql, params = source_sql_filter(source)
     owned_conn = conn is None
     conn = conn or db.connect(target)
-    where_sql, params = with_motion_video_filter(
-        target,
-        where_sql,
-        params,
-        include_motion=source_shows_motion_videos(source),
-        conn=conn,
-    )
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
+    if not source_shows_motion_videos(source):
+        hidden_ids = sorted(hidden_sidecar_file_ids_for_day(conn, day_key))
+        if hidden_ids:
+            placeholders = ",".join("?" for _ in hidden_ids)
+            where_sql = f"({where_sql}) AND id NOT IN ({placeholders})"
+            params = (*params, *hidden_ids)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
     try:
         attach_source_sql_filter_databases(conn, target, source, face_config)
