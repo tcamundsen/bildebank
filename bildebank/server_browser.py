@@ -1708,6 +1708,7 @@ def _source_item_controls_html(
         ),
         unconfirm_buttons="",
         delete_button="" if read_only else delete_button_html(source, item, previous_item, next_item),
+        year_links_to_year_pages=True,
     )
     if timing_callback is not None:
         timing_callback("html_controls", start)
