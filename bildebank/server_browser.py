@@ -1817,7 +1817,6 @@ def source_item_page_html(
     timing_callback: Callable[[str, float], None] | None = None,
 ) -> str:
     target_path = Path(str(item["target_path"]))
-    relative = display_relative_path(target, target_path)
     start = time.perf_counter()
     media = source_item_media_html(target, source, item, face_config)
     if timing_callback is not None:
@@ -1923,9 +1922,6 @@ def source_item_page_html(
               {media}
             </section>
           </div>
-          <footer class="browser-footer">
-            <a class="filename" href="/file/{int(item["id"])}" target="_blank">{html.escape(relative)}</a>
-          </footer>
         </main>
         {faces_overlay}
         {info_overlay}

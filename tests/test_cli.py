@@ -5552,6 +5552,7 @@ model_name = "buffalo_l"
         self.assertIn(".MP4</a>", controls_html)
         self.assertIn("/filter/filename%3APXL_20250102_123.mp4/item/", image_body)
         self.assertNotIn("Motion-video: PXL_20250102_123.mp4", image_body)
+        self.assertNotIn('<footer class="browser-footer">', image_body)
         self.assertEqual(motion_file.content_type, "video/mp4")
         self.assertEqual(motion_file.content[4:8], b"ftyp")
 
@@ -5611,6 +5612,7 @@ model_name = "buffalo_l"
         self.assertIn(".NEF</a>", controls_html)
         self.assertIn("/filter/filename%3ADSC_0170.NEF/item/", image_body)
         self.assertNotIn("RAW-fil: DSC_0170.NEF", image_body)
+        self.assertNotIn('<footer class="browser-footer">', image_body)
         self.assertEqual(response["status"], HTTPStatus.OK)
         content = response["content"]
         assert isinstance(content, dict)
