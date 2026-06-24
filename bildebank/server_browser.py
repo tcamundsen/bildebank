@@ -2860,16 +2860,41 @@ def year_months_page_html(
     )
     content = cards if cards else '<p class="meta">Ingen bilder dette året.</p>'
     escaped_year = html.escape(year)
+    controls = year_navigation_controls_html(target, year, hide_out_of_focus=hide_out_of_focus)
     return shell_page_html(
         escaped_year,
         f"""
         <h1>{escaped_year}</h1>
+        {controls}
         <section class="month-grid-server year-month-grid-server">{content}</section>
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
         title_html=breadcrumb_html([("År", "/years")], escaped_year),
     )
+
+
+def year_navigation_controls_html(target: Path, year: str, *, hide_out_of_focus: bool = False) -> str:
+    from .server_shell import nav_button, nav_disabled
+
+    years = [str(card["year"]) for card in browser_year_cards(target, hide_out_of_focus=hide_out_of_focus)]
+    previous_year = next((candidate for candidate in reversed(years) if candidate < year), None)
+    next_year = next((candidate for candidate in years if candidate > year), None)
+
+    def year_button(target_year: str | None, label: str, key_nav: str, tooltip: str) -> str:
+        if target_year is None:
+            return nav_disabled(label)
+        url = "/years/" + urllib.parse.quote(target_year, safe="")
+        return nav_button(url, label, key_nav, tooltip)
+
+    return f"""
+    <nav class="controls" aria-label="Navigering">
+      <span class="nav-button-pair" data-nav-button-pair="year">
+        {year_button(previous_year, "◀ Å", "previous-year", "Forrige år")}
+        {year_button(next_year, "r ▶", "next-year", "Neste år")}
+      </span>
+    </nav>
+    """
 
 
 def source_year_months_page_html(
