@@ -1342,6 +1342,7 @@ def browser_year_cards(target: Path, *, hide_out_of_focus: bool = False) -> list
                 "year": year,
                 "month_count": int(summary["month_count"]),
                 "item_count": int(summary["item_count"]),
+                "first_month": str(summary["first_month"]),
                 "item": item,
             }
         )
@@ -2928,12 +2929,10 @@ def years_page_html(
     openclip_enabled: bool = True,
     hide_out_of_focus: bool = False,
 ) -> str:
-    cards = "\n".join(
-        year_card_html(target, card)
-        for card in browser_year_cards(target, hide_out_of_focus=hide_out_of_focus)
-    )
+    year_cards = browser_year_cards(target, hide_out_of_focus=hide_out_of_focus)
+    cards = "\n".join(year_card_html(target, card) for card in year_cards)
     content = cards if cards else '<p class="meta">Ingen filer i bildesamlingen.</p>'
-    controls = years_navigation_controls_html(target, hide_out_of_focus=hide_out_of_focus)
+    controls = years_navigation_controls_html(year_cards)
     return shell_page_html(
         "År",
         f"""
@@ -2946,12 +2945,12 @@ def years_page_html(
     )
 
 
-def years_navigation_controls_html(target: Path, *, hide_out_of_focus: bool = False) -> str:
+def years_navigation_controls_html(year_cards: list[dict[str, Any]]) -> str:
     from .server_shell import nav_button, nav_disabled
 
-    month_keys = browser_month_keys(target, hide_out_of_focus=hide_out_of_focus)
-    first_month = month_keys[0] if month_keys else None
-    first_year = first_month[:4] if first_month is not None else None
+    first_card = year_cards[0] if year_cards else None
+    first_month = str(first_card["first_month"]) if first_card is not None else None
+    first_year = str(first_card["year"]) if first_card is not None else None
 
     def year_button(target_year: str | None, label: str, key_nav: str, tooltip: str) -> str:
         if target_year is None:

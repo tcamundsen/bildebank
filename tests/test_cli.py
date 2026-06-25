@@ -2860,7 +2860,8 @@ model_name = "buffalo_l"
             finally:
                 conn.close()
 
-            years_body = years_page_html(target)
+            with patch("bildebank.server_browser.browser_month_keys", wraps=server_browser.browser_month_keys) as month_keys:
+                years_body = years_page_html(target)
             year_body = year_months_page_html(target, "2005")
             filtered_years_body = years_page_html(target, hide_out_of_focus=True)
             filtered_year_body = year_months_page_html(target, "2007", hide_out_of_focus=True)
@@ -2883,6 +2884,7 @@ model_name = "buffalo_l"
         self.assertIn('href="/years/2007"', years_body)
         self.assertIn('src="/file/2005/03/IMG_20050302.jpg"', years_body)
         self.assertNotIn("Video<br>IMG_20050301.mp4", years_body)
+        self.assertEqual(month_keys.call_count, 0)
         self.assertIn('href="/month/2005-03"', year_body)
         self.assertIn('href="/month/2005-04"', year_body)
         self.assertIn('href="/month/2005-05"', year_body)
