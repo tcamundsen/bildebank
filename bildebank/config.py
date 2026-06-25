@@ -58,6 +58,7 @@ def default_browser_hotkeys() -> dict[str, BrowserHotkeyConfig]:
 class BrowserConfig:
     hide_out_of_focus: bool = False
     manual_person_controls_enabled: bool = True
+    person_reference_links_enabled: bool = False
     hotkey_hints_enabled: bool = False
     hotkeys: dict[str, BrowserHotkeyConfig] = field(default_factory=default_browser_hotkeys)
 
@@ -110,6 +111,7 @@ def load_config(repo_root: Path) -> AppConfig:
         browser=BrowserConfig(
             hide_out_of_focus=bool(browser_data.get("hide_out_of_focus", False)),
             manual_person_controls_enabled=bool(browser_data.get("manual_person_controls_enabled", True)),
+            person_reference_links_enabled=bool(browser_data.get("person_reference_links_enabled", False)),
             hotkey_hints_enabled=bool(browser_data.get("hotkey_hints_enabled", False)),
             hotkeys=parse_browser_hotkeys(browser_data.get("hotkeys", {})),
         ),
@@ -252,6 +254,26 @@ def set_browser_manual_person_controls_enabled(repo_root: Path, enabled: bool) -
     _section(tomllib.loads(text), "browser")
     config_path.write_text(
         _set_toml_bool(text, section="browser", key="manual_person_controls_enabled", value=enabled),
+        encoding="utf-8",
+    )
+    return config_path
+
+
+def set_browser_person_reference_links_enabled(repo_root: Path, enabled: bool) -> Path:
+    config_path = repo_root / CONFIG_FILENAME
+    if not config_path.exists():
+        config_path.write_text(
+            "[browser]\n"
+            f"person_reference_links_enabled = {_toml_bool(enabled)}\n",
+            encoding="utf-8",
+        )
+        return config_path
+
+    migrate_legacy_openclip_section(config_path)
+    text = config_path.read_text(encoding="utf-8")
+    _section(tomllib.loads(text), "browser")
+    config_path.write_text(
+        _set_toml_bool(text, section="browser", key="person_reference_links_enabled", value=enabled),
         encoding="utf-8",
     )
     return config_path

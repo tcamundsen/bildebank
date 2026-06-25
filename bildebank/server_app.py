@@ -20,6 +20,7 @@ from .config import (
     set_browser_hotkey_hints_enabled,
     set_browser_hotkey,
     set_browser_manual_person_controls_enabled,
+    set_browser_person_reference_links_enabled,
     set_face_recognition_enabled,
     set_face_recognition_model_name,
     set_image_search_enabled,
@@ -81,6 +82,7 @@ def app_status_page_html(
             app_status_face_model_row_html(config.face_recognition),
             app_status_row_html("InsightFace installert", yes_no(insightface_installed)),
             app_status_manual_person_controls_row_html(config.browser.manual_person_controls_enabled),
+            app_status_person_reference_links_row_html(config.browser.person_reference_links_enabled),
             app_status_row_html("OpenCLIP tilgjengelig", yes_no(module_available_func("open_clip"))),
             app_status_image_search_row_html(config.openclip.enabled),
             app_status_row_html("OpenCLIP-modell", config.openclip.model_name),
@@ -315,6 +317,14 @@ def update_manual_person_controls_config(config: AppConfig, repo_root: Path, ena
     )
 
 
+def update_person_reference_links_config(config: AppConfig, repo_root: Path, enabled: bool) -> AppConfig:
+    set_browser_person_reference_links_enabled(repo_root, enabled)
+    return replace(
+        config,
+        browser=replace(config.browser, person_reference_links_enabled=enabled),
+    )
+
+
 def update_hotkey_config(config: AppConfig, repo_root: Path, key: str, hotkey: BrowserHotkeyConfig) -> AppConfig:
     if hotkey.action == "tag":
         hotkey = replace(hotkey, tag_name=db.normalize_tag_name(hotkey.tag_name))
@@ -430,6 +440,26 @@ def app_status_manual_person_controls_row_html(enabled: bool) -> str:
       <dt>GUI for manuell bekrefting av person i bildet</dt>
       <dd>
         <form action="/settings/manual-person-controls" method="post" class="app-toggle-form">
+          <input type="hidden" name="enabled" value="false">
+          <label class="app-toggle">
+            <input type="checkbox" name="enabled" value="true"{checked} onchange="this.form.submit()">
+            <span class="app-toggle-track" aria-hidden="true"><span></span></span>
+            <span class="app-toggle-status">{status}</span>
+          </label>
+        </form>
+      </dd>
+    </div>
+    """
+
+
+def app_status_person_reference_links_row_html(enabled: bool) -> str:
+    checked = " checked" if enabled else ""
+    status = "På" if enabled else "Av"
+    return f"""
+    <div class="info-row">
+      <dt>Referanselenke for ansiktsforslag</dt>
+      <dd>
+        <form action="/settings/person-reference-links" method="post" class="app-toggle-form">
           <input type="hidden" name="enabled" value="false">
           <label class="app-toggle">
             <input type="checkbox" name="enabled" value="true"{checked} onchange="this.form.submit()">

@@ -784,6 +784,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/settings/manual-person-controls":
                 self.respond_set_manual_person_controls()
                 return
+            if parsed.path == "/settings/person-reference-links":
+                self.respond_set_person_reference_links()
+                return
             if parsed.path == "/settings/hotkey":
                 self.respond_set_hotkey()
                 return
@@ -1042,6 +1045,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 openclip_enabled=self.server.openclip_enabled,
                 face_config=self.server.config.face_recognition,
                 manual_person_controls_enabled=self.server.config.browser.manual_person_controls_enabled,
+                person_reference_links_enabled=self.server.config.browser.person_reference_links_enabled,
                 hotkey_hints_enabled=self.server.config.browser.hotkey_hints_enabled,
                 hotkeys=self.server.config.browser.hotkeys,
                 hide_out_of_focus=self.server.hide_out_of_focus,
@@ -1480,6 +1484,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         openclip_enabled=self.server.openclip_enabled,
                         face_config=self.server.config.face_recognition,
                         manual_person_controls_enabled=self.server.config.browser.manual_person_controls_enabled,
+                        person_reference_links_enabled=self.server.config.browser.person_reference_links_enabled,
                         hotkey_hints_enabled=self.server.config.browser.hotkey_hints_enabled,
                         hotkeys=self.server.config.browser.hotkeys,
                         hide_out_of_focus=hide_out_of_focus,
@@ -1658,6 +1663,17 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             server_app.server_program_repo_root(),
             enabled,
         )
+        self.redirect(settings_redirect_location(params))
+
+    def respond_set_person_reference_links(self) -> None:
+        params = server_request.read_form_params(self.headers, self.rfile)
+        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
+        self.server.config = server_app.update_person_reference_links_config(
+            self.server.config,
+            server_app.server_program_repo_root(),
+            enabled,
+        )
+        clear_face_caches()
         self.redirect(settings_redirect_location(params))
 
     def respond_set_hotkey(self) -> None:
@@ -1930,7 +1946,17 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         if item is None:
             self.respond_json({"ok": False, "error": "Filen finnes ikke."}, status=HTTPStatus.NOT_FOUND)
             return
-        self.respond_json({"ok": True, "html": face_overlay_content_html(self.server.target, item, self.server.config.face_recognition)})
+        self.respond_json(
+            {
+                "ok": True,
+                "html": face_overlay_content_html(
+                    self.server.target,
+                    item,
+                    self.server.config.face_recognition,
+                    person_reference_links_enabled=self.server.config.browser.person_reference_links_enabled,
+                ),
+            }
+        )
 
     def respond_thumbnail_maintenance(self) -> None:
         try:

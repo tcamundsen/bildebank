@@ -1712,6 +1712,7 @@ def item_page_html(
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
+    person_reference_links_enabled: bool = False,
     hotkey_hints_enabled: bool = False,
     hotkeys: Mapping[str, BrowserHotkeyConfig] | None = None,
     read_only: bool = False,
@@ -1728,6 +1729,7 @@ def item_page_html(
         openclip_enabled=openclip_enabled,
         face_config=face_config,
         manual_person_controls_enabled=manual_person_controls_enabled,
+        person_reference_links_enabled=person_reference_links_enabled,
         hotkey_hints_enabled=hotkey_hints_enabled,
         hotkeys=hotkeys,
         read_only=read_only,
@@ -1742,6 +1744,7 @@ def _source_item_face_html(
     *,
     face_enabled: bool,
     manual_person_controls_enabled: bool,
+    person_reference_links_enabled: bool = False,
     face_edit_controls_enabled: bool = True,
     timing_callback: Callable[[str, float], None] | None = None,
 ) -> tuple[str, str, str, bool]:
@@ -1760,7 +1763,12 @@ def _source_item_face_html(
     )
 
     start = time.perf_counter()
-    people_data, confirmed_face_people_data = people_for_file(target, int(item["id"]), face_config)
+    people_data, confirmed_face_people_data = people_for_file(
+        target,
+        int(item["id"]),
+        face_config,
+        person_reference_links_enabled=person_reference_links_enabled,
+    )
     person_has_confirmed_face = False
     if source.person_name is not None:
         person_has_confirmed_face = any(
@@ -1955,6 +1963,7 @@ def source_item_page_html(
     openclip_enabled: bool = True,
     face_config: FaceRecognitionConfig | None = None,
     manual_person_controls_enabled: bool = True,
+    person_reference_links_enabled: bool = False,
     hotkey_hints_enabled: bool = False,
     hotkeys: Mapping[str, BrowserHotkeyConfig] | None = None,
     hide_out_of_focus: bool = False,
@@ -1976,6 +1985,7 @@ def source_item_page_html(
         face_config,
         face_enabled=face_enabled,
         manual_person_controls_enabled=manual_person_controls_enabled and not read_only,
+        person_reference_links_enabled=person_reference_links_enabled,
         face_edit_controls_enabled=not read_only,
         timing_callback=timing_callback,
     )

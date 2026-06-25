@@ -141,7 +141,9 @@ from bildebank.server_filter import parse_text_filter, text_filter_browser_sourc
 from bildebank.server_faces import (
     cached_face_box_media_metadata,
     cached_person_file_ids,
+    clear_face_caches,
     face_overlay_content_html,
+    people_for_file,
     person_file_ids,
     person_items,
     update_face_box_media_metadata,
@@ -1663,6 +1665,7 @@ pretrained = "laion2b_s34b_b79k"
                 "InsightFace-modell",
                 "InsightFace installert",
                 "GUI for manuell bekrefting av person i bildet",
+                "Referanselenke for ansiktsforslag",
                 "OpenCLIP tilgjengelig",
                 "Bildesøk aktivert",
                 "OpenCLIP-modell",
@@ -1713,6 +1716,8 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('action="/settings/face-model"', body)
         self.assertIn("GUI for manuell bekrefting av person", body)
         self.assertIn('action="/settings/manual-person-controls"', body)
+        self.assertIn("Referanselenke for ansiktsforslag", body)
+        self.assertIn('action="/settings/person-reference-links"', body)
         self.assertIn('<span class="app-toggle-status">Av</span>', body)
 
         self.assertIn('<option value="antelopev2">antelopev2</option>', body)
@@ -2239,6 +2244,30 @@ pretrained = "laion2b_s34b_b79k"
 
         self.assertFalse(config.browser.manual_person_controls_enabled)
         self.assertFalse(handler.server.config.browser.manual_person_controls_enabled)
+        self.assertEqual(handler.location, "/settings")
+
+    def test_run_server_person_reference_links_post_updates_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            data = b"enabled=false&enabled=true"
+
+            class FakeHandler:
+                headers = {"Content-Length": str(len(data))}
+                rfile = BytesIO(data)
+                server = SimpleNamespace(config=AppConfig())
+                location: str | None = None
+
+                def redirect(self, location: str) -> None:
+                    self.location = location
+
+            handler = FakeHandler()
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                BildebankRequestHandler.respond_set_person_reference_links(handler)  # type: ignore[arg-type]
+
+            config = load_config(root)
+
+        self.assertTrue(config.browser.person_reference_links_enabled)
+        self.assertTrue(handler.server.config.browser.person_reference_links_enabled)
         self.assertEqual(handler.location, "/settings")
 
     def test_run_server_hotkey_hints_post_updates_config(self) -> None:
@@ -6957,7 +6986,19 @@ model_name = "buffalo_l"
 
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
-            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            default_body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
+            body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+                person_reference_links_enabled=True,
+            )
             manual_disabled_body = item_page_html(
                 target,
                 item,
@@ -6965,7 +7006,7 @@ model_name = "buffalo_l"
                 browser_month_navigation(target, item),
                 manual_person_controls_enabled=False,
             )
-            face_body = face_overlay_content_html(target, item)
+            face_body = face_overlay_content_html(target, item, person_reference_links_enabled=True)
             disabled_body = item_page_html(
                 target,
                 item,
@@ -6975,6 +7016,8 @@ model_name = "buffalo_l"
                 openclip_enabled=False,
             )
 
+        self.assertNotIn('class="person-reference-link"', default_body)
+        self.assertNotIn('href="/person/Ola%20Nordmann/confirmed/item/1"', default_body)
         self.assertNotIn("1 filer, 1 måneder", body)
         self.assertIn('class="person-link" href="/person/Kari/no-faces/item/1"', body)
         self.assertIn('data-person-name="Kari" title="Vis alle bilder med denne personen"', body)
@@ -7005,10 +7048,10 @@ model_name = "buffalo_l"
         self.assertIn('class="person-link-with-reference"', tag_rail_html)
         self.assertIn('class="person-reference-link" href="/person/Ola%20Nordmann/confirmed/item/1"', tag_rail_html)
         self.assertIn(
-            'Ola Nordmann</a><span class="person-reference-marker"></span>'
+            'Ola Nordmann</a><span class="person-reference-marker">(</span>'
             '<a class="person-reference-link" href="/person/Ola%20Nordmann/confirmed/item/1" '
-            'title="Vis referansebildet som ga forslaget, face-id 1">(r)</a>'
-            '<span class="person-reference-marker"></span>',
+            'title="Vis referansebildet som ga forslaget, face-id 1">r</a>'
+            '<span class="person-reference-marker">)</span>',
             tag_rail_html,
         )
         self.assertIn('class="person-link" href="/person/Per%20Manual/no-faces/item/1"', tag_rail_html)
@@ -7125,6 +7168,88 @@ model_name = "buffalo_l"
         self.assertNotIn('href="/search"', disabled_body)
         self.assertNotIn("Ansikter i bildet", disabled_body)
         self.assertNotIn("Ny person", disabled_body)
+
+    def test_person_reference_links_disabled_uses_base_people_query(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(2, 'Ola')")
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(1, 1, 'key-1', 1, 2, 10, 20, 0.9, 'test', ?)
+                    """,
+                    (b"embedding-1",),
+                )
+                face_conn.execute(
+                    """
+                    INSERT INTO faces(
+                        id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                        detection_score, embedding_model, embedding
+                    )
+                    VALUES(2, 1, 'key-2', 3, 4, 12, 22, 0.8, 'test', ?)
+                    """,
+                    (b"embedding-2",),
+                )
+                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+                face_conn.execute(
+                    """
+                    INSERT INTO face_suggestions(person_id, face_id, reference_face_id, similarity)
+                    VALUES(2, 2, 1, 0.91)
+                    """
+                )
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            real_connect = sqlite3.connect
+            queries: list[str] = []
+
+            class RecordingConnection:
+                def __init__(self, *args: object, **kwargs: object) -> None:
+                    self._conn = real_connect(*args, **kwargs)
+
+                @property
+                def row_factory(self) -> object:
+                    return self._conn.row_factory
+
+                @row_factory.setter
+                def row_factory(self, value: object) -> None:
+                    self._conn.row_factory = value
+
+                def execute(self, sql: str, *args: object, **kwargs: object) -> object:
+                    queries.append(sql)
+                    if "reference_face_id" in sql or "reference_faces" in sql:
+                        raise AssertionError("disabled reference links should not query reference data")
+                    return self._conn.execute(sql, *args, **kwargs)
+
+                def executescript(self, sql: str) -> object:
+                    return self._conn.executescript(sql)
+
+                def commit(self) -> None:
+                    self._conn.commit()
+
+                def close(self) -> None:
+                    self._conn.close()
+
+            clear_face_caches()
+            with patch("bildebank.server_faces.sqlite3.connect", RecordingConnection):
+                people, confirmed = people_for_file(target, 1, person_reference_links_enabled=False)
+
+        self.assertTrue(queries)
+        self.assertEqual([person["name"] for person in people], ["Kari", "Ola"])
+        self.assertEqual([person["name"] for person in confirmed], ["Kari"])
 
     def test_run_server_item_faces_api_returns_lazy_overlay_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -9607,6 +9732,22 @@ pretrained = "laion2b_s32b_b82k"
             config_text = (root / "bildebank-config.toml").read_text(encoding="utf-8")
             self.assertIn("[image_search]", config_text)
             self.assertNotIn("[openclip]", config_text)
+
+    def test_load_config_reads_person_reference_links_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "bildebank-config.toml").write_text(
+                """
+[browser]
+person_reference_links_enabled = true
+""",
+                encoding="utf-8",
+            )
+
+            config = load_config(root)
+
+        self.assertTrue(config.browser.person_reference_links_enabled)
+        self.assertFalse(BrowserConfig().person_reference_links_enabled)
 
     def test_load_config_prefers_image_search_over_openclip(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

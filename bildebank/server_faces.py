@@ -74,11 +74,18 @@ def people_for_file(
     target: Path,
     file_id: int,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    person_reference_links_enabled: bool = False,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
     if mtime_ns is None:
         return [], []
-    rows = cached_confirmed_people_for_file(str(db_path), mtime_ns, file_id)
+    rows = cached_confirmed_people_for_file(
+        str(db_path),
+        mtime_ns,
+        file_id,
+        person_reference_links_enabled,
+    )
     return people_for_file_from_rows(file_id, rows), confirmed_face_people_for_file_from_rows(file_id, rows)
 
 
@@ -165,65 +172,98 @@ def cached_confirmed_people_for_file(
     face_db_path: str,
     face_db_mtime_ns: int,
     file_id: int,
+    person_reference_links_enabled: bool,
 ) -> tuple[tuple[str, int, int | None, bool, int | None, int | None], ...]:
     conn = sqlite3.connect(face_db_path)
     conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(conn):
             return ()
-        rows = conn.execute(
-            """
-            SELECT
-                persons.name,
-                0 AS priority,
-                person_faces.face_id,
-                0 AS manual,
-                NULL AS reference_face_id,
-                NULL AS reference_file_id,
-                1.0 AS similarity
-            FROM person_faces
-            JOIN persons ON persons.id = person_faces.person_id
-            JOIN faces ON faces.id = person_faces.face_id
-            WHERE faces.file_id = ?
-            UNION ALL
-            SELECT
-                persons.name,
-                1 AS priority,
-                NULL AS face_id,
-                1 AS manual,
-                NULL AS reference_face_id,
-                NULL AS reference_file_id,
-                1.0 AS similarity
-            FROM person_files
-            JOIN persons ON persons.id = person_files.person_id
-            WHERE person_files.file_id = ?
-            UNION ALL
-            SELECT
-                persons.name,
-                2 AS priority,
-                NULL AS face_id,
-                0 AS manual,
-                face_suggestions.reference_face_id,
-                reference_faces.file_id AS reference_file_id,
-                face_suggestions.similarity
-            FROM face_suggestions
-            JOIN persons ON persons.id = face_suggestions.person_id
-            JOIN faces ON faces.id = face_suggestions.face_id
-            LEFT JOIN faces AS reference_faces
-              ON reference_faces.id = face_suggestions.reference_face_id
-            WHERE faces.file_id = ?
-            ORDER BY name, priority, similarity DESC, face_id
-            """,
-            (file_id, file_id, file_id),
-        )
+        if person_reference_links_enabled:
+            rows = conn.execute(
+                """
+                SELECT
+                    persons.name,
+                    0 AS priority,
+                    person_faces.face_id,
+                    0 AS manual,
+                    NULL AS reference_face_id,
+                    NULL AS reference_file_id,
+                    1.0 AS similarity
+                FROM person_faces
+                JOIN persons ON persons.id = person_faces.person_id
+                JOIN faces ON faces.id = person_faces.face_id
+                WHERE faces.file_id = ?
+                UNION ALL
+                SELECT
+                    persons.name,
+                    1 AS priority,
+                    NULL AS face_id,
+                    1 AS manual,
+                    NULL AS reference_face_id,
+                    NULL AS reference_file_id,
+                    1.0 AS similarity
+                FROM person_files
+                JOIN persons ON persons.id = person_files.person_id
+                WHERE person_files.file_id = ?
+                UNION ALL
+                SELECT
+                    persons.name,
+                    2 AS priority,
+                    NULL AS face_id,
+                    0 AS manual,
+                    face_suggestions.reference_face_id,
+                    reference_faces.file_id AS reference_file_id,
+                    face_suggestions.similarity
+                FROM face_suggestions
+                JOIN persons ON persons.id = face_suggestions.person_id
+                JOIN faces ON faces.id = face_suggestions.face_id
+                LEFT JOIN faces AS reference_faces
+                  ON reference_faces.id = face_suggestions.reference_face_id
+                WHERE faces.file_id = ?
+                ORDER BY name, priority, similarity DESC, face_id
+                """,
+                (file_id, file_id, file_id),
+            )
+        else:
+            rows = conn.execute(
+                """
+                SELECT persons.name, 0 AS priority, person_faces.face_id, 0 AS manual
+                FROM person_faces
+                JOIN persons ON persons.id = person_faces.person_id
+                JOIN faces ON faces.id = person_faces.face_id
+                WHERE faces.file_id = ?
+                UNION ALL
+                SELECT persons.name, 1 AS priority, NULL AS face_id, 1 AS manual
+                FROM person_files
+                JOIN persons ON persons.id = person_files.person_id
+                WHERE person_files.file_id = ?
+                UNION ALL
+                SELECT persons.name, 2 AS priority, NULL AS face_id, 0 AS manual
+                FROM face_suggestions
+                JOIN persons ON persons.id = face_suggestions.person_id
+                JOIN faces ON faces.id = face_suggestions.face_id
+                WHERE faces.file_id = ?
+                ORDER BY name, priority, face_id
+                """,
+                (file_id, file_id, file_id),
+            )
         return tuple(
             (
                 str(row["name"]),
                 int(row["priority"]),
                 int(row["face_id"]) if row["face_id"] is not None else None,
                 bool(row["manual"]),
-                int(row["reference_face_id"]) if row["reference_face_id"] is not None else None,
-                int(row["reference_file_id"]) if row["reference_file_id"] is not None else None,
+                (
+                    int(row["reference_face_id"])
+                    if person_reference_links_enabled and row["reference_face_id"] is not None
+                    else None
+                ),
+                (
+                    int(row["reference_file_id"])
+                    if person_reference_links_enabled and row["reference_file_id"] is not None
+                    else None
+                ),
             )
             for row in rows
         )
@@ -311,6 +351,8 @@ def unconfirmed_faces_for_item(
     target: Path,
     item: Any,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    person_reference_links_enabled: bool = False,
 ) -> list[dict[str, object]]:
     db_path = current_face_db_path(target, face_config)
     if not db_path.exists():
@@ -356,32 +398,51 @@ def unconfirmed_faces_for_item(
                 require_int(face["faceId"], "faceId"): [] for face in faces
             }
             placeholders = ",".join("?" for _ in suggestions_by_face_id)
-            suggestion_rows = conn.execute(
-                f"""
-                SELECT
-                    face_suggestions.face_id,
-                    persons.name,
-                    face_suggestions.reference_face_id,
-                    reference_faces.file_id AS reference_file_id,
-                    face_suggestions.similarity
-                FROM face_suggestions
-                JOIN persons ON persons.id = face_suggestions.person_id
-                LEFT JOIN faces AS reference_faces
-                  ON reference_faces.id = face_suggestions.reference_face_id
-                WHERE face_suggestions.face_id IN ({placeholders})
-                ORDER BY face_suggestions.face_id, face_suggestions.similarity DESC, persons.name
-                """,
-                tuple(suggestions_by_face_id),
-            )
+            if person_reference_links_enabled:
+                suggestion_rows = conn.execute(
+                    f"""
+                    SELECT
+                        face_suggestions.face_id,
+                        persons.name,
+                        face_suggestions.reference_face_id,
+                        reference_faces.file_id AS reference_file_id,
+                        face_suggestions.similarity
+                    FROM face_suggestions
+                    JOIN persons ON persons.id = face_suggestions.person_id
+                    LEFT JOIN faces AS reference_faces
+                      ON reference_faces.id = face_suggestions.reference_face_id
+                    WHERE face_suggestions.face_id IN ({placeholders})
+                    ORDER BY face_suggestions.face_id, face_suggestions.similarity DESC, persons.name
+                    """,
+                    tuple(suggestions_by_face_id),
+                )
+            else:
+                suggestion_rows = conn.execute(
+                    f"""
+                    SELECT
+                        face_suggestions.face_id,
+                        persons.name,
+                        face_suggestions.similarity
+                    FROM face_suggestions
+                    JOIN persons ON persons.id = face_suggestions.person_id
+                    WHERE face_suggestions.face_id IN ({placeholders})
+                    ORDER BY face_suggestions.face_id, face_suggestions.similarity DESC, persons.name
+                    """,
+                    tuple(suggestions_by_face_id),
+                )
             for row in suggestion_rows:
                 suggestions_by_face_id[int(row["face_id"])].append(
                     {
                         "name": str(row["name"]),
                         "referenceFaceId": (
-                            None if row["reference_face_id"] is None else int(row["reference_face_id"])
+                            None
+                            if not person_reference_links_enabled or row["reference_face_id"] is None
+                            else int(row["reference_face_id"])
                         ),
                         "referenceFileId": (
-                            None if row["reference_file_id"] is None else int(row["reference_file_id"])
+                            None
+                            if not person_reference_links_enabled or row["reference_file_id"] is None
+                            else int(row["reference_file_id"])
                         ),
                         "similarity": float(row["similarity"]),
                     }
@@ -915,11 +976,11 @@ def suggested_person_reference_link_html(person: dict[str, object]) -> str:
         + f"/confirmed/item/{clean_reference_file_id}"
     )
     return (
-        '<span class="person-reference-marker"></span>'
+        '<span class="person-reference-marker">(</span>'
         f'<a class="person-reference-link" href="{html.escape(reference_url)}" '
         f'title="Vis referansebildet som ga forslaget, face-id {clean_reference_face_id}">'
-        "(r)</a>"
-        '<span class="person-reference-marker"></span>'
+        "r</a>"
+        '<span class="person-reference-marker">)</span>'
     )
 
 
@@ -1246,8 +1307,15 @@ def face_overlay_content_html(
     target: Path,
     item: Any,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    person_reference_links_enabled: bool = False,
 ) -> str:
-    faces = unconfirmed_faces_for_item(target, item, face_config)
+    faces = unconfirmed_faces_for_item(
+        target,
+        item,
+        face_config,
+        person_reference_links_enabled=person_reference_links_enabled,
+    )
     if not faces:
         return '<p class="empty">Ingen ubekreftede ansikter i bildet.</p>'
     people = registered_people(target, face_config)
