@@ -16,7 +16,7 @@ from .config import BrowserHotkeyConfig, FaceRecognitionConfig, HOTKEY_KEYS
 from .formatting import format_bytes
 from .geo import H3_COLUMNS, h3_area_label
 from .html_export import display_relative_path, month_key_from_path
-from .media import media_kind
+from .media import IMAGE_EXTENSIONS, media_kind
 from .media_cache import cached_image_dimensions
 from .openclip import relative_to_target
 from .server_browser_sources import (
@@ -1235,25 +1235,74 @@ def valid_year_key(value: str) -> bool:
     return len(value) == 4 and value.isdigit()
 
 
+def image_extension_sql(column: str) -> str:
+    clauses = [f"lower({column}) LIKE '%{extension}'" for extension in sorted(IMAGE_EXTENSIONS)]
+    return "(" + " OR ".join(clauses) + ")"
+
+
 def browser_year_summaries(target: Path, *, hide_out_of_focus: bool = False) -> list[dict[str, int | str]]:
     conn = db.connect(target)
     try:
         where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
         rows = conn.execute(
             f"""
-            SELECT
-                substr(browser_date, 1, 4) AS year,
-                COUNT(*) AS item_count,
-                COUNT(DISTINCT substr(browser_date, 1, 7)) AS month_count,
-                MIN(substr(browser_date, 1, 7)) AS first_month
-            FROM (
-                SELECT {db.BROWSER_DATE_ORDER_SQL} AS browser_date
+            WITH visible AS (
+                SELECT
+                    id,
+                    target_path,
+                    target_path_key,
+                    {db.BROWSER_DATE_ORDER_SQL} AS browser_date
                 FROM files
                 WHERE {where_sql}
+            ),
+            valid AS (
+                SELECT
+                    id,
+                    target_path,
+                    target_path_key,
+                    browser_date,
+                    substr(browser_date, 1, 4) AS year,
+                    substr(browser_date, 1, 7) AS month_key
+                FROM visible
+                WHERE browser_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+            ),
+            year_summary AS (
+                SELECT
+                    year,
+                    COUNT(*) AS item_count,
+                    COUNT(DISTINCT month_key) AS month_count,
+                    MIN(month_key) AS first_month
+                FROM valid
+                GROUP BY year
+            ),
+            year_thumbnail AS (
+                SELECT year, id AS item_id
+                FROM (
+                    SELECT
+                        valid.year,
+                        valid.id,
+                        row_number() OVER (
+                            PARTITION BY valid.year
+                            ORDER BY
+                                CASE WHEN {image_extension_sql("valid.target_path")} THEN 0 ELSE 1 END,
+                                valid.browser_date,
+                                valid.target_path_key
+                        ) AS row_number
+                    FROM valid
+                    JOIN year_summary ON year_summary.year = valid.year
+                     AND year_summary.first_month = valid.month_key
+                )
+                WHERE row_number = 1
             )
-            WHERE browser_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-            GROUP BY year
-            ORDER BY year
+            SELECT
+                year_summary.year,
+                year_summary.item_count,
+                year_summary.month_count,
+                year_summary.first_month,
+                year_thumbnail.item_id
+            FROM year_summary
+            JOIN year_thumbnail ON year_thumbnail.year = year_summary.year
+            ORDER BY year_summary.year
             """,
             params,
         )
@@ -1263,6 +1312,7 @@ def browser_year_summaries(target: Path, *, hide_out_of_focus: bool = False) -> 
                 "month_count": int(row["month_count"]),
                 "item_count": int(row["item_count"]),
                 "first_month": str(row["first_month"]),
+                "item_id": int(row["item_id"]),
             }
             for row in rows
             if valid_year_key(str(row["year"]))
@@ -1272,21 +1322,27 @@ def browser_year_summaries(target: Path, *, hide_out_of_focus: bool = False) -> 
 
 
 def browser_year_cards(target: Path, *, hide_out_of_focus: bool = False) -> list[dict[str, Any]]:
+    summaries = browser_year_summaries(target, hide_out_of_focus=hide_out_of_focus)
+    items = {
+        int(item["id"]): item
+        for item in items_by_file_ids(
+            target,
+            [int(summary["item_id"]) for summary in summaries],
+            hide_out_of_focus=hide_out_of_focus,
+        )
+    }
     cards: list[dict[str, Any]] = []
-    for summary in browser_year_summaries(target, hide_out_of_focus=hide_out_of_focus):
+    for summary in summaries:
         year = str(summary["year"])
-        first_month = str(summary["first_month"])
-        if not valid_month_key(first_month):
-            continue
-        first_items = browser_month_items(target, first_month, hide_out_of_focus=hide_out_of_focus)
-        if not first_items:
+        item = items.get(int(summary["item_id"]))
+        if item is None:
             continue
         cards.append(
             {
                 "year": year,
                 "month_count": int(summary["month_count"]),
                 "item_count": int(summary["item_count"]),
-                "item": representative_image_item(first_items),
+                "item": item,
             }
         )
     return cards

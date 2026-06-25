@@ -2909,7 +2909,7 @@ model_name = "buffalo_l"
         self.assertNotIn('href="/month/2007-04"', filtered_year_body)
         self.assertEqual([card["year"] for card in year_cards], ["2005"])
         self.assertEqual([card["year"] for card in optimized_year_cards], ["2005", "2007"])
-        self.assertEqual(month_items.call_count, 2)
+        self.assertEqual(month_items.call_count, 0)
         self.assertEqual([card["month_key"] for card in month_cards], ["2005-03", "2005-04", "2005-05"])
 
     def test_run_server_year_route_rejects_invalid_year(self) -> None:
