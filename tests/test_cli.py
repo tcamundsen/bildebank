@@ -2866,6 +2866,8 @@ model_name = "buffalo_l"
             filtered_year_body = year_months_page_html(target, "2007", hide_out_of_focus=True)
             year_cards = browser_year_cards(target, hide_out_of_focus=True)
             month_cards = browser_year_month_cards(target, "2005")
+            with patch("bildebank.server_browser.browser_month_items", wraps=server_browser.browser_month_items) as month_items:
+                optimized_year_cards = server_browser.browser_year_cards(target)
 
         self.assertIn('href="/years/2005"', years_body)
         self.assertIn('data-nav-button-pair="year"', years_body)
@@ -2906,6 +2908,8 @@ model_name = "buffalo_l"
         self.assertIn('<span class="nav-button disabled">ed ▶</span>', filtered_year_body)
         self.assertNotIn('href="/month/2007-04"', filtered_year_body)
         self.assertEqual([card["year"] for card in year_cards], ["2005"])
+        self.assertEqual([card["year"] for card in optimized_year_cards], ["2005", "2007"])
+        self.assertEqual(month_items.call_count, 2)
         self.assertEqual([card["month_key"] for card in month_cards], ["2005-03", "2005-04", "2005-05"])
 
     def test_run_server_year_route_rejects_invalid_year(self) -> None:

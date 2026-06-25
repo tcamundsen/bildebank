@@ -1235,26 +1235,57 @@ def valid_year_key(value: str) -> bool:
     return len(value) == 4 and value.isdigit()
 
 
+def browser_year_summaries(target: Path, *, hide_out_of_focus: bool = False) -> list[dict[str, int | str]]:
+    conn = db.connect(target)
+    try:
+        where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
+        rows = conn.execute(
+            f"""
+            SELECT
+                substr(browser_date, 1, 4) AS year,
+                COUNT(*) AS item_count,
+                COUNT(DISTINCT substr(browser_date, 1, 7)) AS month_count,
+                MIN(substr(browser_date, 1, 7)) AS first_month
+            FROM (
+                SELECT {db.BROWSER_DATE_ORDER_SQL} AS browser_date
+                FROM files
+                WHERE {where_sql}
+            )
+            WHERE browser_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+            GROUP BY year
+            ORDER BY year
+            """,
+            params,
+        )
+        return [
+            {
+                "year": str(row["year"]),
+                "month_count": int(row["month_count"]),
+                "item_count": int(row["item_count"]),
+                "first_month": str(row["first_month"]),
+            }
+            for row in rows
+            if valid_year_key(str(row["year"]))
+        ]
+    finally:
+        conn.close()
+
+
 def browser_year_cards(target: Path, *, hide_out_of_focus: bool = False) -> list[dict[str, Any]]:
-    month_keys = browser_month_keys(target, hide_out_of_focus=hide_out_of_focus)
-    years = sorted({key[:4] for key in month_keys})
     cards: list[dict[str, Any]] = []
-    for year in years:
-        year_months = [key for key in month_keys if key.startswith(year)]
-        if not year_months:
+    for summary in browser_year_summaries(target, hide_out_of_focus=hide_out_of_focus):
+        year = str(summary["year"])
+        first_month = str(summary["first_month"])
+        if not valid_month_key(first_month):
             continue
-        first_items = browser_month_items(target, year_months[0], hide_out_of_focus=hide_out_of_focus)
+        first_items = browser_month_items(target, first_month, hide_out_of_focus=hide_out_of_focus)
         if not first_items:
             continue
-        item_count = len(first_items) + sum(
-            len(browser_month_items(target, month_key, hide_out_of_focus=hide_out_of_focus))
-            for month_key in year_months[1:]
-        )
         cards.append(
             {
                 "year": year,
-                "month_count": len(year_months),
-                "item_count": item_count,
+                "month_count": int(summary["month_count"]),
+                "item_count": int(summary["item_count"]),
                 "item": representative_image_item(first_items),
             }
         )
