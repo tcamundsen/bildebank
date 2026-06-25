@@ -8188,6 +8188,7 @@ model_name = "buffalo_l"
                         self.openclip_enabled = False
                         self.hide_out_of_focus = False
                         self._source_item_ids = {}
+                        self._source_first_day_item_ids = {}
                         self._browser_navigation_cache_version = 0
 
                     def source_month_keys(self, source, *, hide_out_of_focus: bool = False):
@@ -8207,6 +8208,14 @@ model_name = "buffalo_l"
 
                     def browser_navigation_cache_version(self) -> int:
                         return 0
+
+                    def source_first_day_item_id(self, source, day_key: str, *, hide_out_of_focus: bool = False):
+                        return BildebankServer.source_first_day_item_id(
+                            self,
+                            source,
+                            day_key,
+                            hide_out_of_focus=hide_out_of_focus,
+                        )
 
                 class FakeHandler:
                     server = FakeServer(target)
@@ -8233,6 +8242,7 @@ model_name = "buffalo_l"
                     patch("bildebank.server.source_item_ids", wraps=source_item_ids) as item_ids_mock,
                     patch("bildebank.server.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock,
                     patch("bildebank.server.adjacent_source_items", wraps=adjacent_source_items) as adjacent_mock,
+                    patch("bildebank.server_browser.first_source_day_item", side_effect=AssertionError("handler should pass cached first day item")),
                 ):
                     BildebankRequestHandler.respond_browser_source(  # type: ignore[arg-type]
                         handler,

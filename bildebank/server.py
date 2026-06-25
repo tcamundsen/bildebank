@@ -1437,7 +1437,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         month_key_for_item(self.server.target, item),
                     )
                     self.record_server_timing("month_nav", start)
-                    first_day_item_id = None
+                    start = time.perf_counter()
+                    first_day_item_id = self.server.source_first_day_item_id(
+                        source,
+                        browser_date_for_item(item),
+                        hide_out_of_focus=hide_out_of_focus,
+                    )
+                    self.record_server_timing("first_day_item", start)
                 else:
                     start = time.perf_counter()
                     previous_item, next_item = adjacent_source_items(
