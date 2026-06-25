@@ -230,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.suite is not None:
-        print_suite_summary(suite_summary)
+        print_suite_summary(suite_summary, show_server_timing=args.suite_server_timing)
         try:
             if args.json_output:
                 write_json_output(args.json_output, suite_summary_to_json(suite_summary))
@@ -265,6 +265,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--url", default=DEFAULT_URL, help=f"Startside eller item-URL. Standard: {DEFAULT_URL}")
     parser.add_argument("--suite", type=Path, help="JSON-fil med benchmark-cases.")
+    parser.add_argument(
+        "--suite-server-timing",
+        action="store_true",
+        help="Vis detaljerte Server-Timing-steg for beste run i hver suite-case.",
+    )
     parser.add_argument("--repeat", type=positive_int, default=3, help="Kjør hver suite-case N ganger. Standard: 3")
     parser.add_argument(
         "--min-failures",
@@ -1275,7 +1280,7 @@ def print_years_profile_summary(summary: YearsProfileSummary) -> None:
         print(f"  terskel: {summary.threshold_ms:.1f} ms, brudd={summary.threshold_failures}")
 
 
-def print_suite_summary(summary: SuiteSummary) -> None:
+def print_suite_summary(summary: SuiteSummary, *, show_server_timing: bool = False) -> None:
     print("Bildebank browser benchmark suite")
     print(
         f"  modus: {summary.mode}, repeat={summary.repeat}, "
@@ -1293,7 +1298,7 @@ def print_suite_summary(summary: SuiteSummary) -> None:
             f"brudd={best.threshold_failures}, "
             f"brudd/run=[{failures_per_run}] — {status}"
         )
-        if isinstance(best, BenchmarkSummary):
+        if show_server_timing and isinstance(best, BenchmarkSummary):
             server_timing = server_timing_medians(best.steps)
             if server_timing:
                 ordered_names = [name for name in SERVER_TIMING_STEP_ORDER if name in server_timing]

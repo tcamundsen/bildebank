@@ -384,6 +384,60 @@ def test_parse_args_has_suite_defaults() -> None:
     assert args.repeat == 3
     assert args.min_failures == 0
     assert args.max_failures == 5
+    assert args.suite_server_timing is False
+
+
+def test_print_suite_summary_hides_server_timing_unless_requested(capsys) -> None:
+    benchmark = load_benchmark_module()
+    run = benchmark.BenchmarkSummary(
+        mode="server-keepalive",
+        start_url="http://127.0.0.1:8765/item/123",
+        steps_requested=2,
+        steps_measured=2,
+        warmup=0,
+        threshold_ms=10.0,
+        threshold_failures=0,
+        min_ms=5.0,
+        median_ms=6.0,
+        mean_ms=6.0,
+        p90_ms=7.0,
+        p95_ms=7.0,
+        max_ms=7.0,
+        steps=[
+            benchmark.StepResult(
+                index=1,
+                elapsed_ms=6.0,
+                url="/item/1",
+                server_timing_ms={"parse": 1.0, "total": 6.0},
+            )
+        ],
+    )
+    summary = benchmark.SuiteSummary(
+        suite_path="suite.json",
+        mode="server-keepalive",
+        repeat=1,
+        min_failures=0,
+        max_failures=5,
+        passed=True,
+        cases=[
+            benchmark.SuiteCaseResult(
+                name="vanlig-bildevisning",
+                url="http://127.0.0.1:8765/item/123",
+                threshold_ms=10.0,
+                runs=[run],
+                best_run_index=0,
+                passed=True,
+            )
+        ],
+    )
+
+    benchmark.print_suite_summary(summary)
+    quiet_output = capsys.readouterr().out
+    benchmark.print_suite_summary(summary, show_server_timing=True)
+    verbose_output = capsys.readouterr().out
+
+    assert "server:" not in quiet_output
+    assert "    server: parse=1.0 ms, total=6.0 ms" in verbose_output
 
 
 def test_suite_selects_best_run_and_uses_inclusive_failure_range(tmp_path: Path, monkeypatch) -> None:
