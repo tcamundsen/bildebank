@@ -5785,82 +5785,84 @@ model_name = "buffalo_l"
         self.assertEqual(motion_file.content_type, "video/mp4")
         self.assertEqual(motion_file.content[4:8], b"ftyp")
 
-    def test_run_server_hides_nef_sidecar_and_links_it_from_jpg(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            source.mkdir()
-            (source / "DSC_0170.JPG").write_bytes(jpeg_with_exif_datetime("2019:03:03 12:00:00"))
-            (source / "DSC_0170.NEF").write_bytes(minimal_tiff_with_datetime("2019:03:03 12:00:00"))
+    def test_run_server_hides_raw_sidecar_and_links_it_from_jpg(self) -> None:
+        for extension in ("NEF", "PSD"):
+            with self.subTest(extension=extension), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                target = root / "target"
+                source = root / "source"
+                source.mkdir()
+                sidecar_filename = f"DSC_0170.{extension}"
+                (source / "DSC_0170.JPG").write_bytes(jpeg_with_exif_datetime("2019:03:03 12:00:00"))
+                (source / sidecar_filename).write_bytes(minimal_tiff_with_datetime("2019:03:03 12:00:00"))
 
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+                self.assertEqual(run_cli(["create", str(target)]), 0)
+                self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
 
-            month_items = browser_month_items(target, "2019-03")
-            type_file_source = text_filter_browser_source("type:file")
-            extension_source = text_filter_browser_source("extension:nef")
-            filename_source = text_filter_browser_source("filename:DSC_0170")
-            type_file_items = source_month_items(target, type_file_source, "2019-03")
-            extension_items = source_month_items(target, extension_source, "2019-03")
-            filename_items = source_month_items(target, filename_source, "2019-03")
-            image_item = month_items[0]
-            nef_item = extension_items[0]
-            nef_body = source_item_page_html(
-                target,
-                extension_source,
-                nef_item,
-                *adjacent_source_items(target, extension_source, nef_item),
-                source_month_navigation(target, extension_source, nef_item),
-            )
-            response: dict[str, object] = {}
-            handler = object.__new__(BildebankRequestHandler)
-            handler.server = SimpleNamespace(target=target)
-
-            def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
-                response["content"] = content
-                response["status"] = status
-
-            handler.respond_json = fake_respond_json  # type: ignore[method-assign]
-            handler.respond_item_info(f"file_id={nef_item['id']}")
-            previous_item, next_item = adjacent_browser_items(target, image_item)
-            month_nav = browser_month_navigation(target, image_item)
-            self.assertIsNotNone(raw_sidecar_id_by_image_id(target, int(image_item["id"])))
-            with patch("bildebank.server_browser.raw_sidecar_groups", side_effect=AssertionError("global raw scan")):
-                image_body = item_page_html(
+                month_items = browser_month_items(target, "2019-03")
+                type_file_source = text_filter_browser_source("type:file")
+                extension_source = text_filter_browser_source(f"extension:{extension.lower()}")
+                filename_source = text_filter_browser_source("filename:DSC_0170")
+                type_file_items = source_month_items(target, type_file_source, "2019-03")
+                extension_items = source_month_items(target, extension_source, "2019-03")
+                filename_items = source_month_items(target, filename_source, "2019-03")
+                image_item = month_items[0]
+                sidecar_item = extension_items[0]
+                sidecar_body = source_item_page_html(
                     target,
-                    image_item,
-                    previous_item,
-                    next_item,
-                    month_nav,
+                    extension_source,
+                    sidecar_item,
+                    *adjacent_source_items(target, extension_source, sidecar_item),
+                    source_month_navigation(target, extension_source, sidecar_item),
                 )
+                response: dict[str, object] = {}
+                handler = object.__new__(BildebankRequestHandler)
+                handler.server = SimpleNamespace(target=target)
 
-        self.assertEqual([item["stored_filename"] for item in month_items], ["DSC_0170.JPG"])
-        self.assertEqual([item["stored_filename"] for item in type_file_items], ["DSC_0170.NEF"])
-        self.assertEqual([item["stored_filename"] for item in extension_items], ["DSC_0170.NEF"])
-        self.assertEqual(
-            [item["stored_filename"] for item in filename_items],
-            ["DSC_0170.JPG", "DSC_0170.NEF"],
-        )
-        controls_start = image_body.index('<nav class="controls"')
-        controls_end = image_body.index("</nav>", controls_start)
-        controls_html = image_body[controls_start:controls_end]
-        self.assertIn(".NEF</a>", controls_html)
-        self.assertIn("/filter/filename%3ADSC_0170.NEF/item/", image_body)
-        self.assertNotIn("RAW-fil: DSC_0170.NEF", image_body)
-        self.assertNotIn('<footer class="browser-footer">', image_body)
-        self.assertIn(f'href="/item/{int(image_item["id"])}">Vis JPG-bildet</a>', nef_body)
-        self.assertNotIn("Åpne i alle bilder", nef_body)
-        self.assertEqual(response["status"], HTTPStatus.OK)
-        content = response["content"]
-        assert isinstance(content, dict)
-        self.assertIs(content["ok"], True)
-        nef_info_html = str(content["html"])
-        self.assertIn("<dt>Filnavn</dt>", nef_info_html)
-        self.assertIn("DSC_0170.NEF", nef_info_html)
-        self.assertIn("<dt>Filstørrelse</dt>", nef_info_html)
-        self.assertIn("<dt>Kilder</dt>", nef_info_html)
-        self.assertIn(source.name, nef_info_html)
+                def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    response["content"] = content
+                    response["status"] = status
+
+                handler.respond_json = fake_respond_json  # type: ignore[method-assign]
+                handler.respond_item_info(f"file_id={sidecar_item['id']}")
+                previous_item, next_item = adjacent_browser_items(target, image_item)
+                month_nav = browser_month_navigation(target, image_item)
+                self.assertIsNotNone(raw_sidecar_id_by_image_id(target, int(image_item["id"])))
+                with patch("bildebank.server_browser.raw_sidecar_groups", side_effect=AssertionError("global raw scan")):
+                    image_body = item_page_html(
+                        target,
+                        image_item,
+                        previous_item,
+                        next_item,
+                        month_nav,
+                    )
+
+                self.assertEqual([item["stored_filename"] for item in month_items], ["DSC_0170.JPG"])
+                self.assertEqual([item["stored_filename"] for item in type_file_items], [sidecar_filename])
+                self.assertEqual([item["stored_filename"] for item in extension_items], [sidecar_filename])
+                self.assertEqual(
+                    [item["stored_filename"] for item in filename_items],
+                    ["DSC_0170.JPG", sidecar_filename],
+                )
+                controls_start = image_body.index('<nav class="controls"')
+                controls_end = image_body.index("</nav>", controls_start)
+                controls_html = image_body[controls_start:controls_end]
+                self.assertIn(f".{extension}</a>", controls_html)
+                self.assertIn(f"/filter/filename%3ADSC_0170.{extension}/item/", image_body)
+                self.assertNotIn(f"RAW-fil: {sidecar_filename}", image_body)
+                self.assertNotIn('<footer class="browser-footer">', image_body)
+                self.assertIn(f'href="/item/{int(image_item["id"])}">Vis JPG-bildet</a>', sidecar_body)
+                self.assertNotIn("Åpne i alle bilder", sidecar_body)
+                self.assertEqual(response["status"], HTTPStatus.OK)
+                content = response["content"]
+                assert isinstance(content, dict)
+                self.assertIs(content["ok"], True)
+                sidecar_info_html = str(content["html"])
+                self.assertIn("<dt>Filnavn</dt>", sidecar_info_html)
+                self.assertIn(sidecar_filename, sidecar_info_html)
+                self.assertIn("<dt>Filstørrelse</dt>", sidecar_info_html)
+                self.assertIn("<dt>Kilder</dt>", sidecar_info_html)
+                self.assertIn(source.name, sidecar_info_html)
 
     def test_run_server_nef_sidecar_requires_same_source_folder(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -40,6 +40,13 @@ PageRenderer = Callable[[str, str], str]
 Breadcrumb = tuple[str, str | None] | tuple[str, str | None, str | None]
 RAW_SIDECAR_IDS_CACHE_MAX_SIZE = 8
 RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE: dict[tuple[str, int], dict[int, int]] = {}
+RAW_SIDECAR_EXTENSIONS = {".nef", ".psd"}
+RAW_SIDECAR_SQL_EXTENSION_FILTER = """
+              lower(files.original_filename) LIKE '%.nef'
+              OR lower(files.original_filename) LIKE '%.psd'
+"""
+RAW_SIDECAR_IMAGE_EXTENSIONS = {".jpg", ".jpeg"}
+RAW_SIDECAR_GROUP_EXTENSIONS = RAW_SIDECAR_EXTENSIONS | RAW_SIDECAR_IMAGE_EXTENSIONS
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 MONTH_NAMES = {
     "01": "Januar",
@@ -369,7 +376,7 @@ def query_raw_sidecar_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -
           AND files.date_source = 'metadata'
           AND files.metadata_datetime IS NOT NULL
           AND (
-              lower(files.original_filename) LIKE '%.nef'
+{RAW_SIDECAR_SQL_EXTENSION_FILTER}
               OR lower(files.original_filename) LIKE '%.jpg'
               OR lower(files.original_filename) LIKE '%.jpeg'
           )
@@ -378,7 +385,7 @@ def query_raw_sidecar_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -
     ):
         original_filename = str(row["original_filename"])
         suffix = Path(original_filename).suffix.casefold()
-        if suffix not in {".nef", ".jpg", ".jpeg"}:
+        if suffix not in RAW_SIDECAR_GROUP_EXTENSIONS:
             continue
         key = (
             int(row["source_id"]),
@@ -387,7 +394,7 @@ def query_raw_sidecar_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -
             str(row["metadata_datetime"]),
         )
         raw_ids, image_ids = groups.setdefault(key, (set(), set()))
-        if suffix == ".nef":
+        if suffix in RAW_SIDECAR_EXTENSIONS:
             raw_ids.add(int(row["id"]))
         else:
             image_ids.add(int(row["id"]))
@@ -838,7 +845,7 @@ def query_raw_sidecar_ids_by_image_id(conn: sqlite3.Connection) -> dict[int, int
 def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, str], tuple[set[int], set[int]]]:
     groups: dict[tuple[int, str, str, str], tuple[set[int], set[int]]] = {}
     for row in conn.execute(
-        """
+        f"""
         SELECT
             files.id,
             files.original_filename,
@@ -851,7 +858,7 @@ def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, st
           AND files.date_source = 'metadata'
           AND files.metadata_datetime IS NOT NULL
           AND (
-              lower(files.original_filename) LIKE '%.nef'
+{RAW_SIDECAR_SQL_EXTENSION_FILTER}
               OR lower(files.original_filename) LIKE '%.jpg'
               OR lower(files.original_filename) LIKE '%.jpeg'
           )
@@ -859,7 +866,7 @@ def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, st
     ):
         original_filename = str(row["original_filename"])
         suffix = Path(original_filename).suffix.casefold()
-        if suffix not in {".nef", ".jpg", ".jpeg"}:
+        if suffix not in RAW_SIDECAR_GROUP_EXTENSIONS:
             continue
         key = (
             int(row["source_id"]),
@@ -868,7 +875,7 @@ def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, st
             str(row["metadata_datetime"]),
         )
         raw_ids, image_ids = groups.setdefault(key, (set(), set()))
-        if suffix == ".nef":
+        if suffix in RAW_SIDECAR_EXTENSIONS:
             raw_ids.add(int(row["id"]))
         else:
             image_ids.add(int(row["id"]))
@@ -2185,7 +2192,7 @@ def raw_sidecar_main_image(target: Path, item: Any, *, conn: sqlite3.Connection 
         original_filename = str(item["original_filename"])
     except (KeyError, IndexError):
         original_filename = original_filename_for_item(target, item, conn=conn) or ""
-    if Path(original_filename).suffix.casefold() != ".nef":
+    if Path(original_filename).suffix.casefold() not in RAW_SIDECAR_EXTENSIONS:
         return None
     owned_conn = conn is None
     conn = conn or db.connect(target)

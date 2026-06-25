@@ -40,9 +40,9 @@ ikke gjenkjennes av insightface. Visningen av denne kan slås av og på i
 Du får mer informasjon om bildet ved å klikke på filnavnet øverst på skjermen.
 
 `.NEF`, `.RAW` og `.PSD` vises som lenker til filer, ikke som vanlige bilder.
-Når en `.NEF`-fil hører trygt sammen med en `.JPG`-fil fra samme mappe og samme
-import, skjules `.NEF`-filen fra vanlig bildevisning. Da vises den i stedet
-som en lenke på JPG-bildets side.
+Når en `.NEF`- eller `.PSD`-fil hører trygt sammen med en `.JPG`-fil fra samme
+mappe og samme import, skjules filen fra vanlig bildevisning. Da vises den i
+stedet som en lenke på JPG-bildets side.
 
 ## Hurtigtaster
 

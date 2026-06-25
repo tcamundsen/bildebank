@@ -33,13 +33,13 @@ Bildebank prøver først å finne dato i metadata. Hvis det ikke går, kan progr
 bruke dato fra filens endringstidspunkt eller filnavnet.
 
 `.NEF`, `.RAW` og `.PSD` importeres og bevares, men vises som
-fil-lenker/filkort, ikke som vanlige bilder. `.NEF` kan i tillegg skjules fra
-vanlig bildeblaing når den trygt hører sammen med en `.JPG`; da vises den som
-lenke på JPG-bildets side.
+fil-lenker/filkort, ikke som vanlige bilder. `.NEF` og `.PSD` kan i tillegg
+skjules fra vanlig bildeblaing når de trygt hører sammen med en `.JPG`; da
+vises de som lenke på JPG-bildets side.
 
-Når dette skjer , er `.NEF`-filen er fortsatt bevart i bildesamlingen og kan
-finnes med filtersøk, for eksempel `extension:nef`, `type:file` eller
-`filename:DSC_0170`.
+Når dette skjer, er `.NEF`- eller `.PSD`-filen fortsatt bevart i bildesamlingen
+og kan finnes med filtersøk, for eksempel `extension:nef`, `extension:psd`,
+`type:file` eller `filename:DSC_0170`.
 
 Google/Pixel motion-videoer kan ligge som `.MP`-filer. Når filen faktisk er en
 MP4-video, importerer Bildebank den som video og lagrer kopien med `.mp4` i
