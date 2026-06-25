@@ -1408,14 +1408,10 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             try:
                 if source_has_sql_filter(source):
                     start = time.perf_counter()
-                    item = source_item_by_id(
-                        self.server.target,
-                        source,
-                        file_id,
-                        face_config,
-                        hide_out_of_focus=hide_out_of_focus,
-                        conn=conn,
-                    )
+                    item_ids, item_positions = self.server.source_item_order(source, hide_out_of_focus=hide_out_of_focus)
+                    self.record_server_timing("source_item_order", start)
+                    start = time.perf_counter()
+                    item = item_by_id(self.server.target, file_id, conn=conn) if file_id in item_positions else None
                     self.record_server_timing("item_by_id", start)
                 else:
                     start = time.perf_counter()
@@ -1433,14 +1429,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     return
                 if source_has_sql_filter(source):
                     start = time.perf_counter()
-                    previous_item, next_item = adjacent_source_items(
-                        self.server.target,
-                        source,
-                        item,
-                        face_config,
-                        hide_out_of_focus=hide_out_of_focus,
-                        conn=conn,
-                    )
+                    previous_item, next_item = adjacent_items_from_id_order(item_ids, int(item["id"]), item_positions)
                     self.record_server_timing("adjacent", start)
                     start = time.perf_counter()
                     month_nav = month_navigation_for_keys(
