@@ -65,7 +65,8 @@ def ensure_current_face_schema(face_db_path: str, face_db_mtime_ns: int) -> None
 
 def clear_face_caches() -> None:
     ensure_current_face_schema.cache_clear()
-    cached_confirmed_people_for_file.cache_clear()
+    cached_people_for_file_rows.cache_clear()
+    cached_people_with_references_for_file_rows.cache_clear()
     cached_person_file_ids.cache_clear()
     cached_registered_people.cache_clear()
 
@@ -80,16 +81,57 @@ def people_for_file(
     db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
     if mtime_ns is None:
         return [], []
-    rows = cached_confirmed_people_for_file(
-        str(db_path),
-        mtime_ns,
-        file_id,
-        person_reference_links_enabled,
-    )
+    if person_reference_links_enabled:
+        rows = cached_people_with_references_for_file_rows(str(db_path), mtime_ns, file_id)
+        return (
+            people_with_references_for_file_from_rows(file_id, rows),
+            confirmed_face_people_with_references_for_file_from_rows(file_id, rows),
+        )
+    rows = cached_people_for_file_rows(str(db_path), mtime_ns, file_id)
     return people_for_file_from_rows(file_id, rows), confirmed_face_people_for_file_from_rows(file_id, rows)
 
 
 def people_for_file_from_rows(
+    file_id: int,
+    rows: tuple[tuple[str, int, int | None, bool], ...],
+) -> list[dict[str, object]]:
+    people: dict[str, dict[str, object]] = {}
+    for name, priority, _face_id, manual in rows:
+        if name not in people:
+            people[name] = {"priority": priority, "manual": manual}
+            continue
+        if priority < require_int(people[name]["priority"], "personprioritet"):
+            people[name]["priority"] = priority
+        if manual:
+            people[name]["manual"] = True
+    return [
+        {
+            "name": name,
+            "url": person_item_url(name, file_id, show_faces=False),
+            "confirmed": require_int(data["priority"], "personprioritet") <= 1,
+            "manual": bool(data["manual"]),
+        }
+        for name, data in sorted(people.items())
+    ]
+
+
+def confirmed_face_people_for_file_from_rows(
+    file_id: int,
+    rows: tuple[tuple[str, int, int | None, bool], ...],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "name": name,
+            "url": person_item_url(name, file_id, show_faces=False),
+            "confirmed": True,
+            "faceId": face_id,
+        }
+        for name, priority, face_id, _manual in rows
+        if priority == 0 and face_id is not None
+    ]
+
+
+def people_with_references_for_file_from_rows(
     file_id: int,
     rows: tuple[tuple[str, int, int | None, bool, int | None, int | None], ...],
 ) -> list[dict[str, object]]:
@@ -126,7 +168,7 @@ def people_for_file_from_rows(
     ]
 
 
-def confirmed_face_people_for_file_from_rows(
+def confirmed_face_people_with_references_for_file_from_rows(
     file_id: int,
     rows: tuple[tuple[str, int, int | None, bool, int | None, int | None], ...],
 ) -> list[dict[str, object]]:
@@ -141,6 +183,126 @@ def confirmed_face_people_for_file_from_rows(
         if priority == 0 and face_id is not None
     ]
 
+
+@lru_cache(maxsize=512)
+def cached_people_for_file_rows(
+    face_db_path: str,
+    face_db_mtime_ns: int,
+    file_id: int,
+) -> tuple[tuple[str, int, int | None, bool], ...]:
+    conn = sqlite3.connect(face_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if not face_tables_exist(conn):
+            return ()
+        rows = conn.execute(
+            """
+            SELECT persons.name, 0 AS priority, person_faces.face_id, 0 AS manual
+            FROM person_faces
+            JOIN persons ON persons.id = person_faces.person_id
+            JOIN faces ON faces.id = person_faces.face_id
+            WHERE faces.file_id = ?
+            UNION ALL
+            SELECT persons.name, 1 AS priority, NULL AS face_id, 1 AS manual
+            FROM person_files
+            JOIN persons ON persons.id = person_files.person_id
+            WHERE person_files.file_id = ?
+            UNION ALL
+            SELECT persons.name, 2 AS priority, NULL AS face_id, 0 AS manual
+            FROM face_suggestions
+            JOIN persons ON persons.id = face_suggestions.person_id
+            JOIN faces ON faces.id = face_suggestions.face_id
+            WHERE faces.file_id = ?
+            ORDER BY name, priority, face_id
+            """,
+            (file_id, file_id, file_id),
+        )
+        return tuple(
+            (
+                str(row["name"]),
+                int(row["priority"]),
+                int(row["face_id"]) if row["face_id"] is not None else None,
+                bool(row["manual"]),
+            )
+            for row in rows
+        )
+    except sqlite3.Error:
+        return ()
+    finally:
+        conn.close()
+
+
+@lru_cache(maxsize=512)
+def cached_people_with_references_for_file_rows(
+    face_db_path: str,
+    face_db_mtime_ns: int,
+    file_id: int,
+) -> tuple[tuple[str, int, int | None, bool, int | None, int | None], ...]:
+    conn = sqlite3.connect(face_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if not face_tables_exist(conn):
+            return ()
+        rows = conn.execute(
+            """
+            SELECT
+                persons.name,
+                0 AS priority,
+                person_faces.face_id,
+                0 AS manual,
+                NULL AS reference_face_id,
+                NULL AS reference_file_id,
+                1.0 AS similarity
+            FROM person_faces
+            JOIN persons ON persons.id = person_faces.person_id
+            JOIN faces ON faces.id = person_faces.face_id
+            WHERE faces.file_id = ?
+            UNION ALL
+            SELECT
+                persons.name,
+                1 AS priority,
+                NULL AS face_id,
+                1 AS manual,
+                NULL AS reference_face_id,
+                NULL AS reference_file_id,
+                1.0 AS similarity
+            FROM person_files
+            JOIN persons ON persons.id = person_files.person_id
+            WHERE person_files.file_id = ?
+            UNION ALL
+            SELECT
+                persons.name,
+                2 AS priority,
+                NULL AS face_id,
+                0 AS manual,
+                face_suggestions.reference_face_id,
+                reference_faces.file_id AS reference_file_id,
+                face_suggestions.similarity
+            FROM face_suggestions
+            JOIN persons ON persons.id = face_suggestions.person_id
+            JOIN faces ON faces.id = face_suggestions.face_id
+            LEFT JOIN faces AS reference_faces
+              ON reference_faces.id = face_suggestions.reference_face_id
+            WHERE faces.file_id = ?
+            ORDER BY name, priority, similarity DESC, face_id
+            """,
+            (file_id, file_id, file_id),
+        )
+        return tuple(
+            (
+                str(row["name"]),
+                int(row["priority"]),
+                int(row["face_id"]) if row["face_id"] is not None else None,
+                bool(row["manual"]),
+                int(row["reference_face_id"]) if row["reference_face_id"] is not None else None,
+                int(row["reference_file_id"]) if row["reference_file_id"] is not None else None,
+            )
+            for row in rows
+        )
+    except sqlite3.Error:
+        return ()
+    finally:
+        conn.close()
 
 def registered_people(target: Path, face_config: FaceRecognitionConfig | None = None) -> list[dict[str, str]]:
     db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
@@ -161,112 +323,6 @@ def cached_registered_people(face_db_path: str, face_db_mtime_ns: int) -> tuple[
             return ()
         rows = conn.execute("SELECT name FROM persons ORDER BY name")
         return tuple(str(row["name"]) for row in rows)
-    except sqlite3.Error:
-        return ()
-    finally:
-        conn.close()
-
-
-@lru_cache(maxsize=512)
-def cached_confirmed_people_for_file(
-    face_db_path: str,
-    face_db_mtime_ns: int,
-    file_id: int,
-    person_reference_links_enabled: bool,
-) -> tuple[tuple[str, int, int | None, bool, int | None, int | None], ...]:
-    conn = sqlite3.connect(face_db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        if not face_tables_exist(conn):
-            return ()
-        if person_reference_links_enabled:
-            rows = conn.execute(
-                """
-                SELECT
-                    persons.name,
-                    0 AS priority,
-                    person_faces.face_id,
-                    0 AS manual,
-                    NULL AS reference_face_id,
-                    NULL AS reference_file_id,
-                    1.0 AS similarity
-                FROM person_faces
-                JOIN persons ON persons.id = person_faces.person_id
-                JOIN faces ON faces.id = person_faces.face_id
-                WHERE faces.file_id = ?
-                UNION ALL
-                SELECT
-                    persons.name,
-                    1 AS priority,
-                    NULL AS face_id,
-                    1 AS manual,
-                    NULL AS reference_face_id,
-                    NULL AS reference_file_id,
-                    1.0 AS similarity
-                FROM person_files
-                JOIN persons ON persons.id = person_files.person_id
-                WHERE person_files.file_id = ?
-                UNION ALL
-                SELECT
-                    persons.name,
-                    2 AS priority,
-                    NULL AS face_id,
-                    0 AS manual,
-                    face_suggestions.reference_face_id,
-                    reference_faces.file_id AS reference_file_id,
-                    face_suggestions.similarity
-                FROM face_suggestions
-                JOIN persons ON persons.id = face_suggestions.person_id
-                JOIN faces ON faces.id = face_suggestions.face_id
-                LEFT JOIN faces AS reference_faces
-                  ON reference_faces.id = face_suggestions.reference_face_id
-                WHERE faces.file_id = ?
-                ORDER BY name, priority, similarity DESC, face_id
-                """,
-                (file_id, file_id, file_id),
-            )
-        else:
-            rows = conn.execute(
-                """
-                SELECT persons.name, 0 AS priority, person_faces.face_id, 0 AS manual
-                FROM person_faces
-                JOIN persons ON persons.id = person_faces.person_id
-                JOIN faces ON faces.id = person_faces.face_id
-                WHERE faces.file_id = ?
-                UNION ALL
-                SELECT persons.name, 1 AS priority, NULL AS face_id, 1 AS manual
-                FROM person_files
-                JOIN persons ON persons.id = person_files.person_id
-                WHERE person_files.file_id = ?
-                UNION ALL
-                SELECT persons.name, 2 AS priority, NULL AS face_id, 0 AS manual
-                FROM face_suggestions
-                JOIN persons ON persons.id = face_suggestions.person_id
-                JOIN faces ON faces.id = face_suggestions.face_id
-                WHERE faces.file_id = ?
-                ORDER BY name, priority, face_id
-                """,
-                (file_id, file_id, file_id),
-            )
-        return tuple(
-            (
-                str(row["name"]),
-                int(row["priority"]),
-                int(row["face_id"]) if row["face_id"] is not None else None,
-                bool(row["manual"]),
-                (
-                    int(row["reference_face_id"])
-                    if person_reference_links_enabled and row["reference_face_id"] is not None
-                    else None
-                ),
-                (
-                    int(row["reference_file_id"])
-                    if person_reference_links_enabled and row["reference_file_id"] is not None
-                    else None
-                ),
-            )
-            for row in rows
-        )
     except sqlite3.Error:
         return ()
     finally:
