@@ -16,6 +16,8 @@ from bildebank.server_faces import (
     person_reference_items,
     person_references_page_html,
 )
+from bildebank.server_browser import source_item_ids
+from bildebank.server_browser_sources import person_reference_suggestions_browser_source
 from bildebank.server_pages import shell_page_html
 
 
@@ -67,7 +69,18 @@ class PersonReferencesServerTests(unittest.TestCase):
         try:
             face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari / Åse')")
             face_conn.execute("INSERT INTO persons(id, name) VALUES(2, 'Ola')")
-            for face_id, file_id in ((1, 1), (2, 1), (3, 2), (4, 3)):
+            for face_id, file_id in (
+                (1, 1),
+                (2, 1),
+                (3, 2),
+                (4, 3),
+                (10, 1),
+                (11, 2),
+                (12, 2),
+                (13, 2),
+                (14, 2),
+                (15, 3),
+            ):
                 face_conn.execute(
                     """
                     INSERT INTO faces(
@@ -122,8 +135,12 @@ class PersonReferencesServerTests(unittest.TestCase):
             self.assertIn("Referansebilder (2)", people_body)
             self.assertEqual(reference_body.count('<article class="item">'), 2)
             self.assertIn('href="/person/Kari%20%2F%20%C3%85se/confirmed/item/1"', reference_body)
-            self.assertIn("Foreslåtte bilder: 3", reference_body)
+            self.assertIn(
+                'href="/people/Kari%20%2F%20%C3%85se/references/1">Foreslåtte bilder: 3</a>',
+                reference_body,
+            )
             self.assertIn("Foreslåtte bilder: 0", reference_body)
+            self.assertNotIn('href="/people/Kari%20%2F%20%C3%85se/references/2">Foreslåtte bilder: 0</a>', reference_body)
 
             empty_face_conn = connect_face_db(target)
             try:
@@ -133,6 +150,14 @@ class PersonReferencesServerTests(unittest.TestCase):
                 empty_face_conn.close()
             empty_body = person_references_page_html(target, "Tom", shell_page_html=shell_page_html)
             self.assertIn("Ingen referansebilder for denne personen ennå.", empty_body)
+
+    def test_reference_suggestions_browser_filters_by_reference_image(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = self.make_target(Path(tmp))
+
+            source = person_reference_suggestions_browser_source("Kari / Åse", 1)
+
+            self.assertEqual([1, 2], source_item_ids(target, source, FaceRecognitionConfig(enabled=True)))
 
     def test_reference_handler_decodes_name_and_uses_existing_not_found_page(self) -> None:
         handler = object.__new__(BildebankRequestHandler)
@@ -170,6 +195,16 @@ class PersonReferencesServerTests(unittest.TestCase):
         handler.do_GET()
 
         handler.respond_person_references.assert_called_once_with("Kari%20%2F%20%C3%85se")
+
+    def test_get_route_dispatches_reference_suggestions_to_browser_handler(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        handler.path = "/people/Kari%20%2F%20%C3%85se/references/1/item/2"
+        handler.server = SimpleNamespace(face_enabled=True)
+        handler.respond_person_reference_suggestions = Mock()
+
+        handler.do_GET()
+
+        handler.respond_person_reference_suggestions.assert_called_once_with("Kari%20%2F%20%C3%85se/references/1/item/2")
 
 
 if __name__ == "__main__":

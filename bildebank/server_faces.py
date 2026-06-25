@@ -14,7 +14,14 @@ from .face import active_image_files, ensure_face_schema_path, face_db_path, nor
 from .html_export import browser_face_items_from_metadata, face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
 from .server_browser import items_by_file_ids, rotation_style_attr, thumbnail_media_html
-from .server_browser_sources import BrowserSource, person_browser_source, person_item_url, person_url, source_item_url
+from .server_browser_sources import (
+    BrowserSource,
+    person_browser_source,
+    person_item_url,
+    person_reference_suggestions_browser_source,
+    person_url,
+    source_item_url,
+)
 from .target_lock import TargetLock
 from .value_parsing import require_float, require_int
 
@@ -960,13 +967,19 @@ def person_reference_items(
 
 def person_reference_card_html(target: Path, person_name: str, item: Any, suggestion_count: int) -> str:
     source = person_browser_source(person_name, include_suggestions=False, show_faces=True)
+    suggestion_label = f"Foreslåtte bilder: {suggestion_count}"
+    if suggestion_count > 0:
+        suggestion_source = person_reference_suggestions_browser_source(person_name, int(item["id"]))
+        suggestion_label_html = f'<a href="{html.escape(suggestion_source.root_url)}">{html.escape(suggestion_label)}</a>'
+    else:
+        suggestion_label_html = html.escape(suggestion_label)
     return f"""
     <article class="item">
       <a class="thumb-link" href="{html.escape(source_item_url(source, int(item["id"])))}">
         {thumbnail_media_html(target, item)}
       </a>
       <div class="text">
-        <div class="score">Foreslåtte bilder: {suggestion_count}</div>
+        <div class="score">{suggestion_label_html}</div>
       </div>
     </article>
     """
@@ -994,7 +1007,10 @@ def person_references_page_html(
         f"Referansebilder: {person_name}",
         f"""
         <h1>Referansebilder: {html.escape(person_name)}</h1>
-        <p class="meta">Tallet viser hvor mange foreslåtte bilder hvert bekreftede ansikt er brukt som referanse for.</p>
+        <p class="meta">Klikk på bildene for å bla i referansebildene.
+        Tallet under bildet viser hvor mange foreslåtte bilder hvert bekreftede ansikt er brukt
+        som referanse for. Klikk på denne dette for å se bildene akkurat det bildet har bidratt
+        til å finne personen i.</p>
         {content}
         """,
         face_enabled=True,

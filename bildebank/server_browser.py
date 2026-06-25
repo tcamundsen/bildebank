@@ -3390,6 +3390,8 @@ def empty_source_html(
 
 def empty_source_message(source: BrowserSource) -> str:
     if source.person_name is None:
+        if source.reference_suggestions_person_name is not None:
+            return "Ingen aktive foreslåtte bilder for dette referansebildet."
         if source.source_id is not None:
             return "Ingen aktive bilder for denne kilden."
         if source.geo_place_slug is not None:
@@ -3733,6 +3735,8 @@ def attach_source_sql_filter_databases(
     face_config: FaceRecognitionConfig | None = None,
 ) -> None:
     if source.person_name is not None:
+        attach_face_database(conn, target, face_config)
+    if source.reference_suggestions_person_name is not None:
         attach_face_database(conn, target, face_config)
     if source.missing_face_suggestions:
         attach_face_database(conn, target, face_config)

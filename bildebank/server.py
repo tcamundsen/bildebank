@@ -96,10 +96,12 @@ from .server_browser_sources import (
     geo_place_browser_source,
     imported_source_browser_source,
     missing_face_suggestions_browser_source,
+    parse_person_reference_suggestions_path,
     parse_person_path,
     parse_source_path,
     person_browser_source,
     person_item_url,
+    person_reference_suggestions_browser_source,
     person_url,
     source_has_sql_filter,
     source_item_url,
@@ -555,6 +557,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     self.respond_text("Ansiktsgjenkjenning er av.", status=HTTPStatus.NOT_FOUND)
                     return
                 self.respond_missing_face_suggestions(parsed.path.removeprefix("/people/missing-suggestions"))
+                return
+            if parsed.path.startswith("/people/") and "/references/" in parsed.path:
+                if not self.server.face_enabled:
+                    self.respond_text("Ansiktsgjenkjenning er av.", status=HTTPStatus.NOT_FOUND)
+                    return
+                self.respond_person_reference_suggestions(parsed.path.removeprefix("/people/"))
                 return
             if parsed.path.startswith("/people/") and parsed.path.endswith("/references"):
                 if not self.server.face_enabled:
@@ -1154,6 +1162,43 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 self.server.config.face_recognition,
                 openclip_enabled=self.server.openclip_enabled,
             )
+        )
+
+    def respond_person_reference_suggestions(self, raw_path: str) -> None:
+        raw_name, raw_reference_file_id, page_mode, raw_value = parse_person_reference_suggestions_path(raw_path)
+        person_name = urllib.parse.unquote(raw_name).strip()
+        if not person_name:
+            self.respond_text("Personnavn mangler.", status=HTTPStatus.BAD_REQUEST)
+            return
+        try:
+            reference_file_id = int(urllib.parse.unquote(raw_reference_file_id).strip())
+        except ValueError:
+            self.respond_text("Ugyldig referansebilde.", status=HTTPStatus.BAD_REQUEST)
+            return
+        if reference_file_id <= 0:
+            self.respond_text("Ugyldig referansebilde.", status=HTTPStatus.BAD_REQUEST)
+            return
+        person = person_by_name(self.server.target, person_name, self.server.config.face_recognition)
+        if person is None:
+            self.respond_html(
+                person_not_found_html(
+                    person_name,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                ),
+                status=HTTPStatus.NOT_FOUND,
+            )
+            return
+        canonical_name = str(person["name"])
+        source = person_reference_suggestions_browser_source(canonical_name, reference_file_id)
+        self.respond_browser_source(
+            source,
+            page_mode,
+            raw_value,
+            face_config=self.server.config.face_recognition,
+            hide_out_of_focus=self.server.hide_out_of_focus,
+            item_not_found_message="Filen finnes ikke for dette referansebildet.",
+            invalid_page_message="Ugyldig referansebildeside.",
         )
 
     def respond_missing_face_suggestions(self, raw_path: str) -> None:

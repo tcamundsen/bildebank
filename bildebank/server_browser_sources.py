@@ -15,6 +15,8 @@ class BrowserSource:
     title: str
     root_url: str
     person_name: str | None = None
+    reference_suggestions_person_name: str | None = None
+    reference_suggestions_file_id: int | None = None
     missing_face_suggestions: bool = False
     include_suggestions: bool = True
     source_id: int | None = None
@@ -62,6 +64,14 @@ def parse_person_path(raw_path: str) -> tuple[str, str, bool, str | None, str]:
     return person_part.strip("/"), person_mode, show_faces, page_mode, raw_value
 
 
+def parse_person_reference_suggestions_path(raw_path: str) -> tuple[str, str, str | None, str]:
+    source_part, page_mode, raw_value = parse_source_path(raw_path)
+    raw_name, separator, raw_file_id = source_part.partition("/references/")
+    if not separator:
+        return source_part, "", page_mode, raw_value
+    return raw_name.strip("/"), raw_file_id.strip("/"), page_mode, raw_value
+
+
 def person_item_url(person_name: str, file_id: int, *, show_faces: bool = True) -> str:
     return f"{person_url(person_name, show_faces=show_faces)}/item/{file_id}"
 
@@ -77,6 +87,20 @@ def person_browser_source(person_name: str, *, include_suggestions: bool, show_f
         title = f"{title} - uten ansiktsmarkering"
         root_url = f"{root_url}/no-faces"
     return BrowserSource(title, root_url, person_name=person_name, include_suggestions=include_suggestions, show_faces=show_faces)
+
+
+def person_reference_suggestions_browser_source(person_name: str, reference_file_id: int) -> BrowserSource:
+    root_url = (
+        "/people/"
+        + urllib.parse.quote(person_name, safe="")
+        + f"/references/{reference_file_id}"
+    )
+    return BrowserSource(
+        f"Forslag fra referansebilde: {person_name}",
+        root_url,
+        reference_suggestions_person_name=person_name,
+        reference_suggestions_file_id=reference_file_id,
+    )
 
 
 def missing_face_suggestions_browser_source() -> BrowserSource:
@@ -114,6 +138,7 @@ def tag_browser_source(tag_name: str) -> BrowserSource:
 def is_filtered_source(source: BrowserSource) -> bool:
     return (
         source.person_name is not None
+        or source.reference_suggestions_person_name is not None
         or source.missing_face_suggestions
         or source.source_id is not None
         or source.geo_place_slug is not None
@@ -129,6 +154,7 @@ def source_has_sql_filter(source: BrowserSource) -> bool:
         return not text_filter_has_runtime_filter(source.text_filter)
     return (
         source.person_name is not None
+        or source.reference_suggestions_person_name is not None
         or source.missing_face_suggestions
         or source.source_id is not None
         or source.geo_place_slug is not None
@@ -141,6 +167,31 @@ def source_includes_deleted(source: BrowserSource) -> bool:
 
 
 def source_sql_filter(source: BrowserSource) -> tuple[str, tuple[object, ...]]:
+    if source.reference_suggestions_person_name is not None:
+        from .face import normalize_person_name
+
+        if source.reference_suggestions_file_id is None:
+            raise ValueError("Referansebilde mangler.")
+        return (
+            """
+            files.id IN (
+                SELECT suggested_faces.file_id
+                FROM face_db.persons
+                JOIN face_db.face_suggestions
+                  ON face_db.face_suggestions.person_id = face_db.persons.id
+                JOIN face_db.faces AS suggested_faces
+                  ON suggested_faces.id = face_db.face_suggestions.face_id
+                JOIN face_db.faces AS reference_faces
+                  ON reference_faces.id = face_db.face_suggestions.reference_face_id
+                JOIN face_db.person_faces
+                  ON face_db.person_faces.person_id = face_db.persons.id
+                 AND face_db.person_faces.face_id = reference_faces.id
+                WHERE face_db.persons.name = ?
+                  AND reference_faces.file_id = ?
+            )
+            """,
+            (normalize_person_name(source.reference_suggestions_person_name), source.reference_suggestions_file_id),
+        )
     if source.person_name is not None:
         from .face import normalize_person_name
 
