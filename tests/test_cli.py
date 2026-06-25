@@ -2617,6 +2617,52 @@ model_name = "buffalo_l"
         self.assertIn('href="/filter/filename%3ADSC_0170/item/', body)
         self.assertIn(">3</a>", body)
 
+    def test_run_server_nef_item_reuses_raw_sidecar_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "DSC_0170.JPG").write_bytes(jpeg_with_exif_datetime("2019:03:03 12:00:00"))
+            (source / "DSC_0170.NEF").write_bytes(minimal_tiff_with_datetime("2019:03:03 12:00:00"))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            source_filter = text_filter_browser_source("filename:NEF")
+            nef_item = next(item for item in source_month_items(target, source_filter, "2019-03") if item["stored_filename"] == "DSC_0170.NEF")
+            previous_item, next_item = adjacent_source_items(target, source_filter, nef_item)
+            month_nav = source_month_navigation(target, source_filter, nef_item)
+
+            with (
+                patch(
+                    "bildebank.server_browser.query_raw_sidecar_ids_by_image_id",
+                    wraps=server_browser.query_raw_sidecar_ids_by_image_id,
+                ) as raw_sidecar_ids,
+            ):
+                first_body = source_item_page_html(
+                    target,
+                    source_filter,
+                    nef_item,
+                    previous_item,
+                    next_item,
+                    month_nav,
+                    face_enabled=False,
+                    openclip_enabled=False,
+                )
+                source_item_page_html(
+                    target,
+                    source_filter,
+                    nef_item,
+                    previous_item,
+                    next_item,
+                    month_nav,
+                    face_enabled=False,
+                    openclip_enabled=False,
+                )
+
+        self.assertIn("Vis JPG-bildet", first_body)
+        self.assertEqual(raw_sidecar_ids.call_count, 1)
+
     def test_run_server_top_steder_link_points_to_geo_not_search(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

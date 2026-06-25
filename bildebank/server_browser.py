@@ -40,6 +40,7 @@ PageRenderer = Callable[[str, str], str]
 Breadcrumb = tuple[str, str | None] | tuple[str, str | None, str | None]
 RAW_SIDECAR_IDS_CACHE_MAX_SIZE = 8
 RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE: dict[tuple[str, int], dict[int, int]] = {}
+RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE: dict[tuple[str, int], dict[int, int]] = {}
 RAW_SIDECAR_EXTENSIONS = {".nef", ".psd"}
 RAW_SIDECAR_SQL_EXTENSION_FILTER = """
               lower(files.original_filename) LIKE '%.nef'
@@ -794,6 +795,36 @@ def raw_sidecar_id_by_image_id(
     *,
     conn: sqlite3.Connection | None = None,
 ) -> int | None:
+    return raw_sidecar_ids_by_image_id(target, conn=conn).get(image_id)
+
+
+def raw_sidecar_image_id_by_sidecar_id(
+    target: Path,
+    sidecar_id: int,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> int | None:
+    db_path = db.db_path_for_target(target)
+    try:
+        mtime_ns = db_path.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = 0
+    cache_key = (str(target.resolve()), mtime_ns)
+    cached = RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE.get(cache_key)
+    if cached is not None:
+        return cached.get(sidecar_id)
+    cached = {sidecar_id: image_id for image_id, sidecar_id in raw_sidecar_ids_by_image_id(target, conn=conn).items()}
+    if len(RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE) >= RAW_SIDECAR_IDS_CACHE_MAX_SIZE:
+        RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE.pop(next(iter(RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE)))
+    RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE[cache_key] = cached
+    return cached.get(sidecar_id)
+
+
+def raw_sidecar_ids_by_image_id(
+    target: Path,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> dict[int, int]:
     db_path = db.db_path_for_target(target)
     try:
         mtime_ns = db_path.stat().st_mtime_ns
@@ -802,18 +833,12 @@ def raw_sidecar_id_by_image_id(
     cache_key = (str(target.resolve()), mtime_ns)
     cached = RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.get(cache_key)
     if cached is not None:
-        return cached.get(image_id)
-    if conn is not None:
-        cached = query_raw_sidecar_ids_by_image_id(conn)
-        if len(RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE) >= RAW_SIDECAR_IDS_CACHE_MAX_SIZE:
-            RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.pop(next(iter(RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE)))
-        RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE[cache_key] = cached
-        return cached.get(image_id)
-    cached = cached_raw_sidecar_ids_by_image_id(*cache_key)
+        return cached
+    cached = query_raw_sidecar_ids_by_image_id(conn) if conn is not None else cached_raw_sidecar_ids_by_image_id(*cache_key)
     if len(RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE) >= RAW_SIDECAR_IDS_CACHE_MAX_SIZE:
         RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.pop(next(iter(RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE)))
     RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE[cache_key] = cached
-    return cached.get(image_id)
+    return cached
 
 
 @lru_cache(maxsize=8)
@@ -2201,8 +2226,7 @@ def raw_sidecar_main_image(target: Path, item: Any, *, conn: sqlite3.Connection 
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
-        raw_ids_by_image_id = query_raw_sidecar_ids_by_image_id(conn)
-        image_id = next((image_id for image_id, sidecar_id in raw_ids_by_image_id.items() if sidecar_id == raw_id), None)
+        image_id = raw_sidecar_image_id_by_sidecar_id(target, raw_id, conn=conn)
         if image_id is None:
             return None
         return conn.execute(
