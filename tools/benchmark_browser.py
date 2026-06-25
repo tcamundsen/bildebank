@@ -113,6 +113,8 @@ class YearsProfileStepResult:
     index: int
     total_ms: float
     year_cards_ms: float
+    year_summaries_ms: float
+    thumbnail_items_ms: float
     card_html_ms: float
     controls_ms: float
     shell_ms: float
@@ -131,6 +133,8 @@ class YearsProfileSummary:
     threshold_failures: int
     total: dict[str, float | None]
     year_cards: dict[str, float | None]
+    year_summaries: dict[str, float | None]
+    thumbnail_items: dict[str, float | None]
     card_html: dict[str, float | None]
     controls: dict[str, float | None]
     shell: dict[str, float | None]
@@ -693,7 +697,8 @@ def run_years_profile_benchmark(args: argparse.Namespace) -> YearsProfileSummary
 
 def years_profile_step(target: Path, index: int, *, config: Any | None = None) -> YearsProfileStepResult:
     from bildebank.server_browser import (
-        browser_year_cards,
+        browser_year_summaries,
+        items_by_file_ids,
         year_card_html,
         years_navigation_controls_html,
     )
@@ -706,8 +711,33 @@ def years_profile_step(target: Path, index: int, *, config: Any | None = None) -
     total_start = time.perf_counter()
 
     start = time.perf_counter()
-    year_cards = browser_year_cards(target, hide_out_of_focus=hide_out_of_focus)
-    year_cards_ms = elapsed_ms(start)
+    summaries = browser_year_summaries(target, hide_out_of_focus=hide_out_of_focus)
+    year_summaries_ms = elapsed_ms(start)
+
+    start = time.perf_counter()
+    items = {
+        int(item["id"]): item
+        for item in items_by_file_ids(
+            target,
+            [int(summary["item_id"]) for summary in summaries],
+            hide_out_of_focus=hide_out_of_focus,
+        )
+    }
+    thumbnail_items_ms = elapsed_ms(start)
+
+    start = time.perf_counter()
+    year_cards = [
+        {
+            "year": str(summary["year"]),
+            "month_count": int(summary["month_count"]),
+            "item_count": int(summary["item_count"]),
+            "first_month": str(summary["first_month"]),
+            "item": item,
+        }
+        for summary in summaries
+        if (item := items.get(int(summary["item_id"]))) is not None
+    ]
+    year_cards_ms = year_summaries_ms + thumbnail_items_ms + elapsed_ms(start)
 
     start = time.perf_counter()
     cards = "\n".join(year_card_html(target, card) for card in year_cards)
@@ -735,6 +765,8 @@ def years_profile_step(target: Path, index: int, *, config: Any | None = None) -
         index=index,
         total_ms=elapsed_ms(total_start),
         year_cards_ms=year_cards_ms,
+        year_summaries_ms=year_summaries_ms,
+        thumbnail_items_ms=thumbnail_items_ms,
         card_html_ms=card_html_ms,
         controls_ms=controls_ms,
         shell_ms=shell_ms,
@@ -1105,6 +1137,8 @@ def build_years_profile_summary(args: argparse.Namespace, steps: list[YearsProfi
         threshold_failures=threshold_failures,
         total=stats_dict(total_values),
         year_cards=stats_dict([step.year_cards_ms for step in steps]),
+        year_summaries=stats_dict([step.year_summaries_ms for step in steps]),
+        thumbnail_items=stats_dict([step.thumbnail_items_ms for step in steps]),
         card_html=stats_dict([step.card_html_ms for step in steps]),
         controls=stats_dict([step.controls_ms for step in steps]),
         shell=stats_dict([step.shell_ms for step in steps]),
@@ -1232,6 +1266,8 @@ def print_years_profile_summary(summary: YearsProfileSummary) -> None:
     print(f"  bytes_median: {summary.html_bytes_median if summary.html_bytes_median is not None else 0:.0f}")
     print(f"  total: {format_stats(summary.total)}")
     print(f"  browser_year_cards: {format_stats(summary.year_cards)}")
+    print(f"  browser_year_summaries: {format_stats(summary.year_summaries)}")
+    print(f"  thumbnail_items: {format_stats(summary.thumbnail_items)}")
     print(f"  year_card_html: {format_stats(summary.card_html)}")
     print(f"  years_navigation_controls_html: {format_stats(summary.controls)}")
     print(f"  shell_page_html: {format_stats(summary.shell)}")

@@ -268,6 +268,8 @@ def test_years_profile_summary_counts_threshold_failures_and_prints_steps(capsys
             index=1,
             total_ms=40.0,
             year_cards_ms=30.0,
+            year_summaries_ms=24.0,
+            thumbnail_items_ms=5.0,
             card_html_ms=5.0,
             controls_ms=1.0,
             shell_ms=4.0,
@@ -278,6 +280,8 @@ def test_years_profile_summary_counts_threshold_failures_and_prints_steps(capsys
             index=2,
             total_ms=60.0,
             year_cards_ms=45.0,
+            year_summaries_ms=36.0,
+            thumbnail_items_ms=7.0,
             card_html_ms=6.0,
             controls_ms=1.0,
             shell_ms=8.0,
@@ -292,10 +296,12 @@ def test_years_profile_summary_counts_threshold_failures_and_prints_steps(capsys
     assert summary.threshold_failures == 1
     assert summary.total["median_ms"] == 50.0
     assert summary.year_cards["max_ms"] == 45.0
+    assert summary.year_summaries["median_ms"] == 30.0
+    assert summary.thumbnail_items["max_ms"] == 7.0
     assert summary.html_bytes_median == 1100.0
     output = capsys.readouterr().out
     assert "Bildebank years profile" in output
-    assert "browser_year_cards" in output
+    assert "browser_year_summaries" in output
 
 
 def test_years_profile_step_renders_with_server_pages_shell(monkeypatch, tmp_path: Path) -> None:
@@ -304,15 +310,22 @@ def test_years_profile_step_renders_with_server_pages_shell(monkeypatch, tmp_pat
 
     monkeypatch.setattr(
         server_browser,
-        "browser_year_cards",
+        "browser_year_summaries",
         lambda target, hide_out_of_focus=False: [
             {
                 "year": "2024",
                 "month_count": 1,
                 "item_count": 2,
                 "first_month": "2024-01",
-                "item": {"target_path": "2024/01/IMG.jpg", "stored_filename": "IMG.jpg"},
+                "item_id": 7,
             }
+        ],
+    )
+    monkeypatch.setattr(
+        server_browser,
+        "items_by_file_ids",
+        lambda target, file_ids, hide_out_of_focus=False: [
+            {"id": 7, "target_path": "2024/01/IMG.jpg", "stored_filename": "IMG.jpg"}
         ],
     )
     monkeypatch.setattr(server_browser, "year_card_html", lambda target, card: "<article>2024</article>")
