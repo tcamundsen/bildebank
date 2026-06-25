@@ -6306,10 +6306,10 @@ model_name = "buffalo_l"
 
             handler = FakeHandler()
             with (
-                patch("bildebank.server.source_item_ids", wraps=source_item_ids) as item_ids_mock,
+                patch("bildebank.server.source_item_ids", side_effect=AssertionError("Handler should not materialize source IDs for item pages")) as item_ids_mock,
                 patch("bildebank.server.source_month_keys", wraps=source_month_keys) as month_keys_mock,
-                patch("bildebank.server.source_item_by_id", side_effect=AssertionError("Handler should use cached IDs")),
-                patch("bildebank.server.adjacent_source_items", side_effect=AssertionError("Handler should use cached IDs")),
+                patch("bildebank.server.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock,
+                patch("bildebank.server.adjacent_source_items", wraps=adjacent_source_items) as adjacent_mock,
             ):
                 for file_id in (1, 2):
                     BildebankRequestHandler.respond_browser_source(  # type: ignore[arg-type]
@@ -6322,8 +6322,10 @@ model_name = "buffalo_l"
                     )
                     self.assertEqual(handler.status, HTTPStatus.OK)
 
-            self.assertEqual(item_ids_mock.call_count, 1)
+            self.assertEqual(item_ids_mock.call_count, 0)
             self.assertEqual(month_keys_mock.call_count, 1)
+            self.assertEqual(item_by_id_mock.call_count, 2)
+            self.assertEqual(adjacent_mock.call_count, 2)
 
     def test_tag_cli_and_server_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -8024,15 +8026,6 @@ model_name = "buffalo_l"
                         self.openclip_enabled = False
                         self.hide_out_of_focus = False
 
-                    def source_item_order(self, source, *, hide_out_of_focus: bool = False):
-                        item_ids = source_item_ids(
-                            self.target,
-                            source,
-                            self.config.face_recognition,
-                            hide_out_of_focus=hide_out_of_focus,
-                        )
-                        return item_ids, {file_id: index for index, file_id in enumerate(item_ids)}
-
                     def source_month_keys(self, source, *, hide_out_of_focus: bool = False):
                         return source_month_keys(
                             self.target,
@@ -8063,8 +8056,9 @@ model_name = "buffalo_l"
 
                 handler = FakeHandler()
                 with (
-                    patch("bildebank.server.source_item_by_id", side_effect=AssertionError("handler should use cached source item order")),
-                    patch("bildebank.server.adjacent_source_items", side_effect=AssertionError("handler should use cached adjacent item ids")),
+                    patch("bildebank.server.source_item_ids", side_effect=AssertionError("handler should not materialize person source item ids")),
+                    patch("bildebank.server.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock,
+                    patch("bildebank.server.adjacent_source_items", wraps=adjacent_source_items) as adjacent_mock,
                 ):
                     BildebankRequestHandler.respond_browser_source(  # type: ignore[arg-type]
                         handler,
@@ -8078,6 +8072,8 @@ model_name = "buffalo_l"
 
                 self.assertEqual(HTTPStatus.OK, handler.status)
                 self.assertIn('data-browser-item-id="2"', handler.body)
+                self.assertEqual(1, item_by_id_mock.call_count)
+                self.assertEqual(1, adjacent_mock.call_count)
 
     def test_run_server_people_page_links_confirmed_and_suggested_person_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

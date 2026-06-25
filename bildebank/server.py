@@ -1402,10 +1402,14 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             try:
                 if source_has_sql_filter(source):
                     start = time.perf_counter()
-                    item_ids, item_positions = self.server.source_item_order(source, hide_out_of_focus=hide_out_of_focus)
-                    self.record_server_timing("source_item_order", start)
-                    start = time.perf_counter()
-                    item = item_by_id(self.server.target, file_id, conn=conn) if file_id in item_positions else None
+                    item = source_item_by_id(
+                        self.server.target,
+                        source,
+                        file_id,
+                        face_config,
+                        hide_out_of_focus=hide_out_of_focus,
+                        conn=conn,
+                    )
                     self.record_server_timing("item_by_id", start)
                 else:
                     start = time.perf_counter()
@@ -1423,7 +1427,14 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     return
                 if source_has_sql_filter(source):
                     start = time.perf_counter()
-                    previous_item, next_item = adjacent_items_from_id_order(item_ids, int(item["id"]), item_positions)
+                    previous_item, next_item = adjacent_source_items(
+                        self.server.target,
+                        source,
+                        item,
+                        face_config,
+                        hide_out_of_focus=hide_out_of_focus,
+                        conn=conn,
+                    )
                     self.record_server_timing("adjacent", start)
                     start = time.perf_counter()
                     month_nav = month_navigation_for_keys(
@@ -1431,18 +1442,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         month_key_for_item(self.server.target, item),
                     )
                     self.record_server_timing("month_nav", start)
-                    start = time.perf_counter()
-                    source_first_day_item_id = getattr(self.server, "source_first_day_item_id", None)
-                    first_day_item_id = (
-                        source_first_day_item_id(
-                            source,
-                            browser_date_for_item(item),
-                            hide_out_of_focus=hide_out_of_focus,
-                        )
-                        if source_first_day_item_id is not None
-                        else None
-                    )
-                    self.record_server_timing("first_day_item", start)
+                    first_day_item_id = None
                 else:
                     start = time.perf_counter()
                     previous_item, next_item = adjacent_source_items(
