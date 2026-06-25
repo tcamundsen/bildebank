@@ -237,6 +237,9 @@ def apply_face_schema(conn: sqlite3.Connection) -> None:
             f"Face-databasen bruker et nyere format (schema_version={version}) "
             f"enn programmet støtter (schema_version={FACE_SCHEMA_VERSION})."
         )
+    if version == FACE_SCHEMA_VERSION:
+        validate_current_face_schema(conn)
+        return
     if version == 0:
         create_current_face_schema(conn)
         set_meta(conn, "schema_version", str(FACE_SCHEMA_VERSION))

@@ -1293,6 +1293,12 @@ def print_suite_summary(summary: SuiteSummary) -> None:
             f"brudd={best.threshold_failures}, "
             f"brudd/run=[{failures_per_run}] — {status}"
         )
+        if isinstance(best, BenchmarkSummary):
+            server_timing = server_timing_medians(best.steps)
+            if server_timing:
+                ordered_names = [name for name in SERVER_TIMING_STEP_ORDER if name in server_timing]
+                ordered_names.extend(name for name in sorted(server_timing) if name not in ordered_names)
+                print("    server: " + ", ".join(f"{name}={format_ms(server_timing[name])}" for name in ordered_names))
     print(f"  samlet: {'OK' if summary.passed else 'FEIL'}")
 
 
