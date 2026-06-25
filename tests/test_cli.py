@@ -5741,11 +5741,19 @@ model_name = "buffalo_l"
             filename_items = source_month_items(target, filename_source, "2025-01")
             motion_file = read_server_file(target, str(type_video_items[0]["id"]))
             image_item = month_items[0]
+            motion_item = type_video_items[0]
             image_body = item_page_html(
                 target,
                 image_item,
                 *adjacent_browser_items(target, image_item),
                 browser_month_navigation(target, image_item),
+            )
+            motion_body = source_item_page_html(
+                target,
+                type_video_source,
+                motion_item,
+                *adjacent_source_items(target, type_video_source, motion_item),
+                source_month_navigation(target, type_video_source, motion_item),
             )
 
         self.assertEqual([item["stored_filename"] for item in month_items], ["PXL_20250102_123.MP.jpg"])
@@ -5761,6 +5769,8 @@ model_name = "buffalo_l"
         self.assertIn("/filter/filename%3APXL_20250102_123.mp4/item/", image_body)
         self.assertNotIn("Motion-video: PXL_20250102_123.mp4", image_body)
         self.assertNotIn('<footer class="browser-footer">', image_body)
+        self.assertIn(f'href="/item/{int(image_item["id"])}">Vis JPG-bildet</a>', motion_body)
+        self.assertNotIn("Åpne i alle bilder", motion_body)
         self.assertEqual(motion_file.content_type, "video/mp4")
         self.assertEqual(motion_file.content[4:8], b"ftyp")
 
@@ -5785,6 +5795,13 @@ model_name = "buffalo_l"
             filename_items = source_month_items(target, filename_source, "2019-03")
             image_item = month_items[0]
             nef_item = extension_items[0]
+            nef_body = source_item_page_html(
+                target,
+                extension_source,
+                nef_item,
+                *adjacent_source_items(target, extension_source, nef_item),
+                source_month_navigation(target, extension_source, nef_item),
+            )
             response: dict[str, object] = {}
             handler = object.__new__(BildebankRequestHandler)
             handler.server = SimpleNamespace(target=target)
@@ -5821,6 +5838,8 @@ model_name = "buffalo_l"
         self.assertIn("/filter/filename%3ADSC_0170.NEF/item/", image_body)
         self.assertNotIn("RAW-fil: DSC_0170.NEF", image_body)
         self.assertNotIn('<footer class="browser-footer">', image_body)
+        self.assertIn(f'href="/item/{int(image_item["id"])}">Vis JPG-bildet</a>', nef_body)
+        self.assertNotIn("Åpne i alle bilder", nef_body)
         self.assertEqual(response["status"], HTTPStatus.OK)
         content = response["content"]
         assert isinstance(content, dict)

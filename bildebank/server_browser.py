@@ -2001,10 +2001,11 @@ def source_item_page_html(
         read_only=read_only,
     )
     start = time.perf_counter()
-    all_items_url = all_browser_item_link_url(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
+    all_items_link = all_browser_item_link(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
     if timing_callback is not None:
         timing_callback("html_all_items_link", start)
-    all_items_label = "Åpne i alle bilder"
+    all_items_url = all_items_link[0] if all_items_link is not None else None
+    all_items_label = all_items_link[1] if all_items_link is not None else "Åpne i alle bilder"
     source_url_attr = ""
     if source.text_filter is not None:
         source_url_attr = f' data-browser-source-url="{html.escape(source.root_url)}"'
@@ -2136,6 +2137,71 @@ def raw_sidecar_for_image(target: Path, item: Any, *, conn: sqlite3.Connection |
               AND id = ?
             """,
             (raw_id,),
+        ).fetchone()
+    finally:
+        if owned_conn:
+            conn.close()
+
+
+def motion_video_main_image(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> Any | None:
+    original_filename = original_filename_for_item(target, item, conn=conn)
+    if original_filename is None:
+        return None
+    if not original_filename.casefold().endswith(".mp"):
+        return None
+    try:
+        stored_filename = str(item["stored_filename"])
+    except (KeyError, IndexError):
+        stored_filename = ""
+    if not stored_filename.casefold().endswith(".mp4"):
+        return None
+    image_original_filename = f"{original_filename}.jpg"
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
+    try:
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND lower(original_filename) = lower(?)
+              AND lower(original_filename) LIKE '%.mp.jpg'
+            ORDER BY {ITEM_ORDER_SQL}
+            LIMIT 1
+            """,
+            (image_original_filename,),
+        ).fetchone()
+    finally:
+        if owned_conn:
+            conn.close()
+
+
+def raw_sidecar_main_image(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> Any | None:
+    try:
+        raw_id = int(item["id"])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    try:
+        original_filename = str(item["original_filename"])
+    except (KeyError, IndexError):
+        original_filename = original_filename_for_item(target, item, conn=conn) or ""
+    if Path(original_filename).suffix.casefold() != ".nef":
+        return None
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
+    try:
+        raw_ids_by_image_id = query_raw_sidecar_ids_by_image_id(conn)
+        image_id = next((image_id for image_id, sidecar_id in raw_ids_by_image_id.items() if sidecar_id == raw_id), None)
+        if image_id is None:
+            return None
+        return conn.execute(
+            f"""
+            SELECT {FILE_COLUMNS}
+            FROM files
+            WHERE deleted_at IS NULL
+              AND id = ?
+            """,
+            (image_id,),
         ).fetchone()
     finally:
         if owned_conn:
@@ -2278,18 +2344,23 @@ def breadcrumb_html(
     return '<nav class="breadcrumb" aria-label="Plassering">' + '<span class="sep">/</span>'.join(parts) + "</nav>"
 
 
-def all_browser_item_link_url(
+def all_browser_item_link(
     target: Path,
     source: BrowserSource,
     item: Any,
     *,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
-) -> str | None:
-    if source == all_browser_source() or not hide_out_of_focus:
+) -> tuple[str, str] | None:
+    if source == all_browser_source():
+        return None
+    main_image = hidden_sidecar_main_image(target, item, conn=conn)
+    if main_image is not None:
+        return source_item_url(all_browser_source(), int(main_image["id"])), "Vis JPG-bildet"
+    if not hide_out_of_focus:
         return None
     if should_filter_out_of_focus(source, hide_out_of_focus) and not source_includes_deleted(source):
-        return source_item_url(all_browser_source(), int(item["id"]))
+        return source_item_url(all_browser_source(), int(item["id"])), "Åpne i alle bilder"
     visible_item = source_item_by_id(
         target,
         all_browser_source(),
@@ -2298,8 +2369,24 @@ def all_browser_item_link_url(
         conn=conn,
     )
     if visible_item is None:
-        return "/"
-    return source_item_url(all_browser_source(), int(item["id"]))
+        return "/", "Åpne i alle bilder"
+    return source_item_url(all_browser_source(), int(item["id"])), "Åpne i alle bilder"
+
+
+def all_browser_item_link_url(
+    target: Path,
+    source: BrowserSource,
+    item: Any,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> str | None:
+    link = all_browser_item_link(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
+    return link[0] if link is not None else None
+
+
+def hidden_sidecar_main_image(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> Any | None:
+    return motion_video_main_image(target, item, conn=conn) or raw_sidecar_main_image(target, item, conn=conn)
 
 
 def hidden_after_out_of_focus_tag_redirect_url(
