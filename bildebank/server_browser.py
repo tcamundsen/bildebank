@@ -47,6 +47,7 @@ RAW_SIDECAR_SQL_EXTENSION_FILTER = """
 """
 RAW_SIDECAR_IMAGE_EXTENSIONS = {".jpg", ".jpeg"}
 RAW_SIDECAR_GROUP_EXTENSIONS = RAW_SIDECAR_EXTENSIONS | RAW_SIDECAR_IMAGE_EXTENSIONS
+RAW_SIDECAR_STEM_FALLBACK_EXTENSIONS = {".psd"} | RAW_SIDECAR_IMAGE_EXTENSIONS
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 MONTH_NAMES = {
     "01": "Januar",
@@ -366,6 +367,7 @@ def query_raw_sidecar_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -
         SELECT
             files.id,
             files.original_filename,
+            files.date_source,
             files.metadata_datetime,
             file_sources.source_id,
             file_sources.source_path_key
@@ -373,8 +375,6 @@ def query_raw_sidecar_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -
         JOIN file_sources ON file_sources.file_id = files.id
         WHERE files.deleted_at IS NULL
           AND {db.BROWSER_DATE_ORDER_SQL} = ?
-          AND files.date_source = 'metadata'
-          AND files.metadata_datetime IS NOT NULL
           AND (
 {RAW_SIDECAR_SQL_EXTENSION_FILTER}
               OR lower(files.original_filename) LIKE '%.jpg'
@@ -387,17 +387,12 @@ def query_raw_sidecar_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -
         suffix = Path(original_filename).suffix.casefold()
         if suffix not in RAW_SIDECAR_GROUP_EXTENSIONS:
             continue
-        key = (
-            int(row["source_id"]),
-            source_parent_path_key(str(row["source_path_key"])),
-            Path(original_filename).stem.casefold(),
-            str(row["metadata_datetime"]),
-        )
-        raw_ids, image_ids = groups.setdefault(key, (set(), set()))
-        if suffix in RAW_SIDECAR_EXTENSIONS:
-            raw_ids.add(int(row["id"]))
-        else:
-            image_ids.add(int(row["id"]))
+        for key in raw_sidecar_group_keys(row, original_filename, suffix):
+            raw_ids, image_ids = groups.setdefault(key, (set(), set()))
+            if suffix in RAW_SIDECAR_EXTENSIONS:
+                raw_ids.add(int(row["id"]))
+            else:
+                image_ids.add(int(row["id"]))
     return {next(iter(raw_ids)) for raw_ids, image_ids in groups.values() if len(raw_ids) == 1 and len(image_ids) == 1}
 
 
@@ -849,14 +844,13 @@ def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, st
         SELECT
             files.id,
             files.original_filename,
+            files.date_source,
             files.metadata_datetime,
             file_sources.source_id,
             file_sources.source_path_key
         FROM files
         JOIN file_sources ON file_sources.file_id = files.id
         WHERE files.deleted_at IS NULL
-          AND files.date_source = 'metadata'
-          AND files.metadata_datetime IS NOT NULL
           AND (
 {RAW_SIDECAR_SQL_EXTENSION_FILTER}
               OR lower(files.original_filename) LIKE '%.jpg'
@@ -868,18 +862,28 @@ def raw_sidecar_groups(conn: sqlite3.Connection) -> dict[tuple[int, str, str, st
         suffix = Path(original_filename).suffix.casefold()
         if suffix not in RAW_SIDECAR_GROUP_EXTENSIONS:
             continue
-        key = (
-            int(row["source_id"]),
-            source_parent_path_key(str(row["source_path_key"])),
-            Path(original_filename).stem.casefold(),
-            str(row["metadata_datetime"]),
-        )
-        raw_ids, image_ids = groups.setdefault(key, (set(), set()))
-        if suffix in RAW_SIDECAR_EXTENSIONS:
-            raw_ids.add(int(row["id"]))
-        else:
-            image_ids.add(int(row["id"]))
+        for key in raw_sidecar_group_keys(row, original_filename, suffix):
+            raw_ids, image_ids = groups.setdefault(key, (set(), set()))
+            if suffix in RAW_SIDECAR_EXTENSIONS:
+                raw_ids.add(int(row["id"]))
+            else:
+                image_ids.add(int(row["id"]))
     return groups
+
+
+def raw_sidecar_group_keys(row: Any, original_filename: str, suffix: str) -> tuple[tuple[int, str, str, str], ...]:
+    base_key = (
+        int(row["source_id"]),
+        source_parent_path_key(str(row["source_path_key"])),
+        Path(original_filename).stem.casefold(),
+    )
+    keys: list[tuple[int, str, str, str]] = []
+    metadata_datetime = row["metadata_datetime"]
+    if row["date_source"] == "metadata" and metadata_datetime is not None:
+        keys.append((*base_key, f"metadata:{metadata_datetime}"))
+    if suffix in RAW_SIDECAR_STEM_FALLBACK_EXTENSIONS:
+        keys.append((*base_key, "stem"))
+    return tuple(keys)
 
 
 def source_parent_path_key(source_path_key: str) -> str:

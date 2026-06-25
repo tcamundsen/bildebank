@@ -5864,6 +5864,42 @@ model_name = "buffalo_l"
                 self.assertIn("<dt>Kilder</dt>", sidecar_info_html)
                 self.assertIn(source.name, sidecar_info_html)
 
+    def test_run_server_links_psd_sidecar_without_capture_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            jpg_path = source / "sample_640x426.jpg"
+            psd_path = source / "sample_640x426.psd"
+            jpg_path.write_bytes(b"jpg-without-exif")
+            psd_path.write_bytes(b"psd-without-capture-metadata")
+            jpg_mtime = dt.datetime(2024, 1, 2, 12, 0, 0).timestamp()
+            psd_mtime = dt.datetime(2024, 1, 3, 12, 0, 0).timestamp()
+            os.utime(jpg_path, (jpg_mtime, jpg_mtime))
+            os.utime(psd_path, (psd_mtime, psd_mtime))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            month_items = browser_month_items(target, "2024-01")
+            image_item = month_items[0]
+            previous_item, next_item = adjacent_browser_items(target, image_item)
+            month_nav = browser_month_navigation(target, image_item)
+            psd_id = raw_sidecar_id_by_image_id(target, int(image_item["id"]))
+            image_body = item_page_html(
+                target,
+                image_item,
+                previous_item,
+                next_item,
+                month_nav,
+            )
+
+        self.assertEqual([item["stored_filename"] for item in month_items], ["sample_640x426.jpg"])
+        self.assertIsNotNone(psd_id)
+        self.assertIn(".PSD</a>", image_body)
+        self.assertIn("/filter/filename%3Asample_640x426.psd/item/", image_body)
+
     def test_run_server_nef_sidecar_requires_same_source_folder(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
