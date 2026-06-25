@@ -5514,6 +5514,16 @@ model_name = "buffalo_l"
         self.assertEqual(text_filter.size_lt, int(2.5 * 1024 * 1024 * 1024))
         self.assertEqual(text_filter.width_gt, 1024)
         self.assertEqual(text_filter.height_eq, 2000)
+        self.assertEqual(parse_text_filter("IMG").filename, "IMG")
+        self.assertEqual(parse_text_filter("IMG").query, "filename:IMG")
+        filename_phrase = parse_text_filter("sommer 2024")
+        self.assertEqual(filename_phrase.filename, "sommer 2024")
+        self.assertEqual(filename_phrase.query, 'filename:"sommer 2024"')
+        mixed_filename = parse_text_filter("year:2024 sommer 2024 type:image")
+        self.assertEqual(mixed_filename.filename, "sommer 2024")
+        self.assertEqual(mixed_filename.year, 2024)
+        self.assertEqual(mixed_filename.media_type, "image")
+        self.assertEqual(mixed_filename.query, 'year:2024 filename:"sommer 2024" type:image')
         self.assertEqual(parse_text_filter("width>=1024").width_gte, 1024)
         self.assertIsNone(parse_text_filter("width>=1024").width_gt)
         self.assertEqual(parse_text_filter("width<=2000").width_lte, 2000)
@@ -5669,6 +5679,7 @@ model_name = "buffalo_l"
             ("location:gps h3res:11", "h3res kan bare brukes sammen med location:manual."),
             ("location:oslo h3res:11", "h3res kan bare brukes sammen med location:manual."),
             ("type:audio", "type må være image, video eller file."),
+            ("filename:IMG sommer", "filename kan bare brukes én gang."),
             ('camera:"iPhone', "Ugyldige anførselstegn i filtersøk."),
             ("unknown:canon", "Ukjent filter: unknown"),
         ):

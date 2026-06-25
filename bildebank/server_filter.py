@@ -214,12 +214,34 @@ def parse_text_filter(query: str) -> BrowserTextFilter:
     tokens, clean_query = tokenize_filter_query(query)
     if not tokens:
         raise ValueError("Filtersøk kan ikke være tomt.")
+    tokens, clean_query = default_bare_tokens_to_filename(tokens)
     state = FilterParseState(clean_query)
     for token in tokens:
         if parse_operator_filter_token(state, token):
             continue
         parse_key_value_filter_token(state, token)
     return state.to_filter()
+
+
+def default_bare_tokens_to_filename(tokens: list[str]) -> tuple[list[str], str]:
+    filename_parts: list[str] = []
+    explicit_tokens: list[str] = []
+    insert_index: int | None = None
+
+    for token in tokens:
+        if operator_filter_token(token) is not None or ":" in token:
+            explicit_tokens.append(token)
+            continue
+        if insert_index is None:
+            insert_index = len(explicit_tokens)
+        filename_parts.append(token)
+
+    if filename_parts:
+        filename_token = "filename:" + " ".join(filename_parts)
+        explicit_tokens.insert(insert_index or 0, filename_token)
+
+    clean_query = " ".join(canonical_filter_token(token) for token in explicit_tokens)
+    return explicit_tokens, clean_query
 
 
 def parse_operator_filter_token(state: FilterParseState, token: str) -> bool:

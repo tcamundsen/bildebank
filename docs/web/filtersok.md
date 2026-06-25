@@ -316,6 +316,20 @@ filename:"2024 ferie"
 
 Søket er et delstrengsøk. Det betyr at `filename:IMG` finner filnavn som inneholder `IMG`.
 
+Hvis du skriver tekst uten kriterium foran, tolkes det også som filnavnsøk:
+
+```text
+IMG
+sommer 2024
+```
+
+Dette betyr det samme som:
+
+```text
+filename:IMG
+filename:"sommer 2024"
+```
+
 ### `path`
 
 Søk i filens sti i bildesamlingen.
