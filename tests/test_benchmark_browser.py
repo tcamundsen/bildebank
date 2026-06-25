@@ -291,6 +291,33 @@ def test_years_profile_summary_counts_threshold_failures_and_prints_steps(capsys
     assert "browser_year_cards" in output
 
 
+def test_years_profile_step_renders_with_server_pages_shell(monkeypatch, tmp_path: Path) -> None:
+    benchmark = load_benchmark_module()
+    from bildebank import server_browser
+
+    monkeypatch.setattr(
+        server_browser,
+        "browser_year_cards",
+        lambda target, hide_out_of_focus=False: [
+            {
+                "year": "2024",
+                "month_count": 1,
+                "item_count": 2,
+                "first_month": "2024-01",
+                "item": {"target_path": "2024/01/IMG.jpg", "stored_filename": "IMG.jpg"},
+            }
+        ],
+    )
+    monkeypatch.setattr(server_browser, "year_card_html", lambda target, card: "<article>2024</article>")
+    monkeypatch.setattr(server_browser, "years_navigation_controls_html", lambda cards: "<nav></nav>")
+
+    step = benchmark.years_profile_step(tmp_path, 1)
+
+    assert step.index == 1
+    assert step.year_count == 1
+    assert step.html_bytes > 0
+
+
 def test_profile_parser_supports_imported_source_item_url(monkeypatch, tmp_path: Path) -> None:
     benchmark = load_benchmark_module()
     from bildebank import server_browser

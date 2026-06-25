@@ -693,7 +693,7 @@ def years_profile_step(target: Path, index: int, *, config: Any | None = None) -
         year_card_html,
         years_navigation_controls_html,
     )
-    from bildebank.server_shell import shell_page_html
+    from bildebank.server_pages import shell_page_html
 
     hide_out_of_focus = bool(config.browser.hide_out_of_focus) if config is not None else False
     face_enabled = bool(config.face_recognition.enabled) if config is not None else True
