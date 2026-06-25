@@ -10,7 +10,7 @@ from typing import Any, Callable, Iterable
 
 from . import db
 from .config import FaceRecognitionConfig
-from .face import FACE_SCHEMA_VERSION, active_image_files, apply_face_schema, face_db_path, face_schema_version, normalize_person_name
+from .face import active_image_files, ensure_face_schema_path, face_db_path, normalize_person_name
 from .html_export import browser_face_items_from_metadata, face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
 from .server_browser import items_by_file_ids, rotation_style_attr, thumbnail_media_html
@@ -53,13 +53,7 @@ def current_face_db_path_and_mtime(
 
 @lru_cache(maxsize=8)
 def ensure_current_face_schema(face_db_path: str, face_db_mtime_ns: int) -> None:
-    conn = sqlite3.connect(face_db_path)
-    try:
-        if face_schema_version(conn) != FACE_SCHEMA_VERSION:
-            apply_face_schema(conn)
-            conn.commit()
-    finally:
-        conn.close()
+    ensure_face_schema_path(Path(face_db_path))
 
 
 def clear_face_caches() -> None:

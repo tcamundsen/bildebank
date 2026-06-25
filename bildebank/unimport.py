@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 from . import db
 from .config import AppConfig
-from .face import apply_face_schema, face_database_dir
+from .face import ensure_face_schema_path, face_database_dir
 from .media import sha256_file
 from .openclip import openclip_db_path
 from .pending_deletes import (
@@ -176,12 +176,7 @@ def attach_item_databases(
     face_dir = face_database_dir(target, config.face_recognition)
     if face_dir.is_dir():
         for index, path in enumerate(sorted(face_dir.glob("*.sqlite3"))):
-            face_conn = sqlite3.connect(path)
-            try:
-                apply_face_schema(face_conn)
-                face_conn.commit()
-            finally:
-                face_conn.close()
+            ensure_face_schema_path(path)
             conn.execute(
                 f"ATTACH DATABASE ? AS face_db_{index}",
                 (str(path),),

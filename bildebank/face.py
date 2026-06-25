@@ -209,6 +209,15 @@ def connect_face_db(target: Path, config: FaceRecognitionConfig | None = None) -
     return conn
 
 
+def ensure_face_schema_path(path: Path) -> None:
+    conn = sqlite3.connect(path)
+    try:
+        apply_face_schema(conn)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def validate_face_database_model(conn: sqlite3.Connection, model_name: str) -> None:
     stored_model = get_meta(conn, "model_name")
     if stored_model is None:
