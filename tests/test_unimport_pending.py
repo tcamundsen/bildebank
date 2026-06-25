@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from pathlib import Path
 from unittest.mock import patch
 
 from bildebank import db
 from bildebank.cli import main
 from bildebank.config import AppConfig
-from bildebank.face import connect_face_db
+from bildebank.face import connect_face_db, face_db_path
 from bildebank.file_lifecycle import remove_file
 from bildebank.openclip import connect_openclip_db
 from bildebank.pending_deletes import cleanup_pending_deletes, list_pending_deletes
@@ -336,3 +337,114 @@ def test_unimport_removes_item_dependent_face_and_openclip_rows(
         ).fetchone()[0] == 0
     finally:
         openclip_conn.close()
+
+
+def test_unimport_migrates_legacy_face_db_before_deleting_item_rows(
+    tmp_path: Path,
+) -> None:
+    target, source, _imported = create_single_file_import(tmp_path)
+    config = AppConfig()
+    legacy_face_path = face_db_path(target, config.face_recognition)
+    face_conn = sqlite3.connect(legacy_face_path)
+    try:
+        face_conn.executescript(
+            """
+            CREATE TABLE meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+            INSERT INTO meta(key, value) VALUES('schema_version', '4');
+
+            CREATE TABLE scanned_files (
+                file_id INTEGER PRIMARY KEY,
+                target_path TEXT NOT NULL,
+                target_path_key TEXT NOT NULL,
+                sha256 TEXT NOT NULL,
+                status TEXT NOT NULL,
+                face_count INTEGER NOT NULL DEFAULT 0,
+                error TEXT,
+                scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE faces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_id INTEGER NOT NULL,
+                target_path_key TEXT NOT NULL,
+                bbox_x REAL NOT NULL,
+                bbox_y REAL NOT NULL,
+                bbox_width REAL NOT NULL,
+                bbox_height REAL NOT NULL,
+                detection_score REAL NOT NULL,
+                embedding_model TEXT NOT NULL,
+                embedding BLOB NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE persons (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE person_faces (
+                person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+                face_id INTEGER NOT NULL,
+                confirmed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(person_id, face_id)
+            );
+            CREATE TABLE person_files (
+                person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+                file_id INTEGER NOT NULL,
+                confirmed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY(person_id, file_id)
+            );
+            CREATE TABLE face_suggestions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
+                face_id INTEGER NOT NULL,
+                similarity REAL NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(person_id, face_id)
+            );
+
+            INSERT INTO scanned_files(
+                file_id, target_path, target_path_key, sha256, status, face_count
+            )
+            VALUES(1, '2024/01/IMG_20240102.jpg',
+                   '2024/01/IMG_20240102.jpg', 'hash', 'ok', 1);
+            INSERT INTO faces(
+                id, file_id, target_path_key, bbox_x, bbox_y, bbox_width,
+                bbox_height, detection_score, embedding_model, embedding
+            )
+            VALUES(1, 1, '2024/01/IMG_20240102.jpg',
+                   1, 2, 3, 4, 0.9, 'test', X'00');
+            INSERT INTO persons(id, name) VALUES(1, 'Kari');
+            INSERT INTO person_faces(person_id, face_id) VALUES(1, 1);
+            INSERT INTO person_files(person_id, file_id) VALUES(1, 1);
+            INSERT INTO face_suggestions(person_id, face_id, similarity)
+            VALUES(1, 1, 0.8);
+            """
+        )
+        face_conn.commit()
+    finally:
+        face_conn.close()
+
+    run_unimport(
+        target,
+        source.name,
+        config=config,
+        dry_run=False,
+        confirm=lambda _plan: True,
+    )
+
+    face_conn = connect_face_db(target, config.face_recognition)
+    try:
+        columns = {row["name"] for row in face_conn.execute("PRAGMA table_info(face_suggestions)")}
+        assert "reference_face_id" in columns
+        for table in (
+            "scanned_files",
+            "faces",
+            "person_faces",
+            "person_files",
+            "face_suggestions",
+        ):
+            assert face_conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+    finally:
+        face_conn.close()
