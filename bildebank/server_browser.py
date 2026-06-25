@@ -85,6 +85,14 @@ NOT EXISTS (
 )
 """
 OUT_OF_FOCUS_FILTER_PARAMS = (db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS),)
+
+
+def clear_sidecar_caches() -> None:
+    cached_motion_video_file_ids.cache_clear()
+    cached_raw_sidecar_file_ids.cache_clear()
+    cached_raw_sidecar_ids_by_image_id.cache_clear()
+    RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.clear()
+    RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE.clear()
 def is_image_item(item: Any) -> bool:
     target_path = Path(str(item["target_path"]))
     return media_kind(target_path) == "image"
@@ -715,8 +723,6 @@ def filter_motion_video_items(target: Path, items: list[Any], *, include_motion:
 
 
 def motion_video_file_ids(target: Path, *, conn: sqlite3.Connection | None = None) -> set[int]:
-    if conn is not None:
-        return set(query_motion_video_file_ids(conn))
     db_path = db.db_path_for_target(target)
     try:
         mtime_ns = db_path.stat().st_mtime_ns
@@ -764,14 +770,7 @@ def query_motion_video_file_ids(conn: sqlite3.Connection) -> tuple[int, ...]:
 
 
 def raw_sidecar_file_ids(target: Path, *, conn: sqlite3.Connection | None = None) -> set[int]:
-    if conn is not None:
-        return set(query_raw_sidecar_file_ids(conn))
-    db_path = db.db_path_for_target(target)
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
-        mtime_ns = 0
-    return set(cached_raw_sidecar_file_ids(str(target.resolve()), mtime_ns))
+    return set(raw_sidecar_ids_by_image_id(target).values())
 
 
 @lru_cache(maxsize=8)
@@ -834,7 +833,7 @@ def raw_sidecar_ids_by_image_id(
     cached = RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.get(cache_key)
     if cached is not None:
         return cached
-    cached = query_raw_sidecar_ids_by_image_id(conn) if conn is not None else cached_raw_sidecar_ids_by_image_id(*cache_key)
+    cached = cached_raw_sidecar_ids_by_image_id(*cache_key)
     if len(RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE) >= RAW_SIDECAR_IDS_CACHE_MAX_SIZE:
         RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.pop(next(iter(RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE)))
     RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE[cache_key] = cached
@@ -2107,6 +2106,8 @@ def suggestion_toggle_href(
     if item is None:
         return target_source.root_url
     file_id = int(item["id"])
+    if source.person_name is not None and not source.include_suggestions and target_source.include_suggestions:
+        return source_item_url(target_source, file_id)
     if source.person_name is not None and source.include_suggestions and not target_source.include_suggestions:
         return source_item_url(target_source, file_id) if person_has_confirmed_face else target_source.root_url
     target_item = source_item_by_id(
@@ -3754,10 +3755,10 @@ def attach_face_database(
 ) -> None:
     if any(str(row["name"]) == "face_db" for row in conn.execute("PRAGMA database_list")):
         return
-    from .face import connect_face_db, face_db_path
+    from .face import face_db_path
+    from .server_faces import current_face_db_path
 
-    face_conn = connect_face_db(target, face_config)
-    face_conn.close()
+    current_face_db_path(target, face_config)
     conn.execute("ATTACH DATABASE ? AS face_db", (str(face_db_path(target, face_config)),))
 
 

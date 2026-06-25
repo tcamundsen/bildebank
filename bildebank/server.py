@@ -74,6 +74,7 @@ from .server_browser import (
     browser_item_by_id,
     browser_item_ids,
     browser_month_keys,
+    clear_sidecar_caches,
     first_source_item,
     image_info_content_html,
     imported_source_by_id,
@@ -489,6 +490,7 @@ class BildebankServer(ThreadingHTTPServer):
         getattr(self, "_source_item_counts", {}).clear()
         getattr(self, "_browser_first_day_item_ids", {}).clear()
         getattr(self, "_source_first_day_item_ids", {}).clear()
+        clear_sidecar_caches()
         self._browser_navigation_cache_version = getattr(self, "_browser_navigation_cache_version", 0) + 1
         try:
             self._browser_navigation_db_mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns

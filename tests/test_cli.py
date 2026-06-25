@@ -6654,6 +6654,9 @@ model_name = "buffalo_l"
                 previous_item, next_item = adjacent_source_items(target, imported_source, item, conn=conn)
                 month_nav = source_month_navigation(target, imported_source, item)
 
+                server_browser.clear_sidecar_caches()
+                server_browser.motion_video_file_ids(target)
+                server_browser.raw_sidecar_file_ids(target)
                 with (
                     patch(
                         "bildebank.server_browser.db.connect",
@@ -6688,12 +6691,24 @@ model_name = "buffalo_l"
                         hide_out_of_focus=True,
                         conn=conn,
                     )
+                    server_browser.hidden_sidecar_id_filter_sql(target, "1 = 1", (), conn=conn)
+                    with (
+                        patch(
+                            "bildebank.server_browser.query_motion_video_file_ids",
+                            side_effect=AssertionError("rescanned motion sidecars"),
+                        ),
+                        patch(
+                            "bildebank.server_browser.raw_sidecar_groups",
+                            side_effect=AssertionError("rescanned raw sidecars"),
+                        ),
+                    ):
+                        server_browser.hidden_sidecar_id_filter_sql(target, "1 = 1", (), conn=conn)
             finally:
                 conn.close()
 
         self.assertIn("Åpne i alle bilder", body)
         self.assertIn('href="/item/1">Åpne i alle bilder</a>', body)
-        self.assertEqual(raw_sidecar_ids.call_count, 1)
+        self.assertEqual(raw_sidecar_ids.call_count, 0)
 
     def test_run_server_out_of_focus_button_redirects_to_adjacent_visible_item(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -8195,13 +8210,15 @@ model_name = "buffalo_l"
             confirmed_source = person_browser_source("Kari", include_suggestions=False)
             confirmed_item = source_item_by_id(target, confirmed_source, 1)
             self.assertIsNotNone(confirmed_item)
-            confirmed_body = source_item_page_html(
-                target,
-                confirmed_source,
-                confirmed_item,
-                *adjacent_source_items(target, confirmed_source, confirmed_item),
-                source_month_navigation(target, confirmed_source, confirmed_item),
-            )
+            with patch("bildebank.server_browser.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock:
+                confirmed_body = source_item_page_html(
+                    target,
+                    confirmed_source,
+                    confirmed_item,
+                    *adjacent_source_items(target, confirmed_source, confirmed_item),
+                    source_month_navigation(target, confirmed_source, confirmed_item),
+                )
+            self.assertEqual(item_by_id_mock.call_count, 0)
             confirmed_month_body = source_month_page_html(
                 target,
                 confirmed_source,
