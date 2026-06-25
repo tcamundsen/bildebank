@@ -1243,7 +1243,7 @@ def image_extension_sql(column: str) -> str:
 def browser_year_summaries(target: Path, *, hide_out_of_focus: bool = False) -> list[dict[str, int | str]]:
     conn = db.connect(target)
     try:
-        where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
+        where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
         rows = conn.execute(
             f"""
             WITH visible AS (

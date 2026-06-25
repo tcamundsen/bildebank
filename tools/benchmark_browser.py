@@ -16,6 +16,10 @@ from pathlib import Path
 from typing import Any
 
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 DEFAULT_URL = "http://127.0.0.1:8765/"
 BENCHMARK_HEADER = "X-Bildebank-Benchmark"
 SERVER_TIMING_STEP_ORDER = (

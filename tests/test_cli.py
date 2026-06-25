@@ -2869,6 +2869,8 @@ model_name = "buffalo_l"
             month_cards = browser_year_month_cards(target, "2005")
             with patch("bildebank.server_browser.browser_month_items", wraps=server_browser.browser_month_items) as month_items:
                 optimized_year_cards = server_browser.browser_year_cards(target)
+            with patch("bildebank.server_browser.all_source_where", wraps=server_browser.all_source_where) as all_where:
+                server_browser.browser_year_summaries(target)
 
         self.assertIn('href="/years/2005"', years_body)
         self.assertIn('data-nav-button-pair="year"', years_body)
@@ -2912,6 +2914,7 @@ model_name = "buffalo_l"
         self.assertEqual([card["year"] for card in year_cards], ["2005"])
         self.assertEqual([card["year"] for card in optimized_year_cards], ["2005", "2007"])
         self.assertEqual(month_items.call_count, 0)
+        self.assertTrue(all(call.kwargs.get("conn") is None for call in all_where.call_args_list))
         self.assertEqual([card["month_key"] for card in month_cards], ["2005-03", "2005-04", "2005-05"])
 
     def test_run_server_year_route_rejects_invalid_year(self) -> None:

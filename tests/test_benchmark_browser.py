@@ -32,6 +32,13 @@ def test_next_link_parser_finds_next_navigation_link() -> None:
     assert parser.next_href == "/item/3"
 
 
+def test_benchmark_script_adds_repo_root_to_python_path() -> None:
+    benchmark = load_benchmark_module()
+
+    assert str(Path(__file__).resolve().parents[1]) in sys.path
+    assert benchmark.REPO_ROOT == Path(__file__).resolve().parents[1]
+
+
 def test_item_page_parser_finds_hotkey_request_context() -> None:
     benchmark = load_benchmark_module()
     parser = benchmark.parse_item_page(
