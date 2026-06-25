@@ -104,7 +104,38 @@ class ProfileSummary:
     steps: list[ProfileStepResult]
 
 
-BenchmarkResult = BenchmarkSummary | ProfileSummary
+@dataclass(frozen=True)
+class YearsProfileStepResult:
+    index: int
+    total_ms: float
+    year_cards_ms: float
+    card_html_ms: float
+    controls_ms: float
+    shell_ms: float
+    html_bytes: int
+    year_count: int
+
+
+@dataclass(frozen=True)
+class YearsProfileSummary:
+    mode: str
+    target: str
+    steps_requested: int
+    steps_measured: int
+    warmup: int
+    threshold_ms: float | None
+    threshold_failures: int
+    total: dict[str, float | None]
+    year_cards: dict[str, float | None]
+    card_html: dict[str, float | None]
+    controls: dict[str, float | None]
+    shell: dict[str, float | None]
+    html_bytes_median: float | None
+    year_count_median: float | None
+    steps: list[YearsProfileStepResult]
+
+
+BenchmarkResult = BenchmarkSummary | ProfileSummary | YearsProfileSummary
 
 
 @dataclass(frozen=True)
@@ -200,7 +231,9 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return 0 if suite_summary.passed else 1
 
-    if isinstance(summary, ProfileSummary):
+    if isinstance(summary, YearsProfileSummary):
+        print_years_profile_summary(summary)
+    elif isinstance(summary, ProfileSummary):
         print_profile_summary(summary)
     else:
         print_summary(summary)
@@ -239,10 +272,10 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=("browser", "server", "server-keepalive", "profile", "hotkey", "tag"),
+        choices=("browser", "server", "server-keepalive", "profile", "years-profile", "hotkey", "tag"),
         default="browser",
     )
-    parser.add_argument("--target", type=Path, help="Bildesamlingsmappe. Kreves for --mode profile.")
+    parser.add_argument("--target", type=Path, help="Bildesamlingsmappe. Kreves for --mode profile og years-profile.")
     parser.add_argument("--steps", type=positive_int, default=50, help="Antall neste-klikk som måles. Standard: 50")
     parser.add_argument("--warmup", type=non_negative_int, default=5, help="Antall oppvarmingsklikk før måling. Standard: 5")
     parser.add_argument("--hotkey", default="1", help="Hurtigtast som måles med --mode hotkey. Standard: 1")
@@ -261,6 +294,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
 
 
 def run_benchmark(args: argparse.Namespace) -> BenchmarkResult:
+    if args.mode == "years-profile":
+        return run_years_profile_benchmark(args)
     if args.mode == "profile":
         return run_profile_benchmark(args)
     if args.mode == "hotkey":
@@ -633,6 +668,77 @@ def run_profile_benchmark(args: argparse.Namespace) -> ProfileSummary:
     return build_profile_summary(args, steps)
 
 
+def run_years_profile_benchmark(args: argparse.Namespace) -> YearsProfileSummary:
+    from bildebank import db
+    from bildebank.config import load_config
+
+    if args.target is None:
+        raise RuntimeError("--target må oppgis med --mode years-profile.")
+    target = args.target
+    if not target.exists() or not target.is_dir():
+        raise RuntimeError(f"Bildesamlingen finnes ikke som mappe: {target}")
+    db.prepare_database(target)
+    config = load_config(Path(__file__).resolve().parents[1])
+
+    for _ in range(args.warmup):
+        years_profile_step(target, 0, config=config)
+
+    steps = [years_profile_step(target, index, config=config) for index in range(1, args.steps + 1)]
+    return build_years_profile_summary(args, steps)
+
+
+def years_profile_step(target: Path, index: int, *, config: Any | None = None) -> YearsProfileStepResult:
+    from bildebank.server_browser import (
+        browser_year_cards,
+        year_card_html,
+        years_navigation_controls_html,
+    )
+    from bildebank.server_shell import shell_page_html
+
+    hide_out_of_focus = bool(config.browser.hide_out_of_focus) if config is not None else False
+    face_enabled = bool(config.face_recognition.enabled) if config is not None else True
+    openclip_enabled = bool(config.openclip.enabled) if config is not None else True
+
+    total_start = time.perf_counter()
+
+    start = time.perf_counter()
+    year_cards = browser_year_cards(target, hide_out_of_focus=hide_out_of_focus)
+    year_cards_ms = elapsed_ms(start)
+
+    start = time.perf_counter()
+    cards = "\n".join(year_card_html(target, card) for card in year_cards)
+    content = cards if cards else '<p class="meta">Ingen filer i bildesamlingen.</p>'
+    card_html_ms = elapsed_ms(start)
+
+    start = time.perf_counter()
+    controls = years_navigation_controls_html(year_cards)
+    controls_ms = elapsed_ms(start)
+
+    start = time.perf_counter()
+    html = shell_page_html(
+        "År",
+        f"""
+        <h1>År</h1>
+        {controls}
+        <section class="month-grid-server">{content}</section>
+        """,
+        face_enabled=face_enabled,
+        openclip_enabled=openclip_enabled,
+    )
+    shell_ms = elapsed_ms(start)
+
+    return YearsProfileStepResult(
+        index=index,
+        total_ms=elapsed_ms(total_start),
+        year_cards_ms=year_cards_ms,
+        card_html_ms=card_html_ms,
+        controls_ms=controls_ms,
+        shell_ms=shell_ms,
+        html_bytes=len(html.encode("utf-8")),
+        year_count=len(year_cards),
+    )
+
+
 def profile_source_and_file_id(target: Path, url: str) -> tuple[Any, int]:
     from bildebank.server_browser import imported_source_by_id
     from bildebank.server_browser_sources import (
@@ -978,6 +1084,32 @@ def build_profile_summary(args: argparse.Namespace, steps: list[ProfileStepResul
     )
 
 
+def build_years_profile_summary(args: argparse.Namespace, steps: list[YearsProfileStepResult]) -> YearsProfileSummary:
+    total_values = [step.total_ms for step in steps]
+    threshold_failures = (
+        sum(1 for value in total_values if args.threshold_ms is not None and value > args.threshold_ms)
+        if args.threshold_ms is not None
+        else 0
+    )
+    return YearsProfileSummary(
+        mode="years-profile",
+        target=str(args.target),
+        steps_requested=args.steps,
+        steps_measured=len(steps),
+        warmup=args.warmup,
+        threshold_ms=args.threshold_ms,
+        threshold_failures=threshold_failures,
+        total=stats_dict(total_values),
+        year_cards=stats_dict([step.year_cards_ms for step in steps]),
+        card_html=stats_dict([step.card_html_ms for step in steps]),
+        controls=stats_dict([step.controls_ms for step in steps]),
+        shell=stats_dict([step.shell_ms for step in steps]),
+        html_bytes_median=statistics.median([step.html_bytes for step in steps]) if steps else None,
+        year_count_median=statistics.median([step.year_count for step in steps]) if steps else None,
+        steps=steps,
+    )
+
+
 def stats_dict(values: list[float]) -> dict[str, float | None]:
     return {
         "min_ms": min(values) if values else None,
@@ -1000,18 +1132,24 @@ def percentile(values: list[float], percent: int) -> float | None:
 
 
 def summary_median_ms(summary: BenchmarkResult) -> float | None:
+    if isinstance(summary, YearsProfileSummary):
+        return summary.total["median_ms"]
     if isinstance(summary, ProfileSummary):
         return summary.total["median_ms"]
     return summary.median_ms
 
 
 def summary_p95_ms(summary: BenchmarkResult) -> float | None:
+    if isinstance(summary, YearsProfileSummary):
+        return summary.total["p95_ms"]
     if isinstance(summary, ProfileSummary):
         return summary.total["p95_ms"]
     return summary.p95_ms
 
 
 def summary_max_ms(summary: BenchmarkResult) -> float | None:
+    if isinstance(summary, YearsProfileSummary):
+        return summary.total["max_ms"]
     if isinstance(summary, ProfileSummary):
         return summary.total["max_ms"]
     return summary.max_ms
@@ -1081,6 +1219,22 @@ def print_profile_summary(summary: ProfileSummary) -> None:
         print(f"  terskel: {summary.threshold_ms:.1f} ms, brudd={summary.threshold_failures}")
 
 
+def print_years_profile_summary(summary: YearsProfileSummary) -> None:
+    print("Bildebank years profile")
+    print(f"  target: {summary.target}")
+    print(f"  warmup: {summary.warmup}")
+    print(f"  målt: {summary.steps_measured}/{summary.steps_requested}")
+    print(f"  år_median: {summary.year_count_median if summary.year_count_median is not None else 0:.0f}")
+    print(f"  bytes_median: {summary.html_bytes_median if summary.html_bytes_median is not None else 0:.0f}")
+    print(f"  total: {format_stats(summary.total)}")
+    print(f"  browser_year_cards: {format_stats(summary.year_cards)}")
+    print(f"  year_card_html: {format_stats(summary.card_html)}")
+    print(f"  years_navigation_controls_html: {format_stats(summary.controls)}")
+    print(f"  shell_page_html: {format_stats(summary.shell)}")
+    if summary.threshold_ms is not None:
+        print(f"  terskel: {summary.threshold_ms:.1f} ms, brudd={summary.threshold_failures}")
+
+
 def print_suite_summary(summary: SuiteSummary) -> None:
     print("Bildebank browser benchmark suite")
     print(
@@ -1126,7 +1280,7 @@ def server_timing_medians(steps: list[StepResult]) -> dict[str, float]:
     return {name: statistics.median(values) for name, values in values_by_name.items()}
 
 
-def summary_to_json(summary: BenchmarkSummary | ProfileSummary) -> dict[str, Any]:
+def summary_to_json(summary: BenchmarkSummary | ProfileSummary | YearsProfileSummary) -> dict[str, Any]:
     data = asdict(summary)
     data["steps"] = [asdict(step) for step in summary.steps]
     return data

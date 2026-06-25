@@ -44,6 +44,14 @@ databaseforberedelse som serveren før målingen starter:
 .venv/bin/python tools/benchmark_browser.py --mode profile --target /path/to/bildesamling --url http://127.0.0.1:8765/item/123 --steps 100 --warmup 10
 ```
 
+For å se hvor `/years` bruker tid internt, bruk `years-profile`. Den går ikke
+via HTTP, men rendrer samme HTML som forsiden og deler tiden opp i årskort,
+kort-HTML, navigasjon og shell:
+
+```bash
+.venv/bin/python tools/benchmark_browser.py --mode years-profile --target /path/to/bildesamling --steps 100 --warmup 10
+```
+
 For å måle selve hurtigtast-API-et fra en konkret item-side eller filterside,
 bruk `hotkey`-modus. Startsiden hentes først for å lese `file_id`, CSRF-token
 og eventuell filterkontekst. Deretter måles gjentatte kall til

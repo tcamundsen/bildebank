@@ -242,6 +242,55 @@ def test_profile_summary_counts_threshold_failures_per_total_time() -> None:
     assert summary.adjacent["max_ms"] == 30.0
 
 
+def test_years_profile_summary_counts_threshold_failures_and_prints_steps(capsys) -> None:
+    benchmark = load_benchmark_module()
+    args = benchmark.parse_args(
+        [
+            "--mode",
+            "years-profile",
+            "--target",
+            "/tmp/bilder",
+            "--steps",
+            "2",
+            "--threshold-ms",
+            "50",
+        ]
+    )
+    steps = [
+        benchmark.YearsProfileStepResult(
+            index=1,
+            total_ms=40.0,
+            year_cards_ms=30.0,
+            card_html_ms=5.0,
+            controls_ms=1.0,
+            shell_ms=4.0,
+            html_bytes=1000,
+            year_count=20,
+        ),
+        benchmark.YearsProfileStepResult(
+            index=2,
+            total_ms=60.0,
+            year_cards_ms=45.0,
+            card_html_ms=6.0,
+            controls_ms=1.0,
+            shell_ms=8.0,
+            html_bytes=1200,
+            year_count=22,
+        ),
+    ]
+
+    summary = benchmark.build_years_profile_summary(args, steps)
+    benchmark.print_years_profile_summary(summary)
+
+    assert summary.threshold_failures == 1
+    assert summary.total["median_ms"] == 50.0
+    assert summary.year_cards["max_ms"] == 45.0
+    assert summary.html_bytes_median == 1100.0
+    output = capsys.readouterr().out
+    assert "Bildebank years profile" in output
+    assert "browser_year_cards" in output
+
+
 def test_profile_parser_supports_imported_source_item_url(monkeypatch, tmp_path: Path) -> None:
     benchmark = load_benchmark_module()
     from bildebank import server_browser
