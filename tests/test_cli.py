@@ -6943,6 +6943,12 @@ model_name = "buffalo_l"
                     VALUES(2, 2, 1, 0.91)
                     """
                 )
+                face_conn.execute(
+                    """
+                    INSERT INTO face_suggestions(person_id, face_id, reference_face_id, similarity)
+                    VALUES(3, 2, NULL, 0.81)
+                    """
+                )
                 face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(3, 1)")
                 face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(6, 1)")
                 face_conn.commit()
@@ -6996,7 +7002,17 @@ model_name = "buffalo_l"
         self.assertIn("Referanseansikter:", tag_rail_html)
         self.assertIn('class="person-link" href="/person/Kari/no-faces/item/1"', tag_rail_html)
         self.assertIn('class="person-link" href="/person/Ola%20Nordmann/no-faces/item/1"', tag_rail_html)
+        self.assertIn('class="person-link-with-reference"', tag_rail_html)
+        self.assertIn('class="person-reference-link" href="/person/Ola%20Nordmann/confirmed/item/1"', tag_rail_html)
+        self.assertIn(
+            'Ola Nordmann</a><span class="person-reference-marker"></span>'
+            '<a class="person-reference-link" href="/person/Ola%20Nordmann/confirmed/item/1" '
+            'title="Vis referansebildet som ga forslaget, face-id 1">(r)</a>'
+            '<span class="person-reference-marker"></span>',
+            tag_rail_html,
+        )
         self.assertIn('class="person-link" href="/person/Per%20Manual/no-faces/item/1"', tag_rail_html)
+        self.assertNotIn('href="/person/Per%20Manual/confirmed/item/', tag_rail_html)
         self.assertIn('class="person-link" href="/person/Anne%20Begge/no-faces/item/1"', tag_rail_html)
         self.assertIn('class="person-link" href="/person/Siril/no-faces/item/1"', tag_rail_html)
         self.assertIn('class="person-link" href="/person/Viljar/no-faces/item/1"', tag_rail_html)
@@ -7062,6 +7078,9 @@ model_name = "buffalo_l"
         self.assertIn("width: fit-content;", SERVER_CSS)
         self.assertIn("justify-self: start;", SERVER_CSS)
         self.assertIn(".tag-rail .person-link {\n      flex: 1 1 max-content;", SERVER_CSS)
+        self.assertIn(".tag-rail .person-link-with-reference", SERVER_CSS)
+        self.assertIn(".person-reference-link", SERVER_CSS)
+        self.assertIn(".person-reference-marker", SERVER_CSS)
         self.assertIn("      min-height: 26px;", SERVER_CSS)
         self.assertIn("      background: transparent;", SERVER_CSS)
         self.assertIn(".manual-person-remove-button {\n      display: none;", SERVER_CSS)
@@ -7090,7 +7109,10 @@ model_name = "buffalo_l"
         self.assertIn("Identifiser", face_body)
         self.assertIn("Forslag:", face_body)
         self.assertIn("Ola Nordmann <strong>0.910</strong>", face_body)
-        self.assertIn("(referanse face-id 1)", face_body)
+        self.assertIn('href="/person/Ola%20Nordmann/confirmed/item/1"', face_body)
+        self.assertIn('title="Referanse face-id 1">referanse</a>', face_body)
+        self.assertIn("Per Manual <strong>0.810</strong>", face_body)
+        self.assertNotIn('href="/person/Per%20Manual/confirmed/item/', face_body)
         self.assertIn('data-face-id="2"', face_body)
         self.assertIn('data-person-name="Kari"', face_body)
         self.assertIn('data-person-name="Ola Nordmann"', face_body)

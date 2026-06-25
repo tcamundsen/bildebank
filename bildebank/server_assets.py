@@ -376,6 +376,50 @@ SERVER_CSS = r"""    :root {
     }
     .face-toggle-icon-active { border-color: var(--accent); }
     .person-link { color: var(--accent); }
+    .person-link-with-reference {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #303030;
+      color: var(--text);
+      min-height: 32px;
+    }
+    .person-link-with-reference .person-link {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      min-height: 0;
+      padding-right: 2px;
+    }
+    .person-reference-marker {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1;
+    }
+    .person-reference-marker:first-of-type {
+      padding-left: 1px;
+    }
+    .person-reference-marker:last-of-type {
+      padding-right: 6px;
+    }
+    .person-link-with-reference .person-reference-link {
+      padding: 0 1px;
+      line-height: 1;
+      color: var(--accent);
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .person-link-with-reference .person-reference-link:hover {
+      text-decoration: underline;
+    }
+    .person-link-with-reference:hover {
+      background: #3a3a3a;
+      text-decoration: none;
+      min-width: 0;
+    }
     .people-section {
       display: flex;
       flex-direction: column;
@@ -406,6 +450,13 @@ SERVER_CSS = r"""    :root {
       color: var(--accent);
       font-size: 12px;
       font-weight: 600;
+    }
+    .tag-rail .person-link-with-reference {
+      flex: 1 1 max-content;
+      min-height: 26px;
+      border-color: #454545;
+      background: transparent;
+      font-size: 12px;
     }
     .tag-rail .faces-button {
       flex: 0 0 auto;

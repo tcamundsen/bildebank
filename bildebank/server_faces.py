@@ -84,23 +84,36 @@ def people_for_file(
 
 def people_for_file_from_rows(
     file_id: int,
-    rows: tuple[tuple[str, int, int | None, bool], ...],
+    rows: tuple[tuple[str, int, int | None, bool, int | None, int | None], ...],
 ) -> list[dict[str, object]]:
     people: dict[str, dict[str, object]] = {}
-    for name, priority, _face_id, manual in rows:
+    for name, priority, _face_id, manual, reference_face_id, reference_file_id in rows:
         if name not in people:
-            people[name] = {"priority": priority, "manual": manual}
+            people[name] = {
+                "priority": priority,
+                "manual": manual,
+                "referenceFaceId": reference_face_id if priority == 2 else None,
+                "referenceFileId": reference_file_id if priority == 2 else None,
+            }
             continue
         if priority < require_int(people[name]["priority"], "personprioritet"):
             people[name]["priority"] = priority
+            people[name]["referenceFaceId"] = None
+            people[name]["referenceFileId"] = None
         if manual:
             people[name]["manual"] = True
+        if priority == 2 and require_int(people[name]["priority"], "personprioritet") == 2:
+            if people[name].get("referenceFaceId") is None and reference_face_id is not None:
+                people[name]["referenceFaceId"] = reference_face_id
+                people[name]["referenceFileId"] = reference_file_id
     return [
         {
             "name": name,
             "url": person_item_url(name, file_id, show_faces=False),
             "confirmed": require_int(data["priority"], "personprioritet") <= 1,
             "manual": bool(data["manual"]),
+            "referenceFaceId": data.get("referenceFaceId"),
+            "referenceFileId": data.get("referenceFileId"),
         }
         for name, data in sorted(people.items())
     ]
@@ -108,7 +121,7 @@ def people_for_file_from_rows(
 
 def confirmed_face_people_for_file_from_rows(
     file_id: int,
-    rows: tuple[tuple[str, int, int | None, bool], ...],
+    rows: tuple[tuple[str, int, int | None, bool, int | None, int | None], ...],
 ) -> list[dict[str, object]]:
     return [
         {
@@ -117,7 +130,7 @@ def confirmed_face_people_for_file_from_rows(
             "confirmed": True,
             "faceId": face_id,
         }
-        for name, priority, face_id, _manual in rows
+        for name, priority, face_id, _manual, _reference_face_id, _reference_file_id in rows
         if priority == 0 and face_id is not None
     ]
 
@@ -152,7 +165,7 @@ def cached_confirmed_people_for_file(
     face_db_path: str,
     face_db_mtime_ns: int,
     file_id: int,
-) -> tuple[tuple[str, int, int | None, bool], ...]:
+) -> tuple[tuple[str, int, int | None, bool, int | None, int | None], ...]:
     conn = sqlite3.connect(face_db_path)
     conn.row_factory = sqlite3.Row
     try:
@@ -160,23 +173,46 @@ def cached_confirmed_people_for_file(
             return ()
         rows = conn.execute(
             """
-            SELECT persons.name, 0 AS priority, person_faces.face_id, 0 AS manual
+            SELECT
+                persons.name,
+                0 AS priority,
+                person_faces.face_id,
+                0 AS manual,
+                NULL AS reference_face_id,
+                NULL AS reference_file_id,
+                1.0 AS similarity
             FROM person_faces
             JOIN persons ON persons.id = person_faces.person_id
             JOIN faces ON faces.id = person_faces.face_id
             WHERE faces.file_id = ?
             UNION ALL
-            SELECT persons.name, 1 AS priority, NULL AS face_id, 1 AS manual
+            SELECT
+                persons.name,
+                1 AS priority,
+                NULL AS face_id,
+                1 AS manual,
+                NULL AS reference_face_id,
+                NULL AS reference_file_id,
+                1.0 AS similarity
             FROM person_files
             JOIN persons ON persons.id = person_files.person_id
             WHERE person_files.file_id = ?
             UNION ALL
-            SELECT persons.name, 2 AS priority, NULL AS face_id, 0 AS manual
+            SELECT
+                persons.name,
+                2 AS priority,
+                NULL AS face_id,
+                0 AS manual,
+                face_suggestions.reference_face_id,
+                reference_faces.file_id AS reference_file_id,
+                face_suggestions.similarity
             FROM face_suggestions
             JOIN persons ON persons.id = face_suggestions.person_id
             JOIN faces ON faces.id = face_suggestions.face_id
+            LEFT JOIN faces AS reference_faces
+              ON reference_faces.id = face_suggestions.reference_face_id
             WHERE faces.file_id = ?
-            ORDER BY name, priority, face_id
+            ORDER BY name, priority, similarity DESC, face_id
             """,
             (file_id, file_id, file_id),
         )
@@ -186,6 +222,8 @@ def cached_confirmed_people_for_file(
                 int(row["priority"]),
                 int(row["face_id"]) if row["face_id"] is not None else None,
                 bool(row["manual"]),
+                int(row["reference_face_id"]) if row["reference_face_id"] is not None else None,
+                int(row["reference_file_id"]) if row["reference_file_id"] is not None else None,
             )
             for row in rows
         )
@@ -324,9 +362,12 @@ def unconfirmed_faces_for_item(
                     face_suggestions.face_id,
                     persons.name,
                     face_suggestions.reference_face_id,
+                    reference_faces.file_id AS reference_file_id,
                     face_suggestions.similarity
                 FROM face_suggestions
                 JOIN persons ON persons.id = face_suggestions.person_id
+                LEFT JOIN faces AS reference_faces
+                  ON reference_faces.id = face_suggestions.reference_face_id
                 WHERE face_suggestions.face_id IN ({placeholders})
                 ORDER BY face_suggestions.face_id, face_suggestions.similarity DESC, persons.name
                 """,
@@ -338,6 +379,9 @@ def unconfirmed_faces_for_item(
                         "name": str(row["name"]),
                         "referenceFaceId": (
                             None if row["reference_face_id"] is None else int(row["reference_face_id"])
+                        ),
+                        "referenceFileId": (
+                            None if row["reference_file_id"] is None else int(row["reference_file_id"])
                         ),
                         "similarity": float(row["similarity"]),
                     }
@@ -827,10 +871,16 @@ def people_link_html(
 ) -> str:
     name = str(person["name"])
     badge = '<span class="confirmed-badge" title="Bekreftet" aria-label="Bekreftet"> ✅</span>' if person.get("confirmed") else ""
-    link = (
+    reference_link = suggested_person_reference_link_html(person)
+    person_link = (
         f'<a class="person-link" href="{html.escape(str(person["url"]))}" '
         f'data-person-name="{html.escape(name)}" '
         f'title="Vis alle bilder med denne personen">{html.escape(name)}{badge}</a>'
+    )
+    link = (
+        f'<span class="person-link-with-reference">{person_link}{reference_link}</span>'
+        if reference_link
+        else person_link
     )
     if not manual_remove_enabled or not person.get("manual") or file_id is None:
         return link
@@ -843,6 +893,33 @@ def people_link_html(
         f'data-manual-person-remove data-file-id="{file_id}" '
         f'data-person-name="{html.escape(name)}">×</button>'
         "</span>"
+    )
+
+
+def suggested_person_reference_link_html(person: dict[str, object]) -> str:
+    if person.get("confirmed") or person.get("manual"):
+        return ""
+    reference_face_id = person.get("referenceFaceId")
+    reference_file_id = person.get("referenceFileId")
+    if reference_face_id is None or reference_file_id is None:
+        return ""
+    try:
+        clean_reference_face_id = require_int(reference_face_id, "referenceFaceId")
+        clean_reference_file_id = require_int(reference_file_id, "referenceFileId")
+    except ValueError:
+        return ""
+    name = str(person["name"])
+    reference_url = (
+        "/person/"
+        + urllib.parse.quote(name, safe="")
+        + f"/confirmed/item/{clean_reference_file_id}"
+    )
+    return (
+        '<span class="person-reference-marker"></span>'
+        f'<a class="person-reference-link" href="{html.escape(reference_url)}" '
+        f'title="Vis referansebildet som ga forslaget, face-id {clean_reference_face_id}">'
+        "(r)</a>"
+        '<span class="person-reference-marker"></span>'
     )
 
 
@@ -1228,8 +1305,24 @@ def face_suggestion_summary_html(suggestions: list[object]) -> str:
         except ValueError:
             similarity = 0.0
         reference_face_id = suggestion.get("referenceFaceId")
+        reference_file_id = suggestion.get("referenceFileId")
         reference_text = ""
-        if reference_face_id is not None:
+        if reference_face_id is not None and reference_file_id is not None:
+            try:
+                clean_reference_face_id = require_int(reference_face_id, "referenceFaceId")
+                clean_reference_file_id = require_int(reference_file_id, "referenceFileId")
+                reference_url = (
+                    "/person/"
+                    + urllib.parse.quote(str(suggestion.get("name") or ""), safe="")
+                    + f"/confirmed/item/{clean_reference_file_id}"
+                )
+                reference_text = (
+                    f' (<a href="{html.escape(reference_url)}" '
+                    f'title="Referanse face-id {clean_reference_face_id}">referanse</a>)'
+                )
+            except ValueError:
+                pass
+        elif reference_face_id is not None:
             try:
                 reference_text = f" (referanse face-id {require_int(reference_face_id, 'referenceFaceId')})"
             except ValueError:
