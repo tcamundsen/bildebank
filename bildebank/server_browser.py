@@ -1157,6 +1157,15 @@ def valid_month_key(value: str) -> bool:
     return year.isdigit() and month.isdigit() and 1 <= int(month) <= 12
 
 
+def next_month_key(month_key: str) -> str | None:
+    if not valid_month_key(month_key):
+        return None
+    year, month = (int(part) for part in month_key.split("-", 1))
+    if month == 12:
+        return f"{year + 1:04d}-01"
+    return f"{year:04d}-{month + 1:02d}"
+
+
 def valid_day_key(value: str) -> bool:
     if len(value) != 10 or value[4] != "-" or value[7] != "-":
         return False
@@ -1244,81 +1253,77 @@ def browser_year_summaries(target: Path, *, hide_out_of_focus: bool = False) -> 
     conn = db.connect(target)
     try:
         where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
-        rows = conn.execute(
+        month_rows = conn.execute(
             f"""
             WITH visible AS (
                 SELECT
-                    id,
-                    target_path,
-                    target_path_key,
                     {db.BROWSER_DATE_ORDER_SQL} AS browser_date
                 FROM files
                 WHERE {where_sql}
-            ),
-            valid AS (
-                SELECT
-                    id,
-                    target_path,
-                    target_path_key,
-                    browser_date,
-                    substr(browser_date, 1, 4) AS year,
-                    substr(browser_date, 1, 7) AS month_key
-                FROM visible
-                WHERE browser_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
-            ),
-            year_summary AS (
-                SELECT
-                    year,
-                    COUNT(*) AS item_count,
-                    COUNT(DISTINCT month_key) AS month_count,
-                    MIN(month_key) AS first_month
-                FROM valid
-                GROUP BY year
-            ),
-            year_thumbnail AS (
-                SELECT year, id AS item_id
-                FROM (
-                    SELECT
-                        valid.year,
-                        valid.id,
-                        row_number() OVER (
-                            PARTITION BY valid.year
-                            ORDER BY
-                                CASE WHEN {image_extension_sql("valid.target_path")} THEN 0 ELSE 1 END,
-                                valid.browser_date,
-                                valid.target_path_key
-                        ) AS row_number
-                    FROM valid
-                    JOIN year_summary ON year_summary.year = valid.year
-                     AND year_summary.first_month = valid.month_key
-                )
-                WHERE row_number = 1
             )
             SELECT
-                year_summary.year,
-                year_summary.item_count,
-                year_summary.month_count,
-                year_summary.first_month,
-                year_thumbnail.item_id
-            FROM year_summary
-            JOIN year_thumbnail ON year_thumbnail.year = year_summary.year
-            ORDER BY year_summary.year
+                substr(browser_date, 1, 7) AS month_key,
+                COUNT(*) AS item_count
+            FROM visible
+            WHERE browser_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+            GROUP BY month_key
+            ORDER BY month_key
             """,
             params,
         )
-        return [
-            {
-                "year": str(row["year"]),
-                "month_count": int(row["month_count"]),
-                "item_count": int(row["item_count"]),
-                "first_month": str(row["first_month"]),
-                "item_id": int(row["item_id"]),
-            }
-            for row in rows
-            if valid_year_key(str(row["year"]))
-        ]
+        summaries_by_year: dict[str, dict[str, int | str]] = {}
+        for row in month_rows:
+            month_key = str(row["month_key"])
+            if not valid_month_key(month_key):
+                continue
+            year = month_key[:4]
+            if not valid_year_key(year):
+                continue
+            summary = summaries_by_year.setdefault(
+                year,
+                {"year": year, "month_count": 0, "item_count": 0, "first_month": month_key},
+            )
+            summary["month_count"] = int(summary["month_count"]) + 1
+            summary["item_count"] = int(summary["item_count"]) + int(row["item_count"])
+
+        summaries: list[dict[str, int | str]] = []
+        for year in sorted(summaries_by_year):
+            summary = summaries_by_year[year]
+            first_month = str(summary["first_month"])
+            item_id = first_year_thumbnail_item_id(conn, where_sql, params, first_month)
+            if item_id is None:
+                continue
+            summary["item_id"] = item_id
+            summaries.append(summary)
+        return summaries
     finally:
         conn.close()
+
+
+def first_year_thumbnail_item_id(
+    conn: sqlite3.Connection,
+    where_sql: str,
+    params: tuple[object, ...],
+    first_month: str,
+) -> int | None:
+    next_month = next_month_key(first_month)
+    if next_month is None:
+        return None
+    row = conn.execute(
+        f"""
+        SELECT id
+        FROM files
+        WHERE {where_sql}
+          AND {db.BROWSER_DATE_ORDER_SQL} >= ?
+          AND {db.BROWSER_DATE_ORDER_SQL} < ?
+        ORDER BY
+          CASE WHEN {image_extension_sql("target_path")} THEN 0 ELSE 1 END,
+          {ITEM_ORDER_SQL}
+        LIMIT 1
+        """,
+        (*params, f"{first_month}-01", f"{next_month}-01"),
+    ).fetchone()
+    return int(row["id"]) if row is not None else None
 
 
 def browser_year_cards(target: Path, *, hide_out_of_focus: bool = False) -> list[dict[str, Any]]:
