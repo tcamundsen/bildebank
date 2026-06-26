@@ -104,6 +104,7 @@ HELP_COMMAND_GROUPS = (
     (
         "kom i gang",
         (
+            ("launcher", "Åpne Windows-vennlig kontrollpanel"),
             ("create", "Opprett en ny bildesamlingsmappe"),
             ("import", "Importer en mappe, CD, USB eller annen kilde"),
             ("config", "Slå valgfrie funksjoner på eller av"),
@@ -264,6 +265,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Opprett bildesamling og database",
     )
     create.add_argument("path", metavar="mappe", type=Path, help="Mappen som skal bli bildesamling")
+
+    add_command(
+        subparsers,
+        "launcher",
+        usage="bildebank launcher",
+        description="Åpne Windows-vennlig kontrollpanel for Bildebank.",
+        help="Åpne Windows-vennlig kontrollpanel",
+    )
 
     imp = add_command(
         subparsers,
@@ -1067,6 +1076,7 @@ def main_help_epilog() -> str:
 
 
 NO_TARGET_COMMANDS = {
+    "launcher",
     "create",
     "explain-date",
     "inspect-metadata",
@@ -1145,6 +1155,11 @@ def run(args: argparse.Namespace) -> int:
 
 
 def run_no_target_command(args: argparse.Namespace) -> int:
+    if args.command == "launcher":
+        from .launcher import main as launcher_main
+
+        return launcher_main()
+
     if args.command == "create":
         target = args.path.resolve()
         validate_collection_platform(target)
