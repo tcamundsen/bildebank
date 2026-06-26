@@ -111,6 +111,14 @@ def run_server_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "run-server")
 
 
+def geo_scan_command(collection_path: Path) -> list[str]:
+    return bildebank_command("--target", collection_path, "geo-scan")
+
+
+def make_thumbnails_command(collection_path: Path) -> list[str]:
+    return bildebank_command("--target", collection_path, "make-thumbnails")
+
+
 class BildebankLauncher:
     def __init__(self, config_path: Path | None = None) -> None:
         import tkinter as tk
@@ -196,11 +204,19 @@ class BildebankLauncher:
         if is_collection_created(self.collection_path):
             import_button = ttk.Button(self.button_frame, text="Importer bilder", command=self._start_import_flow)
             import_button.grid(row=0, column=1, padx=(0, 8), pady=4)
+            geo_button = ttk.Button(self.button_frame, text="Scan GPS", command=self._run_geo_scan)
+            geo_button.grid(row=0, column=2, padx=(0, 8), pady=4)
+            thumbs_button = ttk.Button(
+                self.button_frame,
+                text="Lag thumbnails",
+                command=self._run_make_thumbnails,
+            )
+            thumbs_button.grid(row=0, column=3, padx=(0, 8), pady=4)
             start_button = ttk.Button(self.button_frame, text="Start Bildebank", command=self._start_server)
-            start_button.grid(row=0, column=2, padx=(0, 8), pady=4)
+            start_button.grid(row=1, column=1, padx=(0, 8), pady=4)
             open_button = ttk.Button(self.button_frame, text="Åpne bildesamling", command=self._open_collection)
-            open_button.grid(row=0, column=3, padx=(0, 8), pady=4)
-            self.buttons.extend([import_button, start_button, open_button])
+            open_button.grid(row=1, column=2, padx=(0, 8), pady=4)
+            self.buttons.extend([import_button, geo_button, thumbs_button, start_button, open_button])
         else:
             create_button = ttk.Button(
                 self.button_frame,
@@ -249,6 +265,26 @@ class BildebankLauncher:
             running_message="Oppretter bildesamling ...",
             success_message="Bildesamling opprettet.",
             failure_message="Kunne ikke opprette bildesamlingen.",
+            on_success=self._refresh_state,
+        )
+
+    def _run_geo_scan(self) -> None:
+        self._log("Scanner GPS-metadata ...")
+        self._run_waiting_command(
+            geo_scan_command(self.collection_path),
+            running_message="Scanner GPS-metadata ...",
+            success_message="GPS-scan fullført.",
+            failure_message="GPS-scan feilet.",
+            on_success=self._refresh_state,
+        )
+
+    def _run_make_thumbnails(self) -> None:
+        self._log("Lager thumbnails ...")
+        self._run_waiting_command(
+            make_thumbnails_command(self.collection_path),
+            running_message="Lager thumbnails ...",
+            success_message="Thumbnails fullført.",
+            failure_message="Thumbnail-jobb feilet.",
             on_success=self._refresh_state,
         )
 
