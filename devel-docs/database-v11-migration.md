@@ -43,3 +43,21 @@ Dette bevarer brukerens sletting på tvers av senere importer. `unimport` av én
 av kildene skal beholde den slettede filen så lenge en annen kilde fortsatt
 refererer til den. Når siste kilde unimporteres, fjernes `files`-raden og filen
 under `deleted/` legges i `pending_file_deletes` for fysisk opprydding.
+
+## Fysisk sletting ved unimport
+
+`unimport` er en annen operasjon enn brukerinitiert `remove`. En forutsetning
+for å gjennomføre `unimport` er at alle registrerte kildefiler fortsatt finnes
+i kilden og valideres med størrelse og SHA-256 før Bildebank endrer databasen
+eller legger målfilene i `pending_file_deletes`.
+
+Når en målfil mister sin siste `file_sources`-rad i `unimport`, skal den derfor
+ryddes fysisk via `pending_file_deletes`. Den skal ikke flyttes til karantene
+under `deleted/` først. Karantene ville brukt ekstra diskplass og lagt til mer
+livssykluskompleksitet uten å være nødvendig for denne flyten, fordi
+originalinnholdet allerede er kontrollert i kilden før unimporten får
+fortsette.
+
+Ikke foreslå karantene for normal `unimport` uten at kravene endres. Hvis det
+senere skal støttes `unimport` uten tilgjengelige originalfiler, må det
+vurderes som en separat og eksplisitt tapsrisiko-flyt.
