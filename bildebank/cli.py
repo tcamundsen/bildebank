@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -2154,6 +2155,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False) -> int:
         print("Databaseintegritet:")
         doctor_check_pending_file_moves(target)
         doctor_check_duplicate_active_sha256(target)
+        doctor_check_orphan_openclip_rows(target)
         doctor_check_active_files_exist(target)
         doctor_check_orphan_files(target)
         if deep:
@@ -2220,6 +2222,82 @@ def doctor_check_pending_file_moves(target: Path) -> None:
         )
     doctor_report_omitted_details(len(rows))
     doctor_advice("Kjør en Bildebank-kommando på nytt etter at filtilstanden er rettet.")
+
+
+def doctor_check_orphan_openclip_rows(target: Path) -> None:
+    path = openclip_db_path(target)
+    if not path.exists():
+        doctor_ok("ingen OpenCLIP-database å kontrollere")
+        return
+
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        if not doctor_openclip_table_exists(conn, "image_embeddings"):
+            doctor_obs("OpenCLIP-databasen mangler image_embeddings.")
+            return
+        conn.execute("ATTACH DATABASE ? AS main_db", (str(db.db_path_for_target(target)),))
+        embedding_rows = doctor_orphan_openclip_rows(conn, "image_embeddings")
+        result_rows = (
+            doctor_orphan_openclip_rows(conn, "image_search_results")
+            if doctor_openclip_table_exists(conn, "image_search_results")
+            else []
+        )
+    finally:
+        conn.close()
+
+    if not embedding_rows and not result_rows:
+        doctor_ok("ingen foreldreløse OpenCLIP-rader")
+        return
+
+    if embedding_rows:
+        doctor_error(
+            f"{len(embedding_rows)} OpenCLIP embedding-rad(er) peker på manglende eller slettet fil."
+        )
+        for row in embedding_rows[:20]:
+            doctor_info(
+                f"image_embeddings file #{int(row['file_id'])}: "
+                f"{Path(str(row['target_path'])).as_posix()}"
+            )
+        doctor_report_omitted_details(len(embedding_rows))
+    if result_rows:
+        doctor_error(
+            f"{len(result_rows)} OpenCLIP søkeresultat-rad(er) peker på manglende eller slettet fil."
+        )
+        for row in result_rows[:20]:
+            doctor_info(
+                f"image_search_results file #{int(row['file_id'])}: "
+                f"{Path(str(row['target_path'])).as_posix()}"
+            )
+        doctor_report_omitted_details(len(result_rows))
+    doctor_advice("Ikke stol på bildesøkresultater før OpenCLIP-radene er ryddet.")
+
+
+def doctor_openclip_table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    return (
+        conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        is not None
+    )
+
+
+def doctor_orphan_openclip_rows(conn: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
+    if table not in {"image_embeddings", "image_search_results"}:
+        raise ValueError(f"Uventet OpenCLIP-tabell: {table}")
+    return list(
+        conn.execute(
+            f"""
+            SELECT {table}.file_id, {table}.target_path
+            FROM {table}
+            LEFT JOIN main_db.files ON main_db.files.id = {table}.file_id
+            WHERE main_db.files.id IS NULL
+               OR main_db.files.deleted_at IS NOT NULL
+            ORDER BY {table}.file_id, {table}.target_path
+            """
+        )
+    )
 
 
 def doctor_check_active_files_exist(target: Path) -> None:

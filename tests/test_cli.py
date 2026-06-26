@@ -9629,6 +9629,100 @@ enabled = true
         self.assertNotIn("orphan: 2024/01/registered.jpg", stdout)
         self.assertNotIn("orphan: 2024/01/notes.txt", stdout)
 
+    def test_doctor_reports_orphan_openclip_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            active_id = insert_test_file(target, "2024/01/active.png", sha256="sha-active")
+            deleted_id = insert_test_file(
+                target,
+                "deleted/2024/01/deleted.png",
+                sha256="sha-deleted",
+                deleted=True,
+            )
+            missing_id = active_id + deleted_id + 100
+            config = OpenClipConfig(model_name="Test-Model", pretrained="test-weights")
+            conn = connect_openclip_db(target)
+            try:
+                conn.executemany(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256,
+                        model_name, pretrained, embedding
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            active_id,
+                            "2024/01/active.png",
+                            "2024/01/active.png",
+                            "sha-active",
+                            "Test-Model",
+                            "test-weights",
+                            embedding_blob([1.0, 0.0]),
+                        ),
+                        (
+                            deleted_id,
+                            "deleted/2024/01/deleted.png",
+                            "deleted/2024/01/deleted.png",
+                            "sha-deleted",
+                            "Test-Model",
+                            "test-weights",
+                            embedding_blob([0.0, 1.0]),
+                        ),
+                        (
+                            missing_id,
+                            "2026/01/unimported.png",
+                            "2026/01/unimported.png",
+                            "sha-missing",
+                            "Test-Model",
+                            "test-weights",
+                            embedding_blob([0.5, 0.5]),
+                        ),
+                    ],
+                )
+                run_id = conn.execute(
+                    """
+                    INSERT INTO image_search_runs(query, model_name, pretrained, result_limit)
+                    VALUES('cat', 'Test-Model', 'test-weights', 10)
+                    """
+                ).lastrowid
+                conn.execute(
+                    """
+                    INSERT INTO image_search_results(
+                        run_id, file_id, target_path, target_path_key, similarity, rank
+                    ) VALUES(?, ?, '2026/01/unimported.png', '2026/01/unimported.png', 0.9, 1)
+                    """,
+                    (run_id, missing_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli.python_module_available", return_value=False),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: 2 OpenCLIP embedding-rad(er) peker på manglende eller slettet fil.",
+            stdout,
+        )
+        self.assertIn(
+            "INFO: image_embeddings file #",
+            stdout,
+        )
+        self.assertIn("deleted/2024/01/deleted.png", stdout)
+        self.assertIn("2026/01/unimported.png", stdout)
+        self.assertIn(
+            "FEIL: 1 OpenCLIP søkeresultat-rad(er) peker på manglende eller slettet fil.",
+            stdout,
+        )
+        self.assertIn("image_search_results file #", stdout)
+        self.assertNotIn("image_embeddings file #1: 2024/01/active.png", stdout)
+
     def test_face_config_creates_config_file(self) -> None:
         code, stdout, stderr = capture_cli(["face-config", "true"])
 

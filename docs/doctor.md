@@ -23,7 +23,9 @@ Kommandoen skriver korte linjer:
 `doctor` sjekker blant annet config-fil, H3, ExifTool, ansiktsgjenkjenning,
 tekstbasert bildesøk, aktiv bildesamling og om databaseførte bildefiler
 faktisk finnes i samlingen. Den leter også etter mediefiler i samlingen som
-ikke har noen databasepost, og rapporterer dem som orphan-filer. Hvis for eksempel
+ikke har noen databasepost, og rapporterer dem som orphan-filer. Hvis
+OpenCLIP-databasen for bildesøk finnes, sjekker den også om bildesøkdata peker
+på filer som mangler i hoveddatabasen eller er markert som slettet. Hvis for eksempel
 `face_recognition` er slått på, men InsightFace mangler eller ikke kan lastes,
 viser kommandoen en `FEIL:`-linje og et råd om hva du bør gjøre videre.
 
