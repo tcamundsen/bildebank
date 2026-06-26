@@ -6235,13 +6235,17 @@ model_name = "buffalo_l"
                 *source_adjacent,
                 source_month_nav,
             )
-            first_item_body = source_item_page_html(
-                target,
-                source_browser,
-                source_first_item,
-                *source_first_adjacent,
-                source_first_month_nav,
-            )
+            with patch(
+                "bildebank.server_browser.source_month_keys",
+                side_effect=AssertionError("Item-rendering skal bruke eksisterende månedsnavigasjon."),
+            ):
+                first_item_body = source_item_page_html(
+                    target,
+                    source_browser,
+                    source_first_item,
+                    *source_first_adjacent,
+                    source_first_month_nav,
+                )
             year_body = source_year_months_page_html(target, source_browser, "2024")
             first_year_body = source_year_months_page_html(target, source_browser, "2023")
             month_body = source_month_page_html(target, source_browser, "2024-01", source_month)

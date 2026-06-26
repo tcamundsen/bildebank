@@ -1864,6 +1864,7 @@ def _source_item_controls_html(
             face_config,
             hide_out_of_focus=hide_out_of_focus,
             conn=conn,
+            current_key_in_source=True,
         ),
         previous_month_fallback_url=previous_month_overview_url(
             source,
@@ -1895,9 +1896,12 @@ def previous_year_overview_url(
     *,
     hide_out_of_focus: bool = False,
     conn: sqlite3.Connection | None = None,
+    current_key_in_source: bool = False,
 ) -> str | None:
     if month_nav["previous_year"] is not None or not valid_month_key(current_key):
         return None
+    if current_key_in_source:
+        return source.root_url if is_filtered_source(source) else "/years"
     month_keys = source_month_keys(
         target,
         source,
