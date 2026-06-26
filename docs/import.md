@@ -93,6 +93,22 @@ Bildebank hvilke kilder bildet kom fra.
 Duplikater oppdages med SHA-256-hash. Det betyr at Bildebank kan kjenne igjen
 identiske bilder selv om filnavnet er forskjellig i forskjellige importer.
 
+Hvis du tidligere har slettet et bilde med `remove`, ligger bildet under
+`deleted\` og er markert som slettet i databasen. Hvis en senere import finner
+samme filinnhold på nytt, blir ikke bildet aktivt igjen. Bildebank registrerer
+bare at den nye importen også inneholdt denne filen, og kobler den nye kilden
+til den slettede filen.
+
+Dette er med vilje: `remove` betyr at bildet ikke skal vises i den aktive
+bildesamlingen. En senere import skal ikke omgjøre den beslutningen bare fordi
+den samme filen dukker opp på nytt i en annen mappe, USB-brikke eller backup.
+
+Hvis du vil ha bildet tilbake i den aktive samlingen, bruk `undelete`:
+
+```powershell
+bildebank undelete "deleted\2024\01\IMG_0001.jpg"
+```
+
 ## Overlappende mapper
 
 Det er trygt å importere mapper som overlapper hverandre, så lenge hver import

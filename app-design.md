@@ -213,6 +213,20 @@ Databasen skal likevel registrere duplikatfunnet med original kildepath og
 hvilken fil i målmappen den matcher. På den måten kan brukeren senere se at
 filen faktisk ble funnet og vurdert.
 
+Sletting med `remove` er en beslutning om at filen ikke skal være aktiv i
+bildesamlingen. En slettet `files`-rad som peker til `deleted/`, skal derfor
+fortsatt delta i SHA-256-basert duplikatgjenkjenning. Hvis en senere import
+finner samme filinnhold, skal importen registrere ny `file_sources`-rad mot den
+slettede `files`-raden, ikke kopiere inn en ny aktiv fil og ikke automatisk
+gjenopprette bildet.
+
+Før importen hopper over kopiering på grunn av et database-treff på SHA-256, må
+den verifisere at den registrerte målfilen fortsatt finnes på disk og har
+forventet SHA-256. Hvis filen mangler eller innholdet ikke matcher databasen, er
+det en integritetsfeil for den aktuelle kildefilen. Importjobben skal registrere
+feilen og fortsette med andre filer, uten å reparere, overskrive eller
+gjenopprette automatisk.
+
 ## Filformater, dato og feil
 
 - Hvilke bildefilformater skal støttes? I hvert fall JPEG. Hvis det dukker opp
