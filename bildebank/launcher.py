@@ -128,6 +128,14 @@ def rescan_source_command(collection_path: Path, source_name: str) -> list[str]:
     return bildebank_command("--target", collection_path, "rescan-source", "--name", source_name)
 
 
+def unimport_source_command(collection_path: Path, source_name: str) -> list[str]:
+    return bildebank_command("--target", collection_path, "unimport", "--name", source_name)
+
+
+def unimport_source_dry_run_command(collection_path: Path, source_name: str) -> list[str]:
+    return bildebank_command("--target", collection_path, "unimport", "--dry-run", "--name", source_name)
+
+
 def registered_sources(collection_path: Path) -> list[db.Source]:
     conn = db.connect(collection_path)
     try:
@@ -260,6 +268,8 @@ class BildebankLauncher:
             rescan_button.grid(row=0, column=2, padx=(0, 8), pady=4)
             check_button = ttk.Button(self.button_frame, text="Sjekk kilde", command=self._start_check_source_flow)
             check_button.grid(row=0, column=3, padx=(0, 8), pady=4)
+            unimport_button = ttk.Button(self.button_frame, text="Unimport", command=self._start_unimport_source_flow)
+            unimport_button.grid(row=0, column=4, padx=(0, 8), pady=4)
             geo_button = ttk.Button(self.button_frame, text="Scan GPS", command=self._run_geo_scan)
             geo_button.grid(row=1, column=1, padx=(0, 8), pady=4)
             thumbs_button = ttk.Button(
@@ -277,6 +287,7 @@ class BildebankLauncher:
                     import_button,
                     rescan_button,
                     check_button,
+                    unimport_button,
                     geo_button,
                     thumbs_button,
                     start_button,
@@ -409,6 +420,66 @@ class BildebankLauncher:
             running_message="Sjekker kilde ...",
             success_message="Kildesjekk fullført.",
             failure_message="Kildesjekk feilet.",
+            on_success=self._refresh_state,
+        )
+
+    def _start_unimport_source_flow(self) -> None:
+        from tkinter import messagebox
+
+        sources = self._load_registered_sources()
+        if sources is None:
+            return
+        candidates = rescan_source_candidates(sources)
+        if not candidates:
+            messagebox.showinfo("Ingen kilder", "Fant ingen aktive kilder som kan unimporteres.")
+            self._log("Unimport avbrutt: fant ingen aktive kilder.")
+            return
+        self._select_source(
+            candidates,
+            title="Velg kilde for unimport",
+            action_label="Unimport",
+            on_cancel=lambda: self._log("Unimport avbrutt: ingen kilde valgt."),
+            on_select=self._run_unimport_source_dry_run,
+        )
+
+    def _run_unimport_source_dry_run(self, source: db.Source) -> None:
+        self._log(f'Kontrollerer unimport for kilde "{source.name}" fra {source.path} ...')
+        self._run_waiting_command(
+            unimport_source_dry_run_command(self.collection_path, source.name),
+            running_message="Kontrollerer unimport ...",
+            success_message="Unimport dry-run fullført. Se planen i loggen.",
+            failure_message="Unimport dry-run feilet.",
+            on_success=lambda: self._confirm_unimport_source(source),
+        )
+
+    def _confirm_unimport_source(self, source: db.Source) -> None:
+        from tkinter import messagebox, simpledialog
+
+        messagebox.showwarning(
+            "Unimport",
+            (
+                "Dry-run er fullført og planen står i loggen.\n\n"
+                "Unimport kan fjerne filer fra den aktive bildesamlingen."
+            ),
+        )
+        confirmation = simpledialog.askstring(
+            "Bekreft unimport",
+            f'Skriv "ja, det vil jeg" for å unimporte kilden:\n{source.name}',
+            parent=self.root,
+        )
+        if confirmation != "ja, det vil jeg":
+            self._log(f'Unimport avbrutt for kilde "{source.name}".')
+            return
+        self._run_unimport_source(source)
+
+    def _run_unimport_source(self, source: db.Source) -> None:
+        self._log(f'Unimporterer kilde "{source.name}" fra {source.path} ...')
+        self._run_waiting_command(
+            unimport_source_command(self.collection_path, source.name),
+            running_message="Kjører unimport ...",
+            success_message="Unimport fullført.",
+            failure_message="Unimport feilet.",
+            stdin_text="ja, det vil jeg\n",
             on_success=self._refresh_state,
         )
 
@@ -576,6 +647,7 @@ class BildebankLauncher:
         success_message: str,
         failure_message: str,
         on_success: Callable[[], None] | None = None,
+        stdin_text: str | None = None,
     ) -> None:
         from tkinter import messagebox
 
@@ -586,6 +658,7 @@ class BildebankLauncher:
             try:
                 process = subprocess.Popen(
                     command,
+                    stdin=subprocess.PIPE if stdin_text is not None else None,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
@@ -599,6 +672,12 @@ class BildebankLauncher:
                     lambda: self._command_start_failed(failure_message, exc),
                 )
                 return
+
+            if stdin_text is not None:
+                assert process.stdin is not None
+                process.stdin.write(stdin_text)
+                process.stdin.flush()
+                process.stdin.close()
 
             assert process.stdout is not None
             for line in process.stdout:

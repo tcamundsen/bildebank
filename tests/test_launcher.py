@@ -22,6 +22,8 @@ from bildebank.launcher import (
     source_is_collection_or_inside,
     subprocess_output_encoding,
     suggest_import_name,
+    unimport_source_dry_run_command,
+    unimport_source_command,
 )
 
 
@@ -105,6 +107,21 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--target",
         str(collection),
         "rescan-source",
+        "--name",
+        "Sommer 2024",
+    ]
+    assert unimport_source_command(collection, "Sommer 2024")[-5:] == [
+        "--target",
+        str(collection),
+        "unimport",
+        "--name",
+        "Sommer 2024",
+    ]
+    assert unimport_source_dry_run_command(collection, "Sommer 2024")[-6:] == [
+        "--target",
+        str(collection),
+        "unimport",
+        "--dry-run",
         "--name",
         "Sommer 2024",
     ]
