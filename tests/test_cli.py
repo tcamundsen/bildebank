@@ -11589,6 +11589,192 @@ enabled = false
             finally:
                 conn.close()
 
+    def test_duplicate_import_verifies_active_target_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source1 = root / "source1"
+            source2 = root / "source2"
+            source1.mkdir()
+            source2.mkdir()
+            (source1 / "IMG_20240102.jpg").write_bytes(b"same")
+            (source2 / "COPY_20240203.jpg").write_bytes(b"same")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source1.name, "--quiet", str(source1)]), 0)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "import", "--name", source2.name, "--quiet", str(source2)]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("duplikater=1", stdout)
+            self.assertFalse((target / "2024" / "02" / "COPY_20240203.jpg").exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                linked_file_id = conn.execute(
+                    """
+                    SELECT file_id
+                    FROM file_sources
+                    WHERE source_path LIKE ?
+                    """,
+                    ("%COPY_20240203.jpg",),
+                ).fetchone()[0]
+                active_file_id = conn.execute(
+                    "SELECT id FROM files WHERE deleted_at IS NULL"
+                ).fetchone()[0]
+                self.assertEqual(linked_file_id, active_file_id)
+            finally:
+                conn.close()
+
+    def test_duplicate_import_links_deleted_file_without_restoring_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source1 = root / "source1"
+            source2 = root / "source2"
+            source1.mkdir()
+            source2.mkdir()
+            (source1 / "IMG_20240102.jpg").write_bytes(b"same")
+            (source2 / "COPY_20240203.jpg").write_bytes(b"same")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source1.name, "--quiet", str(source1)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]), 0)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "import", "--name", source2.name, "--quiet", str(source2)]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("duplikater=1", stdout)
+            self.assertFalse((target / "2024" / "01" / "IMG_20240102.jpg").exists())
+            self.assertFalse((target / "2024" / "02" / "COPY_20240203.jpg").exists())
+            self.assertTrue((target / "deleted" / "2024" / "01" / "IMG_20240102.jpg").exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                row = conn.execute("SELECT id, target_path, deleted_at FROM files").fetchone()
+                self.assertIsNotNone(row[2])
+                linked_file_id = conn.execute(
+                    "SELECT file_id FROM file_sources WHERE source_path LIKE ?",
+                    ("%COPY_20240203.jpg",),
+                ).fetchone()[0]
+                self.assertEqual(linked_file_id, row[0])
+                self.assertEqual(row[1], "deleted/2024/01/IMG_20240102.jpg")
+            finally:
+                conn.close()
+
+    def test_duplicate_import_reports_error_when_target_file_is_missing_and_continues(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source1 = root / "source1"
+            source2 = root / "source2"
+            source1.mkdir()
+            source2.mkdir()
+            (source1 / "IMG_20240102.jpg").write_bytes(b"same")
+            (source2 / "COPY_20240203.jpg").write_bytes(b"same")
+            (source2 / "IMG_20240204.jpg").write_bytes(b"new")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source1.name, "--quiet", str(source1)]), 0)
+            (target / "2024" / "01" / "IMG_20240102.jpg").unlink()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "import", "--name", source2.name, "--quiet", str(source2)]
+            )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("importert=1", stdout)
+            self.assertIn("feil=1", stdout)
+            self.assertTrue((target / "2024" / "02" / "IMG_20240204.jpg").exists())
+            self.assertFalse((target / "2024" / "02" / "COPY_20240203.jpg").exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT status FROM sources WHERE name = ?", (source2.name,)).fetchone()[0],
+                    "error",
+                )
+                error = conn.execute("SELECT message FROM errors ORDER BY id DESC LIMIT 1").fetchone()[0]
+                self.assertIn("files.id=1", error)
+                self.assertIn("2024/01/IMG_20240102.jpg", error)
+                self.assertIn("målfilen mangler på disk", error)
+                self.assertIsNone(
+                    conn.execute(
+                        "SELECT id FROM file_sources WHERE source_path LIKE ?",
+                        ("%COPY_20240203.jpg",),
+                    ).fetchone()
+                )
+            finally:
+                conn.close()
+
+    def test_duplicate_import_reports_error_when_target_file_hash_differs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source1 = root / "source1"
+            source2 = root / "source2"
+            source1.mkdir()
+            source2.mkdir()
+            (source1 / "IMG_20240102.jpg").write_bytes(b"same")
+            (source2 / "COPY_20240203.jpg").write_bytes(b"same")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source1.name, "--quiet", str(source1)]), 0)
+            (target / "2024" / "01" / "IMG_20240102.jpg").write_bytes(b"changed")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "import", "--name", source2.name, "--quiet", str(source2)]
+            )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("feil=1", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                error = conn.execute("SELECT message FROM errors ORDER BY id DESC LIMIT 1").fetchone()[0]
+                self.assertIn("files.id=1", error)
+                self.assertIn("SHA-256 på disk matcher ikke databaseført SHA-256", error)
+                self.assertIsNone(
+                    conn.execute(
+                        "SELECT id FROM file_sources WHERE source_path LIKE ?",
+                        ("%COPY_20240203.jpg",),
+                    ).fetchone()
+                )
+            finally:
+                conn.close()
+
+    def test_import_dry_run_reports_invalid_duplicate_target_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source1 = root / "source1"
+            source2 = root / "source2"
+            source1.mkdir()
+            source2.mkdir()
+            (source1 / "IMG_20240102.jpg").write_bytes(b"same")
+            duplicate = source2 / "COPY_20240203.jpg"
+            duplicate.write_bytes(b"same")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source1.name, "--quiet", str(source1)]), 0)
+            (target / "2024" / "01" / "IMG_20240102.jpg").write_bytes(b"changed")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "import", "--name", source2.name, "--dry-run", "--quiet", str(source2)]
+            )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn(f"FEIL\t{duplicate}", stdout)
+            self.assertIn("SHA-256 på disk matcher ikke databaseført SHA-256", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM errors").fetchone()[0], 0)
+            finally:
+                conn.close()
+
     def test_unimport_duplicate_source_keeps_shared_target_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

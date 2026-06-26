@@ -57,6 +57,10 @@ class WalkError:
     message: str
 
 
+class DuplicateFileIntegrityError(ValueError):
+    pass
+
+
 def validate_source_target(source: Path, target: Path) -> None:
     source_resolved = source.resolve()
     target_resolved = target.resolve()
@@ -363,7 +367,7 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
     file_hash = sha256_file(path)
     size_bytes = path.stat().st_size
 
-    existing = db.find_file_by_hash(conn, file_hash)
+    existing = verified_duplicate_file(conn, target, file_hash)
     if existing is not None:
         db.insert_duplicate(
             conn,
@@ -440,7 +444,7 @@ def process_file_dry_run(
         return
 
     file_hash = sha256_file(path)
-    existing = db.find_file_by_hash(conn, file_hash)
+    existing = verified_duplicate_file(conn, target, file_hash)
     if existing is not None:
         stats.duplicates += 1
         return
@@ -460,6 +464,43 @@ def process_file_dry_run(
     stats.imported += 1
     if name_conflict:
         stats.name_conflicts += 1
+
+
+def verified_duplicate_file(conn, target: Path, file_hash: str):
+    rows = db.files_by_hash(conn, file_hash)
+    if not rows:
+        return None
+    row = rows[0]
+    verify_duplicate_target_file(target, row, file_hash)
+    return row
+
+
+def verify_duplicate_target_file(target: Path, row, source_hash: str) -> None:
+    file_id = int(row["id"])
+    relative_target_path = str(row["target_path"])
+    expected_hash = str(row["sha256"])
+    target_path = db.absolute_target_path(target, relative_target_path)
+    if expected_hash != source_hash:
+        raise DuplicateFileIntegrityError(
+            f"Integritetsfeil for eksisterende database-treff files.id={file_id}, "
+            f"målsti={relative_target_path}: databaseført SHA-256 matcher ikke kildefilens SHA-256."
+        )
+    if not target_path.exists():
+        raise DuplicateFileIntegrityError(
+            f"Integritetsfeil for eksisterende database-treff files.id={file_id}, "
+            f"målsti={relative_target_path}: målfilen mangler på disk."
+        )
+    if not target_path.is_file():
+        raise DuplicateFileIntegrityError(
+            f"Integritetsfeil for eksisterende database-treff files.id={file_id}, "
+            f"målsti={relative_target_path}: målfilen er ikke en vanlig fil."
+        )
+    actual_hash = sha256_file(target_path)
+    if actual_hash != expected_hash:
+        raise DuplicateFileIntegrityError(
+            f"Integritetsfeil for eksisterende database-treff files.id={file_id}, "
+            f"målsti={relative_target_path}: SHA-256 på disk matcher ikke databaseført SHA-256."
+        )
 
 
 def destination_directory(target: Path, date: MediaDate) -> Path:
