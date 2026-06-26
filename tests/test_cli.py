@@ -14678,7 +14678,7 @@ print(json.dumps([
             self.assertIn("FEIL", stdout)
             self.assertIn("Målfil finnes ikke", stdout)
 
-    def test_refresh_metadata_repairs_missing_target_path_and_resolves_error(self) -> None:
+    def test_refresh_metadata_reports_missing_target_path_without_hash_repair(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -14743,21 +14743,25 @@ print(json.dumps([
                 ["--target", str(target), "refresh-metadata", "--verbose"]
             )
 
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("REPARERER_DB_PATH", stdout)
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("FEIL", stdout)
+            self.assertIn("Målfil finnes ikke", stdout)
+            self.assertNotIn("REPARERER_DB_PATH", stdout)
+            self.assertTrue(repaired_target.exists())
+            self.assertFalse(old_target.exists())
 
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 row = conn.execute(
                     "select target_path, taken_date, date_source from files"
                 ).fetchone()
-                self.assertEqual(row[0], str(repaired_target.relative_to(target)))
-                self.assertEqual(row[1], "2007-03-12")
-                self.assertEqual(row[2], "metadata")
+                self.assertEqual(row[0], str(old_target.relative_to(target)))
+                self.assertEqual(row[1], "2008-02-29")
+                self.assertEqual(row[2], "mtime")
                 unresolved = conn.execute(
                     "select count(*) from errors where resolved_at is null"
                 ).fetchone()[0]
-                self.assertEqual(unresolved, 0)
+                self.assertEqual(unresolved, 2)
             finally:
                 conn.close()
 

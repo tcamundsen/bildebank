@@ -651,14 +651,7 @@ def refresh_non_metadata_file(
 ) -> None:
     current_path = db.absolute_target_path(target, Path(str(row["target_path"])))
     if not current_path.exists():
-        repaired_path = find_file_in_target_by_hash(target, str(row["sha256"]))
-        if repaired_path is None:
-            raise FileNotFoundError(f"Målfil finnes ikke: {current_path}")
-        if verbose:
-            print(f"REPARERER_DB_PATH\t{current_path}\t->\t{repaired_path}", flush=True)
-        if not dry_run:
-            db.resolve_errors_for_path(conn, stage="refresh-metadata", source_path=current_path)
-        current_path = repaired_path
+        raise FileNotFoundError(f"Målfil finnes ikke: {current_path}")
 
     date = media_date(current_path)
     camera = camera_info(current_path)
@@ -732,18 +725,3 @@ def refresh_non_metadata_file(
         if move_id is not None:
             db.complete_pending_file_move(conn, move_id=move_id)
         db.resolve_errors_for_path(conn, stage="refresh-metadata", source_path=current_path)
-
-
-def find_file_in_target_by_hash(target: Path, expected_hash: str) -> Path | None:
-    for dirpath, dirnames, filenames in os.walk(target):
-        dirnames[:] = [dirname for dirname in dirnames if dirname not in {"__pycache__"}]
-        for filename in filenames:
-            path = Path(dirpath) / filename
-            if path.name == db.DB_FILENAME or ".bdbtmp-" in path.name:
-                continue
-            try:
-                if sha256_file(path) == expected_hash:
-                    return path
-            except OSError:
-                continue
-    return None

@@ -16,6 +16,9 @@ options:
 Hvis Bildebank senere klarer å lese metadata som manglet da filen ble
 importert, vil denne kommandoen flytte filen til riktig datomappe.
 
+Hvis en aktiv databaseført fil mangler på disk, rapporterer kommandoen feil.
+Den leter ikke etter en erstatningsfil andre steder i bildesamlingen.
+
 Bruk `--rescan` for å lese metadata på nytt for alle aktive filer. Dette kan
 brukes etter en databaseoppgradering som har lagt til nye metadatafelt, for
 eksempel kameradata.
