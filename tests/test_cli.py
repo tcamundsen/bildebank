@@ -11023,6 +11023,75 @@ enabled = false
             self.assertEqual(row[1], "completed")
             self.assertIsNotNone(row[2])
 
+    def test_remove_rejects_target_file_with_changed_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            imported.write_bytes(b"changed")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Fila på disk har feil SHA-256", stderr)
+            self.assertTrue(imported.exists())
+            self.assertFalse((target / "deleted" / "2024" / "01" / "IMG_20240102.jpg").exists())
+            with sqlite3.connect(target / DB_FILENAME) as conn:
+                row = conn.execute(
+                    "SELECT target_path, deleted_at FROM files WHERE id = 1"
+                ).fetchone()
+                pending_count = conn.execute("SELECT COUNT(*) FROM pending_file_moves").fetchone()[0]
+            self.assertEqual(row, ("2024/01/IMG_20240102.jpg", None))
+            self.assertEqual(pending_count, 0)
+
+    def test_remove_keeps_pending_move_when_post_move_hash_check_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
+            expected_hash = sha256_file(imported)
+
+            with (
+                patch(
+                    "bildebank.file_lifecycle.sha256_file",
+                    side_effect=[expected_hash, "0" * 64],
+                ),
+                self.assertRaisesRegex(ValueError, "feil SHA-256"),
+            ):
+                remove_file_from_browser(target, 1)
+
+            self.assertFalse(imported.exists())
+            self.assertTrue(deleted.exists())
+            with sqlite3.connect(target / DB_FILENAME) as conn:
+                file_row = conn.execute(
+                    "SELECT target_path, deleted_at FROM files WHERE id = 1"
+                ).fetchone()
+                move_row = conn.execute(
+                    "SELECT operation, state, completed_at FROM pending_file_moves"
+                ).fetchone()
+            self.assertEqual(file_row, ("2024/01/IMG_20240102.jpg", None))
+            self.assertEqual(move_row[0], "remove")
+            self.assertEqual(move_row[1], "prepared")
+            self.assertIsNone(move_row[2])
+
     def test_recovery_completes_remove_after_file_was_moved(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -11374,6 +11443,40 @@ enabled = false
             self.assertNotEqual(code, 0)
             self.assertIn("Slettet fil finnes ikke på disk", stderr)
             self.assertFalse((target / "2024" / "01" / "IMG_20240102.jpg").exists())
+
+    def test_undelete_rejects_deleted_file_with_changed_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]), 0)
+            deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
+            restored = target / "2024" / "01" / "IMG_20240102.jpg"
+            deleted.write_bytes(b"changed")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "undelete", "deleted/2024/01/IMG_20240102.jpg"]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Fila på disk har feil SHA-256", stderr)
+            self.assertTrue(deleted.exists())
+            self.assertFalse(restored.exists())
+            with sqlite3.connect(target / DB_FILENAME) as conn:
+                row = conn.execute(
+                    "SELECT target_path, deleted_at FROM files WHERE id = 1"
+                ).fetchone()
+                pending_count = conn.execute(
+                    "SELECT COUNT(*) FROM pending_file_moves WHERE state = 'prepared'"
+                ).fetchone()[0]
+            self.assertEqual(row[0], "deleted/2024/01/IMG_20240102.jpg")
+            self.assertIsNotNone(row[1])
+            self.assertEqual(pending_count, 0)
 
     def test_undelete_fails_when_database_row_is_missing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

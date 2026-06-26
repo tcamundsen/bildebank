@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from . import db
+from .media import sha256_file
 from .target_lock import TargetLock
 
 
@@ -54,6 +55,7 @@ def remove_file(
 
             if not original_path.exists():
                 raise ValueError(f"Målfilen finnes ikke på disk: {original_path}")
+            _verify_expected_sha256(original_path, str(row["sha256"]))
 
             deleted_path = target / "deleted" / relative_path
             if deleted_path.exists():
@@ -71,6 +73,7 @@ def remove_file(
             )
             conn.commit()
             shutil.move(str(original_path), str(deleted_path))
+            _verify_expected_sha256(deleted_path, str(row["sha256"]))
             db.mark_file_deleted(
                 conn,
                 file_id=int(row["id"]),
@@ -141,6 +144,7 @@ def undelete_file(
 
             if not deleted_path.exists():
                 raise ValueError(f"Slettet fil finnes ikke på disk: {deleted_path}")
+            _verify_expected_sha256(deleted_path, str(row["sha256"]))
 
             restored_path = target / Path(str(row["deleted_original_target_path"]))
             if restored_path.exists():
@@ -158,6 +162,7 @@ def undelete_file(
             )
             conn.commit()
             shutil.move(str(deleted_path), str(restored_path))
+            _verify_expected_sha256(restored_path, str(row["sha256"]))
             db.mark_file_undeleted(
                 conn,
                 file_id=int(row["id"]),
@@ -212,3 +217,12 @@ def _deleted_relative_path(
             invalid_message or f"Undelete krever sti under deleted/: {display_path}"
         )
     return relative_path
+
+
+def _verify_expected_sha256(path: Path, expected_sha256: str) -> None:
+    actual_sha256 = sha256_file(path)
+    if actual_sha256 != expected_sha256:
+        raise ValueError(
+            f"Fila på disk har feil SHA-256: {path} "
+            f"(forventet {expected_sha256}, fant {actual_sha256})"
+        )
