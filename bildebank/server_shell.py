@@ -267,17 +267,34 @@ def source_controls_html(
     unconfirm_buttons: str = "",
     delete_button: str = "",
     year_links_to_year_pages: bool = False,
+    previous_year_fallback_url: str | None = None,
+    previous_month_fallback_url: str | None = None,
 ) -> str:
     previous_year_link = source_year_nav_link if year_links_to_year_pages else source_month_nav_link
     next_year_link = source_year_nav_link if year_links_to_year_pages else source_month_nav_link
+    previous_month_link = source_month_nav_link(
+        source,
+        month_nav["previous_month"],
+        "◀ Mån",
+        "previous-month",
+        "Forrige måned",
+        fallback_url=previous_month_fallback_url,
+    )
     return f"""
     <nav class="controls" aria-label="Navigering">
       <span class="nav-button-pair" data-nav-button-pair="year">
-        {previous_year_link(source, month_nav["previous_year"], "◀ Å", "previous-year", "Forrige år")}
+        {previous_year_link(
+            source,
+            month_nav["previous_year"],
+            "◀ Å",
+            "previous-year",
+            "Forrige år",
+            fallback_url=previous_year_fallback_url,
+        )}
         {next_year_link(source, month_nav["next_year"], "r ▶", "next-year", "Neste år")}
       </span>
       <span class="nav-button-pair" data-nav-button-pair="month">
-        {source_month_nav_link(source, month_nav["previous_month"], "◀ Mån", "previous-month", "Forrige måned")}
+        {previous_month_link}
         {source_month_nav_link(source, month_nav["next_month"], "ed ▶", "next-month", "Neste måned")}
       </span>
       <span class="nav-button-pair" data-nav-button-pair="item">
@@ -305,13 +322,33 @@ def source_nav_link(source: BrowserSource, item: Any | None, label: str, key_nav
     return nav_button(source_item_url(source, int(item["id"])), label, key_nav, tooltip)
 
 
-def source_month_nav_link(source: BrowserSource, month_key: str | None, label: str, key_nav: str, tooltip: str) -> str:
+def source_month_nav_link(
+    source: BrowserSource,
+    month_key: str | None,
+    label: str,
+    key_nav: str,
+    tooltip: str,
+    *,
+    fallback_url: str | None = None,
+) -> str:
     if month_key is None:
+        if fallback_url is not None:
+            return nav_button(fallback_url, label, key_nav, tooltip)
         return nav_disabled(label)
     return nav_button(source_month_url(source, month_key), label, key_nav, tooltip)
 
 
-def source_year_nav_link(source: BrowserSource, month_key: str | None, label: str, key_nav: str, tooltip: str) -> str:
+def source_year_nav_link(
+    source: BrowserSource,
+    month_key: str | None,
+    label: str,
+    key_nav: str,
+    tooltip: str,
+    *,
+    fallback_url: str | None = None,
+) -> str:
     if month_key is None:
+        if fallback_url is not None:
+            return nav_button(fallback_url, label, key_nav, tooltip)
         return nav_disabled(label)
     return nav_button(source_year_url(source, month_key[:4]), label, key_nav, tooltip)

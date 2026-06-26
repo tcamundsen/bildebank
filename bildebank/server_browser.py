@@ -1856,10 +1856,61 @@ def _source_item_controls_html(
         unconfirm_buttons="",
         delete_button="" if read_only else delete_button_html(source, item, previous_item, next_item),
         year_links_to_year_pages=True,
+        previous_year_fallback_url=previous_year_overview_url(
+            target,
+            source,
+            month_key_for_item(target, item),
+            month_nav,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+            conn=conn,
+        ),
+        previous_month_fallback_url=previous_month_overview_url(
+            source,
+            month_key_for_item(target, item),
+            month_nav,
+        ),
     )
     if timing_callback is not None:
         timing_callback("html_controls", start)
     return controls
+
+
+def previous_month_overview_url(
+    source: BrowserSource,
+    current_key: str,
+    month_nav: dict[str, str | None],
+) -> str | None:
+    if month_nav["previous_month"] is not None or not valid_month_key(current_key):
+        return None
+    return source.root_url if is_filtered_source(source) else "/years"
+
+
+def previous_year_overview_url(
+    target: Path,
+    source: BrowserSource,
+    current_key: str,
+    month_nav: dict[str, str | None],
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+    conn: sqlite3.Connection | None = None,
+) -> str | None:
+    if month_nav["previous_year"] is not None or not valid_month_key(current_key):
+        return None
+    month_keys = source_month_keys(
+        target,
+        source,
+        face_config,
+        hide_out_of_focus=hide_out_of_focus,
+        conn=conn,
+    )
+    if current_key not in month_keys:
+        return None
+    first_year = min(key[:4] for key in month_keys)
+    if current_key[:4] != first_year:
+        return None
+    return source.root_url if is_filtered_source(source) else "/years"
 
 
 def _source_item_side_panel_html(
@@ -3168,9 +3219,9 @@ def source_year_navigation_controls_html(
     next_year = next((candidate for candidate in years if candidate > year), None)
     previous_month = last_month_before_year(month_keys, year)
     next_month = first_month_in_year(month_keys, year)
-    previous_year_overview_url = None
+    previous_overview_url = None
     if previous_year is None and years and year == years[0]:
-        previous_year_overview_url = source.root_url if is_filtered_source(source) else "/years"
+        previous_overview_url = source.root_url if is_filtered_source(source) else "/years"
 
     def year_button(target_year: str | None, label: str, key_nav: str, tooltip: str) -> str:
         if target_year is None:
@@ -3180,14 +3231,21 @@ def source_year_navigation_controls_html(
     def previous_year_button() -> str:
         if previous_year is not None:
             return year_button(previous_year, "◀ Å", "previous-year", "Forrige år")
-        if previous_year_overview_url is not None:
-            return nav_button(previous_year_overview_url, "◀ Å", "previous-year", "Forrige år")
+        if previous_overview_url is not None:
+            return nav_button(previous_overview_url, "◀ Å", "previous-year", "Forrige år")
         return nav_disabled("◀ Å")
 
     def month_button(month_key: str | None, label: str, key_nav: str, tooltip: str) -> str:
         if month_key is None:
             return nav_disabled(label)
         return nav_button(source_month_url(source, month_key), label, key_nav, tooltip)
+
+    def previous_month_button() -> str:
+        if previous_month is not None:
+            return month_button(previous_month, "◀ Mån", "previous-month", "Forrige måned")
+        if previous_overview_url is not None:
+            return nav_button(previous_overview_url, "◀ Mån", "previous-month", "Forrige måned")
+        return nav_disabled("◀ Mån")
 
     return f"""
     <nav class="controls" aria-label="Navigering">
@@ -3196,7 +3254,7 @@ def source_year_navigation_controls_html(
         {year_button(next_year, "r ▶", "next-year", "Neste år")}
       </span>
       <span class="nav-button-pair" data-nav-button-pair="month">
-        {month_button(previous_month, "◀ Mån", "previous-month", "Forrige måned")}
+        {previous_month_button()}
         {month_button(next_month, "ed ▶", "next-month", "Neste måned")}
       </span>
     </nav>
@@ -3332,19 +3390,31 @@ def source_month_page_html(
     cards = "\n".join(source_month_item_html(target, source, item) for item in items)
     previous_item = items[-1] if items else None
     next_item = items[0] if items else None
+    month_nav = source_month_navigation_for_key(
+        target,
+        source,
+        month_key,
+        face_config,
+        hide_out_of_focus=hide_out_of_focus,
+    )
     controls = source_controls_html(
         source,
-        source_month_navigation_for_key(
-            target,
-            source,
-            month_key,
-            face_config,
-            hide_out_of_focus=hide_out_of_focus,
-        ),
+        month_nav,
         previous_item,
         next_item,
         suggestion_toggle_button=suggestion_toggle_button_html(source, None, face_enabled=face_enabled),
         year_links_to_year_pages=True,
+        previous_year_fallback_url=previous_year_overview_url(
+            target,
+            source,
+            month_key,
+            month_nav,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+        ),
+        previous_month_fallback_url=(
+            previous_month_overview_url(source, month_key, month_nav) if items else None
+        ),
     )
     return page_html(
         f"{source.title}: {month_key}",
