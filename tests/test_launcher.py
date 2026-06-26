@@ -7,6 +7,7 @@ from unittest.mock import patch
 from bildebank import db
 from bildebank.launcher import (
     LauncherConfig,
+    check_source_command,
     create_command,
     default_collection_path,
     geo_scan_command,
@@ -14,6 +15,9 @@ from bildebank.launcher import (
     is_collection_created,
     load_launcher_config,
     make_thumbnails_command,
+    registered_sources,
+    rescan_source_candidates,
+    rescan_source_command,
     save_launcher_config,
     source_is_collection_or_inside,
     subprocess_output_encoding,
@@ -91,8 +95,64 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         str(collection),
         "make-thumbnails",
     ]
+    assert check_source_command(collection, source)[-4:] == [
+        "--target",
+        str(collection),
+        "check-source",
+        str(source),
+    ]
+    assert rescan_source_command(collection, "Sommer 2024")[-5:] == [
+        "--target",
+        str(collection),
+        "rescan-source",
+        "--name",
+        "Sommer 2024",
+    ]
 
 
 def test_subprocess_output_encoding_uses_locale() -> None:
     with patch("locale.getpreferredencoding", return_value="cp1252"):
         assert subprocess_output_encoding() == "cp1252"
+
+
+def test_registered_sources_reads_sources_from_collection_database(tmp_path: Path) -> None:
+    collection = tmp_path / "samling"
+    source = tmp_path / "bilder"
+    source.mkdir()
+    db.init_database(collection)
+    conn = db.connect(collection)
+    try:
+        db.add_named_source(conn, source, "Bilder")
+        conn.commit()
+    finally:
+        conn.close()
+
+    sources = registered_sources(collection)
+
+    assert len(sources) == 1
+    assert sources[0].name == "Bilder"
+    assert sources[0].path == source.resolve()
+
+
+def test_rescan_source_candidates_excludes_superseded_sources(tmp_path: Path) -> None:
+    collection = tmp_path / "samling"
+    first = tmp_path / "første"
+    second = tmp_path / "andre"
+    first.mkdir()
+    second.mkdir()
+    db.init_database(collection)
+    conn = db.connect(collection)
+    try:
+        first_id = db.add_named_source(conn, first, "Første")
+        second_id = db.add_named_source(conn, second, "Andre")
+        conn.execute(
+            "UPDATE sources SET status = 'superseded', superseded_by_source_id = ? WHERE id = ?",
+            (second_id, first_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    candidates = rescan_source_candidates(registered_sources(collection))
+
+    assert [source.name for source in candidates] == ["Andre"]

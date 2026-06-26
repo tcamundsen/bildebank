@@ -120,6 +120,30 @@ def make_thumbnails_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "make-thumbnails")
 
 
+def check_source_command(collection_path: Path, source_path: Path) -> list[str]:
+    return bildebank_command("--target", collection_path, "check-source", source_path)
+
+
+def rescan_source_command(collection_path: Path, source_name: str) -> list[str]:
+    return bildebank_command("--target", collection_path, "rescan-source", "--name", source_name)
+
+
+def registered_sources(collection_path: Path) -> list[db.Source]:
+    conn = db.connect(collection_path)
+    try:
+        return db.get_sources(conn)
+    finally:
+        conn.close()
+
+
+def rescan_source_candidates(sources: list[db.Source]) -> list[db.Source]:
+    return [
+        source
+        for source in sources
+        if source.superseded_by_source_id is None and source.status != "superseded"
+    ]
+
+
 def subprocess_output_encoding() -> str:
     return locale.getpreferredencoding(False) or "utf-8"
 
@@ -140,6 +164,7 @@ class BildebankLauncher:
         self.root = tk.Tk()
         self.root.title("Bildebank kontrollpanel")
         self.root.minsize(640, 460)
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.collection_value: tk.StringVar = tk.StringVar(value=str(self.collection_path))
         self.status_value: tk.StringVar = tk.StringVar(value="")
@@ -153,6 +178,28 @@ class BildebankLauncher:
 
     def run(self) -> None:
         self.root.mainloop()
+
+    def _on_close(self) -> None:
+        self._stop_server_process()
+        self.root.destroy()
+
+    def _stop_server_process(self) -> None:
+        process = self.server_process
+        if process is None:
+            return
+        if process.poll() is not None:
+            self.server_process = None
+            return
+        self._log("Stopper Bildebank-server ...")
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self._log("Bildebank-serveren svarte ikke på stopp, avslutter hardt ...")
+            process.kill()
+            process.wait(timeout=5)
+        self.server_process = None
+        self._log("Bildebank-server stoppet.")
 
     def _build_gui(self) -> None:
         tk = self.tk
@@ -209,19 +256,33 @@ class BildebankLauncher:
         if is_collection_created(self.collection_path):
             import_button = ttk.Button(self.button_frame, text="Importer bilder", command=self._start_import_flow)
             import_button.grid(row=0, column=1, padx=(0, 8), pady=4)
+            rescan_button = ttk.Button(self.button_frame, text="Rescan kilde", command=self._start_rescan_source_flow)
+            rescan_button.grid(row=0, column=2, padx=(0, 8), pady=4)
+            check_button = ttk.Button(self.button_frame, text="Sjekk kilde", command=self._start_check_source_flow)
+            check_button.grid(row=0, column=3, padx=(0, 8), pady=4)
             geo_button = ttk.Button(self.button_frame, text="Scan GPS", command=self._run_geo_scan)
-            geo_button.grid(row=0, column=2, padx=(0, 8), pady=4)
+            geo_button.grid(row=1, column=1, padx=(0, 8), pady=4)
             thumbs_button = ttk.Button(
                 self.button_frame,
                 text="Lag thumbnails",
                 command=self._run_make_thumbnails,
             )
-            thumbs_button.grid(row=0, column=3, padx=(0, 8), pady=4)
+            thumbs_button.grid(row=1, column=2, padx=(0, 8), pady=4)
             start_button = ttk.Button(self.button_frame, text="Start Bildebank", command=self._start_server)
-            start_button.grid(row=1, column=1, padx=(0, 8), pady=4)
+            start_button.grid(row=1, column=3, padx=(0, 8), pady=4)
             open_button = ttk.Button(self.button_frame, text="Åpne bildesamling", command=self._open_collection)
-            open_button.grid(row=1, column=2, padx=(0, 8), pady=4)
-            self.buttons.extend([import_button, geo_button, thumbs_button, start_button, open_button])
+            open_button.grid(row=1, column=4, padx=(0, 8), pady=4)
+            self.buttons.extend(
+                [
+                    import_button,
+                    rescan_button,
+                    check_button,
+                    geo_button,
+                    thumbs_button,
+                    start_button,
+                    open_button,
+                ]
+            )
         else:
             create_button = ttk.Button(
                 self.button_frame,
@@ -253,6 +314,7 @@ class BildebankLauncher:
         if not selected:
             self._log("Valg av bildesamling avbrutt.")
             return
+        self._stop_server_process()
         self.collection_path = Path(selected)
         self.collection_value.set(str(self.collection_path))
         self.config = LauncherConfig(collection_path=self.collection_path)
@@ -292,6 +354,158 @@ class BildebankLauncher:
             failure_message="Thumbnail-jobb feilet.",
             on_success=self._refresh_state,
         )
+
+    def _start_rescan_source_flow(self) -> None:
+        from tkinter import messagebox
+
+        sources = self._load_registered_sources()
+        if sources is None:
+            return
+        candidates = rescan_source_candidates(sources)
+        if not candidates:
+            messagebox.showinfo("Ingen kilder", "Fant ingen aktive kilder som kan rescannes.")
+            self._log("Rescan avbrutt: fant ingen aktive kilder.")
+            return
+        self._select_source(
+            candidates,
+            title="Velg kilde for rescan",
+            action_label="Rescan",
+            on_cancel=lambda: self._log("Rescan avbrutt: ingen kilde valgt."),
+            on_select=self._run_rescan_source,
+        )
+
+    def _run_rescan_source(self, source: db.Source) -> None:
+        self._log(f'Rescanner kilde "{source.name}" fra {source.path} ...')
+        self._run_waiting_command(
+            rescan_source_command(self.collection_path, source.name),
+            running_message="Scanner kilde på nytt ...",
+            success_message="Rescan fullført.",
+            failure_message="Rescan feilet.",
+            on_success=self._refresh_state,
+        )
+
+    def _start_check_source_flow(self) -> None:
+        from tkinter import messagebox
+
+        sources = self._load_registered_sources()
+        if sources is None:
+            return
+        if not sources:
+            messagebox.showinfo("Ingen kilder", "Fant ingen registrerte kilder.")
+            self._log("Sjekk kilde avbrutt: fant ingen registrerte kilder.")
+            return
+        self._select_source(
+            sources,
+            title="Velg kilde som skal sjekkes",
+            action_label="Sjekk kilde",
+            on_cancel=lambda: self._log("Sjekk kilde avbrutt: ingen kilde valgt."),
+            on_select=self._run_check_source,
+        )
+
+    def _run_check_source(self, source: db.Source) -> None:
+        self._log(f'Sjekker kilde "{source.name}" fra {source.path} ...')
+        self._run_waiting_command(
+            check_source_command(self.collection_path, source.path),
+            running_message="Sjekker kilde ...",
+            success_message="Kildesjekk fullført.",
+            failure_message="Kildesjekk feilet.",
+            on_success=self._refresh_state,
+        )
+
+    def _load_registered_sources(self) -> list[db.Source] | None:
+        from tkinter import messagebox
+
+        try:
+            return registered_sources(self.collection_path)
+        except Exception as exc:  # noqa: BLE001 - GUI should show readable errors
+            messagebox.showerror("Kunne ikke lese kilder", "Kunne ikke lese registrerte kilder.")
+            self._log(f"Kunne ikke lese registrerte kilder: {exc}")
+            return None
+
+    def _select_source(
+        self,
+        sources: list[db.Source],
+        *,
+        title: str,
+        action_label: str,
+        on_select: Callable[[db.Source], None],
+        on_cancel: Callable[[], None],
+    ) -> None:
+        tk = self.tk
+        ttk = self.ttk
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.transient(self.root)
+        dialog.minsize(760, 320)
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(0, weight=1)
+
+        frame = ttk.Frame(dialog, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        columns = ("id", "status", "name", "path")
+        tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse", height=10)
+        tree.heading("id", text="ID")
+        tree.heading("status", text="Status")
+        tree.heading("name", text="Navn")
+        tree.heading("path", text="Mappe")
+        tree.column("id", width=55, stretch=False, anchor="e")
+        tree.column("status", width=105, stretch=False)
+        tree.column("name", width=180, stretch=True)
+        tree.column("path", width=380, stretch=True)
+
+        scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        source_by_item: dict[str, db.Source] = {}
+        for source in sources:
+            item_id = tree.insert(
+                "",
+                "end",
+                values=(source.id, source.status, source.name, str(source.path)),
+            )
+            source_by_item[item_id] = source
+        first_item = tree.get_children()
+        if first_item:
+            tree.selection_set(first_item[0])
+            tree.focus(first_item[0])
+
+        def accept() -> None:
+            selected = tree.selection()
+            if not selected:
+                return
+            source = source_by_item[selected[0]]
+            dialog.withdraw()
+            dialog.destroy()
+            self.root.lift()
+            self.root.focus_force()
+            self.root.update_idletasks()
+            self.root.update()
+            self.root.after(300, lambda: on_select(source))
+
+        def cancel() -> None:
+            dialog.withdraw()
+            dialog.destroy()
+            self.root.lift()
+            self.root.focus_force()
+            self.root.update_idletasks()
+            self.root.update()
+            self.root.after(0, on_cancel)
+
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=1, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        ttk.Button(button_frame, text="Avbryt", command=cancel).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(button_frame, text=action_label, command=accept).grid(row=0, column=1)
+
+        tree.bind("<Double-1>", lambda _event: accept())
+        dialog.bind("<Return>", lambda _event: accept())
+        dialog.bind("<Escape>", lambda _event: cancel())
+        dialog.protocol("WM_DELETE_WINDOW", cancel)
 
     def _start_import_flow(self) -> None:
         from tkinter import filedialog, messagebox, simpledialog
