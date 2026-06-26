@@ -566,11 +566,20 @@ def refresh_non_metadata_files(
     rescan: bool = False,
     verbose: bool = False,
     progress: MetadataRefreshProgress | None = None,
+    target_locked: bool = False,
 ) -> MetadataRefreshStats:
     if dry_run:
         return _refresh_non_metadata_files_unlocked(
             target,
             dry_run=True,
+            rescan=rescan,
+            verbose=verbose,
+            progress=progress,
+        )
+    if target_locked:
+        return _refresh_non_metadata_files_unlocked(
+            target,
+            dry_run=False,
             rescan=rescan,
             verbose=verbose,
             progress=progress,

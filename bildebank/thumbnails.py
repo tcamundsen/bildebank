@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -138,10 +139,12 @@ def run_make_thumbnails(
     limit: int | None = None,
     verbose: bool = False,
     progress: ThumbnailProgress | None = None,
+    target_locked: bool = False,
 ) -> ThumbnailStats:
     require_pillow()
     stats = ThumbnailStats()
-    with TargetLock(target, command="make-thumbnails"):
+    lock = nullcontext() if target_locked else TargetLock(target, command="make-thumbnails")
+    with lock:
         candidates = active_thumbnail_candidates(target)
         if progress is not None:
             progress("start", 0, len(candidates), stats, None)

@@ -3969,7 +3969,10 @@ model_name = "buffalo_l"
             self.assertEqual(run_cli(["create", str(target)]), 0)
             (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
 
-            with patch("bildebank.cli.recover_pending_file_moves"):
+            with (
+                patch("bildebank.cli.recover_pending_file_moves"),
+                patch("bildebank.cli.db.connect", side_effect=AssertionError("db before lock")),
+            ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "make-browser"])
 
             self.assertEqual(code, 1)
@@ -11689,9 +11692,13 @@ enabled = false
             lock_path = target / LOCK_FILENAME
             lock_path.write_text("command=import\npid=123\n", encoding="utf-8")
 
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]
-            )
+            with (
+                patch("bildebank.cli.recover_pending_file_moves"),
+                patch("bildebank.cli.db.connect", side_effect=AssertionError("db before lock")),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]
+                )
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
@@ -11699,6 +11706,24 @@ enabled = false
             self.assertIn(str(lock_path), stderr)
             self.assertTrue(lock_path.exists())
             self.assertFalse((target / "2024").exists())
+
+    def test_rescan_source_takes_target_lock_before_database_lookup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / LOCK_FILENAME).write_text("command=rescan-source\n", encoding="utf-8")
+
+            with (
+                patch("bildebank.cli.recover_pending_file_moves"),
+                patch("bildebank.cli.db.connect", side_effect=AssertionError("db before lock")),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "rescan-source", "--name", "missing"]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamlingen er låst", stderr)
 
     def test_duplicate_is_recorded_not_copied(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -14636,7 +14661,11 @@ print(json.dumps([
             )
             (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "refresh-metadata"])
+            with (
+                patch("bildebank.cli.recover_pending_file_moves"),
+                patch("bildebank.cli.db.connect", side_effect=AssertionError("db before lock")),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "refresh-metadata"])
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
@@ -15181,6 +15210,22 @@ print(json.dumps([
         self.assertIn("Thumbnails: kontrollert=1/1", stdout)
         self.assertIn("Thumbnails: ferdig kontrollert 1/1 filer.", stdout)
 
+    def test_make_thumbnails_takes_target_lock_before_database_lookup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
+
+            with (
+                patch("bildebank.cli.recover_pending_file_moves"),
+                patch("bildebank.cli.db.connect", side_effect=AssertionError("db before lock")),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "make-thumbnails"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamlingen er låst", stderr)
+
     def test_make_browser_writes_thumbnail_src_when_thumbnail_is_current(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -15279,7 +15324,10 @@ print(json.dumps([
             self.assertEqual(run_cli(["create", str(target)]), 0)
             (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
 
-            with patch("bildebank.cli.recover_pending_file_moves"):
+            with (
+                patch("bildebank.cli.recover_pending_file_moves"),
+                patch("bildebank.cli.db.connect", side_effect=AssertionError("db before lock")),
+            ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "make-conflict-browser"])
 
             self.assertEqual(code, 1)

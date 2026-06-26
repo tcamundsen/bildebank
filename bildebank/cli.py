@@ -1473,45 +1473,25 @@ def run_tag_mutation_command(args: argparse.Namespace, target: Path) -> int:
 
 
 def run_db_command(args: argparse.Namespace, target: Path) -> int:
+    if args.command == "import":
+        return run_import_command(args, target)
+    if args.command == "rescan-source":
+        return run_rescan_source_command(args, target)
+    if args.command in {"date-set", "date-clear"}:
+        return run_manual_date_command(args, target)
+    if args.command == "refresh-metadata":
+        return run_refresh_metadata_command(args, target)
+    if args.command == "make-browser":
+        return run_make_browser_command(args, target)
+    if args.command == "make-thumbnails":
+        return run_make_thumbnails_command(args, target)
+    if args.command == "make-conflict-browser":
+        return run_make_conflict_browser_command(args, target)
+
     conn = db.connect(target)
     try:
-        if args.command not in {"date-set", "date-clear"} and not (
-            args.command == "unimport" and args.dry_run
-        ):
+        if not (args.command == "unimport" and args.dry_run):
             db.log_command(conn, args.command, vars_for_log(args))
-        if args.command == "import":
-            source_path = existing_path_arg(args.path).resolve()
-            if not source_path.is_dir():
-                raise ValueError(f"Kilden finnes ikke som mappe: {source_path}")
-            validate_source_target(source_path, target)
-            with TargetLock(target, command="import"):
-                source_id = db.add_named_source(conn, source_path, args.name)
-                conn.commit()
-                print(f"Registrert kilde #{source_id}: {args.name} ({source_path})")
-                source_row = db.get_source(conn, source_id)
-                if source_row.imported_at is not None:
-                    print(f"Kilden er allerede importert: {args.name}")
-                    return 0
-                import_stats = import_source(conn, target, source_row, verbose=not args.quiet)
-            print_summary(import_stats)
-            return 0 if import_stats.errors == 0 else 2
-
-        if args.command == "rescan-source":
-            selected_source = resolve_rescan_source(conn, args.name)
-            validate_source_target(selected_source.path, target)
-            with TargetLock(target, command="rescan-source"):
-                print(
-                    f"Scanner kilde på nytt #{selected_source.id}: "
-                    f"{selected_source.name} ({selected_source.path})"
-                )
-                rescan_stats = rescan_source(
-                    conn,
-                    target,
-                    selected_source,
-                    verbose=not args.quiet,
-                )
-            print_summary(rescan_stats)
-            return 0 if rescan_stats.errors == 0 else 2
 
         if args.command == "list-sources":
             for listed_source in db.get_sources(conn):
@@ -1575,34 +1555,6 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
                     print(f"  kilde: {row['source_path']}")
             return 0
 
-        if args.command == "date-set":
-            date_from, date_to = manual_date_range_from_args(args)
-            with TargetLock(target, command="date-set"):
-                db.log_command(conn, args.command, vars_for_log(args))
-                row = resolve_db_file_for_tag_command(conn, target, args.path)
-                db.set_manual_date(
-                    conn,
-                    file_id=int(row["id"]),
-                    date_from=date_from.isoformat(),
-                    date_to=date_to.isoformat(),
-                    note=args.note,
-                )
-                conn.commit()
-            print(f"Manuell dato satt: {manual_date_range_text(date_from, date_to)}")
-            print(f"Fil: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
-            if args.note:
-                print(f"Notat: {db.clean_manual_date_note(args.note)}")
-            return 0
-
-        if args.command == "date-clear":
-            with TargetLock(target, command="date-clear"):
-                db.log_command(conn, args.command, vars_for_log(args))
-                row = resolve_db_file_for_tag_command(conn, target, args.path)
-                db.clear_manual_date(conn, file_id=int(row["id"]))
-                conn.commit()
-            print(f"Manuell dato fjernet: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
-            return 0
-
         if args.command == "tag-list":
             if args.path is None:
                 for row in db.tags(conn):
@@ -1638,21 +1590,6 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
             print(f"Oppsummering: exiftool_metadata_funnet={len(gaps)}")
             return 0
 
-        if args.command == "refresh-metadata":
-            conn.commit()
-            conn.close()
-            refresh_stats = refresh_non_metadata_files(
-                target,
-                dry_run=args.dry_run,
-                rescan=args.rescan,
-                verbose=args.verbose,
-                progress=print_refresh_metadata_progress,
-            )
-            print_refresh_summary(refresh_stats, dry_run=args.dry_run)
-            if refresh_stats.stopped:
-                return 130
-            return 0 if refresh_stats.errors == 0 else 2
-
         if args.command == "errors":
             for row in db.errors(
                 conn,
@@ -1668,41 +1605,6 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
                 )
             return 0
 
-        if args.command == "make-browser":
-            output = args.output.resolve() if args.output else None
-            conn.commit()
-            conn.close()
-            with TargetLock(target, command="make-browser"):
-                output_path = export_html(
-                    target,
-                    output,
-                    month_preview_limit=args.month_preview_limit,
-                    debug_timing=args.debug,
-                )
-            print(f"Skrev HTML-browser: {output_path}")
-            return 0
-
-        if args.command == "make-thumbnails":
-            conn.commit()
-            conn.close()
-            thumbnail_stats = run_make_thumbnails(
-                target,
-                limit=args.limit,
-                verbose=args.verbose,
-                progress=print_thumbnail_progress,
-            )
-            print_thumbnail_summary(thumbnail_stats)
-            return 0 if thumbnail_stats.errors == 0 else 2
-
-        if args.command == "make-conflict-browser":
-            output = args.output.resolve() if args.output else None
-            conn.commit()
-            conn.close()
-            with TargetLock(target, command="make-conflict-browser"):
-                output_path = export_html_conflicts(target, output, target_locked=True)
-            print(f"Skrev HTML-browser for navnekollisjoner: {output_path}")
-            return 0
-
         if args.command == "report":
             print("report er slått sammen med status")
             return 0
@@ -1713,6 +1615,168 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
             conn.close()
         except Exception:
             pass
+
+
+def run_import_command(args: argparse.Namespace, target: Path) -> int:
+    with TargetLock(target, command="import"):
+        conn = db.connect(target)
+        try:
+            db.log_command(conn, args.command, vars_for_log(args))
+            source_path = existing_path_arg(args.path).resolve()
+            if not source_path.is_dir():
+                raise ValueError(f"Kilden finnes ikke som mappe: {source_path}")
+            validate_source_target(source_path, target)
+            source_id = db.add_named_source(conn, source_path, args.name)
+            conn.commit()
+            print(f"Registrert kilde #{source_id}: {args.name} ({source_path})")
+            source_row = db.get_source(conn, source_id)
+            if source_row.imported_at is not None:
+                print(f"Kilden er allerede importert: {args.name}")
+                return 0
+            import_stats = import_source(conn, target, source_row, verbose=not args.quiet)
+        finally:
+            conn.close()
+    print_summary(import_stats)
+    return 0 if import_stats.errors == 0 else 2
+
+
+def run_rescan_source_command(args: argparse.Namespace, target: Path) -> int:
+    with TargetLock(target, command="rescan-source"):
+        conn = db.connect(target)
+        try:
+            db.log_command(conn, args.command, vars_for_log(args))
+            selected_source = resolve_rescan_source(conn, args.name)
+            validate_source_target(selected_source.path, target)
+            print(
+                f"Scanner kilde på nytt #{selected_source.id}: "
+                f"{selected_source.name} ({selected_source.path})"
+            )
+            rescan_stats = rescan_source(
+                conn,
+                target,
+                selected_source,
+                verbose=not args.quiet,
+            )
+        finally:
+            conn.close()
+    print_summary(rescan_stats)
+    return 0 if rescan_stats.errors == 0 else 2
+
+
+def run_manual_date_command(args: argparse.Namespace, target: Path) -> int:
+    command = str(args.command)
+    with TargetLock(target, command=command):
+        conn = db.connect(target)
+        try:
+            db.log_command(conn, command, vars_for_log(args))
+            if command == "date-set":
+                date_from, date_to = manual_date_range_from_args(args)
+                row = resolve_db_file_for_tag_command(conn, target, args.path)
+                db.set_manual_date(
+                    conn,
+                    file_id=int(row["id"]),
+                    date_from=date_from.isoformat(),
+                    date_to=date_to.isoformat(),
+                    note=args.note,
+                )
+                conn.commit()
+            else:
+                row = resolve_db_file_for_tag_command(conn, target, args.path)
+                db.clear_manual_date(conn, file_id=int(row["id"]))
+                conn.commit()
+        finally:
+            conn.close()
+    if command == "date-set":
+        print(f"Manuell dato satt: {manual_date_range_text(date_from, date_to)}")
+        print(f"Fil: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
+        if args.note:
+            print(f"Notat: {db.clean_manual_date_note(args.note)}")
+    else:
+        print(f"Manuell dato fjernet: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
+    return 0
+
+
+def run_refresh_metadata_command(args: argparse.Namespace, target: Path) -> int:
+    if args.dry_run:
+        refresh_stats = refresh_non_metadata_files(
+            target,
+            dry_run=True,
+            rescan=args.rescan,
+            verbose=args.verbose,
+            progress=print_refresh_metadata_progress,
+        )
+    else:
+        with TargetLock(target, command="refresh-metadata"):
+            conn = db.connect(target)
+            try:
+                db.log_command(conn, args.command, vars_for_log(args))
+                conn.commit()
+            finally:
+                conn.close()
+            refresh_stats = refresh_non_metadata_files(
+                target,
+                dry_run=False,
+                rescan=args.rescan,
+                verbose=args.verbose,
+                progress=print_refresh_metadata_progress,
+                target_locked=True,
+            )
+    print_refresh_summary(refresh_stats, dry_run=args.dry_run)
+    if refresh_stats.stopped:
+        return 130
+    return 0 if refresh_stats.errors == 0 else 2
+
+
+def run_make_browser_command(args: argparse.Namespace, target: Path) -> int:
+    output = args.output.resolve() if args.output else None
+    with TargetLock(target, command="make-browser"):
+        conn = db.connect(target)
+        try:
+            db.log_command(conn, args.command, vars_for_log(args))
+            conn.commit()
+        finally:
+            conn.close()
+        output_path = export_html(
+            target,
+            output,
+            month_preview_limit=args.month_preview_limit,
+            debug_timing=args.debug,
+        )
+    print(f"Skrev HTML-browser: {output_path}")
+    return 0
+
+
+def run_make_thumbnails_command(args: argparse.Namespace, target: Path) -> int:
+    with TargetLock(target, command="make-thumbnails"):
+        conn = db.connect(target)
+        try:
+            db.log_command(conn, args.command, vars_for_log(args))
+            conn.commit()
+        finally:
+            conn.close()
+        thumbnail_stats = run_make_thumbnails(
+            target,
+            limit=args.limit,
+            verbose=args.verbose,
+            progress=print_thumbnail_progress,
+            target_locked=True,
+        )
+    print_thumbnail_summary(thumbnail_stats)
+    return 0 if thumbnail_stats.errors == 0 else 2
+
+
+def run_make_conflict_browser_command(args: argparse.Namespace, target: Path) -> int:
+    output = args.output.resolve() if args.output else None
+    with TargetLock(target, command="make-conflict-browser"):
+        conn = db.connect(target)
+        try:
+            db.log_command(conn, args.command, vars_for_log(args))
+            conn.commit()
+        finally:
+            conn.close()
+        output_path = export_html_conflicts(target, output, target_locked=True)
+    print(f"Skrev HTML-browser for navnekollisjoner: {output_path}")
+    return 0
 
 
 def print_thumbnail_summary(stats: ThumbnailStats) -> None:
