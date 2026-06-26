@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import locale
 import os
 import subprocess
 import sys
@@ -117,6 +118,10 @@ def geo_scan_command(collection_path: Path) -> list[str]:
 
 def make_thumbnails_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "make-thumbnails")
+
+
+def subprocess_output_encoding() -> str:
+    return locale.getpreferredencoding(False) or "utf-8"
 
 
 class BildebankLauncher:
@@ -370,7 +375,7 @@ class BildebankLauncher:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    encoding="utf-8",
+                    encoding=subprocess_output_encoding(),
                     errors="replace",
                     bufsize=1,
                 )

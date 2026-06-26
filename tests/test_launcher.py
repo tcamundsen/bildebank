@@ -16,6 +16,7 @@ from bildebank.launcher import (
     make_thumbnails_command,
     save_launcher_config,
     source_is_collection_or_inside,
+    subprocess_output_encoding,
     suggest_import_name,
 )
 
@@ -90,3 +91,8 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         str(collection),
         "make-thumbnails",
     ]
+
+
+def test_subprocess_output_encoding_uses_locale() -> None:
+    with patch("locale.getpreferredencoding", return_value="cp1252"):
+        assert subprocess_output_encoding() == "cp1252"
