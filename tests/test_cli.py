@@ -59,7 +59,7 @@ from bildebank.html_export import render_html
 from bildebank.importer import safe_copy
 from bildebank.media import ImageDimensions, sha256_file
 from bildebank.media_cache import cached_image_dimensions, cached_image_orientation
-from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device
+from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device, search_images
 from bildebank.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
 from bildebank.server_actions import remove_file_from_browser, undelete_file_from_browser
 from bildebank.server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS
@@ -252,6 +252,118 @@ def insert_test_file(
         ).fetchone()
         conn.commit()
         return int(row[0])
+    finally:
+        conn.close()
+
+
+def insert_openclip_cleanup_fixture(target: Path) -> dict[str, int]:
+    active_id = insert_test_file(target, "2024/01/active.png", sha256="sha-active")
+    deleted_id = insert_test_file(
+        target,
+        "deleted/2024/01/deleted.png",
+        sha256="sha-deleted",
+        deleted=True,
+    )
+    missing_id = active_id + deleted_id + 1000
+    conn = connect_openclip_db(target)
+    try:
+        conn.executemany(
+            """
+            INSERT INTO image_embeddings(
+                file_id, target_path, target_path_key, sha256,
+                model_name, pretrained, embedding
+            ) VALUES(?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    active_id,
+                    "2024/01/active.png",
+                    "2024/01/active.png",
+                    "sha-active",
+                    "Test-Model",
+                    "test-weights",
+                    embedding_blob([1.0, 0.0]),
+                ),
+                (
+                    deleted_id,
+                    "deleted/2024/01/deleted.png",
+                    "deleted/2024/01/deleted.png",
+                    "sha-deleted",
+                    "Test-Model",
+                    "test-weights",
+                    embedding_blob([0.0, 1.0]),
+                ),
+                (
+                    missing_id,
+                    "2026/01/unimported.png",
+                    "2026/01/unimported.png",
+                    "sha-missing",
+                    "Test-Model",
+                    "test-weights",
+                    embedding_blob([0.5, 0.5]),
+                ),
+            ],
+        )
+        active_run_id = conn.execute(
+            """
+            INSERT INTO image_search_runs(query, model_name, pretrained, result_limit)
+            VALUES('active', 'Test-Model', 'test-weights', 10)
+            """
+        ).lastrowid
+        orphan_run_id = conn.execute(
+            """
+            INSERT INTO image_search_runs(query, model_name, pretrained, result_limit)
+            VALUES('orphan', 'Test-Model', 'test-weights', 10)
+            """
+        ).lastrowid
+        empty_run_id = conn.execute(
+            """
+            INSERT INTO image_search_runs(query, model_name, pretrained, result_limit)
+            VALUES('empty', 'Test-Model', 'test-weights', 10)
+            """
+        ).lastrowid
+        conn.executemany(
+            """
+            INSERT INTO image_search_results(
+                run_id, file_id, target_path, target_path_key, similarity, rank
+            ) VALUES(?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    active_run_id,
+                    active_id,
+                    "2024/01/active.png",
+                    "2024/01/active.png",
+                    0.8,
+                    1,
+                ),
+                (
+                    orphan_run_id,
+                    missing_id,
+                    "2026/01/unimported.png",
+                    "2026/01/unimported.png",
+                    0.9,
+                    1,
+                ),
+                (
+                    orphan_run_id,
+                    deleted_id,
+                    "deleted/2024/01/deleted.png",
+                    "deleted/2024/01/deleted.png",
+                    0.7,
+                    2,
+                ),
+            ],
+        )
+        conn.commit()
+        return {
+            "active_id": active_id,
+            "deleted_id": deleted_id,
+            "missing_id": missing_id,
+            "active_run_id": int(active_run_id),
+            "orphan_run_id": int(orphan_run_id),
+            "empty_run_id": int(empty_run_id),
+        }
     finally:
         conn.close()
 
@@ -593,6 +705,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("metadata og steder\n   refresh-metadata", stdout)
         self.assertIn("ansikter\n   face-status", stdout)
         self.assertIn("bildesøk\n   image-scan", stdout)
+        self.assertIn("cleanup-image-search", stdout)
         self.assertIn("HTML-eksport\n   make-thumbnails", stdout)
         self.assertIn("vedlikehold\n   doctor", stdout)
         self.assertIn("backup", stdout)
@@ -723,6 +836,19 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("usage: bildebank image-search [valg] søk", stdout)
         self.assertIn("--limit", stdout)
         self.assertIn("--no-browser", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_cleanup_image_search_help_documents_apply(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
+            main(["cleanup-image-search", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn("usage: bildebank cleanup-image-search [valg]", stdout)
+        self.assertIn("--apply", stdout)
+        self.assertIn("foreldreløse", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_run_server_help_documents_local_options(self) -> None:
@@ -1295,6 +1421,152 @@ pretrained = "laion2b_s34b_b79k"
             finally:
                 conn.close()
 
+    def test_cli_image_search_ignores_orphan_openclip_embeddings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            active_id = insert_test_file(target, "2024/01/active.png", sha256="sha-active")
+            missing_id = active_id + 100
+            config = OpenClipConfig()
+            conn = connect_openclip_db(target)
+            try:
+                conn.executemany(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256,
+                        model_name, pretrained, embedding
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            active_id,
+                            "2024/01/active.png",
+                            "2024/01/active.png",
+                            "sha-active",
+                            config.model_name,
+                            config.pretrained,
+                            embedding_blob([1.0, 0.0]),
+                        ),
+                        (
+                            missing_id,
+                            "2026/01/unimported.png",
+                            "2026/01/unimported.png",
+                            "sha-missing",
+                            config.model_name,
+                            config.pretrained,
+                            embedding_blob([0.0, 1.0]),
+                        ),
+                    ],
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch("bildebank.openclip.load_text_model", return_value=(object(), object())),
+                patch("bildebank.openclip.text_embedding", return_value=[0.0, 1.0]),
+            ):
+                stats = search_images(target, config, query="cat", limit=10)
+
+            self.assertEqual([result.file_id for result in stats.results], [active_id])
+            self.assertEqual(stats.results[0].target_path, Path("2024/01/active.png"))
+            conn = sqlite3.connect(openclip_db_path(target))
+            try:
+                self.assertEqual(
+                    [
+                        row[0]
+                        for row in conn.execute(
+                            "SELECT file_id FROM image_search_results ORDER BY rank"
+                        )
+                    ],
+                    [active_id],
+                )
+            finally:
+                conn.close()
+
+    def test_cleanup_image_search_dry_run_lists_orphans_without_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            ids = insert_openclip_cleanup_fixture(target)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "cleanup-image-search"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("foreldreløse_embeddings=2", stdout)
+            self.assertIn("foreldreløse_søkeresultater=2", stdout)
+            self.assertIn(f"image_embeddings\tfile #{ids['deleted_id']}", stdout)
+            self.assertIn(f"image_search_results\tfile #{ids['missing_id']}", stdout)
+            self.assertIn("Dry-run: ingen endringer er gjort.", stdout)
+            self.assertIn("Kjør: bildebank cleanup-image-search --apply", stdout)
+            conn = sqlite3.connect(openclip_db_path(target))
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM image_embeddings").fetchone()[0], 3)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM image_search_results").fetchone()[0], 3)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM image_search_runs").fetchone()[0], 3)
+            finally:
+                conn.close()
+
+    def test_cleanup_image_search_apply_deletes_only_orphan_rows_and_empty_runs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            ids = insert_openclip_cleanup_fixture(target)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "cleanup-image-search", "--apply"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("foreldreløse_embeddings=2", stdout)
+            self.assertIn("foreldreløse_søkeresultater=2", stdout)
+            self.assertIn("Slettet: image_embeddings=2, image_search_results=2, tomme_image_search_runs=2", stdout)
+            conn = sqlite3.connect(openclip_db_path(target))
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT file_id FROM image_embeddings").fetchall(),
+                    [(ids["active_id"],)],
+                )
+                self.assertEqual(
+                    conn.execute("SELECT file_id FROM image_search_results").fetchall(),
+                    [(ids["active_id"],)],
+                )
+                self.assertEqual(
+                    conn.execute("SELECT id FROM image_search_runs").fetchall(),
+                    [(ids["active_run_id"],)],
+                )
+            finally:
+                conn.close()
+
+    def test_cleanup_image_search_reports_missing_openclip_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "cleanup-image-search"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(stdout, "Ingen OpenCLIP-database å rydde.\n")
+            self.assertEqual(stderr, "")
+            self.assertFalse(openclip_db_path(target).exists())
+
+    def test_cleanup_image_search_reports_legacy_openclip_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = sqlite3.connect(openclip_db_path(target))
+            try:
+                conn.execute("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "cleanup-image-search"])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("OpenCLIP-databasen mangler tabellen image_embeddings", stderr)
+            self.assertIn("Kjør bildebank image-scan på nytt", stderr)
+
     def test_run_server_image_search_refuses_to_run_while_target_is_locked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -1526,6 +1798,62 @@ pretrained = "laion2b_s34b_b79k"
                 stats = search_server_images(server, query="test", limit=2)
 
         self.assertEqual([result.file_id for result in stats.results], [2])
+
+    def test_run_server_image_search_ignores_orphan_openclip_embeddings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            active_id = insert_test_file(target, "2024/01/active.png", sha256="sha-active")
+            missing_id = active_id + 100
+            config = OpenClipConfig()
+            conn = connect_openclip_db(target)
+            try:
+                conn.executemany(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256,
+                        model_name, pretrained, embedding
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    [
+                        (
+                            active_id,
+                            "2024/01/active.png",
+                            "2024/01/active.png",
+                            "sha-active",
+                            config.model_name,
+                            config.pretrained,
+                            embedding_blob([1.0, 0.0]),
+                        ),
+                        (
+                            missing_id,
+                            "2026/01/unimported.png",
+                            "2026/01/unimported.png",
+                            "sha-missing",
+                            config.model_name,
+                            config.pretrained,
+                            embedding_blob([0.0, 1.0]),
+                        ),
+                    ],
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            server = SimpleNamespace(
+                target=target,
+                config=AppConfig(openclip=config),
+                search_cache=OpenClipSearchCache(AppConfig(openclip=config)),
+            )
+
+            with (
+                patch("bildebank.server_search.load_text_model", return_value=(object(), object())),
+                patch("bildebank.server_search.text_embedding", return_value=[0.0, 1.0]),
+            ):
+                stats = search_server_images(server, query="cat", limit=10)
+
+        self.assertEqual([result.file_id for result in stats.results], [active_id])
+        self.assertEqual(stats.results[0].target_path, Path("2024/01/active.png"))
 
     def test_run_server_image_search_links_item_but_uses_target_path_for_image_url(self) -> None:
         target = Path("/tmp/target")
@@ -9721,6 +10049,7 @@ enabled = true
             stdout,
         )
         self.assertIn("image_search_results file #", stdout)
+        self.assertIn("Råd: Kjør bildebank cleanup-image-search --apply", stdout)
         self.assertNotIn("image_embeddings file #1: 2024/01/active.png", stdout)
 
     def test_face_config_creates_config_file(self) -> None:

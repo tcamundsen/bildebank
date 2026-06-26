@@ -18,6 +18,7 @@ from .value_parsing import optional_int
 
 
 OPENCLIP_DB_FILENAME = ".bilder-openclip.sqlite3"
+MAIN_DB_ALIAS = "main_db"
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,26 @@ class ImageSearchProgressStats:
     query: str
     compared: int = 0
     total: int = 0
+
+
+@dataclass(frozen=True)
+class OpenClipOrphanGroup:
+    table: str
+    file_id: int
+    target_path: Path
+    row_count: int
+
+
+@dataclass(frozen=True)
+class OpenClipCleanupStats:
+    exists: bool
+    embedding_rows: int = 0
+    search_result_rows: int = 0
+    groups: tuple[OpenClipOrphanGroup, ...] = ()
+    deleted_embedding_rows: int = 0
+    deleted_search_result_rows: int = 0
+    deleted_search_runs: int = 0
+    applied: bool = False
 
 
 def openclip_db_path(target: Path) -> Path:
@@ -162,6 +183,24 @@ def validate_relative_openclip_paths(conn: sqlite3.Connection) -> None:
                 f"{table} for file_id={row['file_id']}: {row['target_path']}. "
                 "Kjør bildebank image-scan på nytt."
             )
+
+
+def attach_main_database(conn: sqlite3.Connection, target: Path) -> None:
+    if any(str(row["name"]) == MAIN_DB_ALIAS for row in conn.execute("PRAGMA database_list")):
+        return
+    main_db_path = db.db_path_for_target(target)
+    if main_db_path.exists():
+        conn.execute(f"ATTACH DATABASE ? AS {MAIN_DB_ALIAS}", (str(main_db_path),))
+
+
+def active_embedding_table(conn: sqlite3.Connection) -> str:
+    if any(str(row["name"]) == MAIN_DB_ALIAS for row in conn.execute("PRAGMA database_list")):
+        return (
+            "image_embeddings "
+            f"JOIN {MAIN_DB_ALIAS}.files ON {MAIN_DB_ALIAS}.files.id = image_embeddings.file_id "
+            f"AND {MAIN_DB_ALIAS}.files.deleted_at IS NULL"
+        )
+    return "image_embeddings"
 
 
 def active_image_files(target: Path, *, limit: int | None = None) -> list[sqlite3.Row]:
@@ -334,12 +373,17 @@ def _search_images_unlocked(
 
     conn = connect_openclip_db(target)
     try:
+        attach_main_database(conn, target)
         rows = list(
             conn.execute(
-                """
-                SELECT file_id, target_path, target_path_key, embedding
-                FROM image_embeddings
-                WHERE model_name = ? AND pretrained = ?
+                f"""
+                SELECT
+                    image_embeddings.file_id,
+                    image_embeddings.target_path,
+                    image_embeddings.target_path_key,
+                    image_embeddings.embedding
+                FROM {active_embedding_table(conn)}
+                WHERE image_embeddings.model_name = ? AND image_embeddings.pretrained = ?
                 """,
                 (config.model_name, config.pretrained),
             )
@@ -404,6 +448,136 @@ def openclip_db_summary(target: Path) -> OpenClipDbSummary:
         )
     finally:
         conn.close()
+
+
+def cleanup_image_search(target: Path, *, apply: bool = False) -> OpenClipCleanupStats:
+    path = openclip_db_path(target)
+    if not path.exists():
+        return OpenClipCleanupStats(exists=False, applied=apply)
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        validate_openclip_cleanup_schema(conn)
+        attach_main_database(conn, target)
+        groups = (
+            *orphan_openclip_groups(conn, "image_embeddings"),
+            *orphan_openclip_groups(conn, "image_search_results"),
+        )
+        embedding_rows = sum(
+            group.row_count for group in groups if group.table == "image_embeddings"
+        )
+        search_result_rows = sum(
+            group.row_count for group in groups if group.table == "image_search_results"
+        )
+        if not apply:
+            return OpenClipCleanupStats(
+                exists=True,
+                embedding_rows=embedding_rows,
+                search_result_rows=search_result_rows,
+                groups=groups,
+            )
+        deleted_embedding_rows = delete_orphan_openclip_rows(conn, "image_embeddings")
+        deleted_search_result_rows = delete_orphan_openclip_rows(conn, "image_search_results")
+        deleted_search_runs = delete_empty_search_runs(conn)
+        conn.commit()
+        return OpenClipCleanupStats(
+            exists=True,
+            embedding_rows=embedding_rows,
+            search_result_rows=search_result_rows,
+            groups=groups,
+            deleted_embedding_rows=deleted_embedding_rows,
+            deleted_search_result_rows=deleted_search_result_rows,
+            deleted_search_runs=deleted_search_runs,
+            applied=True,
+        )
+    except sqlite3.DatabaseError as exc:
+        conn.rollback()
+        raise ValueError(
+            "OpenCLIP-databasen kan ikke ryddes automatisk. "
+            "Kjør bildebank image-scan på nytt, eller reset bildesøkdatabasen senere. "
+            f"SQLite-feil: {exc}"
+        ) from exc
+    finally:
+        conn.close()
+
+
+def validate_openclip_cleanup_schema(conn: sqlite3.Connection) -> None:
+    required_columns = {
+        "image_embeddings": {"file_id", "target_path"},
+        "image_search_results": {"run_id", "file_id", "target_path"},
+        "image_search_runs": {"id"},
+    }
+    for table, columns in required_columns.items():
+        rows = list(conn.execute(f"PRAGMA table_info({table})"))
+        if not rows:
+            raise ValueError(
+                f"OpenCLIP-databasen mangler tabellen {table}. "
+                "Kjør bildebank image-scan på nytt, eller reset bildesøkdatabasen senere."
+            )
+        existing = {str(row["name"]) for row in rows}
+        missing = sorted(columns - existing)
+        if missing:
+            raise ValueError(
+                f"OpenCLIP-tabellen {table} mangler kolonne(r): {', '.join(missing)}. "
+                "Kjør bildebank image-scan på nytt, eller reset bildesøkdatabasen senere."
+            )
+
+
+def orphan_openclip_groups(conn: sqlite3.Connection, table: str) -> tuple[OpenClipOrphanGroup, ...]:
+    if table not in {"image_embeddings", "image_search_results"}:
+        raise ValueError(f"Uventet OpenCLIP-tabell: {table}")
+    rows = conn.execute(
+        f"""
+        SELECT {table}.file_id, {table}.target_path, COUNT(*) AS row_count
+        FROM {table}
+        LEFT JOIN {MAIN_DB_ALIAS}.files ON {MAIN_DB_ALIAS}.files.id = {table}.file_id
+        WHERE {MAIN_DB_ALIAS}.files.id IS NULL
+           OR {MAIN_DB_ALIAS}.files.deleted_at IS NOT NULL
+        GROUP BY {table}.file_id, {table}.target_path
+        ORDER BY {table}.file_id, {table}.target_path
+        """
+    )
+    return tuple(
+        OpenClipOrphanGroup(
+            table=table,
+            file_id=int(row["file_id"]),
+            target_path=Path(str(row["target_path"])),
+            row_count=int(row["row_count"]),
+        )
+        for row in rows
+    )
+
+
+def delete_orphan_openclip_rows(conn: sqlite3.Connection, table: str) -> int:
+    if table not in {"image_embeddings", "image_search_results"}:
+        raise ValueError(f"Uventet OpenCLIP-tabell: {table}")
+    cursor = conn.execute(
+        f"""
+        DELETE FROM {table}
+        WHERE rowid IN (
+            SELECT {table}.rowid
+            FROM {table}
+            LEFT JOIN {MAIN_DB_ALIAS}.files ON {MAIN_DB_ALIAS}.files.id = {table}.file_id
+            WHERE {MAIN_DB_ALIAS}.files.id IS NULL
+               OR {MAIN_DB_ALIAS}.files.deleted_at IS NOT NULL
+        )
+        """
+    )
+    return cursor.rowcount if cursor.rowcount >= 0 else 0
+
+
+def delete_empty_search_runs(conn: sqlite3.Connection) -> int:
+    cursor = conn.execute(
+        """
+        DELETE FROM image_search_runs
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM image_search_results
+            WHERE image_search_results.run_id = image_search_runs.id
+        )
+        """
+    )
+    return cursor.rowcount if cursor.rowcount >= 0 else 0
 
 
 def count_rows_if_table_exists(conn: sqlite3.Connection, table: str) -> int:

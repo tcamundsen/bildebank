@@ -72,6 +72,7 @@ from .media import explain_date, inspect_metadata, is_supported_media, sha256_fi
 from .media_cache import MediaMetadataCache, cached_image_dimensions
 from .manual_dates import date_range_from_uncertainty
 from .openclip import (
+    cleanup_image_search,
     openclip_db_path,
     openclip_db_summary,
     scan_images,
@@ -176,6 +177,7 @@ HELP_COMMAND_GROUPS = (
         (
             ("image-scan", "Scan bilder for tekstbasert bildesøk"),
             ("image-search", "Søk etter bilder med tekst"),
+            ("cleanup-image-search", "Rydd foreldreløse bildesøk-rader"),
         ),
     ),
     (
@@ -752,6 +754,21 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Ikke åpne image-search.html automatisk etter søket.",
     )
+    cleanup_image_search_parser = add_command(
+        subparsers,
+        "cleanup-image-search",
+        usage="bildebank cleanup-image-search [valg]",
+        help="Rydd foreldreløse bildesøk-rader",
+        description=(
+            "Vis eller slett OpenCLIP-rader som peker på filer som mangler "
+            "i hoveddatabasen eller er markert som slettet."
+        ),
+    )
+    cleanup_image_search_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Slett foreldreløse image_embeddings og image_search_results.",
+    )
     run_server_parser = add_command(
         subparsers,
         "run-server",
@@ -1075,7 +1092,7 @@ TARGET_COMMANDS = {
     "cleanup-pending-deletes",
 }
 
-IMAGE_COMMANDS = {"image-scan", "image-search"}
+IMAGE_COMMANDS = {"image-scan", "image-search", "cleanup-image-search"}
 
 FACE_COMMANDS = {
     "face-scan",
@@ -1271,6 +1288,8 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
 
 
 def run_image_command(args: argparse.Namespace, target: Path) -> int:
+    if args.command == "cleanup-image-search":
+        return run_cleanup_image_search(target, apply=args.apply)
     require_openclip_enabled(load_config(program_repo_root()).openclip.enabled)
     if args.command == "image-scan":
         return run_image_scan(target, limit=args.limit)
@@ -2251,26 +2270,32 @@ def doctor_check_orphan_openclip_rows(target: Path) -> None:
         return
 
     if embedding_rows:
+        total_embedding_rows = sum(int(row["row_count"]) for row in embedding_rows)
         doctor_error(
-            f"{len(embedding_rows)} OpenCLIP embedding-rad(er) peker på manglende eller slettet fil."
+            f"{total_embedding_rows} OpenCLIP embedding-rad(er) peker på manglende eller slettet fil."
         )
         for row in embedding_rows[:20]:
+            row_count = int(row["row_count"])
+            count_suffix = f" ({row_count} rader)" if row_count > 1 else ""
             doctor_info(
                 f"image_embeddings file #{int(row['file_id'])}: "
-                f"{Path(str(row['target_path'])).as_posix()}"
+                f"{Path(str(row['target_path'])).as_posix()}{count_suffix}"
             )
-        doctor_report_omitted_details(len(embedding_rows))
+        doctor_report_omitted_openclip_groups(len(embedding_rows))
     if result_rows:
+        total_result_rows = sum(int(row["row_count"]) for row in result_rows)
         doctor_error(
-            f"{len(result_rows)} OpenCLIP søkeresultat-rad(er) peker på manglende eller slettet fil."
+            f"{total_result_rows} OpenCLIP søkeresultat-rad(er) peker på manglende eller slettet fil."
         )
         for row in result_rows[:20]:
+            row_count = int(row["row_count"])
+            count_suffix = f" ({row_count} rader)" if row_count > 1 else ""
             doctor_info(
                 f"image_search_results file #{int(row['file_id'])}: "
-                f"{Path(str(row['target_path'])).as_posix()}"
+                f"{Path(str(row['target_path'])).as_posix()}{count_suffix}"
             )
-        doctor_report_omitted_details(len(result_rows))
-    doctor_advice("Ikke stol på bildesøkresultater før OpenCLIP-radene er ryddet.")
+        doctor_report_omitted_openclip_groups(len(result_rows))
+    doctor_advice("Kjør bildebank cleanup-image-search --apply")
 
 
 def doctor_openclip_table_exists(conn: sqlite3.Connection, table: str) -> bool:
@@ -2289,15 +2314,21 @@ def doctor_orphan_openclip_rows(conn: sqlite3.Connection, table: str) -> list[sq
     return list(
         conn.execute(
             f"""
-            SELECT {table}.file_id, {table}.target_path
+            SELECT {table}.file_id, {table}.target_path, COUNT(*) AS row_count
             FROM {table}
             LEFT JOIN main_db.files ON main_db.files.id = {table}.file_id
             WHERE main_db.files.id IS NULL
                OR main_db.files.deleted_at IS NOT NULL
+            GROUP BY {table}.file_id, {table}.target_path
             ORDER BY {table}.file_id, {table}.target_path
             """
         )
     )
+
+
+def doctor_report_omitted_openclip_groups(total: int) -> None:
+    if total > 20:
+        doctor_info(f"... og {total - 20} file_id/sti-grupper til")
 
 
 def doctor_check_active_files_exist(target: Path) -> None:
@@ -2767,6 +2798,39 @@ def run_cleanup_pending_deletes(
         f"kontrollert={len(results)}, slettet={deleted}, manglet={missing}, feil={failed}"
     )
     return 0 if failed == 0 else 2
+
+
+def run_cleanup_image_search(target: Path, *, apply: bool) -> int:
+    with TargetLock(target, command="cleanup-image-search"):
+        stats = cleanup_image_search(target, apply=apply)
+    if not stats.exists:
+        print("Ingen OpenCLIP-database å rydde.")
+        return 0
+    print(
+        "Bildesøk-opprydding: "
+        f"foreldreløse_embeddings={stats.embedding_rows}, "
+        f"foreldreløse_søkeresultater={stats.search_result_rows}"
+    )
+    for group in stats.groups[:20]:
+        suffix = f" ({group.row_count} rader)" if group.row_count > 1 else ""
+        print(
+            f"{group.table}\tfile #{group.file_id}\t"
+            f"{group.target_path.as_posix()}{suffix}"
+        )
+    if len(stats.groups) > 20:
+        print(f"... og {len(stats.groups) - 20} file_id/sti-grupper til")
+    if not apply:
+        print("Dry-run: ingen endringer er gjort.")
+        if stats.embedding_rows or stats.search_result_rows:
+            print("Kjør: bildebank cleanup-image-search --apply")
+        return 0
+    print(
+        "Slettet: "
+        f"image_embeddings={stats.deleted_embedding_rows}, "
+        f"image_search_results={stats.deleted_search_result_rows}, "
+        f"tomme_image_search_runs={stats.deleted_search_runs}"
+    )
+    return 0
 
 
 def print_image_search_progress(

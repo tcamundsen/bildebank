@@ -13,6 +13,8 @@ import numpy as np
 from .config import OpenClipConfig
 from .openclip import (
     ImageSearchResult,
+    active_embedding_table,
+    attach_main_database,
     connect_openclip_db,
     create_search_run,
     load_text_model,
@@ -108,6 +110,7 @@ class OpenClipSearchCache:
             text_vector = normalized_search_vector(text_embedding(self._model, self._tokenizer, query))
             conn = connect_openclip_db(target)
             try:
+                attach_main_database(conn, target)
                 embeddings = self._cached_embeddings(conn)
                 if embeddings.matrix.size == 0:
                     raise ValueError("Fant ingen bilde-embeddings. Kjør bildebank image-scan først.")
@@ -163,10 +166,10 @@ class OpenClipSearchCache:
 
 def search_embedding_cache_key(conn: sqlite3.Connection, model_name: str, pretrained: str) -> SearchEmbeddingCacheKey:
     row = conn.execute(
-        """
+        f"""
         SELECT COUNT(*) AS count, MAX(updated_at) AS updated_at
-        FROM image_embeddings
-        WHERE model_name = ? AND pretrained = ?
+        FROM {active_embedding_table(conn)}
+        WHERE image_embeddings.model_name = ? AND image_embeddings.pretrained = ?
         """,
         (model_name, pretrained),
     ).fetchone()
@@ -180,11 +183,15 @@ def search_embedding_cache_key(conn: sqlite3.Connection, model_name: str, pretra
 
 def load_search_embedding_cache(conn: sqlite3.Connection, key: SearchEmbeddingCacheKey) -> SearchEmbeddingCache:
     cursor = conn.execute(
-        """
-        SELECT file_id, target_path, target_path_key, embedding
-        FROM image_embeddings
-        WHERE model_name = ? AND pretrained = ?
-        ORDER BY file_id
+        f"""
+        SELECT
+            image_embeddings.file_id,
+            image_embeddings.target_path,
+            image_embeddings.target_path_key,
+            image_embeddings.embedding
+        FROM {active_embedding_table(conn)}
+        WHERE image_embeddings.model_name = ? AND image_embeddings.pretrained = ?
+        ORDER BY image_embeddings.file_id
         """,
         (key.model_name, key.pretrained),
     )

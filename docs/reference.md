@@ -102,5 +102,6 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 ## Tekstbasert bildesøk
 
 - [`image-scan`](image-scan.md) **`cli`**
+- [`cleanup-image-search`](cleanup-image-search.md) **`cli`**
 
 Se den samlede innføringen: [`openclip`](openclip.md).
