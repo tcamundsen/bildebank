@@ -1878,6 +1878,42 @@ pretrained = "laion2b_s34b_b79k"
         self.assertNotIn('href="/file/2025/07/PXL%2020250709_193516074.jpg"', body)
         self.assertNotIn('src="/file/999"', body)
 
+    def test_run_server_image_search_rotates_rotated_results(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                conn.execute("UPDATE files SET view_rotation_degrees = 90 WHERE id = 1")
+                conn.commit()
+            finally:
+                conn.close()
+
+            server = SimpleNamespace(
+                target=target,
+                config=AppConfig(openclip=OpenClipConfig(enabled=True)),
+                face_enabled=False,
+                openclip_enabled=True,
+                search_cache=SimpleNamespace(loaded=True),
+            )
+            result = ImageSearchResult(
+                rank=1,
+                file_id=1,
+                target_path=Path("2024/01/IMG_20240102.png"),
+                similarity=0.301,
+            )
+
+            body = search_html(server, ServerSearchStats("strand", (result,)), DEFAULT_SEARCH_LIMIT)
+
+        self.assertIn('class="media-link quarter-turn"', body)
+        self.assertIn('data-view-rotation="90"', body)
+        self.assertIn("transform: rotate(90deg)", body)
+
     def test_openclip_database_rejects_absolute_target_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

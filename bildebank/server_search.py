@@ -302,7 +302,8 @@ def search_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
-    items = "\n".join(result_html(target, result) for result in stats.results)
+    items_by_id = search_result_items_by_id(target, stats.results)
+    items = "\n".join(result_html(target, result, items_by_id.get(result.file_id)) for result in stats.results)
     return shell_page_html(
         f"Bildesøk: {stats.query}",
         f"""
@@ -336,14 +337,33 @@ def search_form(query: str, limit: int = DEFAULT_SEARCH_LIMIT, *, model_loaded: 
     """
 
 
-def result_html(target: Path, result: ImageSearchResult) -> str:
+def search_result_items_by_id(target: Path, results: tuple[ImageSearchResult, ...]) -> dict[int, Any]:
+    file_ids = [result.file_id for result in results]
+    if not file_ids:
+        return {}
+    try:
+        from .server_browser import items_by_file_ids
+
+        return {int(item["id"]): item for item in items_by_file_ids(target, file_ids)}
+    except (OSError, sqlite3.Error, ValueError):
+        return {}
+
+
+def result_html(target: Path, result: ImageSearchResult, item: Any | None = None) -> str:
     relative = relative_to_target(target, result.target_path)
     url = "/file/" + relative_path_url(relative)
     item_url = source_item_url(all_browser_source(), result.file_id)
     path_text = str(relative).replace("\\", "/")
+    link_class = ""
+    rotation_style = ""
+    if item is not None:
+        from .server_browser import media_link_class_attr, rotation_style_attr
+
+        link_class = media_link_class_attr(item)
+        rotation_style = rotation_style_attr(item, target)
     return f"""
     <article class="item">
-      <a href="{html.escape(item_url)}"><img src="{html.escape(url)}" alt=""></a>
+      <a href="{html.escape(item_url)}"{link_class}><img src="{html.escape(url)}" alt=""{rotation_style}></a>
       <div class="text">
         <div class="path">#{result.rank} {html.escape(path_text)}</div>
         <div class="score">score={result.similarity:.3f}</div>
