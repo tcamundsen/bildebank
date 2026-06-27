@@ -18,9 +18,14 @@ from . import db
 CONFIG_DIR_NAME = "Bildebank"
 CONFIG_FILENAME = "launcher.json"
 PROGRESS_LOG_LABELS = (
+    "Import",
+    "Import dry-run",
+    "Rescan-source",
+    "Rescan-source dry-run",
     "Thumbnails",
     "Unimport",
     "Check-source",
+    "geo-scan",
     "Doctor filer",
     "Doctor SHA-256",
     "Doctor orphan",
@@ -39,6 +44,13 @@ class LauncherConfig:
 
 @dataclass(frozen=True)
 class InsightFaceDependencyStatus:
+    status: str
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class InsightFaceModelStatus:
+    model_name: str
     status: str
     detail: str = ""
 
@@ -166,6 +178,10 @@ def insightface_install_command(repo_root: Path | None = None) -> list[str]:
     return ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script_path)]
 
 
+def download_face_model_command() -> list[str]:
+    return bildebank_command("download-face-model")
+
+
 def insightface_install_supported() -> bool:
     return os.name == "nt"
 
@@ -197,6 +213,16 @@ def _insightface_error_means_missing(message: str) -> bool:
     )
 
 
+def insightface_model_status(repo_root: Path | None = None) -> InsightFaceModelStatus:
+    from .config import load_config
+    from .face import insightface_model_files_exist
+
+    config = load_config(repo_root or program_repo_root()).face_recognition
+    if insightface_model_files_exist(config):
+        return InsightFaceModelStatus(config.model_name, "Lastet ned", str(config.model_root))
+    return InsightFaceModelStatus(config.model_name, "Mangler", str(config.model_root))
+
+
 def registered_sources(collection_path: Path) -> list[db.Source]:
     conn = db.connect(collection_path)
     try:
@@ -218,11 +244,30 @@ def subprocess_output_encoding() -> str:
 
 
 def progress_log_key(message: str) -> str | None:
+    if _is_tqdm_progress_line(message):
+        return "tqdm-progress"
     for label in PROGRESS_LOG_LABELS:
         prefix = f"{label}:"
-        if message.startswith(prefix) and "=" in message[len(prefix):]:
+        rest = message[len(prefix):] if message.startswith(prefix) else ""
+        if rest and not rest.lstrip().startswith("ferdig") and ("=" in rest or _contains_progress_count(rest)):
             return label
     return None
+
+
+def _is_tqdm_progress_line(message: str) -> bool:
+    stripped = message.lstrip()
+    percent, separator, rest = stripped.partition("%|")
+    return bool(separator) and percent.isdigit() and _contains_progress_count(rest)
+
+
+def _contains_progress_count(message: str) -> bool:
+    parts = message.replace(",", " ").split()
+    return any(_is_progress_count(part) for part in parts)
+
+
+def _is_progress_count(part: str) -> bool:
+    current, separator, total = part.partition("/")
+    return bool(separator) and current.isdigit() and total.isdigit()
 
 
 class BildebankLauncher:
@@ -246,12 +291,16 @@ class BildebankLauncher:
         self.collection_value: tk.StringVar = tk.StringVar(value=str(self.collection_path))
         self.status_value: tk.StringVar = tk.StringVar(value="")
         self.insightface_status_value: tk.StringVar = tk.StringVar(value="")
+        self.insightface_model_status_value: tk.StringVar = tk.StringVar(value="")
         self.button_frame: ttk.Frame | None = None
         self.log_text: tk.Text | None = None
         self.buttons: list[ttk.Button] = []
         self.install_insightface_button: ttk.Button | None = None
+        self.download_face_model_button: ttk.Button | None = None
         self.insightface_status = insightface_dependency_status()
-        self.last_progress_log_key: str | None = None
+        self.face_model_status = insightface_model_status()
+        self.active_progress_log_key: str | None = None
+        self.active_progress_log_range: tuple[str, str] | None = None
 
         self._build_gui()
         self._refresh_state()
@@ -296,7 +345,7 @@ class BildebankLauncher:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(5, weight=1)
+        outer.rowconfigure(6, weight=1)
 
         title = ttk.Label(outer, text="Bildebank kontrollpanel", font=("", 15, "bold"))
         title.grid(row=0, column=0, sticky="w")
@@ -320,11 +369,26 @@ class BildebankLauncher:
         )
         self.install_insightface_button.grid(row=0, column=1, sticky="w")
 
+        face_model_frame = ttk.Frame(outer)
+        face_model_frame.grid(row=4, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(face_model_frame, textvariable=self.insightface_model_status_value).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(0, 12),
+        )
+        self.download_face_model_button = ttk.Button(
+            face_model_frame,
+            text="Last ned modell",
+            command=self._download_face_model,
+        )
+        self.download_face_model_button.grid(row=0, column=1, sticky="w")
+
         self.button_frame = ttk.Frame(outer)
-        self.button_frame.grid(row=4, column=0, sticky="w", pady=(14, 18))
+        self.button_frame.grid(row=5, column=0, sticky="w", pady=(14, 18))
 
         log_frame = ttk.Frame(outer)
-        log_frame.grid(row=5, column=0, sticky="nsew")
+        log_frame.grid(row=6, column=0, sticky="nsew")
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(1, weight=1)
         ttk.Label(log_frame, text="Logg:").grid(row=0, column=0, sticky="w")
@@ -336,7 +400,7 @@ class BildebankLauncher:
         scrollbar.grid(row=1, column=1, sticky="ns")
 
         status = ttk.Label(outer, textvariable=self.status_value)
-        status.grid(row=6, column=0, sticky="w", pady=(10, 0))
+        status.grid(row=7, column=0, sticky="w", pady=(10, 0))
 
     def _refresh_state(self) -> None:
         ttk = self.ttk
@@ -409,6 +473,10 @@ class BildebankLauncher:
     def _refresh_insightface_status(self) -> None:
         self.insightface_status = insightface_dependency_status()
         self.insightface_status_value.set(f"InsightFace: {self.insightface_status.status}")
+        self.face_model_status = insightface_model_status()
+        self.insightface_model_status_value.set(
+            f"Valgt modell: {self.face_model_status.model_name} ({self.face_model_status.status})"
+        )
 
     def _set_buttons_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
@@ -423,6 +491,15 @@ class BildebankLauncher:
                 else "disabled"
             )
             self.install_insightface_button.configure(state=insightface_state)
+        if self.download_face_model_button is not None:
+            model_state = (
+                "normal"
+                if enabled
+                and self.insightface_status.status == "Klar"
+                and self.face_model_status.status != "Lastet ned"
+                else "disabled"
+            )
+            self.download_face_model_button.configure(state=model_state)
 
     def _set_busy(self, busy: bool, message: str = "") -> None:
         self.busy = busy
@@ -496,6 +573,19 @@ class BildebankLauncher:
     def _insightface_install_finished(self) -> None:
         importlib.invalidate_caches()
         self._refresh_state()
+
+    def _download_face_model(self) -> None:
+        if self.insightface_status.status != "Klar":
+            self._log("Kan ikke laste ned ansiktsmodell før InsightFace-avhengighetene er klare.")
+            return
+        self._log(f"Laster ned ansiktsmodell {self.face_model_status.model_name} ...")
+        self._run_waiting_command(
+            download_face_model_command(),
+            running_message="Laster ned ansiktsmodell ...",
+            success_message="Ansiktsmodell lastet ned.",
+            failure_message="Nedlasting av ansiktsmodell feilet.",
+            on_success=self._refresh_state,
+        )
 
     def _start_rescan_source_flow(self) -> None:
         from tkinter import messagebox
@@ -789,6 +879,7 @@ class BildebankLauncher:
         from tkinter import messagebox
 
         self._set_busy(True, running_message)
+        self._clear_active_progress_log()
         self._log("$ " + " ".join(command))
 
         def worker() -> None:
@@ -837,6 +928,7 @@ class BildebankLauncher:
         from tkinter import messagebox
 
         self._set_busy(False)
+        self._clear_active_progress_log()
         self._log(f"{failure_message} {exc}")
         messagebox.showerror("Feil", failure_message)
 
@@ -850,6 +942,7 @@ class BildebankLauncher:
         messagebox: object,
     ) -> None:
         self._set_busy(False)
+        self._clear_active_progress_log()
         if return_code == 0:
             self._log(success_message)
             if on_success is not None:
@@ -867,22 +960,31 @@ class BildebankLauncher:
     def _log_process_output(self, message: str) -> None:
         self._log(message, progress_key=progress_log_key(message))
 
+    def _clear_active_progress_log(self) -> None:
+        self.active_progress_log_key = None
+        self.active_progress_log_range = None
+
     def _log(self, message: str, *, progress_key: str | None = None) -> None:
         if not message:
             return
         assert self.log_text is not None
         self.log_text.configure(state="normal")
-        if progress_key is not None and progress_key == self.last_progress_log_key:
-            start = self.log_text.index("last_progress_start")
-            self.log_text.delete(start, "last_progress_end")
+        if (
+            progress_key is not None
+            and progress_key == self.active_progress_log_key
+            and self.active_progress_log_range is not None
+        ):
+            start, end = self.active_progress_log_range
+            self.log_text.delete(start, end)
             self.log_text.insert(start, message + "\n")
         else:
             start = self.log_text.index("end-1c")
             self.log_text.insert("end", message + "\n")
         if progress_key is not None:
-            self.log_text.mark_set("last_progress_start", start)
-            self.log_text.mark_set("last_progress_end", f"{start} + {len(message) + 1} chars")
-        self.last_progress_log_key = progress_key
+            self.active_progress_log_key = progress_key
+            self.active_progress_log_range = (start, f"{start} + {len(message) + 1} chars")
+        else:
+            self._clear_active_progress_log()
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 

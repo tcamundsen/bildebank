@@ -160,6 +160,7 @@ HELP_COMMAND_GROUPS = (
         (
             ("face-status", "Gammelt navn for doctor"),
             ("face-config", "Slå ansiktsgjenkjenning på eller av"),
+            ("download-face-model", "Last ned valgt InsightFace-modell"),
             ("face-scan", "Scanning etter ansikter"),
             ("face-suggest", "Foreslå personer for ukjente ansikter"),
             ("face-report", "Vis rapport for scannede ansikter"),
@@ -737,6 +738,13 @@ def build_parser() -> argparse.ArgumentParser:
         type=bool_arg,
         help="true slår på ansiktsgjenkjenning, false slår den av",
     )
+    add_command(
+        subparsers,
+        "download-face-model",
+        usage="bildebank download-face-model",
+        help="Last ned valgt InsightFace-modell",
+        description="Last ned ansiktsmodellen som er valgt i bildebank-config.toml.",
+    )
     image_scan = add_command(
         subparsers,
         "image-scan",
@@ -1087,6 +1095,7 @@ NO_TARGET_COMMANDS = {
     "face-status",
     "config",
     "face-config",
+    "download-face-model",
 }
 
 TARGET_COMMANDS = {
@@ -1223,6 +1232,9 @@ def run_no_target_command(args: argparse.Namespace) -> int:
 
     if args.command == "face-config":
         return run_face_config(args.enabled)
+
+    if args.command == "download-face-model":
+        return run_download_face_model()
 
     raise ValueError(f"Ukjent kommando uten bildesamling: {args.command}")
 
@@ -2620,6 +2632,24 @@ def doctor_report_omitted_details(total: int) -> None:
 def run_face_config(enabled: bool) -> int:
     print(f"Ansiktsgjenkjenning er satt til {'på' if enabled else 'av'}.")
     return run_config("face_recognition", enabled=enabled)
+
+
+def run_download_face_model() -> int:
+    from .face import insightface_model_files_exist, load_face_app
+
+    config = load_config(program_repo_root()).face_recognition
+    print(f"InsightFace-modell: {config.model_name}")
+    print(f"Modellmappe: {config.model_root}")
+    if insightface_model_files_exist(config):
+        print("Modellen er allerede lastet ned.")
+        return 0
+
+    print("Laster ned og klargjør modellen. Første kjøring kan ta lang tid.")
+    load_face_app(config)
+    if not insightface_model_files_exist(config):
+        raise ValueError(f"InsightFace-modellen {config.model_name!r} ble ikke funnet etter nedlasting.")
+    print("Modellen er lastet ned.")
+    return 0
 
 
 def run_config(section: str, *, enabled: bool) -> int:

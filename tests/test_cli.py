@@ -12834,6 +12834,33 @@ print(json.dumps([
             self.assertIn("Ansiktsgjenkjenning er av", stderr)
             self.assertFalse((face_db_path(target)).exists())
 
+    def test_download_face_model_loads_selected_model_without_target_or_enabled_config(self) -> None:
+        (self.program_root / "bildebank-config.toml").write_text(
+            """
+[face_recognition]
+enabled = false
+provider = "cpu"
+model_root = ".bildebank-insightface"
+model_name = "buffalo_l"
+""",
+            encoding="utf-8",
+        )
+
+        def fake_load_face_app(config):
+            model_dir = config.model_root / "models" / config.model_name
+            model_dir.mkdir(parents=True)
+            (model_dir / "det_10g.onnx").write_bytes(b"model")
+            return object()
+
+        with patch("bildebank.face.load_face_app", side_effect=fake_load_face_app) as load_app:
+            code, stdout, stderr = capture_cli(["download-face-model"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("InsightFace-modell: buffalo_l", stdout)
+        self.assertIn("Modellen er lastet ned.", stdout)
+        self.assertEqual(stderr, "")
+        self.assertEqual(load_app.call_args.args[0].model_name, "buffalo_l")
+
     def test_face_scan_reports_insightface_opencv_linux_system_dependency(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

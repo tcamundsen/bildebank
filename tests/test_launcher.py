@@ -10,10 +10,12 @@ from bildebank.launcher import (
     check_source_command,
     create_command,
     default_collection_path,
+    download_face_model_command,
     geo_scan_command,
     import_command,
     insightface_dependency_status,
     insightface_install_command,
+    insightface_model_status,
     is_collection_created,
     load_launcher_config,
     make_thumbnails_command,
@@ -128,6 +130,7 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--name",
         "Sommer 2024",
     ]
+    assert download_face_model_command()[-1:] == ["download-face-model"]
 
 
 def test_insightface_status_is_ready_when_dependencies_are_available() -> None:
@@ -191,6 +194,41 @@ def test_insightface_install_command_runs_existing_powershell_script(tmp_path: P
     ]
 
 
+def test_insightface_model_status_reports_downloaded_selected_model(tmp_path: Path) -> None:
+    (tmp_path / "bildebank-config.toml").write_text(
+        """
+[face_recognition]
+model_root = ".bildebank-insightface"
+model_name = "buffalo_l"
+""",
+        encoding="utf-8",
+    )
+    model_dir = tmp_path / ".bildebank-insightface" / "models" / "buffalo_l"
+    model_dir.mkdir(parents=True)
+    (model_dir / "det_10g.onnx").write_bytes(b"model")
+
+    status = insightface_model_status(tmp_path)
+
+    assert status.model_name == "buffalo_l"
+    assert status.status == "Lastet ned"
+
+
+def test_insightface_model_status_reports_missing_selected_model(tmp_path: Path) -> None:
+    (tmp_path / "bildebank-config.toml").write_text(
+        """
+[face_recognition]
+model_root = ".bildebank-insightface"
+model_name = "buffalo_l"
+""",
+        encoding="utf-8",
+    )
+
+    status = insightface_model_status(tmp_path)
+
+    assert status.model_name == "buffalo_l"
+    assert status.status == "Mangler"
+
+
 def test_subprocess_output_encoding_uses_locale() -> None:
     with patch("locale.getpreferredencoding", return_value="cp1252"):
         assert subprocess_output_encoding() == "cp1252"
@@ -199,6 +237,10 @@ def test_subprocess_output_encoding_uses_locale() -> None:
 def test_progress_log_key_recognizes_progress_updates_only() -> None:
     assert progress_log_key("Thumbnails: kontrollert=25/84, sjekket=25") == "Thumbnails"
     assert progress_log_key("Check-source: kontrollert=4/10, filer=4") == "Check-source"
+    assert progress_log_key("geo-scan: scannet=12/40, gps=3, feil=0") == "geo-scan"
+    assert progress_log_key("Import: importert=2/10, duplikater=1") == "Import"
+    assert progress_log_key("Rescan-source: kontrollert=2/10, nye=1") == "Rescan-source"
+    assert progress_log_key(" 59%|#####     | 206485/352210 [00:13<00:08, 16523.67KB/s]") == "tqdm-progress"
     assert progress_log_key("Thumbnails: 84 filer skal kontrolleres.") is None
     assert progress_log_key("Thumbnails: ferdig kontrollert 84/84 filer.") is None
     assert progress_log_key("Import fullført.") is None
