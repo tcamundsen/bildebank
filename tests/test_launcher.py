@@ -13,6 +13,7 @@ from bildebank.launcher import (
     download_face_model_command,
     face_scan_command,
     geo_scan_command,
+    image_scan_command,
     import_command,
     insightface_dependency_status,
     insightface_install_command,
@@ -102,6 +103,7 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
 
     assert geo_scan_command(collection)[-3:] == ["--target", str(collection), "geo-scan"]
     assert face_scan_command(collection)[-3:] == ["--target", str(collection), "face-scan"]
+    assert image_scan_command(collection)[-3:] == ["--target", str(collection), "image-scan"]
     assert make_thumbnails_command(collection)[-3:] == [
         "--target",
         str(collection),
