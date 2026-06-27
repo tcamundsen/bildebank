@@ -29,6 +29,7 @@ from .face import (
     FaceResetResult,
     FaceReport,
     FaceSuggestStats,
+    LEGACY_FACE_DB_FILENAME,
     RemoveFaceFromPersonResult,
     RenamePersonResult,
     add_face_to_person,
@@ -37,6 +38,7 @@ from .face import (
     delete_person,
     export_people_browser,
     export_person_browser,
+    face_database_dir,
     face_db_path,
     face_db_summary,
     face_report,
@@ -198,7 +200,7 @@ HELP_COMMAND_GROUPS = (
             ("doctor", "Vis diagnose for installasjon og aktiv bildesamling"),
             ("backup", "Lag eller oppdater backup av bildesamlingen"),
             ("migrate", "Oppgrader databasen etter programoppdatering"),
-            ("vacuum", "Pakk databasen så SQLite-filen krymper fysisk"),
+            ("vacuum", "Pakk databasene så SQLite-filene krymper fysisk"),
             ("update", "Oppdater programinstallasjonen"),
             ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
         ),
@@ -1005,8 +1007,8 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "vacuum",
         usage="bildebank vacuum [valg]",
-        help="Pakk databasen så SQLite-filen krymper fysisk",
-        description="Kjører SQLite VACUUM på Bildebank-databasen. Kommandoen endrer ikke bildefiler.",
+        help="Pakk databasene så SQLite-filene krymper fysisk",
+        description="Kjører SQLite VACUUM på Bildebank-databasene. Kommandoen endrer ikke bildefiler.",
     )
     add_command(subparsers, "update", usage="bildebank update [valg]", help="Oppdater programinstallasjonen",
                 description="Oppdater Bildebank til siste versjon fra GitHub.")
@@ -2101,19 +2103,62 @@ def run_geo_stats(target: Path) -> int:
     return 0
 
 
-def run_vacuum(target: Path) -> int:
-    database_path = db.db_path_for_target(target)
+@dataclass(frozen=True)
+class VacuumDatabase:
+    label: str
+    path: Path
+
+
+def vacuum_databases(target: Path) -> list[VacuumDatabase]:
+    config = load_config(program_repo_root())
+    databases = [VacuumDatabase("Hoveddatabase", db.db_path_for_target(target))]
+
+    openclip_path = openclip_db_path(target)
+    if openclip_path.is_file():
+        databases.append(VacuumDatabase("Bildesøkdatabase", openclip_path))
+
+    legacy_face_path = target / LEGACY_FACE_DB_FILENAME
+    if legacy_face_path.is_file():
+        databases.append(VacuumDatabase("Ansiktsdatabase", legacy_face_path))
+
+    face_dir = face_database_dir(target, config.face_recognition)
+    if face_dir.is_dir():
+        for face_path in sorted(face_dir.glob("*.sqlite3")):
+            if face_path.is_file():
+                databases.append(VacuumDatabase("Ansiktsdatabase", face_path))
+
+    seen: set[Path] = set()
+    unique_databases: list[VacuumDatabase] = []
+    for database in databases:
+        key = database.path.resolve()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_databases.append(database)
+    return unique_databases
+
+
+def vacuum_sqlite_database(database_path: Path) -> tuple[int, int]:
     before = database_path.stat().st_size
-    conn = db.connect(target)
+    conn = sqlite3.connect(database_path)
     try:
         conn.execute("VACUUM")
     finally:
         conn.close()
     after = database_path.stat().st_size
-    print(f"Database: {database_path}")
-    print(f"Størrelse før:  {format_bytes(before)}")
-    print(f"Størrelse etter: {format_bytes(after)}")
-    print("Ferdig. Databasen er pakket.")
+    return before, after
+
+
+def run_vacuum(target: Path) -> int:
+    with TargetLock(target, command="vacuum"):
+        for database in vacuum_databases(target):
+            before, after = vacuum_sqlite_database(database.path)
+            print(f"Database: {database.label}")
+            print(f"Sti: {database.path}")
+            print(f"Størrelse før:  {format_bytes(before)}")
+            print(f"Størrelse etter: {format_bytes(after)}")
+            print()
+    print("Ferdig. Databasene er pakket.")
     return 0
 
 

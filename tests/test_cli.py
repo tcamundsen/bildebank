@@ -15924,14 +15924,32 @@ model_name = "buffalo_l"
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             self.assertEqual(run_cli(["create", str(target)]), 0)
+            openclip_db = target / ".bilder-openclip.sqlite3"
+            face_dir = target / ".bildebank-faces"
+            face_dir.mkdir()
+            face_db = face_dir / "buffalo_l.sqlite3"
+            other_face_db = face_dir / "buffalo_s.sqlite3"
+            for database_path in (openclip_db, face_db, other_face_db):
+                conn = sqlite3.connect(database_path)
+                try:
+                    conn.execute("CREATE TABLE test_data(value TEXT)")
+                    conn.execute("INSERT INTO test_data(value) VALUES('test')")
+                    conn.commit()
+                finally:
+                    conn.close()
 
             code, stdout, stderr = capture_cli(["--target", str(target), "vacuum"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Database:", stdout)
+            self.assertIn("Database: Hoveddatabase", stdout)
+            self.assertIn("Database: Bildesøkdatabase", stdout)
+            self.assertEqual(stdout.count("Database: Ansiktsdatabase"), 2)
+            self.assertIn(str(openclip_db), stdout)
+            self.assertIn(str(face_db), stdout)
+            self.assertIn(str(other_face_db), stdout)
             self.assertIn("Størrelse før:", stdout)
             self.assertIn("Størrelse etter:", stdout)
-            self.assertIn("Ferdig. Databasen er pakket.", stdout)
+            self.assertIn("Ferdig. Databasene er pakket.", stdout)
 
     def test_current_schema_rejects_v11_database_with_absolute_target_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

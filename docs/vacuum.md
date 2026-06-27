@@ -3,7 +3,7 @@
 ```text
 usage: bildebank vacuum [valg]
 
-Kjører SQLite VACUUM på Bildebank-databasen. Kommandoen endrer ikke
+Kjører SQLite VACUUM på Bildebank-databasene. Kommandoen endrer ikke
 bildefiler.
 
 options:
@@ -11,7 +11,9 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-`vacuum` pakker Bildebank-databasen slik at SQLite-filen kan krympe fysisk.
+`vacuum` pakker Bildebank-databasene slik at SQLite-filene kan krympe fysisk.
+Kommandoen tar hoveddatabasen, bildesøkdatabasen og ansiktsdatabasene som
+finnes i bildesamlingen.
 
 Kommandoen endrer ikke bildefilene.
 
@@ -20,4 +22,4 @@ bildebank vacuum
 ```
 
 Dette kan være nyttig etter migreringer eller andre databaseendringer som
-frigjør mye plass inne i databasen.
+frigjør mye plass inne i databasene.
