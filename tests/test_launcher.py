@@ -12,9 +12,12 @@ from bildebank.launcher import (
     default_collection_path,
     geo_scan_command,
     import_command,
+    insightface_dependency_status,
+    insightface_install_command,
     is_collection_created,
     load_launcher_config,
     make_thumbnails_command,
+    progress_log_key,
     registered_sources,
     rescan_source_candidates,
     rescan_source_command,
@@ -127,9 +130,78 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
     ]
 
 
+def test_insightface_status_is_ready_when_dependencies_are_available() -> None:
+    with (
+        patch("bildebank.face.insightface_runtime_error", return_value=None),
+        patch("importlib.util.find_spec", return_value=object()),
+    ):
+        status = insightface_dependency_status()
+
+    assert status.status == "Klar"
+
+
+def test_insightface_status_is_missing_when_insightface_is_missing() -> None:
+    with (
+        patch(
+            "bildebank.face.insightface_runtime_error",
+            return_value="InsightFace er ikke installert. Kjør install-insightface.ps1 fra programmappen.",
+        ),
+        patch("importlib.util.find_spec", return_value=object()),
+    ):
+        status = insightface_dependency_status()
+
+    assert status.status == "Mangler"
+    assert "insightface" in status.detail
+
+
+def test_insightface_status_is_missing_when_onnxruntime_is_missing() -> None:
+    with (
+        patch("bildebank.face.insightface_runtime_error", return_value=None),
+        patch("importlib.util.find_spec", return_value=None),
+    ):
+        status = insightface_dependency_status()
+
+    assert status.status == "Mangler"
+    assert "onnxruntime" in status.detail
+
+
+def test_insightface_status_is_error_when_insightface_cannot_load() -> None:
+    with (
+        patch(
+            "bildebank.face.insightface_runtime_error",
+            return_value="InsightFace er installert, men kan ikke lastes: runtime-feil",
+        ),
+        patch("importlib.util.find_spec", return_value=object()),
+    ):
+        status = insightface_dependency_status()
+
+    assert status.status == "Feil"
+    assert "runtime-feil" in status.detail
+
+
+def test_insightface_install_command_runs_existing_powershell_script(tmp_path: Path) -> None:
+    command = insightface_install_command(tmp_path)
+
+    assert command == [
+        "powershell.exe",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(tmp_path / "install-insightface.ps1"),
+    ]
+
+
 def test_subprocess_output_encoding_uses_locale() -> None:
     with patch("locale.getpreferredencoding", return_value="cp1252"):
         assert subprocess_output_encoding() == "cp1252"
+
+
+def test_progress_log_key_recognizes_progress_updates_only() -> None:
+    assert progress_log_key("Thumbnails: kontrollert=25/84, sjekket=25") == "Thumbnails"
+    assert progress_log_key("Check-source: kontrollert=4/10, filer=4") == "Check-source"
+    assert progress_log_key("Thumbnails: 84 filer skal kontrolleres.") is None
+    assert progress_log_key("Thumbnails: ferdig kontrollert 84/84 filer.") is None
+    assert progress_log_key("Import fullført.") is None
 
 
 def test_registered_sources_reads_sources_from_collection_database(tmp_path: Path) -> None:

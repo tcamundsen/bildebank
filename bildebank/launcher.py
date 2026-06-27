@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 import locale
 import os
@@ -15,11 +17,30 @@ from . import db
 
 CONFIG_DIR_NAME = "Bildebank"
 CONFIG_FILENAME = "launcher.json"
+PROGRESS_LOG_LABELS = (
+    "Thumbnails",
+    "Unimport",
+    "Check-source",
+    "Doctor filer",
+    "Doctor SHA-256",
+    "Doctor orphan",
+    "Image-scan",
+    "Image-search",
+    "Face-scan",
+    "Face-suggest",
+    "Refresh-metadata",
+)
 
 
 @dataclass(frozen=True)
 class LauncherConfig:
     collection_path: Path
+
+
+@dataclass(frozen=True)
+class InsightFaceDependencyStatus:
+    status: str
+    detail: str = ""
 
 
 def default_collection_path() -> Path:
@@ -136,6 +157,46 @@ def unimport_source_dry_run_command(collection_path: Path, source_name: str) -> 
     return bildebank_command("--target", collection_path, "unimport", "--dry-run", "--name", source_name)
 
 
+def program_repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def insightface_install_command(repo_root: Path | None = None) -> list[str]:
+    script_path = (repo_root or program_repo_root()) / "install-insightface.ps1"
+    return ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script_path)]
+
+
+def insightface_install_supported() -> bool:
+    return os.name == "nt"
+
+
+def insightface_dependency_status() -> InsightFaceDependencyStatus:
+    from .face import insightface_runtime_error
+
+    insightface_error = insightface_runtime_error()
+    onnxruntime_available = importlib.util.find_spec("onnxruntime") is not None
+
+    if insightface_error is None and onnxruntime_available:
+        return InsightFaceDependencyStatus("Klar")
+
+    if insightface_error is not None and not _insightface_error_means_missing(insightface_error):
+        return InsightFaceDependencyStatus("Feil", insightface_error)
+
+    missing = []
+    if insightface_error is not None:
+        missing.append("insightface")
+    if not onnxruntime_available:
+        missing.append("onnxruntime")
+    return InsightFaceDependencyStatus("Mangler", "Mangler: " + ", ".join(missing))
+
+
+def _insightface_error_means_missing(message: str) -> bool:
+    return (
+        "InsightFace er ikke installert" in message
+        or "No module named 'insightface" in message
+    )
+
+
 def registered_sources(collection_path: Path) -> list[db.Source]:
     conn = db.connect(collection_path)
     try:
@@ -154,6 +215,14 @@ def rescan_source_candidates(sources: list[db.Source]) -> list[db.Source]:
 
 def subprocess_output_encoding() -> str:
     return locale.getpreferredencoding(False) or "utf-8"
+
+
+def progress_log_key(message: str) -> str | None:
+    for label in PROGRESS_LOG_LABELS:
+        prefix = f"{label}:"
+        if message.startswith(prefix) and "=" in message[len(prefix):]:
+            return label
+    return None
 
 
 class BildebankLauncher:
@@ -176,13 +245,22 @@ class BildebankLauncher:
 
         self.collection_value: tk.StringVar = tk.StringVar(value=str(self.collection_path))
         self.status_value: tk.StringVar = tk.StringVar(value="")
+        self.insightface_status_value: tk.StringVar = tk.StringVar(value="")
         self.button_frame: ttk.Frame | None = None
         self.log_text: tk.Text | None = None
         self.buttons: list[ttk.Button] = []
+        self.install_insightface_button: ttk.Button | None = None
+        self.insightface_status = insightface_dependency_status()
+        self.last_progress_log_key: str | None = None
 
         self._build_gui()
         self._refresh_state()
         self._log(f"Valgt bildesamling: {self.collection_path}")
+        if not insightface_install_supported():
+            self._log(
+                "Installer InsightFace-knappen er deaktivert: "
+                "install-insightface.ps1 er Windows-installasjonsflyt."
+            )
 
     def run(self) -> None:
         self.root.mainloop()
@@ -218,7 +296,7 @@ class BildebankLauncher:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(4, weight=1)
+        outer.rowconfigure(5, weight=1)
 
         title = ttk.Label(outer, text="Bildebank kontrollpanel", font=("", 15, "bold"))
         title.grid(row=0, column=0, sticky="w")
@@ -227,11 +305,26 @@ class BildebankLauncher:
         collection_label = ttk.Label(outer, textvariable=self.collection_value, wraplength=580)
         collection_label.grid(row=2, column=0, sticky="we")
 
+        insightface_frame = ttk.Frame(outer)
+        insightface_frame.grid(row=3, column=0, sticky="w", pady=(14, 0))
+        ttk.Label(insightface_frame, textvariable=self.insightface_status_value).grid(
+            row=0,
+            column=0,
+            sticky="w",
+            padx=(0, 12),
+        )
+        self.install_insightface_button = ttk.Button(
+            insightface_frame,
+            text="Installer InsightFace",
+            command=self._install_insightface,
+        )
+        self.install_insightface_button.grid(row=0, column=1, sticky="w")
+
         self.button_frame = ttk.Frame(outer)
-        self.button_frame.grid(row=3, column=0, sticky="w", pady=(14, 18))
+        self.button_frame.grid(row=4, column=0, sticky="w", pady=(14, 18))
 
         log_frame = ttk.Frame(outer)
-        log_frame.grid(row=4, column=0, sticky="nsew")
+        log_frame.grid(row=5, column=0, sticky="nsew")
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(1, weight=1)
         ttk.Label(log_frame, text="Logg:").grid(row=0, column=0, sticky="w")
@@ -243,7 +336,7 @@ class BildebankLauncher:
         scrollbar.grid(row=1, column=1, sticky="ns")
 
         status = ttk.Label(outer, textvariable=self.status_value)
-        status.grid(row=5, column=0, sticky="w", pady=(10, 0))
+        status.grid(row=6, column=0, sticky="w", pady=(10, 0))
 
     def _refresh_state(self) -> None:
         ttk = self.ttk
@@ -310,12 +403,26 @@ class BildebankLauncher:
             create_button.grid(row=0, column=1, padx=(0, 8), pady=4)
             self.buttons.append(create_button)
 
+        self._refresh_insightface_status()
         self._set_buttons_enabled(not self.busy)
+
+    def _refresh_insightface_status(self) -> None:
+        self.insightface_status = insightface_dependency_status()
+        self.insightface_status_value.set(f"InsightFace: {self.insightface_status.status}")
 
     def _set_buttons_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
         for button in self.buttons:
             button.configure(state=state)
+        if self.install_insightface_button is not None:
+            insightface_state = (
+                "normal"
+                if enabled
+                and insightface_install_supported()
+                and self.insightface_status.status != "Klar"
+                else "disabled"
+            )
+            self.install_insightface_button.configure(state=insightface_state)
 
     def _set_busy(self, busy: bool, message: str = "") -> None:
         self.busy = busy
@@ -372,6 +479,23 @@ class BildebankLauncher:
             failure_message="Thumbnail-jobb feilet.",
             on_success=self._refresh_state,
         )
+
+    def _install_insightface(self) -> None:
+        if not insightface_install_supported():
+            self._log("Kan ikke installere InsightFace her: install-insightface.ps1 er Windows-installasjonsflyt.")
+            return
+        self._log("Installerer InsightFace ...")
+        self._run_waiting_command(
+            insightface_install_command(),
+            running_message="Installerer InsightFace ...",
+            success_message="InsightFace-installasjon fullført.",
+            failure_message="InsightFace-installasjon feilet.",
+            on_success=self._insightface_install_finished,
+        )
+
+    def _insightface_install_finished(self) -> None:
+        importlib.invalidate_caches()
+        self._refresh_state()
 
     def _start_rescan_source_flow(self) -> None:
         from tkinter import messagebox
@@ -694,7 +818,7 @@ class BildebankLauncher:
 
             assert process.stdout is not None
             for line in process.stdout:
-                self.root.after(0, self._log, line.rstrip())
+                self.root.after(0, self._log_process_output, line.rstrip())
             return_code = process.wait()
             self.root.after(
                 0,
@@ -740,12 +864,25 @@ class BildebankLauncher:
         messagebox.showerror("Feil", message)
         self._log(f"{message} {exc}")
 
-    def _log(self, message: str) -> None:
+    def _log_process_output(self, message: str) -> None:
+        self._log(message, progress_key=progress_log_key(message))
+
+    def _log(self, message: str, *, progress_key: str | None = None) -> None:
         if not message:
             return
         assert self.log_text is not None
         self.log_text.configure(state="normal")
-        self.log_text.insert("end", message + "\n")
+        if progress_key is not None and progress_key == self.last_progress_log_key:
+            start = self.log_text.index("last_progress_start")
+            self.log_text.delete(start, "last_progress_end")
+            self.log_text.insert(start, message + "\n")
+        else:
+            start = self.log_text.index("end-1c")
+            self.log_text.insert("end", message + "\n")
+        if progress_key is not None:
+            self.log_text.mark_set("last_progress_start", start)
+            self.log_text.mark_set("last_progress_end", f"{start} + {len(message) + 1} chars")
+        self.last_progress_log_key = progress_key
         self.log_text.see("end")
         self.log_text.configure(state="disabled")
 
