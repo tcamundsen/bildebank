@@ -563,13 +563,7 @@ class BildebankLauncher:
         for button in self.buttons:
             button.configure(state=state)
         if self.install_insightface_button is not None:
-            insightface_state = (
-                "normal"
-                if enabled
-                and insightface_install_supported()
-                and self.insightface_status.status != "Klar"
-                else "disabled"
-            )
+            insightface_state = "normal" if enabled and insightface_install_supported() else "disabled"
             self.install_insightface_button.configure(state=insightface_state)
         if self.install_openclip_button is not None:
             openclip_state = "normal" if enabled and openclip_install_supported() else "disabled"
@@ -579,7 +573,6 @@ class BildebankLauncher:
                 "normal"
                 if enabled
                 and self.insightface_status.status == "Klar"
-                and self.face_model_status.status != "Lastet ned"
                 else "disabled"
             )
             self.download_face_model_button.configure(state=model_state)
@@ -654,6 +647,12 @@ class BildebankLauncher:
         if not insightface_install_supported():
             self._log("Kan ikke installere InsightFace her: install-insightface.ps1 er Windows-installasjonsflyt.")
             return
+        if self.insightface_status.status == "Klar" and not self._confirm_rerun(
+            "Installer InsightFace på nytt?",
+            "InsightFace-avhengighetene er allerede klare. Vil du kjøre installasjonen på nytt?",
+        ):
+            self._log("InsightFace-installasjon avbrutt.")
+            return
         self._log("Installerer InsightFace ...")
         self._run_waiting_command(
             insightface_install_command(),
@@ -670,6 +669,15 @@ class BildebankLauncher:
     def _install_openclip(self) -> None:
         if not openclip_install_supported():
             self._log("Kan ikke installere OpenCLIP her: install-openclip.ps1 er Windows-installasjonsflyt.")
+            return
+        if (
+            self.openclip_status == "Installert"
+            or self.openclip_model_status.status == "Tilgjengelig"
+        ) and not self._confirm_rerun(
+            "Installer OpenCLIP på nytt?",
+            "OpenCLIP ser allerede ut til å være installert eller ha lokal AI-modell. Vil du kjøre installasjonen på nytt?",
+        ):
+            self._log("OpenCLIP-installasjon avbrutt.")
             return
         self._log("Installerer OpenCLIP ...")
         self._run_waiting_command(
@@ -688,6 +696,15 @@ class BildebankLauncher:
         if self.insightface_status.status != "Klar":
             self._log("Kan ikke laste ned ansiktsmodell før InsightFace-avhengighetene er klare.")
             return
+        if self.face_model_status.status == "Lastet ned" and not self._confirm_rerun(
+            "Last ned ansiktsmodell på nytt?",
+            (
+                f"Ansiktsmodellen {self.face_model_status.model_name} er allerede lastet ned. "
+                "Vil du kjøre modellnedlastingen på nytt?"
+            ),
+        ):
+            self._log("Nedlasting av ansiktsmodell avbrutt.")
+            return
         self._log(f"Laster ned ansiktsmodell {self.face_model_status.model_name} ...")
         self._run_waiting_command(
             download_face_model_command(),
@@ -696,6 +713,11 @@ class BildebankLauncher:
             failure_message="Nedlasting av ansiktsmodell feilet.",
             on_success=self._refresh_state,
         )
+
+    def _confirm_rerun(self, title: str, message: str) -> bool:
+        from tkinter import messagebox
+
+        return bool(messagebox.askyesno(title, message, parent=self.root))
 
     def _start_rescan_source_flow(self) -> None:
         from tkinter import messagebox
