@@ -208,9 +208,17 @@ def test_launcher_layout_source_defines_notebook_tabs_and_log_below_tabs() -> No
     assert "log_frame = ttk.Frame(outer)" in source
     assert "log_frame = ttk.Frame(self.notebook)" not in source
     assert "footer = ttk.Frame(outer)" in source
-    assert "self.exit_button = ttk.Button(" in source
+    assert "ttk.Style(self.root).configure(BUTTON_STYLE, padding=BUTTON_PADDING)" in source
+    assert "self.exit_button = self._button(" in source
     assert 'text="Avslutt bildebank kontrollpanel"' in source
     assert 'text="Avslutt bildebank kontrollpanel"' not in refresh_source
+
+
+def test_launcher_button_helper_uses_launcher_button_style() -> None:
+    source = inspect.getsource(BildebankLauncher._button)
+
+    assert 'kwargs.setdefault("style", BUTTON_STYLE)' in source
+    assert "return self.ttk.Button(parent, **kwargs)" in source
 
 
 def test_migration_plan_needs_action_detects_version_change() -> None:
