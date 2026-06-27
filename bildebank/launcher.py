@@ -15,8 +15,8 @@ from typing import Any, Callable
 from . import db
 from .pending_deletes import list_pending_deletes
 
-PADX = 4
-PADY = 4
+PADX = 0
+PADY = 0
 
 CONFIG_DIR_NAME = "Bildebank"
 CONFIG_FILENAME = "launcher.json"
@@ -550,7 +550,6 @@ class BildebankLauncher:
             child.destroy()
         self.buttons = []
 
-        ttk.Frame(self.button_frame, height=30).grid(row=0, column=0, pady=PADY)
         if is_collection_created(self.collection_path):
             if self.migration_required:
                 self.pending_deletes_status = "Ukjent"
