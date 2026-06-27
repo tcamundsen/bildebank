@@ -21,6 +21,7 @@ from bildebank.launcher import (
     insightface_install_command,
     insightface_model_status,
     is_collection_created,
+    launcher_command,
     load_launcher_config,
     make_thumbnails_command,
     openclip_dependency_status,
@@ -36,6 +37,7 @@ from bildebank.launcher import (
     suggest_import_name,
     unimport_source_dry_run_command,
     unimport_source_command,
+    update_command,
 )
 
 
@@ -113,6 +115,8 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         str(collection),
         "make-thumbnails",
     ]
+    assert launcher_command()[-1:] == ["launcher"]
+    assert update_command()[-1:] == ["update"]
     assert check_source_command(collection, source)[-4:] == [
         "--target",
         str(collection),

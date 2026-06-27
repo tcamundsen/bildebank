@@ -155,6 +155,14 @@ def run_server_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "run-server")
 
 
+def launcher_command() -> list[str]:
+    return bildebank_command("launcher")
+
+
+def update_command() -> list[str]:
+    return bildebank_command("update")
+
+
 def doctor_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "doctor")
 
@@ -531,6 +539,8 @@ class BildebankLauncher:
             doctor_button.grid(row=2, column=0, padx=PADX, pady=PADY, sticky="ew")
             deep_doctor_button = ttk.Button(self.button_frame, text="Grundig doctor", command=self._run_deep_doctor)
             deep_doctor_button.grid(row=2, column=1, padx=PADX, pady=PADY, sticky="ew")
+            update_button = ttk.Button(self.button_frame, text="Oppdater Bildebank", command=self._run_update)
+            update_button.grid(row=2, column=2, padx=PADX, pady=PADY, sticky="ew")
             start_button = ttk.Button(self.button_frame, text="Start Bildebank", command=self._start_server)
             start_button.grid(row=3, column=1, padx=PADX, pady=PADY, sticky="ew")
             exit_button = ttk.Button(
@@ -553,6 +563,7 @@ class BildebankLauncher:
                     thumbs_button,
                     doctor_button,
                     deep_doctor_button,
+                    update_button,
                     start_button,
                     exit_button,
                     open_button,
@@ -699,6 +710,41 @@ class BildebankLauncher:
             failure_message="Grundig doctor feilet.",
             on_success=self._refresh_state,
         )
+
+    def _run_update(self) -> None:
+        from tkinter import messagebox
+
+        if not messagebox.askyesno(
+            "Oppdater Bildebank?",
+            (
+                "Bildebank-serveren stoppes hvis den kjører. Etter oppdateringen "
+                "starter kontrollpanelet på nytt."
+            ),
+            parent=self.root,
+        ):
+            self._log("Oppdatering avbrutt.")
+            return
+        self._stop_server_process()
+        self._log("Oppdaterer Bildebank ...")
+        self._run_waiting_command(
+            update_command(),
+            running_message="Oppdaterer Bildebank ...",
+            success_message="Bildebank er oppdatert. Starter kontrollpanelet på nytt ...",
+            failure_message="Oppdatering feilet.",
+            on_success=self._restart_launcher,
+        )
+
+    def _restart_launcher(self) -> None:
+        from tkinter import messagebox
+
+        try:
+            subprocess.Popen(launcher_command())
+        except OSError as exc:
+            messagebox.showerror("Kunne ikke starte kontrollpanelet", "Kontrollpanelet kunne ikke startes på nytt.")
+            self._log(f"Kunne ikke starte kontrollpanelet på nytt: {exc}")
+            return
+        self._log("Nytt kontrollpanel startet. Lukker dette vinduet.")
+        self.root.destroy()
 
     def _install_insightface(self) -> None:
         if not insightface_install_supported():

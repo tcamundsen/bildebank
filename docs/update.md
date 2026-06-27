@@ -20,5 +20,8 @@ Eksempel:
 bildebank update
 ```
 
+Du kan også starte samme oppdatering fra Bildebank kontrollpanel med knappen
+`Oppdater Bildebank`.
+
 Etter en oppgradering kan det hende programmet ber deg kjøre
 `bildebank migrate` for å oppdatere databasen.
