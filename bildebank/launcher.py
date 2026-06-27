@@ -733,7 +733,7 @@ class BildebankLauncher:
                     "Hvis alle filene i mappen du har importert fra finnes i bildesamlingen "
                     "så er det i prinsippet trygt å slette mappen du importerte bildene fra.",
                 )
-                geo_button = ttk.Button(self.tools_button_frame, text="Scan GPS", command=self._run_geo_scan)
+                geo_button = ttk.Button(self.tools_button_frame, text="Les GPS fra bilder", command=self._run_geo_scan)
                 geo_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     geo_button,
@@ -741,7 +741,7 @@ class BildebankLauncher:
                 )
                 thumbs_button = ttk.Button(
                     self.tools_button_frame,
-                    text="Lag thumbnails",
+                    text="Lag miniatyrbilder",
                     command=self._run_make_thumbnails,
                 )
                 thumbs_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
@@ -749,7 +749,7 @@ class BildebankLauncher:
                     thumbs_button,
                     "Lag småbilder av alle bildene som kan brukes for at månedsvisning skal laste raskere."
                 )
-                face_button = ttk.Button(self.tools_button_frame, text="Scan ansikter", command=self._run_face_scan)
+                face_button = ttk.Button(self.tools_button_frame, text="Finn ansikter", command=self._run_face_scan)
                 face_button.grid(row=0, column=2, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     face_button,
@@ -773,7 +773,7 @@ class BildebankLauncher:
                 )
                 deep_doctor_button = ttk.Button(
                     self.tools_button_frame,
-                    text="Grundig grundig",
+                    text="Grundig sjekk",
                     command=self._run_deep_doctor,
                 )
                 deep_doctor_button.grid(row=1, column=1, padx=PADX, pady=PADY, sticky="ew")
