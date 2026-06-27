@@ -459,7 +459,7 @@ class BildebankLauncher:
         self.root.minsize(640, 460)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        self.collection_value: tk.StringVar = tk.StringVar(value=str(self.collection_path))
+        self.collection_value: tk.StringVar = tk.StringVar(value="Bildesamling: " + str(self.collection_path))
         self.status_value: tk.StringVar = tk.StringVar(value="")
         self.insightface_status_value: tk.StringVar = tk.StringVar(value="")
         self.insightface_model_status_value: tk.StringVar = tk.StringVar(value="")
@@ -557,10 +557,10 @@ class BildebankLauncher:
         self.notebook = ttk.Notebook(outer)
         self.notebook.grid(row=1, column=0, sticky="ew", pady=(18, 18))
 
-        self.main_tab = ttk.Frame(self.notebook, padding=8)
-        self.import_tab = ttk.Frame(self.notebook, padding=8)
-        self.tools_tab = ttk.Frame(self.notebook, padding=8)
-        self.setup_tab = ttk.Frame(self.notebook, padding=8)
+        self.main_tab = ttk.Frame(self.notebook, padding=12)
+        self.import_tab = ttk.Frame(self.notebook, padding=12)
+        self.tools_tab = ttk.Frame(self.notebook, padding=12)
+        self.setup_tab = ttk.Frame(self.notebook, padding=12)
         self.notebook.add(self.main_tab, text="Bildebank")
         self.notebook.add(self.import_tab, text="Import av bilder")
         self.notebook.add(self.tools_tab, text="Verktøy")
@@ -573,15 +573,16 @@ class BildebankLauncher:
 
         collection_frame = ttk.Frame(self.main_tab)
         collection_frame.grid(row=0, column=0, sticky="w")
-        ttk.Label(collection_frame, text="Bildesamling:").grid(row=0, column=0, sticky="w")
+
         collection_label = ttk.Label(collection_frame, textvariable=self.collection_value, wraplength=560)
-        collection_label.grid(row=1, column=0, sticky="w")
+        collection_label.grid(row=0, column=0, sticky="w", padx=(12, 0), pady=12, columnspan=2)
+
         self.choose_collection_button = self._button(
             collection_frame,
             text="Velg annen plassering",
             command=self._choose_collection,
         )
-        self.choose_collection_button.grid(row=0, column=1, sticky="w", padx=(12, 0))
+        self.choose_collection_button.grid(row=1, column=0, sticky="w", padx=PADX, pady=PADY)
         self.create_collection_button = self._button(
             collection_frame,
             text="Opprett bildesamling",
@@ -592,10 +593,13 @@ class BildebankLauncher:
             "Lag en bildesamling på stedet vist til venstre. Klikk 'Velg annen plassering' "
             "for å finne bildesamlingen din eller opprette en ny et annet sted."
         )
-        self.create_collection_button.grid(row=0, column=2, sticky="w", padx=(12, 0), pady=(4, 0))
+        self.create_collection_button.grid(row=1, column=1, sticky="w", padx=(12, 0), pady=(4, 0))
+
+        separator = ttk.Separator(self.main_tab, orient="horizontal")
+        separator.grid(row=1, column=0, sticky="ew", pady=(12, 12))
 
         self.main_button_frame = ttk.Frame(self.main_tab)
-        self.main_button_frame.grid(row=1, column=0, sticky="w", pady=(14, 0))
+        self.main_button_frame.grid(row=2, column=0, sticky="w")
 
         self.import_button_frame = ttk.Frame(self.import_tab)
         self.import_button_frame.grid(row=0, column=0, sticky="w")
@@ -605,7 +609,7 @@ class BildebankLauncher:
         ttk.Label(insightface_frame, textvariable=self.insightface_status_value).grid(
             row=0,
             column=0,
-            sticky="w",
+            sticky="e",
             padx=(0, 12),
         )
         self.install_insightface_button = self._button(
@@ -613,22 +617,25 @@ class BildebankLauncher:
             text="Installer InsightFace",
             command=self._install_insightface,
         )
-        self.install_insightface_button.grid(row=0, column=1, sticky="w")
+        self.install_insightface_button.grid(row=0, column=1, sticky="w", pady=PADY)
         ttk.Label(insightface_frame, textvariable=self.insightface_model_status_value).grid(
-            row=0,
-            column=2,
-            sticky="w",
-            padx=(12, 12),
+            row=1,
+            column=0,
+            sticky="e",
+            padx=(0, 12),
         )
         self.download_face_model_button = self._button(
             insightface_frame,
             text="Last ned modell",
             command=self._download_face_model,
         )
-        self.download_face_model_button.grid(row=0, column=3, sticky="w")
+        self.download_face_model_button.grid(row=1, column=1, sticky="w", pady=PADY)
+
+        setup_separator = ttk.Separator(self.setup_tab, orient="horizontal")
+        setup_separator.grid(row=1, column=0, sticky="ew", pady=(12, 12))
 
         openclip_frame = ttk.Frame(self.setup_tab)
-        openclip_frame.grid(row=1, column=0, sticky="w", pady=(8, 0))
+        openclip_frame.grid(row=2, column=0, sticky="w")
         self.install_openclip_button = self._button(
             openclip_frame,
             text="Installer OpenCLIP",
@@ -648,7 +655,7 @@ class BildebankLauncher:
         )
 
         self.tools_button_frame = ttk.Frame(self.tools_tab)
-        self.tools_button_frame.grid(row=2, column=0, sticky="w", pady=(14, 0))
+        self.tools_button_frame.grid(row=2, column=0, sticky="w")
 
         log_frame = ttk.Frame(outer)
         log_frame.grid(row=2, column=0, sticky="nsew")
@@ -1053,7 +1060,7 @@ class BildebankLauncher:
             return
         self._stop_server_process()
         self.collection_path = Path(selected)
-        self.collection_value.set(str(self.collection_path))
+        self.collection_value.set("Bildesamling:" + str(self.collection_path))
         self.config = LauncherConfig(collection_path=self.collection_path)
         try:
             save_launcher_config(self.config)

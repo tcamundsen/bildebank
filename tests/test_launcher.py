@@ -198,10 +198,11 @@ def test_launcher_layout_source_defines_notebook_tabs_and_log_below_tabs() -> No
 
     assert "ttk.Notebook(outer)" in source
     assert 'self.notebook.add(self.main_tab, text="Bildebank")' in source
-    assert 'self.notebook.add(self.import_tab, text="Import og kilder")' in source
+    assert 'self.notebook.add(self.import_tab, text="Import av bilder")' in source
     assert 'self.notebook.add(self.tools_tab, text="Verktøy")' in source
     assert 'self.notebook.add(self.setup_tab, text="Oppsett")' in source
     assert "insightface_frame = ttk.Frame(self.setup_tab)" in source
+    assert 'ttk.Separator(self.setup_tab, orient="horizontal")' in source
     assert "openclip_frame = ttk.Frame(self.setup_tab)" in source
     assert "insightface_frame = ttk.Frame(self.tools_tab)" not in source
     assert "openclip_frame = ttk.Frame(self.tools_tab)" not in source
