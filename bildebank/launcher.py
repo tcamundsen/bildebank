@@ -263,25 +263,25 @@ class BildebankLauncher:
 
         if is_collection_created(self.collection_path):
             import_button = ttk.Button(self.button_frame, text="Importer bilder", command=self._start_import_flow)
-            import_button.grid(row=0, column=1, padx=(0, 8), pady=4)
+            import_button.grid(row=1, column=0, padx=(0, 8), pady=4)
             rescan_button = ttk.Button(self.button_frame, text="Rescan kilde", command=self._start_rescan_source_flow)
-            rescan_button.grid(row=0, column=2, padx=(0, 8), pady=4)
+            rescan_button.grid(row=1, column=2, padx=(0, 8), pady=4)
             check_button = ttk.Button(self.button_frame, text="Sjekk kilde", command=self._start_check_source_flow)
-            check_button.grid(row=0, column=3, padx=(0, 8), pady=4)
+            check_button.grid(row=1, column=3, padx=(0, 8), pady=4)
             unimport_button = ttk.Button(self.button_frame, text="Unimport", command=self._start_unimport_source_flow)
-            unimport_button.grid(row=0, column=4, padx=(0, 8), pady=4)
+            unimport_button.grid(row=1, column=1, padx=(0, 8), pady=4)
             geo_button = ttk.Button(self.button_frame, text="Scan GPS", command=self._run_geo_scan)
-            geo_button.grid(row=1, column=1, padx=(0, 8), pady=4)
+            geo_button.grid(row=2, column=0, padx=(0, 8), pady=4)
             thumbs_button = ttk.Button(
                 self.button_frame,
                 text="Lag thumbnails",
                 command=self._run_make_thumbnails,
             )
-            thumbs_button.grid(row=1, column=2, padx=(0, 8), pady=4)
+            thumbs_button.grid(row=2, column=1, padx=(0, 8), pady=4)
             start_button = ttk.Button(self.button_frame, text="Start Bildebank", command=self._start_server)
-            start_button.grid(row=1, column=3, padx=(0, 8), pady=4)
+            start_button.grid(row=3, column=1, padx=(0, 8), pady=4)
             open_button = ttk.Button(self.button_frame, text="Åpne bildesamling", command=self._open_collection)
-            open_button.grid(row=1, column=4, padx=(0, 8), pady=4)
+            open_button.grid(row=3, column=0, padx=(0, 8), pady=4)
             self.buttons.extend(
                 [
                     import_button,
