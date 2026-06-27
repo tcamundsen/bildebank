@@ -55,6 +55,14 @@ class InsightFaceModelStatus:
     detail: str = ""
 
 
+@dataclass(frozen=True)
+class OpenClipModelStatus:
+    model_name: str
+    pretrained: str
+    status: str
+    detail: str = ""
+
+
 def default_collection_path() -> Path:
     return Path.home() / "kode" / "bilde-samling"
 
@@ -199,6 +207,28 @@ def openclip_install_supported() -> bool:
     return os.name == "nt"
 
 
+def openclip_dependency_status() -> str:
+    if importlib.util.find_spec("open_clip") is not None:
+        return "Installert"
+    return "Mangler"
+
+
+def openclip_model_status(repo_root: Path | None = None) -> OpenClipModelStatus:
+    from .config import load_config
+
+    config = load_config(repo_root or program_repo_root()).openclip
+    if _openclip_model_files_exist(config.model_root):
+        return OpenClipModelStatus(config.model_name, config.pretrained, "Tilgjengelig", str(config.model_root))
+    return OpenClipModelStatus(config.model_name, config.pretrained, "Mangler", str(config.model_root))
+
+
+def _openclip_model_files_exist(model_root: Path) -> bool:
+    if not model_root.is_dir():
+        return False
+    model_extensions = {".bin", ".pt", ".pth", ".safetensors"}
+    return any(path.is_file() and path.suffix.lower() in model_extensions for path in model_root.rglob("*"))
+
+
 def insightface_dependency_status() -> InsightFaceDependencyStatus:
     from .face import insightface_runtime_error
 
@@ -305,6 +335,8 @@ class BildebankLauncher:
         self.status_value: tk.StringVar = tk.StringVar(value="")
         self.insightface_status_value: tk.StringVar = tk.StringVar(value="")
         self.insightface_model_status_value: tk.StringVar = tk.StringVar(value="")
+        self.openclip_status_value: tk.StringVar = tk.StringVar(value="")
+        self.openclip_model_status_value: tk.StringVar = tk.StringVar(value="")
         self.button_frame: ttk.Frame | None = None
         self.log_text: tk.Text | None = None
         self.buttons: list[ttk.Button] = []
@@ -313,6 +345,8 @@ class BildebankLauncher:
         self.download_face_model_button: ttk.Button | None = None
         self.insightface_status = insightface_dependency_status()
         self.face_model_status = insightface_model_status()
+        self.openclip_status = openclip_dependency_status()
+        self.openclip_model_status = openclip_model_status()
         self.active_progress_log_key: str | None = None
         self.active_progress_log_range: tuple[str, str] | None = None
 
@@ -408,6 +442,17 @@ class BildebankLauncher:
             command=self._install_openclip,
         )
         self.install_openclip_button.grid(row=0, column=0, sticky="w")
+        ttk.Label(openclip_frame, textvariable=self.openclip_status_value).grid(
+            row=0,
+            column=1,
+            sticky="w",
+            padx=(12, 12),
+        )
+        ttk.Label(openclip_frame, textvariable=self.openclip_model_status_value).grid(
+            row=0,
+            column=2,
+            sticky="w",
+        )
 
         self.button_frame = ttk.Frame(outer)
         self.button_frame.grid(row=5, column=0, sticky="w", pady=(14, 18))
@@ -496,6 +541,7 @@ class BildebankLauncher:
             self.buttons.append(create_button)
 
         self._refresh_insightface_status()
+        self._refresh_openclip_status()
         self._set_buttons_enabled(not self.busy)
 
     def _refresh_insightface_status(self) -> None:
@@ -505,6 +551,12 @@ class BildebankLauncher:
         self.insightface_model_status_value.set(
             f"Valgt modell: {self.face_model_status.model_name} ({self.face_model_status.status})"
         )
+
+    def _refresh_openclip_status(self) -> None:
+        self.openclip_status = openclip_dependency_status()
+        self.openclip_status_value.set(f"open_clip: {self.openclip_status}")
+        self.openclip_model_status = openclip_model_status()
+        self.openclip_model_status_value.set(f"AI-modell: {self.openclip_model_status.status}")
 
     def _set_buttons_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"

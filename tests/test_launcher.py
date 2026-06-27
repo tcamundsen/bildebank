@@ -20,7 +20,9 @@ from bildebank.launcher import (
     is_collection_created,
     load_launcher_config,
     make_thumbnails_command,
+    openclip_dependency_status,
     openclip_install_command,
+    openclip_model_status,
     progress_log_key,
     registered_sources,
     rescan_source_candidates,
@@ -207,6 +209,55 @@ def test_openclip_install_command_runs_existing_powershell_script(tmp_path: Path
         "-File",
         str(tmp_path / "install-openclip.ps1"),
     ]
+
+
+def test_openclip_status_reports_installed_when_module_exists() -> None:
+    with patch("importlib.util.find_spec", return_value=object()):
+        assert openclip_dependency_status() == "Installert"
+
+
+def test_openclip_status_reports_missing_when_module_is_missing() -> None:
+    with patch("importlib.util.find_spec", return_value=None):
+        assert openclip_dependency_status() == "Mangler"
+
+
+def test_openclip_model_status_reports_available_when_model_file_exists(tmp_path: Path) -> None:
+    (tmp_path / "bildebank-config.toml").write_text(
+        """
+[openclip]
+model_root = ".bildebank-openclip"
+model_name = "ViT-B-32"
+pretrained = "laion2b_s34b_b79k"
+""",
+        encoding="utf-8",
+    )
+    model_dir = tmp_path / ".bildebank-openclip" / "models--laion"
+    model_dir.mkdir(parents=True)
+    (model_dir / "open_clip_pytorch_model.bin").write_bytes(b"model")
+
+    status = openclip_model_status(tmp_path)
+
+    assert status.model_name == "ViT-B-32"
+    assert status.pretrained == "laion2b_s34b_b79k"
+    assert status.status == "Tilgjengelig"
+
+
+def test_openclip_model_status_reports_missing_when_model_file_is_missing(tmp_path: Path) -> None:
+    (tmp_path / "bildebank-config.toml").write_text(
+        """
+[openclip]
+model_root = ".bildebank-openclip"
+model_name = "ViT-B-32"
+pretrained = "laion2b_s34b_b79k"
+""",
+        encoding="utf-8",
+    )
+
+    status = openclip_model_status(tmp_path)
+
+    assert status.model_name == "ViT-B-32"
+    assert status.pretrained == "laion2b_s34b_b79k"
+    assert status.status == "Mangler"
 
 
 def test_insightface_model_status_reports_downloaded_selected_model(tmp_path: Path) -> None:
