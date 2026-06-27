@@ -769,7 +769,13 @@ class BildebankLauncher:
             self.pending_deletes_count = None
             assert self.create_collection_button is not None
             self.create_collection_button.grid()
-            self.buttons.append(self.create_collection_button)
+            exit_button = ttk.Button(
+                self.button_frame,
+                text="Avslutt bildebank kontrollpanel",
+                command=self._on_close,
+            )
+            exit_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
+            self.buttons.extend([self.create_collection_button, exit_button])
 
         self._refresh_insightface_status()
         self._refresh_openclip_status()
