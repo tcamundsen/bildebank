@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import inspect
 import os
 from pathlib import Path
 from unittest.mock import patch
 
 from bildebank import db
 from bildebank.launcher import (
+    BildebankLauncher,
     LauncherConfig,
     check_source_command,
     cleanup_pending_deletes_apply_command,
@@ -185,6 +187,27 @@ def test_open_server_browser_window_opens_default_run_server_url() -> None:
 
     assert server_browser_url() == "http://127.0.0.1:8765/"
     open_browser.assert_called_once_with("http://127.0.0.1:8765/", new=1)
+
+
+def test_launcher_layout_source_defines_notebook_tabs_and_log_below_tabs() -> None:
+    source = inspect.getsource(BildebankLauncher._build_gui)
+    refresh_source = inspect.getsource(BildebankLauncher._refresh_state)
+
+    assert "ttk.Notebook(outer)" in source
+    assert 'self.notebook.add(self.main_tab, text="Bildebank")' in source
+    assert 'self.notebook.add(self.import_tab, text="Import og kilder")' in source
+    assert 'self.notebook.add(self.tools_tab, text="Verktøy")' in source
+    assert 'self.notebook.add(self.setup_tab, text="Oppsett")' in source
+    assert "insightface_frame = ttk.Frame(self.setup_tab)" in source
+    assert "openclip_frame = ttk.Frame(self.setup_tab)" in source
+    assert "insightface_frame = ttk.Frame(self.tools_tab)" not in source
+    assert "openclip_frame = ttk.Frame(self.tools_tab)" not in source
+    assert "log_frame = ttk.Frame(outer)" in source
+    assert "log_frame = ttk.Frame(self.notebook)" not in source
+    assert "footer = ttk.Frame(outer)" in source
+    assert "self.exit_button = ttk.Button(" in source
+    assert 'text="Avslutt bildebank kontrollpanel"' in source
+    assert 'text="Avslutt bildebank kontrollpanel"' not in refresh_source
 
 
 def test_migration_plan_needs_action_detects_version_change() -> None:

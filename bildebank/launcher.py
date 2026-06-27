@@ -17,8 +17,8 @@ from .config import load_launcher_collection_path, set_launcher_collection_path
 from .pending_deletes import list_pending_deletes
 from .server import DEFAULT_HOST, DEFAULT_PORT
 
-PADX = 0
-PADY = 0
+PADX = 4
+PADY = 4
 
 PROGRESS_LOG_LABELS = (
     "Import",
@@ -434,7 +434,14 @@ class BildebankLauncher:
         self.insightface_model_status_value: tk.StringVar = tk.StringVar(value="")
         self.openclip_status_value: tk.StringVar = tk.StringVar(value="")
         self.openclip_model_status_value: tk.StringVar = tk.StringVar(value="")
-        self.button_frame: ttk.Frame | None = None
+        self.notebook: ttk.Notebook | None = None
+        self.main_tab: ttk.Frame | None = None
+        self.import_tab: ttk.Frame | None = None
+        self.tools_tab: ttk.Frame | None = None
+        self.setup_tab: ttk.Frame | None = None
+        self.main_button_frame: ttk.Frame | None = None
+        self.import_button_frame: ttk.Frame | None = None
+        self.tools_button_frame: ttk.Frame | None = None
         self.log_text: tk.Text | None = None
         self.buttons: list[ttk.Button] = []
         self.choose_collection_button: ttk.Button | None = None
@@ -442,6 +449,7 @@ class BildebankLauncher:
         self.install_insightface_button: ttk.Button | None = None
         self.install_openclip_button: ttk.Button | None = None
         self.download_face_model_button: ttk.Button | None = None
+        self.exit_button: ttk.Button | None = None
         self.tooltips: list[Tooltip] = []
         self.pending_deletes_status: str = "Ukjent"
         self.pending_deletes_count: int | None = None
@@ -508,13 +516,30 @@ class BildebankLauncher:
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
         outer.columnconfigure(0, weight=1)
-        outer.rowconfigure(6, weight=1)
+        outer.rowconfigure(2, weight=1)
 
         title = ttk.Label(outer, text="Bildebank kontrollpanel", font=("", 15, "bold"))
         title.grid(row=0, column=0, sticky="w")
 
-        collection_frame = ttk.Frame(outer)
-        collection_frame.grid(row=1, column=0, rowspan=2, sticky="w", pady=(18, 0))
+        self.notebook = ttk.Notebook(outer)
+        self.notebook.grid(row=1, column=0, sticky="ew", pady=(18, 18))
+
+        self.main_tab = ttk.Frame(self.notebook, padding=8)
+        self.import_tab = ttk.Frame(self.notebook, padding=8)
+        self.tools_tab = ttk.Frame(self.notebook, padding=8)
+        self.setup_tab = ttk.Frame(self.notebook, padding=8)
+        self.notebook.add(self.main_tab, text="Bildebank")
+        self.notebook.add(self.import_tab, text="Import og kilder")
+        self.notebook.add(self.tools_tab, text="Verktøy")
+        self.notebook.add(self.setup_tab, text="Oppsett")
+
+        self.main_tab.columnconfigure(0, weight=1)
+        self.import_tab.columnconfigure(0, weight=1)
+        self.tools_tab.columnconfigure(0, weight=1)
+        self.setup_tab.columnconfigure(0, weight=1)
+
+        collection_frame = ttk.Frame(self.main_tab)
+        collection_frame.grid(row=0, column=0, sticky="w")
         ttk.Label(collection_frame, text="Bildesamling:").grid(row=0, column=0, sticky="w")
         collection_label = ttk.Label(collection_frame, textvariable=self.collection_value, wraplength=560)
         collection_label.grid(row=1, column=0, sticky="w")
@@ -536,8 +561,14 @@ class BildebankLauncher:
         )
         self.create_collection_button.grid(row=0, column=2, sticky="w", padx=(12, 0), pady=(4, 0))
 
-        insightface_frame = ttk.Frame(outer)
-        insightface_frame.grid(row=3, column=0, sticky="w", pady=(14, 0))
+        self.main_button_frame = ttk.Frame(self.main_tab)
+        self.main_button_frame.grid(row=1, column=0, sticky="w", pady=(14, 0))
+
+        self.import_button_frame = ttk.Frame(self.import_tab)
+        self.import_button_frame.grid(row=0, column=0, sticky="w")
+
+        insightface_frame = ttk.Frame(self.setup_tab)
+        insightface_frame.grid(row=0, column=0, sticky="w")
         ttk.Label(insightface_frame, textvariable=self.insightface_status_value).grid(
             row=0,
             column=0,
@@ -563,8 +594,8 @@ class BildebankLauncher:
         )
         self.download_face_model_button.grid(row=0, column=3, sticky="w")
 
-        openclip_frame = ttk.Frame(outer)
-        openclip_frame.grid(row=4, column=0, sticky="w", pady=(8, 0))
+        openclip_frame = ttk.Frame(self.setup_tab)
+        openclip_frame.grid(row=1, column=0, sticky="w", pady=(8, 0))
         self.install_openclip_button = ttk.Button(
             openclip_frame,
             text="Installer OpenCLIP",
@@ -583,11 +614,11 @@ class BildebankLauncher:
             sticky="w",
         )
 
-        self.button_frame = ttk.Frame(outer)
-        self.button_frame.grid(row=5, column=0, sticky="w", pady=(14, 18))
+        self.tools_button_frame = ttk.Frame(self.tools_tab)
+        self.tools_button_frame.grid(row=2, column=0, sticky="w", pady=(14, 0))
 
         log_frame = ttk.Frame(outer)
-        log_frame.grid(row=6, column=0, sticky="nsew")
+        log_frame.grid(row=2, column=0, sticky="nsew")
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(1, weight=1)
         ttk.Label(log_frame, text="Logg:").grid(row=0, column=0, sticky="w")
@@ -598,18 +629,30 @@ class BildebankLauncher:
         self.log_text.grid(row=1, column=0, sticky="nsew")
         scrollbar.grid(row=1, column=1, sticky="ns")
 
-        status = ttk.Label(outer, textvariable=self.status_value)
-        status.grid(row=7, column=0, sticky="w", pady=(10, 0))
+        footer = ttk.Frame(outer)
+        footer.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        footer.columnconfigure(0, weight=1)
+        status = ttk.Label(footer, textvariable=self.status_value)
+        status.grid(row=0, column=0, sticky="w")
+        self.exit_button = ttk.Button(
+            footer,
+            text="Avslutt bildebank kontrollpanel",
+            command=self._on_close,
+        )
+        self.exit_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
 
     def _refresh_state(self) -> None:
         ttk = self.ttk
-        assert self.button_frame is not None
+        assert self.main_button_frame is not None
+        assert self.import_button_frame is not None
+        assert self.tools_button_frame is not None
 
         for tooltip in self.tooltips:
             tooltip.hide()
         self.tooltips = []
-        for child in self.button_frame.winfo_children():
-            child.destroy()
+        for frame in (self.main_button_frame, self.import_button_frame, self.tools_button_frame):
+            for child in frame.winfo_children():
+                child.destroy()
         self.buttons = []
         if self.create_collection_button is not None:
             self.create_collection_button.grid_remove()
@@ -618,10 +661,10 @@ class BildebankLauncher:
             if self.migration_required:
                 self.pending_deletes_status = "Ukjent"
                 self.pending_deletes_count = None
-                migrate_button = ttk.Button(self.button_frame, text="Migrer", command=self._run_migrate)
+                migrate_button = ttk.Button(self.main_button_frame, text="Migrer", command=self._run_migrate)
                 migrate_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
                 exit_button = ttk.Button(
-                    self.button_frame,
+                    self.main_button_frame,
                     text="Avslutt uten å migrere",
                     command=self._on_close,
                 )
@@ -630,36 +673,59 @@ class BildebankLauncher:
             elif self.migration_status_error is not None:
                 self.pending_deletes_status = "Ukjent"
                 self.pending_deletes_count = None
-                exit_button = ttk.Button(
-                    self.button_frame,
-                    text="Avslutt bildebank kontrollpanel",
-                    command=self._on_close,
-                )
-                exit_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
-                self.buttons.append(exit_button)
             else:
                 self._refresh_pending_deletes_status()
-                import_button = ttk.Button(self.button_frame, text="Importer bilder", command=self._start_import_flow)
+                start_button = ttk.Button(
+                    self.main_button_frame,
+                    text="Start Bildebank i nettleser",
+                    command=self._start_server,
+                )
+                start_button.grid(row=0, column=0, padx=PADX, pady=PADY, columnspan=2, sticky="ew")
+                update_button = ttk.Button(self.main_button_frame, text="Oppdater Bildebank", command=self._run_update)
+                update_button.grid(row=0, column=2, padx=PADX, pady=PADY, sticky="ew")
+                self._add_tooltip(
+                    update_button,
+                    "Oppdaterer Bildebank til siste utgave. "
+                    "Dette tilsvarer kommandoen 'bildebank update' ",
+                )
+
+                import_button = ttk.Button(
+                    self.import_button_frame,
+                    text="Importer bilder",
+                    command=self._start_import_flow,
+                )
                 import_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     import_button,
                     "Registrerer og importerer bildene fra en mappe, USB-brikke, CD eller disk."
                 )
-                unimport_button = ttk.Button(self.button_frame, text="Unimport", command=self._start_unimport_source_flow)
+                unimport_button = ttk.Button(
+                    self.import_button_frame,
+                    text="Angre import",
+                    command=self._start_unimport_source_flow,
+                )
                 unimport_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     unimport_button,
                     "Reverser en tidligere import. Kontrollerer først at alle registrerte kildefiler "
                     "fortsatt finnes med samme innhold. Krever nøyaktig bekreftelse før noe endres."
                 )
-                rescan_button = ttk.Button(self.button_frame, text="Rescan kilde", command=self._start_rescan_source_flow)
+                rescan_button = ttk.Button(
+                    self.import_button_frame,
+                    text="Rescan kilde",
+                    command=self._start_rescan_source_flow,
+                )
                 rescan_button.grid(row=0, column=2, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     rescan_button,
                     "Scan en mappe du har importert bilder fra en gang til. Bruk dette hvis bildebank "
                     "har blitt forbedret, og nå støtter flere bildefiler."
                 )
-                check_button = ttk.Button(self.button_frame, text="Sjekk kilde", command=self._start_check_source_flow)
+                check_button = ttk.Button(
+                    self.import_button_frame,
+                    text="Sjekk kilde",
+                    command=self._start_check_source_flow,
+                )
                 check_button.grid(row=0, column=3, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     check_button,
@@ -667,67 +733,68 @@ class BildebankLauncher:
                     "Hvis alle filene i mappen du har importert fra finnes i bildesamlingen "
                     "så er det i prinsippet trygt å slette mappen du importerte bildene fra.",
                 )
-                geo_button = ttk.Button(self.button_frame, text="Scan GPS", command=self._run_geo_scan)
-                geo_button.grid(row=1, column=0, padx=PADX, pady=PADY, sticky="ew")
+                geo_button = ttk.Button(self.tools_button_frame, text="Scan GPS", command=self._run_geo_scan)
+                geo_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     geo_button,
                     "Scann bildene med exiftool for å finne ut hvor bildene ble tatt."
                 )
                 thumbs_button = ttk.Button(
-                    self.button_frame,
+                    self.tools_button_frame,
                     text="Lag thumbnails",
                     command=self._run_make_thumbnails,
                 )
-                thumbs_button.grid(row=1, column=1, padx=PADX, pady=PADY, sticky="ew")
+                thumbs_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     thumbs_button,
                     "Lag småbilder av alle bildene som kan brukes for at månedsvisning skal laste raskere."
                 )
-                face_button = ttk.Button(self.button_frame, text="Scan ansikter", command=self._run_face_scan)
-                face_button.grid(row=1, column=2, padx=PADX, pady=PADY, sticky="ew")
+                face_button = ttk.Button(self.tools_button_frame, text="Scan ansikter", command=self._run_face_scan)
+                face_button.grid(row=0, column=2, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     face_button,
                     "Kjører 'bildebank face-scan'. Denne kommandoen scanner bildene etter ansikter. "
                     "Må kjøres på nytt når du legger til nye biler."
                 )
-                image_scan_button = ttk.Button(self.button_frame, text="Scan bildesøk", command=self._run_image_scan)
-                image_scan_button.grid(row=1, column=3, padx=PADX, pady=PADY, sticky="ew")
+                image_scan_button = ttk.Button(self.tools_button_frame, text="Klargjør bildesøk", command=self._run_image_scan)
+                image_scan_button.grid(row=0, column=3, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     image_scan_button,
                     "Kjører 'bildebank image-scan'. Denne kommandoen gjør at du "
                     "kan gjøre klikke Bildesøk i nettleseren og skrive søkeord der. "
                     "Kommandoen må scanne nye bilder for at det kan søkes i dem."
                 )
-                doctor_button = ttk.Button(self.button_frame, text="Doctor", command=self._run_doctor)
-                doctor_button.grid(row=2, column=0, padx=PADX, pady=PADY, sticky="ew")
+                doctor_button = ttk.Button(self.tools_button_frame, text="Sjekk bildebank", command=self._run_doctor)
+                doctor_button.grid(row=1, column=0, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     doctor_button,
                     "Kjør en status-sjekk av Bildebank og bildesamlingen. "
                     "Du kan få forslag til tiltak som må gjøres."
                 )
-                deep_doctor_button = ttk.Button(self.button_frame, text="Grundig doctor", command=self._run_deep_doctor)
-                deep_doctor_button.grid(row=2, column=1, padx=PADX, pady=PADY, sticky="ew")
+                deep_doctor_button = ttk.Button(
+                    self.tools_button_frame,
+                    text="Grundig grundig",
+                    command=self._run_deep_doctor,
+                )
+                deep_doctor_button.grid(row=1, column=1, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     deep_doctor_button,
                     "Kjør en status-sjekk av Bildebank og bildesamlingen. "
                     "Denne kjører en enda grundigere sjekk, og kan ta litt tid å fullføre. "
                     "Du kan få forslag til tiltak som må gjøres. "
                 )
-                update_button = ttk.Button(self.button_frame, text="Oppdater Bildebank", command=self._run_update)
-                update_button.grid(row=2, column=2, padx=PADX, pady=PADY, sticky="ew")
-                self._add_tooltip(
-                    update_button,
-                    "Oppdaterer Bildebank til siste utgave. "
-                    "Dette tilsvarer kommandoen 'bildebank update' ",
+                vacuum_button = ttk.Button(
+                    self.tools_button_frame,
+                    text="Rydd databaser",
+                    command=self._run_vacuum,
                 )
-                vacuum_button = ttk.Button(self.button_frame, text="Vacuum databaser", command=self._run_vacuum)
-                vacuum_button.grid(row=3, column=0, padx=PADX, pady=PADY, sticky="ew")
+                vacuum_button.grid(row=1, column=2, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     vacuum_button,
                     "Bildebank reduserer størrelsen på databasene, hvis mulig."
                 )
                 pending_button = ttk.Button(
-                    self.button_frame,
+                    self.tools_button_frame,
                     text=self._pending_deletes_button_text(),
                     command=self._show_pending_deletes,
                 )
@@ -736,17 +803,11 @@ class BildebankLauncher:
                     "Hvis det finnes filer her, så har en jobb som skulle flytte eller slette "
                     "blitt avbrutt. Knappen brukes til å fullføre jobben på en trygg måte.",
                 )
-                pending_button.grid(row=2, column=3, padx=PADX, pady=PADY, sticky="ew")
-                start_button = ttk.Button(self.button_frame, text="Start Bildebank i nettleser", command=self._start_server)
-                start_button.grid(row=4, column=0, padx=PADX, pady=PADY, columnspan=2, sticky="ew")
-                exit_button = ttk.Button(
-                    self.button_frame,
-                    text="Avslutt bildebank kontrollpanel",
-                    command=self._on_close,
-                )
-                exit_button.grid(row=4, column=2, padx=PADX, pady=PADY, sticky="ew", columnspan=2)
+                pending_button.grid(row=1, column=3, padx=PADX, pady=PADY, sticky="ew")
                 self.buttons.extend(
                     [
+                        start_button,
+                        update_button,
                         import_button,
                         rescan_button,
                         check_button,
@@ -757,11 +818,8 @@ class BildebankLauncher:
                         thumbs_button,
                         doctor_button,
                         deep_doctor_button,
-                        update_button,
                         vacuum_button,
                         pending_button,
-                        start_button,
-                        exit_button,
                     ]
                 )
         else:
@@ -769,13 +827,7 @@ class BildebankLauncher:
             self.pending_deletes_count = None
             assert self.create_collection_button is not None
             self.create_collection_button.grid()
-            exit_button = ttk.Button(
-                self.button_frame,
-                text="Avslutt bildebank kontrollpanel",
-                command=self._on_close,
-            )
-            exit_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
-            self.buttons.extend([self.create_collection_button, exit_button])
+            self.buttons.append(self.create_collection_button)
 
         self._refresh_insightface_status()
         self._refresh_openclip_status()
@@ -841,6 +893,8 @@ class BildebankLauncher:
                 else "disabled"
             )
             self.download_face_model_button.configure(state=model_state)
+        if self.exit_button is not None:
+            self.exit_button.configure(state=state)
 
     def _set_busy(self, busy: bool, message: str = "") -> None:
         self.busy = busy
@@ -1525,7 +1579,7 @@ class BildebankLauncher:
             except OSError as exc:
                 self.root.after(
                     0,
-                    lambda: self._command_start_failed(failure_message, exc),
+                    lambda exc=exc: self._command_start_failed(failure_message, exc),
                 )
                 return
 
