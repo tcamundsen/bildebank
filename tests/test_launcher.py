@@ -10,6 +10,7 @@ from bildebank.launcher import (
     check_source_command,
     create_command,
     default_collection_path,
+    doctor_command,
     download_face_model_command,
     face_scan_command,
     geo_scan_command,
@@ -102,6 +103,7 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
     assert os.path.basename(import_args[0]).startswith("python")
 
     assert geo_scan_command(collection)[-3:] == ["--target", str(collection), "geo-scan"]
+    assert doctor_command(collection)[-3:] == ["--target", str(collection), "doctor"]
     assert face_scan_command(collection)[-3:] == ["--target", str(collection), "face-scan"]
     assert image_scan_command(collection)[-3:] == ["--target", str(collection), "image-scan"]
     assert make_thumbnails_command(collection)[-3:] == [

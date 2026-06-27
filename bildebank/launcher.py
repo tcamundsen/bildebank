@@ -153,6 +153,10 @@ def run_server_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "run-server")
 
 
+def doctor_command(collection_path: Path) -> list[str]:
+    return bildebank_command("--target", collection_path, "doctor")
+
+
 def geo_scan_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "geo-scan")
 
@@ -499,25 +503,27 @@ class BildebankLauncher:
 
         if is_collection_created(self.collection_path):
             import_button = ttk.Button(self.button_frame, text="Importer bilder", command=self._start_import_flow)
-            import_button.grid(row=1, column=0, padx=(0, 8), pady=4)
-            rescan_button = ttk.Button(self.button_frame, text="Rescan kilde", command=self._start_rescan_source_flow)
-            rescan_button.grid(row=1, column=2, padx=(0, 8), pady=4)
-            check_button = ttk.Button(self.button_frame, text="Sjekk kilde", command=self._start_check_source_flow)
-            check_button.grid(row=1, column=3, padx=(0, 8), pady=4)
+            import_button.grid(row=0, column=0, padx=(0, 8), pady=4)
             unimport_button = ttk.Button(self.button_frame, text="Unimport", command=self._start_unimport_source_flow)
-            unimport_button.grid(row=1, column=1, padx=(0, 8), pady=4)
+            unimport_button.grid(row=0, column=1, padx=(0, 8), pady=4)
+            rescan_button = ttk.Button(self.button_frame, text="Rescan kilde", command=self._start_rescan_source_flow)
+            rescan_button.grid(row=0, column=2, padx=(0, 8), pady=4)
+            check_button = ttk.Button(self.button_frame, text="Sjekk kilde", command=self._start_check_source_flow)
+            check_button.grid(row=0, column=3, padx=(0, 8), pady=4)
             geo_button = ttk.Button(self.button_frame, text="Scan GPS", command=self._run_geo_scan)
-            geo_button.grid(row=2, column=0, padx=(0, 8), pady=4)
-            face_button = ttk.Button(self.button_frame, text="Scan ansikter", command=self._run_face_scan)
-            face_button.grid(row=2, column=2, padx=(0, 8), pady=4)
-            image_scan_button = ttk.Button(self.button_frame, text="Scan bildesøk", command=self._run_image_scan)
-            image_scan_button.grid(row=2, column=3, padx=(0, 8), pady=4)
+            geo_button.grid(row=1, column=0, padx=(0, 8), pady=4)
             thumbs_button = ttk.Button(
                 self.button_frame,
                 text="Lag thumbnails",
                 command=self._run_make_thumbnails,
             )
-            thumbs_button.grid(row=2, column=1, padx=(0, 8), pady=4)
+            thumbs_button.grid(row=1, column=1, padx=(0, 8), pady=4)
+            face_button = ttk.Button(self.button_frame, text="Scan ansikter", command=self._run_face_scan)
+            face_button.grid(row=1, column=2, padx=(0, 8), pady=4)
+            image_scan_button = ttk.Button(self.button_frame, text="Scan bildesøk", command=self._run_image_scan)
+            image_scan_button.grid(row=1, column=3, padx=(0, 8), pady=4)
+            doctor_button = ttk.Button(self.button_frame, text="Doctor", command=self._run_doctor)
+            doctor_button.grid(row=2, column=0, padx=(0, 8), pady=4)
             start_button = ttk.Button(self.button_frame, text="Start Bildebank", command=self._start_server)
             start_button.grid(row=3, column=1, padx=(0, 8), pady=4)
             exit_button = ttk.Button(
@@ -538,6 +544,7 @@ class BildebankLauncher:
                     face_button,
                     image_scan_button,
                     thumbs_button,
+                    doctor_button,
                     start_button,
                     exit_button,
                     open_button,
@@ -662,6 +669,16 @@ class BildebankLauncher:
             running_message="Lager thumbnails ...",
             success_message="Thumbnails fullført.",
             failure_message="Thumbnail-jobb feilet.",
+            on_success=self._refresh_state,
+        )
+
+    def _run_doctor(self) -> None:
+        self._log("Kjører doctor ...")
+        self._run_waiting_command(
+            doctor_command(self.collection_path),
+            running_message="Kjører doctor ...",
+            success_message="Doctor fullført.",
+            failure_message="Doctor feilet.",
             on_success=self._refresh_state,
         )
 
