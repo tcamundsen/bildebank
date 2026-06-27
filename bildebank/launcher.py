@@ -387,27 +387,27 @@ class BildebankLauncher:
             command=self._install_insightface,
         )
         self.install_insightface_button.grid(row=0, column=1, sticky="w")
-        self.install_openclip_button = ttk.Button(
-            insightface_frame,
-            text="Installer OpenCLIP",
-            command=self._install_openclip,
-        )
-        self.install_openclip_button.grid(row=0, column=2, sticky="w", padx=(8, 0))
-
-        face_model_frame = ttk.Frame(outer)
-        face_model_frame.grid(row=4, column=0, sticky="w", pady=(8, 0))
-        ttk.Label(face_model_frame, textvariable=self.insightface_model_status_value).grid(
+        ttk.Label(insightface_frame, textvariable=self.insightface_model_status_value).grid(
             row=0,
-            column=0,
+            column=2,
             sticky="w",
-            padx=(0, 12),
+            padx=(12, 12),
         )
         self.download_face_model_button = ttk.Button(
-            face_model_frame,
+            insightface_frame,
             text="Last ned modell",
             command=self._download_face_model,
         )
-        self.download_face_model_button.grid(row=0, column=1, sticky="w")
+        self.download_face_model_button.grid(row=0, column=3, sticky="w")
+
+        openclip_frame = ttk.Frame(outer)
+        openclip_frame.grid(row=4, column=0, sticky="w", pady=(8, 0))
+        self.install_openclip_button = ttk.Button(
+            openclip_frame,
+            text="Installer OpenCLIP",
+            command=self._install_openclip,
+        )
+        self.install_openclip_button.grid(row=0, column=0, sticky="w")
 
         self.button_frame = ttk.Frame(outer)
         self.button_frame.grid(row=5, column=0, sticky="w", pady=(14, 18))
