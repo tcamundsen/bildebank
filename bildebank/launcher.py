@@ -149,6 +149,10 @@ def geo_scan_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "geo-scan")
 
 
+def face_scan_command(collection_path: Path) -> list[str]:
+    return bildebank_command("--target", collection_path, "face-scan")
+
+
 def make_thumbnails_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "make-thumbnails")
 
@@ -429,6 +433,8 @@ class BildebankLauncher:
             unimport_button.grid(row=1, column=1, padx=(0, 8), pady=4)
             geo_button = ttk.Button(self.button_frame, text="Scan GPS", command=self._run_geo_scan)
             geo_button.grid(row=2, column=0, padx=(0, 8), pady=4)
+            face_button = ttk.Button(self.button_frame, text="Scan ansikter", command=self._run_face_scan)
+            face_button.grid(row=2, column=2, padx=(0, 8), pady=4)
             thumbs_button = ttk.Button(
                 self.button_frame,
                 text="Lag thumbnails",
@@ -452,6 +458,7 @@ class BildebankLauncher:
                     check_button,
                     unimport_button,
                     geo_button,
+                    face_button,
                     thumbs_button,
                     start_button,
                     exit_button,
@@ -544,6 +551,16 @@ class BildebankLauncher:
             running_message="Scanner GPS-metadata ...",
             success_message="GPS-scan fullført.",
             failure_message="GPS-scan feilet.",
+            on_success=self._refresh_state,
+        )
+
+    def _run_face_scan(self) -> None:
+        self._log("Scanner ansikter ...")
+        self._run_waiting_command(
+            face_scan_command(self.collection_path),
+            running_message="Scanner ansikter ...",
+            success_message="Ansiktsscan fullført.",
+            failure_message="Ansiktsscan feilet.",
             on_success=self._refresh_state,
         )
 
