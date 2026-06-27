@@ -438,6 +438,7 @@ class BildebankLauncher:
         self.log_text: tk.Text | None = None
         self.buttons: list[ttk.Button] = []
         self.choose_collection_button: ttk.Button | None = None
+        self.create_collection_button: ttk.Button | None = None
         self.install_insightface_button: ttk.Button | None = None
         self.install_openclip_button: ttk.Button | None = None
         self.download_face_model_button: ttk.Button | None = None
@@ -522,7 +523,18 @@ class BildebankLauncher:
             text="Velg annen plassering",
             command=self._choose_collection,
         )
-        self.choose_collection_button.grid(row=0, column=1, rowspan=2, sticky="w", padx=(12, 0))
+        self.choose_collection_button.grid(row=0, column=1, sticky="w", padx=(12, 0))
+        self.create_collection_button = ttk.Button(
+            collection_frame,
+            text="Opprett bildesamling",
+            command=self._create_collection,
+        )
+        self._add_tooltip(
+            self.create_collection_button,
+            "Lag en bildesamling på stedet vist til venstre. Klikk 'Velg annen plassering' "
+            "for å finne bildesamlingen din eller opprette en ny et annet sted."
+        )
+        self.create_collection_button.grid(row=0, column=2, sticky="w", padx=(12, 0), pady=(4, 0))
 
         insightface_frame = ttk.Frame(outer)
         insightface_frame.grid(row=3, column=0, sticky="w", pady=(14, 0))
@@ -599,6 +611,8 @@ class BildebankLauncher:
         for child in self.button_frame.winfo_children():
             child.destroy()
         self.buttons = []
+        if self.create_collection_button is not None:
+            self.create_collection_button.grid_remove()
 
         if is_collection_created(self.collection_path):
             if self.migration_required:
@@ -753,18 +767,9 @@ class BildebankLauncher:
         else:
             self.pending_deletes_status = "Ukjent"
             self.pending_deletes_count = None
-            create_button = ttk.Button(
-                self.button_frame,
-                text="Opprett bildesamling",
-                command=self._create_collection,
-            )
-            self._add_tooltip(
-                create_button,
-                "Opprett en bildesamling i mappen vist ovenfor, eller klikk "
-                "'Velg annen plassering' og bla det frem til bildesamlingen din."
-            )
-            create_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
-            self.buttons.append(create_button)
+            assert self.create_collection_button is not None
+            self.create_collection_button.grid()
+            self.buttons.append(self.create_collection_button)
 
         self._refresh_insightface_status()
         self._refresh_openclip_status()
@@ -814,6 +819,8 @@ class BildebankLauncher:
         if self.choose_collection_button is not None:
             collection_state = "normal" if dependency_buttons_enabled else "disabled"
             self.choose_collection_button.configure(state=collection_state)
+        if self.create_collection_button is not None and self.create_collection_button not in self.buttons:
+            self.create_collection_button.configure(state="disabled")
         if self.install_insightface_button is not None:
             insightface_state = "normal" if dependency_buttons_enabled and insightface_install_supported() else "disabled"
             self.install_insightface_button.configure(state=insightface_state)
