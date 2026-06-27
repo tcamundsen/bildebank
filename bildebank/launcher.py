@@ -157,6 +157,10 @@ def doctor_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "doctor")
 
 
+def deep_doctor_command(collection_path: Path) -> list[str]:
+    return bildebank_command("--target", collection_path, "doctor", "--deep")
+
+
 def geo_scan_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "geo-scan")
 
@@ -524,6 +528,8 @@ class BildebankLauncher:
             image_scan_button.grid(row=1, column=3, padx=(0, 8), pady=4)
             doctor_button = ttk.Button(self.button_frame, text="Doctor", command=self._run_doctor)
             doctor_button.grid(row=2, column=0, padx=(0, 8), pady=4)
+            deep_doctor_button = ttk.Button(self.button_frame, text="Grundig doctor", command=self._run_deep_doctor)
+            deep_doctor_button.grid(row=2, column=1, padx=(0, 8), pady=4)
             start_button = ttk.Button(self.button_frame, text="Start Bildebank", command=self._start_server)
             start_button.grid(row=3, column=1, padx=(0, 8), pady=4)
             exit_button = ttk.Button(
@@ -545,6 +551,7 @@ class BildebankLauncher:
                     image_scan_button,
                     thumbs_button,
                     doctor_button,
+                    deep_doctor_button,
                     start_button,
                     exit_button,
                     open_button,
@@ -679,6 +686,16 @@ class BildebankLauncher:
             running_message="Kjører doctor ...",
             success_message="Doctor fullført.",
             failure_message="Doctor feilet.",
+            on_success=self._refresh_state,
+        )
+
+    def _run_deep_doctor(self) -> None:
+        self._log("Kjører grundig doctor ...")
+        self._run_waiting_command(
+            deep_doctor_command(self.collection_path),
+            running_message="Kjører grundig doctor ...",
+            success_message="Grundig doctor fullført.",
+            failure_message="Grundig doctor feilet.",
             on_success=self._refresh_state,
         )
 
