@@ -29,6 +29,7 @@ from bildebank.launcher import (
     make_thumbnails_command,
     migrate_command,
     migration_plan_needs_action,
+    open_server_browser_window,
     openclip_dependency_status,
     openclip_install_command,
     openclip_model_status,
@@ -37,6 +38,7 @@ from bildebank.launcher import (
     rescan_source_candidates,
     rescan_source_command,
     save_launcher_config,
+    server_browser_url,
     source_is_collection_or_inside,
     subprocess_output_encoding,
     suggest_import_name,
@@ -175,6 +177,14 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "Sommer 2024",
     ]
     assert download_face_model_command()[-1:] == ["download-face-model"]
+
+
+def test_open_server_browser_window_opens_default_run_server_url() -> None:
+    with patch("webbrowser.open", return_value=True) as open_browser:
+        assert open_server_browser_window()
+
+    assert server_browser_url() == "http://127.0.0.1:8765/"
+    open_browser.assert_called_once_with("http://127.0.0.1:8765/", new=1)
 
 
 def test_migration_plan_needs_action_detects_version_change() -> None:

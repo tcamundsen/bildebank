@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import threading
+import webbrowser
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Any, Callable
@@ -14,6 +15,7 @@ from typing import Any, Callable
 from . import db
 from .config import load_launcher_collection_path, set_launcher_collection_path
 from .pending_deletes import list_pending_deletes
+from .server import DEFAULT_HOST, DEFAULT_PORT
 
 PADX = 0
 PADY = 0
@@ -134,6 +136,14 @@ def import_command(collection_path: Path, source_folder: Path, import_name: str)
 
 def run_server_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "run-server")
+
+
+def server_browser_url() -> str:
+    return f"http://{DEFAULT_HOST}:{DEFAULT_PORT}/"
+
+
+def open_server_browser_window() -> bool:
+    return bool(webbrowser.open(server_browser_url(), new=1))
 
 
 def launcher_command() -> list[str]:
@@ -1451,7 +1461,9 @@ class BildebankLauncher:
 
         if self.server_process is not None:
             if self.server_process.poll() is None:
-                self._log("Bildebank-server kjører allerede.")
+                self._log("Bildebank-server kjører allerede. Åpner nytt vindu.")
+                if not open_server_browser_window():
+                    self._log(f"Kunne ikke åpne nettleser automatisk. Åpne {server_browser_url()} manuelt.")
                 return
             self.server_process = None
 
