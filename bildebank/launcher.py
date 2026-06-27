@@ -280,6 +280,12 @@ class BildebankLauncher:
             thumbs_button.grid(row=2, column=1, padx=(0, 8), pady=4)
             start_button = ttk.Button(self.button_frame, text="Start Bildebank", command=self._start_server)
             start_button.grid(row=3, column=1, padx=(0, 8), pady=4)
+            exit_button = ttk.Button(
+                self.button_frame,
+                text="Avslutt bildebank kontrollpanel",
+                command=self._on_close,
+            )
+            exit_button.grid(row=3, column=2, padx=(0, 8), pady=4)
             open_button = ttk.Button(self.button_frame, text="Åpne bildesamling", command=self._open_collection)
             open_button.grid(row=3, column=0, padx=(0, 8), pady=4)
             self.buttons.extend(
@@ -291,6 +297,7 @@ class BildebankLauncher:
                     geo_button,
                     thumbs_button,
                     start_button,
+                    exit_button,
                     open_button,
                 ]
             )
@@ -620,6 +627,12 @@ class BildebankLauncher:
 
     def _start_server(self) -> None:
         from tkinter import messagebox
+
+        if self.server_process is not None:
+            if self.server_process.poll() is None:
+                self._log("Bildebank-server kjører allerede.")
+                return
+            self.server_process = None
 
         self._log("Starter Bildebank ...")
         try:
