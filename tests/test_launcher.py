@@ -8,6 +8,8 @@ from bildebank import db
 from bildebank.launcher import (
     LauncherConfig,
     check_source_command,
+    cleanup_pending_deletes_apply_command,
+    cleanup_pending_deletes_list_command,
     create_command,
     default_collection_path,
     deep_doctor_command,
@@ -114,6 +116,18 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--target",
         str(collection),
         "make-thumbnails",
+    ]
+    assert cleanup_pending_deletes_list_command(collection)[-4:] == [
+        "--target",
+        str(collection),
+        "cleanup-pending-deletes",
+        "--list",
+    ]
+    assert cleanup_pending_deletes_apply_command(collection)[-4:] == [
+        "--target",
+        str(collection),
+        "cleanup-pending-deletes",
+        "--apply",
     ]
     assert launcher_command()[-1:] == ["launcher"]
     assert update_command()[-1:] == ["update"]

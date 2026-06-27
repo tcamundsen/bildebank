@@ -13,6 +13,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Callable
 
 from . import db
+from .pending_deletes import list_pending_deletes
 
 PADX = 4
 PADY = 4
@@ -185,6 +186,14 @@ def image_scan_command(collection_path: Path) -> list[str]:
 
 def make_thumbnails_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "make-thumbnails")
+
+
+def cleanup_pending_deletes_list_command(collection_path: Path) -> list[str]:
+    return bildebank_command("--target", collection_path, "cleanup-pending-deletes", "--list")
+
+
+def cleanup_pending_deletes_apply_command(collection_path: Path) -> list[str]:
+    return bildebank_command("--target", collection_path, "cleanup-pending-deletes", "--apply")
 
 
 def check_source_command(collection_path: Path, source_path: Path) -> list[str]:
@@ -366,6 +375,8 @@ class BildebankLauncher:
         self.install_insightface_button: ttk.Button | None = None
         self.install_openclip_button: ttk.Button | None = None
         self.download_face_model_button: ttk.Button | None = None
+        self.pending_deletes_status: str = "Ukjent"
+        self.pending_deletes_count: int | None = None
         self.insightface_status = insightface_dependency_status()
         self.face_model_status = insightface_model_status()
         self.openclip_status = openclip_dependency_status()
@@ -515,6 +526,7 @@ class BildebankLauncher:
             self.buttons.append(self.choose_collection_button)
         ttk.Frame(self.button_frame, height=30).grid(row=0, column=0, pady=PADY)
         if is_collection_created(self.collection_path):
+            self._refresh_pending_deletes_status()
             import_button = ttk.Button(self.button_frame, text="Importer bilder", command=self._start_import_flow)
             import_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
             unimport_button = ttk.Button(self.button_frame, text="Unimport", command=self._start_unimport_source_flow)
@@ -541,6 +553,12 @@ class BildebankLauncher:
             deep_doctor_button.grid(row=2, column=1, padx=PADX, pady=PADY, sticky="ew")
             update_button = ttk.Button(self.button_frame, text="Oppdater Bildebank", command=self._run_update)
             update_button.grid(row=2, column=2, padx=PADX, pady=PADY, sticky="ew")
+            pending_button = ttk.Button(
+                self.button_frame,
+                text=self._pending_deletes_button_text(),
+                command=self._show_pending_deletes,
+            )
+            pending_button.grid(row=2, column=3, padx=PADX, pady=PADY, sticky="ew")
             start_button = ttk.Button(self.button_frame, text="Start Bildebank", command=self._start_server)
             start_button.grid(row=3, column=1, padx=PADX, pady=PADY, sticky="ew")
             exit_button = ttk.Button(
@@ -564,12 +582,15 @@ class BildebankLauncher:
                     doctor_button,
                     deep_doctor_button,
                     update_button,
+                    pending_button,
                     start_button,
                     exit_button,
                     open_button,
                 ]
             )
         else:
+            self.pending_deletes_status = "Ukjent"
+            self.pending_deletes_count = None
             create_button = ttk.Button(
                 self.button_frame,
                 text="Opprett bildesamling",
@@ -581,6 +602,25 @@ class BildebankLauncher:
         self._refresh_insightface_status()
         self._refresh_openclip_status()
         self._set_buttons_enabled(not self.busy)
+
+    def _refresh_pending_deletes_status(self) -> None:
+        try:
+            rows = list_pending_deletes(self.collection_path)
+        except Exception as exc:  # noqa: BLE001 - launcher status must not block other buttons
+            self.pending_deletes_status = "Ukjent"
+            self.pending_deletes_count = None
+            self._log(f"Kunne ikke lese ventende filsletting-status: {exc}")
+            return
+        self.pending_deletes_count = len(rows)
+        self.pending_deletes_status = "OK" if not rows else "Trenger opprydding"
+
+    def _pending_deletes_button_text(self) -> str:
+        if self.pending_deletes_status == "OK":
+            return "Ventende filsletting: OK"
+        if self.pending_deletes_status == "Trenger opprydding":
+            assert self.pending_deletes_count is not None
+            return f"Ventende filsletting: ! {self.pending_deletes_count}"
+        return "Ventende filsletting: ukjent"
 
     def _refresh_insightface_status(self) -> None:
         self.insightface_status = insightface_dependency_status()
@@ -708,6 +748,63 @@ class BildebankLauncher:
             running_message="Kjører grundig doctor ...",
             success_message="Grundig doctor fullført.",
             failure_message="Grundig doctor feilet.",
+            on_success=self._refresh_state,
+        )
+
+    def _show_pending_deletes(self) -> None:
+        self._log("Kontrollerer ventende filsletting ...")
+        self._run_waiting_command(
+            cleanup_pending_deletes_list_command(self.collection_path),
+            running_message="Kontrollerer ventende filsletting ...",
+            success_message="Kontroll av ventende filsletting fullført. Se listen i loggen.",
+            failure_message="Kontroll av ventende filsletting feilet.",
+            on_success=self._pending_deletes_list_finished,
+        )
+
+    def _pending_deletes_list_finished(self) -> None:
+        from tkinter import messagebox
+
+        self._refresh_pending_deletes_status()
+        self._refresh_state()
+        if not self.pending_deletes_count:
+            messagebox.showinfo(
+                "Ventende filsletting",
+                "Ingen ventende filslettinger.",
+                parent=self.root,
+            )
+            return
+        if not messagebox.askyesno(
+            "Ventende filsletting",
+            (
+                "Listen over ventende filslettinger står i loggen.\n\n"
+                "Vil du prøve å rydde opp nå?"
+            ),
+            parent=self.root,
+        ):
+            self._log("Opprydding av ventende filsletting avbrutt.")
+            return
+        self._confirm_cleanup_pending_deletes()
+
+    def _confirm_cleanup_pending_deletes(self) -> None:
+        from tkinter import simpledialog
+
+        confirmation = simpledialog.askstring(
+            "Bekreft ventende filsletting",
+            'Skriv "ja, rydd opp" for å gjennomføre opprydding.',
+            parent=self.root,
+        )
+        if confirmation != "ja, rydd opp":
+            self._log("Opprydding av ventende filsletting avbrutt.")
+            return
+        self._run_cleanup_pending_deletes()
+
+    def _run_cleanup_pending_deletes(self) -> None:
+        self._log("Rydder opp ventende filsletting ...")
+        self._run_waiting_command(
+            cleanup_pending_deletes_apply_command(self.collection_path),
+            running_message="Rydder opp ventende filsletting ...",
+            success_message="Opprydding av ventende filsletting fullført.",
+            failure_message="Opprydding av ventende filsletting feilet.",
             on_success=self._refresh_state,
         )
 
