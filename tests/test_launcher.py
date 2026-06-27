@@ -8,6 +8,7 @@ from unittest.mock import patch
 from bildebank import db
 from bildebank.launcher import (
     BildebankLauncher,
+    InsightFaceDependencyStatus,
     LauncherConfig,
     check_source_command,
     cleanup_pending_deletes_apply_command,
@@ -16,8 +17,10 @@ from bildebank.launcher import (
     create_command,
     default_collection_path,
     deep_doctor_command,
+    dependency_setup_button_state,
     doctor_command,
     download_face_model_command,
+    face_model_download_button_state,
     face_scan_command,
     geo_scan_command,
     image_scan_command,
@@ -341,6 +344,42 @@ def test_openclip_status_reports_installed_when_module_exists() -> None:
 def test_openclip_status_reports_missing_when_module_is_missing() -> None:
     with patch("importlib.util.find_spec", return_value=None):
         assert openclip_dependency_status() == "Mangler"
+
+
+def test_dependency_setup_buttons_remain_enabled_when_dependencies_are_installed() -> None:
+    assert (
+        dependency_setup_button_state(
+            enabled=True,
+            migration_required=False,
+            migration_status_error=None,
+            install_supported=True,
+        )
+        == "normal"
+    )
+
+
+def test_dependency_setup_buttons_are_disabled_when_install_flow_is_not_supported() -> None:
+    assert (
+        dependency_setup_button_state(
+            enabled=True,
+            migration_required=False,
+            migration_status_error=None,
+            install_supported=False,
+        )
+        == "disabled"
+    )
+
+
+def test_face_model_download_button_is_enabled_when_insightface_is_ready() -> None:
+    assert (
+        face_model_download_button_state(
+            enabled=True,
+            migration_required=False,
+            migration_status_error=None,
+            insightface_status=InsightFaceDependencyStatus("Klar"),
+        )
+        == "normal"
+    )
 
 
 def test_openclip_model_status_reports_available_when_model_file_exists(tmp_path: Path) -> None:

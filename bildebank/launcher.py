@@ -17,8 +17,8 @@ from .config import load_launcher_collection_path, set_launcher_collection_path
 from .pending_deletes import list_pending_deletes
 from .server import DEFAULT_HOST, DEFAULT_PORT
 
-PADX = 4
-PADY = 4
+PADX = 8
+PADY = 8
 
 PROGRESS_LOG_LABELS = (
     "Import",
@@ -234,6 +234,35 @@ def insightface_install_supported() -> bool:
 
 def openclip_install_supported() -> bool:
     return os.name == "nt"
+
+
+def dependency_setup_button_state(
+    *,
+    enabled: bool,
+    migration_required: bool,
+    migration_status_error: str | None,
+    install_supported: bool,
+) -> str:
+    if enabled and not migration_required and migration_status_error is None and install_supported:
+        return "normal"
+    return "disabled"
+
+
+def face_model_download_button_state(
+    *,
+    enabled: bool,
+    migration_required: bool,
+    migration_status_error: str | None,
+    insightface_status: InsightFaceDependencyStatus,
+) -> str:
+    if (
+        enabled
+        and not migration_required
+        and migration_status_error is None
+        and insightface_status.status == "Klar"
+    ):
+        return "normal"
+    return "disabled"
 
 
 def openclip_dependency_status() -> str:
@@ -880,19 +909,32 @@ class BildebankLauncher:
         if self.create_collection_button is not None and self.create_collection_button not in self.buttons:
             self.create_collection_button.configure(state="disabled")
         if self.install_insightface_button is not None:
-            insightface_state = "normal" if dependency_buttons_enabled and insightface_install_supported() else "disabled"
-            self.install_insightface_button.configure(state=insightface_state)
-        if self.install_openclip_button is not None:
-            openclip_state = "normal" if dependency_buttons_enabled and openclip_install_supported() else "disabled"
-            self.install_openclip_button.configure(state=openclip_state)
-        if self.download_face_model_button is not None:
-            model_state = (
-                "normal"
-                if dependency_buttons_enabled
-                and self.insightface_status.status == "Klar"
-                else "disabled"
+            self.install_insightface_button.configure(
+                state=dependency_setup_button_state(
+                    enabled=enabled,
+                    migration_required=self.migration_required,
+                    migration_status_error=self.migration_status_error,
+                    install_supported=insightface_install_supported(),
+                )
             )
-            self.download_face_model_button.configure(state=model_state)
+        if self.install_openclip_button is not None:
+            self.install_openclip_button.configure(
+                state=dependency_setup_button_state(
+                    enabled=enabled,
+                    migration_required=self.migration_required,
+                    migration_status_error=self.migration_status_error,
+                    install_supported=openclip_install_supported(),
+                )
+            )
+        if self.download_face_model_button is not None:
+            self.download_face_model_button.configure(
+                state=face_model_download_button_state(
+                    enabled=enabled,
+                    migration_required=self.migration_required,
+                    migration_status_error=self.migration_status_error,
+                    insightface_status=self.insightface_status,
+                )
+            )
         if self.exit_button is not None:
             self.exit_button.configure(state=state)
 
