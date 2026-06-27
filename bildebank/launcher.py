@@ -14,6 +14,8 @@ from typing import Callable
 
 from . import db
 
+PADX = 4
+PADY = 4
 
 CONFIG_DIR_NAME = "Bildebank"
 CONFIG_FILENAME = "launcher.json"
@@ -503,43 +505,42 @@ class BildebankLauncher:
 
         if self.choose_collection_button is not None:
             self.buttons.append(self.choose_collection_button)
-        ttk.Frame(self.button_frame, height=30).grid(row=0, column=0, pady=4)
-
+        ttk.Frame(self.button_frame, height=30).grid(row=0, column=0, pady=PADY)
         if is_collection_created(self.collection_path):
             import_button = ttk.Button(self.button_frame, text="Importer bilder", command=self._start_import_flow)
-            import_button.grid(row=0, column=0, padx=(0, 8), pady=4)
+            import_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
             unimport_button = ttk.Button(self.button_frame, text="Unimport", command=self._start_unimport_source_flow)
-            unimport_button.grid(row=0, column=1, padx=(0, 8), pady=4)
+            unimport_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
             rescan_button = ttk.Button(self.button_frame, text="Rescan kilde", command=self._start_rescan_source_flow)
-            rescan_button.grid(row=0, column=2, padx=(0, 8), pady=4)
+            rescan_button.grid(row=0, column=2, padx=PADX, pady=PADY, sticky="ew")
             check_button = ttk.Button(self.button_frame, text="Sjekk kilde", command=self._start_check_source_flow)
-            check_button.grid(row=0, column=3, padx=(0, 8), pady=4)
+            check_button.grid(row=0, column=3, padx=PADX, pady=PADY, sticky="ew")
             geo_button = ttk.Button(self.button_frame, text="Scan GPS", command=self._run_geo_scan)
-            geo_button.grid(row=1, column=0, padx=(0, 8), pady=4)
+            geo_button.grid(row=1, column=0, padx=PADX, pady=PADY, sticky="ew")
             thumbs_button = ttk.Button(
                 self.button_frame,
                 text="Lag thumbnails",
                 command=self._run_make_thumbnails,
             )
-            thumbs_button.grid(row=1, column=1, padx=(0, 8), pady=4)
+            thumbs_button.grid(row=1, column=1, padx=PADX, pady=PADY, sticky="ew")
             face_button = ttk.Button(self.button_frame, text="Scan ansikter", command=self._run_face_scan)
-            face_button.grid(row=1, column=2, padx=(0, 8), pady=4)
+            face_button.grid(row=1, column=2, padx=PADX, pady=PADY, sticky="ew")
             image_scan_button = ttk.Button(self.button_frame, text="Scan bildesøk", command=self._run_image_scan)
-            image_scan_button.grid(row=1, column=3, padx=(0, 8), pady=4)
+            image_scan_button.grid(row=1, column=3, padx=PADX, pady=PADY, sticky="ew")
             doctor_button = ttk.Button(self.button_frame, text="Doctor", command=self._run_doctor)
-            doctor_button.grid(row=2, column=0, padx=(0, 8), pady=4)
+            doctor_button.grid(row=2, column=0, padx=PADX, pady=PADY, sticky="ew")
             deep_doctor_button = ttk.Button(self.button_frame, text="Grundig doctor", command=self._run_deep_doctor)
-            deep_doctor_button.grid(row=2, column=1, padx=(0, 8), pady=4)
+            deep_doctor_button.grid(row=2, column=1, padx=PADX, pady=PADY, sticky="ew")
             start_button = ttk.Button(self.button_frame, text="Start Bildebank", command=self._start_server)
-            start_button.grid(row=3, column=1, padx=(0, 8), pady=4)
+            start_button.grid(row=3, column=1, padx=PADX, pady=PADY, sticky="ew")
             exit_button = ttk.Button(
                 self.button_frame,
                 text="Avslutt bildebank kontrollpanel",
                 command=self._on_close,
             )
-            exit_button.grid(row=3, column=2, padx=(0, 8), pady=4)
+            exit_button.grid(row=3, column=2, padx=PADX, pady=PADY, sticky="ew", columnspan=2)
             open_button = ttk.Button(self.button_frame, text="Åpne bildesamling", command=self._open_collection)
-            open_button.grid(row=3, column=0, padx=(0, 8), pady=4)
+            open_button.grid(row=3, column=0, padx=PADX, pady=PADY, sticky="ew")
             self.buttons.extend(
                 [
                     import_button,
@@ -563,7 +564,7 @@ class BildebankLauncher:
                 text="Opprett bildesamling",
                 command=self._create_collection,
             )
-            create_button.grid(row=0, column=1, padx=(0, 8), pady=4)
+            create_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
             self.buttons.append(create_button)
 
         self._refresh_insightface_status()
