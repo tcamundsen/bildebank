@@ -758,6 +758,11 @@ class BildebankLauncher:
                 text="Opprett bildesamling",
                 command=self._create_collection,
             )
+            self._add_tooltip(
+                create_button,
+                "Opprett en bildesamling i mappen vist ovenfor, eller klikk "
+                "'Velg annen plassering' og bla det frem til bildesamlingen din."
+            )
             create_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
             self.buttons.append(create_button)
 
