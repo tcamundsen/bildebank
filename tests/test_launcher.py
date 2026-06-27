@@ -10,6 +10,7 @@ from bildebank.launcher import (
     check_source_command,
     cleanup_pending_deletes_apply_command,
     cleanup_pending_deletes_list_command,
+    collection_needs_migration,
     create_command,
     default_collection_path,
     deep_doctor_command,
@@ -26,6 +27,8 @@ from bildebank.launcher import (
     launcher_command,
     load_launcher_config,
     make_thumbnails_command,
+    migrate_command,
+    migration_plan_needs_action,
     openclip_dependency_status,
     openclip_install_command,
     openclip_model_status,
@@ -119,6 +122,7 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "make-thumbnails",
     ]
     assert vacuum_command(collection)[-3:] == ["--target", str(collection), "vacuum"]
+    assert migrate_command(collection)[-3:] == ["--target", str(collection), "migrate"]
     assert cleanup_pending_deletes_list_command(collection)[-4:] == [
         "--target",
         str(collection),
@@ -162,6 +166,56 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "Sommer 2024",
     ]
     assert download_face_model_command()[-1:] == ["download-face-model"]
+
+
+def test_migration_plan_needs_action_detects_version_change() -> None:
+    plan = db.MigrationPlan(
+        current_version=12,
+        target_version=13,
+        imported_files=0,
+        duplicate_findings=0,
+        creates_file_sources=False,
+    )
+
+    assert migration_plan_needs_action(plan)
+
+
+def test_migration_plan_needs_action_detects_current_schema_repairs() -> None:
+    plan = db.MigrationPlan(
+        current_version=13,
+        target_version=13,
+        imported_files=0,
+        duplicate_findings=0,
+        creates_file_sources=False,
+        refreshes_performance_indexes=True,
+    )
+
+    assert migration_plan_needs_action(plan)
+
+
+def test_migration_plan_needs_action_accepts_current_database() -> None:
+    plan = db.MigrationPlan(
+        current_version=13,
+        target_version=13,
+        imported_files=0,
+        duplicate_findings=0,
+        creates_file_sources=False,
+    )
+
+    assert not migration_plan_needs_action(plan)
+
+
+def test_collection_needs_migration_detects_old_schema_version(tmp_path: Path) -> None:
+    collection = tmp_path / "samling"
+    db.init_database(collection)
+    conn = db.connect(collection)
+    try:
+        conn.execute("UPDATE meta SET value = '12' WHERE key = 'schema_version'")
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert collection_needs_migration(collection)
 
 
 def test_insightface_status_is_ready_when_dependencies_are_available() -> None:

@@ -10,7 +10,7 @@ import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
-from typing import Callable
+from typing import Any, Callable
 
 from . import db
 from .pending_deletes import list_pending_deletes
@@ -192,6 +192,10 @@ def vacuum_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "vacuum")
 
 
+def migrate_command(collection_path: Path) -> list[str]:
+    return bildebank_command("--target", collection_path, "migrate")
+
+
 def cleanup_pending_deletes_list_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "cleanup-pending-deletes", "--list")
 
@@ -309,6 +313,18 @@ def registered_sources(collection_path: Path) -> list[db.Source]:
         conn.close()
 
 
+def migration_plan_needs_action(plan: db.MigrationPlan) -> bool:
+    return (
+        plan.current_version != plan.target_version
+        or plan.refreshes_performance_indexes
+        or bool(plan.internal_repairs)
+    )
+
+
+def collection_needs_migration(collection_path: Path) -> bool:
+    return migration_plan_needs_action(db.migration_plan(collection_path))
+
+
 def rescan_source_candidates(sources: list[db.Source]) -> list[db.Source]:
     return [
         source
@@ -381,6 +397,9 @@ class BildebankLauncher:
         self.download_face_model_button: ttk.Button | None = None
         self.pending_deletes_status: str = "Ukjent"
         self.pending_deletes_count: int | None = None
+        self.migration_required = False
+        self.migration_status_error: str | None = None
+        self.migration_dialog_shown = False
         self.insightface_status = insightface_dependency_status()
         self.face_model_status = insightface_model_status()
         self.openclip_status = openclip_dependency_status()
@@ -389,8 +408,13 @@ class BildebankLauncher:
         self.active_progress_log_range: tuple[str, str] | None = None
 
         self._build_gui()
+        self._update_migration_status()
         self._refresh_state()
         self._log(f"Valgt bildesamling: {self.collection_path}")
+        if self.migration_required:
+            self.root.after(0, self._show_migration_required_dialog)
+        elif self.migration_status_error is not None:
+            self.root.after(0, self._show_migration_status_error)
         if not insightface_install_supported():
             self._log(
                 "Installer InsightFace-knappen er deaktivert: "
@@ -526,75 +550,96 @@ class BildebankLauncher:
             child.destroy()
         self.buttons = []
 
-        if self.choose_collection_button is not None:
-            self.buttons.append(self.choose_collection_button)
         ttk.Frame(self.button_frame, height=30).grid(row=0, column=0, pady=PADY)
         if is_collection_created(self.collection_path):
-            self._refresh_pending_deletes_status()
-            import_button = ttk.Button(self.button_frame, text="Importer bilder", command=self._start_import_flow)
-            import_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
-            unimport_button = ttk.Button(self.button_frame, text="Unimport", command=self._start_unimport_source_flow)
-            unimport_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
-            rescan_button = ttk.Button(self.button_frame, text="Rescan kilde", command=self._start_rescan_source_flow)
-            rescan_button.grid(row=0, column=2, padx=PADX, pady=PADY, sticky="ew")
-            check_button = ttk.Button(self.button_frame, text="Sjekk kilde", command=self._start_check_source_flow)
-            check_button.grid(row=0, column=3, padx=PADX, pady=PADY, sticky="ew")
-            geo_button = ttk.Button(self.button_frame, text="Scan GPS", command=self._run_geo_scan)
-            geo_button.grid(row=1, column=0, padx=PADX, pady=PADY, sticky="ew")
-            thumbs_button = ttk.Button(
-                self.button_frame,
-                text="Lag thumbnails",
-                command=self._run_make_thumbnails,
-            )
-            thumbs_button.grid(row=1, column=1, padx=PADX, pady=PADY, sticky="ew")
-            face_button = ttk.Button(self.button_frame, text="Scan ansikter", command=self._run_face_scan)
-            face_button.grid(row=1, column=2, padx=PADX, pady=PADY, sticky="ew")
-            image_scan_button = ttk.Button(self.button_frame, text="Scan bildesøk", command=self._run_image_scan)
-            image_scan_button.grid(row=1, column=3, padx=PADX, pady=PADY, sticky="ew")
-            doctor_button = ttk.Button(self.button_frame, text="Doctor", command=self._run_doctor)
-            doctor_button.grid(row=2, column=0, padx=PADX, pady=PADY, sticky="ew")
-            deep_doctor_button = ttk.Button(self.button_frame, text="Grundig doctor", command=self._run_deep_doctor)
-            deep_doctor_button.grid(row=2, column=1, padx=PADX, pady=PADY, sticky="ew")
-            update_button = ttk.Button(self.button_frame, text="Oppdater Bildebank", command=self._run_update)
-            update_button.grid(row=2, column=2, padx=PADX, pady=PADY, sticky="ew")
-            vacuum_button = ttk.Button(self.button_frame, text="Vacuum databaser", command=self._run_vacuum)
-            vacuum_button.grid(row=3, column=0, padx=PADX, pady=PADY, sticky="ew")
-            pending_button = ttk.Button(
-                self.button_frame,
-                text=self._pending_deletes_button_text(),
-                command=self._show_pending_deletes,
-            )
-            pending_button.grid(row=2, column=3, padx=PADX, pady=PADY, sticky="ew")
-            start_button = ttk.Button(self.button_frame, text="Start Bildebank", command=self._start_server)
-            start_button.grid(row=3, column=1, padx=PADX, pady=PADY, sticky="ew")
-            exit_button = ttk.Button(
-                self.button_frame,
-                text="Avslutt bildebank kontrollpanel",
-                command=self._on_close,
-            )
-            exit_button.grid(row=3, column=2, padx=PADX, pady=PADY, sticky="ew", columnspan=2)
-            open_button = ttk.Button(self.button_frame, text="Åpne bildesamling", command=self._open_collection)
-            open_button.grid(row=4, column=0, padx=PADX, pady=PADY, sticky="ew")
-            self.buttons.extend(
-                [
-                    import_button,
-                    rescan_button,
-                    check_button,
-                    unimport_button,
-                    geo_button,
-                    face_button,
-                    image_scan_button,
-                    thumbs_button,
-                    doctor_button,
-                    deep_doctor_button,
-                    update_button,
-                    vacuum_button,
-                    pending_button,
-                    start_button,
-                    exit_button,
-                    open_button,
-                ]
-            )
+            if self.migration_required:
+                self.pending_deletes_status = "Ukjent"
+                self.pending_deletes_count = None
+                migrate_button = ttk.Button(self.button_frame, text="Migrer", command=self._run_migrate)
+                migrate_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
+                exit_button = ttk.Button(
+                    self.button_frame,
+                    text="Avslutt uten å migrere",
+                    command=self._on_close,
+                )
+                exit_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
+                self.buttons.extend([migrate_button, exit_button])
+            elif self.migration_status_error is not None:
+                self.pending_deletes_status = "Ukjent"
+                self.pending_deletes_count = None
+                exit_button = ttk.Button(
+                    self.button_frame,
+                    text="Avslutt bildebank kontrollpanel",
+                    command=self._on_close,
+                )
+                exit_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
+                self.buttons.append(exit_button)
+            else:
+                self._refresh_pending_deletes_status()
+                import_button = ttk.Button(self.button_frame, text="Importer bilder", command=self._start_import_flow)
+                import_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
+                unimport_button = ttk.Button(self.button_frame, text="Unimport", command=self._start_unimport_source_flow)
+                unimport_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
+                rescan_button = ttk.Button(self.button_frame, text="Rescan kilde", command=self._start_rescan_source_flow)
+                rescan_button.grid(row=0, column=2, padx=PADX, pady=PADY, sticky="ew")
+                check_button = ttk.Button(self.button_frame, text="Sjekk kilde", command=self._start_check_source_flow)
+                check_button.grid(row=0, column=3, padx=PADX, pady=PADY, sticky="ew")
+                geo_button = ttk.Button(self.button_frame, text="Scan GPS", command=self._run_geo_scan)
+                geo_button.grid(row=1, column=0, padx=PADX, pady=PADY, sticky="ew")
+                thumbs_button = ttk.Button(
+                    self.button_frame,
+                    text="Lag thumbnails",
+                    command=self._run_make_thumbnails,
+                )
+                thumbs_button.grid(row=1, column=1, padx=PADX, pady=PADY, sticky="ew")
+                face_button = ttk.Button(self.button_frame, text="Scan ansikter", command=self._run_face_scan)
+                face_button.grid(row=1, column=2, padx=PADX, pady=PADY, sticky="ew")
+                image_scan_button = ttk.Button(self.button_frame, text="Scan bildesøk", command=self._run_image_scan)
+                image_scan_button.grid(row=1, column=3, padx=PADX, pady=PADY, sticky="ew")
+                doctor_button = ttk.Button(self.button_frame, text="Doctor", command=self._run_doctor)
+                doctor_button.grid(row=2, column=0, padx=PADX, pady=PADY, sticky="ew")
+                deep_doctor_button = ttk.Button(self.button_frame, text="Grundig doctor", command=self._run_deep_doctor)
+                deep_doctor_button.grid(row=2, column=1, padx=PADX, pady=PADY, sticky="ew")
+                update_button = ttk.Button(self.button_frame, text="Oppdater Bildebank", command=self._run_update)
+                update_button.grid(row=2, column=2, padx=PADX, pady=PADY, sticky="ew")
+                vacuum_button = ttk.Button(self.button_frame, text="Vacuum databaser", command=self._run_vacuum)
+                vacuum_button.grid(row=3, column=0, padx=PADX, pady=PADY, sticky="ew")
+                pending_button = ttk.Button(
+                    self.button_frame,
+                    text=self._pending_deletes_button_text(),
+                    command=self._show_pending_deletes,
+                )
+                pending_button.grid(row=2, column=3, padx=PADX, pady=PADY, sticky="ew")
+                start_button = ttk.Button(self.button_frame, text="Start Bildebank", command=self._start_server)
+                start_button.grid(row=3, column=1, padx=PADX, pady=PADY, sticky="ew")
+                exit_button = ttk.Button(
+                    self.button_frame,
+                    text="Avslutt bildebank kontrollpanel",
+                    command=self._on_close,
+                )
+                exit_button.grid(row=3, column=2, padx=PADX, pady=PADY, sticky="ew", columnspan=2)
+                open_button = ttk.Button(self.button_frame, text="Åpne bildesamling", command=self._open_collection)
+                open_button.grid(row=4, column=0, padx=PADX, pady=PADY, sticky="ew")
+                self.buttons.extend(
+                    [
+                        import_button,
+                        rescan_button,
+                        check_button,
+                        unimport_button,
+                        geo_button,
+                        face_button,
+                        image_scan_button,
+                        thumbs_button,
+                        doctor_button,
+                        deep_doctor_button,
+                        update_button,
+                        vacuum_button,
+                        pending_button,
+                        start_button,
+                        exit_button,
+                        open_button,
+                    ]
+                )
         else:
             self.pending_deletes_status = "Ukjent"
             self.pending_deletes_count = None
@@ -647,16 +692,20 @@ class BildebankLauncher:
         state = "normal" if enabled else "disabled"
         for button in self.buttons:
             button.configure(state=state)
+        dependency_buttons_enabled = enabled and not self.migration_required and self.migration_status_error is None
+        if self.choose_collection_button is not None:
+            collection_state = "normal" if dependency_buttons_enabled else "disabled"
+            self.choose_collection_button.configure(state=collection_state)
         if self.install_insightface_button is not None:
-            insightface_state = "normal" if enabled and insightface_install_supported() else "disabled"
+            insightface_state = "normal" if dependency_buttons_enabled and insightface_install_supported() else "disabled"
             self.install_insightface_button.configure(state=insightface_state)
         if self.install_openclip_button is not None:
-            openclip_state = "normal" if enabled and openclip_install_supported() else "disabled"
+            openclip_state = "normal" if dependency_buttons_enabled and openclip_install_supported() else "disabled"
             self.install_openclip_button.configure(state=openclip_state)
         if self.download_face_model_button is not None:
             model_state = (
                 "normal"
-                if enabled
+                if dependency_buttons_enabled
                 and self.insightface_status.status == "Klar"
                 else "disabled"
             )
@@ -666,6 +715,77 @@ class BildebankLauncher:
         self.busy = busy
         self.status_value.set(message)
         self._set_buttons_enabled(not busy)
+
+    def _update_migration_status(self) -> None:
+        self.migration_required = False
+        self.migration_status_error = None
+        if not is_collection_created(self.collection_path):
+            return
+        try:
+            self.migration_required = collection_needs_migration(self.collection_path)
+        except Exception as exc:  # noqa: BLE001 - launcher must show a controlled startup error
+            self.migration_status_error = str(exc)
+
+    def _migration_required_message(self) -> str:
+        return (
+            "Bildebank-databasen må oppdateres før programmet kan brukes.\n\n"
+            "Velg Migrer for å kjøre samme migrering som kommandoen "
+            "`bildebank migrate`, eller avslutt uten å gjøre endringer."
+        )
+
+    def _show_migration_required_dialog(self) -> None:
+        if self.migration_dialog_shown or not self.migration_required:
+            return
+        self.migration_dialog_shown = True
+
+        dialog = self.tk.Toplevel(self.root)
+        dialog.title("Migrering kreves")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        dialog.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        frame = self.ttk.Frame(dialog, padding=16)
+        frame.grid(row=0, column=0, sticky="nsew")
+        self.ttk.Label(frame, text="Migrering kreves", font=("", 12, "bold")).grid(row=0, column=0, sticky="w")
+        self.ttk.Label(frame, text=self._migration_required_message(), wraplength=420).grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(10, 16),
+        )
+        self.ttk.Button(frame, text="Migrer", command=lambda: self._migrate_from_dialog(dialog)).grid(
+            row=2,
+            column=0,
+            sticky="e",
+            padx=(0, 8),
+        )
+        self.ttk.Button(frame, text="Avslutt uten å migrere", command=self._on_close).grid(
+            row=2,
+            column=1,
+            sticky="w",
+        )
+
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + max((self.root.winfo_width() - dialog.winfo_width()) // 2, 0)
+        y = self.root.winfo_rooty() + max((self.root.winfo_height() - dialog.winfo_height()) // 2, 0)
+        dialog.geometry(f"+{x}+{y}")
+
+    def _migrate_from_dialog(self, dialog: Any) -> None:
+        dialog.destroy()
+        self._run_migrate()
+
+    def _show_migration_status_error(self) -> None:
+        if self.migration_status_error is None:
+            return
+        from tkinter import messagebox
+
+        messagebox.showerror(
+            "Kan ikke starte Bildebank",
+            "Databasestatus kunne ikke kontrolleres.\n\n" + self.migration_status_error,
+            parent=self.root,
+        )
 
     def _choose_collection(self) -> None:
         from tkinter import filedialog
@@ -686,7 +806,13 @@ class BildebankLauncher:
         except OSError as exc:
             self._show_error("Kunne ikke lagre valgt plassering.", exc)
         self._log(f"Valgt bildesamling: {self.collection_path}")
+        self.migration_dialog_shown = False
+        self._update_migration_status()
         self._refresh_state()
+        if self.migration_required:
+            self._show_migration_required_dialog()
+        elif self.migration_status_error is not None:
+            self._show_migration_status_error()
 
     def _create_collection(self) -> None:
         self._log("Oppretter bildesamling ...")
@@ -767,6 +893,25 @@ class BildebankLauncher:
             failure_message="Vacuum feilet.",
             on_success=self._refresh_state,
         )
+
+    def _run_migrate(self) -> None:
+        self._log("Migrerer database ...")
+        self._run_waiting_command(
+            migrate_command(self.collection_path),
+            running_message="Migrerer database ...",
+            success_message="Migrering fullført.",
+            failure_message="Migrering feilet.",
+            on_success=self._migration_finished,
+        )
+
+    def _migration_finished(self) -> None:
+        self._update_migration_status()
+        self.migration_dialog_shown = False
+        self._refresh_state()
+        if self.migration_required:
+            self._show_migration_required_dialog()
+        elif self.migration_status_error is not None:
+            self._show_migration_status_error()
 
     def _show_pending_deletes(self) -> None:
         self._log("Kontrollerer ventende filsletting ...")
@@ -1190,6 +1335,16 @@ class BildebankLauncher:
 
     def _start_server(self) -> None:
         from tkinter import messagebox
+
+        self._update_migration_status()
+        if self.migration_required:
+            self._refresh_state()
+            self._show_migration_required_dialog()
+            return
+        if self.migration_status_error is not None:
+            self._refresh_state()
+            self._show_migration_status_error()
+            return
 
         if self.server_process is not None:
             if self.server_process.poll() is None:
