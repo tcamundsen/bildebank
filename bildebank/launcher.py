@@ -344,6 +344,7 @@ class BildebankLauncher:
         self.button_frame: ttk.Frame | None = None
         self.log_text: tk.Text | None = None
         self.buttons: list[ttk.Button] = []
+        self.choose_collection_button: ttk.Button | None = None
         self.install_insightface_button: ttk.Button | None = None
         self.install_openclip_button: ttk.Button | None = None
         self.download_face_model_button: ttk.Button | None = None
@@ -407,9 +408,17 @@ class BildebankLauncher:
         title = ttk.Label(outer, text="Bildebank kontrollpanel", font=("", 15, "bold"))
         title.grid(row=0, column=0, sticky="w")
 
-        ttk.Label(outer, text="Bildesamling:").grid(row=1, column=0, sticky="w", pady=(18, 2))
-        collection_label = ttk.Label(outer, textvariable=self.collection_value, wraplength=580)
-        collection_label.grid(row=2, column=0, sticky="we")
+        collection_frame = ttk.Frame(outer)
+        collection_frame.grid(row=1, column=0, rowspan=2, sticky="w", pady=(18, 0))
+        ttk.Label(collection_frame, text="Bildesamling:").grid(row=0, column=0, sticky="w")
+        collection_label = ttk.Label(collection_frame, textvariable=self.collection_value, wraplength=560)
+        collection_label.grid(row=1, column=0, sticky="w")
+        self.choose_collection_button = ttk.Button(
+            collection_frame,
+            text="Velg annen plassering",
+            command=self._choose_collection,
+        )
+        self.choose_collection_button.grid(row=0, column=1, rowspan=2, sticky="w", padx=(12, 0))
 
         insightface_frame = ttk.Frame(outer)
         insightface_frame.grid(row=3, column=0, sticky="w", pady=(14, 0))
@@ -484,13 +493,9 @@ class BildebankLauncher:
             child.destroy()
         self.buttons = []
 
-        choose = ttk.Button(
-            self.button_frame,
-            text="Velg annen plassering",
-            command=self._choose_collection,
-        )
-        choose.grid(row=0, column=0, padx=(0, 8), pady=4)
-        self.buttons.append(choose)
+        if self.choose_collection_button is not None:
+            self.buttons.append(self.choose_collection_button)
+        ttk.Frame(self.button_frame, height=30).grid(row=0, column=0, pady=4)
 
         if is_collection_created(self.collection_path):
             import_button = ttk.Button(self.button_frame, text="Importer bilder", command=self._start_import_flow)
