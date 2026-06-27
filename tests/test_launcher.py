@@ -20,6 +20,7 @@ from bildebank.launcher import (
     is_collection_created,
     load_launcher_config,
     make_thumbnails_command,
+    openclip_install_command,
     progress_log_key,
     registered_sources,
     rescan_source_candidates,
@@ -193,6 +194,18 @@ def test_insightface_install_command_runs_existing_powershell_script(tmp_path: P
         "Bypass",
         "-File",
         str(tmp_path / "install-insightface.ps1"),
+    ]
+
+
+def test_openclip_install_command_runs_existing_powershell_script(tmp_path: Path) -> None:
+    command = openclip_install_command(tmp_path)
+
+    assert command == [
+        "powershell.exe",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        str(tmp_path / "install-openclip.ps1"),
     ]
 
 

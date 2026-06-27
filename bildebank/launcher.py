@@ -182,11 +182,20 @@ def insightface_install_command(repo_root: Path | None = None) -> list[str]:
     return ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script_path)]
 
 
+def openclip_install_command(repo_root: Path | None = None) -> list[str]:
+    script_path = (repo_root or program_repo_root()) / "install-openclip.ps1"
+    return ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script_path)]
+
+
 def download_face_model_command() -> list[str]:
     return bildebank_command("download-face-model")
 
 
 def insightface_install_supported() -> bool:
+    return os.name == "nt"
+
+
+def openclip_install_supported() -> bool:
     return os.name == "nt"
 
 
@@ -300,6 +309,7 @@ class BildebankLauncher:
         self.log_text: tk.Text | None = None
         self.buttons: list[ttk.Button] = []
         self.install_insightface_button: ttk.Button | None = None
+        self.install_openclip_button: ttk.Button | None = None
         self.download_face_model_button: ttk.Button | None = None
         self.insightface_status = insightface_dependency_status()
         self.face_model_status = insightface_model_status()
@@ -313,6 +323,11 @@ class BildebankLauncher:
             self._log(
                 "Installer InsightFace-knappen er deaktivert: "
                 "install-insightface.ps1 er Windows-installasjonsflyt."
+            )
+        if not openclip_install_supported():
+            self._log(
+                "Installer OpenCLIP-knappen er deaktivert: "
+                "install-openclip.ps1 er Windows-installasjonsflyt."
             )
 
     def run(self) -> None:
@@ -372,6 +387,12 @@ class BildebankLauncher:
             command=self._install_insightface,
         )
         self.install_insightface_button.grid(row=0, column=1, sticky="w")
+        self.install_openclip_button = ttk.Button(
+            insightface_frame,
+            text="Installer OpenCLIP",
+            command=self._install_openclip,
+        )
+        self.install_openclip_button.grid(row=0, column=2, sticky="w", padx=(8, 0))
 
         face_model_frame = ttk.Frame(outer)
         face_model_frame.grid(row=4, column=0, sticky="w", pady=(8, 0))
@@ -498,6 +519,9 @@ class BildebankLauncher:
                 else "disabled"
             )
             self.install_insightface_button.configure(state=insightface_state)
+        if self.install_openclip_button is not None:
+            openclip_state = "normal" if enabled and openclip_install_supported() else "disabled"
+            self.install_openclip_button.configure(state=openclip_state)
         if self.download_face_model_button is not None:
             model_state = (
                 "normal"
@@ -588,6 +612,23 @@ class BildebankLauncher:
         )
 
     def _insightface_install_finished(self) -> None:
+        importlib.invalidate_caches()
+        self._refresh_state()
+
+    def _install_openclip(self) -> None:
+        if not openclip_install_supported():
+            self._log("Kan ikke installere OpenCLIP her: install-openclip.ps1 er Windows-installasjonsflyt.")
+            return
+        self._log("Installerer OpenCLIP ...")
+        self._run_waiting_command(
+            openclip_install_command(),
+            running_message="Installerer OpenCLIP ...",
+            success_message="OpenCLIP-installasjon fullført.",
+            failure_message="OpenCLIP-installasjon feilet.",
+            on_success=self._openclip_install_finished,
+        )
+
+    def _openclip_install_finished(self) -> None:
         importlib.invalidate_caches()
         self._refresh_state()
 
