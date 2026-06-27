@@ -562,7 +562,7 @@ class BildebankLauncher:
         self.tools_tab = ttk.Frame(self.notebook, padding=8)
         self.setup_tab = ttk.Frame(self.notebook, padding=8)
         self.notebook.add(self.main_tab, text="Bildebank")
-        self.notebook.add(self.import_tab, text="Import og kilder")
+        self.notebook.add(self.import_tab, text="Import av bilder")
         self.notebook.add(self.tools_tab, text="Verktøy")
         self.notebook.add(self.setup_tab, text="Oppsett")
 
