@@ -70,6 +70,39 @@ class AppConfig:
     browser: BrowserConfig = field(default_factory=BrowserConfig)
 
 
+def load_launcher_collection_path(repo_root: Path) -> Path | None:
+    config_path = repo_root / CONFIG_FILENAME
+    if not config_path.exists():
+        return None
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    launcher_data = _section(data, "launcher")
+    collection_path = launcher_data.get("collection_path")
+    if not isinstance(collection_path, str) or not collection_path.strip():
+        return None
+    return Path(collection_path)
+
+
+def set_launcher_collection_path(repo_root: Path, collection_path: Path) -> Path:
+    config_path = repo_root / CONFIG_FILENAME
+    value = str(collection_path)
+    if not config_path.exists():
+        config_path.write_text(
+            "[launcher]\n"
+            f'collection_path = "{_toml_string_value(value)}"\n',
+            encoding="utf-8",
+        )
+        return config_path
+
+    migrate_legacy_openclip_section(config_path)
+    text = config_path.read_text(encoding="utf-8")
+    _section(tomllib.loads(text), "launcher")
+    config_path.write_text(
+        _set_toml_string(text, section="launcher", key="collection_path", value=value),
+        encoding="utf-8",
+    )
+    return config_path
+
+
 def load_config(repo_root: Path) -> AppConfig:
     config_path = repo_root / CONFIG_FILENAME
     if not config_path.exists():

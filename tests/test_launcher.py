@@ -53,19 +53,28 @@ def test_default_collection_path_uses_home_kode_bilde_samling() -> None:
 
 
 def test_load_config_uses_default_when_file_is_missing(tmp_path: Path) -> None:
-    with patch("pathlib.Path.home", return_value=tmp_path / "home"):
-        config = load_launcher_config(tmp_path / "missing.json")
+    with (
+        patch("pathlib.Path.home", return_value=tmp_path / "home"),
+        patch("bildebank.launcher.program_repo_root", return_value=tmp_path / "repo"),
+    ):
+        config = load_launcher_config()
 
     assert config.collection_path == tmp_path / "home" / "kode" / "bilde-samling"
 
 
-def test_save_and_load_launcher_config(tmp_path: Path) -> None:
-    config_path = tmp_path / "Bildebank" / "launcher.json"
+def test_save_and_load_launcher_config_uses_bildebank_config_toml(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
     collection_path = tmp_path / "samling"
 
-    save_launcher_config(LauncherConfig(collection_path=collection_path), config_path)
+    with patch("bildebank.launcher.program_repo_root", return_value=repo_root):
+        save_launcher_config(LauncherConfig(collection_path=collection_path))
 
-    assert load_launcher_config(config_path).collection_path == collection_path
+    config_text = (repo_root / "bildebank-config.toml").read_text(encoding="utf-8")
+    assert "[launcher]" in config_text
+    assert f'collection_path = "{collection_path}"' in config_text
+    with patch("bildebank.launcher.program_repo_root", return_value=repo_root):
+        assert load_launcher_config().collection_path == collection_path
 
 
 def test_suggest_import_name_uses_last_folder_name() -> None:

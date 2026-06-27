@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-import json
 import locale
 import os
 import subprocess
@@ -13,13 +12,12 @@ from pathlib import Path, PureWindowsPath
 from typing import Any, Callable
 
 from . import db
+from .config import load_launcher_collection_path, set_launcher_collection_path
 from .pending_deletes import list_pending_deletes
 
 PADX = 0
 PADY = 0
 
-CONFIG_DIR_NAME = "Bildebank"
-CONFIG_FILENAME = "launcher.json"
 PROGRESS_LOG_LABELS = (
     "Import",
     "Import dry-run",
@@ -70,33 +68,15 @@ def default_collection_path() -> Path:
     return Path.home() / "kode" / "bilde-samling"
 
 
-def default_config_path() -> Path:
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if local_app_data:
-        return Path(local_app_data) / CONFIG_DIR_NAME / CONFIG_FILENAME
-    return Path.home() / ".bildebank" / CONFIG_FILENAME
+def load_launcher_config() -> LauncherConfig:
+    collection_path = load_launcher_collection_path(program_repo_root())
+    if collection_path is not None:
+        return LauncherConfig(collection_path=collection_path)
+    return LauncherConfig(collection_path=default_collection_path())
 
 
-def load_launcher_config(config_path: Path | None = None) -> LauncherConfig:
-    path = config_path or default_config_path()
-    if not path.exists():
-        return LauncherConfig(collection_path=default_collection_path())
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return LauncherConfig(collection_path=default_collection_path())
-
-    collection_path = data.get("collection_path")
-    if not isinstance(collection_path, str) or not collection_path.strip():
-        return LauncherConfig(collection_path=default_collection_path())
-    return LauncherConfig(collection_path=Path(collection_path))
-
-
-def save_launcher_config(config: LauncherConfig, config_path: Path | None = None) -> None:
-    path = config_path or default_config_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = {"collection_path": str(config.collection_path)}
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+def save_launcher_config(config: LauncherConfig) -> None:
+    set_launcher_collection_path(program_repo_root(), config.collection_path)
 
 
 def suggest_import_name(source_folder: Path) -> str:
@@ -422,14 +402,13 @@ class Tooltip:
 
 
 class BildebankLauncher:
-    def __init__(self, config_path: Path | None = None) -> None:
+    def __init__(self) -> None:
         import tkinter as tk
         from tkinter import ttk
 
         self.tk = tk
         self.ttk = ttk
-        self.config_path = config_path
-        self.config = load_launcher_config(config_path)
+        self.config = load_launcher_config()
         self.collection_path = self.config.collection_path
         self.busy = False
         self.server_process: subprocess.Popen[str] | None = None
@@ -926,7 +905,7 @@ class BildebankLauncher:
         self.collection_value.set(str(self.collection_path))
         self.config = LauncherConfig(collection_path=self.collection_path)
         try:
-            save_launcher_config(self.config, self.config_path)
+            save_launcher_config(self.config)
         except OSError as exc:
             self._show_error("Kunne ikke lagre valgt plassering.", exc)
         self._log(f"Valgt bildesamling: {self.collection_path}")
