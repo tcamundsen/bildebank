@@ -40,6 +40,7 @@ from bildebank.launcher import (
     unimport_source_dry_run_command,
     unimport_source_command,
     update_command,
+    vacuum_command,
 )
 
 
@@ -117,6 +118,7 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         str(collection),
         "make-thumbnails",
     ]
+    assert vacuum_command(collection)[-3:] == ["--target", str(collection), "vacuum"]
     assert cleanup_pending_deletes_list_command(collection)[-4:] == [
         "--target",
         str(collection),

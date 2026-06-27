@@ -188,6 +188,10 @@ def make_thumbnails_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "make-thumbnails")
 
 
+def vacuum_command(collection_path: Path) -> list[str]:
+    return bildebank_command("--target", collection_path, "vacuum")
+
+
 def cleanup_pending_deletes_list_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "cleanup-pending-deletes", "--list")
 
@@ -553,6 +557,8 @@ class BildebankLauncher:
             deep_doctor_button.grid(row=2, column=1, padx=PADX, pady=PADY, sticky="ew")
             update_button = ttk.Button(self.button_frame, text="Oppdater Bildebank", command=self._run_update)
             update_button.grid(row=2, column=2, padx=PADX, pady=PADY, sticky="ew")
+            vacuum_button = ttk.Button(self.button_frame, text="Vacuum databaser", command=self._run_vacuum)
+            vacuum_button.grid(row=3, column=0, padx=PADX, pady=PADY, sticky="ew")
             pending_button = ttk.Button(
                 self.button_frame,
                 text=self._pending_deletes_button_text(),
@@ -568,7 +574,7 @@ class BildebankLauncher:
             )
             exit_button.grid(row=3, column=2, padx=PADX, pady=PADY, sticky="ew", columnspan=2)
             open_button = ttk.Button(self.button_frame, text="Åpne bildesamling", command=self._open_collection)
-            open_button.grid(row=3, column=0, padx=PADX, pady=PADY, sticky="ew")
+            open_button.grid(row=4, column=0, padx=PADX, pady=PADY, sticky="ew")
             self.buttons.extend(
                 [
                     import_button,
@@ -582,6 +588,7 @@ class BildebankLauncher:
                     doctor_button,
                     deep_doctor_button,
                     update_button,
+                    vacuum_button,
                     pending_button,
                     start_button,
                     exit_button,
@@ -748,6 +755,16 @@ class BildebankLauncher:
             running_message="Kjører grundig doctor ...",
             success_message="Grundig doctor fullført.",
             failure_message="Grundig doctor feilet.",
+            on_success=self._refresh_state,
+        )
+
+    def _run_vacuum(self) -> None:
+        self._log("Pakker Bildebank-databaser ...")
+        self._run_waiting_command(
+            vacuum_command(self.collection_path),
+            running_message="Pakker Bildebank-databaser ...",
+            success_message="Vacuum fullført.",
+            failure_message="Vacuum feilet.",
             on_success=self._refresh_state,
         )
 
