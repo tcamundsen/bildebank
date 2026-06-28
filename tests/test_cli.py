@@ -25,12 +25,11 @@ from unittest.mock import patch
 
 from bildebank.cli import (
     build_parser,
-    lan_share_urls,
     main,
     print_image_search_progress,
-    run_server_command,
     wsl_path_from_windows_path,
 )
+from bildebank.cli_server import lan_share_urls, run_server_command
 from bildebank.config import AppConfig, BrowserConfig, BrowserHotkeyConfig, FaceRecognitionConfig, OpenClipConfig, load_config
 from bildebank import db, server_browser
 from bildebank.db import DB_FILENAME, init_database
@@ -897,7 +896,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("--lan-share kan ikke brukes sammen med --host", stderr.getvalue())
 
     def test_lan_share_urls_use_private_ipv4_addresses(self) -> None:
-        with patch("bildebank.cli.local_lan_ipv4_addresses", return_value=["192.168.86.11"]):
+        with patch("bildebank.cli_server.local_lan_ipv4_addresses", return_value=["192.168.86.11"]):
             self.assertEqual(lan_share_urls(8766), ["http://192.168.86.11:8766/"])
 
     def test_run_server_local_bind_host_detection(self) -> None:
@@ -933,9 +932,9 @@ pretrained = "laion2b_s34b_b79k"
     def test_run_server_command_forwards_remote_permission(self) -> None:
         config = AppConfig()
         with (
-            patch("bildebank.cli.load_config", return_value=config),
-            patch("bildebank.cli.lan_share_urls", return_value=["http://192.168.86.11:8765/"]),
-            patch("bildebank.cli.run_local_server") as run_local_server,
+            patch("bildebank.cli_server.load_config", return_value=config),
+            patch("bildebank.cli_server.lan_share_urls", return_value=["http://192.168.86.11:8765/"]),
+            patch("bildebank.cli_server.run_local_server") as run_local_server,
             redirect_stdout(StringIO()) as stdout,
         ):
             run_local_server.side_effect = lambda *args, **kwargs: kwargs["ready"]("http://0.0.0.0:8765/")
@@ -943,6 +942,7 @@ pretrained = "laion2b_s34b_b79k"
                 Path("C:/Users/Tom/Bilder"),
                 host="0.0.0.0",
                 port=8765,
+                repo_root=self.program_root,
                 browser=False,
                 allow_remote=True,
                 preview_images=True,
@@ -965,10 +965,10 @@ pretrained = "laion2b_s34b_b79k"
     def test_run_server_lan_share_opens_localhost_in_browser(self) -> None:
         config = AppConfig()
         with (
-            patch("bildebank.cli.load_config", return_value=config),
-            patch("bildebank.cli.lan_share_urls", return_value=["http://192.168.86.11:8766/"]),
-            patch("bildebank.cli.run_local_server") as run_local_server,
-            patch("bildebank.cli.webbrowser.open") as open_browser,
+            patch("bildebank.cli_server.load_config", return_value=config),
+            patch("bildebank.cli_server.lan_share_urls", return_value=["http://192.168.86.11:8766/"]),
+            patch("bildebank.cli_server.run_local_server") as run_local_server,
+            patch("bildebank.cli_server.webbrowser.open") as open_browser,
             redirect_stdout(StringIO()),
         ):
             run_local_server.side_effect = lambda *args, **kwargs: kwargs["ready"]("http://0.0.0.0:8766/")
@@ -976,6 +976,7 @@ pretrained = "laion2b_s34b_b79k"
                 Path("C:/Users/Tom/Bilder"),
                 host="0.0.0.0",
                 port=8766,
+                repo_root=self.program_root,
                 browser=True,
                 allow_remote=True,
                 preview_images=True,
