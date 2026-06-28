@@ -10382,9 +10382,9 @@ enabled = false
             update_script.write_text("# update\n", encoding="utf-8")
 
             with (
-                patch("bildebank.cli.sys.platform", "win32"),
+                patch("bildebank.cli_update.sys.platform", "win32"),
                 patch("bildebank.cli.program_repo_root", return_value=repo),
-                patch("bildebank.cli.subprocess.run") as subprocess_run,
+                patch("bildebank.cli_update.subprocess.run") as subprocess_run,
             ):
                 subprocess_run.return_value.returncode = 7
 
@@ -10414,9 +10414,9 @@ enabled = false
             venv_python.write_text("# python\n", encoding="utf-8")
 
             with (
-                patch("bildebank.cli.sys.platform", "linux"),
+                patch("bildebank.cli_update.sys.platform", "linux"),
                 patch("bildebank.cli.program_repo_root", return_value=repo),
-                patch("bildebank.cli.subprocess.run") as subprocess_run,
+                patch("bildebank.cli_update.subprocess.run") as subprocess_run,
             ):
                 subprocess_run.return_value.returncode = 0
                 code, stdout, stderr = capture_cli(["update"])
@@ -10439,10 +10439,10 @@ enabled = false
             (repo / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
 
             with (
-                patch("bildebank.cli.sys.platform", "linux"),
+                patch("bildebank.cli_update.sys.platform", "linux"),
                 patch("bildebank.cli.program_repo_root", return_value=repo),
-                patch("bildebank.cli.shutil.which", return_value="/usr/bin/python3.13"),
-                patch("bildebank.cli.subprocess.run") as subprocess_run,
+                patch("bildebank.cli_update.shutil.which", return_value="/usr/bin/python3.13"),
+                patch("bildebank.cli_update.subprocess.run") as subprocess_run,
             ):
                 subprocess_run.return_value.returncode = 0
                 code, stdout, stderr = capture_cli(["update"])
@@ -10461,7 +10461,7 @@ enabled = false
             repo = Path(tmp)
 
             with (
-                patch("bildebank.cli.sys.platform", "win32"),
+                patch("bildebank.cli_update.sys.platform", "win32"),
                 patch("bildebank.cli.program_repo_root", return_value=repo),
             ):
                 code, stdout, stderr = capture_cli(["update"])
@@ -10476,9 +10476,9 @@ enabled = false
             (repo / "update.ps1").write_text("# update\n", encoding="utf-8")
 
             with (
-                patch("bildebank.cli.sys.platform", "win32"),
+                patch("bildebank.cli_update.sys.platform", "win32"),
                 patch("bildebank.cli.program_repo_root", return_value=repo),
-                patch("bildebank.cli.subprocess.run", side_effect=FileNotFoundError),
+                patch("bildebank.cli_update.subprocess.run", side_effect=FileNotFoundError),
             ):
                 code, stdout, stderr = capture_cli(["update"])
 

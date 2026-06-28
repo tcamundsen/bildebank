@@ -5,9 +5,7 @@ import datetime as dt
 import importlib.util
 import os
 import re
-import shutil
 import sqlite3
-import subprocess
 import sys
 import traceback
 import webbrowser
@@ -19,6 +17,7 @@ from .backup import run_backup
 from .cli_check_source import run_check_source
 from .cli_doctor import run_doctor
 from .cli_server import run_server_command
+from .cli_update import run_update
 from .config import CONFIG_FILENAME, load_config, set_config_enabled
 from .exiftool import install_managed_exiftool, resolve_exiftool_path
 from .exiftool_probe import exiftool_metadata_gaps
@@ -1208,7 +1207,7 @@ def run_no_target_command(args: argparse.Namespace) -> int:
         return 0
 
     if args.command == "update":
-        return run_update()
+        return run_update(program_repo_root())
 
     if args.command == "exiftool-install":
         return run_exiftool_install(force=args.force)
@@ -1957,12 +1956,6 @@ def validate_target_not_in_program_repo(target: Path) -> None:
 
 def program_repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
-
-
-def run_update() -> int:
-    if sys.platform == "win32":
-        return run_update_windows()
-    return run_update_linux()
 
 
 def run_exiftool_install(*, force: bool = False) -> int:
@@ -2934,66 +2927,6 @@ def run_migrate(target: Path, *, check: bool) -> int:
     if result.cleans_gps_errors:
         print("Kjør bildebank vacuum hvis du vil krympe SQLite-filen fysisk.")
     return 0
-
-
-def run_update_windows() -> int:
-    repo_root = program_repo_root()
-    update_script = repo_root / "update.ps1"
-    if not update_script.exists():
-        raise ValueError(
-            f"Fant ikke update.ps1 i programmappen: {repo_root}. "
-            f"Kjør manuelt fra programmappen hvis nødvendig."
-        )
-    try:
-        completed = subprocess.run(
-            [
-                "powershell.exe",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-                str(update_script),
-            ],
-            check=False,
-        )
-    except FileNotFoundError as exc:
-        raise ValueError(
-            "Fant ikke PowerShell. Kjør oppdatering manuelt fra programmappen: "
-            f"cd {repo_root}; .\\update.ps1"
-        ) from exc
-    return completed.returncode
-
-
-def run_update_linux() -> int:
-    repo_root = program_repo_root()
-    if not (repo_root / ".git").exists():
-        raise ValueError(f"Fant ikke git-repo: {repo_root}")
-    if not (repo_root / "pyproject.toml").exists():
-        raise ValueError(f"Fant ikke pyproject.toml i: {repo_root}")
-
-    run_update_command(["git", "pull", "--ff-only"], cwd=repo_root)
-
-    venv_python = repo_root / ".venv" / "bin" / "python"
-    if not venv_python.exists():
-        python = shutil.which("python3.13") or shutil.which("python3")
-        if python is None:
-            raise ValueError("Fant ikke python3.13 eller python3 for å lage .venv.")
-        run_update_command([python, "-m", "venv", ".venv"], cwd=repo_root)
-
-    run_update_command([str(venv_python), "-m", "pip", "install", "-e", "."], cwd=repo_root)
-    print("Ferdig. Databasen migreres ikke automatisk.")
-    print("Kjør bildebank migrate i en bildesamling hvis programmet ber om det.")
-    return 0
-
-
-def run_update_command(command: list[str], *, cwd: Path) -> None:
-    try:
-        completed = subprocess.run(command, cwd=cwd, check=False)
-    except FileNotFoundError as exc:
-        raise ValueError(f"Fant ikke kommandoen: {command[0]}") from exc
-    if completed.returncode != 0:
-        raise ValueError(
-            f"Kommando feilet med exit code {completed.returncode}: {' '.join(command)}"
-        )
 
 
 def open_file_in_browser(path: Path) -> None:
