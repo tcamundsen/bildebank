@@ -26,9 +26,9 @@ from unittest.mock import patch
 from bildebank.cli import (
     build_parser,
     main,
-    print_image_search_progress,
     wsl_path_from_windows_path,
 )
+from bildebank.cli_image import print_image_search_progress
 from bildebank.cli_server import lan_share_urls, run_server_command
 from bildebank.config import AppConfig, BrowserConfig, BrowserHotkeyConfig, FaceRecognitionConfig, OpenClipConfig, load_config
 from bildebank import db, server_browser
@@ -12924,16 +12924,28 @@ model_name = "buffalo_l"
             self.enable_openclip_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
 
-            with patch("bildebank.cli.run_image_search", return_value=0) as run_search:
+            with patch("bildebank.cli_image.run_image_search", return_value=0) as run_search:
                 self.assertEqual(run_cli(["--target", str(target), "image-search", "strand"]), 0)
-                run_search.assert_called_once_with(target.resolve(), query="strand", limit=100, browser=True)
+                run_search.assert_called_once_with(
+                    target.resolve(),
+                    repo_root=self.program_root,
+                    query="strand",
+                    limit=100,
+                    browser=True,
+                )
 
-            with patch("bildebank.cli.run_image_search", return_value=0) as run_search:
+            with patch("bildebank.cli_image.run_image_search", return_value=0) as run_search:
                 self.assertEqual(
                     run_cli(["--target", str(target), "image-search", "strand", "--no-browser"]),
                     0,
                 )
-                run_search.assert_called_once_with(target.resolve(), query="strand", limit=100, browser=False)
+                run_search.assert_called_once_with(
+                    target.resolve(),
+                    repo_root=self.program_root,
+                    query="strand",
+                    limit=100,
+                    browser=False,
+                )
 
     def test_image_search_progress_uses_progress_meter(self) -> None:
         stdout = StringIO()

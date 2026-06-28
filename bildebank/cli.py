@@ -8,7 +8,6 @@ import re
 import sqlite3
 import sys
 import traceback
-import webbrowser
 from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
 
@@ -17,9 +16,10 @@ from .backup import run_backup
 from .cli_check_source import run_check_source
 from .cli_doctor import run_doctor
 from .cli_face import run_download_face_model, run_face_command
+from .cli_image import run_image_command
 from .cli_server import run_server_command
 from .cli_update import run_update
-from .config import CONFIG_FILENAME, load_config, set_config_enabled
+from .config import load_config, set_config_enabled
 from .exiftool import install_managed_exiftool
 from .exiftool_probe import exiftool_metadata_gaps
 from .export_person import PersonExportInterrupted
@@ -49,12 +49,7 @@ from .html_export import export_html, export_html_conflicts
 from .media import explain_date, inspect_metadata
 from .media_cache import MediaMetadataCache, cached_image_dimensions
 from .manual_dates import date_range_from_uncertainty
-from .openclip import (
-    cleanup_image_search,
-    openclip_db_path,
-    scan_images,
-    search_images,
-)
+from .openclip import openclip_db_path
 from .platform_guard import validate_collection_platform
 from .pending_deletes import cleanup_pending_deletes, list_pending_deletes
 from .progress import ProgressMeter
@@ -66,8 +61,6 @@ from .unimport import run_unimport as execute_unimport
 
 
 THUMBNAIL_PROGRESS: ProgressMeter | None = None
-IMAGE_SCAN_PROGRESS: ProgressMeter | None = None
-IMAGE_SEARCH_PROGRESS: ProgressMeter | None = None
 REFRESH_METADATA_PROGRESS: ProgressMeter | None = None
 UNIMPORT_SOURCE_PROGRESS: ProgressMeter | None = None
 UNIMPORT_TARGET_PROGRESS: ProgressMeter | None = None
@@ -1095,7 +1088,7 @@ def run(args: argparse.Namespace) -> int:
         return run_target_command(args, target)
 
     if args.command in IMAGE_COMMANDS:
-        return run_image_command(args, target)
+        return run_image_command(args, target, repo_root=program_repo_root())
 
     if args.command in FACE_COMMANDS:
         return run_face_command(args, target, repo_root=program_repo_root())
@@ -1265,15 +1258,6 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
         accept_deleted=args.accept_deleted,
         path_adapter=existing_path_arg,
     )
-
-
-def run_image_command(args: argparse.Namespace, target: Path) -> int:
-    if args.command == "cleanup-image-search":
-        return run_cleanup_image_search(target, apply=args.apply)
-    require_openclip_enabled(load_config(program_repo_root()).openclip.enabled)
-    if args.command == "image-scan":
-        return run_image_scan(target, limit=args.limit)
-    return run_image_search(target, query=args.query, limit=args.limit, browser=not args.no_browser)
 
 
 def run_file_lifecycle_command(args: argparse.Namespace, target: Path) -> int:
@@ -2073,84 +2057,6 @@ def module_available(module_name: str) -> str:
     return "ja" if python_module_available(module_name) else "nei"
 
 
-def run_image_scan(target: Path, *, limit: int | None) -> int:
-    config = load_config(program_repo_root()).openclip
-    stats = scan_images(target, config, limit=limit, progress=print_image_scan_progress)
-    print(
-        "Bildesøk-scan: "
-        f"bilder={stats.total}, hoppet_over={stats.skipped}, "
-        f"scannet={stats.scanned}, feil={stats.errors}"
-    )
-    print(f"OpenCLIP-database: {openclip_db_path(target)}")
-    return 0 if stats.errors == 0 else 2
-
-
-def print_image_scan_progress(
-    stage: str,
-    current: int,
-    total: int,
-    stats,
-    path: Path | None,
-) -> None:
-    global IMAGE_SCAN_PROGRESS
-    if stage == "start":
-        IMAGE_SCAN_PROGRESS = ProgressMeter("Image-scan")
-        IMAGE_SCAN_PROGRESS.message(f"Image-scan: {total} bildefiler skal kontrolleres.")
-        return
-    if IMAGE_SCAN_PROGRESS is None:
-        IMAGE_SCAN_PROGRESS = ProgressMeter("Image-scan")
-    if stage == "load_model":
-        IMAGE_SCAN_PROGRESS.reset_eta()
-        IMAGE_SCAN_PROGRESS.message(f"Image-scan: {stats.to_scan} nye eller endrede bilder skal scannes.")
-        IMAGE_SCAN_PROGRESS.message("Image-scan: laster OpenCLIP-modell. Det kan ta litt tid.")
-        return
-    if stage == "error":
-        message = getattr(stats, "last_error_message", None) or "ukjent feil"
-        IMAGE_SCAN_PROGRESS.error(f"Image-scan-feil: {path}\t{message}")
-        return
-    if stage == "check":
-        IMAGE_SCAN_PROGRESS.update(
-            current,
-            total,
-            action="kontrollert",
-            details=f"hoppet_over={stats.skipped}, skal_scannes={stats.to_scan}",
-            eta=True,
-        )
-        return
-    if stage == "scan":
-        IMAGE_SCAN_PROGRESS.update(
-            current,
-            total,
-            action="scannet",
-            details=(
-                f"behandlet={stats.skipped + current}/{stats.total}, "
-                f"hoppet_over={stats.skipped}, feil={stats.errors}"
-            ),
-            eta=True,
-        )
-        return
-    if stage == "done":
-        IMAGE_SCAN_PROGRESS.done()
-        IMAGE_SCAN_PROGRESS = None
-        return
-
-
-def run_image_search(target: Path, *, query: str, limit: int, browser: bool = True) -> int:
-    config = load_config(program_repo_root()).openclip
-    stats = search_images(target, config, query=query, limit=limit, progress=print_image_search_progress)
-    print(f"Søk: {stats.query}")
-    print(f"Treff: {len(stats.results)}")
-    for result in stats.results[:20]:
-        print(f"{result.rank}\tscore={result.similarity:.3f}\t{result.target_path}")
-    if len(stats.results) > 20:
-        print(f"... {len(stats.results) - 20} flere treff i HTML-filen")
-    print(f"Skrev bildesøk: {stats.output_path}")
-    if browser:
-        open_file_in_browser(stats.output_path)
-        print(f"Åpnet bildesøk: {stats.output_path}")
-    return 0
-
-
 def run_cleanup_pending_deletes(
     target: Path,
     *,
@@ -2186,76 +2092,6 @@ def run_cleanup_pending_deletes(
         f"kontrollert={len(results)}, slettet={deleted}, manglet={missing}, feil={failed}"
     )
     return 0 if failed == 0 else 2
-
-
-def run_cleanup_image_search(target: Path, *, apply: bool) -> int:
-    with TargetLock(target, command="cleanup-image-search"):
-        stats = cleanup_image_search(target, apply=apply)
-    if not stats.exists:
-        print("Ingen OpenCLIP-database å rydde.")
-        return 0
-    print(
-        "Bildesøk-opprydding: "
-        f"foreldreløse_embeddings={stats.embedding_rows}, "
-        f"foreldreløse_søkeresultater={stats.search_result_rows}"
-    )
-    for group in stats.groups[:20]:
-        suffix = f" ({group.row_count} rader)" if group.row_count > 1 else ""
-        print(
-            f"{group.table}\tfile #{group.file_id}\t"
-            f"{group.target_path.as_posix()}{suffix}"
-        )
-    if len(stats.groups) > 20:
-        print(f"... og {len(stats.groups) - 20} file_id/sti-grupper til")
-    if not apply:
-        print("Dry-run: ingen endringer er gjort.")
-        if stats.embedding_rows or stats.search_result_rows:
-            print("Kjør: bildebank cleanup-image-search --apply")
-        return 0
-    print(
-        "Slettet: "
-        f"image_embeddings={stats.deleted_embedding_rows}, "
-        f"image_search_results={stats.deleted_search_result_rows}, "
-        f"tomme_image_search_runs={stats.deleted_search_runs}"
-    )
-    return 0
-
-
-def print_image_search_progress(
-    stage: str,
-    current: int,
-    total: int,
-    stats,
-) -> None:
-    global IMAGE_SEARCH_PROGRESS
-    if stage == "load_model":
-        IMAGE_SEARCH_PROGRESS = ProgressMeter("Image-search")
-        IMAGE_SEARCH_PROGRESS.message(f"Image-search: fant {total} bilde-embeddings. Laster OpenCLIP-modell.")
-        return
-    if IMAGE_SEARCH_PROGRESS is None:
-        IMAGE_SEARCH_PROGRESS = ProgressMeter("Image-search")
-    if stage == "compare_start":
-        IMAGE_SEARCH_PROGRESS.reset_eta()
-        IMAGE_SEARCH_PROGRESS.message(f'Image-search: søker etter "{stats.query}" i {total} bilder.')
-        return
-    if stage == "compare":
-        IMAGE_SEARCH_PROGRESS.update(current, total, action="søkt", eta=True)
-        return
-    if stage == "write":
-        IMAGE_SEARCH_PROGRESS.message(f"Image-search: skriver {current} treff til image-search.html.")
-        return
-    if stage == "done":
-        IMAGE_SEARCH_PROGRESS.done()
-        IMAGE_SEARCH_PROGRESS = None
-        return
-
-
-def require_openclip_enabled(enabled: bool) -> None:
-    if not enabled:
-        raise ValueError(
-            f"Tekstbasert bildesøk er av. Kjør `bildebank config image_search enable` "
-            f"eller sett enabled = true under [image_search] i {CONFIG_FILENAME} hvis du vil teste."
-        )
 
 
 def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
@@ -2396,11 +2232,6 @@ def run_migrate(target: Path, *, check: bool) -> int:
     if result.cleans_gps_errors:
         print("Kjør bildebank vacuum hvis du vil krympe SQLite-filen fysisk.")
     return 0
-
-
-def open_file_in_browser(path: Path) -> None:
-    if not webbrowser.open(path.resolve().as_uri()):
-        raise ValueError(f"Klarte ikke åpne nettleseren for: {path}")
 
 
 def resolve_collection_file_arg(target: Path, path: Path) -> Path:
