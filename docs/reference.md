@@ -3,9 +3,11 @@
 Kommandoer merket **cli** ("command line interface") kan bare kjøres fra
 PowerShell.
 
+Merket **laucher** betyr at det kommandoen gjør, kan gjøres fra vinduet
+`bildebank launcher` gir deg, i tillegg til fra PowerShell.
+
 Merket **web** betyr at du kan få gjort det samme i nettleseren som det
-kommandoen gjør i powershell. Jeg anbefaler da å bruke nettleseren ved å kjøre
-`bildebank run-server` fra PowerShell.
+kommandoen gjør i powershell.
 
 Merket **devel** betyr at kommandoen ikke er ment for sluttbrukere. De som ikke
 er merket har jeg ikke sett over ennå.
@@ -14,19 +16,19 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 ## Kom i gang
 
-- [`create`](create.md) **`cli`**
-- [`import`](import.md) **`cli`**
+- [`create`](create.md) **`launcher`**
+- [`import`](import.md) **`launcher`**
 - [`config`](config.md) **`cli`**
 
 ## Se og kontrollere samlingen
 
-- [`run-server`](run-server.md) **`cli`**
-- [`make-thumbnails`](make-thumbnails.md) **`cli`**
+- [`run-server`](run-server.md) **`launcher`**
+- [`make-thumbnails`](make-thumbnails.md) **`launcher`**
 - [`status`](status.md) **`cli`**
 - [`list-sources`](list-sources.md) **`web`**
 - [`show-source`](show-source.md) **`web`**
-- [`check-source`](check-source.md) **`cli`**
-- [`rescan-source`](rescan-source.md) **`cli`**
+- [`check-source`](check-source.md) **`launcher`**
+- [`rescan-source`](rescan-source.md) **`launcher`**
 - [`date-set`](date-set.md) **`web`**
 - [`date-clear`](date-clear.md) **`web`**
 
@@ -34,18 +36,18 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 - [`remove`](remove.md) **`web`**
 - [`undelete`](undelete.md) **`web`**
-- [`unimport`](unimport.md) **`cli`**
-- [`cleanup-pending-deletes`](cleanup-pending-deletes.md) **`cli`**
+- [`unimport`](unimport.md) **`launcher`**
+- [`cleanup-pending-deletes`](cleanup-pending-deletes.md) **`launcher`**
 - [`list-removed`](list-removed.md) **`web`**
 
 ## Programmet
 
 - [`where-is`](where-is.md) **`cli`**
-- [`doctor`](doctor.md) **`cli`**
+- [`doctor`](doctor.md) **`launcher`**
 - [`backup`](backup.md) **`cli`**
-- [`migrate`](migrate.md) **`cli`**
-- [`vacuum`](vacuum.md) **`cli`**
-- [`update`](update.md) **`cli`**
+- [`migrate`](migrate.md) **`launcher`**
+- [`vacuum`](vacuum.md) **`launcher`**
+- [`update`](update.md) **`launcher`**
 
 ## Generering av statiske HTML-filer:
 
@@ -59,7 +61,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 - [`export-person`](export-person.md) **`cli`**
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
 - [`face-config`](face-config.md) **`cli`** - gammel kompatibilitetskommando erstattet av [`config`](config.md)
-- [`face-scan`](face-scan.md) **`cli`**
+- [`face-scan`](face-scan.md) **`launcher`**
 - [`face-suggest`](face-suggest.md) **`web`**
 - [`face-reset`](face-reset.md) **`cli`**
 
@@ -77,7 +79,7 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 
 ## Geolokalisering
 
-- [`geo-scan`](geo-scan.md)
+- [`geo-scan`](geo-scan.md) **`launcher`**
 - [`exiftool-install`](exiftool-install.md)
 - [`geo-stats`](geo-stats.md)
 - [`geo-areas`](geo-areas.md)
@@ -101,7 +103,7 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 
 ## Tekstbasert bildesøk
 
-- [`image-scan`](image-scan.md) **`cli`**
+- [`image-scan`](image-scan.md) **`launcher`**
 - [`cleanup-image-search`](cleanup-image-search.md) **`cli`**
 
 Se den samlede innføringen: [`openclip`](openclip.md).

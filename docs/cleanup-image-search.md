@@ -5,7 +5,8 @@
 usage: bildebank cleanup-image-search [valg]
 
 Vis eller slett OpenCLIP-rader som peker på filer som mangler i hoveddatabasen
-eller er markert som slettet.
+eller er markert som slettet. Denne kommandoen ble opprettet for å fikse en
+bug i en tidligere utgave av Bildebank.
 
 options:
   -h, --help  show this help message and exit
