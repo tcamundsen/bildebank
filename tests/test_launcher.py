@@ -243,6 +243,13 @@ def test_launcher_initializes_dependency_status_asynchronously() -> None:
     assert "self.root.after(" in worker_source
 
 
+def test_select_source_does_not_run_nested_tk_event_loop() -> None:
+    source = inspect.getsource(BildebankLauncher._select_source)
+
+    assert "self.root.update()" not in source
+    assert "after_idle" in source
+
+
 def test_migration_plan_needs_action_detects_version_change() -> None:
     plan = db.MigrationPlan(
         current_version=12,

@@ -1679,18 +1679,14 @@ class BildebankLauncher:
             dialog.destroy()
             self.root.lift()
             self.root.focus_force()
-            self.root.update_idletasks()
-            self.root.update()
-            self.root.after(300, lambda: on_select(source))
+            self.root.after_idle(lambda: on_select(source))
 
         def cancel() -> None:
             dialog.withdraw()
             dialog.destroy()
             self.root.lift()
             self.root.focus_force()
-            self.root.update_idletasks()
-            self.root.update()
-            self.root.after(0, on_cancel)
+            self.root.after_idle(on_cancel)
 
         button_frame = ttk.Frame(frame)
         button_frame.grid(row=1, column=0, columnspan=2, sticky="e", pady=(12, 0))
