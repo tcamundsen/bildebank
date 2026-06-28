@@ -11,6 +11,7 @@ from bildebank.launcher import (
     InsightFaceDependencyStatus,
     LauncherConfig,
     check_source_command,
+    close_blocked_by_running_command,
     cleanup_pending_deletes_apply_command,
     cleanup_pending_deletes_list_command,
     collection_needs_migration,
@@ -392,6 +393,11 @@ def test_dependency_setup_buttons_are_disabled_when_install_flow_is_not_supporte
         )
         == "disabled"
     )
+
+
+def test_close_is_blocked_while_command_is_running() -> None:
+    assert close_blocked_by_running_command(True)
+    assert not close_blocked_by_running_command(False)
 
 
 def test_face_model_download_button_is_enabled_when_insightface_is_ready() -> None:

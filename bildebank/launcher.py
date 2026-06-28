@@ -276,6 +276,10 @@ def face_model_download_button_state(
     return "disabled"
 
 
+def close_blocked_by_running_command(busy: bool) -> bool:
+    return busy
+
+
 def openclip_dependency_status() -> str:
     if importlib.util.find_spec("open_clip") is not None:
         return "Installert"
@@ -529,6 +533,13 @@ class BildebankLauncher:
         self.root.mainloop()
 
     def _on_close(self) -> None:
+        if close_blocked_by_running_command(self.busy):
+            from tkinter import messagebox
+
+            message = "Vent til jobben som kjører er ferdig før du lukker kontrollpanelet."
+            self._log(message)
+            messagebox.showinfo("Bildebank jobber", message, parent=self.root)
+            return
         self._stop_server_process()
         self.root.destroy()
 
