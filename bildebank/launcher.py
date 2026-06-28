@@ -985,6 +985,10 @@ class BildebankLauncher:
         self.openclip_status_value.set(f"open_clip: {self.openclip_status}")
         self.openclip_model_status_value.set(f"AI-modell: {self.openclip_model_status.status}")
 
+    def _log_dependency_status_detail(self, label: str, status: str, detail: str) -> None:
+        if status == "Feil" and detail:
+            self._log(f"{label}-status feilet: {detail}")
+
     def _start_dependency_status_refresh(self) -> None:
         if self.dependency_status_refreshing:
             return
@@ -1042,6 +1046,9 @@ class BildebankLauncher:
         self.face_model_status = face_model_status
         self.openclip_status = openclip_status
         self.openclip_model_status = openclip_model_status
+        self._log_dependency_status_detail("InsightFace", insightface_status.status, insightface_status.detail)
+        self._log_dependency_status_detail("Ansiktsmodell", face_model_status.status, face_model_status.detail)
+        self._log_dependency_status_detail("OpenCLIP-modell", openclip_model_status.status, openclip_model_status.detail)
         self._apply_dependency_status_values()
         self._set_buttons_enabled(not self.busy)
 

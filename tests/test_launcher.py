@@ -10,7 +10,9 @@ from bildebank import db
 from bildebank.launcher import (
     BildebankLauncher,
     InsightFaceDependencyStatus,
+    InsightFaceModelStatus,
     LauncherConfig,
+    OpenClipModelStatus,
     check_source_command,
     close_blocked_by_running_command,
     cleanup_pending_deletes_apply_command,
@@ -241,6 +243,38 @@ def test_launcher_initializes_dependency_status_asynchronously() -> None:
     assert "openclip_model_status()" not in refresh_source
     assert "threading.Thread" in start_source
     assert "self.root.after(" in worker_source
+
+
+def test_dependency_status_finished_logs_error_details() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher.busy = False
+    launcher.dependency_status_refreshing = True
+    logged: list[str] = []
+    launcher._log = logged.append
+    launcher._apply_dependency_status_values = lambda: None
+    launcher._set_buttons_enabled = lambda enabled: None
+
+    launcher._dependency_status_finished(
+        InsightFaceDependencyStatus("Feil", "runtime-feil"),
+        InsightFaceModelStatus("buffalo_l", "Mangler", "forventet mangler"),
+        "Feil: open_clip-feil",
+        OpenClipModelStatus("ViT-B-32", "laion", "Feil", "modell-feil"),
+    )
+
+    assert logged == [
+        "InsightFace-status feilet: runtime-feil",
+        "OpenCLIP-modell-status feilet: modell-feil",
+    ]
+
+    logged.clear()
+    launcher._dependency_status_finished(
+        InsightFaceDependencyStatus("Feil"),
+        InsightFaceModelStatus("buffalo_l", "Klar"),
+        "Mangler",
+        OpenClipModelStatus("ViT-B-32", "laion", "Mangler", "forventet mangler"),
+    )
+
+    assert logged == []
 
 
 def test_select_source_does_not_run_nested_tk_event_loop() -> None:
