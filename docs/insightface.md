@@ -71,6 +71,9 @@ bildebank face-scan
 Det er trygt å avbryte med `Ctrl-C`. Neste gang fortsetter Bildebank ved å
 hoppe over bilder som allerede er scannet.
 
+Hvis du kjører scanningen fra Bildebank kontrollpanel, bruker du knappen
+**Avbryt jobb** i stedet for `Ctrl-C`.
+
 Hvis du vil teste resten av systemet før hele samlingen er ferdig scannet, kan
 du la `face-scan` scanne noen hundre bilder, avbryte med `Ctrl-C` og fortsette
 med resten av oppskriften. Senere kan du kjøre `face-scan` på nytt for å

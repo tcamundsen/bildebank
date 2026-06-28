@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import os
+import signal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -29,6 +30,8 @@ from bildebank.launcher import (
     insightface_dependency_status,
     insightface_install_command,
     insightface_model_status,
+    interrupt_process,
+    interruptible_command_creationflags,
     is_collection_created,
     launcher_command,
     load_launcher_config,
@@ -211,6 +214,8 @@ def test_launcher_layout_source_defines_notebook_tabs_and_log_below_tabs() -> No
     assert "log_frame = ttk.Frame(self.notebook)" not in source
     assert "footer = ttk.Frame(outer)" in source
     assert "ttk.Style(self.root).configure(BUTTON_STYLE, padding=BUTTON_PADDING)" in source
+    assert "self.cancel_command_button = self._button(" in source
+    assert 'text="Avbryt jobb"' in source
     assert "self.exit_button = self._button(" in source
     assert 'text="Avslutt bildebank kontrollpanel"' in source
     assert 'text="Avslutt bildebank kontrollpanel"' not in refresh_source
@@ -489,6 +494,32 @@ model_name = "buffalo_l"
 def test_subprocess_output_encoding_uses_locale() -> None:
     with patch("locale.getpreferredencoding", return_value="cp1252"):
         assert subprocess_output_encoding() == "cp1252"
+
+
+def test_interruptible_command_creationflags_are_zero_outside_windows() -> None:
+    with patch("bildebank.launcher.os.name", "posix"):
+        assert interruptible_command_creationflags() == 0
+
+
+def test_interrupt_process_sends_sigint_outside_windows() -> None:
+    class FakeProcess:
+        signal_sent: object | None = None
+
+        def send_signal(self, value: object) -> None:
+            self.signal_sent = value
+
+    process = FakeProcess()
+
+    with patch("bildebank.launcher.os.name", "posix"):
+        interrupt_process(process)  # type: ignore[arg-type]
+
+    assert process.signal_sent is signal.SIGINT
+
+
+def test_face_scan_is_cancellable_from_launcher() -> None:
+    source = inspect.getsource(BildebankLauncher._run_face_scan)
+
+    assert "cancellable=True" in source
 
 
 def test_progress_log_key_recognizes_progress_updates_only() -> None:

@@ -17,6 +17,8 @@ tekstsøk på innhold i bildene.
 
 Denne må kjøres på nytt hvis du legger til nye bilder. Kommandoen kan avbrytes
 med **Ctrl-C**. Den fortsetter da der den slapp neste gang kommandoen kjøres.
+Hvis den kjøres fra Bildebank kontrollpanel, bruker du **Avbryt jobb** i
+stedet.
 
 ```powershell
 bildebank image-report

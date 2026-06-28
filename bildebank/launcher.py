@@ -4,6 +4,7 @@ import importlib
 import importlib.util
 import locale
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -280,6 +281,24 @@ def close_blocked_by_running_command(busy: bool) -> bool:
     return busy
 
 
+def interruptible_command_creationflags() -> int:
+    if os.name != "nt":
+        return 0
+    return int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+
+
+def interrupt_process(process: subprocess.Popen[str]) -> None:
+    if os.name == "nt":
+        ctrl_break_event = getattr(signal, "CTRL_BREAK_EVENT", None)
+        if ctrl_break_event is not None:
+            process.send_signal(ctrl_break_event)
+            return
+    else:
+        process.send_signal(signal.SIGINT)
+        return
+    process.terminate()
+
+
 def openclip_dependency_status() -> str:
     if importlib.util.find_spec("open_clip") is not None:
         return "Installert"
@@ -466,6 +485,9 @@ class BildebankLauncher:
         self.collection_path = self.config.collection_path
         self.busy = False
         self.server_process: subprocess.Popen[str] | None = None
+        self.active_command_process: subprocess.Popen[str] | None = None
+        self.active_command_cancel_requested = False
+        self.active_command_cancellable = False
 
         self.root = tk.Tk()
         self.root.title("Bildebank kontrollpanel")
@@ -493,6 +515,7 @@ class BildebankLauncher:
         self.install_insightface_button: ttk.Button | None = None
         self.install_openclip_button: ttk.Button | None = None
         self.download_face_model_button: ttk.Button | None = None
+        self.cancel_command_button: ttk.Button | None = None
         self.exit_button: ttk.Button | None = None
         self.tooltips: list[Tooltip] = []
         self.pending_deletes_status: str = "Ukjent"
@@ -700,12 +723,18 @@ class BildebankLauncher:
         footer.columnconfigure(0, weight=1)
         status = ttk.Label(footer, textvariable=self.status_value)
         status.grid(row=0, column=0, sticky="w")
+        self.cancel_command_button = self._button(
+            footer,
+            text="Avbryt jobb",
+            command=self._cancel_active_command,
+        )
+        self.cancel_command_button.grid(row=0, column=1, sticky="e", padx=(0, PADX))
         self.exit_button = self._button(
             footer,
             text="Avslutt bildebank kontrollpanel",
             command=self._on_close,
         )
-        self.exit_button.grid(row=0, column=1, sticky="e")
+        self.exit_button.grid(row=0, column=2, sticky="e")
 
     def _refresh_state(self) -> None:
         assert self.main_button_frame is not None
@@ -1056,11 +1085,37 @@ class BildebankLauncher:
             )
         if self.exit_button is not None:
             self.exit_button.configure(state=state)
+        if self.cancel_command_button is not None:
+            cancel_state = (
+                "normal"
+                if self.busy and self.active_command_cancellable and not self.active_command_cancel_requested
+                else "disabled"
+            )
+            self.cancel_command_button.configure(state=cancel_state)
 
     def _set_busy(self, busy: bool, message: str = "") -> None:
         self.busy = busy
         self.status_value.set(message)
         self._set_buttons_enabled(not busy)
+
+    def _cancel_active_command(self) -> None:
+        process = self.active_command_process
+        if process is None and self.busy and self.active_command_cancellable:
+            self.active_command_cancel_requested = True
+            self._set_buttons_enabled(False)
+            self.status_value.set("Avbryter jobb ...")
+            self._log("Ber jobben avbryte kontrollert ...")
+            return
+        if process is None or process.poll() is not None:
+            return
+        self.active_command_cancel_requested = True
+        self._set_buttons_enabled(False)
+        self.status_value.set("Avbryter jobb ...")
+        self._log("Ber jobben avbryte kontrollert ...")
+        try:
+            interrupt_process(process)
+        except OSError as exc:
+            self._log(f"Kunne ikke avbryte jobben: {exc}")
 
     def _update_migration_status(self) -> None:
         self.migration_required = False
@@ -1178,6 +1233,7 @@ class BildebankLauncher:
             success_message="GPS-scan fullført.",
             failure_message="GPS-scan feilet.",
             on_success=self._refresh_state,
+            cancellable=True,
         )
 
     def _run_face_scan(self) -> None:
@@ -1188,6 +1244,7 @@ class BildebankLauncher:
             success_message="Ansiktsscan fullført.",
             failure_message="Ansiktsscan feilet.",
             on_success=self._refresh_state,
+            cancellable=True,
         )
 
     def _run_image_scan(self) -> None:
@@ -1198,6 +1255,7 @@ class BildebankLauncher:
             success_message="Bildesøk-scan fullført.",
             failure_message="Bildesøk-scan feilet.",
             on_success=self._refresh_state,
+            cancellable=True,
         )
 
     def _run_make_thumbnails(self) -> None:
@@ -1208,6 +1266,7 @@ class BildebankLauncher:
             success_message="Thumbnails fullført.",
             failure_message="Thumbnail-jobb feilet.",
             on_success=self._refresh_state,
+            cancellable=True,
         )
 
     def _run_doctor(self) -> None:
@@ -1218,6 +1277,7 @@ class BildebankLauncher:
             success_message="Doctor fullført.",
             failure_message="Doctor feilet.",
             on_success=self._refresh_state,
+            cancellable=True,
         )
 
     def _run_deep_doctor(self) -> None:
@@ -1228,6 +1288,7 @@ class BildebankLauncher:
             success_message="Grundig doctor fullført.",
             failure_message="Grundig doctor feilet.",
             on_success=self._refresh_state,
+            cancellable=True,
         )
 
     def _run_vacuum(self) -> None:
@@ -1454,6 +1515,7 @@ class BildebankLauncher:
             success_message="Rescan fullført.",
             failure_message="Rescan feilet.",
             on_success=self._refresh_state,
+            cancellable=True,
         )
 
     def _start_check_source_flow(self) -> None:
@@ -1482,6 +1544,7 @@ class BildebankLauncher:
             success_message="Kildesjekk fullført.",
             failure_message="Kildesjekk feilet.",
             on_success=self._refresh_state,
+            cancellable=True,
         )
 
     def _start_unimport_source_flow(self) -> None:
@@ -1718,9 +1781,13 @@ class BildebankLauncher:
         failure_message: str,
         on_success: Callable[[], None] | None = None,
         stdin_text: str | None = None,
+        cancellable: bool = False,
     ) -> None:
         from tkinter import messagebox
 
+        self.active_command_process = None
+        self.active_command_cancel_requested = False
+        self.active_command_cancellable = cancellable
         self._set_busy(True, running_message)
         self._clear_active_progress_log()
         self._log("$ " + " ".join(command))
@@ -1736,6 +1803,7 @@ class BildebankLauncher:
                     encoding=subprocess_output_encoding(),
                     errors="replace",
                     bufsize=1,
+                    creationflags=interruptible_command_creationflags() if cancellable else 0,
                 )
             except OSError as exc:
                 self.root.after(
@@ -1743,6 +1811,12 @@ class BildebankLauncher:
                     lambda exc=exc: self._command_start_failed(failure_message, exc),
                 )
                 return
+            self.active_command_process = process
+            if self.active_command_cancel_requested:
+                try:
+                    interrupt_process(process)
+                except OSError:
+                    pass
 
             if stdin_text is not None:
                 assert process.stdin is not None
@@ -1754,6 +1828,7 @@ class BildebankLauncher:
             for line in process.stdout:
                 self.root.after(0, self._log_process_output, line.rstrip())
             return_code = process.wait()
+            cancel_requested = self.active_command_cancel_requested
             self.root.after(
                 0,
                 lambda: self._command_finished(
@@ -1762,6 +1837,7 @@ class BildebankLauncher:
                     failure_message=failure_message,
                     on_success=on_success,
                     messagebox=messagebox,
+                    cancel_requested=cancel_requested,
                 ),
             )
 
@@ -1770,6 +1846,9 @@ class BildebankLauncher:
     def _command_start_failed(self, failure_message: str, exc: OSError) -> None:
         from tkinter import messagebox
 
+        self.active_command_process = None
+        self.active_command_cancel_requested = False
+        self.active_command_cancellable = False
         self._set_busy(False)
         self._clear_active_progress_log()
         self._log(f"{failure_message} {exc}")
@@ -1783,13 +1862,20 @@ class BildebankLauncher:
         failure_message: str,
         on_success: Callable[[], None] | None,
         messagebox: object,
+        cancel_requested: bool = False,
     ) -> None:
+        self.active_command_process = None
+        self.active_command_cancel_requested = False
+        self.active_command_cancellable = False
         self._set_busy(False)
         self._clear_active_progress_log()
         if return_code == 0:
             self._log(success_message)
             if on_success is not None:
                 on_success()
+            return
+        if cancel_requested:
+            self._log(f"Jobben ble avbrutt. Avsluttet med kode {return_code}.")
             return
         self._log(f"{failure_message} Avsluttet med kode {return_code}.")
         messagebox.showerror("Feil", failure_message)
