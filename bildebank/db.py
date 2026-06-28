@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import os
 import re
 import sqlite3
 import shutil
@@ -10,12 +8,32 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from pathlib import PureWindowsPath
-from typing import Any, Iterable
+from typing import Iterable
 
+from . import db_core
+from .db_core import (
+    COLLECTION_ID_META_KEY,
+    DB_FILENAME,
+    absolute_target_path,
+    db_path_for_target,
+    ensure_column,
+    execute_sql_statements,
+    find_target,
+    get_meta,
+    log_command,
+    path_key,
+    relative_path,
+    relative_path_key,
+    set_collection_id,
+    set_meta,
+    table_columns,
+    table_exists,
+    target_relative_path,
+    target_relative_path_key,
+)
 from .value_parsing import optional_int, require_int
 
 
-DB_FILENAME = ".bilder.sqlite3"
 SCHEMA_VERSION = 13
 GPS_ERROR_EXIFTOOL = "exiftool_error"
 GPS_ERROR_FILE_MISSING = "file_missing"
@@ -24,7 +42,6 @@ TAG_KIND_SYSTEM = "system"
 SYSTEM_TAG_OUT_OF_FOCUS = "Ute av fokus"
 SYSTEM_TAG_NAMES = (SYSTEM_TAG_OUT_OF_FOCUS,)
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
-COLLECTION_ID_META_KEY = "collection_id"
 DATE_GLOB_SQL = "'[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
 MANUAL_DATE_MIDPOINT_SQL = "date((julianday(manual_date_from) + julianday(manual_date_to)) / 2.0)"
 BROWSER_DATE_ORDER_SQL = (
@@ -48,9 +65,6 @@ PERFORMANCE_INDEX_NAMES = (
     "idx_file_sources_source_id_file_id",
     "idx_errors_unresolved_stage_id",
 )
-_PREPARED_TARGETS: set[str] = set()
-
-
 def h3_file_column_definitions_sql() -> str:
     return ",\n            ".join(f"{column} TEXT" for column in H3_FILE_COLUMNS)
 
@@ -66,62 +80,6 @@ def h3_file_index_sql() -> str:
         WHERE {column} IS NOT NULL AND deleted_at IS NULL;"""
         for column in H3_FILE_COLUMNS
     )
-
-
-def path_key(path: Path) -> str:
-    resolved = path.resolve()
-    value = os.path.normpath(str(resolved))
-    if os.name == "nt":
-        value = value.lower()
-    return value
-
-
-def relative_path(path: Path) -> Path:
-    candidate = Path(path)
-    if candidate.is_absolute():
-        return candidate
-    normalized = os.path.normpath(str(candidate))
-    return Path(normalized)
-
-
-def relative_path_key(path: Path) -> str:
-    value = os.path.normpath(str(relative_path(path))).replace("\\", "/")
-    if value in {".", ""}:
-        return ""
-    if os.name == "nt":
-        value = value.lower()
-    return value
-
-
-def target_relative_path(target: Path, path: Path) -> Path:
-    candidate = Path(path)
-    if candidate.is_absolute():
-        try:
-            return candidate.resolve().relative_to(target.resolve())
-        except ValueError as exc:
-            raise ValueError(f"Filen ligger utenfor bildesamlingen: {path}") from exc
-    return relative_path(candidate)
-
-
-def target_relative_path_key(target: Path, path: Path) -> str:
-    return relative_path_key(target_relative_path(target, path))
-
-
-def absolute_target_path(target: Path, path: Path | str) -> Path:
-    candidate = Path(path)
-    return candidate if candidate.is_absolute() else target / candidate
-
-
-def db_path_for_target(target: Path) -> Path:
-    return target / DB_FILENAME
-
-
-def find_target(start: Path | None = None) -> Path | None:
-    current = (start or Path.cwd()).resolve()
-    for candidate in [current, *current.parents]:
-        if db_path_for_target(candidate).exists():
-            return candidate
-    return None
 
 
 class SchemaMigrationRequired(ValueError):
@@ -151,25 +109,15 @@ class MigrationPlan:
 
 
 def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path_for_target(target))
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    try:
-        if require_current:
-            require_current_schema(conn, full=str(target.resolve()) not in _PREPARED_TARGETS)
-        return conn
-    except Exception:
-        conn.close()
-        raise
+    return db_core.connect(
+        target,
+        require_current=require_current,
+        schema_validator=require_current_schema,
+    )
 
 
 def prepare_database(target: Path) -> None:
-    conn = connect(target, require_current=False)
-    try:
-        require_current_schema(conn, full=True)
-        _PREPARED_TARGETS.add(str(target.resolve()))
-    finally:
-        conn.close()
+    db_core.prepare_database(target, schema_validator=require_current_schema)
 
 
 def schema_version(conn: sqlite3.Connection) -> int:
@@ -308,29 +256,9 @@ def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
         )
 
 
-def execute_sql_statements(conn: sqlite3.Connection, script: str) -> None:
-    for statement in script.split(";"):
-        if statement.strip():
-            conn.execute(statement)
-
-
 def drop_performance_indexes(conn: sqlite3.Connection) -> None:
     for name in PERFORMANCE_INDEX_NAMES:
         conn.execute(f"DROP INDEX IF EXISTS {name}")
-
-
-def table_exists(conn: sqlite3.Connection, table: str) -> bool:
-    return (
-        conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-            (table,),
-        ).fetchone()
-        is not None
-    )
-
-
-def table_columns(conn: sqlite3.Connection, table: str) -> set[str]:
-    return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
 
 
 def init_database(target: Path) -> None:
@@ -1759,47 +1687,6 @@ def rebuild_file_sources_without_kind(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_id ON file_sources(source_id, id);
         CREATE INDEX IF NOT EXISTS idx_file_sources_source_id_file_id ON file_sources(source_id, file_id);
         """
-    )
-
-
-def ensure_column(conn: sqlite3.Connection, table: str, column: str, definition: str) -> None:
-    columns = table_columns(conn, table)
-    if column not in columns:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-
-
-def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
-    conn.execute(
-        "INSERT INTO meta(key, value) VALUES(?, ?) "
-        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        (key, value),
-    )
-
-
-def get_meta(conn: sqlite3.Connection, key: str) -> str | None:
-    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
-    return None if row is None else str(row["value"])
-
-
-def set_collection_id(conn: sqlite3.Connection) -> str:
-    value = get_meta(conn, COLLECTION_ID_META_KEY)
-    if value is None:
-        value = str(uuid.uuid4())
-        set_meta(conn, COLLECTION_ID_META_KEY, value)
-        return value
-    try:
-        normalized = str(uuid.UUID(value))
-    except ValueError as exc:
-        raise ValueError(f"Ugyldig collection_id i databasen: {value}") from exc
-    if normalized != value:
-        set_meta(conn, COLLECTION_ID_META_KEY, normalized)
-    return normalized
-
-
-def log_command(conn: sqlite3.Connection, command: str, args: dict[str, Any]) -> None:
-    conn.execute(
-        "INSERT INTO command_log(command, args_json) VALUES(?, ?)",
-        (command, json.dumps(args, ensure_ascii=False, sort_keys=True)),
     )
 
 
