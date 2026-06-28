@@ -16,7 +16,7 @@ from . import __version__, db
 from .backup import run_backup
 from .cli_check_source import run_check_source
 from .cli_doctor import run_doctor
-from .cli_face import run_face_command
+from .cli_face import run_download_face_model, run_face_command
 from .cli_server import run_server_command
 from .cli_update import run_update
 from .config import CONFIG_FILENAME, load_config, set_config_enabled
@@ -1180,7 +1180,7 @@ def run_no_target_command(args: argparse.Namespace) -> int:
         return run_config(args.section, enabled=args.action == "enable")
 
     if args.command == "download-face-model":
-        return run_download_face_model()
+        return run_download_face_model(program_repo_root())
 
     raise ValueError(f"Ukjent kommando uten bildesamling: {args.command}")
 
@@ -2050,24 +2050,6 @@ def run_geo_area(
             lon = row["gps_lon"]
             parts.append("-" if lat is None or lon is None else f"{float(lat):.6f}, {float(lon):.6f}")
         print("\t".join(parts))
-    return 0
-
-
-def run_download_face_model() -> int:
-    from .face import insightface_model_files_exist, load_face_app
-
-    config = load_config(program_repo_root()).face_recognition
-    print(f"InsightFace-modell: {config.model_name}")
-    print(f"Modellmappe: {config.model_root}")
-    if insightface_model_files_exist(config):
-        print("Modellen er allerede lastet ned.")
-        return 0
-
-    print("Laster ned og klargjør modellen. Første kjøring kan ta lang tid.")
-    load_face_app(config)
-    if not insightface_model_files_exist(config):
-        raise ValueError(f"InsightFace-modellen {config.model_name!r} ble ikke funnet etter nedlasting.")
-    print("Modellen er lastet ned.")
     return 0
 
 

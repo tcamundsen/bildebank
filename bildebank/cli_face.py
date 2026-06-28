@@ -38,6 +38,24 @@ FACE_SCAN_PROGRESS: ProgressMeter | None = None
 FACE_SUGGEST_PROGRESS: ProgressMeter | None = None
 
 
+def run_download_face_model(repo_root: Path) -> int:
+    from .face import insightface_model_files_exist, load_face_app
+
+    config = load_config(repo_root).face_recognition
+    print(f"InsightFace-modell: {config.model_name}")
+    print(f"Modellmappe: {config.model_root}")
+    if insightface_model_files_exist(config):
+        print("Modellen er allerede lastet ned.")
+        return 0
+
+    print("Laster ned og klargjør modellen. Første kjøring kan ta lang tid.")
+    load_face_app(config)
+    if not insightface_model_files_exist(config):
+        raise ValueError(f"InsightFace-modellen {config.model_name!r} ble ikke funnet etter nedlasting.")
+    print("Modellen er lastet ned.")
+    return 0
+
+
 def run_face_command(args: argparse.Namespace, target: Path, *, repo_root: Path) -> int:
     require_face_enabled(load_config(repo_root).face_recognition.enabled)
 
