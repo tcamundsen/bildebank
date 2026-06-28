@@ -154,7 +154,6 @@ HELP_COMMAND_GROUPS = (
         "ansikter",
         (
             ("face-status", "Gammelt navn for doctor"),
-            ("face-config", "Slå ansiktsgjenkjenning på eller av"),
             ("download-face-model", "Last ned valgt InsightFace-modell"),
             ("face-scan", "Scanning etter ansikter"),
             ("face-suggest", "Foreslå personer for ukjente ansikter"),
@@ -720,19 +719,6 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("enable", "disable"),
         help="enable slår funksjonen på, disable slår den av",
     )
-    face_config = add_command(
-        subparsers,
-        "face-config",
-        usage="bildebank face-config true|false",
-        help="Slå ansiktsgjenkjenning på eller av",
-        description="Slå ansiktsgjenkjenning på eller av",
-    )
-    face_config.add_argument(
-        "enabled",
-        metavar="true|false",
-        type=bool_arg,
-        help="true slår på ansiktsgjenkjenning, false slår den av",
-    )
     add_command(
         subparsers,
         "download-face-model",
@@ -1049,15 +1035,6 @@ def add_command(
     return subparsers.add_parser(name, help=help, description=description, usage=usage)
 
 
-def bool_arg(value: str) -> bool:
-    normalized = value.strip().lower()
-    if normalized == "true":
-        return True
-    if normalized == "false":
-        return False
-    raise argparse.ArgumentTypeError("Bruk true eller false.")
-
-
 def main_help_epilog() -> str:
     lines = ["Vanlige kommandoer:"]
     for heading, commands in HELP_COMMAND_GROUPS:
@@ -1089,7 +1066,6 @@ NO_TARGET_COMMANDS = {
     "doctor",
     "face-status",
     "config",
-    "face-config",
     "download-face-model",
 }
 
@@ -1224,9 +1200,6 @@ def run_no_target_command(args: argparse.Namespace) -> int:
 
     if args.command == "config":
         return run_config(args.section, enabled=args.action == "enable")
-
-    if args.command == "face-config":
-        return run_face_config(args.enabled)
 
     if args.command == "download-face-model":
         return run_download_face_model()
@@ -2201,11 +2174,6 @@ def run_geo_area(
             parts.append("-" if lat is None or lon is None else f"{float(lat):.6f}, {float(lon):.6f}")
         print("\t".join(parts))
     return 0
-
-
-def run_face_config(enabled: bool) -> int:
-    print(f"Ansiktsgjenkjenning er satt til {'på' if enabled else 'av'}.")
-    return run_config("face_recognition", enabled=enabled)
 
 
 def run_download_face_model() -> int:

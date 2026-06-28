@@ -60,7 +60,6 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 - [`insightface`](insightface.md) - innføring
 - [`export-person`](export-person.md) **`cli`**
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
-- [`face-config`](face-config.md) **`cli`** - gammel kompatibilitetskommando erstattet av [`config`](config.md)
 - [`face-scan`](face-scan.md) **`launcher`**
 - [`face-suggest`](face-suggest.md) **`web`**
 - [`face-reset`](face-reset.md) **`cli`**
