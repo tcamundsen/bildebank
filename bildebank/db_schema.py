@@ -24,15 +24,18 @@ from .db_core import (
     table_columns,
     table_exists,
 )
+from .db_tags import (
+    SYSTEM_TAG_NAMES,
+    TAG_KIND_SYSTEM,
+    normalize_tag_name,
+    tag_kind_for_name,
+    tag_name_key,
+)
 from .value_parsing import optional_int
 
 SCHEMA_VERSION = 13
 GPS_ERROR_EXIFTOOL = "exiftool_error"
 GPS_ERROR_FILE_MISSING = "file_missing"
-TAG_KIND_USER = "user"
-TAG_KIND_SYSTEM = "system"
-SYSTEM_TAG_OUT_OF_FOCUS = "Ute av fokus"
-SYSTEM_TAG_NAMES = (SYSTEM_TAG_OUT_OF_FOCUS,)
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
 DATE_GLOB_SQL = "'[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'"
 MANUAL_DATE_MIDPOINT_SQL = "date((julianday(manual_date_from) + julianday(manual_date_to)) / 2.0)"
@@ -1737,28 +1740,6 @@ def count_rows(conn: sqlite3.Connection, table: str) -> int:
         return 0
     return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
-def normalize_tag_name(name: str) -> str:
-    normalized = " ".join(name.strip().split())
-    if not normalized:
-        raise ValueError("Taggnavn kan ikke være tomt.")
-    if len(normalized) > 80:
-        raise ValueError("Taggnavn kan være maks 80 tegn.")
-    return normalized
-
-
-def tag_name_key(name: str) -> str:
-    return normalize_tag_name(name).casefold()
-
-
-def tag_kind_for_name(name: str) -> str:
-    name_key = tag_name_key(name)
-    if name_key in {tag_name_key(system_name) for system_name in SYSTEM_TAG_NAMES}:
-        return TAG_KIND_SYSTEM
-    return TAG_KIND_USER
-
-
-def is_system_tag_name(name: str) -> bool:
-    return tag_kind_for_name(name) == TAG_KIND_SYSTEM
 
 def has_legacy_gps_errors(conn: sqlite3.Connection) -> bool:
     if not table_exists(conn, "files") or "gps_error" not in table_columns(conn, "files"):
