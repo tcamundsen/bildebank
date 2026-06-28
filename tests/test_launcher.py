@@ -222,6 +222,21 @@ def test_launcher_button_helper_uses_launcher_button_style() -> None:
     assert "return self.ttk.Button(parent, **kwargs)" in source
 
 
+def test_launcher_initializes_dependency_status_asynchronously() -> None:
+    init_source = inspect.getsource(BildebankLauncher.__init__)
+    refresh_source = inspect.getsource(BildebankLauncher._refresh_state)
+    start_source = inspect.getsource(BildebankLauncher._start_dependency_status_refresh)
+    worker_source = inspect.getsource(BildebankLauncher._dependency_status_worker)
+
+    assert "self._start_dependency_status_refresh()" in init_source
+    assert "insightface_dependency_status()" not in init_source
+    assert "openclip_model_status()" not in init_source
+    assert "insightface_dependency_status()" not in refresh_source
+    assert "openclip_model_status()" not in refresh_source
+    assert "threading.Thread" in start_source
+    assert "self.root.after(" in worker_source
+
+
 def test_migration_plan_needs_action_detects_version_change() -> None:
     plan = db.MigrationPlan(
         current_version=12,

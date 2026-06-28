@@ -487,16 +487,19 @@ class BildebankLauncher:
         self.migration_required = False
         self.migration_status_error: str | None = None
         self.migration_dialog_shown = False
-        self.insightface_status = insightface_dependency_status()
-        self.face_model_status = insightface_model_status()
-        self.openclip_status = openclip_dependency_status()
-        self.openclip_model_status = openclip_model_status()
+        self.dependency_status_refreshing = False
+        self.insightface_status = InsightFaceDependencyStatus("Sjekker")
+        self.face_model_status = InsightFaceModelStatus("", "Sjekker")
+        self.openclip_status = "Sjekker"
+        self.openclip_model_status = OpenClipModelStatus("", "", "Sjekker")
         self.active_progress_log_key: str | None = None
         self.active_progress_log_range: tuple[str, str] | None = None
+        self._set_dependency_status_placeholder()
 
         self._build_gui()
         self._update_migration_status()
         self._refresh_state()
+        self._start_dependency_status_refresh()
         self._log(f"Valgt bildesamling: {self.collection_path}")
         if self.migration_required:
             self.root.after(0, self._show_migration_required_dialog)
@@ -888,8 +891,6 @@ class BildebankLauncher:
             self.create_collection_button.grid()
             self.buttons.append(self.create_collection_button)
 
-        self._refresh_insightface_status()
-        self._refresh_openclip_status()
         self._set_buttons_enabled(not self.busy)
 
     def _button(self, parent: Any, **kwargs: Any) -> Any:
@@ -918,25 +919,86 @@ class BildebankLauncher:
             return f"Ventende filsletting: ! {self.pending_deletes_count}"
         return "Ventende filsletting: ukjent"
 
-    def _refresh_insightface_status(self) -> None:
-        self.insightface_status = insightface_dependency_status()
+    def _set_dependency_status_placeholder(self) -> None:
+        self.insightface_status_value.set("InsightFace: sjekker ...")
+        self.insightface_model_status_value.set("Valgt modell: sjekker ...")
+        self.openclip_status_value.set("open_clip: sjekker ...")
+        self.openclip_model_status_value.set("AI-modell: sjekker ...")
+
+    def _apply_dependency_status_values(self) -> None:
         self.insightface_status_value.set(f"InsightFace: {self.insightface_status.status}")
-        self.face_model_status = insightface_model_status()
         self.insightface_model_status_value.set(
             f"Valgt modell: {self.face_model_status.model_name} ({self.face_model_status.status})"
         )
-
-    def _refresh_openclip_status(self) -> None:
-        self.openclip_status = openclip_dependency_status()
         self.openclip_status_value.set(f"open_clip: {self.openclip_status}")
-        self.openclip_model_status = openclip_model_status()
         self.openclip_model_status_value.set(f"AI-modell: {self.openclip_model_status.status}")
+
+    def _start_dependency_status_refresh(self) -> None:
+        if self.dependency_status_refreshing:
+            return
+        self.dependency_status_refreshing = True
+        self._set_dependency_status_placeholder()
+        self._set_buttons_enabled(not self.busy)
+        thread = threading.Thread(target=self._dependency_status_worker, daemon=True)
+        thread.start()
+
+    def _dependency_status_worker(self) -> None:
+        insightface_status, face_model_status, openclip_status, openclip_model_status = self._load_dependency_status()
+        try:
+            self.root.after(
+                0,
+                lambda: self._dependency_status_finished(
+                    insightface_status,
+                    face_model_status,
+                    openclip_status,
+                    openclip_model_status,
+                ),
+            )
+        except RuntimeError:
+            return
+
+    def _load_dependency_status(
+        self,
+    ) -> tuple[InsightFaceDependencyStatus, InsightFaceModelStatus, str, OpenClipModelStatus]:
+        try:
+            insightface_status = insightface_dependency_status()
+        except Exception as exc:  # noqa: BLE001 - setup status must not block launcher startup
+            insightface_status = InsightFaceDependencyStatus("Feil", str(exc))
+        try:
+            face_model_status = insightface_model_status()
+        except Exception as exc:  # noqa: BLE001 - setup status must not block launcher startup
+            face_model_status = InsightFaceModelStatus("", "Feil", str(exc))
+        try:
+            openclip_status = openclip_dependency_status()
+        except Exception as exc:  # noqa: BLE001 - setup status must not block launcher startup
+            openclip_status = f"Feil: {exc}"
+        try:
+            openclip_model_status = openclip_model_status()
+        except Exception as exc:  # noqa: BLE001 - setup status must not block launcher startup
+            openclip_model_status = OpenClipModelStatus("", "", "Feil", str(exc))
+        return insightface_status, face_model_status, openclip_status, openclip_model_status
+
+    def _dependency_status_finished(
+        self,
+        insightface_status: InsightFaceDependencyStatus,
+        face_model_status: InsightFaceModelStatus,
+        openclip_status: str,
+        openclip_model_status: OpenClipModelStatus,
+    ) -> None:
+        self.dependency_status_refreshing = False
+        self.insightface_status = insightface_status
+        self.face_model_status = face_model_status
+        self.openclip_status = openclip_status
+        self.openclip_model_status = openclip_model_status
+        self._apply_dependency_status_values()
+        self._set_buttons_enabled(not self.busy)
 
     def _set_buttons_enabled(self, enabled: bool) -> None:
         state = "normal" if enabled else "disabled"
         for button in self.buttons:
             button.configure(state=state)
         dependency_buttons_enabled = enabled and not self.migration_required and self.migration_status_error is None
+        setup_buttons_enabled = enabled and not self.dependency_status_refreshing
         if self.choose_collection_button is not None:
             collection_state = "normal" if dependency_buttons_enabled else "disabled"
             self.choose_collection_button.configure(state=collection_state)
@@ -945,7 +1007,7 @@ class BildebankLauncher:
         if self.install_insightface_button is not None:
             self.install_insightface_button.configure(
                 state=dependency_setup_button_state(
-                    enabled=enabled,
+                    enabled=setup_buttons_enabled,
                     migration_required=self.migration_required,
                     migration_status_error=self.migration_status_error,
                     install_supported=insightface_install_supported(),
@@ -954,7 +1016,7 @@ class BildebankLauncher:
         if self.install_openclip_button is not None:
             self.install_openclip_button.configure(
                 state=dependency_setup_button_state(
-                    enabled=enabled,
+                    enabled=setup_buttons_enabled,
                     migration_required=self.migration_required,
                     migration_status_error=self.migration_status_error,
                     install_supported=openclip_install_supported(),
@@ -963,7 +1025,7 @@ class BildebankLauncher:
         if self.download_face_model_button is not None:
             self.download_face_model_button.configure(
                 state=face_model_download_button_state(
-                    enabled=enabled,
+                    enabled=setup_buttons_enabled,
                     migration_required=self.migration_required,
                     migration_status_error=self.migration_status_error,
                     insightface_status=self.insightface_status,
@@ -1287,7 +1349,7 @@ class BildebankLauncher:
 
     def _insightface_install_finished(self) -> None:
         importlib.invalidate_caches()
-        self._refresh_state()
+        self._start_dependency_status_refresh()
 
     def _install_openclip(self) -> None:
         if not openclip_install_supported():
@@ -1313,7 +1375,7 @@ class BildebankLauncher:
 
     def _openclip_install_finished(self) -> None:
         importlib.invalidate_caches()
-        self._refresh_state()
+        self._start_dependency_status_refresh()
 
     def _download_face_model(self) -> None:
         if self.insightface_status.status != "Klar":
@@ -1334,7 +1396,7 @@ class BildebankLauncher:
             running_message="Laster ned ansiktsmodell ...",
             success_message="Ansiktsmodell lastet ned.",
             failure_message="Nedlasting av ansiktsmodell feilet.",
-            on_success=self._refresh_state,
+            on_success=self._start_dependency_status_refresh,
         )
 
     def _confirm_rerun(self, title: str, message: str) -> bool:
