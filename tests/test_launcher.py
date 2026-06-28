@@ -242,7 +242,20 @@ def test_launcher_initializes_dependency_status_asynchronously() -> None:
     assert "insightface_dependency_status()" not in refresh_source
     assert "openclip_model_status()" not in refresh_source
     assert "threading.Thread" in start_source
-    assert "self.root.after(" in worker_source
+    assert "self._post_to_tk(" in worker_source
+
+
+def test_post_to_tk_ignores_callbacks_after_close_started() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher.closing = True
+
+    class FakeRoot:
+        def after(self, *_args: object) -> None:
+            raise AssertionError("after should not be called while closing")
+
+    launcher.root = FakeRoot()
+
+    assert not launcher._post_to_tk(lambda: None)
 
 
 def test_dependency_status_finished_logs_error_details() -> None:

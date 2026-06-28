@@ -488,6 +488,7 @@ class BildebankLauncher:
         self.active_command_process: subprocess.Popen[str] | None = None
         self.active_command_cancel_requested = False
         self.active_command_cancellable = False
+        self.closing = False
 
         self.root = tk.Tk()
         self.root.title("Bildebank kontrollpanel")
@@ -555,6 +556,33 @@ class BildebankLauncher:
     def run(self) -> None:
         self.root.mainloop()
 
+    def _post_to_tk(self, callback: Callable[[], None]) -> bool:
+        if self.closing:
+            return False
+
+        def guarded_callback() -> None:
+            if self.closing:
+                return
+            try:
+                if not self.root.winfo_exists():
+                    return
+            except self.tk.TclError:
+                return
+            callback()
+
+        try:
+            self.root.after(0, guarded_callback)
+        except (RuntimeError, self.tk.TclError):
+            return False
+        return True
+
+    def _destroy_root(self) -> None:
+        self.closing = True
+        try:
+            self.root.destroy()
+        except self.tk.TclError:
+            pass
+
     def _on_close(self) -> None:
         if close_blocked_by_running_command(self.busy):
             from tkinter import messagebox
@@ -563,8 +591,9 @@ class BildebankLauncher:
             self._log(message)
             messagebox.showinfo("Bildebank jobber", message, parent=self.root)
             return
+        self.closing = True
         self._stop_server_process()
-        self.root.destroy()
+        self._destroy_root()
 
     def _stop_server_process(self) -> None:
         process = self.server_process
@@ -1000,18 +1029,14 @@ class BildebankLauncher:
 
     def _dependency_status_worker(self) -> None:
         insightface_status, face_model_status, openclip_status, openclip_model_status = self._load_dependency_status()
-        try:
-            self.root.after(
-                0,
-                lambda: self._dependency_status_finished(
-                    insightface_status,
-                    face_model_status,
-                    openclip_status,
-                    openclip_model_status,
-                ),
+        self._post_to_tk(
+            lambda: self._dependency_status_finished(
+                insightface_status,
+                face_model_status,
+                openclip_status,
+                openclip_model_status,
             )
-        except RuntimeError:
-            return
+        )
 
     def _load_dependency_status(
         self,
@@ -1417,7 +1442,7 @@ class BildebankLauncher:
             self._log(f"Kunne ikke starte kontrollpanelet på nytt: {exc}")
             return
         self._log("Nytt kontrollpanel startet. Lukker dette vinduet.")
-        self.root.destroy()
+        self._destroy_root()
 
     def _install_insightface(self) -> None:
         if not insightface_install_supported():
@@ -1809,10 +1834,7 @@ class BildebankLauncher:
                     creationflags=interruptible_command_creationflags() if cancellable else 0,
                 )
             except OSError as exc:
-                self.root.after(
-                    0,
-                    lambda exc=exc: self._command_start_failed(failure_message, exc),
-                )
+                self._post_to_tk(lambda exc=exc: self._command_start_failed(failure_message, exc))
                 return
             self.active_command_process = process
             if self.active_command_cancel_requested:
@@ -1829,11 +1851,10 @@ class BildebankLauncher:
 
             assert process.stdout is not None
             for line in process.stdout:
-                self.root.after(0, self._log_process_output, line.rstrip())
+                self._post_to_tk(lambda message=line.rstrip(): self._log_process_output(message))
             return_code = process.wait()
             cancel_requested = self.active_command_cancel_requested
-            self.root.after(
-                0,
+            self._post_to_tk(
                 lambda: self._command_finished(
                     return_code,
                     success_message=success_message,
