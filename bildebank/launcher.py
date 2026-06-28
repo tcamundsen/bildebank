@@ -1200,7 +1200,7 @@ class BildebankLauncher:
             return
         self._stop_server_process()
         self.collection_path = Path(selected)
-        self.collection_value.set("Bildesamling:" + str(self.collection_path))
+        self.collection_value.set("Bildesamling: " + str(self.collection_path))
         self.config = LauncherConfig(collection_path=self.collection_path)
         try:
             save_launcher_config(self.config)
