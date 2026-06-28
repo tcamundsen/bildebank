@@ -15,10 +15,10 @@ from . import db
 from .config import BrowserHotkeyConfig, FaceRecognitionConfig, HOTKEY_KEYS
 from .formatting import format_bytes
 from .geo import H3_COLUMNS, h3_area_label
-from .html_export import display_relative_path, month_key_from_path
+from .html_export import month_key_from_path
+from .html_paths import display_relative_path, relative_to_target
 from .media import IMAGE_EXTENSIONS, media_kind
 from .media_cache import cached_image_dimensions
-from .openclip import relative_to_target
 from .server_browser_sources import (
     BrowserSource,
     all_browser_source,

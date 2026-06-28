@@ -10,7 +10,8 @@ from . import db
 from .config import AppConfig
 from .face import face_database_dir, face_model_db_filename
 from .formatting import format_bytes
-from .html_export import browser_date_text, path_to_url, render_html
+from .html_export import browser_date_text, render_html
+from .html_paths import path_to_url
 from .importer import safe_copy
 from .media import media_kind
 from .server_browser import browser_date_for_item, source_items

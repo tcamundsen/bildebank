@@ -13,11 +13,11 @@ from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
 from typing import Any, Concatenate, ParamSpec, TypeVar
-from urllib.parse import quote
 
 from . import db
 from .config import DEFAULT_FACE_MODEL_NAME, FaceRecognitionConfig
 from .formatting import format_bytes
+from .html_paths import display_relative_path, path_to_url, relative_to_target
 from .html_export import render_html
 from .media import IMAGE_EXTENSIONS
 from .media_cache import MediaMetadataCache
@@ -1270,24 +1270,6 @@ def file_view_rotations(target: Path) -> dict[int, int]:
         }
     finally:
         conn.close()
-
-
-def relative_to_target(target: Path, path: Path) -> Path:
-    candidate = Path(path)
-    if not candidate.is_absolute():
-        return candidate
-    try:
-        return candidate.resolve().relative_to(target.resolve())
-    except ValueError:
-        return candidate
-
-
-def display_relative_path(target: Path, path: Path) -> str:
-    return relative_to_target(target, path).as_posix()
-
-
-def path_to_url(path: Path) -> str:
-    return "/".join(quote(part) for part in path.parts)
 
 
 def render_person_browser_html(

@@ -5,9 +5,9 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
 
 from . import db
+from .html_paths import path_to_url
 from .media import IMAGE_EXTENSIONS
 from .target_lock import TargetLock
 
@@ -58,10 +58,6 @@ def existing_thumbnail_url(target: Path, original_relative_path: Path) -> str:
     if thumbnail_is_current(original_path, thumb_path):
         return path_to_url(thumb_rel)
     return path_to_url(original_relative_path)
-
-
-def path_to_url(path: Path) -> str:
-    return "/".join(quote(part) for part in path.parts)
 
 
 def thumbnail_is_current(original_path: Path, thumb_path: Path) -> bool:

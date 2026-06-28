@@ -4,13 +4,13 @@ import array
 import html
 import math
 import sqlite3
-import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from . import db
 from .config import OpenClipConfig
+from .html_paths import display_relative_path, path_to_url, relative_to_target
 from .media import IMAGE_EXTENSIONS
 from .media_cache import cached_image_dimensions
 from .target_lock import TargetLock
@@ -849,14 +849,3 @@ def image_result_html(target: Path, result: ImageSearchResult) -> str:
       </div>
     </div>"""
 
-
-def relative_to_target(target: Path, path: Path) -> Path:
-    return Path(path)
-
-
-def display_relative_path(target: Path, path: Path) -> str:
-    return str(relative_to_target(target, path)).replace("\\", "/")
-
-
-def path_to_url(path: Path) -> str:
-    return urllib.parse.quote(str(path).replace("\\", "/"))

@@ -8,10 +8,10 @@ import datetime as dt
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
-from urllib.parse import quote
 
 from . import db
 from .formatting import format_bytes
+from .html_paths import display_relative_path, path_to_url, relative_to_target
 from .media import image_dimensions, media_kind
 from .media_cache import MediaMetadataCache
 from .thumbnails import existing_thumbnail_url
@@ -370,18 +370,6 @@ def conflict_row_to_item(
         "kind": media_kind(target_path),
         "viewRotation": db.normalize_view_rotation(row["view_rotation_degrees"]),
     }
-
-
-def relative_to_target(target: Path, path: Path) -> Path:
-    return Path(path)
-
-
-def display_relative_path(target: Path, path: Path) -> str:
-    return relative_to_target(target, path).as_posix()
-
-
-def path_to_url(path: Path) -> str:
-    return "/".join(quote(part) for part in path.parts)
 
 
 def month_key_from_path(path: Path) -> str:
