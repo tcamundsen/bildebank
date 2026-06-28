@@ -17,10 +17,19 @@ from .config import load_launcher_collection_path, set_launcher_collection_path
 from .pending_deletes import list_pending_deletes
 from .server import DEFAULT_HOST, DEFAULT_PORT
 
-PADX = 4
-PADY = 4
+if os.name == "nt":
+    PADX = 2
+    PADY = 2
+    BUTTON_PADDING = (8, 4)
+    PAD = 6
+else:
+    PADX = 4
+    PADY = 4
+    BUTTON_PADDING = (10, 6)
+    PAD = 12
+
+PAD_OUTER = 16
 BUTTON_STYLE = "Launcher.TButton"
-BUTTON_PADDING = (10, 6)
 
 PROGRESS_LOG_LABELS = (
     "Import",
@@ -547,7 +556,8 @@ class BildebankLauncher:
 
         ttk.Style(self.root).configure(BUTTON_STYLE, padding=BUTTON_PADDING)
 
-        outer = ttk.Frame(self.root, padding=16)
+        # Ytterste padding i vinduet.
+        outer = ttk.Frame(self.root, padding=PAD_OUTER)
         outer.grid(row=0, column=0, sticky="nsew")
         self.root.columnconfigure(0, weight=1)
         self.root.rowconfigure(0, weight=1)
@@ -558,12 +568,14 @@ class BildebankLauncher:
         title.grid(row=0, column=0, sticky="w")
 
         self.notebook = ttk.Notebook(outer)
-        self.notebook.grid(row=1, column=0, sticky="ew", pady=(18, 18))
+        # pady er padding over og under notebooken.
+        self.notebook.grid(row=1, column=0, sticky="ew", pady=(PAD))
 
-        self.main_tab = ttk.Frame(self.notebook, padding=12)
-        self.import_tab = ttk.Frame(self.notebook, padding=12)
-        self.tools_tab = ttk.Frame(self.notebook, padding=12)
-        self.setup_tab = ttk.Frame(self.notebook, padding=12)
+        # padding er paddingen inni hver side av notebook
+        self.main_tab = ttk.Frame(self.notebook, padding=PAD)
+        self.import_tab = ttk.Frame(self.notebook, padding=PAD)
+        self.tools_tab = ttk.Frame(self.notebook, padding=PAD)
+        self.setup_tab = ttk.Frame(self.notebook, padding=PAD)
         self.notebook.add(self.main_tab, text="Bildebank")
         self.notebook.add(self.import_tab, text="Import av bilder")
         self.notebook.add(self.tools_tab, text="Verktøy")
@@ -578,7 +590,7 @@ class BildebankLauncher:
         collection_frame.grid(row=0, column=0, sticky="w")
 
         collection_label = ttk.Label(collection_frame, textvariable=self.collection_value, wraplength=560)
-        collection_label.grid(row=0, column=0, sticky="w", padx=(12, 0), pady=12, columnspan=2)
+        collection_label.grid(row=0, column=0, sticky="w", padx=PADX, pady=PADY, columnspan=2)
 
         self.choose_collection_button = self._button(
             collection_frame,
@@ -596,10 +608,10 @@ class BildebankLauncher:
             "Lag en bildesamling på stedet vist til venstre. Klikk 'Velg annen plassering' "
             "for å finne bildesamlingen din eller opprette en ny et annet sted."
         )
-        self.create_collection_button.grid(row=1, column=1, sticky="w", padx=(12, 0), pady=(4, 0))
+        self.create_collection_button.grid(row=1, column=1, sticky="w", padx=PADX, pady=PADY)
 
         separator = ttk.Separator(self.main_tab, orient="horizontal")
-        separator.grid(row=1, column=0, sticky="ew", pady=(12, 12))
+        separator.grid(row=1, column=0, sticky="ew", pady=PAD)
 
         self.main_button_frame = ttk.Frame(self.main_tab)
         self.main_button_frame.grid(row=2, column=0, sticky="w")
@@ -613,7 +625,7 @@ class BildebankLauncher:
             row=0,
             column=0,
             sticky="e",
-            padx=(0, 12),
+            padx=PAD,
         )
         self.install_insightface_button = self._button(
             insightface_frame,
@@ -635,7 +647,7 @@ class BildebankLauncher:
         self.download_face_model_button.grid(row=1, column=1, sticky="w", pady=PADY)
 
         setup_separator = ttk.Separator(self.setup_tab, orient="horizontal")
-        setup_separator.grid(row=1, column=0, sticky="ew", pady=(12, 12))
+        setup_separator.grid(row=1, column=0, sticky="ew", pady=PAD)
 
         openclip_frame = ttk.Frame(self.setup_tab)
         openclip_frame.grid(row=2, column=0, sticky="w")
@@ -649,7 +661,7 @@ class BildebankLauncher:
             row=0,
             column=1,
             sticky="w",
-            padx=(12, 12),
+            padx=PAD,
         )
         ttk.Label(openclip_frame, textvariable=self.openclip_model_status_value).grid(
             row=0,
@@ -673,7 +685,7 @@ class BildebankLauncher:
         scrollbar.grid(row=1, column=1, sticky="ns")
 
         footer = ttk.Frame(outer)
-        footer.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        footer.grid(row=3, column=0, sticky="ew", pady=(PAD, 0))
         footer.columnconfigure(0, weight=1)
         status = ttk.Label(footer, textvariable=self.status_value)
         status.grid(row=0, column=0, sticky="w")
@@ -682,7 +694,7 @@ class BildebankLauncher:
             text="Avslutt bildebank kontrollpanel",
             command=self._on_close,
         )
-        self.exit_button.grid(row=0, column=1, sticky="e", padx=(12, 0))
+        self.exit_button.grid(row=0, column=1, sticky="e")
 
     def _refresh_state(self) -> None:
         assert self.main_button_frame is not None
