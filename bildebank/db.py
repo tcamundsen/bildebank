@@ -102,18 +102,18 @@ from .db_schema import (
     needs_h3_10_11_backfill,
     backfill_h3_10_11,
 )
+from .db_sources import (
+    Source,
+    add_named_source,
+    find_source_by_name,
+    get_source,
+    get_sources,
+    mark_source_error,
+    mark_source_imported,
+    mark_sources_superseded,
+    row_to_source,
+)
 from .value_parsing import optional_int, require_int
-
-
-@dataclass(frozen=True)
-class Source:
-    id: int
-    path: Path
-    path_key: str | None
-    name: str
-    imported_at: str | None
-    status: str
-    superseded_by_source_id: int | None
 
 
 @dataclass(frozen=True)
@@ -125,37 +125,6 @@ class UnimportPlan:
     file_ids_to_delete: tuple[int, ...]
     target_paths_to_delete: tuple[Path, ...]
     target_paths_to_keep: tuple[Path, ...]
-
-
-def row_to_source(row: sqlite3.Row) -> Source:
-    return Source(
-        id=int(row["id"]),
-        path=Path(str(row["path"])),
-        path_key=row["path_key"],
-        name=str(row["name"]),
-        imported_at=row["imported_at"],
-        status=row["status"],
-        superseded_by_source_id=row["superseded_by_source_id"],
-    )
-
-
-def get_sources(conn: sqlite3.Connection) -> list[Source]:
-    return [row_to_source(row) for row in conn.execute("SELECT * FROM sources ORDER BY id")]
-
-
-def get_source(conn: sqlite3.Connection, source_id: int) -> Source:
-    row = conn.execute("SELECT * FROM sources WHERE id = ?", (source_id,)).fetchone()
-    if row is None:
-        raise ValueError(f"Fant ikke kilde #{source_id}")
-    return row_to_source(row)
-
-
-def find_source_by_name(conn: sqlite3.Connection, name: str) -> Source | None:
-    row = conn.execute(
-        "SELECT * FROM sources WHERE name = ?",
-        (name,),
-    ).fetchone()
-    return row_to_source(row) if row is not None else None
 
 
 def source_file_sources(conn: sqlite3.Connection, source_id: int) -> list[sqlite3.Row]:
@@ -179,28 +148,6 @@ def source_file_sources(conn: sqlite3.Connection, source_id: int) -> list[sqlite
             (source_id,),
         )
     )
-
-
-def add_named_source(conn: sqlite3.Connection, path: Path, name: str) -> int:
-    existing = conn.execute(
-        "SELECT id, path, imported_at FROM sources WHERE name = ?",
-        (name,),
-    ).fetchone()
-    if existing is not None and existing["imported_at"] is not None:
-        raise ValueError(
-            f"Kilde med navn {name!r} er allerede importert som "
-            f"{existing['path']}. Bruk et nytt --name hvis dette er en annen mappe/import."
-        )
-    cur = conn.execute(
-        """
-        INSERT INTO sources(path, path_key, name)
-        VALUES(?, ?, ?)
-        ON CONFLICT(name) DO UPDATE SET path = excluded.path, path_key = excluded.path_key
-        RETURNING id
-        """,
-        (str(path.resolve()), path_key(path), name),
-    )
-    return int(cur.fetchone()["id"])
 
 
 def find_file_by_hash(conn: sqlite3.Connection, sha256: str) -> sqlite3.Row | None:
@@ -431,35 +378,6 @@ def resolve_errors_for_path(conn: sqlite3.Connection, *, stage: str, source_path
           AND resolved_at IS NULL
         """,
         (stage, str(source_path)),
-    )
-
-
-def mark_source_imported(conn: sqlite3.Connection, source_id: int) -> None:
-    conn.execute(
-        "UPDATE sources SET imported_at = CURRENT_TIMESTAMP, status = 'imported' WHERE id = ?",
-        (source_id,),
-    )
-
-
-def mark_source_error(conn: sqlite3.Connection, source_id: int) -> None:
-    conn.execute("UPDATE sources SET status = 'error' WHERE id = ?", (source_id,))
-
-
-def mark_sources_superseded(
-    conn: sqlite3.Connection, *, source_ids: Iterable[int], superseded_by_source_id: int
-) -> None:
-    ids = list(source_ids)
-    if not ids:
-        return
-    placeholders = ",".join("?" for _ in ids)
-    conn.execute(
-        f"""
-        UPDATE sources
-        SET status = 'superseded',
-            superseded_by_source_id = ?
-        WHERE id IN ({placeholders})
-        """,
-        [superseded_by_source_id, *ids],
     )
 
 
