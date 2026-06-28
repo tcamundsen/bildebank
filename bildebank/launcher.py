@@ -1029,10 +1029,10 @@ class BildebankLauncher:
         except Exception as exc:  # noqa: BLE001 - setup status must not block launcher startup
             openclip_status = f"Feil: {exc}"
         try:
-            openclip_model_status = openclip_model_status()
+            openclip_model_state = openclip_model_status()
         except Exception as exc:  # noqa: BLE001 - setup status must not block launcher startup
-            openclip_model_status = OpenClipModelStatus("", "", "Feil", str(exc))
-        return insightface_status, face_model_status, openclip_status, openclip_model_status
+            openclip_model_state = OpenClipModelStatus("", "", "Feil", str(exc))
+        return insightface_status, face_model_status, openclip_status, openclip_model_state
 
     def _dependency_status_finished(
         self,

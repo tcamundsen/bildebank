@@ -277,6 +277,26 @@ def test_dependency_status_finished_logs_error_details() -> None:
     assert logged == []
 
 
+def test_load_dependency_status_calls_openclip_model_status() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    expected_openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig", "modellmappe")
+
+    with (
+        patch("bildebank.launcher.insightface_dependency_status", return_value=InsightFaceDependencyStatus("Klar")),
+        patch("bildebank.launcher.insightface_model_status", return_value=InsightFaceModelStatus("buffalo_l", "Lastet ned")),
+        patch("bildebank.launcher.openclip_dependency_status", return_value="Installert"),
+        patch("bildebank.launcher.openclip_model_status", return_value=expected_openclip_model_status),
+    ):
+        status = launcher._load_dependency_status()
+
+    assert status == (
+        InsightFaceDependencyStatus("Klar"),
+        InsightFaceModelStatus("buffalo_l", "Lastet ned"),
+        "Installert",
+        expected_openclip_model_status,
+    )
+
+
 def test_select_source_does_not_run_nested_tk_event_loop() -> None:
     source = inspect.getsource(BildebankLauncher._select_source)
 
