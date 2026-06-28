@@ -9609,9 +9609,9 @@ model_name = "buffalo_l"
     def test_doctor_is_disabled_by_default(self) -> None:
         exiftool = self.program_root / "bildebank-tools" / "exiftool" / "exiftool.exe"
         with (
-            patch("bildebank.cli.resolve_exiftool_path", return_value=exiftool),
-            patch("bildebank.cli.validate_exiftool_install", return_value="13.58"),
-            patch("bildebank.cli.python_module_available", side_effect=lambda name: name == "h3"),
+            patch("bildebank.cli_doctor.resolve_exiftool_path", return_value=exiftool),
+            patch("bildebank.cli_doctor.validate_exiftool_install", return_value="13.58"),
+            patch("bildebank.cli_doctor.python_module_available", side_effect=lambda name: name == "h3"),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
 
@@ -9634,7 +9634,7 @@ model_name = "buffalo_l"
         self.assertFalse(hasattr(face_status_args, "deep"))
 
     def test_face_status_is_doctor_alias(self) -> None:
-        with patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
+        with patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
             code, stdout, stderr = capture_cli(["face-status"])
 
         self.assertEqual(code, 0, stderr)
@@ -9647,8 +9647,8 @@ model_name = "buffalo_l"
     def test_doctor_shows_exiftool_status(self) -> None:
         exiftool = self.program_root / "bildebank-tools" / "exiftool" / "exiftool.exe"
         with (
-            patch("bildebank.cli.resolve_exiftool_path", return_value=exiftool),
-            patch("bildebank.cli.validate_exiftool_install", return_value="13.58"),
+            patch("bildebank.cli_doctor.resolve_exiftool_path", return_value=exiftool),
+            patch("bildebank.cli_doctor.validate_exiftool_install", return_value="13.58"),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
 
@@ -9656,7 +9656,7 @@ model_name = "buffalo_l"
         self.assertIn(f"  OK: ExifTool funnet: {exiftool} (13.58)", stdout)
 
     def test_doctor_reports_missing_exiftool_without_failing(self) -> None:
-        with patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
+        with patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
             code, stdout, stderr = capture_cli(["doctor"])
 
         self.assertEqual(code, 0, stderr)
@@ -9674,10 +9674,10 @@ enabled = true
         )
 
         with (
-            patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-            patch("bildebank.cli.python_module_available", side_effect=lambda name: name == "h3"),
+            patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli_doctor.python_module_available", side_effect=lambda name: name == "h3"),
             patch(
-                "bildebank.cli.insightface_runtime_error",
+                "bildebank.cli_doctor.insightface_runtime_error",
                 return_value="InsightFace er ikke installert. Kjør install-insightface.ps1 fra programmappen.",
             ),
         ):
@@ -9700,10 +9700,10 @@ enabled = true
         )
 
         with (
-            patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-            patch("bildebank.cli.python_module_available", side_effect=lambda name: name in {"h3", "onnxruntime"}),
+            patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli_doctor.python_module_available", side_effect=lambda name: name in {"h3", "onnxruntime"}),
             patch(
-                "bildebank.cli.insightface_runtime_error",
+                "bildebank.cli_doctor.insightface_runtime_error",
                 return_value=(
                     "InsightFace er installert, men OpenCV mangler Linux-biblioteket libGL.so.1. "
                     "Installer det i WSL/Linux med `sudo apt install libgl1`."
@@ -9728,9 +9728,9 @@ enabled = true
         )
 
         with (
-            patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-            patch("bildebank.cli.python_module_available", side_effect=lambda name: name == "h3"),
-            patch("bildebank.cli.torch_gpu_status", return_value={"torch": "nei", "cuda": "nei", "device": "-"}),
+            patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli_doctor.python_module_available", side_effect=lambda name: name == "h3"),
+            patch("bildebank.cli_doctor.torch_gpu_status", return_value={"torch": "nei", "cuda": "nei", "device": "-"}),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
 
@@ -9743,8 +9743,8 @@ enabled = true
 
     def test_doctor_reports_missing_h3_without_failing(self) -> None:
         with (
-            patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-            patch("bildebank.cli.python_module_available", return_value=False),
+            patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+            patch("bildebank.cli_doctor.python_module_available", return_value=False),
         ):
             code, stdout, stderr = capture_cli(["doctor"])
 
@@ -9781,8 +9781,8 @@ enabled = true
                 conn.close()
 
             with (
-                patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-                patch("bildebank.cli.python_module_available", return_value=False),
+                patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli_doctor.python_module_available", return_value=False),
             ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "doctor"]
@@ -9855,9 +9855,9 @@ enabled = true
                 conn.close()
 
             with (
-                patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-                patch("bildebank.cli.python_module_available", return_value=False),
-                patch("bildebank.cli.sha256_file") as hash_file,
+                patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli_doctor.python_module_available", return_value=False),
+                patch("bildebank.cli_doctor.sha256_file") as hash_file,
             ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "doctor"]
@@ -9928,9 +9928,9 @@ enabled = true
                 return sha256_file(path)
 
             with (
-                patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-                patch("bildebank.cli.python_module_available", return_value=False),
-                patch("bildebank.cli.sha256_file", side_effect=hash_or_fail),
+                patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli_doctor.python_module_available", return_value=False),
+                patch("bildebank.cli_doctor.sha256_file", side_effect=hash_or_fail),
             ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "doctor", "--deep"]
@@ -9973,8 +9973,8 @@ enabled = true
             )
 
             with (
-                patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-                patch("bildebank.cli.python_module_available", return_value=False),
+                patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli_doctor.python_module_available", return_value=False),
             ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "doctor"]
@@ -10067,8 +10067,8 @@ enabled = true
                 conn.close()
 
             with (
-                patch("bildebank.cli.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
-                patch("bildebank.cli.python_module_available", return_value=False),
+                patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
+                patch("bildebank.cli_doctor.python_module_available", return_value=False),
             ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "doctor"])
 
