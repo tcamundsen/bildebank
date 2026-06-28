@@ -10579,7 +10579,7 @@ enabled = false
             finally:
                 conn.close()
 
-            with patch("bildebank.cli.open_check_source_missing_report"):
+            with patch("bildebank.cli_check_source.open_check_source_missing_report"):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "check-source", "--quiet", str(source)]
                 )
@@ -10639,7 +10639,7 @@ enabled = false
             )
             missing.write_bytes(b"not-imported")
 
-            with patch("bildebank.cli.open_check_source_missing_report"):
+            with patch("bildebank.cli_check_source.open_check_source_missing_report"):
                 code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
 
             self.assertEqual(code, 2, stderr)
@@ -10670,7 +10670,7 @@ enabled = false
             def fake_open(path: Path) -> None:
                 opened.append(path)
 
-            with patch("bildebank.cli.open_check_source_missing_report", fake_open):
+            with patch("bildebank.cli_check_source.open_check_source_missing_report", fake_open):
                 code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
 
             self.assertEqual(code, 2, stderr)
@@ -10699,7 +10699,7 @@ enabled = false
             def fake_open(path: Path) -> None:
                 opened.append(path)
 
-            with patch("bildebank.cli.open_check_source_missing_report", fake_open):
+            with patch("bildebank.cli_check_source.open_check_source_missing_report", fake_open):
                 code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
 
             self.assertEqual(code, 2, stderr)
@@ -10719,7 +10719,7 @@ enabled = false
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
 
-            with patch("bildebank.cli.open_check_source_missing_report") as open_report:
+            with patch("bildebank.cli_check_source.open_check_source_missing_report") as open_report:
                 code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
 
             self.assertEqual(code, 0, stderr)
@@ -10783,7 +10783,7 @@ enabled = false
             def fake_open(path: Path) -> None:
                 opened.append(path)
 
-            with patch("bildebank.cli.open_check_source_missing_report", fake_open):
+            with patch("bildebank.cli_check_source.open_check_source_missing_report", fake_open):
                 code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
 
             self.assertEqual(code, 2, stderr)
@@ -10807,7 +10807,7 @@ enabled = false
             imported = target / "2024" / "01" / "IMG_20240102.jpg"
             self.assertEqual(run_cli(["--target", str(target), "remove", str(imported)]), 0)
 
-            with patch("bildebank.cli.open_check_source_missing_report") as open_report:
+            with patch("bildebank.cli_check_source.open_check_source_missing_report") as open_report:
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "check-source", "--accept-deleted", "--quiet", str(source)]
                 )
@@ -10833,7 +10833,7 @@ enabled = false
             self.assertEqual(run_cli(["--target", str(target), "remove", str(imported)]), 0)
             deleted.write_bytes(b"changed")
 
-            with patch("bildebank.cli.open_check_source_missing_report"):
+            with patch("bildebank.cli_check_source.open_check_source_missing_report"):
                 code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
 
             self.assertEqual(code, 2, stderr)
