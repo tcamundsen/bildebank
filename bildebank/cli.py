@@ -20,7 +20,7 @@ from .cli_face import run_download_face_model, run_face_command
 from .cli_server import run_server_command
 from .cli_update import run_update
 from .config import CONFIG_FILENAME, load_config, set_config_enabled
-from .exiftool import install_managed_exiftool, resolve_exiftool_path
+from .exiftool import install_managed_exiftool
 from .exiftool_probe import exiftool_metadata_gaps
 from .export_person import PersonExportInterrupted
 from .face import (
