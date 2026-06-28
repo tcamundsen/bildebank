@@ -604,7 +604,10 @@ def browser_date_for_item(item: Any) -> str:
     manual_date = manual_date_midpoint_for_item(item)
     if manual_date is not None:
         return manual_date.isoformat()
-    taken_date = str(item["taken_date"] or "")
+    try:
+        taken_date = str(item["taken_date"] or "")
+    except (KeyError, IndexError):
+        taken_date = ""
     if re.match(r"^\d{4}-\d{2}-\d{2}", taken_date):
         return taken_date[:10]
     return "9999-99-99"
