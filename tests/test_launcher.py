@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import os
 import signal
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,7 +13,9 @@ from bildebank.launcher import (
     InsightFaceDependencyStatus,
     InsightFaceModelStatus,
     LauncherConfig,
+    LauncherUpdateStatus,
     OpenClipModelStatus,
+    check_launcher_update_status,
     check_source_command,
     close_blocked_by_running_command,
     cleanup_pending_deletes_apply_command,
@@ -190,6 +193,94 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
     assert download_face_model_command()[-1:] == ["download-face-model"]
 
 
+def test_check_launcher_update_status_fetches_and_detects_available_update(tmp_path: Path) -> None:
+    calls: list[tuple[list[str], Path]] = []
+
+    def fake_run(command: list[str], *, cwd: Path, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append((command, cwd))
+        if command[1:] == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return subprocess.CompletedProcess(command, 0, stdout="main\n")
+        if command[1:] == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+            return subprocess.CompletedProcess(command, 0, stdout="origin/main\n")
+        if command[1:] == ["fetch", "--quiet"]:
+            return subprocess.CompletedProcess(command, 0, stdout="")
+        if command[1:] == ["rev-list", "--count", "HEAD..@{u}"]:
+            return subprocess.CompletedProcess(command, 0, stdout="2\n")
+        raise AssertionError(f"unexpected command: {command}")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        status = check_launcher_update_status(tmp_path)
+
+    assert status == LauncherUpdateStatus(
+        "available",
+        "main ligger 2 commits bak origin/main",
+        commits_behind=2,
+    )
+    assert calls == [
+        (["git", "rev-parse", "--abbrev-ref", "HEAD"], tmp_path),
+        (["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], tmp_path),
+        (["git", "fetch", "--quiet"], tmp_path),
+        (["git", "rev-list", "--count", "HEAD..@{u}"], tmp_path),
+    ]
+
+
+def test_check_launcher_update_status_detects_current_branch(tmp_path: Path) -> None:
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[1:] == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return subprocess.CompletedProcess(command, 0, stdout="devel\n")
+        if command[1:] == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+            return subprocess.CompletedProcess(command, 0, stdout="origin/devel\n")
+        if command[1:] == ["fetch", "--quiet"]:
+            return subprocess.CompletedProcess(command, 0, stdout="")
+        if command[1:] == ["rev-list", "--count", "HEAD..@{u}"]:
+            return subprocess.CompletedProcess(command, 0, stdout="0\n")
+        raise AssertionError(f"unexpected command: {command}")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        status = check_launcher_update_status(tmp_path)
+
+    assert status == LauncherUpdateStatus("current", "devel er oppdatert mot origin/devel")
+
+
+def test_check_launcher_update_status_handles_missing_upstream(tmp_path: Path) -> None:
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[1:] == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return subprocess.CompletedProcess(command, 0, stdout="main\n")
+        raise subprocess.CalledProcessError(128, command)
+
+    with patch("subprocess.run", side_effect=fake_run):
+        status = check_launcher_update_status(tmp_path)
+
+    assert status.status == "error"
+    assert status.commits_behind == 0
+
+
+def test_check_launcher_update_status_handles_missing_git(tmp_path: Path) -> None:
+    with patch("subprocess.run", side_effect=FileNotFoundError("git")):
+        status = check_launcher_update_status(tmp_path)
+
+    assert status.status == "error"
+    assert "git finnes ikke" in status.detail
+
+
+def test_check_launcher_update_status_handles_git_output_errors(tmp_path: Path) -> None:
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[1:] == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return subprocess.CompletedProcess(command, 0, stdout="main\n")
+        if command[1:] == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+            return subprocess.CompletedProcess(command, 0, stdout="origin/main\n")
+        if command[1:] == ["fetch", "--quiet"]:
+            return subprocess.CompletedProcess(command, 0, stdout="")
+        if command[1:] == ["rev-list", "--count", "HEAD..@{u}"]:
+            return subprocess.CompletedProcess(command, 0, stdout="ikke-et-tall\n")
+        raise AssertionError(f"unexpected command: {command}")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        status = check_launcher_update_status(tmp_path)
+
+    assert status.status == "error"
+
+
 def test_open_server_browser_window_opens_default_run_server_url() -> None:
     with patch("webbrowser.open", return_value=True) as open_browser:
         assert open_server_browser_window()
@@ -243,6 +334,103 @@ def test_launcher_initializes_dependency_status_asynchronously() -> None:
     assert "openclip_model_status()" not in refresh_source
     assert "threading.Thread" in start_source
     assert "self._post_to_tk(" in worker_source
+
+
+def test_launcher_initializes_update_status_asynchronously() -> None:
+    init_source = inspect.getsource(BildebankLauncher.__init__)
+    start_source = inspect.getsource(BildebankLauncher._start_update_status_refresh)
+    worker_source = inspect.getsource(BildebankLauncher._update_status_worker)
+
+    assert "self._start_update_status_refresh()" in init_source
+    assert "check_launcher_update_status()" not in init_source
+    assert "threading.Thread" in start_source
+    assert "self._post_to_tk(" in worker_source
+
+
+class FakeButton:
+    def __init__(self) -> None:
+        self.options: dict[str, object] = {}
+
+    def configure(self, **kwargs: object) -> None:
+        self.options.update(kwargs)
+
+
+def test_update_button_text_reflects_update_status() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+
+    launcher.update_status = LauncherUpdateStatus("checking")
+    assert launcher._update_button_text() == "Ser etter oppdateringer ..."
+
+    launcher.update_status = LauncherUpdateStatus("available", commits_behind=1)
+    assert launcher._update_button_text() == "Oppdater Bildebank"
+
+    launcher.update_status = LauncherUpdateStatus("current")
+    assert launcher._update_button_text() == "Se etter oppdateringer"
+
+    launcher.update_status = LauncherUpdateStatus("error", "nettverksfeil")
+    assert launcher._update_button_text() == "Se etter oppdateringer"
+
+
+def test_apply_update_button_state_updates_label_and_disables_while_checking() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    button = FakeButton()
+    launcher.update_button = button
+    launcher.busy = False
+    launcher.update_status = LauncherUpdateStatus("checking")
+
+    launcher._apply_update_button_state()
+
+    assert button.options["text"] == "Ser etter oppdateringer ..."
+    assert button.options["state"] == "disabled"
+
+
+def test_update_status_finished_shows_available_update_button() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    button = FakeButton()
+    logged: list[str] = []
+    launcher.update_button = button
+    launcher.busy = False
+    launcher.update_checking = True
+    launcher._log = logged.append
+    launcher._set_buttons_enabled = lambda enabled: None
+
+    launcher._update_status_finished(LauncherUpdateStatus("available", commits_behind=3))
+
+    assert launcher.update_checking is False
+    assert button.options["text"] == "Oppdater Bildebank"
+    assert logged == []
+
+
+def test_update_status_finished_logs_error_and_returns_to_check_button() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    button = FakeButton()
+    logged: list[str] = []
+    launcher.update_button = button
+    launcher.busy = False
+    launcher.update_checking = True
+    launcher._log = logged.append
+    launcher._set_buttons_enabled = lambda enabled: None
+
+    launcher._update_status_finished(LauncherUpdateStatus("error", "ingen upstream"))
+
+    assert button.options["text"] == "Se etter oppdateringer"
+    assert logged == ["Oppdateringssjekk feilet: ingen upstream"]
+
+
+def test_update_button_click_runs_update_only_when_update_is_available() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    actions: list[str] = []
+    launcher._run_update = lambda: actions.append("update")
+    launcher._start_update_status_refresh = lambda: actions.append("check")
+
+    launcher.update_status = LauncherUpdateStatus("available")
+    launcher._on_update_button_clicked()
+    launcher.update_status = LauncherUpdateStatus("current")
+    launcher._on_update_button_clicked()
+    launcher.update_status = LauncherUpdateStatus("error")
+    launcher._on_update_button_clicked()
+
+    assert actions == ["update", "check", "check"]
 
 
 def test_post_to_tk_ignores_callbacks_after_close_started() -> None:

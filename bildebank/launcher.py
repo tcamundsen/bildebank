@@ -58,6 +58,13 @@ class LauncherConfig:
 
 
 @dataclass(frozen=True)
+class LauncherUpdateStatus:
+    status: str
+    detail: str = ""
+    commits_behind: int = 0
+
+
+@dataclass(frozen=True)
 class InsightFaceDependencyStatus:
     status: str
     detail: str = ""
@@ -164,6 +171,40 @@ def launcher_command() -> list[str]:
 
 def update_command() -> list[str]:
     return bildebank_command("update")
+
+
+def check_launcher_update_status(repo_root: Path | None = None) -> LauncherUpdateStatus:
+    root = repo_root or program_repo_root()
+    try:
+        branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], root)
+        upstream = _run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], root)
+        _run_git(["fetch", "--quiet"], root)
+        commit_count_text = _run_git(["rev-list", "--count", "HEAD..@{u}"], root)
+        commit_count = int(commit_count_text.strip())
+    except FileNotFoundError as exc:
+        return LauncherUpdateStatus("error", f"git finnes ikke: {exc}")
+    except (OSError, subprocess.CalledProcessError, ValueError) as exc:
+        return LauncherUpdateStatus("error", str(exc))
+    if commit_count > 0:
+        return LauncherUpdateStatus(
+            "available",
+            f"{branch} ligger {commit_count} commits bak {upstream}",
+            commits_behind=commit_count,
+        )
+    return LauncherUpdateStatus("current", f"{branch} er oppdatert mot {upstream}")
+
+
+def _run_git(args: list[str], repo_root: Path) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return result.stdout.strip()
 
 
 def doctor_command(collection_path: Path) -> list[str]:
@@ -516,6 +557,7 @@ class BildebankLauncher:
         self.install_insightface_button: ttk.Button | None = None
         self.install_openclip_button: ttk.Button | None = None
         self.download_face_model_button: ttk.Button | None = None
+        self.update_button: ttk.Button | None = None
         self.cancel_command_button: ttk.Button | None = None
         self.exit_button: ttk.Button | None = None
         self.tooltips: list[Tooltip] = []
@@ -524,6 +566,8 @@ class BildebankLauncher:
         self.migration_required = False
         self.migration_status_error: str | None = None
         self.migration_dialog_shown = False
+        self.update_status = LauncherUpdateStatus("checking")
+        self.update_checking = False
         self.dependency_status_refreshing = False
         self.insightface_status = InsightFaceDependencyStatus("Sjekker")
         self.face_model_status = InsightFaceModelStatus("", "Sjekker")
@@ -536,6 +580,7 @@ class BildebankLauncher:
         self._build_gui()
         self._update_migration_status()
         self._refresh_state()
+        self._start_update_status_refresh()
         self._start_dependency_status_refresh()
         self._log(f"Valgt bildesamling: {self.collection_path}")
         if self.migration_required:
@@ -777,6 +822,7 @@ class BildebankLauncher:
             for child in frame.winfo_children():
                 child.destroy()
         self.buttons = []
+        self.update_button = None
         if self.create_collection_button is not None:
             self.create_collection_button.grid_remove()
 
@@ -806,10 +852,11 @@ class BildebankLauncher:
                 start_button.grid(row=0, column=0, padx=PADX, pady=PADY, columnspan=2, sticky="ew")
                 update_button = self._button(
                     self.main_button_frame,
-                    text="Oppdater Bildebank",
-                    command=self._run_update,
+                    text=self._update_button_text(),
+                    command=self._on_update_button_clicked,
                 )
                 update_button.grid(row=0, column=2, padx=PADX, pady=PADY, sticky="ew")
+                self.update_button = update_button
                 self._add_tooltip(
                     update_button,
                     "Oppdaterer Bildebank til siste utgave. "
@@ -1000,6 +1047,20 @@ class BildebankLauncher:
             return f"Ventende filsletting: ! {self.pending_deletes_count}"
         return "Ventende filsletting: ukjent"
 
+    def _update_button_text(self) -> str:
+        if self.update_status.status == "checking":
+            return "Ser etter oppdateringer ..."
+        if self.update_status.status == "available":
+            return "Oppdater Bildebank"
+        return "Se etter oppdateringer"
+
+    def _apply_update_button_state(self) -> None:
+        if self.update_button is None:
+            return
+        self.update_button.configure(text=self._update_button_text())
+        if self.update_status.status == "checking" or self.busy:
+            self.update_button.configure(state="disabled")
+
     def _set_dependency_status_placeholder(self) -> None:
         self.insightface_status_value.set("InsightFace: sjekker ...")
         self.insightface_model_status_value.set("Valgt modell: sjekker ...")
@@ -1115,6 +1176,7 @@ class BildebankLauncher:
                     insightface_status=self.insightface_status,
                 )
             )
+        self._apply_update_button_state()
         if self.exit_button is not None:
             self.exit_button.configure(state=state)
         if self.cancel_command_button is not None:
@@ -1431,6 +1493,34 @@ class BildebankLauncher:
             failure_message="Oppdatering feilet.",
             on_success=self._restart_launcher,
         )
+
+    def _on_update_button_clicked(self) -> None:
+        if self.update_status.status == "available":
+            self._run_update()
+            return
+        self._start_update_status_refresh()
+
+    def _start_update_status_refresh(self) -> None:
+        if self.update_checking:
+            return
+        self.update_checking = True
+        self.update_status = LauncherUpdateStatus("checking")
+        self._apply_update_button_state()
+        self._set_buttons_enabled(not self.busy)
+        thread = threading.Thread(target=self._update_status_worker, daemon=True)
+        thread.start()
+
+    def _update_status_worker(self) -> None:
+        status = check_launcher_update_status()
+        self._post_to_tk(lambda: self._update_status_finished(status))
+
+    def _update_status_finished(self, status: LauncherUpdateStatus) -> None:
+        self.update_checking = False
+        self.update_status = status
+        if status.status == "error" and status.detail:
+            self._log(f"Oppdateringssjekk feilet: {status.detail}")
+        self._apply_update_button_state()
+        self._set_buttons_enabled(not self.busy)
 
     def _restart_launcher(self) -> None:
         from tkinter import messagebox
