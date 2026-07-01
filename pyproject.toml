@@ -29,7 +29,7 @@ bildebank = "bildebank.cli:main"
 include = ["bildebank*"]
 
 [tool.setuptools.package-data]
-bildebank = ["assets/*.css", "assets/*.js"]
+bildebank = ["assets/*.css", "assets/*.js", "assets/icons/*.png"]
 
 [[tool.mypy.overrides]]
 module = ["h3", "insightface.*", "open_clip", "torch"]

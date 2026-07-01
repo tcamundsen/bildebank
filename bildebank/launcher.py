@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from importlib import resources
 import importlib.util
 import locale
 import os
@@ -12,6 +13,8 @@ import webbrowser
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Any, Callable
+
+from PIL import Image, ImageTk
 
 from . import db
 from .config import load_config, load_launcher_collection_path, set_launcher_collection_path
@@ -596,6 +599,7 @@ class BildebankLauncher:
         self.install_openclip_button: ttk.Button | None = None
         self.download_face_model_button: ttk.Button | None = None
         self.update_button: ttk.Button | None = None
+        self.update_button_icons: dict[str, ImageTk.PhotoImage] = {}
         self.cancel_command_button: ttk.Button | None = None
         self.exit_button: ttk.Button | None = None
         self.tooltips: list[Tooltip] = []
@@ -614,6 +618,7 @@ class BildebankLauncher:
         self.active_progress_log_key: str | None = None
         self.active_progress_log_range: tuple[str, str] | None = None
         self._set_dependency_status_placeholder()
+        self.update_button_icons = self._load_update_button_icons()
 
         self._build_gui()
         self._update_migration_status()
@@ -1098,15 +1103,39 @@ class BildebankLauncher:
 
     def _update_button_text(self) -> str:
         if self.update_status.status == "checking":
-            return "🔍 Ser etter oppdateringer ..."
+            return "Ser etter oppdateringer ..."
         if self.update_status.status == "available":
-            return "✅ Installer oppdatering"
-        return "🔍 Se etter oppdateringer"
+            return "Installer oppdatering"
+        return "Se etter oppdateringer"
+
+    def _load_update_button_icons(self) -> dict[str, ImageTk.PhotoImage]:
+        icons: dict[str, ImageTk.PhotoImage] = {}
+        try:
+            icon_root = resources.files("bildebank").joinpath("assets", "icons")
+            for key, filename in {
+                "search": "search.png",
+                "green-check": "green-check.png",
+            }.items():
+                with Image.open(icon_root.joinpath(filename)) as image:
+                    resized = image.resize((18, 18), Image.Resampling.LANCZOS)
+                    icons[key] = ImageTk.PhotoImage(resized)
+        except Exception as exc:  # noqa: BLE001 - launcher must work without button icons
+            self._log(f"Kunne ikke laste ikon for oppdateringsknapp: {exc}")
+            return {}
+        return icons
+
+    def _update_button_icon(self) -> ImageTk.PhotoImage | None:
+        icon_key = "green-check" if self.update_status.status == "available" else "search"
+        return self.update_button_icons.get(icon_key)
 
     def _apply_update_button_state(self) -> None:
         if self.update_button is None:
             return
-        self.update_button.configure(text=self._update_button_text())
+        icon = self._update_button_icon()
+        if icon is None:
+            self.update_button.configure(text=self._update_button_text(), image="", compound="none")
+        else:
+            self.update_button.configure(text=self._update_button_text(), image=icon, compound="left")
         if self.update_status.status == "checking" or self.busy:
             self.update_button.configure(state="disabled")
 

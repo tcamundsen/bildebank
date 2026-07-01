@@ -4,6 +4,7 @@ import inspect
 import os
 import signal
 import subprocess
+import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -379,29 +380,67 @@ def test_update_button_text_reflects_update_status() -> None:
     launcher = BildebankLauncher.__new__(BildebankLauncher)
 
     launcher.update_status = LauncherUpdateStatus("checking")
-    assert launcher._update_button_text() == "🔍 Ser etter oppdateringer ..."
+    assert launcher._update_button_text() == "Ser etter oppdateringer ..."
 
     launcher.update_status = LauncherUpdateStatus("available", commits_behind=1)
-    assert launcher._update_button_text() == "✅ Installer oppdatering"
+    assert launcher._update_button_text() == "Installer oppdatering"
 
     launcher.update_status = LauncherUpdateStatus("current")
-    assert launcher._update_button_text() == "🔍 Se etter oppdateringer"
+    assert launcher._update_button_text() == "Se etter oppdateringer"
 
     launcher.update_status = LauncherUpdateStatus("error", "nettverksfeil")
-    assert launcher._update_button_text() == "🔍 Se etter oppdateringer"
+    assert launcher._update_button_text() == "Se etter oppdateringer"
 
 
 def test_apply_update_button_state_updates_label_and_disables_while_checking() -> None:
     launcher = BildebankLauncher.__new__(BildebankLauncher)
     button = FakeButton()
     launcher.update_button = button
+    launcher.update_button_icons = {}
     launcher.busy = False
     launcher.update_status = LauncherUpdateStatus("checking")
 
     launcher._apply_update_button_state()
 
-    assert button.options["text"] == "🔍 Ser etter oppdateringer ..."
+    assert button.options["text"] == "Ser etter oppdateringer ..."
+    assert button.options["image"] == ""
+    assert button.options["compound"] == "none"
     assert button.options["state"] == "disabled"
+
+
+def test_apply_update_button_state_uses_icon_when_available() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    button = FakeButton()
+    search_icon = object()
+    launcher.update_button = button
+    launcher.update_button_icons = {"search": search_icon}
+    launcher.busy = False
+    launcher.update_status = LauncherUpdateStatus("current")
+
+    launcher._apply_update_button_state()
+
+    assert button.options["text"] == "Se etter oppdateringer"
+    assert button.options["image"] is search_icon
+    assert button.options["compound"] == "left"
+
+
+def test_update_button_icon_uses_green_check_only_for_available() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    search_icon = object()
+    green_check_icon = object()
+    launcher.update_button_icons = {"search": search_icon, "green-check": green_check_icon}
+
+    launcher.update_status = LauncherUpdateStatus("checking")
+    assert launcher._update_button_icon() is search_icon
+
+    launcher.update_status = LauncherUpdateStatus("current")
+    assert launcher._update_button_icon() is search_icon
+
+    launcher.update_status = LauncherUpdateStatus("error")
+    assert launcher._update_button_icon() is search_icon
+
+    launcher.update_status = LauncherUpdateStatus("available")
+    assert launcher._update_button_icon() is green_check_icon
 
 
 def test_update_status_finished_shows_available_update_button() -> None:
@@ -409,6 +448,7 @@ def test_update_status_finished_shows_available_update_button() -> None:
     button = FakeButton()
     logged: list[str] = []
     launcher.update_button = button
+    launcher.update_button_icons = {}
     launcher.busy = False
     launcher.update_checking = True
     launcher._log = logged.append
@@ -417,7 +457,7 @@ def test_update_status_finished_shows_available_update_button() -> None:
     launcher._update_status_finished(LauncherUpdateStatus("available", commits_behind=3))
 
     assert launcher.update_checking is False
-    assert button.options["text"] == "✅ Installer oppdatering"
+    assert button.options["text"] == "Installer oppdatering"
     assert logged == []
 
 
@@ -426,6 +466,7 @@ def test_update_status_finished_logs_error_and_returns_to_check_button() -> None
     button = FakeButton()
     logged: list[str] = []
     launcher.update_button = button
+    launcher.update_button_icons = {}
     launcher.busy = False
     launcher.update_checking = True
     launcher._log = logged.append
@@ -433,8 +474,16 @@ def test_update_status_finished_logs_error_and_returns_to_check_button() -> None
 
     launcher._update_status_finished(LauncherUpdateStatus("error", "ingen upstream"))
 
-    assert button.options["text"] == "🔍 Se etter oppdateringer"
+    assert button.options["text"] == "Se etter oppdateringer"
     assert logged == ["Oppdateringssjekk feilet: ingen upstream"]
+
+
+def test_pyproject_includes_launcher_button_icons_as_package_data() -> None:
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    package_data = pyproject["tool"]["setuptools"]["package-data"]["bildebank"]
+
+    assert "assets/icons/*.png" in package_data
 
 
 def test_update_button_click_runs_update_only_when_update_is_available() -> None:
