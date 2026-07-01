@@ -34,5 +34,3 @@ SHA-256 mot databasen. Denne kontrollen kan ta lang tid for en stor samling.
 Doctor viser fremdrift mens den leter etter manglende filer, scanner etter
 orphan-filer og kontrollerer SHA-256. Den rapporterer feil, men endrer ikke
 databasen eller filene.
-
-Det gamle navnet `face-status` virker fortsatt som alias.

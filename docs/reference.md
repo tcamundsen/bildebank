@@ -58,7 +58,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 ## Ansiktsgjenkjenning
 
 - [`insightface`](insightface.md) - innføring
-- [`export-person`](export-person.md) **`cli`**
+- [`export-person`](export-person.md) **`launcher`**
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
 - [`face-scan`](face-scan.md) **`launcher`**
 - [`face-suggest`](face-suggest.md) **`web`**
@@ -67,7 +67,6 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 [`run-server`](run-server.md):
 
-- [`face-status`](face-status.md) **`cli`** - gammelt navn for [`doctor`](doctor.md)
 - [`face-report`](face-report.md) **`cli`**
 - [`face-person-create`](face-person-create.md) **`web`**
 - [`face-person-add-face`](face-person-add-face.md) **`web`**

@@ -120,7 +120,6 @@ HELP_COMMAND_GROUPS = (
     (
         "ansikter",
         (
-            ("face-status", "Gammelt navn for doctor"),
             ("download-face-model", "Last ned valgt InsightFace-modell"),
             ("face-scan", "Scanning etter ansikter"),
             ("face-suggest", "Foreslå personer for ukjente ansikter"),
@@ -657,12 +656,6 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Kjør tregere filintegritetssjekker.",
     )
-    add_command(
-        subparsers,
-        "face-status",
-        usage="bildebank face-status [valg]",
-        help="Gammelt navn for doctor",
-    )
     config_parser = add_command(
         subparsers,
         "config",
@@ -1031,7 +1024,6 @@ NO_TARGET_COMMANDS = {
     "exiftool-install",
     "where-is",
     "doctor",
-    "face-status",
     "config",
     "download-face-model",
 }
@@ -1158,7 +1150,7 @@ def run_no_target_command(args: argparse.Namespace) -> int:
     if args.command == "where-is":
         return run_where_is()
 
-    if args.command in {"doctor", "face-status"}:
+    if args.command == "doctor":
         target = db.find_target(args.target)
         if target is not None:
             validate_collection_platform(target)

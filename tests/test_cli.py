@@ -702,7 +702,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("kontrollere importen\n   errors", stdout)
         self.assertIn("rydde trygt\n   remove", stdout)
         self.assertIn("metadata og steder\n   refresh-metadata", stdout)
-        self.assertIn("ansikter\n   face-status", stdout)
+        self.assertIn("ansikter\n   download-face-model", stdout)
         self.assertIn("bildesøk\n   image-scan", stdout)
         self.assertIn("cleanup-image-search", stdout)
         self.assertIn("HTML-eksport\n   make-thumbnails", stdout)
@@ -9625,25 +9625,12 @@ model_name = "buffalo_l"
         self.assertIn("  OBS: ingen aktiv bildesamling funnet.", stdout)
         self.assertEqual(stderr, "")
 
-    def test_doctor_deep_is_explicit_and_not_added_to_face_status(self) -> None:
+    def test_doctor_deep_is_explicit(self) -> None:
         default_args = build_parser().parse_args(["doctor"])
         deep_args = build_parser().parse_args(["doctor", "--deep"])
-        face_status_args = build_parser().parse_args(["face-status"])
 
         self.assertFalse(default_args.deep)
         self.assertTrue(deep_args.deep)
-        self.assertFalse(hasattr(face_status_args, "deep"))
-
-    def test_face_status_is_doctor_alias(self) -> None:
-        with patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
-            code, stdout, stderr = capture_cli(["face-status"])
-
-        self.assertEqual(code, 0, stderr)
-        self.assertIn("Bildebank doctor", stdout)
-        self.assertIn("Ansiktsgjenkjenning:", stdout)
-        self.assertIn("Tekstbasert bildesøk:", stdout)
-        self.assertIn("  FEIL: ExifTool mangler eller virker ikke: mangler", stdout)
-        self.assertEqual(stderr, "")
 
     def test_doctor_shows_exiftool_status(self) -> None:
         exiftool = self.program_root / "bildebank-tools" / "exiftool" / "exiftool.exe"
@@ -10167,7 +10154,7 @@ pretrained = "laion2b_s32b_b82k"
         self.assertIn("invalid choice", stderr.getvalue())
         self.assertFalse((self.program_root / "bildebank-config.toml").exists())
 
-    def test_face_status_uses_explicit_target(self) -> None:
+    def test_doctor_uses_explicit_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -10180,7 +10167,7 @@ pretrained = "laion2b_s32b_b82k"
             self.assertIn("Aktiv bildesamling:", stdout)
             self.assertIn(str(target.resolve()), stdout)
 
-    def test_face_status_does_not_migrate_openclip_database(self) -> None:
+    def test_doctor_does_not_migrate_openclip_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
