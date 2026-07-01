@@ -2474,18 +2474,6 @@ def all_browser_item_link(
     return source_item_url(all_browser_source(), int(item["id"])), "Åpne i alle bilder"
 
 
-def all_browser_item_link_url(
-    target: Path,
-    source: BrowserSource,
-    item: Any,
-    *,
-    hide_out_of_focus: bool = False,
-    conn: sqlite3.Connection | None = None,
-) -> str | None:
-    link = all_browser_item_link(target, source, item, hide_out_of_focus=hide_out_of_focus, conn=conn)
-    return link[0] if link is not None else None
-
-
 def hidden_sidecar_main_image(target: Path, item: Any, *, conn: sqlite3.Connection | None = None) -> Any | None:
     return motion_video_main_image(target, item, conn=conn) or raw_sidecar_main_image(target, item, conn=conn)
 
