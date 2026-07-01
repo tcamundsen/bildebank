@@ -379,16 +379,16 @@ def test_update_button_text_reflects_update_status() -> None:
     launcher = BildebankLauncher.__new__(BildebankLauncher)
 
     launcher.update_status = LauncherUpdateStatus("checking")
-    assert launcher._update_button_text() == "Ser etter oppdateringer ..."
+    assert launcher._update_button_text() == "🔍 Ser etter oppdateringer ..."
 
     launcher.update_status = LauncherUpdateStatus("available", commits_behind=1)
-    assert launcher._update_button_text() == "Oppdater Bildebank"
+    assert launcher._update_button_text() == "✅ Installer oppdatering"
 
     launcher.update_status = LauncherUpdateStatus("current")
-    assert launcher._update_button_text() == "Se etter oppdateringer"
+    assert launcher._update_button_text() == "🔍 Se etter oppdateringer"
 
     launcher.update_status = LauncherUpdateStatus("error", "nettverksfeil")
-    assert launcher._update_button_text() == "Se etter oppdateringer"
+    assert launcher._update_button_text() == "🔍 Se etter oppdateringer"
 
 
 def test_apply_update_button_state_updates_label_and_disables_while_checking() -> None:
@@ -400,7 +400,7 @@ def test_apply_update_button_state_updates_label_and_disables_while_checking() -
 
     launcher._apply_update_button_state()
 
-    assert button.options["text"] == "Ser etter oppdateringer ..."
+    assert button.options["text"] == "🔍 Ser etter oppdateringer ..."
     assert button.options["state"] == "disabled"
 
 
@@ -417,7 +417,7 @@ def test_update_status_finished_shows_available_update_button() -> None:
     launcher._update_status_finished(LauncherUpdateStatus("available", commits_behind=3))
 
     assert launcher.update_checking is False
-    assert button.options["text"] == "Oppdater Bildebank"
+    assert button.options["text"] == "✅ Installer oppdatering"
     assert logged == []
 
 
@@ -433,7 +433,7 @@ def test_update_status_finished_logs_error_and_returns_to_check_button() -> None
 
     launcher._update_status_finished(LauncherUpdateStatus("error", "ingen upstream"))
 
-    assert button.options["text"] == "Se etter oppdateringer"
+    assert button.options["text"] == "🔍 Se etter oppdateringer"
     assert logged == ["Oppdateringssjekk feilet: ingen upstream"]
 
 

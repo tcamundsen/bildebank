@@ -1098,10 +1098,10 @@ class BildebankLauncher:
 
     def _update_button_text(self) -> str:
         if self.update_status.status == "checking":
-            return "Ser etter oppdateringer ..."
+            return "🔍 Ser etter oppdateringer ..."
         if self.update_status.status == "available":
-            return "Oppdater Bildebank"
-        return "Se etter oppdateringer"
+            return "✅ Installer oppdatering"
+        return "🔍 Se etter oppdateringer"
 
     def _apply_update_button_state(self) -> None:
         if self.update_button is None:
