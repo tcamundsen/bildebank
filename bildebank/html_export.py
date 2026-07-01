@@ -22,7 +22,6 @@ from .html_paths import display_relative_path, path_to_url, relative_to_target
 from .media import image_dimensions, media_kind
 from .media_cache import MediaMetadataCache
 from .static_browser import static_browser_item
-from .value_parsing import require_float
 
 
 VIEW_ROTATION_CSS = """
@@ -418,75 +417,6 @@ def browser_date_text(row) -> str:
 
 def manual_date_midpoint(date_from: object, date_to: object) -> dt.date | None:
     return shared_manual_date_midpoint(date_from, date_to)
-
-
-def browser_face_items_from_metadata(
-    faces: object,
-    dimensions,
-    orientation: int = 1,
-    *,
-    include_boxes: bool = True,
-) -> list[dict[str, object]]:
-    if not isinstance(faces, list) or not faces:
-        return []
-    items: list[dict[str, object]] = []
-    for face in faces:
-        if not isinstance(face, dict):
-            continue
-        item = {
-            "faceId": face["faceId"],
-            "score": face["score"],
-        }
-        if include_boxes and dimensions is not None:
-            percent = face_box_percent(face, dimensions, orientation)
-            if percent is not None:
-                left, top, width, height = percent
-                item["left"] = left
-                item["top"] = top
-                item["boxWidth"] = width
-                item["boxHeight"] = height
-        items.append(item)
-    return items
-
-
-def face_box_percent(face: dict[str, object], dimensions, orientation: int = 1) -> tuple[float, float, float, float] | None:
-    if dimensions.width <= 0 or dimensions.height <= 0:
-        return None
-    x, y, width, height, box_width, box_height = orient_face_box(
-        require_float(face["x"], "x"),
-        require_float(face["y"], "y"),
-        require_float(face["width"], "width"),
-        require_float(face["height"], "height"),
-        dimensions.width,
-        dimensions.height,
-        orientation,
-    )
-    if box_width <= 0 or box_height <= 0:
-        return None
-    return (
-        100.0 * x / box_width,
-        100.0 * y / box_height,
-        100.0 * width / box_width,
-        100.0 * height / box_height,
-    )
-
-
-def orient_face_box(
-    x: float,
-    y: float,
-    width: float,
-    height: float,
-    image_width: int,
-    image_height: int,
-    orientation: int,
-) -> tuple[float, float, float, float, int, int]:
-    if orientation == 3:
-        return image_width - x - width, image_height - y - height, width, height, image_width, image_height
-    if orientation == 6:
-        return image_height - y - height, x, height, width, image_height, image_width
-    if orientation == 8:
-        return y, image_width - x - width, height, width, image_height, image_width
-    return x, y, width, height, image_width, image_height
 
 
 def face_tables_exist(conn: sqlite3.Connection) -> bool:

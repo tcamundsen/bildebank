@@ -16,14 +16,11 @@ from typing import Any, Concatenate, ParamSpec, TypeVar
 
 from . import db
 from .config import DEFAULT_FACE_MODEL_NAME, FaceRecognitionConfig
-from .formatting import format_bytes
-from .html_paths import display_relative_path, path_to_url, relative_to_target
+from .html_paths import path_to_url, relative_to_target
 from .html_export import render_html
 from .media import IMAGE_EXTENSIONS
-from .media_cache import MediaMetadataCache
 from .static_browser import static_browser_item
 from .target_lock import TargetLock
-from .thumbnails import existing_thumbnail_url
 
 
 LEGACY_FACE_DB_FILENAME = ".bilder-faces.sqlite3"
@@ -1117,188 +1114,6 @@ def export_people_browser(
     return PeopleBrowserResult(index_path=output_path, person_pages=tuple(person_pages))
 
 
-def person_browser_items(
-    target: Path,
-    conn: sqlite3.Connection,
-    *,
-    person_id: int,
-    media_cache: MediaMetadataCache | None = None,
-    view_rotations: dict[int, int] | None = None,
-) -> list[dict[str, Any]]:
-    rows = conn.execute(
-        """
-        SELECT
-            'bekreftet' AS status,
-            faces.id AS face_id,
-            faces.file_id,
-            1.0 AS similarity,
-            scanned_files.target_path,
-            scanned_files.face_count,
-            faces.bbox_x,
-            faces.bbox_y,
-            faces.bbox_width,
-            faces.bbox_height,
-            faces.detection_score
-        FROM person_faces
-        JOIN faces ON faces.id = person_faces.face_id
-        JOIN scanned_files ON scanned_files.file_id = faces.file_id
-        WHERE person_faces.person_id = ?
-
-        UNION ALL
-
-        SELECT
-            'forslag' AS status,
-            faces.id AS face_id,
-            faces.file_id,
-            face_suggestions.similarity,
-            scanned_files.target_path,
-            scanned_files.face_count,
-            faces.bbox_x,
-            faces.bbox_y,
-            faces.bbox_width,
-            faces.bbox_height,
-            faces.detection_score
-        FROM face_suggestions
-        JOIN faces ON faces.id = face_suggestions.face_id
-        JOIN scanned_files ON scanned_files.file_id = faces.file_id
-        WHERE face_suggestions.person_id = ?
-
-        ORDER BY target_path, status, face_id
-        """,
-        (person_id, person_id),
-    ).fetchall()
-    grouped: dict[str, dict[str, Any]] = {}
-    own_cache = media_cache is None
-    if media_cache is None:
-        media_cache = MediaMetadataCache(target)
-    if view_rotations is None:
-        view_rotations = file_view_rotations(target)
-    try:
-        for row in rows:
-            relative_path = db.relative_path(Path(str(row["target_path"])))
-            target_path = db.absolute_target_path(target, relative_path)
-            key = relative_path.as_posix()
-            dimensions = media_cache.image_dimensions(target_path)
-            orientation = media_cache.image_orientation(target_path)
-            item = grouped.setdefault(
-                key,
-                {
-                    "fileId": int(row["file_id"]),
-                    "path": relative_path.as_posix(),
-                    "url": path_to_url(relative_path),
-                    "thumbnailSrc": existing_thumbnail_url(target, relative_path),
-                    "name": relative_path.name,
-                    "monthKey": person_month_key(target, relative_path),
-                    "sizeText": format_person_file_size(target_path),
-                    "faceCount": int(row["face_count"]),
-                    "dimensions": dimensions,
-                    "orientation": orientation,
-                    "viewRotation": view_rotations.get(int(row["file_id"]), 0),
-                    "faces": [],
-                },
-            )
-            face = {
-                "faceId": int(row["face_id"]),
-                "status": str(row["status"]),
-                "similarity": float(row["similarity"]),
-                "x": float(row["bbox_x"]),
-                "y": float(row["bbox_y"]),
-                "width": float(row["bbox_width"]),
-                "height": float(row["bbox_height"]),
-                "score": float(row["detection_score"]),
-            }
-            percent = face_box_percent(face, dimensions, orientation)
-            if percent is not None:
-                left, top, width, height = percent
-                face["left"] = left
-                face["top"] = top
-                face["boxWidth"] = width
-                face["boxHeight"] = height
-            item["faces"].append(face)
-        manual_file_ids = [
-            int(row["file_id"])
-            for row in conn.execute(
-                """
-                SELECT file_id
-                FROM person_files
-                WHERE person_id = ?
-                ORDER BY file_id
-                """,
-                (person_id,),
-            )
-        ]
-        if manual_file_ids:
-            placeholders = ",".join("?" for _ in manual_file_ids)
-            main_conn = db.connect(target)
-            try:
-                manual_rows = main_conn.execute(
-                    f"""
-                    SELECT id, target_path
-                    FROM files
-                    WHERE deleted_at IS NULL
-                      AND id IN ({placeholders})
-                    ORDER BY target_path_key
-                    """,
-                    tuple(manual_file_ids),
-                )
-                for manual_row in manual_rows:
-                    relative_path = db.relative_path(Path(str(manual_row["target_path"])))
-                    key = relative_path.as_posix()
-                    if key in grouped:
-                        continue
-                    target_path = db.absolute_target_path(target, relative_path)
-                    grouped[key] = {
-                        "fileId": int(manual_row["id"]),
-                        "path": relative_path.as_posix(),
-                        "url": path_to_url(relative_path),
-                        "thumbnailSrc": existing_thumbnail_url(target, relative_path),
-                        "name": relative_path.name,
-                        "monthKey": person_month_key(target, relative_path),
-                        "sizeText": format_person_file_size(target_path),
-                        "faceCount": 0,
-                        "dimensions": media_cache.image_dimensions(target_path),
-                        "orientation": media_cache.image_orientation(target_path),
-                        "viewRotation": view_rotations.get(int(manual_row["id"]), 0),
-                        "faces": [],
-                    }
-            finally:
-                main_conn.close()
-    finally:
-        if own_cache:
-            media_cache.close()
-    return list(grouped.values())
-
-
-def file_view_rotations(target: Path) -> dict[int, int]:
-    conn = db.connect(target)
-    try:
-        return {
-            int(row["id"]): db.normalize_view_rotation(row["view_rotation_degrees"])
-            for row in conn.execute(
-                """
-                SELECT id, view_rotation_degrees
-                FROM files
-                WHERE deleted_at IS NULL
-                """
-            )
-        }
-    finally:
-        conn.close()
-
-
-def render_person_browser_html(
-    person_name: str,
-    items: list[dict[str, Any]],
-    *,
-    month_preview_limit: int | None = None,
-) -> str:
-    return render_html(
-        person_browser_json_items(items),
-        title=person_name,
-        month_preview_limit=month_preview_limit,
-    )
-
-
 def people_index_item(
     target: Path,
     conn: sqlite3.Connection,
@@ -1576,39 +1391,6 @@ def html_escape(value: object) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
-
-
-def person_browser_json_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        static_browser_item(
-            item,
-            Path(str(item["path"])),
-            url=str(item["url"]),
-            thumbnail_src=str(item.get("thumbnailSrc", "")),
-            kind="image",
-            view_rotation=item.get("viewRotation", 0),
-            name=str(item["name"]),
-            month_key=str(item["monthKey"]),
-        )
-        for item in items
-    ]
-
-
-def person_month_key(target: Path, path: Path) -> str:
-    parts = relative_to_target(target, path).parts
-    if len(parts) >= 3 and parts[0].isdigit() and len(parts[0]) == 4 and parts[1].isdigit():
-        return f"{parts[0]}-{parts[1]}"
-    if parts and parts[0] == "udatert":
-        return "udatert"
-    return "ukjent"
-
-
-def format_person_file_size(path: Path) -> str:
-    try:
-        size = path.stat().st_size
-    except OSError:
-        return "-"
-    return format_bytes(size)
 
 
 def safe_filename(value: str) -> str:

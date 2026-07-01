@@ -11,7 +11,7 @@ from typing import Any, Callable, Iterable
 from . import db
 from .config import FaceRecognitionConfig
 from .face import active_image_files, ensure_face_schema_path, face_db_path, normalize_person_name
-from .html_export import browser_face_items_from_metadata, face_tables_exist
+from .html_export import face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
 from .server_browser import items_by_file_ids, rotation_style_attr, thumbnail_media_html
 from .server_browser_sources import (
@@ -1457,9 +1457,82 @@ def face_suggestion_summary_html(suggestions: list[object]) -> str:
     return '<p class="face-suggestion-summary">Forslag: ' + ", ".join(parts) + "</p>"
 
 
+def _face_overlay_items_from_metadata(
+    faces: object,
+    dimensions: ImageDimensions | None,
+    orientation: int = 1,
+    *,
+    include_boxes: bool = True,
+) -> list[dict[str, object]]:
+    if not isinstance(faces, list) or not faces:
+        return []
+    items: list[dict[str, object]] = []
+    for face in faces:
+        if not isinstance(face, dict):
+            continue
+        item = {
+            "faceId": face["faceId"],
+            "score": face["score"],
+        }
+        if include_boxes and dimensions is not None:
+            percent = face_box_percent(face, dimensions, orientation)
+            if percent is not None:
+                left, top, width, height = percent
+                item["left"] = left
+                item["top"] = top
+                item["boxWidth"] = width
+                item["boxHeight"] = height
+        items.append(item)
+    return items
+
+
+def face_box_percent(
+    face: dict[str, object],
+    dimensions: ImageDimensions,
+    orientation: int = 1,
+) -> tuple[float, float, float, float] | None:
+    if dimensions.width <= 0 or dimensions.height <= 0:
+        return None
+    x, y, width, height, box_width, box_height = orient_face_box(
+        require_float(face["x"], "x"),
+        require_float(face["y"], "y"),
+        require_float(face["width"], "width"),
+        require_float(face["height"], "height"),
+        dimensions.width,
+        dimensions.height,
+        orientation,
+    )
+    if box_width <= 0 or box_height <= 0:
+        return None
+    return (
+        100.0 * x / box_width,
+        100.0 * y / box_height,
+        100.0 * width / box_width,
+        100.0 * height / box_height,
+    )
+
+
+def orient_face_box(
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    image_width: int,
+    image_height: int,
+    orientation: int,
+) -> tuple[float, float, float, float, int, int]:
+    if orientation == 3:
+        return image_width - x - width, image_height - y - height, width, height, image_width, image_height
+    if orientation == 6:
+        return image_height - y - height, x, height, width, image_height, image_width
+    if orientation == 8:
+        return y, image_width - x - width, height, width, image_height, image_width
+    return x, y, width, height, image_width, image_height
+
+
 def cached_face_box_items_for_item(target: Path, item: Any, faces: list[dict[str, object]]) -> list[dict[str, object]]:
     dimensions, orientation = cached_face_box_media_metadata(target, item)
-    items = browser_face_items_from_metadata(faces, dimensions, orientation)
+    items = _face_overlay_items_from_metadata(faces, dimensions, orientation)
     extra_by_face_id = {require_int(face["faceId"], "faceId"): face for face in faces}
     for item in items:
         face = extra_by_face_id.get(require_int(item["faceId"], "faceId"))
