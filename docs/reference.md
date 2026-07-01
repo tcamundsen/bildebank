@@ -51,9 +51,9 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 ## Generering av statiske HTML-filer:
 
-- [`make-browser`](make-browser.md) **`cli`** **`launcher`**
-- [`make-people-browser`](make-people-browser.md) **`cli`** **`launcher`**
-- [`make-person-browser`](make-person-browser.md) **`cli`** **`launcher`**
+- [`make-browser`](make-browser.md) **`launcher`**
+- [`make-people-browser`](make-people-browser.md) **`launcher`**
+- [`make-person-browser`](make-person-browser.md) **`launcher`**
 
 ## Ansiktsgjenkjenning
 
