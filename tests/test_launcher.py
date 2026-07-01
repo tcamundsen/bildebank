@@ -44,6 +44,8 @@ from bildebank.launcher import (
     launcher_command,
     load_launcher_config,
     make_browser_command,
+    make_people_browser_command,
+    make_person_browser_command,
     make_thumbnails_command,
     migrate_command,
     migration_plan_needs_action,
@@ -156,6 +158,30 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--target",
         str(collection),
         "make-browser",
+        "--hide-out-of-focus",
+    ]
+    assert make_person_browser_command(collection, "Kari")[-4:] == [
+        "--target",
+        str(collection),
+        "make-person-browser",
+        "Kari",
+    ]
+    assert make_person_browser_command(collection, "Kari", hide_out_of_focus=True)[-5:] == [
+        "--target",
+        str(collection),
+        "make-person-browser",
+        "Kari",
+        "--hide-out-of-focus",
+    ]
+    assert make_people_browser_command(collection)[-3:] == [
+        "--target",
+        str(collection),
+        "make-people-browser",
+    ]
+    assert make_people_browser_command(collection, hide_out_of_focus=True)[-4:] == [
+        "--target",
+        str(collection),
+        "make-people-browser",
         "--hide-out-of-focus",
     ]
     assert vacuum_command(collection)[-3:] == ["--target", str(collection), "vacuum"]
@@ -598,24 +624,38 @@ def test_launcher_source_exposes_export_person_dry_run_flow() -> None:
 
     assert 'text="Eksporter person"' in refresh_source
     assert "_start_export_person_flow" in refresh_source
-    assert "Denne funksjonen eksporterer en kopi av alle bildene av en person" in inspect.getsource(
-        BildebankLauncher._select_person
-    )
+    assert "Denne funksjonen eksporterer en kopi av alle bildene av en person" in flow_source
+    assert "description: str" in inspect.getsource(BildebankLauncher._select_person)
     assert "_select_person(" in flow_source
     assert "dry_run=True" in dry_run_source
     assert "_confirm_export_person" in dry_run_source
     assert "messagebox.askyesno" in confirm_source
 
 
-def test_launcher_source_exposes_make_browser_hide_out_of_focus_checkbox() -> None:
+def test_launcher_source_exposes_static_browser_commands_and_shared_hide_checkbox() -> None:
     refresh_source = inspect.getsource(BildebankLauncher._refresh_state)
-    run_source = inspect.getsource(BildebankLauncher._run_make_browser)
+    make_browser_source = inspect.getsource(BildebankLauncher._run_make_browser)
+    start_make_person_source = inspect.getsource(BildebankLauncher._start_make_person_browser_flow)
+    make_person_source = inspect.getsource(BildebankLauncher._run_make_person_browser)
+    make_people_source = inspect.getsource(BildebankLauncher._run_make_people_browser)
 
     assert 'text="Lag HTML-browser"' in refresh_source
+    assert 'text="Lag personbrowser"' in refresh_source
+    assert 'text="Lag alle personbrowsere"' in refresh_source
     assert 'text=\'Skjul "Ute av fokus"\'' in refresh_source
     assert "static_browser_hide_out_of_focus_var" in refresh_source
-    assert "make_browser_command(" in run_source
-    assert "hide_out_of_focus=hide_out_of_focus" in run_source
+    assert "de statiske HTML-browserkommandoene" in refresh_source
+    assert "_select_person(" in start_make_person_source
+    assert "Velg personen det skal lages statisk HTML-browser for." in start_make_person_source
+    assert "static_browser_hide_out_of_focus_var.get()" in make_browser_source
+    assert "make_browser_command(" in make_browser_source
+    assert "hide_out_of_focus=hide_out_of_focus" in make_browser_source
+    assert "static_browser_hide_out_of_focus_var.get()" in make_person_source
+    assert "make_person_browser_command(" in make_person_source
+    assert "hide_out_of_focus=hide_out_of_focus" in make_person_source
+    assert "static_browser_hide_out_of_focus_var.get()" in make_people_source
+    assert "make_people_browser_command(" in make_people_source
+    assert "hide_out_of_focus=hide_out_of_focus" in make_people_source
 
 
 def test_registered_persons_maps_face_person_rows(tmp_path: Path) -> None:

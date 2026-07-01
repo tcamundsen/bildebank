@@ -250,6 +250,25 @@ def make_browser_command(collection_path: Path, *, hide_out_of_focus: bool = Fal
     return command
 
 
+def make_person_browser_command(
+    collection_path: Path,
+    person_name: str,
+    *,
+    hide_out_of_focus: bool = False,
+) -> list[str]:
+    command = bildebank_command("--target", collection_path, "make-person-browser", person_name)
+    if hide_out_of_focus:
+        command.append("--hide-out-of-focus")
+    return command
+
+
+def make_people_browser_command(collection_path: Path, *, hide_out_of_focus: bool = False) -> list[str]:
+    command = bildebank_command("--target", collection_path, "make-people-browser")
+    if hide_out_of_focus:
+        command.append("--hide-out-of-focus")
+    return command
+
+
 def vacuum_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "vacuum")
 
@@ -988,15 +1007,43 @@ class BildebankLauncher:
                     static_browser_button,
                     "Lag en statisk index.html i bildesamlingen som kan åpnes uten Bildebank-server.",
                 )
+                static_person_browser_button = self._button(
+                    self.tools_button_frame,
+                    text="Lag personbrowser",
+                    command=self._start_make_person_browser_flow,
+                )
+                static_person_browser_button.grid(row=2, column=2, padx=PADX, pady=PADY, sticky="ew")
+                self._add_tooltip(
+                    static_person_browser_button,
+                    "Lag en statisk HTML-browser for en valgt person.",
+                )
+                static_people_browser_button = self._button(
+                    self.tools_button_frame,
+                    text="Lag alle personbrowsere",
+                    command=self._run_make_people_browser,
+                )
+                static_people_browser_button.grid(row=2, column=3, padx=PADX, pady=PADY, sticky="ew")
+                self._add_tooltip(
+                    static_people_browser_button,
+                    "Lag statiske HTML-browsere for alle registrerte personer.",
+                )
                 static_browser_hide_checkbox = self.ttk.Checkbutton(
                     self.tools_button_frame,
                     text='Skjul "Ute av fokus"',
                     variable=self.static_browser_hide_out_of_focus_var,
                 )
-                static_browser_hide_checkbox.grid(row=2, column=2, padx=PADX, pady=PADY, sticky="w")
+                static_browser_hide_checkbox.grid(
+                    row=3,
+                    column=1,
+                    columnspan=3,
+                    padx=PADX,
+                    pady=PADY,
+                    sticky="w",
+                )
                 self._add_tooltip(
                     static_browser_hide_checkbox,
-                    'Når dette er valgt, får "bildebank make-browser" flagget --hide-out-of-focus.',
+                    "Når dette er valgt, får de statiske HTML-browserkommandoene "
+                    "flagget --hide-out-of-focus.",
                 )
                 face_button = self._button(
                     self.tools_button_frame,
@@ -1088,6 +1135,8 @@ class BildebankLauncher:
                         image_scan_button,
                         thumbs_button,
                         static_browser_button,
+                        static_person_browser_button,
+                        static_people_browser_button,
                         static_browser_hide_checkbox,
                         doctor_button,
                         deep_doctor_button,
@@ -1479,6 +1528,54 @@ class BildebankLauncher:
             running_message="Lager statisk HTML-browser ...",
             success_message="Statisk HTML-browser fullført.",
             failure_message="Statisk HTML-browser feilet.",
+            on_success=self._refresh_state,
+            cancellable=True,
+        )
+
+    def _start_make_person_browser_flow(self) -> None:
+        from tkinter import messagebox
+
+        persons = self._load_registered_persons()
+        if persons is None:
+            return
+        if not persons:
+            messagebox.showinfo("Ingen personer", "Fant ingen registrerte personer.")
+            self._log("Personbrowser avbrutt: fant ingen registrerte personer.")
+            return
+
+        self._select_person(
+            persons,
+            title="Lag personbrowser",
+            description="Velg personen det skal lages statisk HTML-browser for.",
+            action_label="Lag HTML-browser",
+            on_cancel=lambda: self._log("Personbrowser avbrutt: ingen person valgt."),
+            on_select=self._run_make_person_browser,
+        )
+
+    def _run_make_person_browser(self, person: RegisteredPerson) -> None:
+        hide_out_of_focus = bool(self.static_browser_hide_out_of_focus_var.get())
+        self._log(f'Lager statisk HTML-browser for "{person.name}" ...')
+        self._run_waiting_command(
+            make_person_browser_command(
+                self.collection_path,
+                person.name,
+                hide_out_of_focus=hide_out_of_focus,
+            ),
+            running_message="Lager statisk personbrowser ...",
+            success_message="Statisk personbrowser fullført.",
+            failure_message="Statisk personbrowser feilet.",
+            on_success=self._refresh_state,
+            cancellable=True,
+        )
+
+    def _run_make_people_browser(self) -> None:
+        hide_out_of_focus = bool(self.static_browser_hide_out_of_focus_var.get())
+        self._log("Lager statiske personbrowsere ...")
+        self._run_waiting_command(
+            make_people_browser_command(self.collection_path, hide_out_of_focus=hide_out_of_focus),
+            running_message="Lager statiske personbrowsere ...",
+            success_message="Statiske personbrowsere fullført.",
+            failure_message="Statiske personbrowsere feilet.",
             on_success=self._refresh_state,
             cancellable=True,
         )
@@ -1964,6 +2061,10 @@ class BildebankLauncher:
         self._select_person(
             persons,
             title="Eksporter person",
+            description=(
+                "Denne funksjonen eksporterer en kopi av alle bildene av en person. "
+                "Velg personen du vil eksportere, og deretter mappen der personmappen skal opprettes."
+            ),
             action_label="Velg mappe",
             on_cancel=lambda: self._log("Personeksport avbrutt: ingen person valgt."),
             on_select=lambda person: self._choose_export_person_destination(person, filedialog=filedialog),
@@ -1984,6 +2085,7 @@ class BildebankLauncher:
         persons: list[RegisteredPerson],
         *,
         title: str,
+        description: str,
         action_label: str,
         on_select: Callable[[RegisteredPerson], None],
         on_cancel: Callable[[], None],
@@ -2002,10 +2104,7 @@ class BildebankLauncher:
 
         ttk.Label(
             frame,
-            text=(
-                "Denne funksjonen eksporterer en kopi av alle bildene av en person. "
-                "Velg personen du vil eksportere, og deretter mappen der personmappen skal opprettes."
-            ),
+            text=description,
             wraplength=460,
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 12))
         ttk.Label(frame, text="Person:").grid(row=1, column=0, sticky="w", pady=(0, 4))
