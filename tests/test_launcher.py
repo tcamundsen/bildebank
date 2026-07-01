@@ -15,6 +15,7 @@ from bildebank.launcher import (
     LauncherConfig,
     LauncherUpdateStatus,
     OpenClipModelStatus,
+    RegisteredPerson,
     check_launcher_update_status,
     check_source_command,
     close_blocked_by_running_command,
@@ -27,6 +28,7 @@ from bildebank.launcher import (
     dependency_setup_button_state,
     doctor_command,
     download_face_model_command,
+    export_person_command,
     face_model_download_button_state,
     face_scan_command,
     geo_scan_command,
@@ -48,6 +50,7 @@ from bildebank.launcher import (
     openclip_install_command,
     openclip_model_status,
     progress_log_key,
+    registered_persons,
     registered_sources,
     rescan_source_candidates,
     rescan_source_command,
@@ -189,6 +192,23 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--dry-run",
         "--name",
         "Sommer 2024",
+    ]
+    assert export_person_command(collection, "Kari", tmp_path / "eksport")[-6:] == [
+        "--target",
+        str(collection),
+        "export-person",
+        "Kari",
+        "--dest",
+        str(tmp_path / "eksport"),
+    ]
+    assert export_person_command(collection, "Kari", tmp_path / "eksport", dry_run=True)[-7:] == [
+        "--target",
+        str(collection),
+        "export-person",
+        "Kari",
+        "--dest",
+        str(tmp_path / "eksport"),
+        "--dry-run",
     ]
     assert download_face_model_command()[-1:] == ["download-face-model"]
 
@@ -503,6 +523,64 @@ def test_select_source_does_not_run_nested_tk_event_loop() -> None:
 
     assert "self.root.update()" not in source
     assert "after_idle" in source
+
+
+def test_select_person_does_not_run_nested_tk_event_loop() -> None:
+    source = inspect.getsource(BildebankLauncher._select_person)
+
+    assert "self.root.update()" not in source
+    assert "after_idle" in source
+    assert 'state="readonly"' in source
+
+
+def test_launcher_source_exposes_export_person_dry_run_flow() -> None:
+    refresh_source = inspect.getsource(BildebankLauncher._refresh_state)
+    flow_source = inspect.getsource(BildebankLauncher._start_export_person_flow)
+    dry_run_source = inspect.getsource(BildebankLauncher._run_export_person_dry_run)
+    confirm_source = inspect.getsource(BildebankLauncher._confirm_export_person)
+
+    assert 'text="Eksporter person"' in refresh_source
+    assert "_start_export_person_flow" in refresh_source
+    assert "Denne funksjonen eksporterer en kopi av alle bildene av en person" in inspect.getsource(
+        BildebankLauncher._select_person
+    )
+    assert "_select_person(" in flow_source
+    assert "dry_run=True" in dry_run_source
+    assert "_confirm_export_person" in dry_run_source
+    assert "messagebox.askyesno" in confirm_source
+
+
+def test_registered_persons_maps_face_person_rows(tmp_path: Path) -> None:
+    rows = [
+        {
+            "name": "Kari",
+            "confirmed_file_count": 12,
+            "face_count": 14,
+            "suggestion_count": 83,
+            "updated_at": "2026-05-09 12:34:56",
+        },
+        {
+            "name": "Ola",
+            "confirmed_file_count": 2,
+            "face_count": 3,
+            "suggestion_count": 4,
+            "updated_at": "2026-05-10 11:22:33",
+        },
+    ]
+
+    with (
+        patch("bildebank.launcher.program_repo_root", return_value=tmp_path),
+        patch("bildebank.launcher.load_config") as load_config,
+        patch("bildebank.face.list_persons", return_value=rows) as list_persons,
+    ):
+        load_config.return_value.face_recognition = object()
+        persons = registered_persons(tmp_path / "samling")
+
+    assert persons == [
+        RegisteredPerson("Kari", 12, 14, 83, "2026-05-09 12:34:56"),
+        RegisteredPerson("Ola", 2, 3, 4, "2026-05-10 11:22:33"),
+    ]
+    list_persons.assert_called_once_with(tmp_path / "samling", load_config.return_value.face_recognition)
 
 
 def test_migration_plan_needs_action_detects_version_change() -> None:

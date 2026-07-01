@@ -14,7 +14,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any, Callable
 
 from . import db
-from .config import load_launcher_collection_path, set_launcher_collection_path
+from .config import load_config, load_launcher_collection_path, set_launcher_collection_path
 from .pending_deletes import list_pending_deletes
 from .server import DEFAULT_HOST, DEFAULT_PORT
 
@@ -62,6 +62,15 @@ class LauncherUpdateStatus:
     status: str
     detail: str = ""
     commits_behind: int = 0
+
+
+@dataclass(frozen=True)
+class RegisteredPerson:
+    name: str
+    confirmed_file_count: int
+    face_count: int
+    suggestion_count: int
+    updated_at: str
 
 
 @dataclass(frozen=True)
@@ -263,6 +272,19 @@ def unimport_source_dry_run_command(collection_path: Path, source_name: str) -> 
     return bildebank_command("--target", collection_path, "unimport", "--dry-run", "--name", source_name)
 
 
+def export_person_command(
+    collection_path: Path,
+    person_name: str,
+    destination_root: Path,
+    *,
+    dry_run: bool = False,
+) -> list[str]:
+    command = bildebank_command("--target", collection_path, "export-person", person_name, "--dest", destination_root)
+    if dry_run:
+        command.append("--dry-run")
+    return command
+
+
 def program_repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -405,6 +427,22 @@ def registered_sources(collection_path: Path) -> list[db.Source]:
         return db.get_sources(conn)
     finally:
         conn.close()
+
+
+def registered_persons(collection_path: Path) -> list[RegisteredPerson]:
+    from .face import list_persons
+
+    config = load_config(program_repo_root()).face_recognition
+    return [
+        RegisteredPerson(
+            name=str(row["name"]),
+            confirmed_file_count=int(row["confirmed_file_count"]),
+            face_count=int(row["face_count"]),
+            suggestion_count=int(row["suggestion_count"]),
+            updated_at=str(row["updated_at"]),
+        )
+        for row in list_persons(collection_path, config)
+    ]
 
 
 def migration_plan_needs_action(plan: db.MigrationPlan) -> bool:
@@ -994,6 +1032,16 @@ class BildebankLauncher:
                     "blitt avbrutt. Knappen brukes til å fullføre jobben på en trygg måte.",
                 )
                 pending_button.grid(row=1, column=3, padx=PADX, pady=PADY, sticky="ew")
+                export_person_button = self._button(
+                    self.tools_button_frame,
+                    text="Eksporter person",
+                    command=self._start_export_person_flow,
+                )
+                export_person_button.grid(row=2, column=0, padx=PADX, pady=PADY, sticky="ew")
+                self._add_tooltip(
+                    export_person_button,
+                    "Eksporter en kopi av alle bildene som vises på siden til en person i bildebrowseren.",
+                )
                 self.buttons.extend(
                     [
                         start_button,
@@ -1010,6 +1058,7 @@ class BildebankLauncher:
                         deep_doctor_button,
                         vacuum_button,
                         pending_button,
+                        export_person_button,
                     ]
                 )
         else:
@@ -1739,6 +1788,16 @@ class BildebankLauncher:
             self._log(f"Kunne ikke lese registrerte kilder: {exc}")
             return None
 
+    def _load_registered_persons(self) -> list[RegisteredPerson] | None:
+        from tkinter import messagebox
+
+        try:
+            return registered_persons(self.collection_path)
+        except Exception as exc:  # noqa: BLE001 - GUI should show readable errors
+            messagebox.showerror("Kunne ikke lese personer", "Kunne ikke lese registrerte personer.")
+            self._log(f"Kunne ikke lese registrerte personer: {exc}")
+            return None
+
     def _select_source(
         self,
         sources: list[db.Source],
@@ -1819,6 +1878,143 @@ class BildebankLauncher:
         dialog.bind("<Return>", lambda _event: accept())
         dialog.bind("<Escape>", lambda _event: cancel())
         dialog.protocol("WM_DELETE_WINDOW", cancel)
+
+    def _start_export_person_flow(self) -> None:
+        from tkinter import filedialog, messagebox
+
+        persons = self._load_registered_persons()
+        if persons is None:
+            return
+        if not persons:
+            messagebox.showinfo("Ingen personer", "Fant ingen registrerte personer.")
+            self._log("Personeksport avbrutt: fant ingen registrerte personer.")
+            return
+
+        self._select_person(
+            persons,
+            title="Eksporter person",
+            action_label="Velg mappe",
+            on_cancel=lambda: self._log("Personeksport avbrutt: ingen person valgt."),
+            on_select=lambda person: self._choose_export_person_destination(person, filedialog=filedialog),
+        )
+
+    def _choose_export_person_destination(self, person: RegisteredPerson, *, filedialog: Any) -> None:
+        selected = filedialog.askdirectory(
+            title=f"Velg hvor personmappen for {person.name} skal opprettes",
+            initialdir=str(self.collection_path.parent),
+        )
+        if not selected:
+            self._log(f'Personeksport avbrutt for "{person.name}": ingen mappe valgt.')
+            return
+        self._run_export_person_dry_run(person, Path(selected))
+
+    def _select_person(
+        self,
+        persons: list[RegisteredPerson],
+        *,
+        title: str,
+        action_label: str,
+        on_select: Callable[[RegisteredPerson], None],
+        on_cancel: Callable[[], None],
+    ) -> None:
+        tk = self.tk
+        ttk = self.ttk
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+
+        frame = ttk.Frame(dialog, padding=12)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+
+        ttk.Label(
+            frame,
+            text=(
+                "Denne funksjonen eksporterer en kopi av alle bildene av en person. "
+                "Velg personen du vil eksportere, og deretter mappen der personmappen skal opprettes."
+            ),
+            wraplength=460,
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 12))
+        ttk.Label(frame, text="Person:").grid(row=1, column=0, sticky="w", pady=(0, 4))
+
+        person_names = [person.name for person in persons]
+        selected_name = tk.StringVar(value=person_names[0])
+        combobox = ttk.Combobox(
+            frame,
+            textvariable=selected_name,
+            values=person_names,
+            state="readonly",
+            width=42,
+        )
+        combobox.grid(row=2, column=0, columnspan=2, sticky="ew")
+        combobox.focus_set()
+
+        person_by_name = {person.name: person for person in persons}
+
+        def accept() -> None:
+            person = person_by_name.get(selected_name.get())
+            if person is None:
+                return
+            dialog.withdraw()
+            dialog.destroy()
+            self.root.lift()
+            self.root.focus_force()
+            self.root.after_idle(lambda: on_select(person))
+
+        def cancel() -> None:
+            dialog.withdraw()
+            dialog.destroy()
+            self.root.lift()
+            self.root.focus_force()
+            self.root.after_idle(on_cancel)
+
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=3, column=0, columnspan=2, sticky="e", pady=(12, 0))
+        self._button(button_frame, text="Avbryt", command=cancel).grid(row=0, column=0, padx=(0, 8))
+        self._button(button_frame, text=action_label, command=accept).grid(row=0, column=1)
+
+        dialog.bind("<Return>", lambda _event: accept())
+        dialog.bind("<Escape>", lambda _event: cancel())
+        dialog.protocol("WM_DELETE_WINDOW", cancel)
+
+    def _run_export_person_dry_run(self, person: RegisteredPerson, destination_root: Path) -> None:
+        self._log(f'Kontrollerer personeksport for "{person.name}" til {destination_root} ...')
+        self._run_waiting_command(
+            export_person_command(self.collection_path, person.name, destination_root, dry_run=True),
+            running_message="Kontrollerer personeksport ...",
+            success_message="Eksport dry-run fullført. Se planen i loggen.",
+            failure_message="Eksport dry-run feilet.",
+            on_success=lambda: self._confirm_export_person(person, destination_root),
+        )
+
+    def _confirm_export_person(self, person: RegisteredPerson, destination_root: Path) -> None:
+        from tkinter import messagebox
+
+        if not messagebox.askyesno(
+            "Eksporter person?",
+            (
+                "Dry-run er fullført og planen står i loggen.\n\n"
+                f'Vil du eksportere bildene av "{person.name}" nå?\n\n'
+                f"Personmappen opprettes under:\n{destination_root}"
+            ),
+            parent=self.root,
+        ):
+            self._log(f'Personeksport avbrutt for "{person.name}".')
+            return
+        self._run_export_person(person, destination_root)
+
+    def _run_export_person(self, person: RegisteredPerson, destination_root: Path) -> None:
+        self._log(f'Eksporterer bilder av "{person.name}" til {destination_root} ...')
+        self._run_waiting_command(
+            export_person_command(self.collection_path, person.name, destination_root),
+            running_message="Eksporterer person ...",
+            success_message="Personeksport fullført.",
+            failure_message="Personeksport feilet.",
+            on_success=self._refresh_state,
+            cancellable=True,
+        )
 
     def _start_import_flow(self) -> None:
         from tkinter import filedialog, messagebox, simpledialog
