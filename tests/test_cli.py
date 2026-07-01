@@ -48,6 +48,7 @@ from bildebank.face import (
     face_box_percent,
     face_db_path,
     export_person_browser,
+    export_people_browser,
     insightface_import_error_message,
     normalize_insightface_model_layout,
     person_source_browser_items,
@@ -4002,6 +4003,41 @@ model_name = "buffalo_l"
             self.assertNotIn("DSC_0170.NEF", html)
             self.assertNotIn("PXL_20250102_123.mp4", html)
             self.assertNotIn("deleted.jpg", html)
+
+    def test_make_browser_can_hide_out_of_focus_items(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(jpeg_with_exif_datetime("2024:01:02 12:00:00"))
+            (source / "IMG_20240103.jpg").write_bytes(jpeg_with_exif_datetime("2024:01:03 12:00:00"))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                db.tag_file(conn, file_id=1, tag_name=db.SYSTEM_TAG_OUT_OF_FOCUS)
+                conn.commit()
+            finally:
+                conn.close()
+
+            output = root / "index.html"
+            self.assertEqual(
+                run_cli(["--target", str(target), "make-browser", "--hide-out-of-focus", "--output", str(output)]),
+                0,
+            )
+            html = output.read_text(encoding="utf-8")
+            items_start = html.index("const embeddedItems = ") + len("const embeddedItems = ")
+            items_end = html.index(";\n    const MONTH_PREVIEW_LIMIT", items_start)
+            items = json.loads(html[items_start:items_end])
+
+            self.assertEqual(
+                [int(item["fileId"]) for item in items],
+                source_item_ids(target, all_browser_source(), hide_out_of_focus=True),
+            )
+            self.assertEqual([item["name"] for item in items], ["IMG_20240103.jpg"])
+            self.assertNotIn("IMG_20240102.jpg", html)
 
     def test_make_browser_requires_target_lock_before_writing_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -16326,6 +16362,57 @@ class ExportPersonTests(unittest.TestCase):
         self.assertNotIn("PXL.mp4", html)
         self.assertNotIn("deleted.jpg", html)
 
+    def test_make_people_browser_index_uses_same_visible_items_as_person_page(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, config, ids = self.make_collection(root)
+            main_conn = db.connect(target)
+            try:
+                rows = list(main_conn.execute("SELECT id, target_path, target_path_key, sha256 FROM files"))
+            finally:
+                main_conn.close()
+            face_conn = connect_face_db(target, config.face_recognition)
+            try:
+                for row in rows:
+                    if int(row["id"]) not in {
+                        ids["confirmed"],
+                        ids["suggested"],
+                        ids["hidden"],
+                        ids["motion"],
+                        ids["deleted"],
+                    }:
+                        continue
+                    face_conn.execute(
+                        """
+                        INSERT OR REPLACE INTO scanned_files(
+                            file_id, target_path, target_path_key, sha256, status, face_count
+                        ) VALUES(?, ?, ?, ?, 'ok', 1)
+                        """,
+                        (
+                            int(row["id"]),
+                            str(row["target_path"]),
+                            str(row["target_path_key"]),
+                            str(row["sha256"]),
+                        ),
+                    )
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            result = export_people_browser(target, config=config.face_recognition, target_locked=True)
+            person_html = (target / "person-Kari.html").read_text(encoding="utf-8")
+            items_start = person_html.index("const embeddedItems = ") + len("const embeddedItems = ")
+            items_end = person_html.index(";\n    const MONTH_PREVIEW_LIMIT", items_start)
+            person_items = json.loads(person_html[items_start:items_end])
+            index_html = result.index_path.read_text(encoding="utf-8")
+
+            self.assertEqual([int(item["fileId"]) for item in person_items], [ids["confirmed"], ids["hidden"], ids["manual"], ids["suggested"]])
+            self.assertIn("4 bilder", index_html)
+            self.assertIn("2 bekreftet, 2 forslag", index_html)
+            self.assertNotIn("6 bilder", index_html)
+            self.assertNotIn("PXL.mp4", person_html)
+            self.assertNotIn("deleted.jpg", person_html)
+
     def test_export_person_uses_browser_selection_dates_collisions_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -16404,7 +16491,10 @@ class ExportPersonTests(unittest.TestCase):
             self.assertFalse((destination_root / "Kari").exists())
             self.assertEqual(list(destination_root.iterdir()), [])
 
-            with patch("bildebank.cli.load_config", return_value=config):
+            with (
+                patch("bildebank.cli.load_config", return_value=config),
+                patch("bildebank.cli_face.load_config", return_value=config),
+            ):
                 code, stdout, stderr = capture_cli(
                     [
                         "--target",
@@ -16422,7 +16512,10 @@ class ExportPersonTests(unittest.TestCase):
             self.assertNotIn("index.html", stdout)
             self.assertFalse((destination_root / "Kari").exists())
 
-            with patch("bildebank.cli.load_config", return_value=config):
+            with (
+                patch("bildebank.cli.load_config", return_value=config),
+                patch("bildebank.cli_face.load_config", return_value=config),
+            ):
                 code, stdout, stderr = capture_cli(
                     [
                         "--target",

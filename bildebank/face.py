@@ -1089,32 +1089,24 @@ def export_people_browser(
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target, config)
     try:
-        view_rotations = file_view_rotations(target)
         people = list(conn.execute("SELECT id, name FROM persons ORDER BY name"))
         index_people: list[dict[str, Any]] = []
         person_pages: list[Path] = []
-        with MediaMetadataCache(target, target_locked=target_locked) as media_cache:
-            for person in people:
-                name = str(person["name"])
-                page_path = target / f"person-{safe_filename(name)}.html"
-                items = person_browser_items(
-                    target,
-                    conn,
-                    person_id=int(person["id"]),
-                    media_cache=media_cache,
-                    view_rotations=view_rotations,
-                )
-                page_path.write_text(
-                    render_html(
-                        person_source_browser_items(target, name, config),
-                        title=name,
-                        month_preview_limit=month_preview_limit,
-                    ),
-                    encoding="utf-8",
-                    newline="\n",
-                )
-                person_pages.append(page_path)
-                index_people.append(people_index_item(target, name, page_path, items))
+        for person in people:
+            name = str(person["name"])
+            page_path = target / f"person-{safe_filename(name)}.html"
+            items = person_source_browser_items(target, name, config)
+            page_path.write_text(
+                render_html(
+                    items,
+                    title=name,
+                    month_preview_limit=month_preview_limit,
+                ),
+                encoding="utf-8",
+                newline="\n",
+            )
+            person_pages.append(page_path)
+            index_people.append(people_index_item(target, conn, name, page_path, items))
     finally:
         conn.close()
     output_path.write_text(render_people_index_html(index_people), encoding="utf-8", newline="\n")
@@ -1305,18 +1297,13 @@ def render_person_browser_html(
 
 def people_index_item(
     target: Path,
+    conn: sqlite3.Connection,
     name: str,
     page_path: Path,
     items: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    confirmed = 0
-    suggested = 0
-    for item in items:
-        for face in item["faces"]:
-            if face["status"] == "forslag":
-                suggested += 1
-            else:
-                confirmed += 1
+    file_ids = [int(item["fileId"]) for item in items]
+    confirmed, suggested = person_visible_face_counts(conn, name, file_ids)
     thumbnail_url = items[0]["url"] if items else None
     thumbnail_rotation = items[0].get("viewRotation", 0) if items else 0
     return {
@@ -1328,6 +1315,37 @@ def people_index_item(
         "confirmed": confirmed,
         "suggested": suggested,
     }
+
+
+def person_visible_face_counts(conn: sqlite3.Connection, person_name: str, file_ids: list[int]) -> tuple[int, int]:
+    if not file_ids:
+        return 0, 0
+    placeholders = ",".join("?" for _ in file_ids)
+    person = conn.execute("SELECT id FROM persons WHERE name = ?", (person_name,)).fetchone()
+    if person is None:
+        return 0, 0
+    person_id = int(person["id"])
+    confirmed = conn.execute(
+        f"""
+        SELECT COUNT(*)
+        FROM person_faces
+        JOIN faces ON faces.id = person_faces.face_id
+        WHERE person_faces.person_id = ?
+          AND faces.file_id IN ({placeholders})
+        """,
+        (person_id, *file_ids),
+    ).fetchone()[0]
+    suggested = conn.execute(
+        f"""
+        SELECT COUNT(*)
+        FROM face_suggestions
+        JOIN faces ON faces.id = face_suggestions.face_id
+        WHERE face_suggestions.person_id = ?
+          AND faces.file_id IN ({placeholders})
+        """,
+        (person_id, *file_ids),
+    ).fetchone()[0]
+    return int(confirmed or 0), int(suggested or 0)
 
 
 def render_people_index_html(people: list[dict[str, Any]]) -> str:

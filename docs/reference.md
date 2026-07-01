@@ -3,7 +3,7 @@
 Kommandoer merket **cli** ("command line interface") kan bare kjøres fra
 PowerShell.
 
-Merket **laucher** betyr at det kommandoen gjør, kan gjøres fra vinduet
+Merket **launcher** betyr at det kommandoen gjør, kan gjøres fra vinduet
 `bildebank launcher` gir deg, i tillegg til fra PowerShell.
 
 Merket **web** betyr at du kan få gjort det samme i nettleseren som det
@@ -51,7 +51,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 ## Generering av statiske HTML-filer:
 
-- [`make-browser`](make-browser.md) **`cli`**
+- [`make-browser`](make-browser.md) **`cli`** **`launcher`**
 - [`make-people-browser`](make-people-browser.md) **`cli`**
 - [`make-person-browser`](make-person-browser.md) **`cli`**
 

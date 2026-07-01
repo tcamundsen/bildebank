@@ -595,6 +595,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Skriv HTML-filen hit. Standard: index.html i bildesamlingsmappen.",
     )
+    browser.add_argument(
+        "--hide-out-of-focus",
+        action="store_true",
+        help='Ikke ta med bilder tagget "Ute av fokus" i den statiske HTML-browseren.',
+    )
     add_month_preview_limit_argument(browser)
 
     make_thumbnails = add_command(
@@ -1566,6 +1571,7 @@ def run_make_browser_command(args: argparse.Namespace, target: Path) -> int:
             target,
             output,
             month_preview_limit=args.month_preview_limit,
+            hide_out_of_focus=args.hide_out_of_focus,
             debug_timing=args.debug,
         )
     print(f"Skrev HTML-browser: {output_path}")

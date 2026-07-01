@@ -243,6 +243,13 @@ def make_thumbnails_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "make-thumbnails")
 
 
+def make_browser_command(collection_path: Path, *, hide_out_of_focus: bool = False) -> list[str]:
+    command = bildebank_command("--target", collection_path, "make-browser")
+    if hide_out_of_focus:
+        command.append("--hide-out-of-focus")
+    return command
+
+
 def vacuum_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "vacuum")
 
@@ -583,6 +590,7 @@ class BildebankLauncher:
         self.insightface_model_status_value: tk.StringVar = tk.StringVar(value="")
         self.openclip_status_value: tk.StringVar = tk.StringVar(value="")
         self.openclip_model_status_value: tk.StringVar = tk.StringVar(value="")
+        self.static_browser_hide_out_of_focus_var: tk.BooleanVar = tk.BooleanVar(value=False)
         self.notebook: ttk.Notebook | None = None
         self.main_tab: ttk.Frame | None = None
         self.import_tab: ttk.Frame | None = None
@@ -592,7 +600,7 @@ class BildebankLauncher:
         self.import_button_frame: ttk.Frame | None = None
         self.tools_button_frame: ttk.Frame | None = None
         self.log_text: tk.Text | None = None
-        self.buttons: list[ttk.Button] = []
+        self.buttons: list[Any] = []
         self.choose_collection_button: ttk.Button | None = None
         self.create_collection_button: ttk.Button | None = None
         self.install_insightface_button: ttk.Button | None = None
@@ -970,6 +978,26 @@ class BildebankLauncher:
                     thumbs_button,
                     "Lag småbilder av alle bildene som kan brukes for at månedsvisning skal laste raskere."
                 )
+                static_browser_button = self._button(
+                    self.tools_button_frame,
+                    text="Lag HTML-browser",
+                    command=self._run_make_browser,
+                )
+                static_browser_button.grid(row=2, column=1, padx=PADX, pady=PADY, sticky="ew")
+                self._add_tooltip(
+                    static_browser_button,
+                    "Lag en statisk index.html i bildesamlingen som kan åpnes uten Bildebank-server.",
+                )
+                static_browser_hide_checkbox = self.ttk.Checkbutton(
+                    self.tools_button_frame,
+                    text='Skjul "Ute av fokus"',
+                    variable=self.static_browser_hide_out_of_focus_var,
+                )
+                static_browser_hide_checkbox.grid(row=2, column=2, padx=PADX, pady=PADY, sticky="w")
+                self._add_tooltip(
+                    static_browser_hide_checkbox,
+                    'Når dette er valgt, får "bildebank make-browser" flagget --hide-out-of-focus.',
+                )
                 face_button = self._button(
                     self.tools_button_frame,
                     text="Finn ansikter",
@@ -1059,6 +1087,8 @@ class BildebankLauncher:
                         face_button,
                         image_scan_button,
                         thumbs_button,
+                        static_browser_button,
+                        static_browser_hide_checkbox,
                         doctor_button,
                         deep_doctor_button,
                         vacuum_button,
@@ -1437,6 +1467,18 @@ class BildebankLauncher:
             running_message="Lager thumbnails ...",
             success_message="Thumbnails fullført.",
             failure_message="Thumbnail-jobb feilet.",
+            on_success=self._refresh_state,
+            cancellable=True,
+        )
+
+    def _run_make_browser(self) -> None:
+        hide_out_of_focus = bool(self.static_browser_hide_out_of_focus_var.get())
+        self._log("Lager statisk HTML-browser ...")
+        self._run_waiting_command(
+            make_browser_command(self.collection_path, hide_out_of_focus=hide_out_of_focus),
+            running_message="Lager statisk HTML-browser ...",
+            success_message="Statisk HTML-browser fullført.",
+            failure_message="Statisk HTML-browser feilet.",
             on_success=self._refresh_state,
             cancellable=True,
         )

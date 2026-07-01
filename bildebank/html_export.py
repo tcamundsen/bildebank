@@ -324,6 +324,7 @@ def export_html(
     output: Path | None = None,
     *,
     month_preview_limit: int | None = None,
+    hide_out_of_focus: bool = False,
     debug_timing: bool = False,
 ) -> Path:
     timing = BrowserExportTiming() if debug_timing else None
@@ -333,6 +334,7 @@ def export_html(
         start = timing.measure("resolve_output", start)
     items = browser_items(
         target,
+        hide_out_of_focus=hide_out_of_focus,
         timing=timing,
     )
     if timing is not None:
@@ -354,12 +356,13 @@ def export_html(
 def browser_items(
     target: Path,
     *,
+    hide_out_of_focus: bool = False,
     timing: BrowserExportTiming | None = None,
 ) -> list[dict[str, object]]:
     from .server_browser import all_source_items
 
     start = perf_counter()
-    items = [row_to_item(target, row) for row in all_source_items(target)]
+    items = [row_to_item(target, row) for row in all_source_items(target, hide_out_of_focus=hide_out_of_focus)]
     if timing is not None:
         timing.measure("rows_to_items", start)
     return items

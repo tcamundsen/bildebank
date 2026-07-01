@@ -7,6 +7,8 @@ options:
   -h, --help            show this help message and exit
   -o, --output OUTPUT   Skriv HTML-filen hit. Standard: index.html i
                         bildesamlingsmappen.
+  --hide-out-of-focus   Ikke ta med bilder tagget "Ute av fokus" i den
+                        statiske HTML-browseren.
   --month-preview-limit MONTH_PREVIEW_LIMIT
                         Maks antall filer i månedsoversikten. Standard: vis
                         alle.
@@ -47,6 +49,17 @@ Begrenser hvor mange filer som vises i månedsoversikten:
 ```powershell
 bildebank make-browser --month-preview-limit 40
 ```
+
+### `--hide-out-of-focus`
+
+Lager HTML-filen uten bilder som er tagget `Ute av fokus`:
+
+```powershell
+bildebank make-browser --hide-out-of-focus
+```
+
+I kontrollpanelet er dette valget checkboxen `Skjul "Ute av fokus"` ved
+knappen `Lag HTML-browser`.
 
 ### `--output`
 

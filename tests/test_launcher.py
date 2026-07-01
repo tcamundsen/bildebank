@@ -43,6 +43,7 @@ from bildebank.launcher import (
     is_collection_created,
     launcher_command,
     load_launcher_config,
+    make_browser_command,
     make_thumbnails_command,
     migrate_command,
     migration_plan_needs_action,
@@ -149,6 +150,13 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--target",
         str(collection),
         "make-thumbnails",
+    ]
+    assert make_browser_command(collection)[-3:] == ["--target", str(collection), "make-browser"]
+    assert make_browser_command(collection, hide_out_of_focus=True)[-4:] == [
+        "--target",
+        str(collection),
+        "make-browser",
+        "--hide-out-of-focus",
     ]
     assert vacuum_command(collection)[-3:] == ["--target", str(collection), "vacuum"]
     assert migrate_command(collection)[-3:] == ["--target", str(collection), "migrate"]
@@ -597,6 +605,17 @@ def test_launcher_source_exposes_export_person_dry_run_flow() -> None:
     assert "dry_run=True" in dry_run_source
     assert "_confirm_export_person" in dry_run_source
     assert "messagebox.askyesno" in confirm_source
+
+
+def test_launcher_source_exposes_make_browser_hide_out_of_focus_checkbox() -> None:
+    refresh_source = inspect.getsource(BildebankLauncher._refresh_state)
+    run_source = inspect.getsource(BildebankLauncher._run_make_browser)
+
+    assert 'text="Lag HTML-browser"' in refresh_source
+    assert 'text=\'Skjul "Ute av fokus"\'' in refresh_source
+    assert "static_browser_hide_out_of_focus_var" in refresh_source
+    assert "make_browser_command(" in run_source
+    assert "hide_out_of_focus=hide_out_of_focus" in run_source
 
 
 def test_registered_persons_maps_face_person_rows(tmp_path: Path) -> None:
