@@ -21,6 +21,7 @@ from .html_paths import display_relative_path, path_to_url, relative_to_target
 from .html_export import render_html
 from .media import IMAGE_EXTENSIONS
 from .media_cache import MediaMetadataCache
+from .static_browser import static_browser_item
 from .target_lock import TargetLock
 from .thumbnails import existing_thumbnail_url
 
@@ -1171,6 +1172,7 @@ def person_browser_items(
             item = grouped.setdefault(
                 key,
                 {
+                    "fileId": int(row["file_id"]),
                     "path": relative_path.as_posix(),
                     "url": path_to_url(relative_path),
                     "thumbnailSrc": existing_thumbnail_url(target, relative_path),
@@ -1235,6 +1237,7 @@ def person_browser_items(
                         continue
                     target_path = db.absolute_target_path(target, relative_path)
                     grouped[key] = {
+                        "fileId": int(manual_row["id"]),
                         "path": relative_path.as_posix(),
                         "url": path_to_url(relative_path),
                         "thumbnailSrc": existing_thumbnail_url(target, relative_path),
@@ -1540,18 +1543,16 @@ def html_escape(value: object) -> str:
 
 def person_browser_json_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
-        {
-            "path": item["path"],
-            "url": item["url"],
-            "thumbnailSrc": item.get("thumbnailSrc", ""),
-            "kind": "image",
-            "viewRotation": db.normalize_view_rotation(item.get("viewRotation", 0)),
-            "name": item["name"],
-            "monthKey": item["monthKey"],
-            "takenDate": "",
-            "dateSource": "",
-            "sizeText": item["sizeText"],
-        }
+        static_browser_item(
+            item,
+            Path(str(item["path"])),
+            url=str(item["url"]),
+            thumbnail_src=str(item.get("thumbnailSrc", "")),
+            kind="image",
+            view_rotation=item.get("viewRotation", 0),
+            name=str(item["name"]),
+            month_key=str(item["monthKey"]),
+        )
         for item in items
     ]
 

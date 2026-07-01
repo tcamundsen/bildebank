@@ -21,7 +21,7 @@ from .formatting import format_bytes
 from .html_paths import display_relative_path, path_to_url, relative_to_target
 from .media import image_dimensions, media_kind
 from .media_cache import MediaMetadataCache
-from .thumbnails import existing_thumbnail_url
+from .static_browser import static_browser_item
 from .value_parsing import require_float
 
 
@@ -173,29 +173,7 @@ def row_to_item(
 ) -> dict[str, object]:
     stored_path = Path(str(row["target_path"]))
     relative_path = relative_to_target(target, stored_path)
-    path = relative_path.as_posix()
-    kind = media_kind(relative_path)
-    month_key = month_key_from_browser_date(row) or month_key_from_path(relative_path)
-    browser_date = browser_date_from_row(row)
-    file_id = int(row["id"])
-    return {
-        "fileId": file_id,
-        "path": path,
-        "url": path_to_url(relative_path),
-        "thumbnailSrc": existing_thumbnail_url(target, relative_path) if kind == "image" else "",
-        "kind": kind,
-        "viewRotation": db.normalize_view_rotation(row["view_rotation_degrees"]),
-        "monthKey": month_key,
-        "browserDate": browser_date,
-        "dateText": browser_date_text(row),
-        "takenDate": row["taken_date"] or "",
-        "dateSource": row["date_source"],
-        "manualDateFrom": row["manual_date_from"] or "",
-        "manualDateTo": row["manual_date_to"] or "",
-        "manualDateNote": row["manual_date_note"] or "",
-        "name": row["stored_filename"],
-        "sizeText": format_bytes(int(row["size_bytes"])),
-    }
+    return static_browser_item(row, relative_path, target=target)
 
 
 def month_key_from_browser_date(row) -> str | None:

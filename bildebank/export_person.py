@@ -9,14 +9,13 @@ from pathlib import Path
 from . import db
 from .config import AppConfig
 from .face import face_database_dir, face_model_db_filename
-from .formatting import format_bytes
-from .html_export import browser_date_text, render_html
-from .html_paths import path_to_url
+from .html_export import render_html
 from .importer import safe_copy
 from .media import media_kind
 from .server_browser import browser_date_for_item, source_items
 from .server_browser_sources import person_browser_source
 from .server_faces import person_by_name
+from .static_browser import static_browser_item
 from .target_lock import TargetLock
 
 
@@ -157,26 +156,15 @@ def build_export_plan(
 
 
 def export_browser_item(item, relative_destination: Path, browser_date: str) -> dict[str, object]:
-    url = path_to_url(relative_destination)
     kind = media_kind(relative_destination)
-    return {
-        "fileId": int(item["id"]),
-        "path": relative_destination.as_posix(),
-        "url": url,
-        "thumbnailSrc": url if kind == "image" else "",
-        "kind": kind,
-        "viewRotation": db.normalize_view_rotation(item["view_rotation_degrees"]),
-        "monthKey": browser_date[:7] if valid_export_date(browser_date) is not None else "udatert",
-        "browserDate": browser_date,
-        "dateText": browser_date_text(item),
-        "takenDate": item["taken_date"] or "",
-        "dateSource": item["date_source"],
-        "manualDateFrom": item["manual_date_from"] or "",
-        "manualDateTo": item["manual_date_to"] or "",
-        "manualDateNote": item["manual_date_note"] or "",
-        "name": relative_destination.name,
-        "sizeText": format_bytes(int(item["size_bytes"])),
-    }
+    return static_browser_item(
+        item,
+        relative_destination,
+        kind=kind,
+        thumbnail_src=None if kind == "image" else "",
+        name=relative_destination.name,
+        browser_date=browser_date,
+    )
 
 
 def file_hashes(target: Path, file_ids: list[int]) -> dict[int, str]:
