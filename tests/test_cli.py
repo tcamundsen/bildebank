@@ -777,20 +777,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("krever alltid", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
-    def test_removed_group_commands_are_unavailable(self) -> None:
-        for command in ("face-group", "face-person-add-group", "make-face-browser"):
-            with self.subTest(command=command):
-                stdout_buffer = StringIO()
-                stderr_buffer = StringIO()
-                with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
-                    main([command, "-h"])
-
-                self.assertEqual(raised.exception.code, 2)
-                self.assertEqual(stdout_buffer.getvalue(), "")
-                stderr = stderr_buffer.getvalue()
-                self.assertIn("invalid choice", stderr)
-                self.assertIn(command, stderr)
-
     def test_make_people_browser_help(self) -> None:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
@@ -10274,18 +10260,6 @@ pretrained = "laion2b_s32b_b82k"
         with redirect_stdout(stdout), redirect_stderr(stderr):
             with self.assertRaises(SystemExit) as raised:
                 main(["config", "unknown", "enable"])
-
-        self.assertEqual(raised.exception.code, 2)
-        self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("invalid choice", stderr.getvalue())
-        self.assertFalse((self.program_root / "bildebank-config.toml").exists())
-
-    def test_face_config_command_is_removed(self) -> None:
-        stdout = StringIO()
-        stderr = StringIO()
-        with redirect_stdout(stdout), redirect_stderr(stderr):
-            with self.assertRaises(SystemExit) as raised:
-                main(["face-config", "true"])
 
         self.assertEqual(raised.exception.code, 2)
         self.assertEqual(stdout.getvalue(), "")
