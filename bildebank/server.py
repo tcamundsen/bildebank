@@ -41,8 +41,6 @@ from . import server_actions
 from .server_pages import (
     app_status_page_html,
     custom_geo_places_page_html,
-    empty_person_browser_html,
-    empty_source_html,
     error_html,
     filter_start_html,
     geo_area_page_html,
@@ -61,6 +59,7 @@ from .server_pages import (
     source_item_page_html,
     source_month_page_html,
     source_year_months_page_html,
+    source_years_page_html,
     sources_page_html,
     tags_page_html,
     year_months_page_html,
@@ -75,7 +74,6 @@ from .server_browser import (
     browser_item_ids,
     browser_month_keys,
     clear_sidecar_caches,
-    first_source_item,
     image_info_content_html,
     imported_source_by_id,
     item_by_id,
@@ -1378,25 +1376,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         hide_out_of_focus: bool = False,
     ) -> None:
         if page_mode is None:
-            item = first_source_item(
-                self.server.target,
-                source,
-                face_config,
-                hide_out_of_focus=hide_out_of_focus,
+            self.respond_html(
+                source_years_page_html(
+                    self.server.target,
+                    source,
+                    face_enabled=self.server.face_enabled,
+                    openclip_enabled=self.server.openclip_enabled,
+                    face_config=self.server.config.face_recognition,
+                    hide_out_of_focus=hide_out_of_focus,
+                )
             )
-            if item is None:
-                if source.person_name is None:
-                    self.respond_html(
-                        empty_source_html(
-                            source,
-                            face_enabled=self.server.face_enabled,
-                            openclip_enabled=self.server.openclip_enabled,
-                        )
-                    )
-                else:
-                    self.respond_html(empty_person_browser_html(source, openclip_enabled=self.server.openclip_enabled))
-                return
-            self.redirect(source_item_url(source, int(item["id"])))
             return
         if page_mode == "item":
             start = time.perf_counter()

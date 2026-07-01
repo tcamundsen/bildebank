@@ -1392,6 +1392,43 @@ def browser_year_cards(target: Path, *, hide_out_of_focus: bool = False) -> list
     return cards
 
 
+def source_year_cards(
+    target: Path,
+    source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+) -> list[dict[str, Any]]:
+    summaries_by_year: dict[str, dict[str, Any]] = {}
+    for month_key in source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus):
+        year = month_key[:4]
+        if not valid_year_key(year):
+            continue
+        items = source_month_items(
+            target,
+            source,
+            month_key,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+        )
+        if not items:
+            continue
+        summary = summaries_by_year.setdefault(
+            year,
+            {
+                "year": year,
+                "month_count": 0,
+                "item_count": 0,
+                "first_month": month_key,
+                "item": representative_image_item(items),
+            },
+        )
+        summary["month_count"] = int(summary["month_count"]) + 1
+        summary["item_count"] = int(summary["item_count"]) + len(items)
+
+    return [summaries_by_year[year] for year in sorted(summaries_by_year)]
+
+
 def browser_year_month_cards(target: Path, year: str, *, hide_out_of_focus: bool = False) -> list[dict[str, Any]]:
     if not valid_year_key(year):
         return []
@@ -3172,6 +3209,37 @@ def years_navigation_controls_html(year_cards: list[dict[str, Any]]) -> str:
     """
 
 
+def source_years_navigation_controls_html(source: BrowserSource, year_cards: list[dict[str, Any]]) -> str:
+    from .server_shell import nav_button, nav_disabled
+
+    first_card = year_cards[0] if year_cards else None
+    first_month = str(first_card["first_month"]) if first_card is not None else None
+    first_year = str(first_card["year"]) if first_card is not None else None
+
+    def year_button(target_year: str | None, label: str, key_nav: str, tooltip: str) -> str:
+        if target_year is None:
+            return nav_disabled(label)
+        return nav_button(source_year_url(source, target_year), label, key_nav, tooltip)
+
+    def month_button(month_key: str | None, label: str, key_nav: str, tooltip: str) -> str:
+        if month_key is None:
+            return nav_disabled(label)
+        return nav_button(source_month_url(source, month_key), label, key_nav, tooltip)
+
+    return f"""
+    <nav class="controls" aria-label="Navigering">
+      <span class="nav-button-pair" data-nav-button-pair="year">
+        {year_button(None, "◀ Å", "previous-year", "Forrige år")}
+        {year_button(first_year, "r ▶", "next-year", "Neste år")}
+      </span>
+      <span class="nav-button-pair" data-nav-button-pair="month">
+        {month_button(None, "◀ Mån", "previous-month", "Forrige måned")}
+        {month_button(first_month, "ed ▶", "next-month", "Neste måned")}
+      </span>
+    </nav>
+    """
+
+
 def year_months_page_html(
     target: Path,
     year: str,
@@ -3323,6 +3391,62 @@ def source_year_months_page_html(
     )
 
 
+def source_years_page_html(
+    target: Path,
+    source: BrowserSource,
+    *,
+    page_html: PageRenderer,
+    face_enabled: bool = True,
+    openclip_enabled: bool = True,
+    face_config: FaceRecognitionConfig | None = None,
+    hide_out_of_focus: bool = False,
+) -> str:
+    from .server_shell import app_header_html
+
+    year_cards = source_year_cards(
+        target,
+        source,
+        face_config,
+        hide_out_of_focus=hide_out_of_focus,
+    )
+    cards = "\n".join(source_year_card_html(target, source, card) for card in year_cards)
+    if cards:
+        content = cards
+    elif source_item_count(target, source, face_config, hide_out_of_focus=hide_out_of_focus) > 0:
+        content = '<p class="meta">Ingen daterte bilder matcher denne visningen.</p>'
+    else:
+        content = f'<p class="meta">{html.escape(empty_source_message(source))}</p>'
+    controls = source_years_navigation_controls_html(source, year_cards)
+    if source.text_filter is None:
+        source_label = source.title
+        source_title = None
+    else:
+        source_label, source_title = source_breadcrumb_label(
+            target,
+            source,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+        )
+    title_attr = f' title="{html.escape(source_title)}"' if source_title else ""
+    title_html = f"<span{title_attr}>{html.escape(source_label)}</span>" if source_title else html.escape(source_label)
+    return page_html(
+        source_label,
+        f"""
+        <main class="server-browser">
+          {app_header_html(
+              source_label,
+              source=source,
+              title_html=title_html,
+              controls=controls,
+              face_enabled=face_enabled,
+              openclip_enabled=openclip_enabled,
+          )}
+          <section class="month-grid-server">{content}</section>
+        </main>
+        """,
+    )
+
+
 def source_year_breadcrumb_html(
     target: Path,
     source: BrowserSource,
@@ -3345,6 +3469,10 @@ def source_year_breadcrumb_html(
 
 
 def year_card_html(target: Path, card: dict[str, Any]) -> str:
+    return source_year_card_html(target, all_browser_source(), card)
+
+
+def source_year_card_html(target: Path, source: BrowserSource, card: dict[str, Any]) -> str:
     year = str(card["year"])
     month_count = int(card["month_count"])
     item_count = int(card["item_count"])
@@ -3354,7 +3482,7 @@ def year_card_html(target: Path, card: dict[str, Any]) -> str:
     media = thumbnail_media_html(target, item)
     return f"""
     <article class="item">
-      <a class="thumb-link" href="/years/{html.escape(urllib.parse.quote(year))}">{media}</a>
+      <a class="thumb-link" href="{html.escape(source_year_url(source, year))}">{media}</a>
       <div class="text">
         <div class="path">{html.escape(year)}</div>
         <div class="score">{month_count} {month_label}, {item_count} {image_label}</div>

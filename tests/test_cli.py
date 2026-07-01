@@ -94,6 +94,7 @@ from bildebank.server_pages import (
     source_item_page_html,
     source_month_page_html,
     source_year_months_page_html,
+    source_years_page_html,
     sources_page_html,
     tags_page_html,
     year_months_page_html,
@@ -5907,6 +5908,7 @@ model_name = "buffalo_l"
                 *adjacent_source_items(target, source_filter, first_item),
                 date_month_nav,
             )
+            date_years_body = source_years_page_html(target, source_filter)
             date_year_body = source_year_months_page_html(target, source_filter, "2024")
             date_month_body = source_month_page_html(target, source_filter, "2024-01", date_month)
             person_body = source_item_page_html(
@@ -5916,6 +5918,7 @@ model_name = "buffalo_l"
                 *adjacent_source_items(target, person_filter, person_item),
                 person_month_nav,
             )
+            missing_date_years_body = source_years_page_html(target, missing_date_filter)
             date_filter_excludes_after_boundary = source_item_by_id(target, source_filter, 1) is None
             date_filter_excludes_before_boundary = source_item_by_id(target, source_filter, 3) is None
             empty_body = empty_source_html(text_filter_browser_source("before:1900-01-01"))
@@ -5998,14 +6001,27 @@ model_name = "buffalo_l"
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_body)
         self.assertIn('title="2 treff i filtersøket"', date_body)
+        self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_years_body)
+        self.assertIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2024"', date_years_body)
+        self.assertIn(">2024</div>", date_years_body)
+        self.assertNotIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2023"', date_years_body)
+        self.assertNotIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2025"', date_years_body)
+        self.assertIn(">2 måneder, 2 bilder</div>", date_years_body)
+        self.assertIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2024" title="Neste år" data-key-nav="next-year">r ▶</a>', date_years_body)
+        self.assertIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/month/2024-01" title="Neste måned" data-key-nav="next-month">ed ▶</a>', date_years_body)
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_year_body)
         self.assertIn('title="2 treff i filtersøket"', date_year_body)
+        self.assertIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12" title="2 treff i filtersøket">Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)</a><span class="sep">/</span>2024</nav>', date_year_body)
+        self.assertIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/month/2024-01"', date_year_body)
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_month_body)
         self.assertIn('title="2 treff i filtersøket"', date_month_body)
         self.assertIn("/filter/after%3A2023-12-01%20before%3A2024-12-12/item/4", date_body)
         self.assertIn('href="/filter">Filtersøk</a>', date_body)
         self.assertIn("Filtersøk: person:viljar", person_body)
         self.assertIn("/filter/person%3Aviljar/item/3", person_body)
+        self.assertIn("Ingen daterte bilder matcher denne visningen.", missing_date_years_body)
+        self.assertNotIn("/filter/missing%3Adate/year/", missing_date_years_body)
+        self.assertNotIn("/filter/missing%3Adate/item/", missing_date_years_body)
         self.assertIn("Ingen aktive bilder matcher filtersøket.", empty_body)
 
     def test_run_server_filter_parser_rejects_invalid_queries(self) -> None:
@@ -6530,6 +6546,24 @@ model_name = "buffalo_l"
             filter_source = text_filter_browser_source("type:image")
             filter_item = source_item_by_id(target, filter_source, 1)
             self.assertIsNotNone(filter_item)
+            response: dict[str, object] = {}
+            handler = object.__new__(BildebankRequestHandler)
+            handler.server = SimpleNamespace(  # type: ignore[attr-defined]
+                target=target,
+                config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=False)),
+                face_enabled=False,
+                openclip_enabled=False,
+                hide_out_of_focus=False,
+            )
+
+            def fake_respond_html(content: str) -> None:
+                response["html"] = content
+
+            def fake_redirect(location: str) -> None:
+                response["location"] = location
+
+            handler.respond_html = fake_respond_html  # type: ignore[method-assign]
+            handler.redirect = fake_redirect  # type: ignore[method-assign]
 
             with patch(
                 "bildebank.server_browser.source_item_count",
@@ -6543,8 +6577,19 @@ model_name = "buffalo_l"
                     source_month_navigation(target, filter_source, filter_item),
                     source_item_count_value=1,
                 )
+            BildebankRequestHandler.respond_browser_source(  # type: ignore[arg-type]
+                handler,
+                filter_source,
+                None,
+                "",
+                item_not_found_message="Filen finnes ikke for dette filtersøket.",
+                invalid_page_message="Ugyldig filtersøkside.",
+            )
 
         self.assertIn("Filtersøk: type:image (1 treff)", body)
+        self.assertNotIn("location", response)
+        self.assertIn("Filtersøk: type:image (1 treff)", str(response["html"]))
+        self.assertIn('href="/filter/type%3Aimage/year/2024"', str(response["html"]))
 
     def test_run_server_filter_page_documents_search_criteria(self) -> None:
         server = SimpleNamespace(face_enabled=True, openclip_enabled=True)
@@ -8512,6 +8557,15 @@ model_name = "buffalo_l"
                 *adjacent_source_items(target, plain_source, suggested_item),
                 source_month_navigation(target, plain_source, suggested_item),
             )
+            plain_years_body = source_years_page_html(target, plain_source, face_config=FaceRecognitionConfig(enabled=True))
+            confirmed_plain_source = person_browser_source("Kari", include_suggestions=False, show_faces=False)
+            confirmed_years_body = source_years_page_html(
+                target,
+                confirmed_plain_source,
+                face_config=FaceRecognitionConfig(enabled=True),
+            )
+            marked_source = person_browser_source("Kari", include_suggestions=True, show_faces=True)
+            marked_years_body = source_years_page_html(target, marked_source, face_config=FaceRecognitionConfig(enabled=True))
             month_body = person_month_page_html(target, "Kari", "2024-02", person_month_items(target, "Kari", "2024-02"))
 
         self.assertIn(">Kari<", body)
@@ -8545,6 +8599,16 @@ model_name = "buffalo_l"
         self.assertIn("Kari - uten ansiktsmarkering", plain_body)
         self.assertIn('href="/person/Kari/no-faces">Kari</a>', plain_body)
         self.assertIn('href="/person/Kari/no-faces/year/2024">2024</a>', plain_body)
+        self.assertIn("Kari - uten ansiktsmarkering", plain_years_body)
+        self.assertIn('href="/person/Kari/no-faces/year/2024"', plain_years_body)
+        self.assertIn(">2024</div>", plain_years_body)
+        self.assertIn(">2 måneder, 2 bilder</div>", plain_years_body)
+        self.assertIn('href="/person/Kari/no-faces/month/2024-01" title="Neste måned" data-key-nav="next-month">ed ▶</a>', plain_years_body)
+        self.assertIn("Kari - bekreftet - uten ansiktsmarkering", confirmed_years_body)
+        self.assertIn('href="/person/Kari/confirmed/no-faces/year/2024"', confirmed_years_body)
+        self.assertIn(">1 måned, 1 bilde</div>", confirmed_years_body)
+        self.assertNotIn("/person/Kari/confirmed/no-faces/year/2025", confirmed_years_body)
+        self.assertIn('href="/person/Kari/year/2024"', marked_years_body)
         self.assertNotIn('Kari - uten ansiktsmarkering</a><span class="sep">/</span>', plain_body)
         plain_tag_rail_start = plain_body.index('<aside class="tag-rail"')
         plain_tag_rail_end = plain_body.index("</aside>", plain_tag_rail_start)
