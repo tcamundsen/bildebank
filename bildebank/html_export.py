@@ -10,6 +10,13 @@ from pathlib import Path
 from time import perf_counter
 
 from . import db
+from .browser_dates import (
+    browser_date_from_item,
+    browser_date_text as item_browser_date_text,
+    manual_date_midpoint as shared_manual_date_midpoint,
+    month_key_from_browser_date_item,
+    month_key_from_path as shared_month_key_from_path,
+)
 from .formatting import format_bytes
 from .html_paths import display_relative_path, path_to_url, relative_to_target
 from .media import image_dimensions, media_kind
@@ -192,42 +199,19 @@ def row_to_item(
 
 
 def month_key_from_browser_date(row) -> str | None:
-    browser_date = browser_date_from_row(row)
-    if browser_date != "9999-99-99":
-        return browser_date[:7]
-    return None
+    return month_key_from_browser_date_item(row)
 
 
 def browser_date_from_row(row) -> str:
-    manual_midpoint = manual_date_midpoint(row["manual_date_from"], row["manual_date_to"])
-    if manual_midpoint is not None:
-        return manual_midpoint.isoformat()
-    taken_date = str(row["taken_date"] or "")
-    if len(taken_date) >= 10 and taken_date[4] == "-" and taken_date[7] == "-":
-        return taken_date[:10]
-    return "9999-99-99"
+    return browser_date_from_item(row)
 
 
 def browser_date_text(row) -> str:
-    manual_from = str(row["manual_date_from"] or "")
-    manual_to = str(row["manual_date_to"] or "")
-    if manual_from and manual_to:
-        if manual_from == manual_to:
-            return f"{manual_from} (manuell dato)"
-        midpoint = manual_date_midpoint(manual_from, manual_to)
-        if midpoint is not None:
-            return f"ca. {midpoint.isoformat()} (manuell dato)"
-    taken_date = str(row["taken_date"] or "-")
-    return f"{taken_date} ({row['date_source']})"
+    return item_browser_date_text(row)
 
 
 def manual_date_midpoint(date_from: object, date_to: object) -> dt.date | None:
-    try:
-        start = dt.date.fromisoformat(str(date_from or ""))
-        end = dt.date.fromisoformat(str(date_to or ""))
-    except ValueError:
-        return None
-    return start + (end - start) // 2
+    return shared_manual_date_midpoint(date_from, date_to)
 
 
 def browser_face_items_from_metadata(
@@ -373,12 +357,7 @@ def conflict_row_to_item(
 
 
 def month_key_from_path(path: Path) -> str:
-    parts = path.parts
-    if len(parts) >= 3 and parts[0].isdigit() and len(parts[0]) == 4 and parts[1].isdigit():
-        return f"{parts[0]}-{parts[1]}"
-    if parts and parts[0] == "udatert":
-        return "udatert"
-    return "ukjent"
+    return shared_month_key_from_path(path)
 
 
 def render_html(

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import html
-import re
 import sqlite3
 import urllib.parse
 import datetime as dt
@@ -12,10 +11,19 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import db
+from .browser_dates import (
+    browser_date_from_item,
+    manual_date_midpoint_for_item as shared_manual_date_midpoint_for_item,
+    month_key_for_item as shared_month_key_for_item,
+    month_key_from_stored_path as shared_month_key_from_stored_path,
+    next_month_key as shared_next_month_key,
+    parse_iso_date as shared_parse_iso_date,
+    valid_day_key as shared_valid_day_key,
+    valid_month_key as shared_valid_month_key,
+)
 from .config import BrowserHotkeyConfig, FaceRecognitionConfig, HOTKEY_KEYS
 from .formatting import format_bytes
 from .geo import H3_COLUMNS, h3_area_label
-from .html_export import month_key_from_path
 from .html_paths import display_relative_path, relative_to_target
 from .media import IMAGE_EXTENSIONS, media_kind
 from .media_cache import cached_image_dimensions
@@ -49,7 +57,6 @@ RAW_SIDECAR_SQL_EXTENSION_FILTER = """
 RAW_SIDECAR_IMAGE_EXTENSIONS = {".jpg", ".jpeg"}
 RAW_SIDECAR_GROUP_EXTENSIONS = RAW_SIDECAR_EXTENSIONS | RAW_SIDECAR_IMAGE_EXTENSIONS
 RAW_SIDECAR_STEM_FALLBACK_EXTENSIONS = {".psd"} | RAW_SIDECAR_IMAGE_EXTENSIONS
-MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
 MONTH_NAMES = {
     "01": "Januar",
     "02": "Februar",
@@ -601,34 +608,15 @@ def item_order_key(item: Any) -> tuple[str, str]:
 
 
 def browser_date_for_item(item: Any) -> str:
-    manual_date = manual_date_midpoint_for_item(item)
-    if manual_date is not None:
-        return manual_date.isoformat()
-    try:
-        taken_date = str(item["taken_date"] or "")
-    except (KeyError, IndexError):
-        taken_date = ""
-    if re.match(r"^\d{4}-\d{2}-\d{2}", taken_date):
-        return taken_date[:10]
-    return "9999-99-99"
+    return browser_date_from_item(item)
 
 
 def manual_date_midpoint_for_item(item: Any) -> dt.date | None:
-    try:
-        date_from = parse_iso_date(str(item["manual_date_from"] or ""))
-        date_to = parse_iso_date(str(item["manual_date_to"] or ""))
-    except (KeyError, IndexError):
-        return None
-    if date_from is None or date_to is None:
-        return None
-    return date_from + (date_to - date_from) // 2
+    return shared_manual_date_midpoint_for_item(item)
 
 
 def parse_iso_date(value: str) -> dt.date | None:
-    try:
-        return dt.date.fromisoformat(value)
-    except ValueError:
-        return None
+    return shared_parse_iso_date(value)
 
 
 def should_filter_out_of_focus(source: BrowserSource, hide_out_of_focus: bool) -> bool:
@@ -1189,29 +1177,15 @@ def adjacent_source_items(
 
 
 def valid_month_key(value: str) -> bool:
-    if len(value) != 7 or value[4] != "-":
-        return False
-    year, month = value.split("-", 1)
-    return year.isdigit() and month.isdigit() and 1 <= int(month) <= 12
+    return shared_valid_month_key(value)
 
 
 def next_month_key(month_key: str) -> str | None:
-    if not valid_month_key(month_key):
-        return None
-    year, month = (int(part) for part in month_key.split("-", 1))
-    if month == 12:
-        return f"{year + 1:04d}-01"
-    return f"{year:04d}-{month + 1:02d}"
+    return shared_next_month_key(month_key)
 
 
 def valid_day_key(value: str) -> bool:
-    if len(value) != 10 or value[4] != "-" or value[7] != "-":
-        return False
-    try:
-        dt.date.fromisoformat(value)
-    except ValueError:
-        return False
-    return True
+    return shared_valid_day_key(value)
 
 
 @lru_cache(maxsize=8)
@@ -3765,19 +3739,11 @@ def browser_month_navigation(target: Path, item: Any, *, hide_out_of_focus: bool
 
 
 def month_key_for_item(target: Path, item: Any) -> str:
-    browser_date = browser_date_for_item(item)
-    if re.match(r"^\d{4}-\d{2}-\d{2}$", browser_date):
-        return browser_date[:7]
-    stored_key = month_key_from_stored_path(str(item["target_path"]))
-    return stored_key or month_key_from_path(relative_to_target(target, Path(str(item["target_path"]))))
+    return shared_month_key_for_item(target, item)
 
 
 def month_key_from_stored_path(path: str) -> str | None:
-    match = MONTH_PATH_RE.search(path.replace("\\\\", "\\"))
-    if match is None:
-        return None
-    month_key = f"{match.group('year')}-{match.group('month')}"
-    return month_key if valid_month_key(month_key) else None
+    return shared_month_key_from_stored_path(path)
 
 
 def source_items(
