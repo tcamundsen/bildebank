@@ -306,16 +306,6 @@ def unimport_total_sources_by_file_id(conn: sqlite3.Connection, source_id: int) 
 
 def apply_unimport(conn: sqlite3.Connection, plan: UnimportPlan) -> None:
     source_id = plan.source.id
-    conn.execute(
-        """
-        UPDATE sources
-        SET status = 'imported',
-            superseded_by_source_id = NULL
-        WHERE superseded_by_source_id = ?
-          AND imported_at IS NOT NULL
-        """,
-        (source_id,),
-    )
     conn.execute("DELETE FROM errors WHERE source_id = ?", (source_id,))
     conn.execute("DELETE FROM file_sources WHERE source_id = ?", (source_id,))
     if plan.file_ids_to_delete:
@@ -579,4 +569,3 @@ def deleted_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
         ORDER BY files.deleted_at, files.deleted_original_target_path, files.target_path
         """
     )
-

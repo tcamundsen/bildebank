@@ -32,7 +32,6 @@ class ImportStats:
     imported: int = 0
     duplicates: int = 0
     skipped_existing: int = 0
-    skipped_covered: int = 0
     name_conflicts: int = 0
     errors: int = 0
     stopped: bool = False
@@ -96,8 +95,6 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
         stats.errors += 1
         return stats
 
-    covered_sources = covered_imported_subsources(conn, source)
-    covered_roots = [covered.path.resolve() for covered in covered_sources]
     errors_before = stats.errors
     progress = ProgressMeter("Import", stream=sys.stderr) if verbose else None
     try:
@@ -115,9 +112,6 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
                 )
                 continue
             path = item
-            if is_under_any(path, covered_roots):
-                stats.skipped_covered += 1
-                continue
             stats.scanned += 1
             try:
                 process_file(conn, target, source, path, stats)
@@ -151,11 +145,6 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
 
     if stats.errors == errors_before:
         db.mark_source_imported(conn, source.id)
-        db.mark_sources_superseded(
-            conn,
-            source_ids=[covered.id for covered in covered_sources],
-            superseded_by_source_id=source.id,
-        )
     else:
         db.mark_source_error(conn, source.id)
     conn.commit()
@@ -172,8 +161,6 @@ def import_source_dry_run(
         print(f"FEIL\t{root}\tKilden finnes ikke eller er ikke en mappe.", file=output)
         return stats
 
-    covered_sources = covered_imported_subsources(conn, source)
-    covered_roots = [covered.path.resolve() for covered in covered_sources]
     progress = ProgressMeter("Import dry-run", stream=sys.stderr) if verbose else None
     try:
         if progress is not None:
@@ -184,9 +171,6 @@ def import_source_dry_run(
                 print(f"FEIL\t{item.path}\t{item.message}", file=output)
                 continue
             path = item
-            if is_under_any(path, covered_roots):
-                stats.skipped_covered += 1
-                continue
             stats.scanned += 1
             try:
                 process_file_dry_run(conn, target, source, path, stats, output=output)
@@ -326,7 +310,7 @@ def import_progress_details(stats: ImportStats, *, dry_run: bool = False) -> str
     imported_label = "ville_importert" if dry_run else "importert"
     return (
         f"{imported_label}={stats.imported}, duplikater={stats.duplicates}, "
-        f"eksisterende={stats.skipped_existing}, dekket={stats.skipped_covered}, feil={stats.errors}"
+        f"eksisterende={stats.skipped_existing}, feil={stats.errors}"
     )
 
 
@@ -347,15 +331,6 @@ def iter_media_files(root: Path):
                 yield path
     while walk_errors:
         yield walk_errors.pop(0)
-
-
-def covered_imported_subsources(conn, source: db.Source) -> list[db.Source]:
-    return []
-
-
-def is_under_any(path: Path, roots: list[Path]) -> bool:
-    resolved = path.resolve()
-    return any(_is_relative_to(resolved, root) for root in roots)
 
 
 def process_file(conn, target: Path, source: db.Source, path: Path, stats: ImportStats) -> None:

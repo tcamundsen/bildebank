@@ -184,7 +184,6 @@ from .db_sources import (
     get_sources,
     mark_source_error,
     mark_source_imported,
-    mark_sources_superseded,
     row_to_source,
 )
 from .value_parsing import optional_int, require_int

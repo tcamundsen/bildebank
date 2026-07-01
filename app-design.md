@@ -90,15 +90,16 @@ lagring uten å kreve en separat databaseserver.
 
 ## Databaseversjoner
 
-- gjeldende schema er v13
+- gjeldende schema er v14
 - historiske migreringer ligger i devel-docs/database-v4-migration.md og
   devel-docs/database-v5-migration.md, devel-docs/database-v6-migration.md og
   devel-docs/database-v7-migration.md, devel-docs/database-v8-migration.md,
   devel-docs/database-v9-migration.md, devel-docs/database-v10-migration.md
   devel-docs/database-v11-migration.md,
   devel-docs/database-v12-migration.md og
-  devel-docs/database-v13-migration.md
-- ny runtime-kode skal anta v13, med mindre oppgaven eksplisitt gjelder
+  devel-docs/database-v13-migration.md og
+  devel-docs/database-v14-migration.md
+- ny runtime-kode skal anta v14, med mindre oppgaven eksplisitt gjelder
   migrering
 
 ## Plattform
@@ -186,9 +187,9 @@ En vanlig kildemappe behandles som en avsluttet importjobb, ikke som en mappe
 som senere synkroniseres automatisk.
 
 Det er fortsatt lov å registrere en overmappe etter at en undermappe allerede er
-importert, slik at man kan gå fra en liten testimport til en større import. Når
-overmappen er ferdig importert uten feil, markeres den tidligere undermappen som
-`superseded`.
+importert, slik at man kan gå fra en liten testimport til en større import. Den
+tidligere undermappen forblir en vanlig kilde. Filer som finnes i begge importer
+får flere `file_sources`-rader.
 
 Hvis det senere blir behov for å scanne en tidligere importert kilde om igjen,
 bør det være en egen eksplisitt kommando, for eksempel `bildebank rescan-source ID`,

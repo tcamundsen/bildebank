@@ -52,7 +52,7 @@ Eier kilder:
 - `Source`
 - oppslag på kilder
 - opprettelse av navngitte kilder
-- source-status, inkludert imported/error/superseded
+- source-status, inkludert imported/error/pending
 
 Modulen skal ikke eie koblingen mellom kilder og filer. Den koblingen går via
 `file_sources` og hører til `db_files.py`.

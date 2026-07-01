@@ -3,7 +3,6 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from .db_core import path_key
 
@@ -16,7 +15,6 @@ class Source:
     name: str
     imported_at: str | None
     status: str
-    superseded_by_source_id: int | None
 
 
 def row_to_source(row: sqlite3.Row) -> Source:
@@ -27,7 +25,6 @@ def row_to_source(row: sqlite3.Row) -> Source:
         name=str(row["name"]),
         imported_at=row["imported_at"],
         status=row["status"],
-        superseded_by_source_id=row["superseded_by_source_id"],
     )
 
 
@@ -81,21 +78,3 @@ def mark_source_imported(conn: sqlite3.Connection, source_id: int) -> None:
 
 def mark_source_error(conn: sqlite3.Connection, source_id: int) -> None:
     conn.execute("UPDATE sources SET status = 'error' WHERE id = ?", (source_id,))
-
-
-def mark_sources_superseded(
-    conn: sqlite3.Connection, *, source_ids: Iterable[int], superseded_by_source_id: int
-) -> None:
-    ids = list(source_ids)
-    if not ids:
-        return
-    placeholders = ",".join("?" for _ in ids)
-    conn.execute(
-        f"""
-        UPDATE sources
-        SET status = 'superseded',
-            superseded_by_source_id = ?
-        WHERE id IN ({placeholders})
-        """,
-        [superseded_by_source_id, *ids],
-    )

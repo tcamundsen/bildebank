@@ -511,11 +511,7 @@ def collection_needs_migration(collection_path: Path) -> bool:
 
 
 def rescan_source_candidates(sources: list[db.Source]) -> list[db.Source]:
-    return [
-        source
-        for source in sources
-        if source.superseded_by_source_id is None and source.status != "superseded"
-    ]
+    return list(sources)
 
 
 def subprocess_output_encoding() -> str:

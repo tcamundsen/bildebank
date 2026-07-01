@@ -1048,7 +1048,7 @@ def test_registered_sources_reads_sources_from_collection_database(tmp_path: Pat
     assert sources[0].path == source.resolve()
 
 
-def test_rescan_source_candidates_excludes_superseded_sources(tmp_path: Path) -> None:
+def test_rescan_source_candidates_returns_registered_sources(tmp_path: Path) -> None:
     collection = tmp_path / "samling"
     first = tmp_path / "første"
     second = tmp_path / "andre"
@@ -1057,16 +1057,12 @@ def test_rescan_source_candidates_excludes_superseded_sources(tmp_path: Path) ->
     db.init_database(collection)
     conn = db.connect(collection)
     try:
-        first_id = db.add_named_source(conn, first, "Første")
-        second_id = db.add_named_source(conn, second, "Andre")
-        conn.execute(
-            "UPDATE sources SET status = 'superseded', superseded_by_source_id = ? WHERE id = ?",
-            (second_id, first_id),
-        )
+        db.add_named_source(conn, first, "Første")
+        db.add_named_source(conn, second, "Andre")
         conn.commit()
     finally:
         conn.close()
 
     candidates = rescan_source_candidates(registered_sources(collection))
 
-    assert [source.name for source in candidates] == ["Andre"]
+    assert [source.name for source in candidates] == ["Første", "Andre"]

@@ -45,11 +45,6 @@ def run_unimport(
             source = db.find_source_by_name(conn, source_name)
             if source is None:
                 raise ValueError(f"Fant ikke kilde med navn: {source_name}")
-            if source.status == "superseded":
-                raise ValueError(
-                    "Kan ikke unimportere en superseded kilde. "
-                    f"Kilden er dekket av en annen import: {source.path}"
-                )
             plan = db.build_unimport_plan(conn, target, source)
             validate_source_files(
                 conn,

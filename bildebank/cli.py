@@ -1337,11 +1337,9 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
         if args.command == "list-sources":
             for listed_source in db.get_sources(conn):
                 imported = listed_source.imported_at or "-"
-                superseded_by = listed_source.superseded_by_source_id or "-"
                 print(
                     f"{listed_source.id}\t{listed_source.status}\t"
-                    f"{imported}\t{superseded_by}\t"
-                    f"{listed_source.name}\t{listed_source.path}"
+                    f"{imported}\t{listed_source.name}\t{listed_source.path}"
                 )
             return 0
 
@@ -1691,11 +1689,6 @@ def resolve_source_by_name(conn, name: str) -> db.Source:
 
 def resolve_rescan_source(conn, name: str) -> db.Source:
     source = resolve_source_by_name(conn, name)
-    if source.superseded_by_source_id is not None or source.status == "superseded":
-        raise ValueError(
-            f"Kilden {name!r} er markert som erstattet av kilde #{source.superseded_by_source_id}. "
-            "Scan den aktive overkilden i stedet."
-        )
     source_path = existing_path_arg(source.path).resolve()
     if not source_path.exists() or not source_path.is_dir():
         raise ValueError(f"Kilden finnes ikke som mappe: {source.path}")
@@ -1992,7 +1985,6 @@ def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
             name=args.name,
             imported_at=None,
             status="dry-run",
-            superseded_by_source_id=None,
         )
         stats = import_source_dry_run(
             conn, target, source_row, output=sys.stdout, verbose=not args.quiet
@@ -2046,6 +2038,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  opprette pending_file_moves")
     if plan.adds_metadata_datetime_column:
         print("  legge til metadata_datetime i files")
+    if plan.removes_superseded_sources:
+        print("  fjerne gammel superseded-kildemodell")
     if plan.refreshes_performance_indexes:
         print("  oppdatere manglende ytelsesindekser")
     for repair in plan.internal_repairs:
@@ -2099,6 +2093,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
     if result.adds_metadata_datetime_column:
         print("Legger til metadata_datetime i files.")
         print("Kjør bildebank refresh-metadata --rescan for å fylle tidspunkt for eksisterende filer.")
+    if result.removes_superseded_sources:
+        print("Fjerner gammel superseded-kildemodell.")
     if result.refreshes_performance_indexes:
         print("Oppdaterer manglende ytelsesindekser.")
     if result.internal_repairs:
@@ -2354,8 +2350,7 @@ def summary_line(stats) -> str:
         "Oppsummering: "
         f"scannet={stats.scanned}, importert={stats.imported}, "
         f"duplikater={stats.duplicates}, eksisterende={stats.skipped_existing}, "
-        f"dekket={stats.skipped_covered}, navnekollisjoner={stats.name_conflicts}, "
-        f"feil={stats.errors}"
+        f"navnekollisjoner={stats.name_conflicts}, feil={stats.errors}"
     )
 
 

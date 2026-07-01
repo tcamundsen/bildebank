@@ -202,7 +202,7 @@ plasserer dem etter dato, for eksempel i mapper som `2024\01`.
 På slutten skriver programmet en oppsummering, for eksempel:
 
 ```text
-Oppsummering: scannet=10, importert=10, duplikater=0, eksisterende=0, dekket=0, navnekollisjoner=0, feil=0
+Oppsummering: scannet=10, importert=10, duplikater=0, eksisterende=0, navnekollisjoner=0, feil=0
 ```
 
 Hvis du prøver å bruke samme importnavn på nytt, stopper Bildebank. Velg et

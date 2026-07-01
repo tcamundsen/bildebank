@@ -9095,7 +9095,7 @@ model_name = "buffalo_l"
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "13",
+                    "14",
                 )
                 file_columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 self.assertNotIn("source_id", file_columns)
@@ -9104,6 +9104,7 @@ model_name = "buffalo_l"
                 source_columns = {row[1] for row in conn.execute("PRAGMA table_info(sources)")}
                 file_source_columns = {row[1] for row in conn.execute("PRAGMA table_info(file_sources)")}
                 self.assertNotIn("kind", source_columns)
+                self.assertNotIn("superseded_by_source_id", source_columns)
                 self.assertNotIn("kind", file_source_columns)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources WHERE name IS NULL").fetchone()[0], 0)
             finally:
@@ -12206,7 +12207,7 @@ enabled = false
             self.assertIn("Kildefil har endret", stderr)
             self.assertTrue((target / "2024" / "01" / "IMG_20240102.jpg").exists())
 
-    def test_unimport_rejects_superseded_source(self) -> None:
+    def test_unimport_overlapping_child_source_removes_only_child_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -12413,20 +12414,25 @@ enabled = false
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 2", stdout)
-            self.assertIn("Ny schema_version: 13", stdout)
+            self.assertIn("Ny schema_version: 14", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "13",
+                    "14",
                 )
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
                 source_columns = {row[1] for row in conn.execute("pragma table_info(sources)")}
                 file_source_columns = {row[1] for row in conn.execute("pragma table_info(file_sources)")}
                 self.assertFalse({"source_id", "source_path", "source_path_key"} & file_columns)
                 self.assertNotIn("kind", source_columns)
+                self.assertNotIn("superseded_by_source_id", source_columns)
                 self.assertNotIn("kind", file_source_columns)
                 self.assertEqual(conn.execute("select count(*) from sources where name is null").fetchone()[0], 0)
+                self.assertEqual(
+                    conn.execute("select count(*) from sources where status = 'superseded'").fetchone()[0],
+                    0,
+                )
                 self.assertEqual(conn.execute("pragma foreign_key_list(errors)").fetchall(), [])
             finally:
                 conn.close()
@@ -12485,7 +12491,7 @@ enabled = false
             self.assertIn("Navnekollisjoner: 0", stdout)
             self.assertIn("Filer uten dato: 0", stdout)
 
-    def test_parent_source_supersedes_imported_child_without_duplicate_findings(self) -> None:
+    def test_parent_source_after_child_import_records_duplicate_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -12508,11 +12514,8 @@ enabled = false
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 2)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 3)
-                statuses = conn.execute(
-                    "SELECT path, status, superseded_by_source_id FROM sources ORDER BY id"
-                ).fetchall()
+                statuses = conn.execute("SELECT path, status FROM sources ORDER BY id").fetchall()
                 self.assertEqual(statuses[0][1], "imported")
-                self.assertIsNone(statuses[0][2])
                 self.assertEqual(statuses[1][1], "imported")
             finally:
                 conn.close()
@@ -12543,7 +12546,7 @@ enabled = false
             finally:
                 conn.close()
 
-    def test_rejects_superseded_child_source_added_again(self) -> None:
+    def test_overlapping_child_source_added_again_records_duplicate_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -15505,14 +15508,14 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 1", stdout)
-            self.assertIn("Ny schema_version: 13", stdout)
+            self.assertIn("Ny schema_version: 14", stdout)
             self.assertIn("Vil opprette tabellen file_sources.", stdout)
             self.assertIn("  importerte filer: 1", stdout)
             self.assertIn("  duplikatfunn: 1", stdout)
             self.assertIn("  bygge om files uten gamle v1-kildekolonner", stdout)
             self.assertIn("  fjerne legacy-tabellen duplicate_findings", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
-            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-13-*")))
+            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-14-*")))
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertFalse(
@@ -15535,13 +15538,13 @@ model_name = "buffalo_l"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Ferdig. Databasen er migrert.", stdout)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-13-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-14-*"))), 1)
 
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "13",
+                    "14",
                 )
                 self.assertEqual(conn.execute("select count(*) from file_sources").fetchone()[0], 2)
                 file_columns = {row[1] for row in conn.execute("pragma table_info(files)")}
@@ -15595,12 +15598,12 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 5", stdout)
-            self.assertIn("Ny schema_version: 13", stdout)
+            self.assertIn("Ny schema_version: 14", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "13",
+                    "14",
                 )
                 self.assertTrue(
                     conn.execute(
@@ -15624,7 +15627,7 @@ model_name = "buffalo_l"
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Nåværende schema_version: 13", stdout)
+            self.assertIn("Nåværende schema_version: 14", stdout)
             self.assertIn("oppdatere manglende ytelsesindekser", stdout)
             self.assertIn("Oppdaterer manglende ytelsesindekser.", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
@@ -15656,14 +15659,14 @@ model_name = "buffalo_l"
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate", "--check"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("reparere intern v13-struktur", stdout)
+            self.assertIn("reparere intern v14-struktur", stdout)
             self.assertIn("systemtaggen", stdout)
             self.assertIn("meta.collection_id", stdout)
             self.assertIn("idx_file_tags_tag_id_file_id", stdout)
             self.assertIn("Ingen endringer er gjort (--check).", stdout)
             self.assertEqual(database_path.read_bytes(), before)
             self.assertEqual(database_path.stat().st_mtime_ns, before_mtime)
-            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-13-*")))
+            self.assertFalse(list(target.glob(".bilder.sqlite3.backup-before-schema-14-*")))
 
     def test_migrate_repairs_internal_v11_structure_and_preserves_tags_and_links(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -15708,8 +15711,8 @@ model_name = "buffalo_l"
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Reparerer intern v13-struktur.", stdout)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-13-*"))), 1)
+            self.assertIn("Reparerer intern v14-struktur.", stdout)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-14-*"))), 1)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 collection_id = conn.execute(
@@ -15783,7 +15786,7 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 9", stdout)
-            self.assertIn("Ny schema_version: 13", stdout)
+            self.assertIn("Ny schema_version: 14", stdout)
             self.assertIn("Legger til kamerakolonner i files.", stdout)
             self.assertIn("refresh-metadata --rescan", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
@@ -15793,7 +15796,7 @@ model_name = "buffalo_l"
                 self.assertIn("camera_model", columns)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "13",
+                    "14",
                 )
                 self.assertEqual(
                     conn.execute("SELECT camera_make, camera_model FROM files").fetchone(),
@@ -15818,7 +15821,7 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 10", stdout)
-            self.assertIn("Ny schema_version: 13", stdout)
+            self.assertIn("Ny schema_version: 14", stdout)
             self.assertIn("Oppretter pending_file_deletes.", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
@@ -15826,7 +15829,7 @@ model_name = "buffalo_l"
                     conn.execute(
                         "SELECT value FROM meta WHERE key = 'schema_version'"
                     ).fetchone()[0],
-                    "13",
+                    "14",
                 )
                 columns = {
                     row[1]
@@ -15836,7 +15839,7 @@ model_name = "buffalo_l"
                 conn.close()
             self.assertIn("last_error", columns)
 
-    def test_migrate_v12_to_v13_adds_metadata_datetime_without_backfill(self) -> None:
+    def test_migrate_v12_to_v14_adds_metadata_datetime_without_backfill(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -15856,7 +15859,7 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 12", stdout)
-            self.assertIn("Ny schema_version: 13", stdout)
+            self.assertIn("Ny schema_version: 14", stdout)
             self.assertIn("Legger til metadata_datetime i files.", stdout)
             self.assertIn("refresh-metadata --rescan", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
@@ -15865,7 +15868,7 @@ model_name = "buffalo_l"
                 self.assertIn("metadata_datetime", columns)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "13",
+                    "14",
                 )
                 self.assertIsNone(conn.execute("SELECT metadata_datetime FROM files").fetchone()[0])
             finally:
@@ -15906,13 +15909,13 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 7", stdout)
-            self.assertIn("Ny schema_version: 13", stdout)
+            self.assertIn("Ny schema_version: 14", stdout)
             self.assertIn("Fyller h3_res10 og h3_res11", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "13",
+                    "14",
                 )
                 columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 indexes = {row[1] for row in conn.execute("PRAGMA index_list(files)")}
@@ -15953,14 +15956,14 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Nåværende schema_version: 6", stdout)
-            self.assertIn("Ny schema_version: 13", stdout)
+            self.assertIn("Ny schema_version: 14", stdout)
             self.assertIn("Rydder gamle GPS-feilmeldinger.", stdout)
             self.assertIn("bildebank vacuum", stdout)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
                     conn.execute("select value from meta where key = 'schema_version'").fetchone()[0],
-                    "13",
+                    "14",
                 )
                 self.assertEqual(
                     conn.execute("SELECT gps_error FROM files").fetchone()[0],
@@ -16034,7 +16037,7 @@ model_name = "buffalo_l"
             self.assertIn("Størrelse etter:", stdout)
             self.assertIn("Ferdig. Databasene er pakket.", stdout)
 
-    def test_current_schema_rejects_v11_database_with_absolute_target_path(self) -> None:
+    def test_current_schema_rejects_v14_database_with_absolute_target_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -16049,9 +16052,10 @@ model_name = "buffalo_l"
                 conn.execute("ALTER TABLE files ADD COLUMN camera_make TEXT")
                 conn.execute("ALTER TABLE files ADD COLUMN camera_model TEXT")
                 conn.execute("ALTER TABLE files ADD COLUMN metadata_datetime TEXT")
+                conn.execute("ALTER TABLE sources DROP COLUMN superseded_by_source_id")
                 db.create_pending_file_deletes_schema(conn)
                 db.create_pending_file_moves_schema(conn)
-                conn.execute("UPDATE meta SET value = '13' WHERE key = 'schema_version'")
+                conn.execute("UPDATE meta SET value = '14' WHERE key = 'schema_version'")
                 conn.commit()
             finally:
                 conn.close()
@@ -16149,7 +16153,7 @@ model_name = "buffalo_l"
             code, stdout, stderr = capture_cli(["--target", str(target), "migrate"])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Ny schema_version: 13", stdout)
+            self.assertIn("Ny schema_version: 14", stdout)
             conn = sqlite3.connect(db_path)
             try:
                 names = [row[0] for row in conn.execute("SELECT name FROM sources ORDER BY id")]
@@ -16177,7 +16181,7 @@ model_name = "buffalo_l"
             self.assertEqual(code, 1)
             self.assertIn("Lager backup:", stdout)
             self.assertIn("Databasen ble ikke migrert", stderr)
-            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-13-*"))), 1)
+            self.assertEqual(len(list(target.glob(".bilder.sqlite3.backup-before-schema-14-*"))), 1)
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
                 self.assertEqual(
@@ -16212,7 +16216,7 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
-            self.assertIn("schema_version=13", stderr)
+            self.assertIn("schema_version=14", stderr)
             self.assertIn("bildebank migrate", stderr)
 
 

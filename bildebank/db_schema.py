@@ -31,9 +31,8 @@ from .db_tags import (
     tag_kind_for_name,
     tag_name_key,
 )
-from .value_parsing import optional_int
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 GPS_ERROR_EXIFTOOL = "exiftool_error"
 GPS_ERROR_FILE_MISSING = "file_missing"
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
@@ -102,6 +101,7 @@ class MigrationPlan:
     creates_pending_file_deletes: bool = False
     creates_pending_file_moves: bool = False
     adds_metadata_datetime_column: bool = False
+    removes_superseded_sources: bool = False
     internal_repairs: tuple[str, ...] = ()
 
 
@@ -198,9 +198,6 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
         ensure_column(conn, "files", "gps_source", "TEXT")
         ensure_column(conn, "files", "gps_scanned_at", "TEXT")
         ensure_column(conn, "files", "gps_error", "TEXT")
-    if table_exists(conn, "sources"):
-        ensure_column(conn, "sources", "superseded_by_source_id", "INTEGER REFERENCES sources(id)")
-
 
 def ensure_performance_indexes(conn: sqlite3.Connection) -> None:
     if table_exists(conn, "files"):
@@ -295,8 +292,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             name TEXT NOT NULL UNIQUE,
             added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             imported_at TEXT,
-            status TEXT NOT NULL DEFAULT 'pending',
-            superseded_by_source_id INTEGER REFERENCES sources(id)
+            status TEXT NOT NULL DEFAULT 'pending'
         );
 
         CREATE TABLE IF NOT EXISTS files (
@@ -608,7 +604,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 refreshes_performance_indexes=bool(missing_performance_indexes(conn)),
                 internal_repairs=internal_repairs,
             )
-        if version in {5, 6, 7, 8, 9, 10, 11, 12}:
+        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13}:
             if validate:
                 validate_current_schema(
                     conn,
@@ -619,7 +615,9 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                     require_pending_file_moves=version >= 12,
                     require_metadata_datetime_column=version >= 13,
                     require_internal_structure=False,
+                    require_no_superseded_sources=False,
                 )
+            source_columns = table_columns(conn, "sources") if table_exists(conn, "sources") else set()
             return MigrationPlan(
                 current_version=version,
                 target_version=SCHEMA_VERSION,
@@ -633,6 +631,10 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 creates_pending_file_deletes=version < 11,
                 creates_pending_file_moves=version < 12,
                 adds_metadata_datetime_column=version < 13,
+                removes_superseded_sources=(
+                    "superseded_by_source_id" in source_columns
+                    or has_superseded_source_status(conn)
+                ),
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -660,6 +662,10 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             creates_pending_file_deletes=True,
             creates_pending_file_moves=True,
             adds_metadata_datetime_column=True,
+            removes_superseded_sources=(
+                "superseded_by_source_id" in source_columns
+                or has_superseded_source_status(conn)
+            ),
         )
     finally:
         conn.close()
@@ -707,15 +713,21 @@ def migrate_database(target: Path) -> MigrationPlan:
                 refreshes_performance_indexes=refreshes_performance_indexes,
                 internal_repairs=internal_repairs,
             )
-        if version in {5, 6, 7, 8, 9, 10, 11, 12}:
+        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13}:
             imported_files = count_rows(conn, "files")
             duplicate_findings = count_rows(conn, "duplicate_findings")
             cleans_gps_errors = has_legacy_gps_errors(conn)
             backfills_h3_10_11 = needs_h3_10_11_backfill(conn)
+            removes_superseded_sources = (
+                "superseded_by_source_id" in table_columns(conn, "sources")
+                or has_superseded_source_status(conn)
+            )
             try:
+                conn.execute("PRAGMA foreign_keys = OFF")
                 conn.execute("BEGIN IMMEDIATE")
                 ensure_compatible_columns(conn)
                 set_collection_id(conn)
+                rebuild_sources_without_superseded(conn)
                 validate_current_schema(conn, require_performance_indexes=False)
                 drop_performance_indexes(conn)
                 ensure_performance_indexes(conn)
@@ -730,6 +742,8 @@ def migrate_database(target: Path) -> MigrationPlan:
             except Exception:
                 conn.rollback()
                 raise
+            finally:
+                conn.execute("PRAGMA foreign_keys = ON")
             return MigrationPlan(
                 current_version=version,
                 target_version=SCHEMA_VERSION,
@@ -743,6 +757,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 creates_pending_file_deletes=version < 11,
                 creates_pending_file_moves=version < 12,
                 adds_metadata_datetime_column=version < 13,
+                removes_superseded_sources=removes_superseded_sources,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -760,6 +775,10 @@ def migrate_database(target: Path) -> MigrationPlan:
         rebuilds_file_sources = bool("kind" in file_source_columns)
         cleans_gps_errors = has_legacy_gps_errors(conn)
         backfills_h3_10_11 = needs_h3_10_11_backfill(conn)
+        removes_superseded_sources = (
+            "superseded_by_source_id" in source_columns
+            or has_superseded_source_status(conn)
+        )
         try:
             conn.execute("PRAGMA foreign_keys = OFF")
             conn.execute("BEGIN IMMEDIATE")
@@ -775,6 +794,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             rebuild_files_without_legacy_source_columns(conn)
             rebuild_errors_without_source_fk(conn)
             rebuild_sources_without_kind(conn)
+            rebuild_sources_without_superseded(conn)
             rebuild_file_sources_without_kind(conn)
             if table_exists(conn, "duplicate_findings"):
                 conn.execute("DROP TABLE duplicate_findings")
@@ -812,6 +832,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             creates_pending_file_deletes=True,
             creates_pending_file_moves=True,
             adds_metadata_datetime_column=True,
+            removes_superseded_sources=removes_superseded_sources,
         )
     finally:
         conn.close()
@@ -916,6 +937,7 @@ def validate_current_schema(
     require_pending_file_deletes: bool = True,
     require_pending_file_moves: bool = True,
     require_internal_structure: bool = True,
+    require_no_superseded_sources: bool = True,
 ) -> None:
     if not table_exists(conn, "sources"):
         raise ValueError("Databasen mangler tabellen sources.")
@@ -924,8 +946,12 @@ def validate_current_schema(
     source_columns = table_columns(conn, "sources")
     if "kind" in source_columns:
         raise ValueError("sources inneholder gammel kind-kolonne. Kjør bildebank migrate.")
+    if require_no_superseded_sources and "superseded_by_source_id" in source_columns:
+        raise ValueError("sources inneholder gammel superseded-kolonne. Kjør bildebank migrate.")
     if "name" not in source_columns or not source_name_is_not_null(conn):
         raise ValueError("sources.name er ikke påkrevd. Kjør bildebank migrate.")
+    if require_no_superseded_sources and has_superseded_source_status(conn):
+        raise ValueError("sources inneholder gammel superseded-status. Kjør bildebank migrate.")
     file_columns = table_columns(conn, "files") if table_exists(conn, "files") else set()
     legacy_file_columns = sorted({"source_id", "source_path", "source_path_key"} & file_columns)
     if legacy_file_columns:
@@ -1646,9 +1672,30 @@ def rebuild_sources_without_kind(conn: sqlite3.Connection) -> None:
     needs_rebuild = "kind" in columns or not source_name_is_not_null(conn)
     if not needs_rebuild:
         return
+    rebuild_sources_table(conn)
+
+
+def has_superseded_source_status(conn: sqlite3.Connection) -> bool:
+    if not table_exists(conn, "sources") or "status" not in table_columns(conn, "sources"):
+        return False
+    return conn.execute(
+        "SELECT 1 FROM sources WHERE status = 'superseded' LIMIT 1"
+    ).fetchone() is not None
+
+
+def rebuild_sources_without_superseded(conn: sqlite3.Connection) -> None:
+    if not table_exists(conn, "sources"):
+        return
+    columns = table_columns(conn, "sources")
+    if "superseded_by_source_id" not in columns and not has_superseded_source_status(conn):
+        return
+    rebuild_sources_table(conn)
+
+
+def rebuild_sources_table(conn: sqlite3.Connection) -> None:
     rows = conn.execute("SELECT * FROM sources ORDER BY id").fetchall()
     used: set[str] = set()
-    named_rows: list[tuple[int, str, str | None, str, str, str | None, str, int | None]] = []
+    named_rows: list[tuple[int, str, str | None, str, str, str | None, str]] = []
     for row in rows:
         existing_name = row["name"] if "name" in row.keys() else None
         base = str(existing_name).strip() if existing_name else default_source_name(str(row["path"]))
@@ -1657,8 +1704,9 @@ def rebuild_sources_without_kind(conn: sqlite3.Connection) -> None:
         source_path_key = str(raw_path_key) if raw_path_key is not None else None
         raw_imported_at = row["imported_at"]
         imported_at = str(raw_imported_at) if raw_imported_at is not None else None
-        raw_superseded_by = row["superseded_by_source_id"] if "superseded_by_source_id" in row.keys() else None
-        superseded_by_source_id = optional_int(raw_superseded_by, "superseded_by_source_id")
+        status = str(row["status"])
+        if status == "superseded":
+            status = "imported"
         named_rows.append(
             (
                 int(row["id"]),
@@ -1667,8 +1715,7 @@ def rebuild_sources_without_kind(conn: sqlite3.Connection) -> None:
                 name,
                 str(row["added_at"]),
                 imported_at,
-                str(row["status"]),
-                superseded_by_source_id,
+                status,
             )
         )
     conn.executescript(
@@ -1680,16 +1727,15 @@ def rebuild_sources_without_kind(conn: sqlite3.Connection) -> None:
             name TEXT NOT NULL UNIQUE,
             added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             imported_at TEXT,
-            status TEXT NOT NULL DEFAULT 'pending',
-            superseded_by_source_id INTEGER REFERENCES sources(id)
+            status TEXT NOT NULL DEFAULT 'pending'
         );
         """
     )
     conn.executemany(
         """
         INSERT INTO sources_v4(
-            id, path, path_key, name, added_at, imported_at, status, superseded_by_source_id
-        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+            id, path, path_key, name, added_at, imported_at, status
+        ) VALUES(?, ?, ?, ?, ?, ?, ?)
         """,
         named_rows,
     )

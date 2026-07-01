@@ -1552,7 +1552,6 @@ def source_summary_rows(target: Path) -> list[sqlite3.Row]:
                     sources.path,
                     sources.imported_at,
                     sources.status,
-                    sources.superseded_by_source_id,
                     COUNT(file_sources.id) AS source_file_count,
                     COUNT(CASE WHEN files.deleted_at IS NULL THEN 1 END) AS active_file_count
                 FROM sources
@@ -1666,15 +1665,13 @@ def source_row_html(source: sqlite3.Row) -> str:
     active_file_count = int(source["active_file_count"])
     source_file_count = int(source["source_file_count"])
     imported_at = str(source["imported_at"] or "-")
-    superseded_by = source["superseded_by_source_id"]
-    superseded = f", erstattet av #{int(superseded_by)}" if superseded_by is not None else ""
     source_browser = imported_source_browser_source(source)
     return f"""
     <div class="people-row">
       <div class="people-name">{html.escape(name)}</div>
       <a class="person-link" href="{html.escape(source_browser.root_url)}">Vis bilder ({active_file_count})</a>
       <span class="status">filer fra kilde: {source_file_count}</span>
-      <span class="status">status: {html.escape(status)}{html.escape(superseded)}</span>
+      <span class="status">status: {html.escape(status)}</span>
       <span class="status">importert: {html.escape(imported_at)}</span>
       <div class="detail">{html.escape(str(source["path"]))}</div>
     </div>
