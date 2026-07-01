@@ -677,20 +677,6 @@ def hidden_sidecar_id_filter_sql(
     return f"({where_sql}) AND id NOT IN ({placeholders})", (*params, *hidden_ids)
 
 
-def motion_video_id_filter_sql(
-    target: Path,
-    where_sql: str,
-    params: tuple[object, ...],
-    *,
-    conn: sqlite3.Connection | None = None,
-) -> tuple[str, tuple[object, ...]]:
-    hidden_ids = sorted(motion_video_file_ids(target, conn=conn))
-    if not hidden_ids:
-        return where_sql, params
-    placeholders = ",".join("?" for _ in hidden_ids)
-    return f"({where_sql}) AND id NOT IN ({placeholders})", (*params, *hidden_ids)
-
-
 def source_shows_motion_videos(source: BrowserSource) -> bool:
     if source.text_filter is None:
         return False

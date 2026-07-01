@@ -64,7 +64,6 @@ class OpenClipSearchCache:
         self._tokenizer: Any | None = None
         self._embeddings: SearchEmbeddingCache | None = None
         self._preload_thread: threading.Thread | None = None
-        self._preload_error: str | None = None
 
     def text_vector(self, query: str) -> list[float]:
         with self._lock:
@@ -74,14 +73,12 @@ class OpenClipSearchCache:
     def preload_model(self) -> None:
         with self._lock:
             self._ensure_model_loaded()
-            self._preload_error = None
 
     def preload_model_async(self) -> str:
         if self.loaded:
             return "loaded"
         if self._preload_thread is not None and self._preload_thread.is_alive():
             return "loading"
-        self._preload_error = None
         self._preload_thread = threading.Thread(target=self._preload_model_worker, daemon=True)
         self._preload_thread.start()
         return "loading"
@@ -89,8 +86,8 @@ class OpenClipSearchCache:
     def _preload_model_worker(self) -> None:
         try:
             self.preload_model()
-        except Exception as exc:  # noqa: BLE001 - background preload should not crash the server
-            self._preload_error = str(exc)
+        except Exception:  # noqa: BLE001 - background preload should not crash the server
+            pass
 
     def _ensure_model_loaded(self) -> None:
         if self._model is None or self._tokenizer is None:
@@ -157,10 +154,6 @@ class OpenClipSearchCache:
     @property
     def loaded(self) -> bool:
         return self._model is not None and self._tokenizer is not None
-
-    @property
-    def preload_error(self) -> str | None:
-        return self._preload_error
 
 
 def search_embedding_cache_key(conn: sqlite3.Connection, model_name: str, pretrained: str) -> SearchEmbeddingCacheKey:

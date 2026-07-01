@@ -955,20 +955,6 @@ def fetch_next_page(url: str, html: str, timeout_ms: int) -> tuple[float, str, s
     return elapsed_ms, next_url, next_html
 
 
-def fetch_next_page_keepalive(conn: http.client.HTTPConnection, url: str, html: str) -> tuple[float, str, str]:
-    parser = NextLinkParser()
-    parser.feed(html)
-    if parser.next_href is None:
-        raise RuntimeError("Fant ingen aktiv Neste bilde-lenke.")
-    next_url = urllib.parse.urljoin(url, parser.next_href)
-    start = time.perf_counter()
-    next_html = fetch_text_keepalive(conn, next_url)
-    elapsed_ms = (time.perf_counter() - start) * 1000.0
-    if not next_html:
-        raise RuntimeError(f"Tom respons fra {next_url}")
-    return elapsed_ms, next_url, next_html
-
-
 def fetch_next_page_keepalive_step(
     conn: http.client.HTTPConnection,
     url: str,

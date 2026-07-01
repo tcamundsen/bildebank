@@ -11,10 +11,8 @@ from time import perf_counter
 
 from . import db
 from .browser_dates import (
-    browser_date_from_item,
     browser_date_text as item_browser_date_text,
     manual_date_midpoint as shared_manual_date_midpoint,
-    month_key_from_browser_date_item,
     month_key_from_path as shared_month_key_from_path,
 )
 from .formatting import format_bytes
@@ -401,14 +399,6 @@ def row_to_item(
     stored_path = Path(str(row["target_path"]))
     relative_path = relative_to_target(target, stored_path)
     return static_browser_item(row, relative_path, target=target)
-
-
-def month_key_from_browser_date(row) -> str | None:
-    return month_key_from_browser_date_item(row)
-
-
-def browser_date_from_row(row) -> str:
-    return browser_date_from_item(row)
 
 
 def browser_date_text(row) -> str:

@@ -96,17 +96,6 @@ def list_pending_deletes(target: Path) -> list[PendingFileDelete]:
         conn.close()
 
 
-def try_pending_delete(target: Path, pending_id: int) -> PendingDeleteResult | None:
-    with TargetLock(target, command="cleanup-pending-deletes"):
-        conn = db.connect(target)
-        try:
-            result = _try_pending_delete(conn, target, pending_id)
-            conn.commit()
-            return result
-        finally:
-            conn.close()
-
-
 def cleanup_pending_deletes(
     target: Path,
     *,

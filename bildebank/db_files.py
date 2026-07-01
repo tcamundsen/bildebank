@@ -11,7 +11,7 @@ from .db_core import (
     target_relative_path,
     target_relative_path_key,
 )
-from .db_schema import BROWSER_DATE_ORDER_SQL, VIDEO_EXTENSIONS
+from .db_schema import VIDEO_EXTENSIONS
 from .db_sources import Source
 
 
@@ -47,13 +47,6 @@ def source_file_sources(conn: sqlite3.Connection, source_id: int) -> list[sqlite
             (source_id,),
         )
     )
-
-
-def find_file_by_hash(conn: sqlite3.Connection, sha256: str) -> sqlite3.Row | None:
-    return conn.execute(
-        "SELECT * FROM files WHERE sha256 = ? ORDER BY id LIMIT 1",
-        (sha256,),
-    ).fetchone()
 
 
 def files_by_hash(conn: sqlite3.Connection, sha256: str) -> list[sqlite3.Row]:
@@ -587,17 +580,3 @@ def deleted_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
         """
     )
 
-
-def browser_files(conn: sqlite3.Connection) -> Iterable[sqlite3.Row]:
-    return conn.execute(
-        f"""
-        SELECT
-            id, target_path, stored_filename, taken_date, date_source,
-            manual_date_from, manual_date_to, manual_date_note,
-            camera_make, camera_model,
-            size_bytes, view_rotation_degrees
-        FROM files
-        WHERE deleted_at IS NULL
-        ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path
-        """
-    )

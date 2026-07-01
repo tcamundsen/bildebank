@@ -74,10 +74,6 @@ def month_key_from_browser_date_value(browser_date: str) -> str | None:
     return None
 
 
-def month_key_from_browser_date_item(item: Any) -> str | None:
-    return month_key_from_browser_date_value(browser_date_from_item(item))
-
-
 def valid_month_key(value: str) -> bool:
     if len(value) != 7 or value[4] != "-":
         return False
