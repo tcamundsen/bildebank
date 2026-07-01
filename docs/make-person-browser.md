@@ -13,6 +13,8 @@ options:
   --month-preview-limit MONTH_PREVIEW_LIMIT
                         Maks antall bilder i månedsoversikten. Standard: vis
                         alle.
+  --hide-out-of-focus   Ikke ta med bilder tagget "Ute av fokus" i den
+                        statiske personbrowseren.
 ```
 <!-- CLI-HELP-END -->
 
@@ -45,7 +47,15 @@ endres ikke.
 Begrenser hvor mange filer som vises i månedsoversikten:
 
 ```powershell
-bildebank make-browser --month-preview-limit 40
+bildebank make-person-browser "Tom" --month-preview-limit 40
+```
+
+### `--hide-out-of-focus`
+
+Lager HTML-filen uten bilder som er tagget `Ute av fokus`:
+
+```powershell
+bildebank make-person-browser "Tom" --hide-out-of-focus
 ```
 
 ### `--output`
@@ -53,7 +63,7 @@ bildebank make-browser --month-preview-limit 40
 `-o` eller `--output` skriver HTML-filen til et annet filnavn:
 
 ```powershell
-bildebank make-browser -o "familiebilder.html"
+bildebank make-person-browser "Tom" -o "tom.html"
 ```
 
 ## Hurtigtaster

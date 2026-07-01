@@ -902,6 +902,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=positive_int_arg,
         help="Maks antall bilder i månedsoversikten. Standard: vis alle.",
     )
+    person_browser.add_argument(
+        "--hide-out-of-focus",
+        action="store_true",
+        help='Ikke ta med bilder tagget "Ute av fokus" i den statiske personbrowseren.',
+    )
     people_browser = add_command(
         subparsers,
         "make-people-browser",
@@ -913,6 +918,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--month-preview-limit",
         type=positive_int_arg,
         help="Maks antall bilder i månedsoversikten på hver personside. Standard: vis alle.",
+    )
+    people_browser.add_argument(
+        "--hide-out-of-focus",
+        action="store_true",
+        help='Ikke ta med bilder tagget "Ute av fokus" i de statiske personbrowserne.',
     )
     face_reset = add_command(
         subparsers,

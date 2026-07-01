@@ -131,6 +131,7 @@ def run_face_command(args: argparse.Namespace, target: Path, *, repo_root: Path)
                 args.name,
                 output,
                 month_preview_limit=args.month_preview_limit,
+                hide_out_of_focus=args.hide_out_of_focus,
                 config=load_config(repo_root).face_recognition,
                 target_locked=True,
             )
@@ -142,6 +143,7 @@ def run_face_command(args: argparse.Namespace, target: Path, *, repo_root: Path)
             browser_result = export_people_browser(
                 target,
                 month_preview_limit=args.month_preview_limit,
+                hide_out_of_focus=args.hide_out_of_focus,
                 config=load_config(repo_root).face_recognition,
                 target_locked=True,
             )

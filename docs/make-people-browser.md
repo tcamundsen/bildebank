@@ -10,6 +10,8 @@ options:
   --month-preview-limit MONTH_PREVIEW_LIMIT
                         Maks antall bilder i månedsoversikten på hver
                         personside. Standard: vis alle.
+  --hide-out-of-focus   Ikke ta med bilder tagget "Ute av fokus" i de statiske
+                        personbrowserne.
 ```
 <!-- CLI-HELP-END -->
 
@@ -27,7 +29,15 @@ Bildebank. Bildefilene endres ikke.
 Begrenser hvor mange filer som vises i månedsoversikten:
 
 ```powershell
-bildebank make-browser --month-preview-limit 40
+bildebank make-people-browser --month-preview-limit 40
+```
+
+### `--hide-out-of-focus`
+
+Lager personoversikten og personsidene uten bilder som er tagget `Ute av fokus`:
+
+```powershell
+bildebank make-people-browser --hide-out-of-focus
 ```
 
 

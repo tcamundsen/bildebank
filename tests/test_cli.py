@@ -16362,6 +16362,53 @@ class ExportPersonTests(unittest.TestCase):
         self.assertNotIn("PXL.mp4", html)
         self.assertNotIn("deleted.jpg", html)
 
+    def test_make_person_browser_can_hide_out_of_focus_items(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, config, ids = self.make_collection(root)
+            source = person_browser_source("Kari", include_suggestions=True, show_faces=False)
+            server_ids = source_item_ids(target, source, config.face_recognition, hide_out_of_focus=True)
+
+            output = root / "kari.html"
+            output_path = export_person_browser(
+                target,
+                "Kari",
+                output,
+                config=config.face_recognition,
+                hide_out_of_focus=True,
+            )
+            html = output_path.read_text(encoding="utf-8")
+            items_start = html.index("const embeddedItems = ") + len("const embeddedItems = ")
+            items_end = html.index(";\n    const MONTH_PREVIEW_LIMIT", items_start)
+            html_items = json.loads(html[items_start:items_end])
+
+            cli_output = root / "kari-cli.html"
+            with (
+                patch("bildebank.cli.load_config", return_value=config),
+                patch("bildebank.cli_face.load_config", return_value=config),
+            ):
+                code, _stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "make-person-browser",
+                        "Kari",
+                        "--hide-out-of-focus",
+                        "--output",
+                        str(cli_output),
+                    ]
+                )
+            cli_html = cli_output.read_text(encoding="utf-8")
+
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual([int(item["fileId"]) for item in html_items], server_ids)
+        self.assertNotIn(ids["hidden"], server_ids)
+        self.assertIn(ids["confirmed"], server_ids)
+        self.assertIn(ids["suggested"], server_ids)
+        self.assertIn(ids["manual"], server_ids)
+        self.assertNotIn("hidden.jpg", html)
+        self.assertNotIn("hidden.jpg", cli_html)
+
     def test_make_people_browser_index_uses_same_visible_items_as_person_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -16412,6 +16459,44 @@ class ExportPersonTests(unittest.TestCase):
             self.assertNotIn("6 bilder", index_html)
             self.assertNotIn("PXL.mp4", person_html)
             self.assertNotIn("deleted.jpg", person_html)
+
+    def test_make_people_browser_can_hide_out_of_focus_items(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, config, ids = self.make_collection(root)
+            with (
+                patch("bildebank.cli.load_config", return_value=config),
+                patch("bildebank.cli_face.load_config", return_value=config),
+            ):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "make-people-browser",
+                        "--hide-out-of-focus",
+                    ]
+                )
+            person_html = (target / "person-Kari.html").read_text(encoding="utf-8")
+            items_start = person_html.index("const embeddedItems = ") + len("const embeddedItems = ")
+            items_end = person_html.index(";\n    const MONTH_PREVIEW_LIMIT", items_start)
+            person_items = json.loads(person_html[items_start:items_end])
+            index_html = (target / "personer.html").read_text(encoding="utf-8")
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev person-index", stdout)
+            self.assertEqual(
+                [int(item["fileId"]) for item in person_items],
+                source_item_ids(
+                    target,
+                    person_browser_source("Kari", include_suggestions=True, show_faces=False),
+                    config.face_recognition,
+                    hide_out_of_focus=True,
+                ),
+            )
+            self.assertNotIn(ids["hidden"], [int(item["fileId"]) for item in person_items])
+            self.assertNotIn("hidden.jpg", person_html)
+            self.assertIn("3 bilder", index_html)
+            self.assertIn("1 bekreftet, 2 forslag", index_html)
 
     def test_export_person_uses_browser_selection_dates_collisions_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

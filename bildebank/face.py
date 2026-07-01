@@ -1033,6 +1033,7 @@ def export_person_browser(
     output: Path | None = None,
     *,
     month_preview_limit: int | None = None,
+    hide_out_of_focus: bool = False,
     config: FaceRecognitionConfig | None = None,
     target_locked: bool = False,
 ) -> Path:
@@ -1048,7 +1049,7 @@ def export_person_browser(
             raise ValueError(f"Fant ikke person: {clean_name}")
     finally:
         conn.close()
-    items = person_source_browser_items(target, clean_name, config)
+    items = person_source_browser_items(target, clean_name, config, hide_out_of_focus=hide_out_of_focus)
     output_path.write_text(
         render_html(items, title=clean_name, month_preview_limit=month_preview_limit),
         encoding="utf-8",
@@ -1061,6 +1062,8 @@ def person_source_browser_items(
     target: Path,
     person_name: str,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
 ) -> list[dict[str, object]]:
     from .server_browser import source_items
     from .server_browser_sources import person_browser_source
@@ -1072,7 +1075,7 @@ def person_source_browser_items(
             relative_to_target(target, Path(str(item["target_path"]))),
             target=target,
         )
-        for item in source_items(target, source, face_config)
+        for item in source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
     ]
 
 
@@ -1080,6 +1083,7 @@ def export_people_browser(
     target: Path,
     *,
     month_preview_limit: int | None = None,
+    hide_out_of_focus: bool = False,
     config: FaceRecognitionConfig | None = None,
     target_locked: bool = False,
 ) -> PeopleBrowserResult:
@@ -1095,7 +1099,7 @@ def export_people_browser(
         for person in people:
             name = str(person["name"])
             page_path = target / f"person-{safe_filename(name)}.html"
-            items = person_source_browser_items(target, name, config)
+            items = person_source_browser_items(target, name, config, hide_out_of_focus=hide_out_of_focus)
             page_path.write_text(
                 render_html(
                     items,
