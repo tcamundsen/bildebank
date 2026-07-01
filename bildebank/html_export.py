@@ -129,14 +129,12 @@ def browser_items(
     *,
     timing: BrowserExportTiming | None = None,
 ) -> list[dict[str, object]]:
-    conn = db.connect(target)
-    try:
-        start = perf_counter()
-        items = [row_to_item(target, row) for row in db.browser_files(conn)]
-        if timing is not None:
-            timing.measure("rows_to_items", start)
-    finally:
-        conn.close()
+    from .server_browser import all_source_items
+
+    start = perf_counter()
+    items = [row_to_item(target, row) for row in all_source_items(target)]
+    if timing is not None:
+        timing.measure("rows_to_items", start)
     return items
 
 

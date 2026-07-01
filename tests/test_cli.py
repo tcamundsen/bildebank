@@ -3965,6 +3965,42 @@ model_name = "buffalo_l"
         self.assertIn('"manualDateFrom": "2004-06-01"', html)
         self.assertIn('"manualDateTo": "2004-08-31"', html)
 
+    def test_make_browser_uses_run_server_all_browser_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "PXL_20250102_123.MP").write_bytes(minimal_mp4_with_creation_date(dt.date(2025, 1, 2)))
+            (source / "PXL_20250102_123.MP.jpg").write_bytes(b"image")
+            (source / "DSC_0170.JPG").write_bytes(jpeg_with_exif_datetime("2019:03:03 12:00:00"))
+            (source / "DSC_0170.NEF").write_bytes(minimal_tiff_with_datetime("2019:03:03 12:00:00"))
+            (source / "deleted.jpg").write_bytes(jpeg_with_exif_datetime("2020:01:01 12:00:00"))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE stored_filename = 'deleted.jpg'")
+                conn.commit()
+            finally:
+                conn.close()
+
+            output = root / "index.html"
+            self.assertEqual(run_cli(["--target", str(target), "make-browser", "--output", str(output)]), 0)
+            html = output.read_text(encoding="utf-8")
+            items_start = html.index("const embeddedItems = ") + len("const embeddedItems = ")
+            items_end = html.index(";\n    const MONTH_PREVIEW_LIMIT", items_start)
+            items = json.loads(html[items_start:items_end])
+            item_ids = [int(item["fileId"]) for item in items]
+            server_item_ids = source_item_ids(target, all_browser_source())
+
+            self.assertEqual(item_ids, server_item_ids)
+            self.assertEqual([item["name"] for item in items], ["DSC_0170.JPG", "PXL_20250102_123.MP.jpg"])
+            self.assertNotIn("DSC_0170.NEF", html)
+            self.assertNotIn("PXL_20250102_123.mp4", html)
+            self.assertNotIn("deleted.jpg", html)
+
     def test_make_browser_requires_target_lock_before_writing_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
