@@ -190,6 +190,13 @@ def check_launcher_update_status(repo_root: Path | None = None) -> LauncherUpdat
     try:
         branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], root)
         upstream = _run_git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], root)
+        remote_name = _upstream_remote_name(upstream)
+        remote_url = _run_git(["remote", "get-url", remote_name], root)
+        if _git_remote_url_uses_ssh(remote_url):
+            return LauncherUpdateStatus(
+                "skipped",
+                f"hopper over automatisk oppdateringssjekk for SSH-remote {remote_name}",
+            )
         _run_git(["fetch", "--quiet"], root)
         commit_count_text = _run_git(["rev-list", "--count", "HEAD..@{u}"], root)
         commit_count = int(commit_count_text.strip())
@@ -204,6 +211,23 @@ def check_launcher_update_status(repo_root: Path | None = None) -> LauncherUpdat
             commits_behind=commit_count,
         )
     return LauncherUpdateStatus("current", f"{branch} er oppdatert mot {upstream}")
+
+
+def _upstream_remote_name(upstream: str) -> str:
+    remote_name, separator, _branch_name = upstream.partition("/")
+    if not separator or not remote_name:
+        raise ValueError(f"uventet upstream-navn: {upstream}")
+    return remote_name
+
+
+def _git_remote_url_uses_ssh(remote_url: str) -> bool:
+    url = remote_url.strip()
+    if url.startswith(("ssh://", "git+ssh://")):
+        return True
+    if "://" in url or "@" not in url:
+        return False
+    _user, _separator, host_and_path = url.partition("@")
+    return ":" in host_and_path
 
 
 def _run_git(args: list[str], repo_root: Path) -> str:
@@ -1736,6 +1760,8 @@ class BildebankLauncher:
         self.update_status = status
         if status.status == "error" and status.detail:
             self._log(f"Oppdateringssjekk feilet: {status.detail}")
+        elif status.status == "skipped" and status.detail:
+            self._log(f"Oppdateringssjekk hoppet over: {status.detail}")
         self._apply_update_button_state()
         self._set_buttons_enabled(not self.busy)
 

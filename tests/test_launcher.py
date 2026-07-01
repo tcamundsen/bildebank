@@ -257,6 +257,8 @@ def test_check_launcher_update_status_fetches_and_detects_available_update(tmp_p
             return subprocess.CompletedProcess(command, 0, stdout="main\n")
         if command[1:] == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
             return subprocess.CompletedProcess(command, 0, stdout="origin/main\n")
+        if command[1:] == ["remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(command, 0, stdout="https://github.com/example/bildebank.git\n")
         if command[1:] == ["fetch", "--quiet"]:
             return subprocess.CompletedProcess(command, 0, stdout="")
         if command[1:] == ["rev-list", "--count", "HEAD..@{u}"]:
@@ -274,6 +276,7 @@ def test_check_launcher_update_status_fetches_and_detects_available_update(tmp_p
     assert calls == [
         (["git", "rev-parse", "--abbrev-ref", "HEAD"], tmp_path),
         (["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], tmp_path),
+        (["git", "remote", "get-url", "origin"], tmp_path),
         (["git", "fetch", "--quiet"], tmp_path),
         (["git", "rev-list", "--count", "HEAD..@{u}"], tmp_path),
     ]
@@ -285,6 +288,8 @@ def test_check_launcher_update_status_detects_current_branch(tmp_path: Path) -> 
             return subprocess.CompletedProcess(command, 0, stdout="devel\n")
         if command[1:] == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
             return subprocess.CompletedProcess(command, 0, stdout="origin/devel\n")
+        if command[1:] == ["remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(command, 0, stdout="https://github.com/example/bildebank.git\n")
         if command[1:] == ["fetch", "--quiet"]:
             return subprocess.CompletedProcess(command, 0, stdout="")
         if command[1:] == ["rev-list", "--count", "HEAD..@{u}"]:
@@ -295,6 +300,29 @@ def test_check_launcher_update_status_detects_current_branch(tmp_path: Path) -> 
         status = check_launcher_update_status(tmp_path)
 
     assert status == LauncherUpdateStatus("current", "devel er oppdatert mot origin/devel")
+
+
+def test_check_launcher_update_status_skips_ssh_remote_before_fetch(tmp_path: Path) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(command)
+        if command[1:] == ["rev-parse", "--abbrev-ref", "HEAD"]:
+            return subprocess.CompletedProcess(command, 0, stdout="main\n")
+        if command[1:] == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
+            return subprocess.CompletedProcess(command, 0, stdout="origin/main\n")
+        if command[1:] == ["remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(command, 0, stdout="git@github.com:tom/bildebank.git\n")
+        raise AssertionError(f"unexpected command: {command}")
+
+    with patch("subprocess.run", side_effect=fake_run):
+        status = check_launcher_update_status(tmp_path)
+
+    assert status == LauncherUpdateStatus(
+        "skipped",
+        "hopper over automatisk oppdateringssjekk for SSH-remote origin",
+    )
+    assert ["git", "fetch", "--quiet"] not in calls
 
 
 def test_check_launcher_update_status_handles_missing_upstream(tmp_path: Path) -> None:
@@ -324,6 +352,8 @@ def test_check_launcher_update_status_handles_git_output_errors(tmp_path: Path) 
             return subprocess.CompletedProcess(command, 0, stdout="main\n")
         if command[1:] == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]:
             return subprocess.CompletedProcess(command, 0, stdout="origin/main\n")
+        if command[1:] == ["remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(command, 0, stdout="https://github.com/example/bildebank.git\n")
         if command[1:] == ["fetch", "--quiet"]:
             return subprocess.CompletedProcess(command, 0, stdout="")
         if command[1:] == ["rev-list", "--count", "HEAD..@{u}"]:
@@ -510,6 +540,23 @@ def test_update_status_finished_logs_error_and_returns_to_check_button() -> None
 
     assert button.options["text"] == "Se etter oppdateringer"
     assert logged == ["Oppdateringssjekk feilet: ingen upstream"]
+
+
+def test_update_status_finished_logs_skipped_update_check_without_error() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    button = FakeButton()
+    logged: list[str] = []
+    launcher.update_button = button
+    launcher.update_button_icons = {}
+    launcher.busy = False
+    launcher.update_checking = True
+    launcher._log = logged.append
+    launcher._set_buttons_enabled = lambda enabled: None
+
+    launcher._update_status_finished(LauncherUpdateStatus("skipped", "SSH-remote"))
+
+    assert button.options["text"] == "Se etter oppdateringer"
+    assert logged == ["Oppdateringssjekk hoppet over: SSH-remote"]
 
 
 def test_pyproject_includes_launcher_button_icons_as_package_data() -> None:
