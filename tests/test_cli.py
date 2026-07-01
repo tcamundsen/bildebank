@@ -47,8 +47,10 @@ from bildebank.face import (
     create_person,
     face_box_percent,
     face_db_path,
+    export_person_browser,
     insightface_import_error_message,
     normalize_insightface_model_layout,
+    person_source_browser_items,
     read_image,
     remove_person_from_file,
     remove_insightface_model_zip,
@@ -16294,6 +16296,35 @@ class ExportPersonTests(unittest.TestCase):
             browser=BrowserConfig(hide_out_of_focus=True),
         )
         return target, config, ids
+
+    def test_make_person_browser_uses_run_server_person_selection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, config, ids = self.make_collection(root)
+
+            source = person_browser_source("Kari", include_suggestions=True, show_faces=False)
+            server_ids = source_item_ids(target, source, config.face_recognition)
+            browser_items = person_source_browser_items(target, "Kari", config.face_recognition)
+
+            output = root / "kari.html"
+            output_path = export_person_browser(target, "Kari", output, config=config.face_recognition)
+            html = output_path.read_text(encoding="utf-8")
+            items_start = html.index("const embeddedItems = ") + len("const embeddedItems = ")
+            items_end = html.index(";\n    const MONTH_PREVIEW_LIMIT", items_start)
+            html_items = json.loads(html[items_start:items_end])
+
+        self.assertEqual([int(item["fileId"]) for item in browser_items], server_ids)
+        self.assertEqual([int(item["fileId"]) for item in html_items], server_ids)
+        self.assertIn(ids["confirmed"], server_ids)
+        self.assertIn(ids["suggested"], server_ids)
+        self.assertIn(ids["manual"], server_ids)
+        self.assertIn(ids["hidden"], server_ids)
+        self.assertNotIn(ids["motion"], server_ids)
+        self.assertNotIn(ids["deleted"], server_ids)
+        self.assertIn('"manualDateFrom": "2024-01-01"', html)
+        self.assertIn('"dateText": "ca. 2024-01-16 (manuell dato)"', html)
+        self.assertNotIn("PXL.mp4", html)
+        self.assertNotIn("deleted.jpg", html)
 
     def test_export_person_uses_browser_selection_dates_collisions_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -1043,26 +1043,37 @@ def export_person_browser(
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target, config)
     try:
-        view_rotations = file_view_rotations(target)
         person = conn.execute("SELECT id, name FROM persons WHERE name = ?", (clean_name,)).fetchone()
         if person is None:
             raise ValueError(f"Fant ikke person: {clean_name}")
-        with MediaMetadataCache(target, target_locked=target_locked) as media_cache:
-            items = person_browser_items(
-                target,
-                conn,
-                person_id=int(person["id"]),
-                media_cache=media_cache,
-                view_rotations=view_rotations,
-            )
     finally:
         conn.close()
+    items = person_source_browser_items(target, clean_name, config)
     output_path.write_text(
-        render_person_browser_html(clean_name, items, month_preview_limit=month_preview_limit),
+        render_html(items, title=clean_name, month_preview_limit=month_preview_limit),
         encoding="utf-8",
         newline="\n",
     )
     return output_path
+
+
+def person_source_browser_items(
+    target: Path,
+    person_name: str,
+    face_config: FaceRecognitionConfig | None = None,
+) -> list[dict[str, object]]:
+    from .server_browser import source_items
+    from .server_browser_sources import person_browser_source
+
+    source = person_browser_source(person_name, include_suggestions=True, show_faces=False)
+    return [
+        static_browser_item(
+            item,
+            relative_to_target(target, Path(str(item["target_path"]))),
+            target=target,
+        )
+        for item in source_items(target, source, face_config)
+    ]
 
 
 def export_people_browser(
@@ -1094,7 +1105,11 @@ def export_people_browser(
                     view_rotations=view_rotations,
                 )
                 page_path.write_text(
-                    render_person_browser_html(name, items, month_preview_limit=month_preview_limit),
+                    render_html(
+                        person_source_browser_items(target, name, config),
+                        title=name,
+                        month_preview_limit=month_preview_limit,
+                    ),
                     encoding="utf-8",
                     newline="\n",
                 )

@@ -82,6 +82,233 @@ VIEW_ROTATION_JAVASCRIPT = """
 """
 
 
+STATIC_BROWSER_MONTH_NAMES = {
+    "01": "Januar",
+    "02": "Februar",
+    "03": "Mars",
+    "04": "April",
+    "05": "Mai",
+    "06": "Juni",
+    "07": "Juli",
+    "08": "August",
+    "09": "September",
+    "10": "Oktober",
+    "11": "November",
+    "12": "Desember",
+}
+
+
+STATIC_BROWSER_CSS = f"""
+    :root {{
+      color-scheme: dark;
+      --bg: #171717;
+      --panel: #242424;
+      --border: #3a3a3a;
+      --text: #f2f2f2;
+      --muted: #b8b8b8;
+      --accent: #7db7ff;
+    }}
+    * {{ box-sizing: border-box; }}
+    html, body {{
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }}
+    .app {{
+      height: 100vh;
+      height: 100dvh;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+    }}
+    header {{
+      background: var(--panel);
+      border-color: var(--border);
+    }}
+    header {{
+      border-bottom: 1px solid var(--border);
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }}
+    .topline, .controls {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }}
+    .title {{
+      font-weight: 700;
+      margin-right: 12px;
+    }}
+    .breadcrumb {{
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }}
+    .breadcrumb a {{
+      color: var(--text);
+      text-decoration: none;
+    }}
+    .breadcrumb a:hover {{ text-decoration: underline; }}
+    .breadcrumb .sep {{
+      color: var(--muted);
+      font-weight: 400;
+    }}
+    button {{
+      border: 1px solid var(--border);
+      background: #303030;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      cursor: pointer;
+      min-height: 38px;
+    }}
+    button:hover {{ background: #3a3a3a; }}
+    button:disabled {{
+      opacity: 0.45;
+      cursor: default;
+    }}
+    .nav-button-pair {{
+      display: inline-flex;
+      align-items: stretch;
+      gap: 0;
+    }}
+    .nav-button-pair button {{
+      border-radius: 0;
+      justify-content: center;
+    }}
+    .nav-button-pair button + button {{ margin-left: -1px; }}
+    .nav-button-pair button:first-child {{
+      border-top-left-radius: 6px;
+      border-bottom-left-radius: 6px;
+      padding-right: 0;
+    }}
+    .nav-button-pair button:last-child {{
+      border-top-right-radius: 6px;
+      border-bottom-right-radius: 6px;
+      padding-left: 0;
+    }}
+    .status {{
+      color: var(--muted);
+      font-size: 14px;
+    }}
+    main {{
+      min-height: 0;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+    }}
+    .viewer {{
+      width: 100%;
+      height: 100%;
+      min-height: 0;
+      min-width: 0;
+      display: grid;
+      place-items: center;
+      background: #0e0e0e;
+      overflow: hidden;
+    }}
+    .media-link {{
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      place-items: center;
+    }}
+    .viewer img, .viewer video {{
+      min-width: 0;
+      min-height: 0;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      object-position: center center;
+      display: block;
+    }}
+{VIEW_ROTATION_CSS}
+    .month-grid {{
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      min-height: 0;
+      overflow: auto;
+      padding: 12px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      grid-auto-rows: 130px;
+      gap: 8px;
+      align-content: start;
+    }}
+    .thumb {{
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #181818;
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      padding: 0;
+      font: inherit;
+      text-align: center;
+    }}
+    .thumb:hover {{
+      border-color: var(--accent);
+      background: #242424;
+    }}
+    .thumb img {{
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }}
+    .thumb-video {{
+      padding: 10px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }}
+    .overview-thumb {{
+      position: relative;
+    }}
+    .overview-label {{
+      position: absolute;
+      inset: auto 0 0;
+      padding: 7px 8px;
+      background: rgb(0 0 0 / 78%);
+      color: var(--text);
+      font-weight: 650;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }}
+    .file-card {{
+      padding: 16px;
+      color: var(--muted);
+      line-height: 1.35;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }}
+    .empty {{
+      color: var(--muted);
+      text-align: center;
+      max-width: 560px;
+      line-height: 1.5;
+      padding: 24px;
+    }}
+"""
+
+
 @dataclass
 class BrowserExportTiming:
     steps: list[tuple[str, float]] = field(default_factory=list)
@@ -349,6 +576,7 @@ def render_html(
         .replace(">", "\\u003e")
     )
     month_preview_limit_json = json.dumps(month_preview_limit)
+    month_names_json = json.dumps(STATIC_BROWSER_MONTH_NAMES, ensure_ascii=False)
     escaped_title = html.escape(title)
     return f"""<!doctype html>
 <html lang="no">
@@ -357,213 +585,7 @@ def render_html(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escaped_title}</title>
   <style>
-    :root {{
-      color-scheme: dark;
-      --bg: #171717;
-      --panel: #242424;
-      --border: #3a3a3a;
-      --text: #f2f2f2;
-      --muted: #b8b8b8;
-      --accent: #7db7ff;
-    }}
-    * {{ box-sizing: border-box; }}
-    html, body {{
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-    }}
-    body {{
-      margin: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }}
-    .app {{
-      height: 100vh;
-      height: 100dvh;
-      display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
-      overflow: hidden;
-    }}
-    header {{
-      background: var(--panel);
-      border-color: var(--border);
-    }}
-    header {{
-      border-bottom: 1px solid var(--border);
-      padding: 12px;
-      display: grid;
-      gap: 10px;
-    }}
-    .topline, .controls {{
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }}
-    .title {{
-      font-weight: 700;
-      margin-right: 12px;
-    }}
-    .breadcrumb {{
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: wrap;
-    }}
-    .breadcrumb a {{
-      color: var(--text);
-      text-decoration: none;
-    }}
-    .breadcrumb a:hover {{ text-decoration: underline; }}
-    .breadcrumb .sep {{
-      color: var(--muted);
-      font-weight: 400;
-    }}
-    button {{
-      border: 1px solid var(--border);
-      background: #303030;
-      color: var(--text);
-      border-radius: 6px;
-      padding: 8px 10px;
-      font: inherit;
-      cursor: pointer;
-      min-height: 38px;
-    }}
-    button:hover {{ background: #3a3a3a; }}
-    button:disabled {{
-      opacity: 0.45;
-      cursor: default;
-    }}
-    .nav-button-pair {{
-      display: inline-flex;
-      align-items: stretch;
-      gap: 0;
-    }}
-    .nav-button-pair button {{
-      border-radius: 0;
-      justify-content: center;
-    }}
-    .nav-button-pair button + button {{ margin-left: -1px; }}
-    .nav-button-pair button:first-child {{
-      border-top-left-radius: 6px;
-      border-bottom-left-radius: 6px;
-      padding-right: 0;
-    }}
-    .nav-button-pair button:last-child {{
-      border-top-right-radius: 6px;
-      border-bottom-right-radius: 6px;
-      padding-left: 0;
-    }}
-    .status {{
-      color: var(--muted);
-      font-size: 14px;
-    }}
-    main {{
-      min-height: 0;
-      display: grid;
-      place-items: center;
-      overflow: hidden;
-    }}
-    .viewer {{
-      width: 100%;
-      height: 100%;
-      min-height: 0;
-      min-width: 0;
-      display: grid;
-      place-items: center;
-      background: #0e0e0e;
-      overflow: hidden;
-    }}
-    .media-link {{
-      width: 100%;
-      height: 100%;
-      min-width: 0;
-      min-height: 0;
-      display: grid;
-      place-items: center;
-    }}
-    .viewer img, .viewer video {{
-      min-width: 0;
-      min-height: 0;
-      width: auto;
-      height: auto;
-      max-width: 100%;
-      max-height: 100%;
-      object-fit: contain;
-      object-position: center center;
-      display: block;
-    }}
-{VIEW_ROTATION_CSS}
-    .month-grid {{
-      width: 100%;
-      height: 100%;
-      min-width: 0;
-      min-height: 0;
-      overflow: auto;
-      padding: 12px;
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-      grid-auto-rows: 130px;
-      gap: 8px;
-      align-content: start;
-    }}
-    .thumb {{
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      background: #181818;
-      color: var(--muted);
-      display: grid;
-      place-items: center;
-      min-width: 0;
-      min-height: 0;
-      overflow: hidden;
-      padding: 0;
-      font: inherit;
-      text-align: center;
-    }}
-    .thumb:hover {{
-      border-color: var(--accent);
-      background: #242424;
-    }}
-    .thumb img {{
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-    }}
-    .thumb-video {{
-      padding: 10px;
-      line-height: 1.35;
-      overflow-wrap: anywhere;
-    }}
-    .overview-thumb {{
-      position: relative;
-    }}
-    .overview-label {{
-      position: absolute;
-      inset: auto 0 0;
-      padding: 7px 8px;
-      background: rgb(0 0 0 / 78%);
-      color: var(--text);
-      font-weight: 650;
-      line-height: 1.25;
-      overflow-wrap: anywhere;
-    }}
-    .file-card {{
-      padding: 16px;
-      color: var(--muted);
-      line-height: 1.35;
-      text-align: center;
-      overflow-wrap: anywhere;
-    }}
-    .empty {{
-      color: var(--muted);
-      text-align: center;
-      max-width: 560px;
-      line-height: 1.5;
-      padding: 24px;
-    }}
+{STATIC_BROWSER_CSS}
   </style>
 </head>
 <body>
@@ -599,20 +621,7 @@ def render_html(
   <script>
     const embeddedItems = {items_json};
     const MONTH_PREVIEW_LIMIT = {month_preview_limit_json};
-    const MONTH_NAMES = {{
-      "01": "Januar",
-      "02": "Februar",
-      "03": "Mars",
-      "04": "April",
-      "05": "Mai",
-      "06": "Juni",
-      "07": "Juli",
-      "08": "August",
-      "09": "September",
-      "10": "Oktober",
-      "11": "November",
-      "12": "Desember"
-    }};
+    const MONTH_NAMES = {month_names_json};
     const state = {{ months: [], years: [], monthIndex: 0, itemIndex: 0, viewMode: "item" }};
     const titleEl = document.getElementById("title");
     const statusEl = document.getElementById("status");
