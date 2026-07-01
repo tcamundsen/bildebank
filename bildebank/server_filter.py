@@ -29,7 +29,6 @@ class BrowserTextFilter:
     extension: str | None = None
     filename: str | None = None
     location: str | None = None
-    location_place_slug: str | None = None
     location_place_cells: tuple[tuple[str, str], ...] = ()
     h3res_operator: str | None = None
     h3res_value: int | None = None
@@ -598,7 +597,6 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         extension=text_filter.extension,
         filename=text_filter.filename,
         location=text_filter.location,
-        location_place_slug=place.slug,
         location_place_cells=tuple(geo_place_cells_by_column(place)),
         h3res_operator=text_filter.h3res_operator,
         h3res_value=text_filter.h3res_value,
