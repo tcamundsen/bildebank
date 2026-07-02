@@ -512,6 +512,22 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     server_timing_steps: dict[str, float]
     protocol_version = "HTTP/1.1"
 
+    def browser_db_connection(self) -> tuple[Any, bool]:
+        if not hasattr(self, "request"):
+            return db.connect(self.server.target), True
+        conn = getattr(self, "_browser_db_connection", None)
+        if conn is None:
+            conn = db.connect(self.server.target)
+            self._browser_db_connection = conn
+        return conn, False
+
+    def close_browser_db_connection(self) -> None:
+        conn = getattr(self, "_browser_db_connection", None)
+        if conn is None:
+            return
+        self._browser_db_connection = None
+        conn.close()
+
     def read_only_get_blocked(self, path: str) -> bool:
         return (
             path in {"/settings", "/sources", "/sources/", "/tags", "/tags/", "/api/maintenance/statuses"}
@@ -952,6 +968,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 self.close_connection = True
                 return
             raise
+        finally:
+            self.close_browser_db_connection()
 
     def log_message(self, format: str, *args: Any) -> None:
         return
@@ -975,7 +993,10 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
 
         start = time.perf_counter()
         source = all_browser_source()
-        conn = db.connect(self.server.target)
+        browser_db_connection = getattr(self, "browser_db_connection", None)
+        conn, close_conn = (
+            browser_db_connection() if browser_db_connection is not None else (db.connect(self.server.target), True)
+        )
         self.record_server_timing("db_connect", start)
         try:
             start = time.perf_counter()
@@ -1066,7 +1087,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(encoded)
         finally:
-            conn.close()
+            if close_conn:
+                conn.close()
 
     def respond_month(self, raw_month: str) -> None:
         month_key = urllib.parse.unquote(raw_month).strip()
@@ -1392,7 +1414,10 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             file_id = parse_file_id(raw_value)
             self.record_server_timing("parse", start)
             start = time.perf_counter()
-            conn = db.connect(self.server.target)
+            browser_db_connection = getattr(self, "browser_db_connection", None)
+            conn, close_conn = (
+                browser_db_connection() if browser_db_connection is not None else (db.connect(self.server.target), True)
+            )
             self.record_server_timing("db_connect", start)
             try:
                 if source_has_sql_filter(source):
@@ -1485,7 +1510,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 )
                 self.record_server_timing("source_item_page_html", start)
             finally:
-                conn.close()
+                if close_conn:
+                    conn.close()
             return
         if page_mode == "month":
             month_key = urllib.parse.unquote(raw_value).strip()
