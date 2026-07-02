@@ -170,6 +170,14 @@ def validate_existing_backup(backup_dir: Path, collection_id: str) -> None:
     except json.JSONDecodeError as exc:
         raise ValueError(f"Backupmetadata er ikke gyldig JSON: {metadata_path}") from exc
     backup_of = metadata.get("backup_of")
+    if not isinstance(backup_of, str) or not backup_of.strip():
+        raise ValueError(
+            "Kan ikke oppdatere backup.\n"
+            "\nMålmappen er merket som en bildebank-backup, men backupmetadata mangler "
+            "feltet backup_of:\n"
+            f"\n  {metadata_path}\n"
+            "\nProgrammet kan derfor ikke bekrefte hvilken bildesamling backupen hører til."
+        )
     if backup_of != collection_id:
         raise ValueError(
             "Kan ikke oppdatere backup.\n"

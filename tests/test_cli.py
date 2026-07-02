@@ -9369,6 +9369,35 @@ model_name = "buffalo_l"
             self.assertIn("ser ikke ut til å være en bildebank-backup", stderr)
             self.assertEqual((backup_dir / "unrelated.txt").read_text(encoding="utf-8"), "do not touch\n")
 
+    def test_backup_rejects_existing_backup_without_backup_of_with_specific_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_parent.mkdir()
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / "first.txt").write_text("first\n", encoding="utf-8")
+            with patch("bildebank.backup.select_backup_engine", return_value=None):
+                self.assertEqual(run_cli(["--target", str(target), "backup", str(backup_parent)]), 0)
+
+            backup_dir = backup_parent / target.name
+            metadata_path = backup_dir / ".bildebank-backup.json"
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            del metadata["backup_of"]
+            metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+            extra = backup_dir / "extra.txt"
+            extra.write_text("do not delete\n", encoding="utf-8")
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("backupmetadata mangler feltet backup_of", stderr)
+            self.assertIn(str(metadata_path), stderr)
+            self.assertNotIn("backup for en annen bildesamling", stderr)
+            self.assertEqual(extra.read_text(encoding="utf-8"), "do not delete\n")
+
     def test_backup_rejects_destination_inside_existing_backup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
