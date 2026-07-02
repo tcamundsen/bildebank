@@ -17,6 +17,7 @@ from bildebank.launcher import (
     LauncherUpdateStatus,
     OpenClipModelStatus,
     RegisteredPerson,
+    backup_command,
     check_launcher_update_status,
     check_source_command,
     close_blocked_by_running_command,
@@ -259,6 +260,19 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--dest",
         str(tmp_path / "eksport"),
         "--dry-run",
+    ]
+    assert backup_command(collection, tmp_path / "backup")[-4:] == [
+        "--target",
+        str(collection),
+        "backup",
+        str(tmp_path / "backup"),
+    ]
+    assert backup_command(collection, tmp_path / "backup", dry_run=True)[-5:] == [
+        "--target",
+        str(collection),
+        "backup",
+        "--dry-run",
+        str(tmp_path / "backup"),
     ]
     assert download_face_model_command()[-1:] == ["download-face-model"]
 
@@ -702,6 +716,25 @@ def test_launcher_source_exposes_export_person_dry_run_flow() -> None:
     assert "dry_run=True" in dry_run_source
     assert "_confirm_export_person" in dry_run_source
     assert "messagebox.askyesno" in confirm_source
+
+
+def test_launcher_source_exposes_backup_dry_run_flow() -> None:
+    refresh_source = inspect.getsource(BildebankLauncher._refresh_state)
+    flow_source = inspect.getsource(BildebankLauncher._start_backup_flow)
+    dry_run_source = inspect.getsource(BildebankLauncher._run_backup_dry_run)
+    confirm_source = inspect.getsource(BildebankLauncher._confirm_backup)
+    backup_source = inspect.getsource(BildebankLauncher._run_backup)
+
+    assert 'text="Ta backup"' in refresh_source
+    assert "_start_backup_flow" in refresh_source
+    assert "askdirectory" in flow_source
+    assert 'title="Velg backup-plassering"' in flow_source
+    assert "_run_backup_dry_run" in flow_source
+    assert "dry_run=True" in dry_run_source
+    assert "_confirm_backup" in dry_run_source
+    assert "messagebox.askyesno" in confirm_source
+    assert "_run_backup(backup_parent)" in confirm_source
+    assert "cancellable=True" in backup_source
 
 
 def test_launcher_source_exposes_static_browser_commands_and_shared_hide_checkbox() -> None:

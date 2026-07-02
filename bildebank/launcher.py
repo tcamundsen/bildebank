@@ -361,6 +361,14 @@ def export_person_command(
     return command
 
 
+def backup_command(collection_path: Path, backup_parent: Path, dry_run: bool = False) -> list[str]:
+    command = bildebank_command("--target", collection_path, "backup")
+    if dry_run:
+        command.append("--dry-run")
+    command.append(str(backup_parent))
+    return command
+
+
 def program_repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -975,6 +983,17 @@ class BildebankLauncher:
                     "Oppdaterer Bildebank til siste utgave. "
                     "Dette tilsvarer kommandoen 'bildebank update' ",
                 )
+                backup_button = self._button(
+                    self.main_button_frame,
+                    text="Ta backup",
+                    command=self._start_backup_flow,
+                )
+                backup_button.grid(row=0, column=3, padx=PADX, pady=PADY, sticky="ew")
+                self._add_tooltip(
+                    backup_button,
+                    "Kjører først backup dry-run og viser planen i loggen. "
+                    "Faktisk backup speiler bildesamlingen og kan slette filer i backupmålet.",
+                )
 
                 import_button = self._button(
                     self.import_button_frame,
@@ -1169,6 +1188,7 @@ class BildebankLauncher:
                     [
                         start_button,
                         update_button,
+                        backup_button,
                         import_button,
                         rescan_button,
                         check_button,
@@ -1619,6 +1639,59 @@ class BildebankLauncher:
             running_message="Lager statiske personbrowsere ...",
             success_message="Statiske personbrowsere fullført.",
             failure_message="Statiske personbrowsere feilet.",
+            on_success=self._refresh_state,
+            cancellable=True,
+        )
+
+    def _start_backup_flow(self) -> None:
+        from tkinter import filedialog
+
+        selected = filedialog.askdirectory(
+            title="Velg backup-plassering",
+            initialdir=str(self.collection_path.parent),
+        )
+        if not selected:
+            self._log("Backup avbrutt: ingen plassering valgt.")
+            return
+        self._run_backup_dry_run(Path(selected))
+
+    def _run_backup_dry_run(self, backup_parent: Path) -> None:
+        self._log(f"Kontrollerer backup til {backup_parent} ...")
+        self._run_waiting_command(
+            backup_command(self.collection_path, backup_parent, dry_run=True),
+            running_message="Kontrollerer backup ...",
+            success_message="Backup dry-run fullført. Se planen i loggen.",
+            failure_message="Backup dry-run feilet.",
+            on_success=lambda: self._confirm_backup(backup_parent),
+            cancellable=True,
+        )
+
+    def _confirm_backup(self, backup_parent: Path) -> None:
+        from tkinter import messagebox
+
+        backup_dir = backup_parent / self.collection_path.name
+        if not messagebox.askyesno(
+            "Ta backup?",
+            (
+                "Dry-run er fullført og planen står i loggen.\n\n"
+                "Faktisk backup speiler bildesamlingen. Det kan slette filer fra "
+                "backupen som ikke finnes i bildesamlingen.\n\n"
+                f"Backupmappe:\n{backup_dir}\n\n"
+                "Vil du kjøre faktisk backup nå?"
+            ),
+            parent=self.root,
+        ):
+            self._log("Backup avbrutt etter dry-run.")
+            return
+        self._run_backup(backup_parent)
+
+    def _run_backup(self, backup_parent: Path) -> None:
+        self._log(f"Tar backup til {backup_parent} ...")
+        self._run_waiting_command(
+            backup_command(self.collection_path, backup_parent),
+            running_message="Tar backup ...",
+            success_message="Backup fullført.",
+            failure_message="Backup feilet.",
             on_success=self._refresh_state,
             cancellable=True,
         )
