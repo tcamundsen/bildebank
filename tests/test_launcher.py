@@ -715,7 +715,8 @@ def test_launcher_source_exposes_export_person_dry_run_flow() -> None:
     assert "_select_person(" in flow_source
     assert "dry_run=True" in dry_run_source
     assert "_confirm_export_person" in dry_run_source
-    assert "messagebox.askyesno" in confirm_source
+    assert "_show_log_review_question" in confirm_source
+    assert "_run_export_person(person, destination_root)" in confirm_source
 
 
 def test_launcher_source_exposes_backup_dry_run_flow() -> None:
@@ -732,9 +733,22 @@ def test_launcher_source_exposes_backup_dry_run_flow() -> None:
     assert "_run_backup_dry_run" in flow_source
     assert "dry_run=True" in dry_run_source
     assert "_confirm_backup" in dry_run_source
-    assert "messagebox.askyesno" in confirm_source
+    assert "_show_log_review_question" in confirm_source
     assert "_run_backup(backup_parent)" in confirm_source
     assert "cancellable=True" in backup_source
+
+
+def test_launcher_log_review_question_is_nonmodal() -> None:
+    source = inspect.getsource(BildebankLauncher._show_log_review_question)
+    pending_source = inspect.getsource(BildebankLauncher._pending_deletes_list_finished)
+
+    assert "Toplevel" in source
+    assert "grab_set" not in source
+    assert "wait_window" not in source
+    assert "wait_variable" not in source
+    assert "_set_busy(True" in source
+    assert "_set_busy(False" in source
+    assert "_show_log_review_question" in pending_source
 
 
 def test_launcher_source_exposes_static_browser_commands_and_shared_hide_checkbox() -> None:

@@ -1667,10 +1667,8 @@ class BildebankLauncher:
         )
 
     def _confirm_backup(self, backup_parent: Path) -> None:
-        from tkinter import messagebox
-
         backup_dir = backup_parent / self.collection_path.name
-        if not messagebox.askyesno(
+        self._show_log_review_question(
             "Ta backup?",
             (
                 "Dry-run er fullført og planen står i loggen.\n\n"
@@ -1679,11 +1677,11 @@ class BildebankLauncher:
                 f"Backupmappe:\n{backup_dir}\n\n"
                 "Vil du kjøre faktisk backup nå?"
             ),
-            parent=self.root,
-        ):
-            self._log("Backup avbrutt etter dry-run.")
-            return
-        self._run_backup(backup_parent)
+            yes_text="Kjør backup",
+            no_text="Avbryt",
+            on_yes=lambda: self._run_backup(backup_parent),
+            on_no=lambda: self._log("Backup avbrutt etter dry-run."),
+        )
 
     def _run_backup(self, backup_parent: Path) -> None:
         self._log(f"Tar backup til {backup_parent} ...")
@@ -1769,17 +1767,17 @@ class BildebankLauncher:
                 parent=self.root,
             )
             return
-        if not messagebox.askyesno(
+        self._show_log_review_question(
             "Ventende filsletting",
             (
                 "Listen over ventende filslettinger står i loggen.\n\n"
                 "Vil du prøve å rydde opp nå?"
             ),
-            parent=self.root,
-        ):
-            self._log("Opprydding av ventende filsletting avbrutt.")
-            return
-        self._confirm_cleanup_pending_deletes()
+            yes_text="Rydd opp",
+            no_text="Avbryt",
+            on_yes=self._confirm_cleanup_pending_deletes,
+            on_no=lambda: self._log("Opprydding av ventende filsletting avbrutt."),
+        )
 
     def _confirm_cleanup_pending_deletes(self) -> None:
         from tkinter import simpledialog
@@ -1944,6 +1942,63 @@ class BildebankLauncher:
         from tkinter import messagebox
 
         return bool(messagebox.askyesno(title, message, parent=self.root))
+
+    def _show_log_review_question(
+        self,
+        title: str,
+        message: str,
+        *,
+        yes_text: str,
+        no_text: str,
+        on_yes: Callable[[], None],
+        on_no: Callable[[], None],
+    ) -> None:
+        dialog = self.tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+
+        self._set_busy(True, "Venter på bekreftelse ...")
+
+        frame = self.ttk.Frame(dialog, padding=16)
+        frame.grid(row=0, column=0, sticky="nsew")
+        self.ttk.Label(frame, text=title, font=("", 12, "bold")).grid(row=0, column=0, columnspan=2, sticky="w")
+        self.ttk.Label(frame, text=message, wraplength=460).grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(10, 16),
+        )
+
+        finished = False
+
+        def finish(answer: bool) -> None:
+            nonlocal finished
+            if finished:
+                return
+            finished = True
+            try:
+                dialog.destroy()
+            except self.tk.TclError:
+                pass
+            self._set_busy(False)
+            if answer:
+                on_yes()
+            else:
+                on_no()
+
+        button_frame = self.ttk.Frame(frame)
+        button_frame.grid(row=2, column=0, columnspan=2, sticky="e")
+        self._button(button_frame, text=no_text, command=lambda: finish(False)).grid(row=0, column=0, padx=(0, 8))
+        self._button(button_frame, text=yes_text, command=lambda: finish(True)).grid(row=0, column=1)
+
+        dialog.bind("<Escape>", lambda _event: finish(False))
+        dialog.protocol("WM_DELETE_WINDOW", lambda: finish(False))
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + max((self.root.winfo_width() - dialog.winfo_width()) // 2, 0)
+        y = self.root.winfo_rooty() + max((self.root.winfo_height() - dialog.winfo_height()) // 2, 0)
+        dialog.geometry(f"+{x}+{y}")
 
     def _start_rescan_source_flow(self) -> None:
         from tkinter import messagebox
@@ -2320,20 +2375,18 @@ class BildebankLauncher:
         )
 
     def _confirm_export_person(self, person: RegisteredPerson, destination_root: Path) -> None:
-        from tkinter import messagebox
-
-        if not messagebox.askyesno(
+        self._show_log_review_question(
             "Eksporter person?",
             (
                 "Dry-run er fullført og planen står i loggen.\n\n"
                 f'Vil du eksportere bildene av "{person.name}" nå?\n\n'
                 f"Personmappen opprettes under:\n{destination_root}"
             ),
-            parent=self.root,
-        ):
-            self._log(f'Personeksport avbrutt for "{person.name}".')
-            return
-        self._run_export_person(person, destination_root)
+            yes_text="Eksporter",
+            no_text="Avbryt",
+            on_yes=lambda: self._run_export_person(person, destination_root),
+            on_no=lambda: self._log(f'Personeksport avbrutt for "{person.name}".'),
+        )
 
     def _run_export_person(self, person: RegisteredPerson, destination_root: Path) -> None:
         self._log(f'Eksporterer bilder av "{person.name}" til {destination_root} ...')
