@@ -82,13 +82,13 @@ def people_for_file(
     if mtime_ns is None:
         return [], []
     if person_reference_links_enabled:
-        rows = cached_people_with_references_for_file_rows(str(db_path), mtime_ns, file_id)
+        reference_rows = cached_people_with_references_for_file_rows(str(db_path), mtime_ns, file_id)
         return (
-            people_with_references_for_file_from_rows(file_id, rows),
-            confirmed_face_people_with_references_for_file_from_rows(file_id, rows),
+            people_with_references_for_file_from_rows(file_id, reference_rows),
+            confirmed_face_people_with_references_for_file_from_rows(file_id, reference_rows),
         )
-    rows = cached_people_for_file_rows(str(db_path), mtime_ns, file_id)
-    return people_for_file_from_rows(file_id, rows), confirmed_face_people_for_file_from_rows(file_id, rows)
+    person_rows = cached_people_for_file_rows(str(db_path), mtime_ns, file_id)
+    return people_for_file_from_rows(file_id, person_rows), confirmed_face_people_for_file_from_rows(file_id, person_rows)
 
 
 def people_for_file_from_rows(

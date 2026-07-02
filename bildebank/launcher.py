@@ -643,7 +643,7 @@ class BildebankLauncher:
         self.config = load_launcher_config()
         self.collection_path = self.config.collection_path
         self.busy = False
-        self.server_process: subprocess.Popen[str] | None = None
+        self.server_process: subprocess.Popen[Any] | None = None
         self.active_command_process: subprocess.Popen[str] | None = None
         self.active_command_cancel_requested = False
         self.active_command_cancellable = False
@@ -1258,7 +1258,8 @@ class BildebankLauncher:
                 "search": "search.png",
                 "green-check": "green-check.png",
             }.items():
-                with Image.open(icon_root.joinpath(filename)) as image:
+                with icon_root.joinpath(filename).open("rb") as icon_file:
+                    image = Image.open(icon_file)
                     resized = image.resize((18, 18), Image.Resampling.LANCZOS)
                     icons[key] = ImageTk.PhotoImage(resized)
         except Exception as exc:  # noqa: BLE001 - launcher must work without button icons
@@ -2480,8 +2481,6 @@ class BildebankLauncher:
         stdin_text: str | None = None,
         cancellable: bool = False,
     ) -> None:
-        from tkinter import messagebox
-
         self.active_command_process = None
         self.active_command_cancel_requested = False
         self.active_command_cancellable = cancellable
@@ -2491,7 +2490,7 @@ class BildebankLauncher:
 
         def worker() -> None:
             try:
-                process = subprocess.Popen(
+                process: subprocess.Popen[str] = subprocess.Popen(
                     command,
                     stdin=subprocess.PIPE if stdin_text is not None else None,
                     stdout=subprocess.PIPE,
@@ -2503,7 +2502,10 @@ class BildebankLauncher:
                     creationflags=interruptible_command_creationflags() if cancellable else 0,
                 )
             except OSError as exc:
-                self._post_to_tk(lambda exc=exc: self._command_start_failed(failure_message, exc))
+                def report_start_failed(exc: OSError = exc) -> None:
+                    self._command_start_failed(failure_message, exc)
+
+                self._post_to_tk(report_start_failed)
                 return
             self.active_command_process = process
             if self.active_command_cancel_requested:
@@ -2520,19 +2522,24 @@ class BildebankLauncher:
 
             assert process.stdout is not None
             for line in process.stdout:
-                self._post_to_tk(lambda message=line.rstrip(): self._log_process_output(message))
+                message = line.rstrip()
+
+                def log_message(message: str = message) -> None:
+                    self._log_process_output(message)
+
+                self._post_to_tk(log_message)
             return_code = process.wait()
             cancel_requested = self.active_command_cancel_requested
-            self._post_to_tk(
-                lambda: self._command_finished(
+            def report_finished() -> None:
+                self._command_finished(
                     return_code,
                     success_message=success_message,
                     failure_message=failure_message,
                     on_success=on_success,
-                    messagebox=messagebox,
                     cancel_requested=cancel_requested,
-                ),
-            )
+                )
+
+            self._post_to_tk(report_finished)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2554,9 +2561,10 @@ class BildebankLauncher:
         success_message: str,
         failure_message: str,
         on_success: Callable[[], None] | None,
-        messagebox: object,
         cancel_requested: bool = False,
     ) -> None:
+        from tkinter import messagebox
+
         self.active_command_process = None
         self.active_command_cancel_requested = False
         self.active_command_cancellable = False

@@ -37,7 +37,7 @@ def static_browser_item(
     thumbnail_src = browser_thumbnail_src(target, relative_path, kind, url, thumbnail_src)
     view_rotation = view_rotation if view_rotation is not None else item_view_rotation(item)
     return {
-        "fileId": int(item_value(item, "id", item_value(item, "fileId", 0)) or 0),
+        "fileId": item_int(item, "id", item_int(item, "fileId", 0)),
         "path": relative_path.as_posix(),
         "url": url,
         "thumbnailSrc": thumbnail_src,
@@ -91,6 +91,17 @@ def item_size_text(item: Any) -> str:
     if size_text:
         return str(size_text)
     try:
-        return format_bytes(int(item_value(item, "size_bytes", 0) or 0))
+        return format_bytes(item_int(item, "size_bytes", 0))
     except (TypeError, ValueError):
         return ""
+
+
+def item_int(item: Any, key: str, default: int) -> int:
+    value = item_value(item, key, default) or default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, (str, bytes, bytearray)):
+        return int(value)
+    return int(str(value))
