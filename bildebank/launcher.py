@@ -3,12 +3,14 @@ from __future__ import annotations
 import importlib
 from importlib import resources
 import importlib.util
+import json
 import locale
 import os
 import signal
 import subprocess
 import sys
 import threading
+import tempfile
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
@@ -321,8 +323,29 @@ def unimport_source_command(collection_path: Path, source_name: str) -> list[str
     return bildebank_command("--target", collection_path, "unimport", "--name", source_name)
 
 
-def unimport_source_dry_run_command(collection_path: Path, source_name: str) -> list[str]:
-    return bildebank_command("--target", collection_path, "unimport", "--dry-run", "--name", source_name)
+def unimport_source_dry_run_command(
+    collection_path: Path,
+    source_name: str,
+    *,
+    target_change_report_json: Path | None = None,
+) -> list[str]:
+    command = bildebank_command("--target", collection_path, "unimport", "--dry-run", "--name", source_name)
+    if target_change_report_json is not None:
+        command.extend(["--target-change-report-json", str(target_change_report_json)])
+    return command
+
+
+def read_unimport_target_change_report(report_path: Path) -> list[str]:
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    changed_targets = payload.get("changed_targets", [])
+    if not isinstance(changed_targets, list):
+        raise ValueError("uventet target-change-rapport fra unimport dry-run")
+    paths: list[str] = []
+    for item in changed_targets:
+        if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+            raise ValueError("uventet target-change-rad fra unimport dry-run")
+        paths.append(item["path"])
+    return paths
 
 
 def export_person_command(
@@ -1928,17 +1951,40 @@ class BildebankLauncher:
         )
 
     def _run_unimport_source_dry_run(self, source: db.Source) -> None:
+        report_file = tempfile.NamedTemporaryFile(
+            prefix="bildebank-unimport-",
+            suffix=".json",
+            delete=False,
+        )
+        report_path = Path(report_file.name)
+        report_file.close()
         self._log(f'Kontrollerer unimport for kilde "{source.name}" fra {source.path} ...')
         self._run_waiting_command(
-            unimport_source_dry_run_command(self.collection_path, source.name),
+            unimport_source_dry_run_command(
+                self.collection_path,
+                source.name,
+                target_change_report_json=report_path,
+            ),
             running_message="Kontrollerer unimport ...",
             success_message="Unimport dry-run fullført. Se planen i loggen.",
             failure_message="Unimport dry-run feilet.",
-            on_success=lambda: self._confirm_unimport_source(source),
+            on_success=lambda: self._confirm_unimport_source(source, report_path),
         )
 
-    def _confirm_unimport_source(self, source: db.Source) -> None:
+    def _confirm_unimport_source(self, source: db.Source, report_path: Path) -> None:
         from tkinter import messagebox, simpledialog
+
+        try:
+            changed_targets = read_unimport_target_change_report(report_path)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            self._log(f'Unimport avbrutt for kilde "{source.name}": kunne ikke lese dry-run-rapport: {exc}')
+            messagebox.showerror("Unimport", "Kunne ikke lese dry-run-rapporten for unimport.")
+            return
+        finally:
+            try:
+                report_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
         messagebox.showwarning(
             "Unimport",
@@ -1955,16 +2001,35 @@ class BildebankLauncher:
         if confirmation != "ja, det vil jeg":
             self._log(f'Unimport avbrutt for kilde "{source.name}".')
             return
-        self._run_unimport_source(source)
+        target_change_answer = "nei"
+        if changed_targets:
+            preview = "\n".join(f"  {path}" for path in changed_targets[:10])
+            if len(changed_targets) > 10:
+                preview += f"\n  ... og {len(changed_targets) - 10} til"
+            if not messagebox.askyesno(
+                "Endrede målfiler",
+                (
+                    "Noen målfil(er) i bildebanken er endret siden import.\n\n"
+                    "Kildefilene er verifisert, men disse målfilene matcher ikke "
+                    "lenger databaseført størrelse/SHA-256 og kan inneholde "
+                    f"manuelle endringer:\n\n{preview}\n\n"
+                    "Fortsette unimport og la disse filene slettes?"
+                ),
+                parent=self.root,
+            ):
+                self._log(f'Unimport avbrutt for kilde "{source.name}": endrede målfiler.')
+                return
+            target_change_answer = "ja"
+        self._run_unimport_source(source, target_change_answer=target_change_answer)
 
-    def _run_unimport_source(self, source: db.Source) -> None:
+    def _run_unimport_source(self, source: db.Source, *, target_change_answer: str = "nei") -> None:
         self._log(f'Unimporterer kilde "{source.name}" fra {source.path} ...')
         self._run_waiting_command(
             unimport_source_command(self.collection_path, source.name),
             running_message="Kjører unimport ...",
-            success_message="Unimport fullført.",
+            success_message="Unimport-kommando avsluttet. Se loggen for resultat.",
             failure_message="Unimport feilet.",
-            stdin_text="ja, det vil jeg\n",
+            stdin_text=f"ja, det vil jeg\n{target_change_answer}\n",
             on_success=self._refresh_state,
         )
 

@@ -58,6 +58,7 @@ from bildebank.launcher import (
     registered_sources,
     rescan_source_candidates,
     rescan_source_command,
+    read_unimport_target_change_report,
     save_launcher_config,
     server_browser_url,
     source_is_collection_or_inside,
@@ -228,6 +229,20 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--name",
         "Sommer 2024",
     ]
+    assert unimport_source_dry_run_command(
+        collection,
+        "Sommer 2024",
+        target_change_report_json=tmp_path / "unimport.json",
+    )[-8:] == [
+        "--target",
+        str(collection),
+        "unimport",
+        "--dry-run",
+        "--name",
+        "Sommer 2024",
+        "--target-change-report-json",
+        str(tmp_path / "unimport.json"),
+    ]
     assert export_person_command(collection, "Kari", tmp_path / "eksport")[-6:] == [
         "--target",
         str(collection),
@@ -246,6 +261,16 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--dry-run",
     ]
     assert download_face_model_command()[-1:] == ["download-face-model"]
+
+
+def test_read_unimport_target_change_report_returns_changed_paths(tmp_path: Path) -> None:
+    report_path = tmp_path / "unimport-report.json"
+    report_path.write_text(
+        '{"changed_targets": [{"path": "2024/01/IMG.jpg"}]}',
+        encoding="utf-8",
+    )
+
+    assert read_unimport_target_change_report(report_path) == ["2024/01/IMG.jpg"]
 
 
 def test_check_launcher_update_status_fetches_and_detects_available_update(tmp_path: Path) -> None:

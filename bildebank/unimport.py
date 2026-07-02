@@ -19,12 +19,23 @@ from .target_lock import TargetLock
 
 
 Confirmation = Callable[[db.UnimportPlan], bool]
+TargetContentConfirmation = Callable[[tuple["TargetContentChange", ...]], bool]
+
+
+@dataclass(frozen=True)
+class TargetContentChange:
+    path: Path
+    expected_size_bytes: int
+    actual_size_bytes: int
+    expected_sha256: str
+    actual_sha256: str
 
 
 @dataclass(frozen=True)
 class UnimportResult:
     plan: db.UnimportPlan
     applied: bool
+    target_content_changes: tuple[TargetContentChange, ...] = ()
     cleanup_results: tuple[PendingDeleteResult, ...] = ()
 
 
@@ -35,6 +46,7 @@ def run_unimport(
     config: AppConfig,
     dry_run: bool,
     confirm: Confirmation,
+    confirm_target_content_changes: TargetContentConfirmation | None = None,
     source_progress: Any | None = None,
     target_progress: Any | None = None,
 ) -> UnimportResult:
@@ -52,9 +64,25 @@ def run_unimport(
                 progress=source_progress,
             )
             validate_target_paths(target, plan, progress=target_progress)
+            target_content_changes = find_target_content_changes(conn, target, plan)
             if dry_run or not confirm(plan):
                 conn.rollback()
-                return UnimportResult(plan=plan, applied=False)
+                return UnimportResult(
+                    plan=plan,
+                    applied=False,
+                    target_content_changes=target_content_changes,
+                )
+            if (
+                target_content_changes
+                and confirm_target_content_changes is not None
+                and not confirm_target_content_changes(target_content_changes)
+            ):
+                conn.rollback()
+                return UnimportResult(
+                    plan=plan,
+                    applied=False,
+                    target_content_changes=target_content_changes,
+                )
 
             attach_item_databases(conn, target, config)
             conn.execute("BEGIN IMMEDIATE")
@@ -73,6 +101,7 @@ def run_unimport(
     return UnimportResult(
         plan=plan,
         applied=True,
+        target_content_changes=target_content_changes,
         cleanup_results=cleanup_results,
     )
 
@@ -136,6 +165,53 @@ def validate_target_paths(
     finally:
         if progress is not None:
             progress.done()
+
+
+def find_target_content_changes(
+    conn: sqlite3.Connection,
+    target: Path,
+    plan: db.UnimportPlan,
+) -> tuple[TargetContentChange, ...]:
+    if not plan.file_ids_to_delete:
+        return ()
+    placeholders = ",".join("?" for _ in plan.file_ids_to_delete)
+    rows = {
+        int(row["id"]): row
+        for row in conn.execute(
+            f"""
+            SELECT id, target_path, sha256, size_bytes
+            FROM files
+            WHERE id IN ({placeholders})
+            """,
+            plan.file_ids_to_delete,
+        )
+    }
+    changes: list[TargetContentChange] = []
+    for file_id in plan.file_ids_to_delete:
+        row = rows.get(file_id)
+        if row is None:
+            continue
+        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+        relative_path = db.target_relative_path(target, target_path)
+        if not target_path.exists():
+            continue
+        if not target_path.is_file():
+            raise ValueError(f"Målfilen som skulle fjernes er ikke en fil: {target_path}")
+        expected_size = int(row["size_bytes"])
+        expected_sha256 = str(row["sha256"])
+        actual_size = target_path.stat().st_size
+        actual_sha256 = sha256_file(target_path)
+        if actual_size != expected_size or actual_sha256 != expected_sha256:
+            changes.append(
+                TargetContentChange(
+                    path=relative_path,
+                    expected_size_bytes=expected_size,
+                    actual_size_bytes=actual_size,
+                    expected_sha256=expected_sha256,
+                    actual_sha256=actual_sha256,
+                )
+            )
+    return tuple(changes)
 
 
 def apply_unimport_transaction(

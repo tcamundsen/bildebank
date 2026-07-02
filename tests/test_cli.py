@@ -12207,6 +12207,131 @@ enabled = false
             self.assertIn("Kildefil har endret", stderr)
             self.assertTrue((target / "2024" / "01" / "IMG_20240102.jpg").exists())
 
+    def test_unimport_warns_and_aborts_when_target_file_changed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            imported.write_bytes(b"changed target")
+
+            with patch("builtins.input", side_effect=["ja, det vil jeg", "nei"]):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--name", source.name]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("ADVARSEL: målfil(er) i bildebanken er endret siden import.", stdout)
+            self.assertIn("2024/01/IMG_20240102.jpg", stdout)
+            self.assertIn("Avbrutt. Ingen endringer er gjort.", stdout)
+            self.assertTrue(imported.exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 1)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM pending_file_deletes").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_unimport_can_continue_when_target_file_changed_after_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            imported.write_bytes(b"changed target")
+
+            with patch("builtins.input", side_effect=["ja, det vil jeg", "ja"]):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--name", source.name]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("ADVARSEL: målfil(er) i bildebanken er endret siden import.", stdout)
+            self.assertIn("Unimport gjennomført.", stdout)
+            self.assertFalse(imported.exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_unimport_dry_run_reports_changed_target_file_without_prompt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            imported.write_bytes(b"changed target")
+            report_path = root / "target-change-report.json"
+
+            with patch("builtins.input", side_effect=AssertionError("dry-run should not ask")):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "unimport",
+                        "--dry-run",
+                        "--name",
+                        source.name,
+                        "--target-change-report-json",
+                        str(report_path),
+                    ]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("ADVARSEL: målfil(er) i bildebanken er endret siden import.", stdout)
+            self.assertTrue(imported.exists())
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["changed_targets"][0]["path"], "2024/01/IMG_20240102.jpg")
+
+    def test_unimport_target_warning_ignores_files_kept_by_other_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source1 = root / "source1"
+            source2 = root / "source2"
+            source1.mkdir()
+            source2.mkdir()
+            (source1 / "IMG_20240102.jpg").write_bytes(b"same")
+            (source2 / "COPY_20240203.jpg").write_bytes(b"same")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source1.name, "--quiet", str(source1)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source2.name, "--quiet", str(source2)]), 0)
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            imported.write_bytes(b"changed shared target")
+
+            with patch("builtins.input", side_effect=AssertionError("dry-run should not ask")):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--dry-run", "--name", source2.name]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertNotIn("ADVARSEL: målfil(er)", stdout)
+            self.assertTrue(imported.exists())
+
     def test_unimport_overlapping_child_source_removes_only_child_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

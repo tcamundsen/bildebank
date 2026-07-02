@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import importlib.util
 import os
 import re
@@ -53,7 +54,7 @@ from .program_state import known_targets, program_db_path, record_target_best_ef
 from .server import DEFAULT_HOST, DEFAULT_PORT
 from .target_lock import TargetLock
 from .thumbnails import ThumbnailStats, run_make_thumbnails
-from .unimport import run_unimport as execute_unimport
+from .unimport import TargetContentChange, run_unimport as execute_unimport
 
 
 THUMBNAIL_PROGRESS: ProgressMeter | None = None
@@ -367,6 +368,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Vis hva som ville blitt gjort uten å slette filer eller endre databasen",
+    )
+    unimport.add_argument(
+        "--target-change-report-json",
+        type=Path,
+        help=argparse.SUPPRESS,
     )
     remove = add_command(
         subparsers,
@@ -1264,17 +1270,29 @@ def run_unimport_command(target: Path, args: argparse.Namespace) -> int:
         print_unimport_plan(target, plan)
         return input('Skriv "ja, det vil jeg" for å gjennomføre unimport: ') == "ja, det vil jeg"
 
+    def confirm_target_content_changes(changes: tuple[TargetContentChange, ...]) -> bool:
+        print_unimport_target_content_warning(changes)
+        answer = input('Fortsette unimport? Skriv "ja" eller "nei": ').strip().casefold()
+        return answer == "ja"
+
     result = execute_unimport(
         target,
         args.name,
         config=load_config(program_repo_root()),
         dry_run=args.dry_run,
         confirm=confirm,
+        confirm_target_content_changes=confirm_target_content_changes,
         source_progress=unimport_source_progress(),
         target_progress=unimport_target_progress(),
     )
+    write_unimport_target_change_report(
+        getattr(args, "target_change_report_json", None),
+        result.target_content_changes,
+    )
     if args.dry_run:
         print_unimport_plan(target, result.plan)
+        if result.target_content_changes:
+            print_unimport_target_content_warning(result.target_content_changes)
         print_unimport_dry_run_note(result.plan.source)
         print("Dry-run: ingen endringer er gjort.")
         return 0
@@ -1746,6 +1764,47 @@ def print_unimport_plan(target: Path, plan: db.UnimportPlan) -> None:
 
 def print_unimport_dry_run_note(source: db.Source) -> None:
     print("Kilden ville blitt fjernet fra kildelisten.")
+
+
+def print_unimport_target_content_warning(
+    changes: tuple[TargetContentChange, ...],
+) -> None:
+    print("")
+    print("ADVARSEL: målfil(er) i bildebanken er endret siden import.")
+    print(
+        "Kildefilene er verifisert, men disse målfilene matcher ikke lenger "
+        "databaseført størrelse/SHA-256 og kan inneholde manuelle endringer:"
+    )
+    for change in changes:
+        print(
+            f"  {change.path.as_posix()} "
+            f"(størrelse {change.actual_size_bytes}, forventet {change.expected_size_bytes})"
+        )
+    print("Hvis du fortsetter, kan disse endrede målfilene bli slettet.")
+
+
+def write_unimport_target_change_report(
+    report_path: Path | None,
+    changes: tuple[TargetContentChange, ...],
+) -> None:
+    if report_path is None:
+        return
+    payload = {
+        "changed_targets": [
+            {
+                "path": change.path.as_posix(),
+                "expected_size_bytes": change.expected_size_bytes,
+                "actual_size_bytes": change.actual_size_bytes,
+                "expected_sha256": change.expected_sha256,
+                "actual_sha256": change.actual_sha256,
+            }
+            for change in changes
+        ]
+    }
+    report_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
 
 def validate_target_not_in_program_repo(target: Path) -> None:
