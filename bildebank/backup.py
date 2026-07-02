@@ -10,10 +10,20 @@ from pathlib import Path
 
 from . import __version__, db
 from .media import is_supported_media
-from .target_lock import TargetLock
+from .target_lock import LOCK_FILENAME, TargetLock
 
 
 BACKUP_METADATA_FILENAME = ".bildebank-backup.json"
+BACKUP_LOG_FILENAME = ".bildebank.log"
+BACKUP_EXCLUDED_FILENAMES = (
+    BACKUP_METADATA_FILENAME,
+    LOCK_FILENAME,
+    BACKUP_LOG_FILENAME,
+)
+BACKUP_RUNTIME_FILENAMES = (
+    LOCK_FILENAME,
+    BACKUP_LOG_FILENAME,
+)
 BACKUP_FORMAT_VERSION = 1
 BACKUP_ADOPTION_CONFIRMATION = "registrer backup"
 
@@ -196,6 +206,7 @@ def run_backup(source_dir: Path, backup_parent_arg: Path, *, dry_run: bool = Fal
 
         plan.backup_dir.mkdir(exist_ok=True)
         write_backup_metadata(plan, status="in-progress")
+        delete_backup_runtime_files(plan.backup_dir)
         engine = select_backup_engine()
         warning = None
         if engine is None:
@@ -334,7 +345,7 @@ def run_robocopy(plan: BackupPlan, executable: str, *, dry_run: bool = False) ->
         "/XJ",
         "/FFT",
         "/XF",
-        BACKUP_METADATA_FILENAME,
+        *BACKUP_EXCLUDED_FILENAMES,
     ]
     if dry_run:
         command.append("/L")
@@ -351,8 +362,7 @@ def run_rsync(plan: BackupPlan, executable: str, *, dry_run: bool = False) -> "M
         "--stats",
         "-a",
         "--delete",
-        "--exclude",
-        BACKUP_METADATA_FILENAME,
+        *(arg for filename in BACKUP_EXCLUDED_FILENAMES for arg in ("--exclude", filename)),
         source_arg_with_trailing_slash(plan.source_dir),
         destination_arg_with_trailing_slash(plan.backup_dir),
     ]
@@ -483,6 +493,8 @@ def mirror_directory(source: Path, destination: Path) -> MirrorStats:
     files_copied = 0
     dirs_created = 0
     for source_path in source.rglob("*"):
+        if source_path.name in BACKUP_EXCLUDED_FILENAMES:
+            continue
         if source_path.is_dir() and source_path.is_symlink():
             continue
         relative = source_path.relative_to(source)
@@ -525,6 +537,10 @@ def delete_extra_destination_entries(source: Path, destination: Path) -> tuple[i
     for destination_path in sorted(destination.rglob("*"), key=lambda path: len(path.parts), reverse=True):
         if destination_path.name == BACKUP_METADATA_FILENAME:
             continue
+        if destination_path.name in BACKUP_RUNTIME_FILENAMES:
+            delete_backup_path(destination_path)
+            files_deleted += 1
+            continue
         relative = destination_path.relative_to(destination)
         source_path = source / relative
         if source_path.exists():
@@ -536,3 +552,19 @@ def delete_extra_destination_entries(source: Path, destination: Path) -> tuple[i
             destination_path.unlink()
             files_deleted += 1
     return files_deleted, dirs_deleted
+
+
+def delete_backup_runtime_files(backup_dir: Path) -> None:
+    for filename in BACKUP_RUNTIME_FILENAMES:
+        path = backup_dir / filename
+        try:
+            delete_backup_path(path)
+        except FileNotFoundError:
+            pass
+
+
+def delete_backup_path(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+        return
+    path.unlink()

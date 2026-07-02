@@ -175,14 +175,15 @@ ADVARSEL: robocopy/rsync mangler. Bruker tregere Python-kopiering.
 På Windows brukes `robocopy` med speiling:
 
 ```powershell
-robocopy SOURCE BACKUP_DIR /MIR /Z /DCOPY:DAT /COPY:DAT /R:2 /W:5 /XJ /FFT /XF .bildebank-backup.json
+robocopy SOURCE BACKUP_DIR /MIR /Z /DCOPY:DAT /COPY:DAT /R:2 /W:5 /XJ /FFT /XF .bildebank-backup.json .bildebank.lock .bildebank.log
 ```
 
 Viktige krav:
 
 - `/MIR` brukes for at backupen skal speile aktiv samling.
-- `/XF .bildebank-backup.json` må være med, ellers sletter robocopy
-  backupmetadataen.
+- `/XF .bildebank-backup.json .bildebank.lock .bildebank.log` må være med.
+  Backupmetadataen skal bevares i backupen, mens lock- og loggfiler er
+  runtime-filer som ikke skal speiles.
 - Exitkoder `0` til og med `7` regnes som suksess.
 - Exitkoder over `7` regnes som feil.
 
@@ -191,7 +192,7 @@ Viktige krav:
 På Linux og macOS brukes `rsync` med speiling:
 
 ```bash
-rsync --rsync --progress -a --delete --exclude .bildebank-backup.json SOURCE/ BACKUP_DIR/
+rsync --progress --stats -a --delete --exclude .bildebank-backup.json --exclude .bildebank.lock --exclude .bildebank.log SOURCE/ BACKUP_DIR/
 ```
 
 Viktige krav:
@@ -199,8 +200,9 @@ Viktige krav:
 - Kildeargumentet må ha trailing slash slik at innholdet i samlingen speiles inn
   i `backup_dir`.
 - `--delete` brukes for at backupen skal speile aktiv samling.
-- `--exclude .bildebank-backup.json` må være med, ellers sletter rsync
-  backupmetadataen.
+- `--exclude .bildebank-backup.json`, `--exclude .bildebank.lock` og
+  `--exclude .bildebank.log` må være med. Backupmetadataen skal bevares i
+  backupen, mens lock- og loggfiler er runtime-filer som ikke skal speiles.
 - Exitkode `0` regnes som suksess.
 
 ## Python-fallback
@@ -210,7 +212,9 @@ Python-fallbacken skal:
 - kopiere nye og endrede filer med `shutil.copy2`
 - slette filer og mapper i backupen som ikke finnes i kilden
 - aldri slette noe i kildesamlingen
-- ignorere `.bildebank-backup.json` ved sletting
+- bevare `.bildebank-backup.json` i backupen
+- ikke kopiere `.bildebank.lock` eller `.bildebank.log`
+- slette gamle `.bildebank.lock` og `.bildebank.log` fra backupen
 - ta med hele samlingen, inkludert databaser, HTML-filer og `deleted/`
 
 Fallbacken er primært for portabilitet og testbarhet. For store samlinger er

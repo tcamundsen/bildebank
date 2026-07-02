@@ -57,7 +57,8 @@ D:\Backuper\bilde-samling
 
 Backupen tar med hele bildesamlingen, inkludert databaser, HTML-filer og
 `deleted/`. Dette er med vilje: nylig slettede bilder skal også sikres fram
-til trash-can er tømt manuelt.
+til trash-can er tømt manuelt. Interne runtime-filer som `.bildebank.lock` og
+`.bildebank.log` tas ikke med.
 
 
 ## Når du bør bruke den

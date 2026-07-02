@@ -9147,6 +9147,7 @@ model_name = "buffalo_l"
             removed.parent.mkdir(parents=True)
             image.write_bytes(b"image")
             removed.write_bytes(b"removed")
+            (target / ".bildebank.log").write_text("lokal logg\n", encoding="utf-8")
 
             with patch("bildebank.backup.select_backup_engine", return_value=None):
                 code, stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
@@ -9158,6 +9159,8 @@ model_name = "buffalo_l"
             self.assertIn(str(backup_dir), stdout)
             self.assertEqual((backup_dir / "2024" / "01" / "IMG_20240102.jpg").read_bytes(), b"image")
             self.assertEqual((backup_dir / "deleted" / "2024" / "01" / "IMG_20240103.jpg").read_bytes(), b"removed")
+            self.assertFalse((backup_dir / ".bildebank.log").exists())
+            self.assertFalse((backup_dir / LOCK_FILENAME).exists())
             metadata = json.loads((backup_dir / ".bildebank-backup.json").read_text(encoding="utf-8"))
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
@@ -9166,6 +9169,15 @@ model_name = "buffalo_l"
                 conn.close()
             self.assertEqual(metadata["backup_of"], collection_id)
             self.assertEqual(metadata["source_name"], target.name)
+
+            (backup_dir / ".bildebank.log").write_text("gammel logg\n", encoding="utf-8")
+            (backup_dir / LOCK_FILENAME).write_text("command=backup\n", encoding="utf-8")
+            with patch("bildebank.backup.select_backup_engine", return_value=None):
+                code, _stdout, stderr = capture_cli(["--target", str(target), "backup", str(backup_parent)])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertFalse((backup_dir / ".bildebank.log").exists())
+            self.assertFalse((backup_dir / LOCK_FILENAME).exists())
 
     def test_backup_dry_run_does_not_create_backup_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -9210,6 +9222,8 @@ model_name = "buffalo_l"
             self.assertIn("--delete", command)
             self.assertIn("--exclude", command)
             self.assertIn(".bildebank-backup.json", command)
+            self.assertIn(LOCK_FILENAME, command)
+            self.assertIn(".bildebank.log", command)
             self.assertEqual(command[-2], str(target.resolve()) + "/")
             self.assertEqual(command[-1], str((backup_parent / target.name).resolve()) + "/")
             self.assertFalse((backup_parent / target.name).exists())
@@ -9613,6 +9627,8 @@ model_name = "buffalo_l"
             command = subprocess_run.call_args.args[0]
             self.assertIn("--exclude", command)
             self.assertIn(".bildebank-backup.json", command)
+            self.assertIn(LOCK_FILENAME, command)
+            self.assertIn(".bildebank.log", command)
             self.assertEqual(command[-2], str(target.resolve()) + "/")
             self.assertEqual(command[-1], str((backup_parent / target.name).resolve()) + "/")
             metadata = json.loads(
@@ -9668,6 +9684,8 @@ model_name = "buffalo_l"
             self.assertIn("/MIR", command)
             self.assertIn("/XF", command)
             self.assertIn(".bildebank-backup.json", command)
+            self.assertIn(LOCK_FILENAME, command)
+            self.assertIn(".bildebank.log", command)
 
     def test_where_is_lists_program_and_registered_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
