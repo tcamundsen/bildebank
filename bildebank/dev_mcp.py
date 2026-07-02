@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 import sqlite3
+import tempfile
 from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+
+from . import db
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +53,33 @@ def _schema_version(conn: sqlite3.Connection, table_names: set[str]) -> int | No
         return int(row["value"])
     except (TypeError, ValueError):
         return None
+
+
+def _example_schema_version() -> int | None:
+    try:
+        with _connect_readonly(EXAMPLE_DATABASE) as conn:
+            return _schema_version(conn, set(_table_names(conn)))
+    except (OSError, sqlite3.Error):
+        return None
+
+
+@contextmanager
+def _schema_database() -> Iterator[tuple[Path, dict[str, Any]]]:
+    example_schema_version = _example_schema_version()
+    metadata: dict[str, Any] = {
+        "example_database": EXAMPLE_DATABASE.name,
+        "example_schema_version": example_schema_version,
+        "runtime_schema_version": db.SCHEMA_VERSION,
+    }
+
+    if example_schema_version == db.SCHEMA_VERSION:
+        yield EXAMPLE_DATABASE, metadata | {"schema_source": "example_database"}
+        return
+
+    with tempfile.TemporaryDirectory(prefix="bildebank-schema-") as temporary_directory:
+        target = Path(temporary_directory) / "collection"
+        db.init_database(target)
+        yield db.db_path_for_target(target), metadata | {"schema_source": "generated_runtime_schema"}
 
 
 def _columns(conn: sqlite3.Connection, table: str) -> list[dict[str, Any]]:
@@ -97,23 +129,25 @@ def _foreign_keys(conn: sqlite3.Connection, table: str) -> list[dict[str, Any]]:
 
 @mcp.tool()
 def get_schema_summary() -> dict[str, Any]:
-    """Returner schema fra den kopierte eksempeldatabasen uten å lese bildedata."""
-    with _connect_readonly(EXAMPLE_DATABASE) as conn:
-        table_names = _table_names(conn)
-        table_name_set = set(table_names)
-        return {
-            "database": EXAMPLE_DATABASE.name,
-            "schema_version": _schema_version(conn, table_name_set),
-            "tables": [
-                {
-                    "name": table,
-                    "columns": _columns(conn, table),
-                    "indexes": _indexes(conn, table),
-                    "foreign_keys": _foreign_keys(conn, table),
-                }
-                for table in table_names
-            ],
-        }
+    """Returner gjeldende schema uten å lese bildedata."""
+    with _schema_database() as (database_path, metadata):
+        with _connect_readonly(database_path) as conn:
+            table_names = _table_names(conn)
+            table_name_set = set(table_names)
+            return {
+                "database": database_path.name,
+                **metadata,
+                "schema_version": _schema_version(conn, table_name_set),
+                "tables": [
+                    {
+                        "name": table,
+                        "columns": _columns(conn, table),
+                        "indexes": _indexes(conn, table),
+                        "foreign_keys": _foreign_keys(conn, table),
+                    }
+                    for table in table_names
+                ],
+            }
 
 
 if __name__ == "__main__":

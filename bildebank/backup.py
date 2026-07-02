@@ -71,7 +71,7 @@ class BackupAdoptionPlan:
     comparison: BackupComparisonStats
 
 
-def plan_backup(source_dir: Path, backup_parent_arg: Path, *, ensure_collection_id: bool = True) -> BackupPlan:
+def plan_backup(source_dir: Path, backup_parent_arg: Path) -> BackupPlan:
     source = source_dir.resolve()
     backup_parent = backup_parent_arg.expanduser().resolve()
     if not source.is_dir() or not db.db_path_for_target(source).exists():
@@ -178,7 +178,7 @@ def run_backup_adoption(source_dir: Path, backup_parent_arg: Path) -> BackupAdop
 
 def run_backup(source_dir: Path, backup_parent_arg: Path, *, dry_run: bool = False) -> BackupStats:
     if dry_run:
-        plan = plan_backup(source_dir, backup_parent_arg, ensure_collection_id=False)
+        plan = plan_backup(source_dir, backup_parent_arg)
         engine = select_backup_engine()
         if engine is None:
             return BackupStats(
@@ -195,7 +195,7 @@ def run_backup(source_dir: Path, backup_parent_arg: Path, *, dry_run: bool = Fal
         raise ValueError(f"Bildesamlingen er ikke initialisert: {source}")
 
     with TargetLock(source, command="backup"):
-        plan = plan_backup(source, backup_parent_arg, ensure_collection_id=True)
+        plan = plan_backup(source, backup_parent_arg)
 
         conn = db.connect(plan.source_dir)
         try:
