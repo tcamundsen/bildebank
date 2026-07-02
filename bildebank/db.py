@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# ruff: noqa: F401
+# This module intentionally re-exports database helpers from the split db_* modules.
+
 import sqlite3
 from pathlib import Path
 from typing import Iterable
