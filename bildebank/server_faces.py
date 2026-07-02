@@ -83,6 +83,21 @@ def people_for_file(
     db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
     if mtime_ns is None:
         return [], []
+    return people_for_file_from_face_db(
+        db_path,
+        mtime_ns,
+        file_id,
+        person_reference_links_enabled=person_reference_links_enabled,
+    )
+
+
+def people_for_file_from_face_db(
+    db_path: Path,
+    mtime_ns: int,
+    file_id: int,
+    *,
+    person_reference_links_enabled: bool = False,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     if person_reference_links_enabled:
         reference_rows = cached_people_with_references_for_file_rows(str(db_path), mtime_ns, file_id)
         return (
@@ -320,6 +335,10 @@ def registered_people_options_html(target: Path, face_config: FaceRecognitionCon
     db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
     if mtime_ns is None:
         return ""
+    return registered_people_options_html_from_face_db(db_path, mtime_ns)
+
+
+def registered_people_options_html_from_face_db(db_path: Path, mtime_ns: int) -> str:
     return cached_registered_people_options_html(str(db_path), mtime_ns)
 
 
@@ -395,6 +414,10 @@ def unconfirmed_face_count_for_item(
     db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
     if mtime_ns is None:
         return 0
+    return unconfirmed_face_count_for_item_from_face_db(db_path, mtime_ns, file_id)
+
+
+def unconfirmed_face_count_for_item_from_face_db(db_path: Path, mtime_ns: int, file_id: int) -> int:
     return cached_unconfirmed_face_count_for_item(str(db_path), mtime_ns, file_id)
 
 
@@ -1346,8 +1369,10 @@ def manual_person_file_controls_html(
     item: Any,
     _people: list[dict[str, object]],
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    registered_options_html: str | None = None,
 ) -> str:
-    options = registered_people_options_html(target, face_config)
+    options = registered_people_options_html(target, face_config) if registered_options_html is None else registered_options_html
     if not options:
         return ""
     file_id = int(item["id"])

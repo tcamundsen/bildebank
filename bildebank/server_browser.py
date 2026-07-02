@@ -49,6 +49,8 @@ Breadcrumb = tuple[str, str | None] | tuple[str, str | None, str | None]
 RAW_SIDECAR_IDS_CACHE_MAX_SIZE = 8
 RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE: dict[tuple[str, int], dict[int, int]] = {}
 RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE: dict[tuple[str, int], dict[int, int]] = {}
+TAG_CONTROL_ROWS_CACHE_MAX_SIZE = 8
+TAG_CONTROL_ROWS_CACHE: dict[tuple[str, int], tuple[tuple[str, str], ...]] = {}
 RAW_SIDECAR_EXTENSIONS = {".nef", ".psd"}
 RAW_SIDECAR_SQL_EXTENSION_FILTER = """
               lower(files.original_filename) LIKE '%.nef'
@@ -100,6 +102,7 @@ def clear_sidecar_caches() -> None:
     cached_raw_sidecar_ids_by_image_id.cache_clear()
     RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.clear()
     RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE.clear()
+    TAG_CONTROL_ROWS_CACHE.clear()
 def is_image_item(item: Any) -> bool:
     target_path = Path(str(item["target_path"]))
     return media_kind(target_path) == "image"
@@ -1750,20 +1753,26 @@ def _source_item_face_html(
 
     from .server_faces import (
         confirmed_face_people_text_html,
+        current_face_db_path_and_mtime,
         faces_button_html,
         faces_overlay_html,
         manual_person_file_controls_html,
-        people_for_file,
+        people_for_file_from_face_db,
         people_links_html,
         source_duplicate_confirmed_faces_warning_html,
-        unconfirmed_face_count_for_item,
+        registered_people_options_html_from_face_db,
+        unconfirmed_face_count_for_item_from_face_db,
     )
 
+    face_db_path, face_db_mtime_ns = current_face_db_path_and_mtime(target, face_config)
+    if face_db_mtime_ns is None:
+        return "", "", "", False
+
     start = time.perf_counter()
-    people_data, confirmed_face_people_data = people_for_file(
-        target,
+    people_data, confirmed_face_people_data = people_for_file_from_face_db(
+        face_db_path,
+        face_db_mtime_ns,
         int(item["id"]),
-        face_config,
         person_reference_links_enabled=person_reference_links_enabled,
     )
     person_has_confirmed_face = False
@@ -1778,7 +1787,13 @@ def _source_item_face_html(
     manual_person_controls = ""
     if manual_person_controls_enabled:
         start = time.perf_counter()
-        manual_person_controls = manual_person_file_controls_html(target, item, people_data, face_config)
+        manual_person_controls = manual_person_file_controls_html(
+            target,
+            item,
+            people_data,
+            face_config,
+            registered_options_html=registered_people_options_html_from_face_db(face_db_path, face_db_mtime_ns),
+        )
         if timing_callback is not None:
             timing_callback("html_manual_person_controls", start)
 
@@ -1791,7 +1806,11 @@ def _source_item_face_html(
         manual_remove_enabled=manual_person_controls_enabled,
     )
     show_unconfirmed_faces = source.person_name is None and face_edit_controls_enabled
-    unconfirmed_face_count = unconfirmed_face_count_for_item(target, int(item["id"]), face_config) if show_unconfirmed_faces else 0
+    unconfirmed_face_count = (
+        unconfirmed_face_count_for_item_from_face_db(face_db_path, face_db_mtime_ns, int(item["id"]))
+        if show_unconfirmed_faces
+        else 0
+    )
     face_rail_html += faces_button_html(unconfirmed_face_count, int(item["id"])) if show_unconfirmed_faces else ""
     face_rail_html += confirmed_face_people_text_html(confirmed_face_people_data)
     faces_overlay = faces_overlay_html(item) if unconfirmed_face_count > 0 else ""
@@ -2521,7 +2540,7 @@ def item_side_panel_html(
     owned_conn = conn is None
     conn = conn or db.connect(target)
     try:
-        defined_tags = [] if read_only else tag_control_rows(conn)
+        defined_tags = () if read_only else tag_control_rows(target, conn)
         active_names = active_tag_name_keys_for_file(conn, file_id)
         manual_h3_name = manual_h3_place_name(conn, item)
         manual_h3_cell_value = manual_h3_cell(item)
@@ -2531,8 +2550,7 @@ def item_side_panel_html(
             conn.close()
     buttons = []
     for tag in defined_tags:
-        tag_name = str(tag["name"])
-        tag_name_key = str(tag["name_key"])
+        tag_name, tag_name_key = tag
         active = tag_name_key in active_names
         pressed = "true" if active else "false"
         active_class = " active" if active else ""
@@ -2611,16 +2629,28 @@ def display_short_date(value: str) -> str:
     return parsed.strftime("%d.%m.%y")
 
 
-def tag_control_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    return list(
-        conn.execute(
-            """
-            SELECT id, name, name_key, kind, created_at
-            FROM tags
-            ORDER BY CASE kind WHEN 'system' THEN 0 ELSE 1 END, name_key
-            """
-        )
+def tag_control_rows(target: Path, conn: sqlite3.Connection) -> tuple[tuple[str, str], ...]:
+    db_path = db.db_path_for_target(target)
+    try:
+        mtime_ns = db_path.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = 0
+    cache_key = (str(target.resolve()), mtime_ns)
+    cached = TAG_CONTROL_ROWS_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    rows = conn.execute(
+        """
+        SELECT name, name_key
+        FROM tags
+        ORDER BY CASE kind WHEN 'system' THEN 0 ELSE 1 END, name_key
+        """
     )
+    cached = tuple((str(row["name"]), str(row["name_key"])) for row in rows)
+    if len(TAG_CONTROL_ROWS_CACHE) >= TAG_CONTROL_ROWS_CACHE_MAX_SIZE:
+        TAG_CONTROL_ROWS_CACHE.pop(next(iter(TAG_CONTROL_ROWS_CACHE)))
+    TAG_CONTROL_ROWS_CACHE[cache_key] = cached
+    return cached
 
 
 def active_tag_name_keys_for_file(conn: sqlite3.Connection, file_id: int) -> set[str]:
