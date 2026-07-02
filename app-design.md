@@ -69,6 +69,9 @@ Kommando for å liste bilder med navnekollisjon
 
 unimport må være konservativ, verifiser kildefiler før endring, aldri føre til
 tap, og fjerne bare proveniens når andre kilder fortsatt peker på samme fil.
+Hvis en målfil som skal fjernes ved `unimport` ikke lenger matcher databaseført
+størrelse og SHA-256, skal brukeren varsles og eksplisitt bekrefte før
+`unimport` fortsetter.
 
 ## Låsing av samlingsendringer
 
