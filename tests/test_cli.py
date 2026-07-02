@@ -9367,6 +9367,8 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 1)
             self.assertIn("ser ikke ut til å være en bildebank-backup", stderr)
+            self.assertIn(f"bildebank backup --adopt --dry-run {backup_parent}", stderr)
+            self.assertIn(f"bildebank backup --adopt {backup_parent}", stderr)
             self.assertEqual((backup_dir / "unrelated.txt").read_text(encoding="utf-8"), "do not touch\n")
 
     def test_backup_rejects_existing_backup_without_backup_of_with_specific_message(self) -> None:
@@ -9395,8 +9397,179 @@ model_name = "buffalo_l"
             self.assertEqual(stdout, "")
             self.assertIn("backupmetadata mangler feltet backup_of", stderr)
             self.assertIn(str(metadata_path), stderr)
+            self.assertIn(f"bildebank backup --adopt --dry-run {backup_parent}", stderr)
+            self.assertIn(f"bildebank backup --adopt {backup_parent}", stderr)
             self.assertNotIn("backup for en annen bildesamling", stderr)
             self.assertEqual(extra.read_text(encoding="utf-8"), "do not delete\n")
+
+    def test_backup_adopt_dry_run_reports_file_comparison_without_writing_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            backup_parent = root / "backup-root"
+            backup_dir = backup_parent / target.name
+            source.mkdir()
+            backup_dir.mkdir(parents=True)
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            (source / "IMG_20240103.jpg").write_bytes(b"second")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]),
+                0,
+            )
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename, stored_filename,
+                        sha256, size_bytes, date_source, deleted_at, deleted_original_target_path
+                    )
+                    VALUES(
+                        'deleted/2024/01/IMG_20240104.jpg',
+                        'deleted/2024/01/img_20240104.jpg',
+                        'IMG_20240104.jpg',
+                        'IMG_20240104.jpg',
+                        'abc',
+                        7,
+                        'filename',
+                        CURRENT_TIMESTAMP,
+                        '2024/01/IMG_20240104.jpg'
+                    )
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            (backup_dir / "2024" / "01").mkdir(parents=True)
+            (backup_dir / "2024" / "01" / "IMG_20240102.jpg").write_bytes(b"image")
+            (backup_dir / "2024" / "01" / "IMG_20240103.jpg").write_bytes(b"wrong-size")
+            (backup_dir / "extra_20240105.jpg").write_bytes(b"extra")
+
+            with patch("builtins.input", side_effect=AssertionError("dry-run should not ask")):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "backup", "--adopt", "--dry-run", str(backup_parent)]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Adopt dry run", stdout)
+            self.assertIn("Mangler .bildebank-backup.json", stdout)
+            self.assertIn("database_files=3", stdout)
+            self.assertIn("matched=1 (33.3%)", stdout)
+            self.assertIn("missing=1", stdout)
+            self.assertIn("wrong_size_or_type=1", stdout)
+            self.assertIn("extra_media_files=1", stdout)
+            self.assertIn("Dry-run: ingen endringer er gjort.", stdout)
+            self.assertFalse((backup_dir / ".bildebank-backup.json").exists())
+
+    def test_backup_adopt_registers_existing_directory_after_exact_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_dir = backup_parent / target.name
+            backup_dir.mkdir(parents=True)
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with patch("builtins.input", return_value="registrer backup"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "backup", "--adopt", str(backup_parent)]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Ready to register backup.", stdout)
+            self.assertIn("Backupen er registrert", stdout)
+            metadata = json.loads((backup_dir / ".bildebank-backup.json").read_text(encoding="utf-8"))
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                collection_id = conn.execute("SELECT value FROM meta WHERE key = 'collection_id'").fetchone()[0]
+            finally:
+                conn.close()
+            self.assertEqual(metadata["backup_of"], collection_id)
+            self.assertEqual(metadata["source_name"], target.name)
+            self.assertEqual(metadata["status"], "adopted")
+            self.assertEqual(metadata["created_by"], "bildebank")
+
+    def test_backup_adopt_repairs_metadata_without_backup_of_and_preserves_extra_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_dir = backup_parent / target.name
+            backup_dir.mkdir(parents=True)
+            metadata_path = backup_dir / ".bildebank-backup.json"
+            metadata_path.write_text(
+                json.dumps({"source_name": "gammelt-navn", "note": "behold"}),
+                encoding="utf-8",
+            )
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with patch("builtins.input", return_value="registrer backup"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "backup", "--adopt", str(backup_parent)]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Metadata finnes, men backup_of mangler", stdout)
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            self.assertEqual(metadata["source_name"], target.name)
+            self.assertEqual(metadata["note"], "behold")
+            self.assertIn("backup_of", metadata)
+
+    def test_backup_adopt_aborts_without_exact_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_dir = backup_parent / target.name
+            backup_dir.mkdir(parents=True)
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with patch("builtins.input", return_value="ja"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "backup", "--adopt", str(backup_parent)]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Avbrutt. Ingen endringer er gjort.", stdout)
+            self.assertFalse((backup_dir / ".bildebank-backup.json").exists())
+
+    def test_backup_adopt_rejects_existing_matching_or_mismatching_backup_of(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            backup_parent = root / "backup-root"
+            backup_dir = backup_parent / target.name
+            backup_dir.mkdir(parents=True)
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                collection_id = conn.execute("SELECT value FROM meta WHERE key = 'collection_id'").fetchone()[0]
+            finally:
+                conn.close()
+            metadata_path = backup_dir / ".bildebank-backup.json"
+            metadata_path.write_text(json.dumps({"backup_of": collection_id}), encoding="utf-8")
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--adopt", str(backup_parent)])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("allerede registrert", stderr)
+
+            metadata_path.write_text(json.dumps({"backup_of": str(uuid.uuid4())}), encoding="utf-8")
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "backup", "--adopt", str(backup_parent)])
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("backup for en annen bildesamling", stderr)
 
     def test_backup_rejects_destination_inside_existing_backup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

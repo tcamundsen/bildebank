@@ -13,6 +13,8 @@ positional arguments:
 options:
   -h, --help  show this help message and exit
   --dry-run   Vis hva som ville blitt gjort uten å kopiere eller endre filer
+  --adopt     Registrer en eksisterende backupmappe som backup av denne
+              bildesamlingen
 ```
 <!-- CLI-HELP-END -->
 
@@ -95,6 +97,40 @@ Bildebank verktøyets egen dry-run-funksjon slik at du får se hva verktøyet vi
 gjort.
 
 Du kan ikke legge en ny backup inni en eksisterende Bildebank-backup.
+
+## Registrere en gammel backup
+
+Hvis du har en eksisterende backupmappe som mangler `.bildebank-backup.json`,
+eller der metadatafilen mangler `backup_of`, vil vanlig `backup` avbryte.
+Da kan du først be Bildebank vise en sammenligning:
+
+```bash
+bildebank backup --adopt --dry-run D:\Backuper
+```
+
+Kommandoen sammenligner filene Bildebank har i databasen med filene i
+backupmappen. Den viser hvor mange filer som finnes med samme sti og størrelse,
+hvor mange som mangler, hvor mange som har feil størrelse, og hvor mange ekstra
+mediafiler som finnes i backupen.
+
+Hvis rapporten ser riktig ut, kan du registrere backupmappen:
+
+```bash
+bildebank backup --adopt D:\Backuper
+```
+
+Da må du bekrefte ved å skrive `registrer backup`. Dette kopierer eller sletter
+ingen bilder. Det skriver bare `.bildebank-backup.json` slik at Bildebank vet at
+backupmappen hører til denne bildesamlingen.
+
+Etter registrering kan du kjøre vanlig backup:
+
+```bash
+bildebank backup D:\Backuper
+```
+
+Vær oppmerksom på at vanlig backup er speiling. Filer som finnes i backupen, men
+ikke i bildesamlingen, kan da bli slettet fra backupen.
 
 ## Sikkerhet
 

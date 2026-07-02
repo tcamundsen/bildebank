@@ -4,6 +4,7 @@ Dette dokumentet beskriver utviklerkontrakten for:
 
 ```bash
 bildebank backup DEST
+bildebank backup --adopt DEST
 ```
 
 Brukerdokumentasjonen ligger i `docs/backup.md`.
@@ -65,6 +66,10 @@ ikke automatisk opprette en lang foreldresti.
 Hvis `backup_dir` finnes uten `.bildebank-backup.json`, skal kommandoen avbryte
 for å hindre speiling inn i en vanlig mappe.
 
+`backup --adopt` er en eksplisitt reparasjonsflyt for eksisterende backupmapper
+der `.bildebank-backup.json` mangler, eller der metadatafilen finnes men
+`backup_of` mangler eller er tom. Kommandoen skal ikke speile filer.
+
 ## Collection ID
 
 Hver samling har en stabil UUID i hoveddatabasen:
@@ -103,6 +108,10 @@ Minimumskontrakt:
 
 Metadatafilen finnes bare i backupen, ikke i kildesamlingen. Den skal derfor
 ekskluderes fra speilingen.
+
+Adopsjon/reparasjon skriver samme metadatafil med `status: "adopted"`. Neste
+vanlige backupkjøring vil skrive `status: "in-progress"` og deretter
+`status: "complete"` hvis speilingen lykkes.
 
 ## Metadata-status
 
@@ -241,6 +250,65 @@ Result:
   Would update backup.
   motor=rsync
 ```
+
+## Adopsjon av eksisterende backup
+
+`bildebank backup --adopt DEST` bruker samme `DEST`-tolkning som vanlig backup:
+
+```text
+backup_dir = DEST / source_dir.name
+```
+
+Kommandoen er bare tillatt når `backup_dir` finnes og én av disse er sann:
+
+- `.bildebank-backup.json` mangler.
+- `.bildebank-backup.json` finnes, men `backup_of` mangler eller er tom.
+
+Kommandoen skal avvise ugyldig JSON, `backup_of` som matcher aktiv samling
+(adopsjon er unødvendig), og `backup_of` som peker på en annen samling.
+
+Før brukeren bekrefter, skal kommandoen vise:
+
+- aktiv bildesamling
+- backup parent
+- beregnet backupmappe
+- metadata-status
+- aktiv `collection_id`
+- antall databaseførte filer i `files`
+- antall og prosent som finnes i backup med samme relative sti og størrelse
+- antall som mangler
+- antall som finnes, men ikke er vanlig fil eller har feil størrelse
+- antall ekstra støttede mediafiler i backupen som ikke finnes i `files.target_path`
+
+Sammenligningen bruker `files.target_path` og `files.size_bytes`, ikke full
+SHA-256. Både aktive og slettede filer telles, siden backup skal inkludere
+`deleted/`. Ekstra filer telles bare når de er støttede mediafiler.
+
+`--dry-run` skal vise samme rapport, men ikke spørre om bekreftelse og ikke
+skrive metadata.
+
+Uten `--dry-run` skal brukeren skrive nøyaktig:
+
+```text
+registrer backup
+```
+
+Hvis teksten ikke matcher, skal kommandoen avbryte uten endringer.
+
+Ved bekreftet adopsjon skal programmet opprette eller oppdatere
+`.bildebank-backup.json`, bevare ufarlige eksisterende felt, og sette/oppdatere:
+
+- `backup_of`
+- `source_name`
+- `created_by`
+- `bildebank_version`
+- `format_version`
+- `status`
+- `updated_at`
+- `adopted_at`
+
+Adopsjon skal ikke starte speiling. Brukeren må kjøre vanlig
+`bildebank backup DEST` etterpå for å oppdatere backupinnholdet.
 
 ## Feilhåndtering
 

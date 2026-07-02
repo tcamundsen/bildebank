@@ -9,11 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__, db
+from .media import is_supported_media
 from .target_lock import TargetLock
 
 
 BACKUP_METADATA_FILENAME = ".bildebank-backup.json"
 BACKUP_FORMAT_VERSION = 1
+BACKUP_ADOPTION_CONFIRMATION = "registrer backup"
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,27 @@ class BackupStats:
     files_deleted: int = 0
     dirs_created: int = 0
     dirs_deleted: int = 0
+
+
+@dataclass(frozen=True)
+class BackupComparisonStats:
+    total_files: int
+    matched_files: int
+    missing_files: int
+    wrong_size_or_type_files: int
+    extra_media_files: int
+
+
+@dataclass(frozen=True)
+class BackupAdoptionPlan:
+    source_dir: Path
+    backup_parent: Path
+    backup_dir: Path
+    metadata_path: Path
+    collection_id: str
+    metadata_state: str
+    existing_metadata: dict[str, object]
+    comparison: BackupComparisonStats
 
 
 def plan_backup(source_dir: Path, backup_parent_arg: Path, *, ensure_collection_id: bool = True) -> BackupPlan:
@@ -67,6 +90,80 @@ def plan_backup(source_dir: Path, backup_parent_arg: Path, *, ensure_collection_
     if existing_backup:
         validate_existing_backup(backup_dir, collection_id)
     return BackupPlan(source, backup_parent, backup_dir, collection_id, existing_backup)
+
+
+def plan_backup_adoption(source_dir: Path, backup_parent_arg: Path) -> BackupAdoptionPlan:
+    source = source_dir.resolve()
+    backup_parent = backup_parent_arg.expanduser().resolve()
+    if not source.is_dir() or not db.db_path_for_target(source).exists():
+        raise ValueError(f"Bildesamlingen er ikke initialisert: {source}")
+    if not backup_parent.exists():
+        raise ValueError(
+            "Backup-plasseringen finnes ikke:\n"
+            f"\n  {backup_parent}\n"
+            "\nOpprett mappen først, eller velg en eksisterende plassering."
+        )
+    if not backup_parent.is_dir():
+        raise ValueError(f"Backup-plasseringen er ikke en mappe: {backup_parent}")
+
+    backup_dir = (backup_parent / source.name).resolve()
+    validate_backup_location(source, backup_dir)
+    validate_backup_not_nested_inside_existing_backup(backup_dir)
+    if not backup_dir.exists():
+        raise ValueError(
+            "Kan ikke registrere backup.\n"
+            "\nBackupmappen finnes ikke:\n"
+            f"\n  {backup_dir}\n"
+            "\nVelg plasseringen som inneholder den eksisterende backupmappen."
+        )
+    if not backup_dir.is_dir():
+        raise ValueError(f"Backupmålet finnes, men er ikke en mappe: {backup_dir}")
+
+    conn = db.connect(source, require_current=False)
+    try:
+        db.require_current_schema(conn)
+        collection_id = db.validate_collection_id(conn)
+        expected_files = expected_backup_files(conn)
+    finally:
+        conn.close()
+
+    metadata_path = backup_dir / BACKUP_METADATA_FILENAME
+    if metadata_path.exists():
+        metadata = read_backup_metadata(metadata_path)
+        backup_of = metadata.get("backup_of")
+        if isinstance(backup_of, str) and backup_of.strip():
+            if backup_of == collection_id:
+                raise ValueError(
+                    "Backupen er allerede registrert for denne bildesamlingen:\n"
+                    f"\n  {backup_dir}"
+                )
+            raise ValueError(
+                "Kan ikke registrere backup.\n"
+                "\nMålmappen er merket som backup for en annen bildesamling:\n"
+                f"\n  {backup_dir}"
+            )
+        metadata_state = "missing_backup_of"
+    else:
+        metadata = {}
+        metadata_state = "missing_metadata"
+
+    comparison = compare_backup_files(backup_dir, expected_files)
+    return BackupAdoptionPlan(
+        source_dir=source,
+        backup_parent=backup_parent,
+        backup_dir=backup_dir,
+        metadata_path=metadata_path,
+        collection_id=collection_id,
+        metadata_state=metadata_state,
+        existing_metadata=metadata,
+        comparison=comparison,
+    )
+
+
+def run_backup_adoption(source_dir: Path, backup_parent_arg: Path) -> BackupAdoptionPlan:
+    plan = plan_backup_adoption(source_dir, backup_parent_arg)
+    write_adopted_backup_metadata(plan)
+    return plan
 
 
 def run_backup(source_dir: Path, backup_parent_arg: Path, *, dry_run: bool = False) -> BackupStats:
@@ -163,12 +260,13 @@ def validate_existing_backup(backup_dir: Path, collection_id: str) -> None:
             "Kan ikke lage backup.\n"
             "\nMålmappen finnes allerede, men ser ikke ut til å være en bildebank-backup:\n"
             f"\n  {backup_dir}\n"
-            "\nVelg en annen backup-plassering, eller flytt/gi nytt navn til denne mappen."
+            "\nHvis dette er en gammel backup av denne bildesamlingen, kontroller den først med:\n"
+            f"\n  bildebank backup --adopt --dry-run {backup_dir.parent}\n"
+            "\nHvis rapporten ser riktig ut, kan du registrere den med:\n"
+            f"\n  bildebank backup --adopt {backup_dir.parent}\n"
+            "\nVelg ellers en annen backup-plassering, eller flytt/gi nytt navn til denne mappen."
         )
-    try:
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Backupmetadata er ikke gyldig JSON: {metadata_path}") from exc
+    metadata = read_backup_metadata(metadata_path)
     backup_of = metadata.get("backup_of")
     if not isinstance(backup_of, str) or not backup_of.strip():
         raise ValueError(
@@ -176,7 +274,11 @@ def validate_existing_backup(backup_dir: Path, collection_id: str) -> None:
             "\nMålmappen er merket som en bildebank-backup, men backupmetadata mangler "
             "feltet backup_of:\n"
             f"\n  {metadata_path}\n"
-            "\nProgrammet kan derfor ikke bekrefte hvilken bildesamling backupen hører til."
+            "\nProgrammet kan derfor ikke bekrefte hvilken bildesamling backupen hører til.\n"
+            "\nHvis dette er en backup av denne bildesamlingen, kontroller den først med:\n"
+            f"\n  bildebank backup --adopt --dry-run {backup_dir.parent}\n"
+            "\nHvis rapporten ser riktig ut, kan du registrere den med:\n"
+            f"\n  bildebank backup --adopt {backup_dir.parent}"
         )
     if backup_of != collection_id:
         raise ValueError(
@@ -184,6 +286,16 @@ def validate_existing_backup(backup_dir: Path, collection_id: str) -> None:
             "\nMålmappen er merket som backup for en annen bildesamling:\n"
             f"\n  {backup_dir}"
         )
+
+
+def read_backup_metadata(metadata_path: Path) -> dict[str, object]:
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Backupmetadata er ikke gyldig JSON: {metadata_path}") from exc
+    if not isinstance(metadata, dict):
+        raise ValueError(f"Backupmetadata må være et JSON-objekt: {metadata_path}")
+    return metadata
 
 
 @dataclass(frozen=True)
@@ -279,6 +391,84 @@ def write_backup_metadata(plan: BackupPlan, *, status: str, engine: str | None =
         metadata["engine"] = engine
     path = plan.backup_dir / BACKUP_METADATA_FILENAME
     path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def write_adopted_backup_metadata(plan: BackupAdoptionPlan) -> None:
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    metadata = dict(plan.existing_metadata)
+    metadata.update(
+        {
+            "backup_of": plan.collection_id,
+            "source_name": plan.source_dir.name,
+            "created_by": "bildebank",
+            "bildebank_version": __version__,
+            "format_version": BACKUP_FORMAT_VERSION,
+            "status": "adopted",
+            "updated_at": now,
+            "adopted_at": now,
+        }
+    )
+    plan.metadata_path.write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def expected_backup_files(conn) -> dict[str, int]:  # noqa: ANN001
+    rows = conn.execute(
+        """
+        SELECT target_path, size_bytes
+        FROM files
+        ORDER BY target_path_key
+        """
+    )
+    return {
+        db.relative_path(Path(str(row["target_path"]))).as_posix(): int(row["size_bytes"])
+        for row in rows
+    }
+
+
+def compare_backup_files(backup_dir: Path, expected_files: dict[str, int]) -> BackupComparisonStats:
+    matched_files = 0
+    missing_files = 0
+    wrong_size_or_type_files = 0
+    expected_paths = set(expected_files)
+
+    for relative_path, expected_size in expected_files.items():
+        path = backup_dir / relative_path
+        if not path.exists():
+            missing_files += 1
+            continue
+        if not path.is_file():
+            wrong_size_or_type_files += 1
+            continue
+        try:
+            actual_size = path.stat().st_size
+        except OSError:
+            wrong_size_or_type_files += 1
+            continue
+        if actual_size == expected_size:
+            matched_files += 1
+        else:
+            wrong_size_or_type_files += 1
+
+    extra_media_files = 0
+    for path in backup_dir.rglob("*"):
+        if path.name == BACKUP_METADATA_FILENAME:
+            continue
+        if not is_supported_media(path):
+            continue
+        relative = path.relative_to(backup_dir).as_posix()
+        if relative not in expected_paths:
+            extra_media_files += 1
+
+    return BackupComparisonStats(
+        total_files=len(expected_files),
+        matched_files=matched_files,
+        missing_files=missing_files,
+        wrong_size_or_type_files=wrong_size_or_type_files,
+        extra_media_files=extra_media_files,
+    )
 
 
 @dataclass(frozen=True)
