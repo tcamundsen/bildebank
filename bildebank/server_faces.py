@@ -67,6 +67,8 @@ def clear_face_caches() -> None:
     ensure_current_face_schema.cache_clear()
     cached_people_for_file_rows.cache_clear()
     cached_people_with_references_for_file_rows.cache_clear()
+    cached_unconfirmed_face_count_for_item.cache_clear()
+    cached_registered_people_options_html.cache_clear()
     cached_person_file_ids.cache_clear()
     cached_registered_people.cache_clear()
 
@@ -314,6 +316,21 @@ def registered_people(target: Path, face_config: FaceRecognitionConfig | None = 
     ]
 
 
+def registered_people_options_html(target: Path, face_config: FaceRecognitionConfig | None = None) -> str:
+    db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
+    if mtime_ns is None:
+        return ""
+    return cached_registered_people_options_html(str(db_path), mtime_ns)
+
+
+@lru_cache(maxsize=8)
+def cached_registered_people_options_html(face_db_path: str, face_db_mtime_ns: int) -> str:
+    return "".join(
+        f'<option value="{html.escape(name)}">{html.escape(name)}</option>'
+        for name in cached_registered_people(face_db_path, face_db_mtime_ns)
+    )
+
+
 @lru_cache(maxsize=8)
 def cached_registered_people(face_db_path: str, face_db_mtime_ns: int) -> tuple[str, ...]:
     conn = sqlite3.connect(face_db_path)
@@ -375,10 +392,19 @@ def unconfirmed_face_count_for_item(
     file_id: int,
     face_config: FaceRecognitionConfig | None = None,
 ) -> int:
-    db_path = current_face_db_path(target, face_config)
-    if not db_path.exists():
+    db_path, mtime_ns = current_face_db_path_and_mtime(target, face_config)
+    if mtime_ns is None:
         return 0
-    conn = sqlite3.connect(db_path)
+    return cached_unconfirmed_face_count_for_item(str(db_path), mtime_ns, file_id)
+
+
+@lru_cache(maxsize=512)
+def cached_unconfirmed_face_count_for_item(
+    face_db_path: str,
+    face_db_mtime_ns: int,
+    file_id: int,
+) -> int:
+    conn = sqlite3.connect(face_db_path)
     conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(conn):
@@ -1321,19 +1347,15 @@ def manual_person_file_controls_html(
     _people: list[dict[str, object]],
     face_config: FaceRecognitionConfig | None = None,
 ) -> str:
-    registered = registered_people(target, face_config)
-    if not registered:
+    options = registered_people_options_html(target, face_config)
+    if not options:
         return ""
     file_id = int(item["id"])
-    options = []
-    for person in registered:
-        name = str(person["name"])
-        options.append(f'<option value="{html.escape(name)}">{html.escape(name)}</option>')
     return f"""
     <form class="manual-person-form inline-manual-person-form" data-manual-person-form data-file-id="{file_id}" hidden>
       <select id="manualPersonSelect" name="person_name">
         <option value="">Velg person</option>
-        {"".join(options)}
+        {options}
       </select>
       <button class="nav-button" type="submit" title="Manuelt legge til person uten å påvirke ansiktsgjenkjenning">Legg til</button>
       <button class="nav-button" type="button" data-close-manual-person-form>Ferdig</button>

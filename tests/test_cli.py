@@ -6571,6 +6571,46 @@ model_name = "buffalo_l"
 
         self.assertIsNone(motion_video_for_image(Path("/unused"), item, conn=ExplodingConnection()))  # type: ignore[arg-type]
 
+    def test_run_server_associated_files_skip_unrelated_image_names(self) -> None:
+        item = {
+            "id": 1,
+            "target_path": "2024/01/IMG_20240102.jpg",
+            "target_path_key": "2024/01/img_20240102.jpg",
+            "original_filename": "IMG_20240102.jpg",
+            "stored_filename": "IMG_20240102.jpg",
+        }
+
+        with (
+            patch("bildebank.server_browser.motion_video_for_image", side_effect=AssertionError("motion lookup")),
+            patch("bildebank.server_browser.raw_sidecar_for_image", return_value=None),
+        ):
+            self.assertEqual(
+                server_browser.associated_files_for_item(Path("/unused"), item),
+                (None, None),
+            )
+
+    def test_run_server_associated_files_check_motion_partner_images(self) -> None:
+        item = {
+            "id": 1,
+            "target_path": "2024/01/PXL_20240102.MP.jpg",
+            "target_path_key": "2024/01/pxl_20240102.mp.jpg",
+            "original_filename": "PXL_20240102.MP.jpg",
+            "stored_filename": "PXL_20240102.MP.jpg",
+        }
+        motion_item = {"id": 2, "stored_filename": "PXL_20240102.mp4"}
+
+        with (
+            patch("bildebank.server_browser.motion_video_for_image", return_value=motion_item) as motion_lookup,
+            patch("bildebank.server_browser.raw_sidecar_for_image", return_value=None) as raw_lookup,
+        ):
+            self.assertEqual(
+                server_browser.associated_files_for_item(Path("/unused"), item),
+                (motion_item, None),
+            )
+
+        motion_lookup.assert_called_once()
+        raw_lookup.assert_called_once()
+
     def test_run_server_filter_route_redirects_query_to_canonical_browser_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

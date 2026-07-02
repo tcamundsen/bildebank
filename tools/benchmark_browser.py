@@ -905,7 +905,6 @@ def profile_item_step(
                     "face_enabled": config.face_recognition.enabled,
                     "openclip_enabled": config.openclip.enabled,
                     "face_config": config.face_recognition,
-                    "manual_h3_cell": config.browser.manual_h3_cell,
                     "hide_out_of_focus": config.browser.hide_out_of_focus,
                 }
             )

@@ -2050,8 +2050,7 @@ def source_item_page_html(
     if timing_callback is not None:
         timing_callback("html_hotkey_hints", start)
     start = time.perf_counter()
-    motion_video = motion_video_for_image(target, item, conn=conn)
-    raw_sidecar = raw_sidecar_for_image(target, item, conn=conn)
+    motion_video, raw_sidecar = associated_files_for_item(target, item, conn=conn)
     associated_file_buttons = associated_file_buttons_html(motion_video, raw_sidecar)
     if timing_callback is not None:
         timing_callback("html_associated_files", start)
@@ -2146,6 +2145,23 @@ def source_item_page_html(
     if timing_callback is not None:
         timing_callback("html_page", start)
     return result
+
+
+def associated_files_for_item(
+    target: Path,
+    item: Any,
+    *,
+    conn: sqlite3.Connection | None = None,
+) -> tuple[Any | None, Any | None]:
+    if not is_image_item(item):
+        return None, None
+    try:
+        folded_filename = str(item["original_filename"]).casefold()
+    except (KeyError, IndexError):
+        folded_filename = ""
+    motion_video = motion_video_for_image(target, item, conn=conn) if folded_filename.endswith(".mp.jpg") else None
+    raw_sidecar = raw_sidecar_for_image(target, item, conn=conn)
+    return motion_video, raw_sidecar
 
 
 def suggestion_toggle_href(

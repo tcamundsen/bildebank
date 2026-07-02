@@ -375,6 +375,67 @@ def test_profile_parser_rejects_unknown_imported_source(monkeypatch, tmp_path: P
         raise AssertionError("Ukjent source-ID skulle gi RuntimeError")
 
 
+def test_profile_item_step_uses_current_browser_config(monkeypatch, tmp_path: Path) -> None:
+    benchmark = load_benchmark_module()
+    from bildebank import db, server_browser, server_pages
+    from bildebank.config import AppConfig, BrowserConfig
+    from bildebank.server_browser_sources import all_browser_source
+
+    class FakeConnection:
+        def close(self) -> None:
+            return
+
+    item = {
+        "id": 7,
+        "target_path": "2024/01/IMG.jpg",
+        "target_path_key": "2024/01/img.jpg",
+        "original_filename": "IMG.jpg",
+        "stored_filename": "IMG.jpg",
+        "taken_date": "2024-01-02",
+        "date_source": "metadata",
+        "metadata_datetime": None,
+        "manual_date_from": None,
+        "manual_date_to": None,
+        "manual_date_note": None,
+    }
+    captured_kwargs: dict[str, object] = {}
+
+    monkeypatch.setattr(db, "connect", lambda target: FakeConnection())
+    monkeypatch.setattr(server_browser, "item_by_id", lambda target, file_id, conn=None: item)
+    monkeypatch.setattr(
+        server_browser,
+        "adjacent_items_from_id_order",
+        lambda item_ids, file_id, positions=None: ({"id": 6}, {"id": 8}),
+    )
+    monkeypatch.setattr(server_browser, "month_key_for_item", lambda target, item: "2024-01")
+    monkeypatch.setattr(
+        server_browser,
+        "month_navigation_for_keys",
+        lambda month_keys, month_key: {"previous_year": None, "previous_month": None, "next_month": None, "next_year": None},
+    )
+
+    def fake_page_html(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return "<html></html>"
+
+    monkeypatch.setattr(server_pages, "source_item_page_html", fake_page_html)
+
+    step = benchmark.profile_item_step(
+        tmp_path,
+        all_browser_source(),
+        7,
+        1,
+        month_keys=["2024-01"],
+        item_ids=[7, 8],
+        item_positions={7: 0, 8: 1},
+        config=AppConfig(browser=BrowserConfig(hide_out_of_focus=True)),
+    )
+
+    assert step.url == "/item/8"
+    assert captured_kwargs["hide_out_of_focus"] is True
+    assert "manual_h3_cell" not in captured_kwargs
+
+
 def test_parse_args_has_suite_defaults() -> None:
     benchmark = load_benchmark_module()
 
