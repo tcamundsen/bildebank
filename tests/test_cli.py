@@ -10121,7 +10121,7 @@ enabled = true
                 deleted=True,
             )
             missing_id = active_id + deleted_id + 100
-            config = OpenClipConfig(model_name="Test-Model", pretrained="test-weights")
+            OpenClipConfig(model_name="Test-Model", pretrained="test-weights")
             conn = connect_openclip_db(target)
             try:
                 conn.executemany(

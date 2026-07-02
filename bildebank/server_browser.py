@@ -24,7 +24,7 @@ from .browser_dates import (
 from .config import BrowserHotkeyConfig, FaceRecognitionConfig, HOTKEY_KEYS
 from .formatting import format_bytes
 from .geo import H3_COLUMNS, h3_area_label
-from .html_paths import display_relative_path, relative_to_target
+from .html_paths import display_relative_path
 from .media import IMAGE_EXTENSIONS, media_kind
 from .media_cache import cached_image_dimensions
 from .server_browser_sources import (
