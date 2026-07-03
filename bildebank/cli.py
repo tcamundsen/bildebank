@@ -622,7 +622,6 @@ def build_parser() -> argparse.ArgumentParser:
     make_thumbnails.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
     make_thumbnails.add_argument("--verbose", action="store_true", help="Vis filer som feiler")
 
-    add_command(subparsers, "report", usage="bildebank report [valg]", help="Vis importoppsummering")
     add_command(
         subparsers,
         "where-is",
@@ -1454,10 +1453,6 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
                     f"{row['id']}\t{row['created_at']}\t{row['stage']}\t"
                     f"{resolved}\t{error_source_path}\t{row['message']}"
                 )
-            return 0
-
-        if args.command == "report":
-            print("report er slått sammen med status")
             return 0
 
         raise ValueError(f"Ukjent kommando: {args.command}")

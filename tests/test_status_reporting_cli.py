@@ -98,17 +98,6 @@ class StatusReportingCliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIn("Løst feil", stdout)
 
-    def test_report_prints_status_merge_message(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "report"])
-
-        self.assertEqual(code, 0, stderr)
-        self.assertEqual(stdout, "report er slått sammen med status\n")
-
     def test_vacuum_packs_current_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

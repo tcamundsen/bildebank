@@ -96,7 +96,6 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 - [`inspect-metadata`](inspect-metadata.md) **`cli`**
 - [`refresh-metadata`](refresh-metadata.md) **`cli`**
 - [`exiftool-metadata-gaps`](exiftool-metadata-gaps.md) **`devel`**
-- [`report`](report.md)
 
 ## Tekstbasert bildesøk
 
