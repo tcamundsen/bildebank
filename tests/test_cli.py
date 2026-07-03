@@ -13,7 +13,6 @@ import sys
 import time
 import warnings
 import uuid
-import zipfile
 from collections.abc import Iterable
 from contextlib import redirect_stderr, redirect_stdout
 from http import HTTPStatus
@@ -32,7 +31,6 @@ from bildebank.cli_server import lan_share_urls, run_server_command
 from bildebank.config import AppConfig, BrowserConfig, BrowserHotkeyConfig, FaceRecognitionConfig, OpenClipConfig, load_config
 from bildebank import db, server_browser
 from bildebank.db import DB_FILENAME, init_database
-from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
 from bildebank.export_person import (
     PersonExportInterrupted,
     export_person,
@@ -747,19 +745,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertNotIn("<kommando> [<args>] create", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
-    def test_config_help_preserves_description_examples(self) -> None:
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
-            main(["config", "-h"])
-
-        self.assertEqual(raised.exception.code, 0)
-        stdout = stdout_buffer.getvalue()
-        self.assertIn("Slå valgfrie funksjoner på eller av i bildebank-config.toml.\nEksempel:\n\n", stdout)
-        self.assertIn(" bildebank config face_recognition enable\n", stdout)
-        self.assertIn(" bildebank config image_search disable\n", stdout)
-        self.assertEqual(stderr_buffer.getvalue(), "")
-
     def test_face_reset_help_documents_reset_levels(self) -> None:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
@@ -1172,18 +1157,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('href="/file/7"', body)
         self.assertIn('src="/display/7"', body)
         self.assertNotIn('src="/file/7"', body)
-
-    def test_exiftool_install_help_documents_force(self) -> None:
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
-            main(["exiftool-install", "-h"])
-
-        self.assertEqual(raised.exception.code, 0)
-        stdout = stdout_buffer.getvalue()
-        self.assertIn("usage: bildebank exiftool-install [valg]", stdout)
-        self.assertIn("--force", stdout)
-        self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_openclip_database_schema_is_separate(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2123,18 +2096,6 @@ pretrained = "laion2b_s34b_b79k"
                     self.assertEqual(server.browser_navigation_cache_version(), 0)
 
             self.assertEqual(db_path_for_target.call_count, 1)
-
-    def test_load_config_reads_tag_hotkey(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "bildebank-config.toml").write_text(
-                '[browser.hotkeys]\n"1" = { action = "tag", tag_name = "Familie" }\n',
-                encoding="utf-8",
-            )
-
-            config = load_config(root)
-
-        self.assertEqual(config.browser.hotkeys["1"], BrowserHotkeyConfig(action="tag", tag_name="Familie"))
 
     def test_run_server_renders_bookmarkable_item_page(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -8744,149 +8705,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Bildebank-program:", stdout)
         self.assertIn("Ingen registrert ennå.", stdout)
 
-    def test_config_enables_face_recognition(self) -> None:
-        code, stdout, stderr = capture_cli(["config", "face_recognition", "enable"])
-
-        self.assertEqual(code, 0, stderr)
-        self.assertIn("face_recognition.enabled er satt til true.", stdout)
-        self.assertIn("Config-fil:", stdout)
-        config = load_config(self.program_root)
-        self.assertTrue(config.face_recognition.enabled)
-
-    def test_config_updates_image_search_without_changing_other_fields(self) -> None:
-        (self.program_root / "bildebank-config.toml").write_text(
-            """
-[face_recognition]
-enabled = true
-provider = "cpu"
-model_root = "models/insightface"
-database_dir = ".faces-by-model"
-model_name = "buffalo_s"
-
-[openclip]
-enabled = true
-model_root = "models/openclip"
-device = "cpu"
-model_name = "ViT-L-14"
-pretrained = "laion2b_s32b_b82k"
-""",
-            encoding="utf-8",
-        )
-
-        code, stdout, stderr = capture_cli(["config", "image_search", "disable"])
-
-        self.assertEqual(code, 0, stderr)
-        self.assertIn("image_search.enabled er satt til false.", stdout)
-        config = load_config(self.program_root)
-        self.assertTrue(config.face_recognition.enabled)
-        self.assertEqual(config.face_recognition.model_name, "buffalo_s")
-        self.assertFalse(config.openclip.enabled)
-        self.assertEqual(config.openclip.model_root, self.program_root / "models" / "openclip")
-        self.assertEqual(config.openclip.device, "cpu")
-        self.assertEqual(config.openclip.model_name, "ViT-L-14")
-        self.assertEqual(config.openclip.pretrained, "laion2b_s32b_b82k")
-        config_text = (self.program_root / "bildebank-config.toml").read_text(encoding="utf-8")
-        self.assertIn("[image_search]", config_text)
-        self.assertNotIn("[openclip]", config_text)
-
-        code, stdout, stderr = capture_cli(["config", "image_search", "enable"])
-
-        self.assertEqual(code, 0, stderr)
-        self.assertIn("image_search.enabled er satt til true.", stdout)
-        self.assertTrue(load_config(self.program_root).openclip.enabled)
-
-    def test_config_rejects_unknown_section_without_writing_file(self) -> None:
-        stdout = StringIO()
-        stderr = StringIO()
-        with redirect_stdout(stdout), redirect_stderr(stderr):
-            with self.assertRaises(SystemExit) as raised:
-                main(["config", "unknown", "enable"])
-
-        self.assertEqual(raised.exception.code, 2)
-        self.assertEqual(stdout.getvalue(), "")
-        self.assertIn("invalid choice", stderr.getvalue())
-        self.assertFalse((self.program_root / "bildebank-config.toml").exists())
-
-    def test_load_config_reads_local_face_config(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "bildebank-config.toml").write_text(
-                """
-[face_recognition]
-enabled = true
-provider = "cpu"
-model_root = "models/insightface"
-database_dir = "faces"
-model_name = "buffalo_s"
-
-[openclip]
-enabled = true
-model_root = "models/openclip"
-device = "cpu"
-model_name = "ViT-L-14"
-pretrained = "laion2b_s32b_b82k"
-""",
-                encoding="utf-8",
-            )
-
-            config = load_config(root)
-
-            self.assertTrue(config.face_recognition.enabled)
-            self.assertEqual(config.face_recognition.provider, "cpu")
-            self.assertEqual(config.face_recognition.model_root, root / "models" / "insightface")
-            self.assertEqual(config.face_recognition.database_dir, Path("faces"))
-            self.assertEqual(config.face_recognition.model_name, "buffalo_s")
-            self.assertTrue(config.openclip.enabled)
-            self.assertEqual(config.openclip.model_root, root / "models" / "openclip")
-            self.assertEqual(config.openclip.device, "cpu")
-            self.assertEqual(config.openclip.model_name, "ViT-L-14")
-            self.assertEqual(config.openclip.pretrained, "laion2b_s32b_b82k")
-            config_text = (root / "bildebank-config.toml").read_text(encoding="utf-8")
-            self.assertIn("[image_search]", config_text)
-            self.assertNotIn("[openclip]", config_text)
-
-    def test_load_config_reads_person_reference_links_config(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "bildebank-config.toml").write_text(
-                """
-[browser]
-person_reference_links_enabled = true
-""",
-                encoding="utf-8",
-            )
-
-            config = load_config(root)
-
-        self.assertTrue(config.browser.person_reference_links_enabled)
-        self.assertFalse(BrowserConfig().person_reference_links_enabled)
-
-    def test_load_config_prefers_image_search_over_openclip(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            (root / "bildebank-config.toml").write_text(
-                """
-[openclip]
-enabled = true
-model_root = "models/openclip"
-device = "cpu"
-model_name = "ViT-L-14"
-pretrained = "laion2b_s32b_b82k"
-
-[image_search]
-enabled = false
-""",
-                encoding="utf-8",
-            )
-
-            config = load_config(root)
-
-            self.assertFalse(config.openclip.enabled)
-            self.assertEqual(config.openclip.model_root, root / "models" / "openclip")
-            self.assertEqual(config.openclip.device, "cpu")
-            self.assertEqual(config.openclip.model_name, "ViT-L-14")
-            self.assertEqual(config.openclip.pretrained, "laion2b_s32b_b82k")
-
     def test_rejects_target_inside_program_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -8900,117 +8718,6 @@ enabled = false
             self.assertEqual(code, 1)
             self.assertIn("Bildesamlingen kan ikke ligge inni programmappen", stderr)
             self.assertFalse((target / DB_FILENAME).exists())
-
-    def test_update_runs_update_script_without_target(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            update_script = repo / "update.ps1"
-            update_script.write_text("# update\n", encoding="utf-8")
-
-            with (
-                patch("bildebank.cli_update.sys.platform", "win32"),
-                patch("bildebank.cli.program_repo_root", return_value=repo),
-                patch("bildebank.cli_update.subprocess.run") as subprocess_run,
-            ):
-                subprocess_run.return_value.returncode = 7
-
-                code, stdout, stderr = capture_cli(["update"])
-
-            self.assertEqual(code, 7)
-            self.assertEqual(stdout, "")
-            self.assertEqual(stderr, "")
-            subprocess_run.assert_called_once_with(
-                [
-                    "powershell.exe",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    str(update_script),
-                ],
-                check=False,
-            )
-
-    def test_update_runs_linux_update_commands(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            (repo / ".git").mkdir()
-            (repo / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
-            venv_python = repo / ".venv" / "bin" / "python"
-            venv_python.parent.mkdir(parents=True)
-            venv_python.write_text("# python\n", encoding="utf-8")
-
-            with (
-                patch("bildebank.cli_update.sys.platform", "linux"),
-                patch("bildebank.cli.program_repo_root", return_value=repo),
-                patch("bildebank.cli_update.subprocess.run") as subprocess_run,
-            ):
-                subprocess_run.return_value.returncode = 0
-                code, stdout, stderr = capture_cli(["update"])
-
-            self.assertEqual(code, 0)
-            self.assertIn("Ferdig", stdout)
-            self.assertEqual(stderr, "")
-            self.assertEqual(subprocess_run.call_count, 2)
-            subprocess_run.assert_any_call(["git", "pull", "--ff-only"], cwd=repo, check=False)
-            subprocess_run.assert_any_call(
-                [str(venv_python), "-m", "pip", "install", "-e", "."],
-                cwd=repo,
-                check=False,
-            )
-
-    def test_update_creates_linux_venv_when_missing(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            (repo / ".git").mkdir()
-            (repo / "pyproject.toml").write_text("[project]\nname = 'x'\n", encoding="utf-8")
-
-            with (
-                patch("bildebank.cli_update.sys.platform", "linux"),
-                patch("bildebank.cli.program_repo_root", return_value=repo),
-                patch("bildebank.cli_update.shutil.which", return_value="/usr/bin/python3.13"),
-                patch("bildebank.cli_update.subprocess.run") as subprocess_run,
-            ):
-                subprocess_run.return_value.returncode = 0
-                code, stdout, stderr = capture_cli(["update"])
-
-            self.assertEqual(code, 0)
-            self.assertIn("Ferdig", stdout)
-            self.assertEqual(stderr, "")
-            subprocess_run.assert_any_call(
-                ["/usr/bin/python3.13", "-m", "venv", ".venv"],
-                cwd=repo,
-                check=False,
-            )
-
-    def test_update_reports_missing_update_script(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-
-            with (
-                patch("bildebank.cli_update.sys.platform", "win32"),
-                patch("bildebank.cli.program_repo_root", return_value=repo),
-            ):
-                code, stdout, stderr = capture_cli(["update"])
-
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("Fant ikke update.ps1", stderr)
-
-    def test_update_reports_missing_powershell(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp)
-            (repo / "update.ps1").write_text("# update\n", encoding="utf-8")
-
-            with (
-                patch("bildebank.cli_update.sys.platform", "win32"),
-                patch("bildebank.cli.program_repo_root", return_value=repo),
-                patch("bildebank.cli_update.subprocess.run", side_effect=FileNotFoundError),
-            ):
-                code, stdout, stderr = capture_cli(["update"])
-
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("Fant ikke PowerShell", stderr)
 
     def test_import_accepts_path_with_accidental_trailing_quote(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -11283,144 +10990,6 @@ enabled = false
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("ikke del av en navnekollisjon", stdout)
-
-    def test_exiftool_resolver_prefers_explicit_path_then_managed_path(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            repo = root / "repo"
-            explicit = root / "custom-exiftool.exe"
-            managed = managed_exiftool_path(repo)
-            write_fake_exiftool(explicit)
-            write_fake_exiftool(managed)
-            (managed.parent / "exiftool_files").mkdir()
-
-            self.assertEqual(resolve_exiftool_path(repo, explicit), explicit)
-            self.assertEqual(resolve_exiftool_path(repo), managed)
-
-    def test_exiftool_resolver_falls_back_to_path(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            path_tool = root / "exiftool"
-            write_fake_exiftool(path_tool)
-
-            with patch("bildebank.exiftool.shutil.which", return_value=str(path_tool)):
-                self.assertEqual(resolve_exiftool_path(root / "repo"), str(path_tool))
-
-    def test_exiftool_resolver_requires_managed_support_folder(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp) / "repo"
-            write_fake_exiftool(managed_exiftool_path(repo))
-
-            with self.assertRaisesRegex(FileNotFoundError, "exiftool_files"):
-                resolve_exiftool_path(repo)
-
-    def test_exiftool_install_downloads_zip_to_managed_tools_folder(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            repo = root / "repo"
-            source_zip = root / "exiftool.zip"
-            script = """#!/usr/bin/env python3
-import sys
-if "-ver" in sys.argv:
-    print("13.58")
-"""
-            with zipfile.ZipFile(source_zip, "w") as archive:
-                archive.writestr("exiftool-13.58_64/exiftool(-k).exe", script)
-                archive.writestr("exiftool-13.58_64/exiftool_files/ExifTool_config", "config")
-
-            def fake_urlretrieve(url: str, filename: str | Path):
-                shutil.copyfile(source_zip, filename)
-                return (str(filename), None)
-
-            with (
-                patch("bildebank.cli.sys.platform", "win32"),
-                patch("bildebank.cli.program_repo_root", return_value=repo),
-                patch("bildebank.exiftool.urllib.request.urlretrieve", side_effect=fake_urlretrieve),
-            ):
-                code, stdout, stderr = capture_cli(["exiftool-install"])
-
-            installed = repo / "bildebank-tools" / "exiftool"
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Installerte ExifTool 13.58", stdout)
-            self.assertTrue((installed / "exiftool.exe").exists())
-            self.assertTrue((installed / "exiftool_files").is_dir())
-
-    def test_exiftool_install_fails_on_linux(self) -> None:
-        with patch("bildebank.cli.sys.platform", "linux"):
-            code, stdout, stderr = capture_cli(["exiftool-install"])
-
-        self.assertEqual(1, code)
-        self.assertEqual("", stdout)
-        self.assertIn("støttes bare på Windows", stderr)
-        self.assertIn("libimage-exiftool-perl", stderr)
-
-    def test_exiftool_metadata_gaps_lists_dates_bildebank_does_not_read(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            source.mkdir()
-            (source / "IMG_20240102.jpg").write_bytes(b"image")
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-
-            exiftool = root / "exiftool.exe"
-            write_fake_exiftool(
-                exiftool,
-                """import json
-print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}]))
-""",
-            )
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "exiftool-metadata-gaps", "--exiftool", str(exiftool)]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("2024-01-02\tDateTimeOriginal", stdout)
-            self.assertIn("bildebank=filename:2024-01-02", stdout)
-            self.assertIn("IMG_20240102.jpg", stdout)
-            self.assertIn("Oppsummering: exiftool_metadata_funnet=1", stdout)
-            self.assertIn("exiftool: kontrollert=1/1", stderr)
-            self.assertIn("gjenstår=0s", stderr)
-
-    def test_exiftool_metadata_gaps_reads_files_in_batches(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            source.mkdir()
-            for index, name in enumerate(("IMG_20240102.jpg", "IMG_20240103.jpg", "IMG_20240104.jpg")):
-                (source / name).write_bytes(f"image-{index}".encode("ascii"))
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-
-            calls = target / "exiftool-calls.txt"
-            exiftool = root / "exiftool.exe"
-            write_fake_exiftool(
-                exiftool,
-                f"""import json
-import sys
-from pathlib import Path
-paths = [arg for arg in sys.argv[1:] if not arg.startswith("-")]
-with Path({str(calls)!r}).open("a", encoding="utf-8") as fh:
-    fh.write("call\\n")
-print(json.dumps([
-    {{"SourceFile": path, "DateTimeOriginal": "2024:01:02 03:04:05"}}
-    for path in paths
-]))
-""",
-            )
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "exiftool-metadata-gaps", "--exiftool", str(exiftool), "--batch-size", "10"]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual(calls.read_text(encoding="utf-8"), "call\n")
-            self.assertIn("Oppsummering: exiftool_metadata_funnet=3", stdout)
 
     def test_rejects_target_inside_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
