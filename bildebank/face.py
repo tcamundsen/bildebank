@@ -1062,7 +1062,7 @@ def person_source_browser_items(
     *,
     hide_out_of_focus: bool = False,
 ) -> list[dict[str, object]]:
-    from .server_browser import source_items
+    from .server_browser_queries import source_items
     from .server_browser_sources import person_browser_source
 
     source = person_browser_source(person_name, include_suggestions=True, show_faces=False)

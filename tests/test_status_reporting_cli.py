@@ -8,7 +8,7 @@ from pathlib import Path
 
 from bildebank import db
 from bildebank.db import DB_FILENAME
-from bildebank.server_browser import out_of_focus_file_ids
+from bildebank.server_browser_queries import out_of_focus_file_ids
 from tests.cli_helpers import capture_cli, run_cli
 from tests.test_media import minimal_mp4_with_creation_date
 

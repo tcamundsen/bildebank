@@ -701,11 +701,13 @@ def run_years_profile_benchmark(args: argparse.Namespace) -> YearsProfileSummary
 
 
 def years_profile_step(target: Path, index: int, *, config: Any | None = None) -> YearsProfileStepResult:
-    from bildebank.server_browser import (
-        browser_year_summaries,
-        items_by_file_ids,
+    from bildebank.server_browser_overview_html import (
         year_card_html,
         years_navigation_controls_html,
+    )
+    from bildebank.server_browser_queries import (
+        browser_year_summaries,
+        items_by_file_ids,
     )
     from bildebank.server_pages import shell_page_html
 
@@ -781,7 +783,7 @@ def years_profile_step(target: Path, index: int, *, config: Any | None = None) -
 
 
 def profile_source_and_file_id(target: Path, url: str) -> tuple[Any, int]:
-    from bildebank.server_browser import imported_source_by_id
+    from bildebank.server_browser_queries import imported_source_by_id
     from bildebank.server_browser_sources import (
         all_browser_source,
         imported_source_browser_source,
@@ -818,7 +820,7 @@ def profile_source_and_file_id(target: Path, url: str) -> tuple[Any, int]:
 
 
 def profile_cached_month_keys(target: Path, source: Any) -> list[str] | None:
-    from bildebank.server_browser import browser_month_keys, source_month_keys
+    from bildebank.server_browser_queries import browser_month_keys, source_month_keys
     from bildebank.server_browser_sources import all_browser_source, source_has_sql_filter
 
     if source == all_browser_source():
@@ -829,7 +831,7 @@ def profile_cached_month_keys(target: Path, source: Any) -> list[str] | None:
 
 
 def profile_cached_item_ids(target: Path, source: Any) -> list[int] | None:
-    from bildebank.server_browser import browser_item_ids, source_item_ids
+    from bildebank.server_browser_queries import browser_item_ids, source_item_ids
     from bildebank.server_browser_sources import all_browser_source, source_has_sql_filter
 
     if source == all_browser_source():
@@ -857,7 +859,7 @@ def profile_item_step(
     config: Any | None = None,
 ) -> ProfileStepResult:
     from bildebank import db
-    from bildebank.server_browser import (
+    from bildebank.server_browser_queries import (
         adjacent_items_from_id_order,
         adjacent_source_items,
         item_by_id,

@@ -18,7 +18,7 @@ from bildebank.config import (
 from bildebank.face import FaceSuggestStats, connect_face_db
 from bildebank.server import BildebankRequestHandler
 from bildebank.server_assets import SERVER_JS
-from bildebank.server_browser import source_item_ids
+from bildebank.server_browser_queries import source_item_ids
 from bildebank.server_browser_sources import missing_face_suggestions_browser_source
 from bildebank.server_pages import people_page_html
 from bildebank.server_pages import item_page_html

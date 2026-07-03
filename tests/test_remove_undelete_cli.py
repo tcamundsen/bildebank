@@ -10,7 +10,7 @@ from unittest.mock import patch
 from bildebank.db import DB_FILENAME
 from bildebank.media import sha256_file
 from bildebank.server_actions import remove_file_from_browser, undelete_file_from_browser
-from bildebank.server_browser import browser_item_by_id
+from bildebank.server_browser_queries import browser_item_by_id
 from bildebank.target_lock import LOCK_FILENAME
 from tests.cli_helpers import capture_cli, run_cli
 

@@ -255,7 +255,7 @@ def search_server_images(server: Any, *, query: str, limit: int) -> ServerSearch
     with TargetLock(server.target, command="image-search-web"):
         hidden_file_ids = None
         if server.config.browser.hide_out_of_focus:
-            from .server_browser import out_of_focus_file_ids
+            from .server_browser_queries import out_of_focus_file_ids
 
             hidden_file_ids = out_of_focus_file_ids(server.target)
         results = server.search_cache.search(server.target, clean_query, limit, hidden_file_ids=hidden_file_ids)
@@ -334,7 +334,7 @@ def search_result_items_by_id(target: Path, results: tuple[ImageSearchResult, ..
     if not file_ids:
         return {}
     try:
-        from .server_browser import items_by_file_ids
+        from .server_browser_queries import items_by_file_ids
 
         return {int(item["id"]): item for item in items_by_file_ids(target, file_ids)}
     except (OSError, sqlite3.Error, ValueError):
@@ -349,7 +349,7 @@ def result_html(target: Path, result: ImageSearchResult, item: Any | None = None
     link_class = ""
     rotation_style = ""
     if item is not None:
-        from .server_browser import media_link_class_attr, rotation_style_attr
+        from .server_browser_item_html import media_link_class_attr, rotation_style_attr
 
         link_class = media_link_class_attr(item)
         rotation_style = rotation_style_attr(item, target)

@@ -12,7 +12,8 @@ from bildebank.db import init_database
 from bildebank.geo import h3_cells_for_manual_cell, h3_cells_for_point
 from bildebank.server import BildebankRequestHandler
 from bildebank.server_assets import SERVER_JS
-from bildebank.server_browser import adjacent_browser_items, browser_item_by_id, browser_month_navigation, image_info_content_html
+from bildebank.server_browser_info_html import image_info_content_html
+from bildebank.server_browser_queries import adjacent_browser_items, browser_item_by_id, browser_month_navigation
 from bildebank.server_pages import (
     geo_area_page_html,
     geo_index_page_html,
@@ -326,4 +327,3 @@ class ServerGeoCliTests(unittest.TestCase):
         self.assertNotIn("<dt>Kart</dt>", body)
         self.assertNotIn("google.com/maps", body)
         self.assertNotIn("/geo/area/", body)
-

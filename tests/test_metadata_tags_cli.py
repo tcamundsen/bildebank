@@ -9,14 +9,13 @@ from bildebank import db
 from bildebank.geo import h3_cells_for_point
 from bildebank.server_browser_sources import tag_browser_source
 from bildebank.server_assets import SERVER_CSS
-from bildebank.server_browser import (
+from bildebank.server_browser_info_html import date_source_text, image_info_content_html
+from bildebank.server_browser_queries import (
     adjacent_browser_items,
     adjacent_source_items,
     browser_item_by_id,
     browser_month_items,
     browser_month_navigation,
-    date_source_text,
-    image_info_content_html,
     month_key_for_item,
     source_item_by_id,
     source_month_items,

@@ -22,7 +22,7 @@ from bildebank.server import (
     validate_bind_host,
 )
 from bildebank.server_assets import SERVER_JS
-from bildebank.server_browser import item_media_html
+from bildebank.server_browser_item_html import item_media_html
 from bildebank.server_files import server_file_path_by_id
 from bildebank.server_pages import (
     app_status_page_html,

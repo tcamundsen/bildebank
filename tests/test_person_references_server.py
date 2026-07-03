@@ -16,7 +16,7 @@ from bildebank.server_faces import (
     person_reference_items,
     person_references_page_html,
 )
-from bildebank.server_browser import source_item_ids
+from bildebank.server_browser_queries import source_item_ids
 from bildebank.server_browser_sources import person_reference_suggestions_browser_source
 from bildebank.server_pages import shell_page_html
 

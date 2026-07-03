@@ -356,7 +356,7 @@ def browser_items(
     hide_out_of_focus: bool = False,
     timing: BrowserExportTiming | None = None,
 ) -> list[dict[str, object]]:
-    from .server_browser import all_source_items
+    from .server_browser_queries import all_source_items
 
     start = perf_counter()
     items = [row_to_item(target, row) for row in all_source_items(target, hide_out_of_focus=hide_out_of_focus)]

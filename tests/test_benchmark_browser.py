@@ -306,10 +306,10 @@ def test_years_profile_summary_counts_threshold_failures_and_prints_steps(capsys
 
 def test_years_profile_step_renders_with_server_pages_shell(monkeypatch, tmp_path: Path) -> None:
     benchmark = load_benchmark_module()
-    from bildebank import server_browser
+    from bildebank import server_browser_overview_html, server_browser_queries
 
     monkeypatch.setattr(
-        server_browser,
+        server_browser_queries,
         "browser_year_summaries",
         lambda target, hide_out_of_focus=False: [
             {
@@ -322,14 +322,14 @@ def test_years_profile_step_renders_with_server_pages_shell(monkeypatch, tmp_pat
         ],
     )
     monkeypatch.setattr(
-        server_browser,
+        server_browser_queries,
         "items_by_file_ids",
         lambda target, file_ids, hide_out_of_focus=False: [
             {"id": 7, "target_path": "2024/01/IMG.jpg", "stored_filename": "IMG.jpg"}
         ],
     )
-    monkeypatch.setattr(server_browser, "year_card_html", lambda target, card: "<article>2024</article>")
-    monkeypatch.setattr(server_browser, "years_navigation_controls_html", lambda cards: "<nav></nav>")
+    monkeypatch.setattr(server_browser_overview_html, "year_card_html", lambda target, card: "<article>2024</article>")
+    monkeypatch.setattr(server_browser_overview_html, "years_navigation_controls_html", lambda cards: "<nav></nav>")
 
     step = benchmark.years_profile_step(tmp_path, 1)
 
@@ -340,10 +340,10 @@ def test_years_profile_step_renders_with_server_pages_shell(monkeypatch, tmp_pat
 
 def test_profile_parser_supports_imported_source_item_url(monkeypatch, tmp_path: Path) -> None:
     benchmark = load_benchmark_module()
-    from bildebank import server_browser
+    from bildebank import server_browser_queries
 
     monkeypatch.setattr(
-        server_browser,
+        server_browser_queries,
         "imported_source_by_id",
         lambda target, source_id: SimpleNamespace(id=source_id, name="Minnekort"),
     )
@@ -360,9 +360,9 @@ def test_profile_parser_supports_imported_source_item_url(monkeypatch, tmp_path:
 
 def test_profile_parser_rejects_unknown_imported_source(monkeypatch, tmp_path: Path) -> None:
     benchmark = load_benchmark_module()
-    from bildebank import server_browser
+    from bildebank import server_browser_queries
 
-    monkeypatch.setattr(server_browser, "imported_source_by_id", lambda target, source_id: None)
+    monkeypatch.setattr(server_browser_queries, "imported_source_by_id", lambda target, source_id: None)
 
     try:
         benchmark.profile_source_and_file_id(
@@ -377,7 +377,7 @@ def test_profile_parser_rejects_unknown_imported_source(monkeypatch, tmp_path: P
 
 def test_profile_item_step_uses_current_browser_config(monkeypatch, tmp_path: Path) -> None:
     benchmark = load_benchmark_module()
-    from bildebank import db, server_browser, server_pages
+    from bildebank import db, server_browser_queries, server_pages
     from bildebank.config import AppConfig, BrowserConfig
     from bildebank.server_browser_sources import all_browser_source
 
@@ -401,15 +401,15 @@ def test_profile_item_step_uses_current_browser_config(monkeypatch, tmp_path: Pa
     captured_kwargs: dict[str, object] = {}
 
     monkeypatch.setattr(db, "connect", lambda target: FakeConnection())
-    monkeypatch.setattr(server_browser, "item_by_id", lambda target, file_id, conn=None: item)
+    monkeypatch.setattr(server_browser_queries, "item_by_id", lambda target, file_id, conn=None: item)
     monkeypatch.setattr(
-        server_browser,
+        server_browser_queries,
         "adjacent_items_from_id_order",
         lambda item_ids, file_id, positions=None: ({"id": 6}, {"id": 8}),
     )
-    monkeypatch.setattr(server_browser, "month_key_for_item", lambda target, item: "2024-01")
+    monkeypatch.setattr(server_browser_queries, "month_key_for_item", lambda target, item: "2024-01")
     monkeypatch.setattr(
-        server_browser,
+        server_browser_queries,
         "month_navigation_for_keys",
         lambda month_keys, month_key: {"previous_year": None, "previous_month": None, "next_month": None, "next_year": None},
     )

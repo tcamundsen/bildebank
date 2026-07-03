@@ -17,7 +17,7 @@ from bildebank.db import DB_FILENAME, init_database
 from bildebank.face import connect_face_db
 from bildebank.html_export import render_html
 from bildebank.server_assets import SERVER_CSS
-from bildebank.server_browser import browser_month_items, source_item_ids
+from bildebank.server_browser_queries import browser_month_items, source_item_ids
 from bildebank.server_browser_sources import all_browser_source
 from bildebank.server_pages import month_page_html
 from bildebank.target_lock import LOCK_FILENAME

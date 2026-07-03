@@ -13,14 +13,15 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from bildebank import db, server_browser, server_browser_sidecars
+from bildebank import db, server_browser_item_html, server_browser_queries, server_browser_sidecars
 from bildebank.config import AppConfig, FaceRecognitionConfig
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.face import connect_face_db
 from bildebank.geo import h3_cells_for_point
 from bildebank.server import BildebankRequestHandler, BildebankServer
 from bildebank.server_assets import SERVER_JS
-from bildebank.server_browser import (
+from bildebank.server_browser_info_html import image_info_content_html
+from bildebank.server_browser_queries import (
     adjacent_browser_items,
     adjacent_source_items,
     browser_item_by_id,
@@ -28,9 +29,6 @@ from bildebank.server_browser import (
     browser_month_navigation,
     browser_year_cards,
     browser_year_month_cards,
-    image_info_content_html,
-    motion_video_for_image,
-    raw_sidecar_id_by_image_id,
     source_item_by_id,
     source_item_ids,
     source_month_items,
@@ -39,6 +37,7 @@ from bildebank.server_browser import (
     source_summary_rows,
     valid_year_key,
 )
+from bildebank.server_browser_sidecars import motion_video_for_image, raw_sidecar_id_by_image_id
 from bildebank.server_browser_sources import (
     all_browser_source,
     imported_source_browser_source,
@@ -460,17 +459,26 @@ class ServerBrowserCliTests(unittest.TestCase):
             finally:
                 conn.close()
 
-            with patch("bildebank.server_browser.browser_month_keys", wraps=server_browser.browser_month_keys) as month_keys:
+            with patch(
+                "bildebank.server_browser_queries.browser_month_keys",
+                wraps=server_browser_queries.browser_month_keys,
+            ) as month_keys:
                 years_body = years_page_html(target)
             year_body = year_months_page_html(target, "2005")
             filtered_years_body = years_page_html(target, hide_out_of_focus=True)
             filtered_year_body = year_months_page_html(target, "2007", hide_out_of_focus=True)
             year_cards = browser_year_cards(target, hide_out_of_focus=True)
             month_cards = browser_year_month_cards(target, "2005")
-            with patch("bildebank.server_browser.browser_month_items", wraps=server_browser.browser_month_items) as month_items:
-                optimized_year_cards = server_browser.browser_year_cards(target)
-            with patch("bildebank.server_browser.all_source_where", wraps=server_browser.all_source_where) as all_where:
-                server_browser.browser_year_summaries(target)
+            with patch(
+                "bildebank.server_browser_queries.browser_month_items",
+                wraps=server_browser_queries.browser_month_items,
+            ) as month_items:
+                optimized_year_cards = server_browser_queries.browser_year_cards(target)
+            with patch(
+                "bildebank.server_browser_queries.all_source_where",
+                wraps=server_browser_queries.all_source_where,
+            ) as all_where:
+                server_browser_queries.browser_year_summaries(target)
 
         self.assertIn('href="/years/2005"', years_body)
         self.assertIn('data-nav-button-pair="year"', years_body)
@@ -1618,7 +1626,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             patch("bildebank.server_browser_item_html.raw_sidecar_for_image", return_value=None),
         ):
             self.assertEqual(
-                server_browser.associated_files_for_item(Path("/unused"), item),
+                server_browser_item_html.associated_files_for_item(Path("/unused"), item),
                 (None, None),
             )
 
@@ -1637,7 +1645,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             patch("bildebank.server_browser_item_html.raw_sidecar_for_image", return_value=None) as raw_lookup,
         ):
             self.assertEqual(
-                server_browser.associated_files_for_item(Path("/unused"), item),
+                server_browser_item_html.associated_files_for_item(Path("/unused"), item),
                 (motion_item, None),
             )
 
@@ -1699,7 +1707,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             handler.redirect = fake_redirect  # type: ignore[method-assign]
 
             with patch(
-                "bildebank.server_browser.source_item_count",
+                "bildebank.server_browser_queries.source_item_count",
                 side_effect=AssertionError("Filter item page should use prefetched source count."),
             ):
                 body = source_item_page_html(
@@ -1758,7 +1766,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             self.assertIsNotNone(source)
             source_browser = imported_source_browser_source(source)
             with patch(
-                "bildebank.server_browser.source_items",
+                "bildebank.server_browser_queries.source_items",
                 side_effect=AssertionError("Imported source should use SQL filter"),
             ):
                 source_item = source_item_by_id(target, source_browser, 2)
@@ -1782,7 +1790,7 @@ class ServerBrowserCliTests(unittest.TestCase):
                 source_month_nav,
             )
             with patch(
-                "bildebank.server_browser.source_month_keys",
+                "bildebank.server_browser_queries.source_month_keys",
                 side_effect=AssertionError("Item-rendering skal bruke eksisterende månedsnavigasjon."),
             ):
                 first_item_body = source_item_page_html(
@@ -1894,7 +1902,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             february_id = rows["C_20240202.jpg"]
             march_id = rows["A_20240301.jpg"]
             with patch(
-                "bildebank.server_browser.source_items",
+                "bildebank.server_browser_queries.source_items",
                 side_effect=AssertionError("Imported source should not materialize source_items"),
             ):
                 self.assertEqual(source_item_ids(target, source), [january_id, february_id, march_id])
@@ -2255,9 +2263,10 @@ class ServerBrowserCliTests(unittest.TestCase):
                 previous_item, next_item = adjacent_source_items(target, imported_source, item, conn=conn)
                 month_nav = source_month_navigation(target, imported_source, item)
 
-                server_browser.clear_sidecar_caches()
-                server_browser.motion_video_file_ids(target)
-                server_browser.raw_sidecar_file_ids(target)
+                server_browser_sidecars.clear_sidecar_data_caches()
+                server_browser_item_html.clear_tag_control_rows_cache()
+                server_browser_sidecars.motion_video_file_ids(target)
+                server_browser_sidecars.raw_sidecar_file_ids(target)
                 with (
                     patch(
                         "bildebank.db.connect",
@@ -2292,7 +2301,7 @@ class ServerBrowserCliTests(unittest.TestCase):
                         hide_out_of_focus=True,
                         conn=conn,
                     )
-                    server_browser.hidden_sidecar_id_filter_sql(target, "1 = 1", (), conn=conn)
+                    server_browser_queries.hidden_sidecar_id_filter_sql(target, "1 = 1", (), conn=conn)
                     with (
                         patch(
                             "bildebank.server_browser_sidecars.query_motion_video_file_ids",
@@ -2303,7 +2312,7 @@ class ServerBrowserCliTests(unittest.TestCase):
                             side_effect=AssertionError("rescanned raw sidecars"),
                         ),
                     ):
-                        server_browser.hidden_sidecar_id_filter_sql(target, "1 = 1", (), conn=conn)
+                        server_browser_queries.hidden_sidecar_id_filter_sql(target, "1 = 1", (), conn=conn)
             finally:
                 conn.close()
 

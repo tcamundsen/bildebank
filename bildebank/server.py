@@ -65,7 +65,9 @@ from .server_pages import (
     year_months_page_html,
     years_page_html,
 )
-from .server_browser import (
+from .server_browser_info_html import image_info_content_html
+from .server_browser_item_html import clear_tag_control_rows_cache
+from .server_browser_queries import (
     active_item_by_id_including_hidden,
     adjacent_items_from_id_order,
     adjacent_source_items,
@@ -73,8 +75,6 @@ from .server_browser import (
     browser_item_by_id,
     browser_item_ids,
     browser_month_keys,
-    clear_sidecar_caches,
-    image_info_content_html,
     imported_source_by_id,
     item_by_id,
     month_key_for_item,
@@ -89,6 +89,7 @@ from .server_browser import (
     valid_month_key,
     valid_year_key,
 )
+from .server_browser_sidecars import clear_sidecar_data_caches
 from .server_browser_sources import (
     BrowserSource,
     all_browser_source,
@@ -136,6 +137,11 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 PREVIEW_MAX_SIZE = 1600
 BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS = 1.0
+
+
+def clear_sidecar_caches() -> None:
+    clear_sidecar_data_caches()
+    clear_tag_control_rows_cache()
 
 
 def settings_redirect_location(params: dict[str, list[str]]) -> str:

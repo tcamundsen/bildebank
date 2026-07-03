@@ -35,7 +35,7 @@ from bildebank.server_pages import (
     geo_index_page_html,
     source_month_page_html,
 )
-from bildebank.server_browser import (
+from bildebank.server_browser_queries import (
     adjacent_source_items,
     source_item_by_id,
     source_month_items,
@@ -354,7 +354,10 @@ class GeoTests(unittest.TestCase):
             place = geo_place_by_slug(target, "hytta")
             assert place is not None
             source = geo_place_browser_source(place)
-            with patch("bildebank.server_browser.source_items", side_effect=AssertionError("source_items should not be used")):
+            with patch(
+                "bildebank.server_browser_queries.source_items",
+                side_effect=AssertionError("source_items should not be used"),
+            ):
                 items = geo_place_items(target, "hytta")
                 item = source_item_by_id(target, source, parent_id)
                 assert item is not None
@@ -509,7 +512,10 @@ class GeoTests(unittest.TestCase):
             set_file_h3_cells(target, first_id, {column: h3_cell})
             set_file_h3_cells(target, second_id, {column: h3_cell})
             source = geo_place_browser_source(place)
-            with patch("bildebank.server_browser.source_items", side_effect=AssertionError("source_items should not be used")):
+            with patch(
+                "bildebank.server_browser_queries.source_items",
+                side_effect=AssertionError("source_items should not be used"),
+            ):
                 item = source_item_by_id(target, source, first_id)
                 assert item is not None
                 previous_item, next_item = adjacent_source_items(target, source, item)

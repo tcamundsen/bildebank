@@ -12,7 +12,7 @@ from .face import face_database_dir, face_model_db_filename
 from .html_export import render_html
 from .importer import safe_copy
 from .media import media_kind
-from .server_browser import browser_date_for_item, source_items
+from .server_browser_queries import browser_date_for_item, source_items
 from .server_browser_sources import person_browser_source
 from .server_faces import person_by_name
 from .static_browser import static_browser_item

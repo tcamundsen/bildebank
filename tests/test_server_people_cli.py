@@ -16,7 +16,7 @@ from bildebank.face import add_person_to_file, connect_face_db, remove_person_fr
 from bildebank.media_cache import cached_image_dimensions, cached_image_orientation
 from bildebank.server import BildebankRequestHandler, BildebankServer
 from bildebank.server_assets import SERVER_CSS, SERVER_JS
-from bildebank.server_browser import (
+from bildebank.server_browser_queries import (
     adjacent_browser_items,
     adjacent_person_items,
     adjacent_source_items,
@@ -1255,7 +1255,10 @@ class ServerPeopleCliTests(unittest.TestCase):
             all_source = person_browser_source("Kari", include_suggestions=True, show_faces=False)
             confirmed_source = person_browser_source("Kari", include_suggestions=False, show_faces=False)
 
-            with patch("bildebank.server_browser.source_items", side_effect=AssertionError("person browser should use SQL filter")):
+            with patch(
+                "bildebank.server_browser_queries.source_items",
+                side_effect=AssertionError("person browser should use SQL filter"),
+            ):
                 all_item = source_item_by_id(target, all_source, 2)
                 self.assertIsNotNone(all_item)
                 previous_item, next_item = adjacent_source_items(target, all_source, all_item)
@@ -1337,7 +1340,10 @@ class ServerPeopleCliTests(unittest.TestCase):
                     patch("bildebank.server.source_item_ids", wraps=source_item_ids) as item_ids_mock,
                     patch("bildebank.server.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock,
                     patch("bildebank.server.adjacent_source_items", wraps=adjacent_source_items) as adjacent_mock,
-                    patch("bildebank.server_browser.first_source_day_item", side_effect=AssertionError("handler should pass cached first day item")),
+                    patch(
+                        "bildebank.server_browser_queries.first_source_day_item",
+                        side_effect=AssertionError("handler should pass cached first day item"),
+                    ),
                 ):
                     BildebankRequestHandler.respond_browser_source(  # type: ignore[arg-type]
                         handler,
@@ -1475,7 +1481,7 @@ class ServerPeopleCliTests(unittest.TestCase):
             confirmed_source = person_browser_source("Kari", include_suggestions=False)
             confirmed_item = source_item_by_id(target, confirmed_source, 1)
             self.assertIsNotNone(confirmed_item)
-            with patch("bildebank.server_browser.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock:
+            with patch("bildebank.server_browser_queries.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock:
                 confirmed_body = source_item_page_html(
                     target,
                     confirmed_source,
@@ -1543,4 +1549,3 @@ class ServerPeopleCliTests(unittest.TestCase):
         self.assertIn("/api/face-person-delete", SERVER_JS)
         self.assertEqual([int(item["id"]) for item in confirmed_items], [1])
         self.assertEqual([int(item["id"]) for item in all_items], [1, 2])
-

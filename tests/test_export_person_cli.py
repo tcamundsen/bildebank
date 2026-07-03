@@ -19,7 +19,7 @@ from bildebank.export_person import (
 )
 from bildebank.face import connect_face_db, export_people_browser, export_person_browser, person_source_browser_items
 from bildebank.media import sha256_file
-from bildebank.server_browser import source_item_ids
+from bildebank.server_browser_queries import source_item_ids
 from bildebank.server_browser_sources import person_browser_source
 from bildebank.target_lock import LOCK_FILENAME
 from tests.cli_helpers import capture_cli

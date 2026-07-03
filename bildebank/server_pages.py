@@ -6,8 +6,23 @@ from typing import Any
 
 from .config import AppConfig, BrowserHotkeyConfig, FaceRecognitionConfig
 from . import server_app
-from . import server_browser
-from .server_browser import adjacent_browser_items, browser_month_navigation, first_browser_item
+from .server_browser_admin_html import sources_page_html as browser_sources_page_html
+from .server_browser_admin_html import tags_page_html as browser_tags_page_html
+from .server_browser_item_html import item_page_html as browser_item_page_html
+from .server_browser_item_html import person_item_page_html as browser_person_item_page_html
+from .server_browser_item_html import source_item_page_html as browser_source_item_page_html
+from .server_browser_overview_html import empty_browser_html as browser_empty_browser_html
+from .server_browser_overview_html import empty_person_browser_html as browser_empty_person_browser_html
+from .server_browser_overview_html import empty_source_html as browser_empty_source_html
+from .server_browser_overview_html import month_page_html as browser_month_page_html
+from .server_browser_overview_html import person_month_page_html as browser_person_month_page_html
+from .server_browser_overview_html import person_not_found_html as browser_person_not_found_html
+from .server_browser_overview_html import source_month_page_html as browser_source_month_page_html
+from .server_browser_overview_html import source_year_months_page_html as browser_source_year_months_page_html
+from .server_browser_overview_html import source_years_page_html as browser_source_years_page_html
+from .server_browser_overview_html import year_months_page_html as browser_year_months_page_html
+from .server_browser_overview_html import years_page_html as browser_years_page_html
+from .server_browser_queries import adjacent_browser_items, browser_month_navigation, first_browser_item
 from .server_browser_sources import BrowserSource
 from . import server_faces
 from . import server_filter
@@ -207,7 +222,7 @@ def markdown_doc_page_html(
 
 
 def empty_browser_html(*, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
-    return server_browser.empty_browser_html(
+    return browser_empty_browser_html(
         shell_page_html=shell_page_html,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
@@ -230,7 +245,7 @@ def item_page_html(
     hotkeys: Mapping[str, BrowserHotkeyConfig] | None = None,
     read_only: bool = False,
 ) -> str:
-    return server_browser.item_page_html(
+    return browser_item_page_html(
         target,
         item,
         previous_item,
@@ -270,7 +285,7 @@ def source_item_page_html(
     timing_callback: Any | None = None,
     read_only: bool = False,
 ) -> str:
-    return server_browser.source_item_page_html(
+    return browser_source_item_page_html(
         target,
         source,
         item,
@@ -354,7 +369,7 @@ def person_item_page_html(
     next_item: Any | None,
     month_nav: dict[str, str | None],
 ) -> str:
-    return server_browser.person_item_page_html(
+    return browser_person_item_page_html(
         target,
         person_name,
         item,
@@ -366,7 +381,7 @@ def person_item_page_html(
 
 
 def month_page_html(target: Path, month_key: str, items: list[Any]) -> str:
-    return server_browser.month_page_html(target, month_key, items, page_html=page_html)
+    return browser_month_page_html(target, month_key, items, page_html=page_html)
 
 
 def source_month_page_html(
@@ -380,7 +395,7 @@ def source_month_page_html(
     face_config: FaceRecognitionConfig | None = None,
     hide_out_of_focus: bool = False,
 ) -> str:
-    return server_browser.source_month_page_html(
+    return browser_source_month_page_html(
         target,
         source,
         month_key,
@@ -403,7 +418,7 @@ def source_year_months_page_html(
     face_config: FaceRecognitionConfig | None = None,
     hide_out_of_focus: bool = False,
 ) -> str:
-    return server_browser.source_year_months_page_html(
+    return browser_source_year_months_page_html(
         target,
         source,
         year,
@@ -424,7 +439,7 @@ def source_years_page_html(
     face_config: FaceRecognitionConfig | None = None,
     hide_out_of_focus: bool = False,
 ) -> str:
-    return server_browser.source_years_page_html(
+    return browser_source_years_page_html(
         target,
         source,
         page_html=page_html,
@@ -442,7 +457,7 @@ def years_page_html(
     openclip_enabled: bool = True,
     hide_out_of_focus: bool = False,
 ) -> str:
-    return server_browser.years_page_html(
+    return browser_years_page_html(
         target,
         shell_page_html=shell_page_html,
         face_enabled=face_enabled,
@@ -459,7 +474,7 @@ def year_months_page_html(
     openclip_enabled: bool = True,
     hide_out_of_focus: bool = False,
 ) -> str:
-    return server_browser.year_months_page_html(
+    return browser_year_months_page_html(
         target,
         year,
         shell_page_html=shell_page_html,
@@ -470,7 +485,7 @@ def year_months_page_html(
 
 
 def empty_person_browser_html(person: str | BrowserSource, *, openclip_enabled: bool = True) -> str:
-    return server_browser.empty_person_browser_html(
+    return browser_empty_person_browser_html(
         person,
         shell_page_html=shell_page_html,
         openclip_enabled=openclip_enabled,
@@ -478,7 +493,7 @@ def empty_person_browser_html(person: str | BrowserSource, *, openclip_enabled: 
 
 
 def empty_source_html(source: BrowserSource, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
-    return server_browser.empty_source_html(
+    return browser_empty_source_html(
         source,
         shell_page_html=shell_page_html,
         face_enabled=face_enabled,
@@ -487,7 +502,7 @@ def empty_source_html(source: BrowserSource, *, face_enabled: bool = True, openc
 
 
 def sources_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
-    return server_browser.sources_page_html(
+    return browser_sources_page_html(
         target,
         shell_page_html=shell_page_html,
         face_enabled=face_enabled,
@@ -496,7 +511,7 @@ def sources_page_html(target: Path, *, face_enabled: bool = True, openclip_enabl
 
 
 def tags_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
-    return server_browser.tags_page_html(
+    return browser_tags_page_html(
         target,
         shell_page_html=shell_page_html,
         face_enabled=face_enabled,
@@ -510,7 +525,7 @@ def person_not_found_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
-    return server_browser.person_not_found_html(
+    return browser_person_not_found_html(
         person_name,
         shell_page_html=shell_page_html,
         face_enabled=face_enabled,
@@ -553,4 +568,4 @@ def person_references_page_html(
 
 
 def person_month_page_html(target: Path, person_name: str, month_key: str, items: list[Any]) -> str:
-    return server_browser.person_month_page_html(target, person_name, month_key, items, page_html=page_html)
+    return browser_person_month_page_html(target, person_name, month_key, items, page_html=page_html)

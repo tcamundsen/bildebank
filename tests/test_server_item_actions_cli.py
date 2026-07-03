@@ -18,12 +18,12 @@ from bildebank.geo import h3_cells_for_point
 from bildebank.server import BildebankRequestHandler
 from bildebank.server_actions import undelete_file_from_browser
 from bildebank.server_assets import SERVER_CSS, SERVER_JS
-from bildebank.server_browser import (
+from bildebank.server_browser_info_html import image_info_content_html
+from bildebank.server_browser_queries import (
     adjacent_browser_items,
     browser_item_by_id,
     browser_month_items,
     browser_month_navigation,
-    image_info_content_html,
 )
 from bildebank.server_filter import text_filter_browser_source
 from bildebank.server_pages import app_status_page_html, item_page_html, month_page_html, removed_files_page_html
@@ -1542,4 +1542,3 @@ class ServerItemActionsCliTests(unittest.TestCase):
 
         self.assertNotIn("↻", body)
         self.assertNotIn("↺", body)
-

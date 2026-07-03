@@ -13,7 +13,9 @@ from .config import FaceRecognitionConfig
 from .face import active_image_files, ensure_face_schema_path, face_db_path, normalize_person_name
 from .html_export import face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
-from .server_browser import items_by_file_ids, rotation_style_attr, thumbnail_media_html
+from .server_browser_item_html import rotation_style_attr
+from .server_browser_overview_html import thumbnail_media_html
+from .server_browser_queries import items_by_file_ids
 from .server_browser_sources import (
     BrowserSource,
     person_browser_source,
