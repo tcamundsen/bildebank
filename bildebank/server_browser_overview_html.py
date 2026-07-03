@@ -95,24 +95,30 @@ def month_page_html(
 def years_page_html(
     target: Path,
     *,
-    shell_page_html: ShellPageRenderer,
+    page_html: PageRenderer,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     hide_out_of_focus: bool = False,
 ) -> str:
+    from .server_shell import app_header_html
+
     year_cards = browser_year_cards(target, hide_out_of_focus=hide_out_of_focus)
     cards = "\n".join(year_card_html(target, card) for card in year_cards)
     content = cards if cards else '<p class="meta">Ingen filer i bildesamlingen.</p>'
     controls = years_navigation_controls_html(year_cards)
-    return shell_page_html(
+    return page_html(
         "År",
         f"""
-        <h1>År</h1>
-        {controls}
-        <section class="month-grid-server">{content}</section>
+        <main class="server-browser">
+          {app_header_html(
+              "År",
+              controls=controls,
+              face_enabled=face_enabled,
+              openclip_enabled=openclip_enabled,
+          )}
+          <section class="month-grid-server">{content}</section>
+        </main>
         """,
-        face_enabled=face_enabled,
-        openclip_enabled=openclip_enabled,
     )
 
 
@@ -122,6 +128,7 @@ def years_navigation_controls_html(year_cards: list[dict[str, Any]]) -> str:
     first_card = year_cards[0] if year_cards else None
     first_month = str(first_card["first_month"]) if first_card is not None else None
     first_year = str(first_card["year"]) if first_card is not None else None
+    first_item = first_card["item"] if first_card is not None else None
 
     def year_button(target_year: str | None, label: str, key_nav: str, tooltip: str) -> str:
         if target_year is None:
@@ -143,6 +150,10 @@ def years_navigation_controls_html(year_cards: list[dict[str, Any]]) -> str:
         {month_button(None, "◀ Mån", "previous-month", "Forrige måned")}
         {month_button(first_month, "ed ▶", "next-month", "Neste måned")}
       </span>
+      <span class="nav-button-pair" data-nav-button-pair="item">
+        {nav_disabled("◀ Bil")}
+        {item_button(all_browser_source(), first_item, "de ▶", "next", "Neste bilde")}
+      </span>
     </nav>
     """
 
@@ -153,6 +164,7 @@ def source_years_navigation_controls_html(source: BrowserSource, year_cards: lis
     first_card = year_cards[0] if year_cards else None
     first_month = str(first_card["first_month"]) if first_card is not None else None
     first_year = str(first_card["year"]) if first_card is not None else None
+    first_item = first_card["item"] if first_card is not None else None
 
     def year_button(target_year: str | None, label: str, key_nav: str, tooltip: str) -> str:
         if target_year is None:
@@ -174,6 +186,10 @@ def source_years_navigation_controls_html(source: BrowserSource, year_cards: lis
         {month_button(None, "◀ Mån", "previous-month", "Forrige måned")}
         {month_button(first_month, "ed ▶", "next-month", "Neste måned")}
       </span>
+      <span class="nav-button-pair" data-nav-button-pair="item">
+        {nav_disabled("◀ Bil")}
+        {item_button(source, first_item, "de ▶", "next", "Neste bilde")}
+      </span>
     </nav>
     """
 
@@ -182,11 +198,13 @@ def year_months_page_html(
     target: Path,
     year: str,
     *,
-    shell_page_html: ShellPageRenderer,
+    page_html: PageRenderer,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     hide_out_of_focus: bool = False,
 ) -> str:
+    from .server_shell import app_header_html
+
     cards = "\n".join(
         year_month_card_html(target, all_browser_source(), card)
         for card in browser_year_month_cards(target, year, hide_out_of_focus=hide_out_of_focus)
@@ -194,16 +212,20 @@ def year_months_page_html(
     content = cards if cards else '<p class="meta">Ingen bilder dette året.</p>'
     escaped_year = html.escape(year)
     controls = year_navigation_controls_html(target, year, hide_out_of_focus=hide_out_of_focus)
-    return shell_page_html(
+    return page_html(
         escaped_year,
         f"""
-        <h1>{escaped_year}</h1>
-        {controls}
-        <section class="month-grid-server year-month-grid-server">{content}</section>
+        <main class="server-browser">
+          {app_header_html(
+              escaped_year,
+              title_html=breadcrumb_html([("År", "/years")], escaped_year),
+              controls=controls,
+              face_enabled=face_enabled,
+              openclip_enabled=openclip_enabled,
+          )}
+          <section class="month-grid-server year-month-grid-server">{content}</section>
+        </main>
         """,
-        face_enabled=face_enabled,
-        openclip_enabled=openclip_enabled,
-        title_html=breadcrumb_html([("År", "/years")], escaped_year),
     )
 
 
@@ -232,6 +254,15 @@ def source_year_navigation_controls_html(
     next_year = next((candidate for candidate in years if candidate > year), None)
     previous_month = last_month_before_year(month_keys, year)
     next_month = first_month_in_year(month_keys, year)
+    month_cards = source_year_month_cards(
+        target,
+        source,
+        year,
+        face_config,
+        hide_out_of_focus=hide_out_of_focus,
+    )
+    first_item = month_cards[0]["item"] if month_cards else None
+    last_item = month_cards[-1]["item"] if month_cards else None
     previous_overview_url = None
     if previous_year is None and years and year == years[0]:
         previous_overview_url = source.root_url if is_filtered_source(source) else "/years"
@@ -270,8 +301,20 @@ def source_year_navigation_controls_html(
         {previous_month_button()}
         {month_button(next_month, "ed ▶", "next-month", "Neste måned")}
       </span>
+      <span class="nav-button-pair" data-nav-button-pair="item">
+        {item_button(source, last_item, "◀ Bil", "previous", "Forrige bilde")}
+        {item_button(source, first_item, "de ▶", "next", "Neste bilde")}
+      </span>
     </nav>
     """
+
+
+def item_button(source: BrowserSource, item: Any | None, label: str, key_nav: str, tooltip: str) -> str:
+    from .server_shell import nav_button, nav_disabled
+
+    if item is None:
+        return nav_disabled(label)
+    return nav_button(source_item_url(source, int(item["id"])), label, key_nav, tooltip)
 
 
 def source_year_months_page_html(

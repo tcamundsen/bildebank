@@ -459,7 +459,7 @@ def years_page_html(
 ) -> str:
     return browser_years_page_html(
         target,
-        shell_page_html=shell_page_html,
+        page_html=page_html,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
         hide_out_of_focus=hide_out_of_focus,
@@ -477,7 +477,7 @@ def year_months_page_html(
     return browser_year_months_page_html(
         target,
         year,
-        shell_page_html=shell_page_html,
+        page_html=page_html,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
         hide_out_of_focus=hide_out_of_focus,
