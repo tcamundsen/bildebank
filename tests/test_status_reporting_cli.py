@@ -9,7 +9,8 @@ from pathlib import Path
 from bildebank import db
 from bildebank.db import DB_FILENAME
 from bildebank.server_browser import out_of_focus_file_ids
-from tests.test_cli import capture_cli, minimal_mp4_with_creation_date, run_cli
+from tests.test_cli import capture_cli, run_cli
+from tests.test_media import minimal_mp4_with_creation_date
 
 
 class StatusReportingCliTests(unittest.TestCase):
@@ -138,4 +139,3 @@ class StatusReportingCliTests(unittest.TestCase):
             self.assertIn("Størrelse før:", stdout)
             self.assertIn("Størrelse etter:", stdout)
             self.assertIn("Ferdig. Databasene er pakket.", stdout)
-
