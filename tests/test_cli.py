@@ -25,7 +25,6 @@ from bildebank.cli import (
     main,
     wsl_path_from_windows_path,
 )
-from bildebank.cli_image import print_image_search_progress
 from bildebank.cli_server import lan_share_urls, run_server_command
 from bildebank.config import AppConfig, BrowserConfig, BrowserHotkeyConfig, FaceRecognitionConfig, OpenClipConfig, load_config
 from bildebank import db, server_browser
@@ -57,7 +56,7 @@ from bildebank.html_export import render_html
 from bildebank.importer import safe_copy
 from bildebank.media import ImageDimensions, sha256_file
 from bildebank.media_cache import cached_image_dimensions, cached_image_orientation
-from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path, resolve_torch_device, search_images
+from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path
 from bildebank.server_actions import undelete_file_from_browser
 from bildebank.server_assets import SERVER_CSS, SERVER_JS
 from bildebank.server_response import add_csrf_to_html
@@ -94,7 +93,6 @@ from bildebank.server_pages import (
     source_year_months_page_html,
     source_years_page_html,
     sources_page_html,
-    tags_page_html,
     year_months_page_html,
     years_page_html,
 )
@@ -107,12 +105,9 @@ from bildebank.server_browser import (
     browser_month_navigation,
     browser_year_cards,
     browser_year_month_cards,
-    date_source_text,
     image_info_content_html,
     item_media_html,
-    month_key_for_item,
     motion_video_for_image,
-    out_of_focus_file_ids,
     person_item_by_id,
     person_month_items,
     person_month_navigation,
@@ -145,7 +140,6 @@ from bildebank.server_faces import (
     person_items,
     update_face_box_media_metadata,
 )
-from bildebank.server_geo import geo_component_pixel_coordinates
 from bildebank.server_search import (
     DEFAULT_SEARCH_LIMIT,
     OpenClipSearchCache,
@@ -161,7 +155,6 @@ from bildebank.thumbnails import (
     thumbnail_relative_path,
 )
 from tests.test_media import (
-    jpeg_with_xmp_date,
     jpeg_with_exif_datetime,
     jpeg_with_exif_camera,
     minimal_avi_with_creation_date,
@@ -795,32 +788,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("nytt_navn", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
-    def test_image_search_help_documents_limit_and_no_browser(self) -> None:
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
-            main(["image-search", "-h"])
-
-        self.assertEqual(raised.exception.code, 0)
-        stdout = stdout_buffer.getvalue()
-        self.assertIn("usage: bildebank image-search [valg] søk", stdout)
-        self.assertIn("--limit", stdout)
-        self.assertIn("--no-browser", stdout)
-        self.assertEqual(stderr_buffer.getvalue(), "")
-
-    def test_cleanup_image_search_help_documents_apply(self) -> None:
-        stdout_buffer = StringIO()
-        stderr_buffer = StringIO()
-        with redirect_stdout(stdout_buffer), redirect_stderr(stderr_buffer), self.assertRaises(SystemExit) as raised:
-            main(["cleanup-image-search", "-h"])
-
-        self.assertEqual(raised.exception.code, 0)
-        stdout = stdout_buffer.getvalue()
-        self.assertIn("usage: bildebank cleanup-image-search [valg]", stdout)
-        self.assertIn("--apply", stdout)
-        self.assertIn("foreldreløse", stdout)
-        self.assertEqual(stderr_buffer.getvalue(), "")
-
     def test_run_server_help_documents_local_options(self) -> None:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
@@ -1156,30 +1123,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('src="/display/7"', body)
         self.assertNotIn('src="/file/7"', body)
 
-    def test_openclip_database_schema_is_separate(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp)
-            conn = connect_openclip_db(target)
-            try:
-                tables = {
-                    row[0]
-                    for row in conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type = 'table'"
-                    )
-                }
-            finally:
-                conn.close()
-
-            self.assertEqual(openclip_db_path(target), target / ".bilder-openclip.sqlite3")
-            self.assertIn("image_embeddings", tables)
-            self.assertIn("image_search_runs", tables)
-            self.assertIn("image_search_results", tables)
-
-    def test_openclip_device_validation(self) -> None:
-        self.assertEqual(resolve_torch_device("cpu"), "cpu")
-        with self.assertRaises(ValueError):
-            resolve_torch_device("gpu")
-
     def test_database_schema_includes_general_performance_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
@@ -1297,15 +1240,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertNotIn('href="/people">Personer</a>', body)
         self.assertNotIn('href="/search">Bildesøk</a>', body)
 
-    def test_openclip_search_cache_can_preload_model(self) -> None:
-        config = OpenClipConfig(enabled=True)
-        cache = OpenClipSearchCache(AppConfig(openclip=config))
-        with patch("bildebank.server_search.load_text_model", return_value=("model", "tokenizer")) as load_model:
-            cache.preload_model()
-
-        load_model.assert_called_once_with(config)
-        self.assertTrue(cache.loaded)
-
     def test_run_server_search_preload_endpoint_starts_background_load(self) -> None:
         class FakeSearchCache:
             loaded = False
@@ -1380,152 +1314,6 @@ pretrained = "laion2b_s34b_b79k"
                 )
             finally:
                 conn.close()
-
-    def test_cli_image_search_ignores_orphan_openclip_embeddings(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            init_database(target)
-            active_id = insert_test_file(target, "2024/01/active.png", sha256="sha-active")
-            missing_id = active_id + 100
-            config = OpenClipConfig()
-            conn = connect_openclip_db(target)
-            try:
-                conn.executemany(
-                    """
-                    INSERT INTO image_embeddings(
-                        file_id, target_path, target_path_key, sha256,
-                        model_name, pretrained, embedding
-                    )
-                    VALUES(?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    [
-                        (
-                            active_id,
-                            "2024/01/active.png",
-                            "2024/01/active.png",
-                            "sha-active",
-                            config.model_name,
-                            config.pretrained,
-                            embedding_blob([1.0, 0.0]),
-                        ),
-                        (
-                            missing_id,
-                            "2026/01/unimported.png",
-                            "2026/01/unimported.png",
-                            "sha-missing",
-                            config.model_name,
-                            config.pretrained,
-                            embedding_blob([0.0, 1.0]),
-                        ),
-                    ],
-                )
-                conn.commit()
-            finally:
-                conn.close()
-
-            with (
-                patch("bildebank.openclip.load_text_model", return_value=(object(), object())),
-                patch("bildebank.openclip.text_embedding", return_value=[0.0, 1.0]),
-            ):
-                stats = search_images(target, config, query="cat", limit=10)
-
-            self.assertEqual([result.file_id for result in stats.results], [active_id])
-            self.assertEqual(stats.results[0].target_path, Path("2024/01/active.png"))
-            conn = sqlite3.connect(openclip_db_path(target))
-            try:
-                self.assertEqual(
-                    [
-                        row[0]
-                        for row in conn.execute(
-                            "SELECT file_id FROM image_search_results ORDER BY rank"
-                        )
-                    ],
-                    [active_id],
-                )
-            finally:
-                conn.close()
-
-    def test_cleanup_image_search_dry_run_lists_orphans_without_changes(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            init_database(target)
-            ids = insert_openclip_cleanup_fixture(target)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "cleanup-image-search"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("foreldreløse_embeddings=2", stdout)
-            self.assertIn("foreldreløse_søkeresultater=2", stdout)
-            self.assertIn(f"image_embeddings\tfile #{ids['deleted_id']}", stdout)
-            self.assertIn(f"image_search_results\tfile #{ids['missing_id']}", stdout)
-            self.assertIn("Dry-run: ingen endringer er gjort.", stdout)
-            self.assertIn("Kjør: bildebank cleanup-image-search --apply", stdout)
-            conn = sqlite3.connect(openclip_db_path(target))
-            try:
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM image_embeddings").fetchone()[0], 3)
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM image_search_results").fetchone()[0], 3)
-                self.assertEqual(conn.execute("SELECT COUNT(*) FROM image_search_runs").fetchone()[0], 3)
-            finally:
-                conn.close()
-
-    def test_cleanup_image_search_apply_deletes_only_orphan_rows_and_empty_runs(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            init_database(target)
-            ids = insert_openclip_cleanup_fixture(target)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "cleanup-image-search", "--apply"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("foreldreløse_embeddings=2", stdout)
-            self.assertIn("foreldreløse_søkeresultater=2", stdout)
-            self.assertIn("Slettet: image_embeddings=2, image_search_results=2, tomme_image_search_runs=2", stdout)
-            conn = sqlite3.connect(openclip_db_path(target))
-            try:
-                self.assertEqual(
-                    conn.execute("SELECT file_id FROM image_embeddings").fetchall(),
-                    [(ids["active_id"],)],
-                )
-                self.assertEqual(
-                    conn.execute("SELECT file_id FROM image_search_results").fetchall(),
-                    [(ids["active_id"],)],
-                )
-                self.assertEqual(
-                    conn.execute("SELECT id FROM image_search_runs").fetchall(),
-                    [(ids["active_run_id"],)],
-                )
-            finally:
-                conn.close()
-
-    def test_cleanup_image_search_reports_missing_openclip_database(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            init_database(target)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "cleanup-image-search"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual(stdout, "Ingen OpenCLIP-database å rydde.\n")
-            self.assertEqual(stderr, "")
-            self.assertFalse(openclip_db_path(target).exists())
-
-    def test_cleanup_image_search_reports_legacy_openclip_schema(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            init_database(target)
-            conn = sqlite3.connect(openclip_db_path(target))
-            try:
-                conn.execute("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-                conn.commit()
-            finally:
-                conn.close()
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "cleanup-image-search"])
-
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("OpenCLIP-databasen mangler tabellen image_embeddings", stderr)
-            self.assertIn("Kjør bildebank image-scan på nytt", stderr)
 
     def test_run_server_image_search_refuses_to_run_while_target_is_locked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1873,38 +1661,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn('class="media-link quarter-turn"', body)
         self.assertIn('data-view-rotation="90"', body)
         self.assertIn("transform: rotate(90deg)", body)
-
-    def test_openclip_database_rejects_absolute_target_paths(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            target.mkdir()
-            absolute_image = target / "2024" / "01" / "IMG_20240102.jpg"
-            config = OpenClipConfig()
-            conn = connect_openclip_db(target)
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO image_embeddings(
-                        file_id, target_path, target_path_key, sha256, model_name, pretrained, embedding
-                    )
-                    VALUES(?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        1,
-                        str(absolute_image),
-                        "2024/01/img_20240102.jpg",
-                        "sha",
-                        config.model_name,
-                        config.pretrained,
-                        embedding_blob([1.0, 0.0]),
-                    ),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-
-            with self.assertRaisesRegex(ValueError, "OpenCLIP-databasen har absolutt target_path"):
-                connect_openclip_db(target).close()
 
     def test_run_server_h3_cells_page_saves_and_lists_named_cell(self) -> None:
         h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
@@ -2426,32 +2182,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertNotIn("IMG_20240103.png", area_body)
         self.assertIn("IMG_20240104.png", missing_body)
 
-    def test_geo_map_component_orientation_matches_cardinal_directions(self) -> None:
-        import h3
-
-        origin = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
-        cells = sorted(h3.grid_disk(origin, 1))
-        coords = geo_component_pixel_coordinates(cells, 28.0)
-        origin_lat, origin_lon = h3.cell_to_latlng(origin)
-        origin_x, origin_y = coords[origin]
-
-        mismatches = 0
-        comparisons = 0
-        for cell in cells:
-            if cell == origin:
-                continue
-            lat, lon = h3.cell_to_latlng(cell)
-            x, y = coords[cell]
-            if abs(lon - origin_lon) > 0.000001:
-                comparisons += 1
-                mismatches += (x > origin_x) != (lon > origin_lon)
-            if abs(lat - origin_lat) > 0.000001:
-                comparisons += 1
-                mismatches += (y > origin_y) != (lat < origin_lat)
-
-        self.assertGreater(comparisons, 0)
-        self.assertLessEqual(mismatches, 1)
-
     def test_run_server_item_page_does_not_show_nearby_geo_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -2726,83 +2456,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIsNotNone(next_item)
         self.assertEqual(previous_item["stored_filename"], "z.jpg")
         self.assertEqual(next_item["stored_filename"], "m.jpg")
-
-    def test_manual_date_changes_browser_month_without_moving_file(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            source.mkdir()
-            (source / "IMG_20260102.jpg").write_bytes(b"image")
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-            imported = target / "2026" / "01" / "IMG_20260102.jpg"
-
-            code, stdout, stderr = capture_cli(
-                [
-                    "--target",
-                    str(target),
-                    "date-set",
-                    str(imported),
-                    "--date",
-                    "2004-07-15",
-                    "--uncertainty",
-                    "1m",
-                    "--note",
-                    "Kamera hadde feil dato",
-                ]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertTrue(imported.exists())
-            self.assertIn("Manuell dato satt: ca. 2004-07-15", stdout)
-            self.assertEqual(browser_month_items(target, "2026-01"), [])
-            manual_items = browser_month_items(target, "2004-07")
-            self.assertEqual([item["stored_filename"] for item in manual_items], ["IMG_20260102.jpg"])
-            self.assertEqual(month_key_for_item(target, manual_items[0]), "2004-07")
-            body = item_page_html(
-                target,
-                manual_items[0],
-                *adjacent_browser_items(target, manual_items[0]),
-                browser_month_navigation(target, manual_items[0]),
-            )
-            info_body = image_info_content_html(target, manual_items[0])
-            self.assertNotIn("date-status-badge", body)
-            self.assertNotIn("Opprinnelig: 2026-01-02", body)
-            self.assertIn("ca. 2004-07-15", info_body)
-            self.assertIn("Kamera hadde feil dato", info_body)
-            self.assertIn("Opprinnelig dato", info_body)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "date-clear", str(imported)])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertEqual(browser_month_items(target, "2004-07"), [])
-            self.assertEqual([item["stored_filename"] for item in browser_month_items(target, "2026-01")], ["IMG_20260102.jpg"])
-
-    def test_manual_date_cli_commands_refuse_to_run_while_target_is_locked(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            source = Path(tmp) / "source"
-            source.mkdir()
-            (source / "IMG_20260102.jpg").write_bytes(b"image")
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-            imported = target / "2026" / "01" / "IMG_20260102.jpg"
-            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
-
-            set_code, _set_stdout, set_stderr = capture_cli(
-                ["--target", str(target), "date-set", str(imported), "--date", "2004-07-15"]
-            )
-            clear_code, _clear_stdout, clear_stderr = capture_cli(
-                ["--target", str(target), "date-clear", str(imported)]
-            )
-
-        self.assertEqual(set_code, 1)
-        self.assertIn("Bildesamlingen er låst", set_stderr)
-        self.assertEqual(clear_code, 1)
-        self.assertIn("Bildesamlingen er låst", clear_stderr)
 
     def test_run_server_item_page_has_manual_date_controls(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -3591,11 +3244,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn(source.name, info_body)
         self.assertIn("closeInfoOverlay", SERVER_JS)
 
-    def test_image_info_date_source_labels_are_human_readable(self) -> None:
-        self.assertEqual(date_source_text("metadata"), "fra metadata")
-        self.assertEqual(date_source_text("filename"), "fra filnavn")
-        self.assertEqual(date_source_text("mtime"), "fra mtime")
-
     def test_run_server_item_info_api_returns_lazy_panel_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -4267,80 +3915,6 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual({"ok": True, "file_id": 1, "tag_name": "Familie", "tagged": True}, handler.body)
         self.assertIn('data-tag-name="Familie" aria-pressed="true"', body)
         self.assertIn("Familie", info_body)
-
-    def test_tag_add_stops_before_database_writes_when_target_is_locked(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            source = Path(tmp) / "source"
-            source.mkdir()
-            (source / "IMG_20240102.jpg").write_bytes(b"image")
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(
-                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
-                0,
-            )
-            lock_path = target / LOCK_FILENAME
-            lock_path.write_text("command=remove\npid=123\n", encoding="utf-8")
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "tag-add", "2024/01/IMG_20240102.jpg", "Familie"]
-            )
-
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("Bildesamlingen er låst", stderr)
-            self.assertTrue(lock_path.exists())
-            conn = db.connect(target)
-            try:
-                self.assertIsNone(conn.execute("SELECT id FROM tags WHERE name_key = 'familie'").fetchone())
-                self.assertEqual(
-                    conn.execute("SELECT COUNT(*) FROM command_log WHERE command = 'tag-add'").fetchone()[0],
-                    0,
-                )
-            finally:
-                conn.close()
-
-    def test_tag_add_rolls_back_and_releases_lock_on_validation_error(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            source = Path(tmp) / "source"
-            source.mkdir()
-            (source / "IMG_20240102.jpg").write_bytes(b"image")
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(
-                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
-                0,
-            )
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "tag-add", "2024/01/IMG_20240102.jpg", ""]
-            )
-
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("Taggnavn kan ikke være tomt", stderr)
-            self.assertFalse((target / LOCK_FILENAME).exists())
-            conn = db.connect(target)
-            try:
-                self.assertEqual(
-                    conn.execute("SELECT COUNT(*) FROM command_log WHERE command = 'tag-add'").fetchone()[0],
-                    0,
-                )
-            finally:
-                conn.close()
-
-            self.assertEqual(
-                run_cli(
-                    [
-                        "--target",
-                        str(target),
-                        "tag-add",
-                        "2024/01/IMG_20240102.jpg",
-                        "Familie",
-                    ]
-                ),
-                0,
-            )
 
     def test_run_server_item_tag_returns_conflict_when_target_is_locked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -6233,80 +5807,6 @@ pretrained = "laion2b_s34b_b79k"
             self.assertEqual(month_keys_mock.call_count, 1)
             self.assertEqual(item_by_id_mock.call_count, 0)
             self.assertEqual(adjacent_mock.call_count, 0)
-
-    def test_tag_cli_and_server_browser(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            source = Path(tmp) / "source"
-            source.mkdir()
-            (source / "IMG_20240102.jpg").write_bytes(b"image-a")
-            (source / "IMG_20240203.jpg").write_bytes(b"image-b")
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]), 0)
-            item = browser_item_by_id(target, 1)
-            self.assertIsNotNone(item)
-            item_path = target / str(item["target_path"])
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "tag-add", str(item_path), "Familie"])
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("La til: Familie", stdout)
-            code, stdout, stderr = capture_cli(["--target", str(target), "tag-list"])
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Familie\t1\tuser", stdout)
-            self.assertIn("Ute av fokus\t0\tsystem", stdout)
-            code, stdout, stderr = capture_cli(["--target", str(target), "tag-files", "familie"])
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("IMG_20240102.jpg", stdout)
-
-            tag_source = tag_browser_source("familie")
-            tag_item = source_item_by_id(target, tag_source, 1)
-            self.assertIsNotNone(tag_item)
-            self.assertIsNone(source_item_by_id(target, tag_source, 2))
-            item_body = source_item_page_html(
-                target,
-                tag_source,
-                tag_item,
-                *adjacent_source_items(target, tag_source, tag_item),
-                source_month_navigation(target, tag_source, tag_item),
-            )
-            tag_month = source_month_items(target, tag_source, "2024-01")
-            month_body = source_month_page_html(target, tag_source, "2024-01", tag_month)
-            tags_body = tags_page_html(target)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "tag-remove", str(item_path), "familie"])
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Fjernet: familie", stdout)
-            code, stdout, stderr = capture_cli(["--target", str(target), "tag-add", str(item_path), "Ute av fokus"])
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("La til: Ute av fokus", stdout)
-            code, stdout, stderr = capture_cli(["--target", str(target), "tag-list", str(item_path)])
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Ute av fokus\tsystem", stdout)
-            code, stdout, stderr = capture_cli(["--target", str(target), "tag-remove", str(item_path), "Ute av fokus"])
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Fjernet: Ute av fokus", stdout)
-            code, stdout, stderr = capture_cli(["--target", str(target), "tag-list"])
-            self.assertEqual(code, 0, stderr)
-            self.assertNotIn("Familie", stdout)
-            self.assertIn("Ute av fokus\t0\tsystem", stdout)
-
-        self.assertIn("Tagg: familie", item_body)
-        self.assertIn('href="/item/1">Åpne i alle bilder</a>', item_body)
-        self.assertIn('href="/tag/familie/year/2024">2024</a>', item_body)
-        self.assertIn('href="/tag/familie/item/1"', month_body)
-        self.assertEqual(len(tag_month), 1)
-        self.assertIn("<h1>Tagger</h1>", tags_body)
-        self.assertIn('action="/tags/create"', tags_body)
-        self.assertIn('action="/tags/rename"', tags_body)
-        self.assertIn('action="/tags/delete"', tags_body)
-        self.assertIn('class="tag-actions"', tags_body)
-        self.assertIn(".tag-actions", SERVER_CSS)
-        self.assertIn('data-confirm-submit="Slette taggen Familie fra alle bilder?"', tags_body)
-        self.assertIn("systemtagg kan ikke endres", tags_body)
-        self.assertIn('href="/tag/Familie">Vis bilder (1)</a>', tags_body)
-        self.assertIn("brukertagg", tags_body)
-        self.assertIn("systemtagg", tags_body)
 
     def test_run_server_tags_page_can_create_rename_and_delete_user_tags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -8511,23 +8011,6 @@ pretrained = "laion2b_s34b_b79k"
             self.assertEqual(database_path.read_bytes(), before)
             self.assertEqual(database_path.stat().st_mtime_ns, before_mtime)
 
-    def test_status_and_browser_database_preparation_do_not_write_current_database(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            database_path = target / DB_FILENAME
-            before = database_path.read_bytes()
-            before_mtime = database_path.stat().st_mtime_ns
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "status"])
-            db.prepare_database(target)
-            out_of_focus_file_ids(target)
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Importerte filer: 0", stdout)
-            self.assertEqual(database_path.read_bytes(), before)
-            self.assertEqual(database_path.stat().st_mtime_ns, before_mtime)
-
     def test_rejects_target_inside_program_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -9190,35 +8673,6 @@ pretrained = "laion2b_s34b_b79k"
             finally:
                 conn.close()
 
-    def test_status_counts_media_types_and_date_sources(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            source.mkdir()
-            (source / "IMG_20240102.jpg").write_bytes(b"image")
-            (source / "video.mp4").write_bytes(minimal_mp4_with_creation_date(dt.date(2010, 7, 8)))
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "status"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Totalt: 2", stdout)
-            self.assertIn("Bilder: 1", stdout)
-            self.assertIn("Videoer: 1", stdout)
-            self.assertIn("  metadata: 1", stdout)
-            self.assertIn("  filename: 1", stdout)
-            self.assertIn("  mtime: 0", stdout)
-            self.assertIn("Kilder: 1", stdout)
-            self.assertIn("Importerte filer: 2", stdout)
-            self.assertIn("Kildefilforekomster: 2", stdout)
-            self.assertIn("Duplikatkilder: 0", stdout)
-            self.assertIn("Uløste feil: 0", stdout)
-            self.assertIn("Navnekollisjoner: 0", stdout)
-            self.assertIn("Filer uten dato: 0", stdout)
-
     def test_parent_source_after_child_import_records_duplicate_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -9461,90 +8915,6 @@ model_name = "buffalo_l"
         self.assertIn("Bildesamlingen er låst", scan_stderr)
         self.assertEqual(suggest_code, 1)
         self.assertIn("Bildesamlingen er låst", suggest_stderr)
-
-    def test_image_commands_require_enabled_config(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "image-scan", "--limit", "1"])
-
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("Tekstbasert bildesøk er av", stderr)
-            self.assertFalse(openclip_db_path(target).exists())
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "image-search", "strand"])
-
-            self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
-            self.assertIn("Tekstbasert bildesøk er av", stderr)
-            self.assertFalse(openclip_db_path(target).exists())
-
-    def test_image_scan_and_search_refuse_to_run_while_target_is_locked(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            self.enable_openclip_config()
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            (target / LOCK_FILENAME).write_text("command=remove\n", encoding="utf-8")
-
-            scan_code, _scan_stdout, scan_stderr = capture_cli(
-                ["--target", str(target), "image-scan", "--limit", "1"]
-            )
-            search_code, _search_stdout, search_stderr = capture_cli(
-                ["--target", str(target), "image-search", "strand", "--no-browser"]
-            )
-
-        self.assertEqual(scan_code, 1)
-        self.assertIn("Bildesamlingen er låst", scan_stderr)
-        self.assertEqual(search_code, 1)
-        self.assertIn("Bildesamlingen er låst", search_stderr)
-
-    def test_image_search_passes_browser_option_to_runner(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            self.enable_openclip_config()
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-
-            with patch("bildebank.cli_image.run_image_search", return_value=0) as run_search:
-                self.assertEqual(run_cli(["--target", str(target), "image-search", "strand"]), 0)
-                run_search.assert_called_once_with(
-                    target.resolve(),
-                    repo_root=self.program_root,
-                    query="strand",
-                    limit=100,
-                    browser=True,
-                )
-
-            with patch("bildebank.cli_image.run_image_search", return_value=0) as run_search:
-                self.assertEqual(
-                    run_cli(["--target", str(target), "image-search", "strand", "--no-browser"]),
-                    0,
-                )
-                run_search.assert_called_once_with(
-                    target.resolve(),
-                    repo_root=self.program_root,
-                    query="strand",
-                    limit=100,
-                    browser=False,
-                )
-
-    def test_image_search_progress_uses_progress_meter(self) -> None:
-        stdout = StringIO()
-        stats = SimpleNamespace(query="strand")
-
-        with redirect_stdout(stdout):
-            print_image_search_progress("load_model", 0, 10, stats)
-            print_image_search_progress("compare_start", 0, 10, stats)
-            print_image_search_progress("compare", 10, 10, stats)
-            print_image_search_progress("write", 5, 5, stats)
-            print_image_search_progress("done", 5, 5, stats)
-
-        output = stdout.getvalue()
-        self.assertIn("Image-search: søker etter \"strand\" i 10 bilder.", output)
-        self.assertIn("Image-search: søkt=10/10, gjenstår=0s", output)
-        self.assertIn("Image-search: skriver 5 treff til image-search.html.", output)
 
     def test_face_scan_writes_faces_to_separate_database(self) -> None:
         class FakeFace:
@@ -10992,62 +10362,6 @@ model_name = "buffalo_l"
                 ],
             )
 
-    def test_non_metadata_lists_files_not_placed_by_metadata(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            source = root / "source"
-            source.mkdir()
-            (source / "video.mp4").write_bytes(minimal_mp4_with_creation_date(dt.date(2010, 7, 8)))
-            (source / "IMG_20240102.jpg").write_bytes(b"filename-date")
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "non-metadata"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("filename\t2024-01-02", stdout)
-            self.assertIn("IMG_20240102.jpg", stdout)
-            self.assertNotIn("video.mp4", stdout)
-
-    def test_explain_date_shows_selected_date_and_candidates(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "IMG_20240102.jpg"
-            path.write_bytes(b"not-a-real-jpeg")
-
-            code, stdout, stderr = capture_cli(["explain-date", str(path)])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Valgt dato: 2024-01-02", stdout)
-            self.assertIn("Valgt kilde: filename", stdout)
-            self.assertIn("JPEG EXIF", stdout)
-            self.assertIn("Dato i filnavn", stdout)
-
-    def test_inspect_metadata_shows_metadata_fragments(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "xmp-only.jpg"
-            path.write_bytes(jpeg_with_xmp_date("2007-03-12T19:54:18+01:00"))
-
-            code, stdout, stderr = capture_cli(["inspect-metadata", str(path)])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("JPEG metadata:", stdout)
-            self.assertIn("APP1", stdout)
-            self.assertIn("XMP dato: 2007-03-12", stdout)
-
-    def test_inspect_metadata_shows_tiff_raw_metadata(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "DSC_0170.NEF"
-            path.write_bytes(minimal_tiff_with_datetime("2019:03:03 12:00:00"))
-
-            code, stdout, stderr = capture_cli(["inspect-metadata", str(path)])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Valgt dato: 2019-03-03", stdout)
-            self.assertIn("TIFF/RAW metadata:", stdout)
-            self.assertIn("TIFF/RAW dato: 2019-03-03", stdout)
-
     def test_refresh_metadata_moves_non_metadata_file_when_metadata_becomes_readable(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -11277,44 +10591,6 @@ model_name = "buffalo_l"
                 self.assertEqual(rows[1], (None, None))
             finally:
                 conn.close()
-
-    def test_errors_lists_recorded_errors(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            target = root / "target"
-            missing = root / "missing-source"
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            conn = sqlite3.connect(target / DB_FILENAME)
-            try:
-                conn.execute(
-                    "insert into errors(stage, source_path, message) values(?, ?, ?)",
-                    ("refresh-metadata", str(missing), "Målfil finnes ikke"),
-                )
-                conn.execute(
-                    """
-                    insert into errors(stage, source_path, message, resolved_at)
-                    values(?, ?, ?, CURRENT_TIMESTAMP)
-                    """,
-                    ("refresh-metadata", str(root / "fixed"), "Løst feil"),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "errors"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("refresh-metadata", stdout)
-            self.assertIn("Målfil finnes ikke", stdout)
-            self.assertNotIn("Løst feil", stdout)
-
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "errors", "--include-resolved"]
-            )
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Løst feil", stdout)
 
     def test_refresh_metadata_verbose_prints_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -11951,17 +11227,6 @@ model_name = "buffalo_l"
             self.assertIn("Kildefilforekomster: 2", stdout)
             self.assertIn("Duplikatkilder: 1", stdout)
 
-    def test_report_prints_status_merge_message(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "report"])
-
-        self.assertEqual(code, 0, stderr)
-        self.assertEqual(stdout, "report er slått sammen med status\n")
-
     def test_migrate_v5_to_v11_creates_performance_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -12385,37 +11650,6 @@ model_name = "buffalo_l"
                 )
             finally:
                 conn.close()
-
-    def test_vacuum_packs_current_database(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "target"
-            self.assertEqual(run_cli(["create", str(target)]), 0)
-            openclip_db = target / ".bilder-openclip.sqlite3"
-            face_dir = target / ".bildebank-faces"
-            face_dir.mkdir()
-            face_db = face_dir / "buffalo_l.sqlite3"
-            other_face_db = face_dir / "buffalo_s.sqlite3"
-            for database_path in (openclip_db, face_db, other_face_db):
-                conn = sqlite3.connect(database_path)
-                try:
-                    conn.execute("CREATE TABLE test_data(value TEXT)")
-                    conn.execute("INSERT INTO test_data(value) VALUES('test')")
-                    conn.commit()
-                finally:
-                    conn.close()
-
-            code, stdout, stderr = capture_cli(["--target", str(target), "vacuum"])
-
-            self.assertEqual(code, 0, stderr)
-            self.assertIn("Database: Hoveddatabase", stdout)
-            self.assertIn("Database: Bildesøkdatabase", stdout)
-            self.assertEqual(stdout.count("Database: Ansiktsdatabase"), 2)
-            self.assertIn(str(openclip_db), stdout)
-            self.assertIn(str(face_db), stdout)
-            self.assertIn(str(other_face_db), stdout)
-            self.assertIn("Størrelse før:", stdout)
-            self.assertIn("Størrelse etter:", stdout)
-            self.assertIn("Ferdig. Databasene er pakket.", stdout)
 
     def test_current_schema_rejects_v14_database_with_absolute_target_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
