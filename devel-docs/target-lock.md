@@ -26,7 +26,7 @@ flytting.
 - `backup` låser kildesamlingen mens backup-speilet oppdateres.
 - `migrate` holder låsen mens hoveddatabasen migreres.
 - `make-thumbnails` holder låsen mens thumbnail-settet oppdateres.
-- `make-browser`, `make-conflict-browser`, `make-person-browser` og
+- `make-browser`, `make-person-browser` og
   `make-people-browser` holder låsen mens de leser
   databasegrunnlaget og skriver HTML-filer.
 - `tag-add`, `tag-remove` og tilsvarende weboperasjoner holder låsen fra før

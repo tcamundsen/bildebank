@@ -47,7 +47,7 @@ from .importer import (
     rescan_source_dry_run,
     validate_source_target,
 )
-from .html_export import export_html, export_html_conflicts
+from .html_export import export_html
 from .media import explain_date, inspect_metadata
 from .media_cache import MediaMetadataCache, cached_image_dimensions
 from .manual_dates import date_range_from_uncertainty
@@ -153,7 +153,6 @@ HELP_COMMAND_GROUPS = (
         (
             ("make-thumbnails", "Lag thumbnails for rask månedsvisning"),
             ("make-browser", "Lag index.html for nettleseren"),
-            ("make-conflict-browser", "Lag HTML-side for navnekollisjoner"),
             ("make-people-browser", "Lag HTML-sider for alle personer"),
             ("make-person-browser", "Lag HTML-side for en person"),
         ),
@@ -623,19 +622,6 @@ def build_parser() -> argparse.ArgumentParser:
     make_thumbnails.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
     make_thumbnails.add_argument("--verbose", action="store_true", help="Vis filer som feiler")
 
-    export_conflicts = add_command(
-        subparsers,
-        "make-conflict-browser",
-        usage="bildebank make-conflict-browser [valg]",
-        help="Lag HTML-side for browsing av navnekollisjoner",
-    )
-    export_conflicts.add_argument(
-        "-o",
-        "--output",
-        dest="output",
-        type=Path,
-        help="Skriv HTML-filen hit. Standard: name-conflicts.html i bildesamlingsmappen.",
-    )
     add_command(subparsers, "report", usage="bildebank report [valg]", help="Vis importoppsummering")
     add_command(
         subparsers,
@@ -1354,8 +1340,6 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
         return run_make_browser_command(args, target)
     if args.command == "make-thumbnails":
         return run_make_thumbnails_command(args, target)
-    if args.command == "make-conflict-browser":
-        return run_make_conflict_browser_command(args, target)
 
     conn = db.connect(target)
     try:
@@ -1631,20 +1615,6 @@ def run_make_thumbnails_command(args: argparse.Namespace, target: Path) -> int:
         )
     print_thumbnail_summary(thumbnail_stats)
     return 0 if thumbnail_stats.errors == 0 else 2
-
-
-def run_make_conflict_browser_command(args: argparse.Namespace, target: Path) -> int:
-    output = args.output.resolve() if args.output else None
-    with TargetLock(target, command="make-conflict-browser"):
-        conn = db.connect(target)
-        try:
-            db.log_command(conn, args.command, vars_for_log(args))
-            conn.commit()
-        finally:
-            conn.close()
-        output_path = export_html_conflicts(target, output, target_locked=True)
-    print(f"Skrev HTML-browser for navnekollisjoner: {output_path}")
-    return 0
 
 
 def print_thumbnail_summary(stats: ThumbnailStats) -> None:
