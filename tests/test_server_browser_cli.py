@@ -13,7 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from bildebank import db, server_browser
+from bildebank import db, server_browser, server_browser_sidecars
 from bildebank.config import AppConfig, FaceRecognitionConfig
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.face import connect_face_db
@@ -267,7 +267,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             previous_item, next_item = adjacent_source_items(target, source_filter, image_item)
             month_nav = source_month_navigation(target, source_filter, image_item)
             self.assertIsNotNone(raw_sidecar_id_by_image_id(target, int(image_item["id"])))
-            with patch("bildebank.server_browser.raw_sidecar_groups", side_effect=AssertionError("global raw scan")):
+            with patch("bildebank.server_browser_sidecars.raw_sidecar_groups", side_effect=AssertionError("global raw scan")):
                 body = source_item_page_html(
                     target,
                     source_filter,
@@ -301,8 +301,8 @@ class ServerBrowserCliTests(unittest.TestCase):
 
             with (
                 patch(
-                    "bildebank.server_browser.query_raw_sidecar_ids_by_image_id",
-                    wraps=server_browser.query_raw_sidecar_ids_by_image_id,
+                    "bildebank.server_browser_sidecars.query_raw_sidecar_ids_by_image_id",
+                    wraps=server_browser_sidecars.query_raw_sidecar_ids_by_image_id,
                 ) as raw_sidecar_ids,
             ):
                 first_body = source_item_page_html(
@@ -1489,7 +1489,7 @@ class ServerBrowserCliTests(unittest.TestCase):
                 previous_item, next_item = adjacent_browser_items(target, image_item)
                 month_nav = browser_month_navigation(target, image_item)
                 self.assertIsNotNone(raw_sidecar_id_by_image_id(target, int(image_item["id"])))
-                with patch("bildebank.server_browser.raw_sidecar_groups", side_effect=AssertionError("global raw scan")):
+                with patch("bildebank.server_browser_sidecars.raw_sidecar_groups", side_effect=AssertionError("global raw scan")):
                     image_body = item_page_html(
                         target,
                         image_item,
@@ -1614,8 +1614,8 @@ class ServerBrowserCliTests(unittest.TestCase):
         }
 
         with (
-            patch("bildebank.server_browser.motion_video_for_image", side_effect=AssertionError("motion lookup")),
-            patch("bildebank.server_browser.raw_sidecar_for_image", return_value=None),
+            patch("bildebank.server_browser_item_html.motion_video_for_image", side_effect=AssertionError("motion lookup")),
+            patch("bildebank.server_browser_item_html.raw_sidecar_for_image", return_value=None),
         ):
             self.assertEqual(
                 server_browser.associated_files_for_item(Path("/unused"), item),
@@ -1633,8 +1633,8 @@ class ServerBrowserCliTests(unittest.TestCase):
         motion_item = {"id": 2, "stored_filename": "PXL_20240102.mp4"}
 
         with (
-            patch("bildebank.server_browser.motion_video_for_image", return_value=motion_item) as motion_lookup,
-            patch("bildebank.server_browser.raw_sidecar_for_image", return_value=None) as raw_lookup,
+            patch("bildebank.server_browser_item_html.motion_video_for_image", return_value=motion_item) as motion_lookup,
+            patch("bildebank.server_browser_item_html.raw_sidecar_for_image", return_value=None) as raw_lookup,
         ):
             self.assertEqual(
                 server_browser.associated_files_for_item(Path("/unused"), item),
@@ -2260,12 +2260,12 @@ class ServerBrowserCliTests(unittest.TestCase):
                 server_browser.raw_sidecar_file_ids(target)
                 with (
                     patch(
-                        "bildebank.server_browser.db.connect",
+                        "bildebank.db.connect",
                         side_effect=AssertionError("opened nested connection"),
                     ),
                     patch(
-                        "bildebank.server_browser.query_raw_sidecar_ids_by_image_id",
-                        wraps=server_browser.query_raw_sidecar_ids_by_image_id,
+                        "bildebank.server_browser_sidecars.query_raw_sidecar_ids_by_image_id",
+                        wraps=server_browser_sidecars.query_raw_sidecar_ids_by_image_id,
                     ) as raw_sidecar_ids,
                 ):
                     body = source_item_page_html(
@@ -2295,11 +2295,11 @@ class ServerBrowserCliTests(unittest.TestCase):
                     server_browser.hidden_sidecar_id_filter_sql(target, "1 = 1", (), conn=conn)
                     with (
                         patch(
-                            "bildebank.server_browser.query_motion_video_file_ids",
+                            "bildebank.server_browser_sidecars.query_motion_video_file_ids",
                             side_effect=AssertionError("rescanned motion sidecars"),
                         ),
                         patch(
-                            "bildebank.server_browser.raw_sidecar_groups",
+                            "bildebank.server_browser_sidecars.raw_sidecar_groups",
                             side_effect=AssertionError("rescanned raw sidecars"),
                         ),
                     ):
@@ -2379,4 +2379,3 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("/month/2024-02", body)
         self.assertIn("/month/2023-12", month_body)
         self.assertIn("/month/2024-02", month_body)
-

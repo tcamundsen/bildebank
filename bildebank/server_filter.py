@@ -986,7 +986,7 @@ def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTe
 
 
 def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_of_focus: bool = False) -> list[Any]:
-    from .server_browser import (
+    from .server_browser_queries import (
         FILE_COLUMNS,
         ITEM_ORDER_SQL,
         OUT_OF_FOCUS_FILTER_PARAMS,

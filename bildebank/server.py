@@ -522,10 +522,10 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         return conn, False
 
     def close_browser_db_connection(self) -> None:
-        conn = getattr(self, "_browser_db_connection", None)
+        conn: Any | None = getattr(self, "_browser_db_connection", None)
         if conn is None:
             return
-        self._browser_db_connection = None
+        delattr(self, "_browser_db_connection")
         conn.close()
 
     def read_only_get_blocked(self, path: str) -> bool:
