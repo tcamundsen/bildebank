@@ -29,10 +29,7 @@ from bildebank.media import ImageDimensions
 from bildebank.openclip import embedding_blob
 from bildebank.server_faces import cached_face_box_media_metadata, update_face_box_media_metadata
 from bildebank.target_lock import LOCK_FILENAME, TargetLockError
-from tests.test_cli import (
-    capture_cli,
-    run_cli,
-)
+from tests.cli_helpers import capture_cli, run_cli
 from tests.test_media import minimal_png
 
 

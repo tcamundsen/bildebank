@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from tests.test_cli import capture_cli
+from tests.cli_helpers import capture_cli
 
 
 class UpdateCliTests(unittest.TestCase):

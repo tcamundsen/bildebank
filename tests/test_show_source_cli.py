@@ -5,7 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.test_cli import capture_cli, minimal_png, run_cli
+from tests.cli_helpers import capture_cli, run_cli
+from tests.test_media import minimal_png
 
 
 class ShowSourceCliTests(unittest.TestCase):
@@ -197,4 +198,3 @@ class ShowSourceCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("ikke del av en navnekollisjon", stdout)
-

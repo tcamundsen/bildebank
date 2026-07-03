@@ -62,7 +62,7 @@ from bildebank.server_pages import (
     years_page_html,
 )
 from bildebank.target_lock import LOCK_FILENAME
-from tests.test_cli import run_cli
+from tests.cli_helpers import run_cli
 from tests.test_media import (
     jpeg_with_exif_camera,
     jpeg_with_exif_datetime,

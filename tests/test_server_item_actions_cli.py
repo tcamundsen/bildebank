@@ -28,7 +28,7 @@ from bildebank.server_browser import (
 from bildebank.server_filter import text_filter_browser_source
 from bildebank.server_pages import app_status_page_html, item_page_html, month_page_html, removed_files_page_html
 from bildebank.target_lock import LOCK_FILENAME
-from tests.test_cli import run_cli
+from tests.cli_helpers import run_cli
 from tests.test_media import minimal_mp4_with_creation_date, minimal_png
 
 

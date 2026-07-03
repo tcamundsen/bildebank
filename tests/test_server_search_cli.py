@@ -22,7 +22,8 @@ from bildebank.server_search import (
     search_server_images,
 )
 from bildebank.target_lock import LOCK_FILENAME, TargetLockError
-from tests.test_cli import insert_test_file, register_target_file, run_cli
+from tests.cli_helpers import run_cli
+from tests.db_test_helpers import insert_test_file, register_target_file
 from tests.test_media import minimal_png
 
 
@@ -477,4 +478,3 @@ class ServerSearchCliTests(unittest.TestCase):
         self.assertIn('class="media-link quarter-turn"', body)
         self.assertIn('data-view-rotation="90"', body)
         self.assertIn("transform: rotate(90deg)", body)
-

@@ -22,7 +22,8 @@ from bildebank.media import sha256_file
 from bildebank.server_browser import source_item_ids
 from bildebank.server_browser_sources import person_browser_source
 from bildebank.target_lock import LOCK_FILENAME
-from tests.test_cli import capture_cli, register_target_file
+from tests.cli_helpers import capture_cli
+from tests.db_test_helpers import register_target_file
 
 
 class ExportPersonTests(unittest.TestCase):
@@ -489,4 +490,3 @@ class ExportPersonTests(unittest.TestCase):
         self.assertIn("export-person", parser.format_help())
         reference = Path("docs/reference.md").read_text(encoding="utf-8")
         self.assertIn("[`export-person`](export-person.md)", reference)
-

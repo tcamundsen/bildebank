@@ -13,7 +13,7 @@ from bildebank import db
 from bildebank.db import DB_FILENAME
 from bildebank.media import sha256_file
 from bildebank.target_lock import LOCK_FILENAME
-from tests.test_cli import capture_cli, run_cli
+from tests.cli_helpers import capture_cli, run_cli
 from tests.test_media import jpeg_with_exif_camera, minimal_avi_with_idit_outside_info
 
 

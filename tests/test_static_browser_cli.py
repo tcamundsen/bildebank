@@ -27,7 +27,8 @@ from bildebank.thumbnails import (
     thumbnail_is_current,
     thumbnail_relative_path,
 )
-from tests.test_cli import capture_cli, register_target_file, run_cli, write_test_image
+from tests.cli_helpers import capture_cli, run_cli, write_test_image
+from tests.db_test_helpers import register_target_file
 from tests.test_media import (
     jpeg_with_exif_datetime,
     minimal_mp4_with_creation_date,
@@ -644,4 +645,3 @@ class StaticBrowserCliTests(unittest.TestCase):
             self.assertEqual(stdout, "")
             self.assertIn("Bildesamlingen er låst", stderr)
             self.assertFalse((target / "name-conflicts.html").exists())
-

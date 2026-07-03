@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from bildebank.cli import main
 from bildebank.config import BrowserConfig, BrowserHotkeyConfig, load_config
-from tests.test_cli import capture_cli
+from tests.cli_helpers import capture_cli
 
 
 class ConfigCliTests(unittest.TestCase):

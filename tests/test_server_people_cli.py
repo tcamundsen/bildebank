@@ -51,7 +51,7 @@ from bildebank.server_pages import (
     source_years_page_html,
 )
 from bildebank.target_lock import LOCK_FILENAME
-from tests.test_cli import run_cli
+from tests.cli_helpers import run_cli
 from tests.test_media import minimal_png
 
 

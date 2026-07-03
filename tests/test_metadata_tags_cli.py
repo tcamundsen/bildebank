@@ -30,10 +30,7 @@ from tests.test_media import (
     minimal_mp4_with_creation_date,
     minimal_tiff_with_datetime,
 )
-from tests.test_cli import (
-    capture_cli,
-    run_cli,
-)
+from tests.cli_helpers import capture_cli, run_cli
 
 
 class MetadataTagsCliTests(unittest.TestCase):

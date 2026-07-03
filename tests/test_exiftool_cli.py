@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from bildebank.cli import main
 from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
-from tests.test_cli import capture_cli, run_cli, write_fake_exiftool
+from tests.cli_helpers import capture_cli, run_cli, write_fake_exiftool
 
 
 class ExiftoolCliTests(unittest.TestCase):

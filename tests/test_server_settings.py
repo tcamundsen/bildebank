@@ -20,7 +20,7 @@ from bildebank.server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS
 from bildebank.server_pages import app_status_page_html
 from bildebank.server_search import OpenClipSearchCache
 from bildebank.thumbnails import thumbnail_absolute_path
-from tests.test_cli import insert_test_file
+from tests.db_test_helpers import insert_test_file
 
 
 class ServerSettingsTests(unittest.TestCase):

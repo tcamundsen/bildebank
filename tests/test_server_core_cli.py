@@ -34,7 +34,8 @@ from bildebank.server_pages import (
 )
 from bildebank.server_response import add_csrf_to_html
 from bildebank.server_search import DEFAULT_SEARCH_LIMIT, ServerSearchStats
-from tests.test_cli import register_target_file, write_test_image
+from tests.cli_helpers import write_test_image
+from tests.db_test_helpers import register_target_file
 
 
 class ServerCoreCliTests(unittest.TestCase):

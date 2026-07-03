@@ -22,7 +22,8 @@ from bildebank.server_pages import (
     h3_cells_page_html,
     item_page_html,
 )
-from tests.test_cli import register_target_file, run_cli
+from tests.cli_helpers import run_cli
+from tests.db_test_helpers import register_target_file
 from tests.test_media import minimal_png
 
 

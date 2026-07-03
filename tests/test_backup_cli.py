@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from bildebank.db import DB_FILENAME
 from bildebank.target_lock import LOCK_FILENAME
-from tests.test_cli import capture_cli, run_cli
+from tests.cli_helpers import capture_cli, run_cli
 
 
 class BackupCliTests(unittest.TestCase):

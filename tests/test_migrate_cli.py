@@ -13,12 +13,8 @@ from bildebank import db
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.geo import h3_cells_for_point
 from bildebank.media import sha256_file
-from tests.test_cli import (
-    capture_cli,
-    create_legacy_database,
-    create_v4_database,
-    run_cli,
-)
+from tests.cli_helpers import capture_cli, run_cli
+from tests.db_test_helpers import create_legacy_database, create_v4_database
 from tests.test_media import (
     jpeg_with_exif_camera,
     jpeg_with_exif_datetime,

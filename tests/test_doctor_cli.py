@@ -11,7 +11,8 @@ from bildebank.cli import build_parser
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.media import sha256_file
 from bildebank.openclip import OpenClipConfig, connect_openclip_db, embedding_blob, openclip_db_path
-from tests.test_cli import capture_cli, insert_test_file, register_target_file, run_cli
+from tests.cli_helpers import capture_cli, run_cli
+from tests.db_test_helpers import insert_test_file, register_target_file
 
 
 class DoctorCliTests(unittest.TestCase):

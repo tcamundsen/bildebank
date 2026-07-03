@@ -22,7 +22,8 @@ from bildebank.openclip import (
 )
 from bildebank.server_search import OpenClipSearchCache
 from bildebank.target_lock import LOCK_FILENAME
-from tests.test_cli import capture_cli, insert_openclip_cleanup_fixture, insert_test_file, run_cli
+from tests.cli_helpers import capture_cli, run_cli
+from tests.db_test_helpers import insert_openclip_cleanup_fixture, insert_test_file
 
 
 class ImageSearchCliTests(unittest.TestCase):

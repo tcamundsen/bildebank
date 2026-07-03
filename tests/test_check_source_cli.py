@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bildebank.db import DB_FILENAME
-from tests.test_cli import capture_cli, run_cli
+from tests.cli_helpers import capture_cli, run_cli
 
 
 class CheckSourceCliTests(unittest.TestCase):

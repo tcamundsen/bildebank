@@ -13,7 +13,7 @@ from unittest.mock import patch
 from bildebank import db
 from bildebank.cli import build_parser
 from bildebank.db import DB_FILENAME
-from tests.test_cli import capture_cli, run_cli
+from tests.cli_helpers import capture_cli, run_cli
 
 
 class UnimportCliTests(unittest.TestCase):
