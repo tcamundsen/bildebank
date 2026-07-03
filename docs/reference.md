@@ -18,7 +18,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 - [`create`](create.md) **`launcher`**
 - [`import`](import.md) **`launcher`**
-- [`config`](config.md) **`cli`**
+- [`config`](config.md) **`web`**
 
 ## Se og kontrollere samlingen
 
@@ -44,7 +44,7 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 - [`where-is`](where-is.md) **`cli`**
 - [`doctor`](doctor.md) **`launcher`**
-- [`backup`](backup.md) **`cli`**
+- [`backup`](backup.md) **`launcher`**
 - [`migrate`](migrate.md) **`launcher`**
 - [`vacuum`](vacuum.md) **`launcher`**
 - [`update`](update.md) **`launcher`**
@@ -79,16 +79,16 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 
 - [`geo-scan`](geo-scan.md) **`launcher`**
 - [`exiftool-install`](exiftool-install.md)
-- [`geo-stats`](geo-stats.md)
-- [`geo-areas`](geo-areas.md)
-- [`geo-area`](geo-area.md)
+- [`geo-stats`](geo-stats.md) **`web`**
+- [`geo-areas`](geo-areas.md) **`cli`**
+- [`geo-area`](geo-area.md) **`cli`**
  
 ## Finne ting som bør kontrolleres
 
-- [`conflicts`](conflicts.md)
-- [`show-conflict`](show-conflict.md)
-- [`non-metadata`](non-metadata.md)
-- [`errors`](errors.md)
+- [`conflicts`](conflicts.md) **`cli`**
+- [`show-conflict`](show-conflict.md) **`cli`**
+- [`non-metadata`](non-metadata.md) **`cli`**
+- [`errors`](errors.md) **`cli`**
 
 ## Diverse
 
