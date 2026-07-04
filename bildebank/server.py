@@ -446,6 +446,49 @@ class BildebankServer(ThreadingHTTPServer):
             self._source_item_counts[cache_key] = cached
         return cached[1]
 
+    def note_tag_navigation_change(self, tag_name: str) -> None:
+        tag_key = db.tag_name_key(tag_name)
+        if tag_key == db.tag_name_key(db.SYSTEM_TAG_OUT_OF_FOCUS) and self.hide_out_of_focus:
+            self.clear_browser_navigation_cache()
+            return
+        self._clear_source_navigation_cache_for_tag(tag_key)
+        self._refresh_browser_navigation_mtimes()
+
+    def _clear_source_navigation_cache_for_tag(self, tag_key: str) -> None:
+        def source_matches(source: BrowserSource) -> bool:
+            if source.tag_name is not None and db.tag_name_key(source.tag_name) == tag_key:
+                return True
+            text_filter = source.text_filter
+            return bool(text_filter is not None and db.tag_name_key(getattr(text_filter, "tag", "") or "") == tag_key)
+
+        def prune(cache: dict[tuple[BrowserSource, bool], Any]) -> None:
+            for cache_key in list(cache):
+                source, _hide_out_of_focus = cache_key
+                if source_matches(source):
+                    del cache[cache_key]
+
+        prune(getattr(self, "_source_item_ids", {}))
+        prune(getattr(self, "_source_month_keys", {}))
+        prune(getattr(self, "_source_item_counts", {}))
+        prune(getattr(self, "_source_first_day_item_ids", {}))
+
+    def _refresh_browser_navigation_mtimes(self) -> None:
+        try:
+            self._browser_navigation_db_mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
+        except OSError:
+            self._browser_navigation_db_mtime_ns = None
+        config = getattr(self, "config", None)
+        face_config = config.face_recognition if config is not None else None
+        try:
+            self._browser_navigation_face_db_mtime_ns = (
+                current_face_db_path(self.target, face_config).stat().st_mtime_ns
+                if face_config is not None and face_config.enabled
+                else None
+            )
+        except OSError:
+            self._browser_navigation_face_db_mtime_ns = None
+        self._browser_navigation_checked_at = time.monotonic()
+
     def browser_navigation_cache_version(self) -> int:
         version = getattr(self, "_browser_navigation_cache_version", 0)
         now = time.monotonic()
@@ -496,21 +539,7 @@ class BildebankServer(ThreadingHTTPServer):
         getattr(self, "_source_first_day_item_ids", {}).clear()
         clear_sidecar_caches()
         self._browser_navigation_cache_version = getattr(self, "_browser_navigation_cache_version", 0) + 1
-        try:
-            self._browser_navigation_db_mtime_ns = db.db_path_for_target(self.target).stat().st_mtime_ns
-        except OSError:
-            self._browser_navigation_db_mtime_ns = None
-        config = getattr(self, "config", None)
-        face_config = config.face_recognition if config is not None else None
-        try:
-            self._browser_navigation_face_db_mtime_ns = (
-                current_face_db_path(self.target, face_config).stat().st_mtime_ns
-                if face_config is not None and face_config.enabled
-                else None
-            )
-        except OSError:
-            self._browser_navigation_face_db_mtime_ns = None
-        self._browser_navigation_checked_at = time.monotonic()
+        self._refresh_browser_navigation_mtimes()
 
 
 class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
@@ -2293,6 +2322,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             start = time.perf_counter()
             server_actions.set_tag_on_file(self.server.target, file_id, tag_name, tagged)
+            self.server.note_tag_navigation_change(tag_name)
             record_timing("tag_apply", start)
         except TargetLockError as exc:
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
@@ -2456,6 +2486,8 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         start = time.perf_counter()
         if hotkey.action == "manual_date":
             clear_browser_navigation_cache(self.server)
+        if hotkey.action == "tag":
+            self.server.note_tag_navigation_change(str(result.get("tag_name") or hotkey.tag_name))
         if hotkey.action == "person":
             clear_face_caches()
             result["person_url"] = person_item_url(str(result["person_name"]), file_id, show_faces=False)

@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bildebank import db, server_browser_item_html, server_browser_queries, server_browser_sidecars
-from bildebank.config import AppConfig, FaceRecognitionConfig
+from bildebank.config import AppConfig, BrowserConfig, FaceRecognitionConfig
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.face import connect_face_db
 from bildebank.geo import h3_cells_for_point
@@ -2059,6 +2059,79 @@ class ServerBrowserCliTests(unittest.TestCase):
             self.assertEqual(month_keys_mock.call_count, 1)
             self.assertEqual(item_by_id_mock.call_count, 0)
             self.assertEqual(adjacent_mock.call_count, 0)
+
+    def test_run_server_tag_change_preserves_global_navigation_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "A_20240101.jpg").write_bytes(b"one")
+            (source / "B_20240201.jpg").write_bytes(b"two")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]), 0)
+
+            server = object.__new__(BildebankServer)
+            server.target = target
+            server.config = AppConfig()
+            server._browser_navigation_cache_version = 0
+            server._browser_navigation_db_mtime_ns = db.db_path_for_target(target).stat().st_mtime_ns
+            server._browser_navigation_face_db_mtime_ns = None
+            server._browser_navigation_checked_at = time.monotonic()
+            server._browser_item_ids = {}
+            server._browser_month_keys = {}
+            server._source_item_ids = {}
+            server._source_month_keys = {}
+            server._source_item_counts = {}
+            server._browser_first_day_item_ids = {}
+            server._source_first_day_item_ids = {}
+
+            global_order = server.browser_item_order()
+            tag_source = tag_browser_source("Familie")
+            tag_filter_source = text_filter_browser_source("tag:Familie")
+            other_tag_source = tag_browser_source("Annet")
+            server._source_item_ids[(tag_source, False)] = (0, [1], {1: 0})
+            server._source_item_ids[(tag_filter_source, False)] = (0, [1], {1: 0})
+            server._source_item_ids[(other_tag_source, False)] = (0, [2], {2: 0})
+
+            conn = db.connect(target)
+            try:
+                db.tag_file(conn, file_id=1, tag_name="Familie")
+                conn.commit()
+            finally:
+                conn.close()
+
+            server.note_tag_navigation_change("Familie")
+            server._browser_navigation_checked_at = 0.0
+            version = server.browser_navigation_cache_version()
+
+        self.assertEqual(version, 0)
+        self.assertIs(server._browser_item_ids[False][1], global_order[0])
+        self.assertNotIn((tag_source, False), server._source_item_ids)
+        self.assertNotIn((tag_filter_source, False), server._source_item_ids)
+        self.assertIn((other_tag_source, False), server._source_item_ids)
+
+    def test_run_server_out_of_focus_tag_change_clears_global_navigation_cache(self) -> None:
+        server = object.__new__(BildebankServer)
+        server.target = Path("/tmp/nonexistent-bildebank-target")
+        server.config = AppConfig(browser=BrowserConfig(hide_out_of_focus=True))
+        server._browser_navigation_cache_version = 0
+        server._browser_navigation_db_mtime_ns = None
+        server._browser_navigation_face_db_mtime_ns = None
+        server._browser_navigation_checked_at = 0.0
+        server._browser_item_ids = {False: (0, [1], {1: 0})}
+        server._browser_month_keys = {False: (0, ["2024-01"])}
+        server._source_item_ids = {}
+        server._source_month_keys = {}
+        server._source_item_counts = {}
+        server._browser_first_day_item_ids = {}
+        server._source_first_day_item_ids = {}
+
+        server.note_tag_navigation_change(db.SYSTEM_TAG_OUT_OF_FOCUS)
+
+        self.assertEqual(server._browser_navigation_cache_version, 1)
+        self.assertEqual(server._browser_item_ids, {})
+        self.assertEqual(server._browser_month_keys, {})
 
     def test_run_server_tags_page_can_create_rename_and_delete_user_tags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
