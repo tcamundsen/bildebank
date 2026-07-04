@@ -180,7 +180,7 @@ def open_server_browser_window() -> bool:
 
 
 def launcher_command() -> list[str]:
-    return bildebank_command("launcher")
+    return bildebank_command("start")
 
 
 def update_command() -> list[str]:
@@ -650,7 +650,7 @@ class BildebankLauncher:
         self.closing = False
 
         self.root = tk.Tk()
-        self.root.title("Bildebank kontrollpanel")
+        self.root.title("Bildebank")
         self.root.minsize(640, 460)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -753,7 +753,7 @@ class BildebankLauncher:
         if close_blocked_by_running_command(self.busy):
             from tkinter import messagebox
 
-            message = "Vent til jobben som kjører er ferdig før du lukker kontrollpanelet."
+            message = "Vent til jobben som kjører er ferdig før du lukker Bildebank-vinduet."
             self._log(message)
             messagebox.showinfo("Bildebank jobber", message, parent=self.root)
             return
@@ -793,7 +793,7 @@ class BildebankLauncher:
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(2, weight=1)
 
-        title = ttk.Label(outer, text="Bildebank kontrollpanel", font=("", 15, "bold"))
+        title = ttk.Label(outer, text="Bildebank", font=("", 15, "bold"))
         title.grid(row=0, column=0, sticky="w")
 
         self.notebook = ttk.Notebook(outer)
@@ -926,7 +926,7 @@ class BildebankLauncher:
         self.cancel_command_button.grid(row=0, column=1, sticky="e", padx=(0, PADX))
         self.exit_button = self._button(
             footer,
-            text="Avslutt bildebank kontrollpanel",
+            text="Avslutt Bildebank",
             command=self._on_close,
         )
         self.exit_button.grid(row=0, column=2, sticky="e")
@@ -1810,7 +1810,7 @@ class BildebankLauncher:
             "Oppdater Bildebank?",
             (
                 "Bildebank-serveren stoppes hvis den kjører. Etter oppdateringen "
-                "starter kontrollpanelet på nytt."
+                "starter Bildebank-vinduet på nytt."
             ),
             parent=self.root,
         ):
@@ -1821,7 +1821,7 @@ class BildebankLauncher:
         self._run_waiting_command(
             update_command(),
             running_message="Oppdaterer Bildebank ...",
-            success_message="Bildebank er oppdatert. Starter kontrollpanelet på nytt ...",
+            success_message="Bildebank er oppdatert. Starter Bildebank-vinduet på nytt ...",
             failure_message="Oppdatering feilet.",
             on_success=self._restart_launcher,
         )
@@ -1862,10 +1862,10 @@ class BildebankLauncher:
         try:
             subprocess.Popen(launcher_command())
         except OSError as exc:
-            messagebox.showerror("Kunne ikke starte kontrollpanelet", "Kontrollpanelet kunne ikke startes på nytt.")
-            self._log(f"Kunne ikke starte kontrollpanelet på nytt: {exc}")
+            messagebox.showerror("Kunne ikke starte Bildebank", "Bildebank-vinduet kunne ikke startes på nytt.")
+            self._log(f"Kunne ikke starte Bildebank-vinduet på nytt: {exc}")
             return
-        self._log("Nytt kontrollpanel startet. Lukker dette vinduet.")
+        self._log("Nytt Bildebank-vindu startet. Lukker dette vinduet.")
         self._destroy_root()
 
     def _install_insightface(self) -> None:

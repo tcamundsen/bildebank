@@ -200,7 +200,7 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "cleanup-pending-deletes",
         "--apply",
     ]
-    assert launcher_command()[-1:] == ["launcher"]
+    assert launcher_command()[-1:] == ["start"]
     assert update_command()[-1:] == ["update"]
     assert check_source_command(collection, source)[-4:] == [
         "--target",
@@ -434,8 +434,8 @@ def test_launcher_layout_source_defines_notebook_tabs_and_log_below_tabs() -> No
     assert "self.cancel_command_button = self._button(" in source
     assert 'text="Avbryt jobb"' in source
     assert "self.exit_button = self._button(" in source
-    assert 'text="Avslutt bildebank kontrollpanel"' in source
-    assert 'text="Avslutt bildebank kontrollpanel"' not in refresh_source
+    assert 'text="Avslutt Bildebank"' in source
+    assert 'text="Avslutt Bildebank"' not in refresh_source
 
 
 def test_launcher_button_helper_uses_launcher_button_style() -> None:

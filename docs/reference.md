@@ -3,8 +3,8 @@
 Kommandoer merket **cli** ("command line interface") kan bare kjøres fra
 PowerShell.
 
-Merket **launcher** betyr at det kommandoen gjør, kan gjøres fra vinduet
-`bildebank launcher` gir deg, i tillegg til fra PowerShell.
+Merket **vindu** betyr at det kommandoen gjør, kan gjøres fra Bildebank-vinduet
+som åpnes med `bildebank start`, i tillegg til fra PowerShell.
 
 Merket **web** betyr at du kan få gjort det samme i nettleseren som det
 kommandoen gjør i powershell.
@@ -16,19 +16,20 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 ## Kom i gang
 
-- [`create`](create.md) **`launcher`**
-- [`import`](import.md) **`launcher`**
+- [`start`](start.md) **`vindu`**
+- [`create`](create.md) **`vindu`**
+- [`import`](import.md) **`vindu`**
 - [`config`](config.md) **`web`**
 
 ## Se og kontrollere samlingen
 
-- [`run-server`](run-server.md) **`launcher`**
-- [`make-thumbnails`](make-thumbnails.md) **`launcher`**
+- [`run-server`](run-server.md) **`vindu`**
+- [`make-thumbnails`](make-thumbnails.md) **`vindu`**
 - [`status`](status.md) **`cli`**
 - [`list-sources`](list-sources.md) **`web`**
 - [`show-source`](show-source.md) **`web`**
-- [`check-source`](check-source.md) **`launcher`**
-- [`rescan-source`](rescan-source.md) **`launcher`**
+- [`check-source`](check-source.md) **`vindu`**
+- [`rescan-source`](rescan-source.md) **`vindu`**
 - [`date-set`](date-set.md) **`web`**
 - [`date-clear`](date-clear.md) **`web`**
 
@@ -36,31 +37,31 @@ Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 - [`remove`](remove.md) **`web`**
 - [`undelete`](undelete.md) **`web`**
-- [`unimport`](unimport.md) **`launcher`**
-- [`cleanup-pending-deletes`](cleanup-pending-deletes.md) **`launcher`**
+- [`unimport`](unimport.md) **`vindu`**
+- [`cleanup-pending-deletes`](cleanup-pending-deletes.md) **`vindu`**
 - [`list-removed`](list-removed.md) **`web`**
 
 ## Programmet
 
 - [`where-is`](where-is.md) **`cli`**
-- [`doctor`](doctor.md) **`launcher`**
-- [`backup`](backup.md) **`launcher`**
-- [`migrate`](migrate.md) **`launcher`**
-- [`vacuum`](vacuum.md) **`launcher`**
-- [`update`](update.md) **`launcher`**
+- [`doctor`](doctor.md) **`vindu`**
+- [`backup`](backup.md) **`vindu`**
+- [`migrate`](migrate.md) **`vindu`**
+- [`vacuum`](vacuum.md) **`vindu`**
+- [`update`](update.md) **`vindu`**
 
 ## Generering av statiske HTML-filer:
 
-- [`make-browser`](make-browser.md) **`launcher`**
-- [`make-people-browser`](make-people-browser.md) **`launcher`**
-- [`make-person-browser`](make-person-browser.md) **`launcher`**
+- [`make-browser`](make-browser.md) **`vindu`**
+- [`make-people-browser`](make-people-browser.md) **`vindu`**
+- [`make-person-browser`](make-person-browser.md) **`vindu`**
 
 ## Ansiktsgjenkjenning
 
 - [`insightface`](insightface.md) - innføring
-- [`export-person`](export-person.md) **`launcher`**
+- [`export-person`](export-person.md) **`vindu`**
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
-- [`face-scan`](face-scan.md) **`launcher`**
+- [`face-scan`](face-scan.md) **`vindu`**
 - [`face-suggest`](face-suggest.md) **`web`**
 - [`face-reset`](face-reset.md) **`cli`**
 
@@ -77,7 +78,7 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 
 ## Geolokalisering
 
-- [`geo-scan`](geo-scan.md) **`launcher`**
+- [`geo-scan`](geo-scan.md) **`vindu`**
 - [`exiftool-install`](exiftool-install.md)
 - [`geo-stats`](geo-stats.md) **`web`**
 - [`geo-areas`](geo-areas.md) **`cli`**
@@ -99,7 +100,7 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 
 ## Tekstbasert bildesøk
 
-- [`image-scan`](image-scan.md) **`launcher`**
+- [`image-scan`](image-scan.md) **`vindu`**
 - [`cleanup-image-search`](cleanup-image-search.md) **`cli`**
 
 Se den samlede innføringen: [`openclip`](openclip.md).

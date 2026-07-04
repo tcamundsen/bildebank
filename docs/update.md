@@ -20,7 +20,7 @@ Eksempel:
 bildebank update
 ```
 
-Du kan også starte samme oppdatering fra Bildebank kontrollpanel med knappen
+Du kan også starte samme oppdatering fra Bildebank-vinduet med knappen
 `Oppdater Bildebank`.
 
 Etter en oppgradering kan det hende programmet ber deg kjøre

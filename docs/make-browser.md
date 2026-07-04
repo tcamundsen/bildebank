@@ -58,7 +58,7 @@ Lager HTML-filen uten bilder som er tagget `Ute av fokus`:
 bildebank make-browser --hide-out-of-focus
 ```
 
-I kontrollpanelet er dette valget checkboxen `Skjul "Ute av fokus"` ved
+I Bildebank-vinduet er dette valget checkboxen `Skjul "Ute av fokus"` ved
 knappen `Lag HTML-browser`.
 
 ### `--output`

@@ -55,6 +55,12 @@ Da er det på tide å ta kontakt med Tom Cato.
 
 Hvis dette fungerer kan du fortsette med å lese [brukermanualen](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
 
+Når programmet er installert, åpner du Bildebank-vinduet med:
+
+```powershell
+bildebank start
+```
+
 # Komplisert forklaring du ikke trenger å se på :-)
 
 Hvis scriptet ikke får installert Git eller Python automatisk, kan du følge den
@@ -234,5 +240,4 @@ samlingen er sikkerhetskopiert.
 
 Bildebank er fri programvare lisensiert under GNU General Public License,
 versjon 3 eller senere. Se `LICENSE` for full lisens.
-
 

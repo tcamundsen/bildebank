@@ -72,7 +72,7 @@ HELP_COMMAND_GROUPS = (
     (
         "kom i gang",
         (
-            ("launcher", "Åpne Windows-vennlig kontrollpanel"),
+            ("start", "Åpne Bildebank-vinduet"),
             ("create", "Opprett en ny bildesamlingsmappe"),
             ("import", "Importer en mappe, CD, USB eller annen kilde"),
             ("config", "Slå valgfrie funksjoner på eller av"),
@@ -234,10 +234,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_command(
         subparsers,
+        "start",
+        usage="bildebank start",
+        description="Åpne Bildebank-vinduet.",
+        help="Åpne Bildebank-vinduet",
+    )
+    add_command(
+        subparsers,
         "launcher",
         usage="bildebank launcher",
-        description="Åpne Windows-vennlig kontrollpanel for Bildebank.",
-        help="Åpne Windows-vennlig kontrollpanel",
+        description="Alias for bildebank start.",
+        help=argparse.SUPPRESS,
     )
 
     imp = add_command(
@@ -1023,6 +1030,7 @@ def main_help_epilog() -> str:
     lines.append("   bildebank <kommando> -h")
     lines.append("")
     lines.append("Vanlig start:")
+    lines.append("   bildebank start")
     lines.append("   bildebank create \"C:\\Users\\Tom\\Bilder samlet\"")
     lines.append("   cd \"C:\\Users\\Tom\\Bilder samlet\"")
     lines.append("   bildebank import --name \"Mobil 2024\" --dry-run \"E:\\DCIM\"")
@@ -1032,6 +1040,7 @@ def main_help_epilog() -> str:
 
 
 NO_TARGET_COMMANDS = {
+    "start",
     "launcher",
     "create",
     "explain-date",
@@ -1110,7 +1119,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 def run_no_target_command(args: argparse.Namespace) -> int:
-    if args.command == "launcher":
+    if args.command in {"start", "launcher"}:
         from .launcher import main as launcher_main
 
         return launcher_main()

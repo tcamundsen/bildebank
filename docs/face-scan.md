@@ -22,7 +22,7 @@ Den hopper over bilder som allerede er scannet med samme innhold. Det er trygt
 å avbryte med `Ctrl-C`; neste kjøring fortsetter ved å hoppe over det som er
 ferdig.
 
-Hvis kommandoen kjøres fra Bildebank kontrollpanel, kan du bruke knappen
+Hvis kommandoen kjøres fra Bildebank-vinduet, kan du bruke knappen
 **Avbryt jobb** i stedet for `Ctrl-C`.
 
 Med `--force` scanner den valgte bildene på nytt. Gamle ansikter, forslag og

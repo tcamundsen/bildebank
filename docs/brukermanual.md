@@ -125,6 +125,12 @@ bildebank
 
 Programmet skal da skrive ut en liste over kommandoer.
 
+Den vanlige måten å åpne Bildebank-vinduet på er:
+
+```powershell
+bildebank start
+```
+
 `$HOME` er en variabel som peker på hjemmemappen din. For meg betyr disse to
 linjene det samme:
 

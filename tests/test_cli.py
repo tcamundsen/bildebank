@@ -70,6 +70,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Vanlige kommandoer:", stdout)
         self.assertIn("bildebank <kommando> -h", stdout)
         self.assertIn("Vanlig start:", stdout)
+        self.assertIn("bildebank start", stdout)
         self.assertIn('bildebank import --name "Mobil 2024" --dry-run "E:\\DCIM"', stdout)
         self.assertIn("bildebank run-server", stdout)
         self.assertEqual(stderr, "")
@@ -86,7 +87,8 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("Bildebank 0.4.0", stdout)
         self.assertNotIn("--target", stdout)
         self.assertIn("Vanlige kommandoer:", stdout)
-        self.assertIn("kom i gang\n   launcher", stdout)
+        self.assertIn("kom i gang\n   start", stdout)
+        self.assertNotIn("launcher", stdout)
         self.assertIn("import", stdout)
         self.assertIn("run-server", stdout)
         self.assertIn("kontrollere importen\n   errors", stdout)
@@ -134,6 +136,13 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("mappe       Mappen som skal bli bildesamling", stdout)
         self.assertNotIn("<kommando> [<args>] create", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_start_and_launcher_commands_open_launcher(self) -> None:
+        with patch("bildebank.launcher.main", return_value=0) as launcher_main:
+            self.assertEqual(main(["start"]), 0)
+            self.assertEqual(main(["launcher"]), 0)
+
+        self.assertEqual(launcher_main.call_count, 2)
 
     def test_make_people_browser_help(self) -> None:
         stdout_buffer = StringIO()
