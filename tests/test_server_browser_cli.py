@@ -370,6 +370,7 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn('data-nav-button-pair="month"', body)
         self.assertIn('data-nav-button-pair="item"', body)
         self.assertIn('<main class="server-browser month-browser">', body)
+        self.assertNotIn("years-grid-server", body)
         self.assertNotIn('<footer class="browser-footer">', body)
 
     def test_run_server_first_month_previous_month_links_to_years(self) -> None:
@@ -481,6 +482,8 @@ class ServerBrowserCliTests(unittest.TestCase):
                 server_browser_queries.browser_year_summaries(target)
 
         self.assertIn('href="/years/2005"', years_body)
+        self.assertIn('<main class="server-browser years-browser">', years_body)
+        self.assertIn('<section class="month-grid-server years-grid-server">', years_body)
         self.assertIn('data-nav-button-pair="year"', years_body)
         self.assertIn('data-nav-button-pair="month"', years_body)
         self.assertIn('data-nav-button-pair="item"', years_body)
@@ -495,6 +498,8 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertNotIn("<h1>2005</h1>", year_body)
         self.assertIn(">2005</div>", years_body)
         self.assertIn(">3 måneder, 4 bilder</div>", years_body)
+        self.assertIn('<div class="path">2005</div>', years_body)
+        self.assertIn('<div class="score">3 måneder, 4 bilder</div>', years_body)
         self.assertNotIn('href="/years/2006"', years_body)
         self.assertIn('href="/years/2007"', years_body)
         self.assertIn('src="/file/2005/03/IMG_20050302.jpg"', years_body)
@@ -513,6 +518,7 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn('title="Forrige bilde" data-key-nav="previous">◀ Bil</a>', year_body)
         self.assertIn('title="Neste bilde" data-key-nav="next">de ▶</a>', year_body)
         self.assertIn('<section class="month-grid-server year-month-grid-server">', year_body)
+        self.assertNotIn("years-grid-server", year_body)
         self.assertIn('src="/file/2005/03/IMG_20050302.jpg"', year_body)
         self.assertIn(">2005-04</div>", year_body)
         self.assertIn(">1 bilde</div>", year_body)
@@ -532,6 +538,42 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertEqual(month_items.call_count, 0)
         self.assertTrue(all(call.kwargs.get("conn") is None for call in all_where.call_args_list))
         self.assertEqual([card["month_key"] for card in month_cards], ["2005-03", "2005-04", "2005-05"])
+
+    def test_run_server_years_page_keeps_text_for_many_year_cards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                for year in range(1970, 1996):
+                    relative_path = f"{year}/01/IMG_{year}0101.jpg"
+                    conn.execute(
+                        """
+                        INSERT INTO files(
+                            target_path, target_path_key, original_filename, stored_filename,
+                            sha256, size_bytes, taken_date, date_source, name_conflict
+                        ) VALUES(?, ?, ?, ?, ?, ?, ?, 'filename', 0)
+                        """,
+                        (
+                            relative_path,
+                            relative_path,
+                            f"IMG_{year}0101.jpg",
+                            f"IMG_{year}0101.jpg",
+                            uuid.uuid4().hex,
+                            1,
+                            f"{year}-01-01",
+                        ),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+            body = years_page_html(target)
+
+        self.assertIn('<section class="month-grid-server years-grid-server">', body)
+        for year in range(1970, 1996):
+            self.assertIn(f'<div class="path">{year}</div>', body)
+            self.assertIn('<div class="score">1 måned, 1 bilde</div>', body)
 
     def test_run_server_year_route_rejects_invalid_year(self) -> None:
         handler = object.__new__(BildebankRequestHandler)

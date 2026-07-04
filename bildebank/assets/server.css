@@ -693,6 +693,27 @@
       padding: 12px;
       overflow: auto;
     }
+    .years-grid-server {
+      overflow: auto;
+    }
+    .years-grid-server .item {
+      display: grid;
+      grid-template-rows: auto max-content;
+      min-height: 0;
+    }
+    .years-grid-server .thumb-link {
+      min-height: 0;
+    }
+    .years-grid-server .text {
+      display: block;
+      padding: 10px;
+      font-size: 14px;
+      line-height: 1.25;
+    }
+    .years-grid-server .path,
+    .years-grid-server .score {
+      display: block;
+    }
     .year-month-grid-server {
       grid-template-columns: repeat(6, minmax(120px, 1fr));
       gap: 10px;

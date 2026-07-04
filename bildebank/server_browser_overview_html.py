@@ -109,14 +109,14 @@ def years_page_html(
     return page_html(
         "År",
         f"""
-        <main class="server-browser">
+        <main class="server-browser years-browser">
           {app_header_html(
               "År",
               controls=controls,
               face_enabled=face_enabled,
               openclip_enabled=openclip_enabled,
           )}
-          <section class="month-grid-server">{content}</section>
+          <section class="month-grid-server years-grid-server">{content}</section>
         </main>
         """,
     )
