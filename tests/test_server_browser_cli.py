@@ -324,6 +324,22 @@ class ServerBrowserCliTests(unittest.TestCase):
                     face_enabled=False,
                     openclip_enabled=False,
                 )
+                conn = db.connect(target)
+                try:
+                    db.tag_file(conn, file_id=int(nef_item["id"]), tag_name="Familie")
+                    conn.commit()
+                finally:
+                    conn.close()
+                source_item_page_html(
+                    target,
+                    source_filter,
+                    nef_item,
+                    previous_item,
+                    next_item,
+                    month_nav,
+                    face_enabled=False,
+                    openclip_enabled=False,
+                )
 
         self.assertIn("Vis JPG-bildet", first_body)
         self.assertEqual(raw_sidecar_ids.call_count, 1)

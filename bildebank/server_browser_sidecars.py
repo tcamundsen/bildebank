@@ -10,8 +10,10 @@ from .media import media_kind
 
 
 RAW_SIDECAR_IDS_CACHE_MAX_SIZE = 8
-RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE: dict[tuple[str, int], dict[int, int]] = {}
-RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE: dict[tuple[str, int], dict[int, int]] = {}
+SidecarCacheKey = tuple[str, tuple[object, ...]]
+SIDECAR_SIGNATURE_CACHE: dict[tuple[str, int], tuple[object, ...]] = {}
+RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE: dict[SidecarCacheKey, dict[int, int]] = {}
+RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE: dict[SidecarCacheKey, dict[int, int]] = {}
 RAW_SIDECAR_EXTENSIONS = {".nef", ".psd"}
 RAW_SIDECAR_SQL_EXTENSION_FILTER = """
               lower(files.original_filename) LIKE '%.nef'
@@ -35,8 +37,8 @@ ITEM_ORDER_SQL = f"{ITEM_DATE_ORDER_SQL}, target_path_key"
 
 def clear_sidecar_data_caches() -> None:
     cached_motion_video_file_ids.cache_clear()
-    cached_raw_sidecar_file_ids.cache_clear()
     cached_raw_sidecar_ids_by_image_id.cache_clear()
+    SIDECAR_SIGNATURE_CACHE.clear()
     RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.clear()
     RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE.clear()
 
@@ -48,6 +50,74 @@ def is_image_item(item: Any) -> bool:
 
 def hidden_sidecar_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -> set[int]:
     return query_motion_video_file_ids_for_day(conn, day_key) | query_raw_sidecar_file_ids_for_day(conn, day_key)
+
+
+def sidecar_cache_key(target: Path, *, conn: sqlite3.Connection | None = None) -> SidecarCacheKey:
+    return (str(target.resolve()), sidecar_cache_signature(target, conn=conn))
+
+
+def sidecar_cache_signature(target: Path, *, conn: sqlite3.Connection | None = None) -> tuple[object, ...]:
+    db_path = db.db_path_for_target(target)
+    try:
+        mtime_ns = db_path.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = 0
+    cache_mtime_key = (str(target.resolve()), mtime_ns)
+    cached = SIDECAR_SIGNATURE_CACHE.get(cache_mtime_key)
+    if cached is not None:
+        return cached
+    owned_conn = conn is None
+    conn = conn or db.connect(target)
+    try:
+        files_row = conn.execute(
+            """
+            SELECT
+                COUNT(*) AS row_count,
+                COALESCE(MAX(id), 0) AS max_id,
+                COALESCE(MAX(target_path_key), '') AS max_target_path_key,
+                COALESCE(MAX(original_filename), '') AS max_original_filename,
+                COALESCE(MAX(stored_filename), '') AS max_stored_filename,
+                COALESCE(MAX(date_source), '') AS max_date_source,
+                COALESCE(MAX(metadata_datetime), '') AS max_metadata_datetime,
+                COALESCE(MAX(deleted_at), '') AS max_deleted_at,
+                COALESCE(MAX(media_metadata_mtime_ns), 0) AS max_media_metadata_mtime_ns
+            FROM files
+            """
+        ).fetchone()
+        sources_row = conn.execute(
+            """
+            SELECT
+                COUNT(*) AS row_count,
+                COALESCE(MAX(id), 0) AS max_id,
+                COALESCE(MAX(file_id), 0) AS max_file_id,
+                COALESCE(MAX(source_id), 0) AS max_source_id,
+                COALESCE(MAX(source_path_key), '') AS max_source_path_key
+            FROM file_sources
+            """
+        ).fetchone()
+        signature = (
+            int(files_row["row_count"]),
+            int(files_row["max_id"]),
+            str(files_row["max_target_path_key"]),
+            str(files_row["max_original_filename"]),
+            str(files_row["max_stored_filename"]),
+            str(files_row["max_date_source"]),
+            str(files_row["max_metadata_datetime"]),
+            str(files_row["max_deleted_at"]),
+            int(files_row["max_media_metadata_mtime_ns"]),
+            int(sources_row["row_count"]),
+            int(sources_row["max_id"]),
+            int(sources_row["max_file_id"]),
+            int(sources_row["max_source_id"]),
+            str(sources_row["max_source_path_key"]),
+        )
+        if len(SIDECAR_SIGNATURE_CACHE) >= RAW_SIDECAR_IDS_CACHE_MAX_SIZE:
+            SIDECAR_SIGNATURE_CACHE.pop(next(iter(SIDECAR_SIGNATURE_CACHE)))
+        SIDECAR_SIGNATURE_CACHE[cache_mtime_key] = signature
+        return signature
+    finally:
+        if owned_conn:
+            conn.close()
 
 
 def query_motion_video_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -> set[int]:
@@ -116,17 +186,15 @@ def query_raw_sidecar_file_ids_for_day(conn: sqlite3.Connection, day_key: str) -
             else:
                 image_ids.add(int(row["id"]))
     return {next(iter(raw_ids)) for raw_ids, image_ids in groups.values() if len(raw_ids) == 1 and len(image_ids) == 1}
+
+
 def motion_video_file_ids(target: Path, *, conn: sqlite3.Connection | None = None) -> set[int]:
-    db_path = db.db_path_for_target(target)
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
-        mtime_ns = 0
-    return set(cached_motion_video_file_ids(str(target.resolve()), mtime_ns))
+    cache_key = sidecar_cache_key(target, conn=conn)
+    return set(cached_motion_video_file_ids(*cache_key))
 
 
 @lru_cache(maxsize=8)
-def cached_motion_video_file_ids(target_path: str, db_mtime_ns: int) -> tuple[int, ...]:
+def cached_motion_video_file_ids(target_path: str, sidecar_signature: tuple[object, ...]) -> tuple[int, ...]:
     target = Path(target_path)
     conn = db.connect(target)
     try:
@@ -164,17 +232,7 @@ def query_motion_video_file_ids(conn: sqlite3.Connection) -> tuple[int, ...]:
 
 
 def raw_sidecar_file_ids(target: Path, *, conn: sqlite3.Connection | None = None) -> set[int]:
-    return set(raw_sidecar_ids_by_image_id(target).values())
-
-
-@lru_cache(maxsize=8)
-def cached_raw_sidecar_file_ids(target_path: str, db_mtime_ns: int) -> tuple[int, ...]:
-    target = Path(target_path)
-    conn = db.connect(target)
-    try:
-        return query_raw_sidecar_file_ids(conn)
-    finally:
-        conn.close()
+    return set(raw_sidecar_ids_by_image_id(target, conn=conn).values())
 
 
 def query_raw_sidecar_file_ids(conn: sqlite3.Connection) -> tuple[int, ...]:
@@ -197,12 +255,7 @@ def raw_sidecar_image_id_by_sidecar_id(
     *,
     conn: sqlite3.Connection | None = None,
 ) -> int | None:
-    db_path = db.db_path_for_target(target)
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
-        mtime_ns = 0
-    cache_key = (str(target.resolve()), mtime_ns)
+    cache_key = sidecar_cache_key(target, conn=conn)
     cached = RAW_SIDECAR_IMAGE_IDS_BY_SIDECAR_ID_CACHE.get(cache_key)
     if cached is not None:
         return cached.get(sidecar_id)
@@ -218,12 +271,7 @@ def raw_sidecar_ids_by_image_id(
     *,
     conn: sqlite3.Connection | None = None,
 ) -> dict[int, int]:
-    db_path = db.db_path_for_target(target)
-    try:
-        mtime_ns = db_path.stat().st_mtime_ns
-    except OSError:
-        mtime_ns = 0
-    cache_key = (str(target.resolve()), mtime_ns)
+    cache_key = sidecar_cache_key(target, conn=conn)
     cached = RAW_SIDECAR_IDS_BY_IMAGE_ID_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -235,7 +283,7 @@ def raw_sidecar_ids_by_image_id(
 
 
 @lru_cache(maxsize=8)
-def cached_raw_sidecar_ids_by_image_id(target_path: str, db_mtime_ns: int) -> dict[int, int]:
+def cached_raw_sidecar_ids_by_image_id(target_path: str, sidecar_signature: tuple[object, ...]) -> dict[int, int]:
     target = Path(target_path)
     conn = db.connect(target)
     try:
