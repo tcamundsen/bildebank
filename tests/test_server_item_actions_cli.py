@@ -378,6 +378,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
             data = json.dumps({"file_id": 1, "key": "2"}).encode("utf-8")
             responses: list[dict[str, object]] = []
+            tag_navigation_changes: list[str] = []
             hotkeys = {"2": BrowserHotkeyConfig(action="tag", tag_name="  Familie  ")}
 
             class FakeHandler:
@@ -396,6 +397,8 @@ class ServerItemActionsCliTests(unittest.TestCase):
                 def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
                     responses.append({"content": content, "status": status})
 
+                server.note_tag_navigation_change = tag_navigation_changes.append
+
             BildebankRequestHandler.respond_hotkey_action(FakeHandler())  # type: ignore[arg-type]
             BildebankRequestHandler.respond_hotkey_action(FakeHandler())  # type: ignore[arg-type]
             conn = db.connect(target)
@@ -413,6 +416,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertEqual(responses[1]["content"]["tag_name"], "Familie")
         self.assertEqual(tag_row["name"], "Familie")
         self.assertEqual(link_count, 1)
+        self.assertEqual(tag_navigation_changes, ["Familie", "Familie"])
 
     def test_run_server_item_page_has_delete_button(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -922,12 +926,16 @@ class ServerItemActionsCliTests(unittest.TestCase):
                 server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
                 body: dict[str, object] | None = None
                 timings: list[str] = []
+                tag_navigation_changes: list[str] = []
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
                     self.body = content
 
                 def record_server_timing(self, name: str, start: float) -> None:
                     self.timings.append(name)
+
+                def __init__(self) -> None:
+                    self.server.note_tag_navigation_change = self.tag_navigation_changes.append
 
             handler = FakeHandler()
             BildebankRequestHandler.respond_tag_item(handler)  # type: ignore[arg-type]
@@ -938,6 +946,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
 
         self.assertEqual({"ok": True, "file_id": 1, "tag_name": db.SYSTEM_TAG_OUT_OF_FOCUS, "tagged": True}, handler.body)
         self.assertEqual(handler.timings, ["tag_read_payload", "tag_validate", "tag_apply"])
+        self.assertEqual(handler.tag_navigation_changes, [db.SYSTEM_TAG_OUT_OF_FOCUS])
         self.assertIn('class="tag-toggle active"', body)
         self.assertIn('aria-pressed="true"', body)
         self.assertIn("Ute av fokus", info_body)
@@ -963,10 +972,14 @@ class ServerItemActionsCliTests(unittest.TestCase):
                 server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
                 body: dict[str, object] | None = None
                 status = None
+                tag_navigation_changes: list[str] = []
 
                 def respond_json(self, content: dict[str, object], *, status=None) -> None:
                     self.body = content
                     self.status = status
+
+                def __init__(self) -> None:
+                    self.server.note_tag_navigation_change = self.tag_navigation_changes.append
 
             handler = FakeHandler()
             BildebankRequestHandler.respond_tag_item(handler)  # type: ignore[arg-type]
@@ -977,6 +990,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
 
         self.assertIsNone(handler.status)
         self.assertEqual({"ok": True, "file_id": 1, "tag_name": "Familie", "tagged": True}, handler.body)
+        self.assertEqual(handler.tag_navigation_changes, ["Familie"])
         self.assertIn('data-tag-name="Familie" aria-pressed="true"', body)
         self.assertIn("Familie", info_body)
 
