@@ -320,6 +320,47 @@
     document.querySelectorAll('.stage .person-media[data-view-rotation="90"], .stage .person-media[data-view-rotation="270"]').forEach(fitQuarterTurnLegacyMedia);
     document.querySelectorAll(".stage .person-media").forEach(fitPersonFaceLayer);
   }
+  function resetInlineMediaFit(img) {
+    img.style.width = "";
+    img.style.height = "";
+    img.style.transform = "";
+    const personMedia = img.closest(".person-media");
+    if (personMedia instanceof HTMLElement) {
+      personMedia.style.maxWidth = "";
+      personMedia.style.maxHeight = "";
+      personMedia.style.transform = "";
+      personMedia.style.removeProperty("--quarter-turn-width");
+    }
+    const link = img.closest(".media-link");
+    if (link instanceof HTMLElement) {
+      link.style.width = "";
+      link.style.height = "";
+      link.classList.remove("quarter-turn");
+    }
+  }
+  function applyViewRotation(rotation) {
+    const normalizedRotation = Number(rotation) || 0;
+    const img = document.querySelector(".stage .media-link > img, .stage .person-media img");
+    if (!(img instanceof HTMLImageElement)) return;
+    const link = img.closest(".media-link");
+    const personMedia = img.closest(".person-media");
+    resetInlineMediaFit(img);
+    const rotationTarget = personMedia instanceof HTMLElement ? personMedia : img;
+    rotationTarget.dataset.viewRotation = String(normalizedRotation);
+    if (normalizedRotation === 0) {
+      rotationTarget.removeAttribute("data-view-rotation");
+      return;
+    }
+    rotationTarget.style.transform = `rotate(${normalizedRotation}deg)`;
+    if ((normalizedRotation === 90 || normalizedRotation === 270) && link instanceof HTMLElement) {
+      link.classList.add("quarter-turn");
+    }
+    if (normalizedRotation === 90 || normalizedRotation === 270) {
+      scheduleQuarterTurnFit();
+    } else if (personMedia instanceof HTMLElement) {
+      fitPersonFaceLayer(personMedia);
+    }
+  }
   function scheduleQuarterTurnFit() {
     requestAnimationFrame(() => {
       fitQuarterTurnMedia();
@@ -637,7 +678,8 @@
           window.location.href = payload.redirect_url;
           return;
         }
-        window.location.reload();
+        applyViewRotation(payload.rotation);
+        button.disabled = false;
       } catch (error) {
         alert(error.message || "Kunne ikke rotere.");
         button.disabled = false;

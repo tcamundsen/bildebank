@@ -1323,6 +1323,15 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertIn("function fitQuarterTurnMedia()", SERVER_JS)
         self.assertIn("const availableHeight = Math.max(stageRect.height, 1);", SERVER_JS)
         self.assertIn("const maxOriginalWidth = Math.max(Math.min(availableHeight, availableWidth * ratio), 1);", SERVER_JS)
+        rotate_handler = SERVER_JS[
+            SERVER_JS.index('document.querySelectorAll("[data-rotate-item]') : SERVER_JS.index(
+                'document.querySelectorAll("[data-tag-toggle]'
+            )
+        ]
+        self.assertIn("applyViewRotation(payload.rotation);", rotate_handler)
+        self.assertIn('const img = document.querySelector(".stage .media-link > img, .stage .person-media img");', SERVER_JS)
+        self.assertIn('link.classList.add("quarter-turn");', SERVER_JS)
+        self.assertNotIn("window.location.reload();", rotate_handler)
 
     def test_run_server_rotate_reports_target_lock_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
