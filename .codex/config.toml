@@ -3,8 +3,11 @@ command = "/home/tom/code/bildebank/.venv/bin/python"
 args = ["-m", "bildebank.dev_mcp"]
 cwd = "/home/tom/code/bildebank"
 enabled = true
-enabled_tools = ["get_schema_summary"]
+enabled_tools = ["get_schema_summary", "get_example_database_summaries"]
 default_tools_approval_mode = "auto"
 
 [mcp_servers.bildebank_dev.tools.get_schema_summary]
+approval_mode = "approve"
+
+[mcp_servers.bildebank_dev.tools.get_example_database_summaries]
 approval_mode = "approve"

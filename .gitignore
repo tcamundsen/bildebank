@@ -2,6 +2,7 @@
 .make/
 __pycache__/
 html/
+example-db/
 *.py[cod]
 *.egg-info/
 .pytest_cache/

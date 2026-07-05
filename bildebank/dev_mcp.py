@@ -15,7 +15,11 @@ from . import db
 REPO_ROOT = Path(__file__).resolve().parents[1]
 # "example-bilder.sqlite3" er en kopi av nåværende .bildebank.sqlite3 fra bildesamlingen
 # min. Jeg kopierer jevnlig inn ny versjon.
-EXAMPLE_DATABASE = REPO_ROOT / "example-bilder.sqlite3"
+EXAMPLE_DATABASE = REPO_ROOT / "example-db" / ".bilder.sqlite3"
+EXAMPLE_OPENCLIP_DATABASE = REPO_ROOT / "example-db" / ".bilder-openclip.sqlite3"
+EXAMPLE_INSIGHTFACE_DATABASES = {
+    "antelopev2": REPO_ROOT / "example-db" / "antelopev2.sqlite3",
+}
 
 mcp = FastMCP("Bildebank dev")
 
@@ -127,6 +131,51 @@ def _foreign_keys(conn: sqlite3.Connection, table: str) -> list[dict[str, Any]]:
     ]
 
 
+def _database_schema_summary(name: str, database_path: Path) -> dict[str, Any]:
+    try:
+        display_path = str(database_path.relative_to(REPO_ROOT))
+    except ValueError:
+        display_path = str(database_path)
+    summary: dict[str, Any] = {
+        "name": name,
+        "database": database_path.name,
+        "path": display_path,
+        "exists": database_path.is_file(),
+    }
+    if not database_path.is_file():
+        return summary
+
+    with _connect_readonly(database_path) as conn:
+        table_names = _table_names(conn)
+        table_name_set = set(table_names)
+        summary.update(
+            {
+                "schema_version": _schema_version(conn, table_name_set),
+                "tables": [
+                    {
+                        "name": table,
+                        "columns": _columns(conn, table),
+                        "indexes": _indexes(conn, table),
+                        "foreign_keys": _foreign_keys(conn, table),
+                    }
+                    for table in table_names
+                ],
+            }
+        )
+    return summary
+
+
+def _example_database_summaries() -> list[dict[str, Any]]:
+    return [
+        _database_schema_summary("main", EXAMPLE_DATABASE),
+        _database_schema_summary("openclip", EXAMPLE_OPENCLIP_DATABASE),
+        *(
+            _database_schema_summary(f"insightface:{model_name}", database_path)
+            for model_name, database_path in sorted(EXAMPLE_INSIGHTFACE_DATABASES.items())
+        ),
+    ]
+
+
 @mcp.tool()
 def get_schema_summary() -> dict[str, Any]:
     """Returner gjeldende schema uten å lese bildedata."""
@@ -147,7 +196,14 @@ def get_schema_summary() -> dict[str, Any]:
                     }
                     for table in table_names
                 ],
+                "example_databases": _example_database_summaries(),
             }
+
+
+@mcp.tool()
+def get_example_database_summaries() -> dict[str, Any]:
+    """Returner schema og filstatus for kopierte eksempel-databaser."""
+    return {"databases": _example_database_summaries()}
 
 
 if __name__ == "__main__":
