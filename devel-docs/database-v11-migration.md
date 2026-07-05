@@ -47,7 +47,7 @@ under `deleted/` legges i `pending_file_deletes` for fysisk opprydding.
 ## Fysisk sletting ved unimport
 
 `unimport` er en annen operasjon enn brukerinitiert `remove`. En forutsetning
-for å gjennomføre `unimport` er at alle registrerte kildefiler fortsatt finnes
+for å gjennomføre `unimport` er at alle registrerte originalfiler fortsatt finnes
 i kilden og valideres med størrelse og SHA-256 før Bildebank endrer databasen
 eller legger filene i `pending_file_deletes`.
 

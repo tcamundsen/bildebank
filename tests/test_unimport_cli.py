@@ -39,7 +39,7 @@ class UnimportCliTests(unittest.TestCase):
                 )
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Unimport: kildefiler=1/1", stdout)
+            self.assertIn("Unimport: filer i kilden=1/1", stdout)
             self.assertIn("Unimport: filer=0/0", stdout)
             self.assertIn("Filer som fjernes fra aktiv samling: 0", stdout)
             self.assertIn("Filer som blir liggende fordi de også finnes i andre kilder: 1", stdout)
@@ -75,7 +75,7 @@ class UnimportCliTests(unittest.TestCase):
                 )
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Unimport: kildefiler=1/1", stdout)
+            self.assertIn("Unimport: filer i kilden=1/1", stdout)
             self.assertIn("Unimport: filer=1/1", stdout)
             self.assertIn("Filer som fjernes fra aktiv samling: 1", stdout)
             self.assertIn("Kilden er fjernet fra kildelisten.", stdout)
@@ -106,7 +106,7 @@ class UnimportCliTests(unittest.TestCase):
                 )
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Unimport: kildefiler=1/1", stdout)
+            self.assertIn("Unimport: filer i kilden=1/1", stdout)
             self.assertIn("Unimport: filer=1/1", stdout)
             self.assertIn("Filer som fjernes fra aktiv samling: 1", stdout)
             self.assertIn("Kilden ville blitt fjernet fra kildelisten.", stdout)
@@ -209,8 +209,8 @@ class UnimportCliTests(unittest.TestCase):
                 )
 
             self.assertEqual(code, 1)
-            self.assertIn("Unimport: kontrollerer 1 kildefiler.", stdout)
-            self.assertIn("Kildefil har endret", stderr)
+            self.assertIn("Unimport: kontrollerer 1 filer i kilden.", stdout)
+            self.assertIn("Originalfilen har endret", stderr)
             self.assertTrue((target / "2024" / "01" / "IMG_20240102.jpg").exists())
 
     def test_unimport_warns_and_aborts_when_target_file_changed(self) -> None:
@@ -457,7 +457,7 @@ class UnimportCliTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 1)
-            self.assertIn("Unimport: kontrollerer 1 kildefiler.", stdout)
-            self.assertIn("Kildefil mangler", stderr)
+            self.assertIn("Unimport: kontrollerer 1 filer i kilden.", stdout)
+            self.assertIn("Originalfil mangler", stderr)
             self.assertIn("Sjekk at riktig mappe, USB-disk", stderr)
             self.assertTrue((target / "2024" / "02" / "REM_20240203.jpg").exists())

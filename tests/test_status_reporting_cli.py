@@ -54,7 +54,7 @@ class StatusReportingCliTests(unittest.TestCase):
             self.assertIn("  mtime: 0", stdout)
             self.assertIn("Kilder: 1", stdout)
             self.assertIn("Importerte filer: 2", stdout)
-            self.assertIn("Kildefilforekomster: 2", stdout)
+            self.assertIn("Registrerte filer i kilder: 2", stdout)
             self.assertIn("Duplikatkilder: 0", stdout)
             self.assertIn("Uløste feil: 0", stdout)
             self.assertIn("Navnekollisjoner: 0", stdout)

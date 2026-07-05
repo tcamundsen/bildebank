@@ -5,7 +5,7 @@ usage: bildebank non-metadata [valg]
 
 options:
   -h, --help     show this help message and exit
-  --with-source  Vis kildefil i tillegg til importert fil
+  --with-source  Vis filen i kilden i tillegg til importert fil
 ```
 <!-- CLI-HELP-END -->
 
@@ -27,4 +27,4 @@ bruke dato fra filnavn, filens endringstidspunkt eller ukjent dato. Kommandoen
 Mulighet for å rydde bilder som har dette problemet kommer i en seinere utgave av
 programmet.
 
-`--with-source` viser også kildefilen.
+`--with-source` viser også filen i kilden.

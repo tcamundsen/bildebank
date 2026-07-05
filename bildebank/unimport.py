@@ -115,30 +115,30 @@ def validate_source_files(
     rows = db.source_file_sources(conn, source.id)
     total = len(rows)
     if progress is not None:
-        progress.message(f"Unimport: kontrollerer {total} kildefiler.")
+        progress.message(f"Unimport: kontrollerer {total} filer i kilden.")
         if total == 0:
-            progress.update(0, 0, action="kildefiler", eta=True)
+            progress.update(0, 0, action="filer i kilden", eta=True)
     try:
         for index, row in enumerate(rows, start=1):
             source_path = Path(str(row["source_path"]))
             if not source_path.exists():
                 raise ValueError(
-                    f"Kildefil mangler: {source_path}\n"
+                    f"Originalfil mangler: {source_path}\n"
                     "Sjekk at riktig mappe, USB-disk, CD eller minnekort er tilgjengelig, "
                     "og at det har samme stasjon/path som da importen ble kjørt."
                 )
             if not source_path.is_file():
-                raise ValueError(f"Kildefil er ikke en fil: {source_path}")
+                raise ValueError(f"Originalfilen er ikke en vanlig fil: {source_path}")
             size_bytes = source_path.stat().st_size
             if size_bytes != int(row["size_bytes"]):
                 raise ValueError(
-                    f"Kildefil har endret størrelse: {source_path} "
+                    f"Originalfilen har endret størrelse: {source_path} "
                     f"(nå {size_bytes}, forventet {row['size_bytes']})"
                 )
             if sha256_file(source_path) != row["sha256"]:
-                raise ValueError(f"Kildefil har endret innhold: {source_path}")
+                raise ValueError(f"Originalfilen har endret innhold: {source_path}")
             if progress is not None:
-                progress.update(index, total, action="kildefiler", eta=True)
+                progress.update(index, total, action="filer i kilden", eta=True)
     finally:
         if progress is not None:
             progress.done()

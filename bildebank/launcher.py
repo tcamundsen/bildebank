@@ -1013,7 +1013,7 @@ class BildebankLauncher:
                 unimport_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     unimport_button,
-                    "Reverser en tidligere import. Kontrollerer først at alle registrerte kildefiler "
+                    "Reverser en tidligere import. Kontrollerer først at alle registrerte originalfiler "
                     "fortsatt finnes med samme innhold. Krever nøyaktig bekreftelse før noe endres."
                 )
                 rescan_button = self._button(
@@ -2139,7 +2139,7 @@ class BildebankLauncher:
                 "Endrede filer",
                 (
                     "Noen fil(er) i bildesamlingen er endret siden import.\n\n"
-                    "Kildefilene er verifisert, men disse filene matcher ikke "
+                    "Filene i kilden er verifisert, men disse filene matcher ikke "
                     "lenger databaseført størrelse/SHA-256 og kan inneholde "
                     f"manuelle endringer:\n\n{preview}\n\n"
                     "Fortsette unimport og la disse filene slettes?"

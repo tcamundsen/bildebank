@@ -28,8 +28,8 @@ class ShowSourceCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn(f"Importert fil: {imported.resolve()}", stdout)
-            self.assertIn(f"Kildefil: {source_file.resolve()}", stdout)
-            self.assertIn("Kildefil finnes: ja", stdout)
+            self.assertIn(f"Fil i kilde: {source_file.resolve()}", stdout)
+            self.assertIn("Finnes i kilden: ja", stdout)
             self.assertIn("Kilde-id: 1", stdout)
             self.assertIn("Kilde: source", stdout)
             self.assertIn("Originalt filnavn: IMG_20240102.jpg", stdout)
@@ -63,7 +63,7 @@ class ShowSourceCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn(f"Importert fil: {imported.resolve()}", stdout)
-            self.assertIn(f"Kildefil: {source_file.resolve()}", stdout)
+            self.assertIn(f"Fil i kilde: {source_file.resolve()}", stdout)
 
     def test_show_source_lists_duplicate_sources_for_same_target_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -86,7 +86,7 @@ class ShowSourceCliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(["--target", str(target), "show-source", str(imported)])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("Kildefiler:", stdout)
+            self.assertIn("Filer i kilder:", stdout)
             self.assertIn(f"- {first.resolve()}", stdout)
             self.assertIn(f"- {duplicate.resolve()}", stdout)
 
@@ -122,7 +122,7 @@ class ShowSourceCliTests(unittest.TestCase):
             self.assertIn("oppløsning: 320x240", stdout)
             self.assertIn("dato: 2024-01-02 (filename)", stdout)
             self.assertIn("sha256:", stdout)
-            self.assertIn("kildefil finnes: ja", stdout)
+            self.assertIn("finnes i kilden: ja", stdout)
 
     def test_show_name_conflict_resolves_relative_path_under_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

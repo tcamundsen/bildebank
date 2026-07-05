@@ -5,7 +5,7 @@
 usage: bildebank unimport [valg] --name navn
 
 Reverser en tidligere import. Kontrollerer først at alle registrerte
-kildefiler fortsatt finnes med samme innhold. Krever nøyaktig bekreftelse før
+originalfiler fortsatt finnes med samme innhold. Krever nøyaktig bekreftelse før
 noe endres.
 
 options:
@@ -31,7 +31,7 @@ Når du kjører uten `--dry-run`, viser Bildebank en oppsummering før noe endre
 
 ```text
 Kilde: Sommer2023
-Registrerte kildefiler kontrollert: 179
+Registrerte originalfiler kontrollert: 179
 Filer som fjernes fra aktiv samling: 142
 Filer som blir liggende fordi de også finnes i andre kilder: 37
 Skriv "ja, det vil jeg" for å gjennomføre unimport:
@@ -93,14 +93,14 @@ og gjør ingen endringer.
 `unimport` kan fjerne filer fra den aktive bildesamlingen. Derfor er kommandoen
 forsiktig.
 
-Før den endrer noe, kontrollerer Bildebank at alle registrerte kildefiler
+Før den endrer noe, kontrollerer Bildebank at alle registrerte originalfiler
 fortsatt finnes i kilden, og at de har nøyaktig samme innhold som da de ble
 importert.
 
-Hvis en kildefil mangler eller er endret, stopper kommandoen uten å gjøre
+Hvis en originalfil mangler eller er endret, stopper kommandoen uten å gjøre
 endringer.
 
-Hvis kildefilene er i orden, men en fil i bildesamlingen er endret siden
+Hvis filene i kilden er i orden, men en fil i bildesamlingen er endret siden
 import, stopper ikke Bildebank automatisk. I stedet viser programmet en tydelig
 advarsel og spør om du vil fortsette. Dette beskytter mot at man ved et uhell
 sletter en manuelt endret kopi inne i bildesamlingen.
@@ -111,12 +111,12 @@ sletter en manuelt endret kopi inne i bildesamlingen.
 USB, CD eller minnekort, må riktig medium være satt inn når du kjører
 kommandoen.
 
-Hvis Bildebank sier at en kildefil mangler, sjekk at riktig USB-disk, CD eller
-minnekort er koblet til, og at den har samme stasjonsbokstav og path som da
-importen ble kjørt.
+Hvis Bildebank sier at originalfilen i kilden mangler, sjekk at riktig USB-disk,
+CD eller minnekort er koblet til, og at den har samme stasjonsbokstav og path
+som da importen ble kjørt.
 
 Dette er gjort omstendig med hensikt, for å unngå å miste bilder. Det er
-foreløpig ikke mulig å kjøre `unimport` hvis orginalfilene mangler. Hvis
+foreløpig ikke mulig å kjøre `unimport` hvis originalfilene mangler. Hvis
 noen har sterkt behov for det, kan det vurderes å legge til
 `--ja-jeg-vil-miste-filer` eller lignende for å kjøre `unimport` uten
-orginalfilene.
+originalfilene.

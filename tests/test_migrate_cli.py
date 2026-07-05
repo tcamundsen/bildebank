@@ -492,7 +492,7 @@ class MigrateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Importerte filer: 1", stdout)
-            self.assertIn("Kildefilforekomster: 2", stdout)
+            self.assertIn("Registrerte filer i kilder: 2", stdout)
             self.assertIn("Duplikatkilder: 1", stdout)
 
     def test_migrate_v5_to_v11_creates_performance_indexes(self) -> None:

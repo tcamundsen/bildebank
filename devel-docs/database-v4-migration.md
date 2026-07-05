@@ -18,7 +18,7 @@ Før v4 hadde databasen en enklere proveniensmodell:
 I v4 er dette normalisert:
 
 - `files` er sannheten om importerte filer i samlingen.
-- `file_sources` er sannheten om kildefilforekomster.
+- `file_sources` er sannheten om filer registrert i kilder.
 - `sources` har `name NOT NULL UNIQUE`.
 - `errors` kan lagre source-historikk uten å blokkere opprydding.
 

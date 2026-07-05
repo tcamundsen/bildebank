@@ -124,7 +124,7 @@ def require_windows() -> None:
     if os.name != "nt":
         raise RuntimeError(
             "Dette reparasjonsverktøyet må kjøres direkte i Windows, ikke fra WSL. "
-            "Det må kunne kontrollere de konverterte C:\\-kildefilene."
+            "Det må kunne kontrollere de konverterte C:\\-filene i kilden."
         )
 
 
@@ -182,7 +182,7 @@ def build_repair_plan(conn: sqlite3.Connection, source_name: str) -> RepairPlan:
         wsl_rows += len(wsl_group)
         windows_group = [item for item in group if not item[1]]
         if len(windows_group) > 1:
-            raise ValueError(f"Flere Windows-rader peker på samme kildefil: {windows_group[0][2]}")
+            raise ValueError(f"Flere Windows-rader peker på samme fil i kilden: {windows_group[0][2]}")
         authoritative = windows_group[0] if windows_group else wsl_group[0]
         authoritative_row, _is_wsl, windows_path = authoritative
         for row, is_wsl, row_windows_path in group:
@@ -265,19 +265,19 @@ def validate_source_files(plan: RepairPlan) -> None:
         expected = (action.size_bytes, action.sha256)
         previous = expected_by_path.setdefault(action.windows_path, expected)
         if previous != expected:
-            raise ValueError(f"Motstridende metadata for kildefil: {action.windows_path}")
+            raise ValueError(f"Motstridende metadata for fil i kilden: {action.windows_path}")
     for raw_path, (size_bytes, expected_hash) in expected_by_path.items():
         path = Path(raw_path)
         if not path.is_file():
-            raise ValueError(f"Konvertert Windows-kildefil finnes ikke: {path}")
+            raise ValueError(f"Konvertert Windows-fil i kilden finnes ikke: {path}")
         actual_size = path.stat().st_size
         if actual_size != size_bytes:
             raise ValueError(
-                f"Kildefilen har endret størrelse: {path} (nå {actual_size}, forventet {size_bytes})"
+                f"Originalfilen har endret størrelse: {path} (nå {actual_size}, forventet {size_bytes})"
             )
         actual_hash = sha256_file(path)
         if actual_hash != expected_hash:
-            raise ValueError(f"Kildefilen har endret innhold: {path}")
+            raise ValueError(f"Originalfilen har endret innhold: {path}")
     if plan.source_path_update is not None and not Path(plan.source_path_update[0]).is_dir():
         raise ValueError(f"Konvertert Windows-kildemappe finnes ikke: {plan.source_path_update[0]}")
 

@@ -288,7 +288,7 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "show-conflict",
         usage="bildebank show-conflict [valg] fil",
-        help="Vis alle kildefiler i samme navnekollisjon som en importert fil",
+        help="Vis alle filer i kilder med samme navnekollisjon som en importert fil",
     )
     show_conflict.add_argument("path", metavar="fil", type=Path, help="Importert fil")
     show_source = add_command(
@@ -370,7 +370,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Reverser en tidligere importert kilde",
         description=(
             "Reverser en tidligere import. "
-            "Kontrollerer først at alle registrerte kildefiler fortsatt finnes "
+            "Kontrollerer først at alle registrerte originalfiler fortsatt finnes "
             "med samme innhold. Krever nøyaktig bekreftelse før noe endres."
         ),
     )
@@ -443,7 +443,7 @@ def build_parser() -> argparse.ArgumentParser:
     non_metadata.add_argument(
         "--with-source",
         action="store_true",
-        help="Vis kildefil i tillegg til importert fil",
+        help="Vis filen i kilden i tillegg til importert fil",
     )
     tag_list = add_command(
         subparsers,
@@ -1725,7 +1725,7 @@ def unimport_target_progress() -> ProgressMeter:
 
 def print_unimport_plan(target: Path, plan: db.UnimportPlan) -> None:
     print(f"Kilde: {plan.source.name or plan.source.path}")
-    print(f"Registrerte kildefiler kontrollert: {plan.source_file_count}")
+    print(f"Registrerte originalfiler kontrollert: {plan.source_file_count}")
     print(f"Items/importkoblinger som fjernes: {plan.source_file_count}")
     print(f"Filer som fjernes fra aktiv samling: {plan.active_remove_count}")
     print(
@@ -1756,7 +1756,7 @@ def print_unimport_target_content_warning(
     print("")
     print("ADVARSEL: fil(er) i bildesamlingen er endret siden import.")
     print(
-        "Kildefilene er verifisert, men disse filene matcher ikke lenger "
+        "Filene i kilden er verifisert, men disse filene matcher ikke lenger "
         "databaseført størrelse/SHA-256 og kan inneholde manuelle endringer:"
     )
     for change in changes:
@@ -2288,15 +2288,15 @@ def print_name_conflict_item(target: Path, row, *, media_cache: MediaMetadataCac
     print(f"  oppløsning: {dimensions_text}")
     print(f"  filstørrelse: {format_bytes(int(row['size_bytes']))} ({row['size_bytes']} bytes)")
     print(f"  sha256: {row['sha256']}")
-    print(f"  kildefil finnes: {'ja' if source_path.exists() else 'nei'}")
+    print(f"  finnes i kilden: {'ja' if source_path.exists() else 'nei'}")
 
 
 def print_source_item(target: Path, row) -> None:
     source_path = Path(str(row["source_path"]))
     source_label = row["source_name"] or row["source_root"]
     print(f"Importert fil: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
-    print(f"Kildefil: {source_path}")
-    print(f"Kildefil finnes: {'ja' if source_path.exists() else 'nei'}")
+    print(f"Fil i kilde: {source_path}")
+    print(f"Finnes i kilden: {'ja' if source_path.exists() else 'nei'}")
     print(f"Kilde-id: {row['source_id']}")
     print(f"Kilde: {source_label}")
     print(f"Kildestatus: {row['source_status']}")
@@ -2331,7 +2331,7 @@ def print_source_items(target: Path, rows: list) -> None:
             print(f"Datonotat: {first['manual_date_note']}")
     print(f"Filstørrelse: {format_bytes(int(first['size_bytes']))} ({first['size_bytes']} bytes)")
     print(f"SHA-256: {first['sha256']}")
-    print("Kildefiler:")
+    print("Filer i kilder:")
     for row in rows:
         source_path = Path(str(row["source_path"]))
         source_label = row["source_name"]
@@ -2353,7 +2353,7 @@ def print_deleted_item(target: Path, row) -> None:
     exists = "ja" if deleted_path.exists() else "nei"
     print(f"{row['deleted_at']}\t{exists}\t{taken_date}\t{row['date_source']}\t{original_path}")
     print(f"  slettet fil: {deleted_path}")
-    print(f"  kildefil: {row['source_path']}")
+    print(f"  fil i kilde: {row['source_path']}")
     print(f"  filstørrelse: {format_bytes(int(row['size_bytes']))} ({row['size_bytes']} bytes)")
     print(f"  sha256: {row['sha256']}")
 
@@ -2486,7 +2486,7 @@ def print_status(conn) -> None:
     print("\nKilder")
     print(f"  Kilder: {db.count_rows(conn, 'sources')}")
     print(f"  Importerte filer: {db.count_rows(conn, 'files')}")
-    print(f"  Kildefilforekomster: {db.count_rows(conn, 'file_sources')}")
+    print(f"  Registrerte filer i kilder: {db.count_rows(conn, 'file_sources')}")
     print(f"  Duplikatkilder: {db.duplicate_source_count(conn)}")
     print("\nKontroll")
     print(f"  Uløste feil: {db.error_count(conn)}")

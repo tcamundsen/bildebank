@@ -22,7 +22,7 @@ Verktøyet endrer aldri bildefiler. Det arbeider bare med `sources` og
 - Sletter bare en WSL-rad når en Windows-rad for samme fysiske sti har samme
   `file_id`, SHA-256 og størrelse.
 - Omskriver en WSL-rad til Windows-sti dersom Windows-motpart mangler.
-- Kontrollerer at hver konverterte Windows-kildefil finnes og fortsatt har
+- Kontrollerer at hver konverterte Windows-fil i kilden finnes og fortsatt har
   lagret størrelse og SHA-256.
 - Stopper hele reparasjonen ved motstridende metadata.
 - Tar en konsistent SQLite-backup før `--apply`.

@@ -31,7 +31,7 @@ De eksporterte bildefilene er uendrede kopier.
 Stien øverst i browseren kan brukes til å gå mellom oversikter for år, måneder
 og filer.
 
-Bruk `--dry-run` for å kontrollere alle kildefiler og eksportfiler uten å opprette
+Bruk `--dry-run` for å kontrollere alle originalfiler og eksportfiler uten å opprette
 mapper eller kopiere filer:
 
 ```powershell

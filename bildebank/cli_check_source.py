@@ -77,7 +77,7 @@ def run_check_source(
                 file_hash = sha256_file(path)
             except OSError as exc:
                 stats.source_errors += 1
-                problems.append(CheckSourceProblem(path, f"kan ikke lese kildefil: {exc}"))
+                problems.append(CheckSourceProblem(path, f"kan ikke lese filen i kilden: {exc}"))
                 continue
 
             rows = db.files_by_hash(conn, file_hash)

@@ -14,5 +14,5 @@ options:
 
 Kommandoen teller importerte bilder og videoer, og viser hvor mange filer som
 har dato hentet fra metadata, filnavn eller filens endringstidspunkt (`mtime`).
-Den viser også antall kilder, kildefilforekomster, duplikatkilder, uløste feil,
+Den viser også antall kilder, registrerte filer i kilder, duplikatkilder, uløste feil,
 navnekollisjoner og filer uten dato.

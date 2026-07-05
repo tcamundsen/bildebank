@@ -458,7 +458,7 @@ def verify_duplicate_target_file(target: Path, row, source_hash: str) -> None:
     if expected_hash != source_hash:
         raise DuplicateFileIntegrityError(
             f"Integritetsfeil for eksisterende database-treff files.id={file_id}, "
-            f"lagret sti={relative_target_path}: databaseført SHA-256 matcher ikke kildefilens SHA-256."
+            f"lagret sti={relative_target_path}: databaseført SHA-256 matcher ikke SHA-256 for filen i kilden."
         )
     if not target_path.exists():
         raise DuplicateFileIntegrityError(
@@ -519,7 +519,7 @@ def safe_copy(source: Path, destination: Path, expected_hash: str) -> None:
         shutil.copy2(source, temp)
         copied_hash = sha256_file(temp)
         if copied_hash != expected_hash:
-            raise OSError("Hash på kopiert fil matcher ikke kildefilen.")
+            raise OSError("Hash på kopiert fil matcher ikke filen i kilden.")
         install_copied_file(temp, destination, expected_hash)
     finally:
         if temp.exists():

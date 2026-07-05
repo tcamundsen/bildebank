@@ -56,7 +56,7 @@ Kildestier skal derfor fortsatt være absolutte:
 - `sources.path_key`
 - `file_sources.source_path`
 - `file_sources.source_path_key`
-- `errors.source_path` når verdien peker på en kildefil eller en ekstern feil
+- `errors.source_path` når verdien peker på en fil i kilden eller en ekstern feil
 
 Dette gjør at Bildebank fortsatt kan kontrollere opprinnelige kilder når de
 finnes, samtidig som selve samlingen kan flyttes.

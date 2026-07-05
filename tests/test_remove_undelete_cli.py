@@ -60,7 +60,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
             self.assertIn("ja\t2024-01-02\tfilename", stdout)
             self.assertIn(str(imported.resolve()), stdout)
             self.assertIn(f"  slettet fil: {deleted.resolve()}", stdout)
-            self.assertIn(f"  kildefil: {(source / 'IMG_20240102.jpg').resolve()}", stdout)
+            self.assertIn(f"  fil i kilde: {(source / 'IMG_20240102.jpg').resolve()}", stdout)
             self.assertIn("filstørrelse: 9 bytes (9 bytes)", stdout)
             self.assertIn("sha256:", stdout)
 

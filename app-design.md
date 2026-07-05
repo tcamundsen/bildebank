@@ -30,7 +30,7 @@ skal bare kopiere filer fra kildemapper til målmappen.
   finnes i målmappen, selv om filnavn eller plassering kan være forskjellig.
 - **Importert kilde**: En kildemappe eller et flyttbart medium som programmet
   tidligere har behandlet og registrert i databasen.
-- **Duplikatfunn**: En kildefil som ikke kopieres fordi programmet finner en
+- **Duplikatfunn**: En fil i kilden som ikke kopieres fordi programmet finner en
   eksakt duplikat i målmappen.
 - **Udatert fil**: Et bilde eller en video der programmet ikke klarer å finne
   dato fra metadata, filens endringsdato eller filnavn.
@@ -47,7 +47,7 @@ kunne oppdage filer som allerede ligger i målmappen, og unngå å lage duplikat
 
 Kopiering skal gjøres på en måte som hindrer halvkopierte filer i målmappen.
 Programmet bør kopiere til en midlertidig fil i riktig målmappe, verifisere at
-hash på kopien matcher hash på kildefilen, og deretter gi filen endelig navn.
+hash på kopien matcher hash på filen i kilden, og deretter gi filen endelig navn.
 Filen skal først registreres som importert i databasen etter vellykket kopiering
 og verifisering.
 
@@ -67,7 +67,7 @@ før filendelsen, for eksempel `IMG1324-2.jpg`. Samtidig må det markeres
 i databasen at dette bildet har fått lagt til "-1" på grunn av navnekollisjon.
 Kommando for å liste bilder med navnekollisjon
 
-unimport må være konservativ, verifiser kildefiler før endring, aldri føre til
+unimport må være konservativ, verifiser filene i kilden før endring, aldri føre til
 tap, og fjerne bare proveniens når andre kilder fortsatt peker på samme fil.
 Hvis en fil som skal fjernes ved `unimport` ikke lenger matcher databaseført
 størrelse og SHA-256, skal brukeren varsles og eksplisitt bekrefte før
@@ -212,7 +212,7 @@ usikre metoder for automatisk å slå sammen filer i første versjon. Når måle
 å unngå tap, er det bedre å importere noen ekstra filer enn å feilaktig forkaste
 en unik fil.
 
-Når programmet finner et eksakt duplikat, skal kildefilen ikke kopieres på nytt.
+Når programmet finner et eksakt duplikat, skal filen i kilden ikke kopieres på nytt.
 Databasen skal likevel registrere duplikatfunnet med original kildepath og
 hvilken fil i målmappen den matcher. På den måten kan brukeren senere se at
 filen faktisk ble funnet og vurdert.
@@ -227,7 +227,7 @@ gjenopprette bildet.
 Før importen hopper over kopiering på grunn av et database-treff på SHA-256, må
 den verifisere at den registrerte filen fortsatt finnes på disk og har
 forventet SHA-256. Hvis filen mangler eller innholdet ikke matcher databasen, er
-det en integritetsfeil for den aktuelle kildefilen. Importjobben skal registrere
+det en integritetsfeil for den aktuelle filen i kilden. Importjobben skal registrere
 feilen og fortsette med andre filer, uten å reparere, overskrive eller
 gjenopprette automatisk.
 
