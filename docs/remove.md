@@ -4,10 +4,10 @@
 ```text
 usage: bildebank remove [valg] fil
 
-Flytt en importert målfil til deleted/ og marker den som slettet
+Flytt en importert fil til deleted/ og marker den som slettet
 
 positional arguments:
-  fil         Importert målfil som skal fjernes
+  fil         Importert fil som skal fjernes
 
 options:
   -h, --help  show this help message and exit

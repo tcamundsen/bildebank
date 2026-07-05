@@ -49,16 +49,16 @@ under `deleted/` legges i `pending_file_deletes` for fysisk opprydding.
 `unimport` er en annen operasjon enn brukerinitiert `remove`. En forutsetning
 for å gjennomføre `unimport` er at alle registrerte kildefiler fortsatt finnes
 i kilden og valideres med størrelse og SHA-256 før Bildebank endrer databasen
-eller legger målfilene i `pending_file_deletes`.
+eller legger filene i `pending_file_deletes`.
 
-Før databaseendringen kontrollerer `unimport` også målfilene som faktisk vil
-miste siste `file_sources`-rad. Hvis en slik målfil finnes på disk, men ikke
+Før databaseendringen kontrollerer `unimport` også filene som faktisk vil
+miste siste `file_sources`-rad. Hvis en slik fil finnes på disk, men ikke
 lenger matcher `files.size_bytes` og `files.sha256`, skal brukeren få en tydelig
 advarsel og eksplisitt bekrefte om `unimport` likevel skal fortsette. Dette er
 en overstyrbar beskyttelse mot manuelle endringer i bildesamlingen, ikke en ny
 schema- eller `pending_file_deletes`-invariant.
 
-Når en målfil mister sin siste `file_sources`-rad i `unimport`, skal den derfor
+Når en fil mister sin siste `file_sources`-rad i `unimport`, skal den derfor
 ryddes fysisk via `pending_file_deletes`. Den skal ikke flyttes til karantene
 under `deleted/` først. Karantene ville brukt ekstra diskplass og lagt til mer
 livssykluskompleksitet uten å være nødvendig for denne flyten, fordi

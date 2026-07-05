@@ -114,7 +114,7 @@ def run_check_source(
                 problems.append(CheckSourceProblem(path, CHECK_SOURCE_MISSING_REASON, CHECK_SOURCE_MISSING_KIND))
             else:
                 stats.target_errors += 1
-                problems.append(CheckSourceProblem(path, "matchende målfil mangler eller har endret innhold"))
+                problems.append(CheckSourceProblem(path, "matchende fil i bildesamlingen mangler eller har endret innhold"))
 
             if progress is not None:
                 progress.update(

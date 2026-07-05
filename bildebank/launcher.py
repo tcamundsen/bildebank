@@ -2136,17 +2136,17 @@ class BildebankLauncher:
             if len(changed_targets) > 10:
                 preview += f"\n  ... og {len(changed_targets) - 10} til"
             if not messagebox.askyesno(
-                "Endrede målfiler",
+                "Endrede filer",
                 (
-                    "Noen målfil(er) i bildebanken er endret siden import.\n\n"
-                    "Kildefilene er verifisert, men disse målfilene matcher ikke "
+                    "Noen fil(er) i bildesamlingen er endret siden import.\n\n"
+                    "Kildefilene er verifisert, men disse filene matcher ikke "
                     "lenger databaseført størrelse/SHA-256 og kan inneholde "
                     f"manuelle endringer:\n\n{preview}\n\n"
                     "Fortsette unimport og la disse filene slettes?"
                 ),
                 parent=self.root,
             ):
-                self._log(f'Unimport avbrutt for kilde "{source.name}": endrede målfiler.')
+                self._log(f'Unimport avbrutt for kilde "{source.name}": endrede filer.')
                 return
             target_change_answer = "ja"
         self._run_unimport_source(source, target_change_answer=target_change_answer)

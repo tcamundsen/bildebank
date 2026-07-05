@@ -71,7 +71,7 @@ class StatusReportingCliTests(unittest.TestCase):
             try:
                 conn.execute(
                     "insert into errors(stage, source_path, message) values(?, ?, ?)",
-                    ("refresh-metadata", str(missing), "Målfil finnes ikke"),
+                    ("refresh-metadata", str(missing), "Filen finnes ikke"),
                 )
                 conn.execute(
                     """
@@ -88,7 +88,7 @@ class StatusReportingCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("refresh-metadata", stdout)
-            self.assertIn("Målfil finnes ikke", stdout)
+            self.assertIn("Filen finnes ikke", stdout)
             self.assertNotIn("Løst feil", stdout)
 
             code, stdout, stderr = capture_cli(

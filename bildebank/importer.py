@@ -458,23 +458,23 @@ def verify_duplicate_target_file(target: Path, row, source_hash: str) -> None:
     if expected_hash != source_hash:
         raise DuplicateFileIntegrityError(
             f"Integritetsfeil for eksisterende database-treff files.id={file_id}, "
-            f"målsti={relative_target_path}: databaseført SHA-256 matcher ikke kildefilens SHA-256."
+            f"lagret sti={relative_target_path}: databaseført SHA-256 matcher ikke kildefilens SHA-256."
         )
     if not target_path.exists():
         raise DuplicateFileIntegrityError(
             f"Integritetsfeil for eksisterende database-treff files.id={file_id}, "
-            f"målsti={relative_target_path}: målfilen mangler på disk."
+            f"lagret sti={relative_target_path}: filen i bildesamlingen mangler på disk."
         )
     if not target_path.is_file():
         raise DuplicateFileIntegrityError(
             f"Integritetsfeil for eksisterende database-treff files.id={file_id}, "
-            f"målsti={relative_target_path}: målfilen er ikke en vanlig fil."
+            f"lagret sti={relative_target_path}: filen i bildesamlingen er ikke en vanlig fil."
         )
     actual_hash = sha256_file(target_path)
     if actual_hash != expected_hash:
         raise DuplicateFileIntegrityError(
             f"Integritetsfeil for eksisterende database-treff files.id={file_id}, "
-            f"målsti={relative_target_path}: SHA-256 på disk matcher ikke databaseført SHA-256."
+            f"lagret sti={relative_target_path}: SHA-256 på disk matcher ikke databaseført SHA-256."
         )
 
 
@@ -530,7 +530,7 @@ def install_copied_file(temp: Path, destination: Path, expected_hash: str) -> No
     if destination.exists():
         if sha256_file(destination) == expected_hash:
             return
-        raise FileExistsError(f"Målfil finnes allerede med annet innhold: {destination}")
+        raise FileExistsError(f"En fil finnes allerede med annet innhold: {destination}")
     temp.rename(destination)
 
 
@@ -635,7 +635,7 @@ def refresh_non_metadata_file(
 ) -> None:
     current_path = db.absolute_target_path(target, Path(str(row["target_path"])))
     if not current_path.exists():
-        raise FileNotFoundError(f"Målfil finnes ikke: {current_path}")
+        raise FileNotFoundError(f"Filen finnes ikke: {current_path}")
 
     date = media_date(current_path)
     camera = camera_info(current_path)

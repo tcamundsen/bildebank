@@ -309,5 +309,4 @@ class CheckSourceCliTests(unittest.TestCase):
             self.assertEqual(code, 2, stderr)
             self.assertIn("scannet=1, dekket=0, mangler=0", stdout)
             self.assertIn("målfeil=1", stdout)
-            self.assertIn("matchende målfil mangler eller har endret innhold", stdout)
-
+            self.assertIn("matchende fil i bildesamlingen mangler eller har endret innhold", stdout)

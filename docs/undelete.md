@@ -33,7 +33,8 @@ ikke peke på den opprinnelige stien, for eksempel `2024\01\IMG_0001.jpg`.
 `undelete` flytter filen tilbake til stien den hadde før [`remove`](remove.md)
 ble kjørt, og fjerner slettemarkeringen i databasen.
 
-Hvis målfilen allerede finnes, stopper kommandoen uten å flytte noe.
+Hvis en fil allerede finnes på den opprinnelige plasseringen, stopper kommandoen
+uten å flytte noe.
 
 ## Se slettede filer
 

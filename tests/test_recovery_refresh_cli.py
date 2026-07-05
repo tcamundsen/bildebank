@@ -411,7 +411,7 @@ class RecoveryRefreshCliTests(unittest.TestCase):
 
             self.assertEqual(code, 2, stderr)
             self.assertIn("FEIL", stdout)
-            self.assertIn("Målfil finnes ikke", stdout)
+            self.assertIn("Filen finnes ikke", stdout)
 
     def test_refresh_metadata_reports_missing_target_path_without_hash_repair(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -468,7 +468,7 @@ class RecoveryRefreshCliTests(unittest.TestCase):
                 )
                 conn.execute(
                     "insert into errors(stage, source_path, message) values(?, ?, ?)",
-                    ("refresh-metadata", str(old_target), "Målfil finnes ikke"),
+                    ("refresh-metadata", str(old_target), "Filen finnes ikke"),
                 )
                 conn.commit()
             finally:
@@ -480,7 +480,7 @@ class RecoveryRefreshCliTests(unittest.TestCase):
 
             self.assertEqual(code, 2, stderr)
             self.assertIn("FEIL", stdout)
-            self.assertIn("Målfil finnes ikke", stdout)
+            self.assertIn("Filen finnes ikke", stdout)
             self.assertNotIn("REPARERER_DB_PATH", stdout)
             self.assertTrue(repaired_target.exists())
             self.assertFalse(old_target.exists())
@@ -499,4 +499,3 @@ class RecoveryRefreshCliTests(unittest.TestCase):
                 self.assertEqual(unresolved, 2)
             finally:
                 conn.close()
-

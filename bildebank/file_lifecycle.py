@@ -54,7 +54,7 @@ def remove_file(
                 relative_path = _active_relative_path(target, original_path)
 
             if not original_path.exists():
-                raise ValueError(f"Målfilen finnes ikke på disk: {original_path}")
+                raise ValueError(f"Filen finnes ikke på disk: {original_path}")
             _verify_expected_sha256(original_path, str(row["sha256"]))
 
             deleted_path = target / "deleted" / relative_path
@@ -115,7 +115,7 @@ def undelete_file(
                     raise ValueError(f"Filen er ikke markert som slettet: {deleted_path}")
                 if row["deleted_original_target_path"] is None:
                     raise ValueError(
-                        f"Filen mangler opprinnelig målsti i databasen: {deleted_path}"
+                        f"Filen mangler opprinnelig plassering i databasen: {deleted_path}"
                     )
             else:
                 row = conn.execute(
@@ -131,7 +131,7 @@ def undelete_file(
                 if row["deleted_at"] is None:
                     raise ValueError("Filen er ikke markert som slettet.")
                 if row["deleted_original_target_path"] is None:
-                    raise ValueError("Filen mangler opprinnelig målsti i databasen.")
+                    raise ValueError("Filen mangler opprinnelig plassering i databasen.")
                 deleted_path = db.absolute_target_path(
                     target, Path(str(row["target_path"]))
                 ).resolve()
@@ -148,7 +148,7 @@ def undelete_file(
 
             restored_path = target / Path(str(row["deleted_original_target_path"]))
             if restored_path.exists():
-                raise ValueError(f"Målfilen finnes allerede: {restored_path}")
+                raise ValueError(f"En fil finnes allerede på opprinnelig plassering: {restored_path}")
 
             restored_path.parent.mkdir(parents=True, exist_ok=True)
             move_id = db.create_pending_file_move(

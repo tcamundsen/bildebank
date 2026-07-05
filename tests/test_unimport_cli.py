@@ -40,7 +40,7 @@ class UnimportCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Unimport: kildefiler=1/1", stdout)
-            self.assertIn("Unimport: målfiler=0/0", stdout)
+            self.assertIn("Unimport: filer=0/0", stdout)
             self.assertIn("Filer som fjernes fra aktiv samling: 0", stdout)
             self.assertIn("Filer som blir liggende fordi de også finnes i andre kilder: 1", stdout)
             self.assertTrue(imported.exists())
@@ -76,7 +76,7 @@ class UnimportCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Unimport: kildefiler=1/1", stdout)
-            self.assertIn("Unimport: målfiler=1/1", stdout)
+            self.assertIn("Unimport: filer=1/1", stdout)
             self.assertIn("Filer som fjernes fra aktiv samling: 1", stdout)
             self.assertIn("Kilden er fjernet fra kildelisten.", stdout)
             self.assertFalse(imported.exists())
@@ -107,7 +107,7 @@ class UnimportCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Unimport: kildefiler=1/1", stdout)
-            self.assertIn("Unimport: målfiler=1/1", stdout)
+            self.assertIn("Unimport: filer=1/1", stdout)
             self.assertIn("Filer som fjernes fra aktiv samling: 1", stdout)
             self.assertIn("Kilden ville blitt fjernet fra kildelisten.", stdout)
             self.assertIn("Dry-run: ingen endringer er gjort.", stdout)
@@ -233,7 +233,7 @@ class UnimportCliTests(unittest.TestCase):
                 )
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("ADVARSEL: målfil(er) i bildebanken er endret siden import.", stdout)
+            self.assertIn("ADVARSEL: fil(er) i bildesamlingen er endret siden import.", stdout)
             self.assertIn("2024/01/IMG_20240102.jpg", stdout)
             self.assertIn("Avbrutt. Ingen endringer er gjort.", stdout)
             self.assertTrue(imported.exists())
@@ -266,7 +266,7 @@ class UnimportCliTests(unittest.TestCase):
                 )
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("ADVARSEL: målfil(er) i bildebanken er endret siden import.", stdout)
+            self.assertIn("ADVARSEL: fil(er) i bildesamlingen er endret siden import.", stdout)
             self.assertIn("Unimport gjennomført.", stdout)
             self.assertFalse(imported.exists())
             conn = sqlite3.connect(target / DB_FILENAME)
@@ -307,7 +307,7 @@ class UnimportCliTests(unittest.TestCase):
                 )
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn("ADVARSEL: målfil(er) i bildebanken er endret siden import.", stdout)
+            self.assertIn("ADVARSEL: fil(er) i bildesamlingen er endret siden import.", stdout)
             self.assertTrue(imported.exists())
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(report["changed_targets"][0]["path"], "2024/01/IMG_20240102.jpg")
@@ -335,7 +335,7 @@ class UnimportCliTests(unittest.TestCase):
                 )
 
             self.assertEqual(code, 0, stderr)
-            self.assertNotIn("ADVARSEL: målfil(er)", stdout)
+            self.assertNotIn("ADVARSEL: fil(er)", stdout)
             self.assertTrue(imported.exists())
 
     def test_unimport_overlapping_child_source_removes_only_child_reference(self) -> None:

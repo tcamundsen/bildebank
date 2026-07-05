@@ -305,7 +305,7 @@ class ImportCliTests(unittest.TestCase):
                 error = conn.execute("SELECT message FROM errors ORDER BY id DESC LIMIT 1").fetchone()[0]
                 self.assertIn("files.id=1", error)
                 self.assertIn("2024/01/IMG_20240102.jpg", error)
-                self.assertIn("målfilen mangler på disk", error)
+                self.assertIn("filen i bildesamlingen mangler på disk", error)
                 self.assertIsNone(
                     conn.execute(
                         "SELECT id FROM file_sources WHERE source_path LIKE ?",

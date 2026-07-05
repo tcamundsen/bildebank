@@ -47,7 +47,7 @@ kunne oppdage filer som allerede ligger i målmappen, og unngå å lage duplikat
 
 Kopiering skal gjøres på en måte som hindrer halvkopierte filer i målmappen.
 Programmet bør kopiere til en midlertidig fil i riktig målmappe, verifisere at
-hash på målfilen matcher hash på kildefilen, og deretter gi filen endelig navn.
+hash på kopien matcher hash på kildefilen, og deretter gi filen endelig navn.
 Filen skal først registreres som importert i databasen etter vellykket kopiering
 og verifisering.
 
@@ -55,7 +55,7 @@ Kopieringen skal fungere på vanlige filsystemer som brukes på Windows, ekstern
 disker og Linux, for eksempel NTFS, exFAT, FAT32, SMB/nettverksmapper og ext4.
 Programmet skal derfor ikke være avhengig av filsystemfunksjoner som ikke er
 universelt tilgjengelige, for eksempel hardlinks. Midlertidig fil bør ligge i
-samme mappe som endelig målfil slik at endelig rename/flytting skjer innenfor
+samme mappe som den endelige filen slik at endelig rename/flytting skjer innenfor
 samme filsystem.
 
 Når bildene (og videoene) importeres, så skal ikke filnavnet deres endres.
@@ -69,7 +69,7 @@ Kommando for å liste bilder med navnekollisjon
 
 unimport må være konservativ, verifiser kildefiler før endring, aldri føre til
 tap, og fjerne bare proveniens når andre kilder fortsatt peker på samme fil.
-Hvis en målfil som skal fjernes ved `unimport` ikke lenger matcher databaseført
+Hvis en fil som skal fjernes ved `unimport` ikke lenger matcher databaseført
 størrelse og SHA-256, skal brukeren varsles og eksplisitt bekrefte før
 `unimport` fortsetter.
 
@@ -225,7 +225,7 @@ slettede `files`-raden, ikke kopiere inn en ny aktiv fil og ikke automatisk
 gjenopprette bildet.
 
 Før importen hopper over kopiering på grunn av et database-treff på SHA-256, må
-den verifisere at den registrerte målfilen fortsatt finnes på disk og har
+den verifisere at den registrerte filen fortsatt finnes på disk og har
 forventet SHA-256. Hvis filen mangler eller innholdet ikke matcher databasen, er
 det en integritetsfeil for den aktuelle kildefilen. Importjobben skal registrere
 feilen og fortsette med andre filer, uten å reparere, overskrive eller

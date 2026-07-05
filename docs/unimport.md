@@ -45,11 +45,11 @@ ja, det vil jeg
 
 Hvis du skriver noe annet, avbryter Bildebank uten å endre noe.
 
-Hvis Bildebank oppdager at en målfil som skal fjernes er endret siden import,
+Hvis Bildebank oppdager at en fil som skal fjernes er endret siden import,
 viser kommandoen en ekstra advarsel etter denne bekreftelsen:
 
 ```text
-ADVARSEL: målfil(er) i bildebanken er endret siden import.
+ADVARSEL: fil(er) i bildesamlingen er endret siden import.
 ...
 Fortsette unimport? Skriv "ja" eller "nei":
 ```
@@ -84,7 +84,7 @@ bildebank cleanup-pending-deletes --apply
 `--dry-run` viser hvilke filer som ville blitt lagt i køen, og hvilke som
 beholdes fordi andre importer fortsatt refererer til dem.
 
-Hvis noen av målfilene som ville blitt fjernet er endret siden import, viser
+Hvis noen av filene som ville blitt fjernet er endret siden import, viser
 `--dry-run` også advarselen om dette. Dry-run spør fortsatt ikke om bekreftelse
 og gjør ingen endringer.
 
@@ -100,7 +100,7 @@ importert.
 Hvis en kildefil mangler eller er endret, stopper kommandoen uten å gjøre
 endringer.
 
-Hvis kildefilene er i orden, men en målfil i bildesamlingen er endret siden
+Hvis kildefilene er i orden, men en fil i bildesamlingen er endret siden
 import, stopper ikke Bildebank automatisk. I stedet viser programmet en tydelig
 advarsel og spør om du vil fortsette. Dette beskytter mot at man ved et uhell
 sletter en manuelt endret kopi inne i bildesamlingen.

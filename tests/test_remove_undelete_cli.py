@@ -471,7 +471,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
             )
 
             self.assertNotEqual(code, 0)
-            self.assertIn("Målfilen finnes allerede", stderr)
+            self.assertIn("En fil finnes allerede på opprinnelig plassering", stderr)
             self.assertEqual(destination.read_bytes(), b"already-here")
             self.assertTrue((target / "deleted" / "2024" / "01" / "IMG_20240102.jpg").exists())
 

@@ -288,17 +288,17 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "show-conflict",
         usage="bildebank show-conflict [valg] fil",
-        help="Vis alle kildefiler i samme navnekollisjon som en målfil",
+        help="Vis alle kildefiler i samme navnekollisjon som en importert fil",
     )
-    show_conflict.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    show_conflict.add_argument("path", metavar="fil", type=Path, help="Importert fil")
     show_source = add_command(
         subparsers,
         "show-source",
         usage="bildebank show-source [valg] fil",
-        help="Vis hvilken kilde en importert målfil kommer fra",
-        description="Vis hvilken kilde en importert målfil kommer fra",
+        help="Vis hvilken kilde en importert fil kommer fra",
+        description="Vis hvilken kilde en importert fil kommer fra",
     )
-    show_source.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    show_source.add_argument("path", metavar="fil", type=Path, help="Importert fil")
     date_set = add_command(
         subparsers,
         "date-set",
@@ -306,7 +306,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Sett manuell dato for en importert fil",
         description="Sett manuell dato i Bildebank uten å endre originalfilen.",
     )
-    date_set.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    date_set.add_argument("path", metavar="fil", type=Path, help="Importert fil")
     date_choice = date_set.add_mutually_exclusive_group(required=True)
     date_choice.add_argument("--date", type=iso_date_arg, help="Eksakt eller omtrentlig midtdato, YYYY-MM-DD")
     date_choice.add_argument(
@@ -328,7 +328,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fjern manuell dato fra en importert fil",
         description="Fjern manuell dato fra Bildebank uten å endre originalfilen.",
     )
-    date_clear.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    date_clear.add_argument("path", metavar="fil", type=Path, help="Importert fil")
     check_source = add_command(
         subparsers,
         "check-source",
@@ -390,9 +390,9 @@ def build_parser() -> argparse.ArgumentParser:
         "remove",
         usage="bildebank remove [valg] fil",
         help="Flytt en importert fil til deleted/",
-        description="Flytt en importert målfil til deleted/ og marker den som slettet",
+        description="Flytt en importert fil til deleted/ og marker den som slettet",
     )
-    remove.add_argument("path", metavar="fil", type=Path, help="Importert målfil som skal fjernes")
+    remove.add_argument("path", metavar="fil", type=Path, help="Importert fil som skal fjernes")
     undelete = add_command(
         subparsers,
         "undelete",
@@ -443,7 +443,7 @@ def build_parser() -> argparse.ArgumentParser:
     non_metadata.add_argument(
         "--with-source",
         action="store_true",
-        help="Vis kildefil i tillegg til målfil",
+        help="Vis kildefil i tillegg til importert fil",
     )
     tag_list = add_command(
         subparsers,
@@ -451,14 +451,14 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank tag-list [valg] [fil]",
         help="List tagger eller tagger for én fil",
     )
-    tag_list.add_argument("path", metavar="fil", type=Path, nargs="?", help="Importer målfil")
+    tag_list.add_argument("path", metavar="fil", type=Path, nargs="?", help="Importert fil")
     tag_add = add_command(
         subparsers,
         "tag-add",
         usage="bildebank tag-add [valg] fil tagg",
         help="Legg tagg på en importert fil",
     )
-    tag_add.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    tag_add.add_argument("path", metavar="fil", type=Path, help="Importert fil")
     tag_add.add_argument("tag", metavar="tagg", help="Taggnavn")
     tag_remove = add_command(
         subparsers,
@@ -466,7 +466,7 @@ def build_parser() -> argparse.ArgumentParser:
         usage="bildebank tag-remove [valg] fil tagg",
         help="Fjern tagg fra en importert fil",
     )
-    tag_remove.add_argument("path", metavar="fil", type=Path, help="Importert målfil")
+    tag_remove.add_argument("path", metavar="fil", type=Path, help="Importert fil")
     tag_remove.add_argument("tag", metavar="tagg", help="Taggnavn")
     tag_files = add_command(
         subparsers,
@@ -1754,9 +1754,9 @@ def print_unimport_target_content_warning(
     changes: tuple[TargetContentChange, ...],
 ) -> None:
     print("")
-    print("ADVARSEL: målfil(er) i bildebanken er endret siden import.")
+    print("ADVARSEL: fil(er) i bildesamlingen er endret siden import.")
     print(
-        "Kildefilene er verifisert, men disse målfilene matcher ikke lenger "
+        "Kildefilene er verifisert, men disse filene matcher ikke lenger "
         "databaseført størrelse/SHA-256 og kan inneholde manuelle endringer:"
     )
     for change in changes:
@@ -1764,7 +1764,7 @@ def print_unimport_target_content_warning(
             f"  {change.path.as_posix()} "
             f"(størrelse {change.actual_size_bytes}, forventet {change.expected_size_bytes})"
         )
-    print("Hvis du fortsetter, kan disse endrede målfilene bli slettet.")
+    print("Hvis du fortsetter, kan disse endrede filene bli slettet.")
 
 
 def write_unimport_target_change_report(
@@ -2294,7 +2294,7 @@ def print_name_conflict_item(target: Path, row, *, media_cache: MediaMetadataCac
 def print_source_item(target: Path, row) -> None:
     source_path = Path(str(row["source_path"]))
     source_label = row["source_name"] or row["source_root"]
-    print(f"Målfil: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
+    print(f"Importert fil: {db.absolute_target_path(target, Path(str(row['target_path'])))}")
     print(f"Kildefil: {source_path}")
     print(f"Kildefil finnes: {'ja' if source_path.exists() else 'nei'}")
     print(f"Kilde-id: {row['source_id']}")
@@ -2319,7 +2319,7 @@ def print_source_items(target: Path, rows: list) -> None:
         return
 
     first = rows[0]
-    print(f"Målfil: {db.absolute_target_path(target, Path(str(first['target_path'])))}")
+    print(f"Importert fil: {db.absolute_target_path(target, Path(str(first['target_path'])))}")
     print(f"Originalt filnavn: {first['original_filename']}")
     print(f"Lagret filnavn: {first['stored_filename']}")
     print(f"Importert: {first['file_imported_at']}")

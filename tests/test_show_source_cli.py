@@ -27,7 +27,7 @@ class ShowSourceCliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(["--target", str(target), "show-source", str(imported)])
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn(f"Målfil: {imported.resolve()}", stdout)
+            self.assertIn(f"Importert fil: {imported.resolve()}", stdout)
             self.assertIn(f"Kildefil: {source_file.resolve()}", stdout)
             self.assertIn("Kildefil finnes: ja", stdout)
             self.assertIn("Kilde-id: 1", stdout)
@@ -62,7 +62,7 @@ class ShowSourceCliTests(unittest.TestCase):
                 os.chdir(old_cwd)
 
             self.assertEqual(code, 0, stderr)
-            self.assertIn(f"Målfil: {imported.resolve()}", stdout)
+            self.assertIn(f"Importert fil: {imported.resolve()}", stdout)
             self.assertIn(f"Kildefil: {source_file.resolve()}", stdout)
 
     def test_show_source_lists_duplicate_sources_for_same_target_file(self) -> None:

@@ -20,7 +20,7 @@ til:
 C:\Users\brukernavn\minebilder
 ```
 
-skal Bildebank fortsatt finne målfilene ved å tolke lagrede stier relativt til
+skal Bildebank fortsatt finne filene ved å tolke lagrede stier relativt til
 mappen som inneholder `.bilder.sqlite3`.
 
 Dette krever en eksplisitt databaseendring fra `schema_version=4` til
@@ -142,12 +142,12 @@ Kildestier skal ikke konverteres.
 
 ## Runtime-regler etter v5
 
-Kode som leser en målfil fra databasen må tolke `files.target_path` som relativ
+Kode som leser en importert fil fra databasen må tolke `files.target_path` som relativ
 sti og kombinere den med aktiv samlingsrot.
 
-Kode som skriver nye målfilrader må lagre relativ sti i databasen.
+Kode som skriver nye `files`-rader må lagre relativ sti i databasen.
 
-Kode som sammenligner målfilstier må bruke relativ path key. Absolutt
+Kode som sammenligner lagrede filstier må bruke relativ path key. Absolutt
 `resolve()` skal ikke brukes for samlingsinterne database-nøkler.
 
 Kode som viser stier til brukeren kan vise relative stier når det er mest
@@ -166,7 +166,7 @@ Minimumstester for v5:
 - Migrering stopper hvis en `files.target_path` peker utenfor samlingsrot.
 - `sources.path` og `file_sources.source_path` forblir absolutte etter
   migrering.
-- `remove` og `unimport` fungerer med relative målfilstier.
+- `remove` og `unimport` fungerer med relative lagrede filstier.
 - `make-browser`, face-visninger og OpenCLIP-søk fungerer etter flytting av
   samlingen.
 - Face/OpenCLIP-data migreres til relative stier eller håndteres tydelig som

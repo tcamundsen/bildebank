@@ -10,14 +10,14 @@ Før v4 hadde databasen en enklere proveniensmodell:
 
 - `duplicate_findings` lagret duplikater som egne rader.
 - `files.source_id`, `files.source_path` og `files.source_path_key` pekte på
-  én hovedkilde for målfilen.
+  én hovedkilde for den importerte filen.
 - `sources.kind` og `file_sources.kind` skilte mellom kilde- og importtype.
 - `errors` kunne ha en foreign key til `sources`, som gjorde det vanskelig å
   slette eller rydde opp i kilder.
 
 I v4 er dette normalisert:
 
-- `files` er sannheten om målfilene i samlingen.
+- `files` er sannheten om importerte filer i samlingen.
 - `file_sources` er sannheten om kildefilforekomster.
 - `sources` har `name NOT NULL UNIQUE`.
 - `errors` kan lagre source-historikk uten å blokkere opprydding.

@@ -3,10 +3,10 @@
 ```text
 usage: bildebank show-source [valg] fil
 
-Vis hvilken kilde en importert målfil kommer fra
+Vis hvilken kilde en importert fil kommer fra
 
 positional arguments:
-  fil         Importert målfil
+  fil         Importert fil
 
 options:
   -h, --help  show this help message and exit

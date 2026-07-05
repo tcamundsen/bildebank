@@ -152,16 +152,16 @@ def validate_target_paths(
 ) -> None:
     total = len(plan.target_paths_to_delete)
     if progress is not None:
-        progress.message(f"Unimport: kontrollerer {total} målfil(er) som kan fjernes.")
+        progress.message(f"Unimport: kontrollerer {total} fil(er) som kan fjernes.")
         if total == 0:
-            progress.update(0, 0, action="målfiler", eta=True)
+            progress.update(0, 0, action="filer", eta=True)
     try:
         for index, target_path in enumerate(plan.target_paths_to_delete, start=1):
             db.target_relative_path(target, target_path)
             if target_path.exists() and not target_path.is_file():
-                raise ValueError(f"Målfilen som skulle fjernes er ikke en fil: {target_path}")
+                raise ValueError(f"Filen som skulle fjernes er ikke en vanlig fil: {target_path}")
             if progress is not None:
-                progress.update(index, total, action="målfiler", eta=True)
+                progress.update(index, total, action="filer", eta=True)
     finally:
         if progress is not None:
             progress.done()
@@ -196,7 +196,7 @@ def find_target_content_changes(
         if not target_path.exists():
             continue
         if not target_path.is_file():
-            raise ValueError(f"Målfilen som skulle fjernes er ikke en fil: {target_path}")
+            raise ValueError(f"Filen som skulle fjernes er ikke en vanlig fil: {target_path}")
         expected_size = int(row["size_bytes"])
         expected_sha256 = str(row["sha256"])
         actual_size = target_path.stat().st_size

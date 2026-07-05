@@ -5,7 +5,7 @@ usage: bildebank non-metadata [valg]
 
 options:
   -h, --help     show this help message and exit
-  --with-source  Vis kildefil i tillegg til målfil
+  --with-source  Vis kildefil i tillegg til importert fil
 ```
 <!-- CLI-HELP-END -->
 
@@ -28,4 +28,3 @@ Mulighet for å rydde bilder som har dette problemet kommer i en seinere utgave 
 programmet.
 
 `--with-source` viser også kildefilen.
-
