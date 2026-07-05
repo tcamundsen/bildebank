@@ -1,27 +1,27 @@
 [
   {
     "name": "vanlig-bildevisning",
-    "url": "http://127.0.0.1:8765/item/123",
+    "url": "http://127.0.0.1:8765/",
     "threshold_ms": 5.0
   },
   {
     "name": "filtersok-image",
-    "url": "http://127.0.0.1:8765/filter/type%3Aimage/item/123",
+    "url": "http://127.0.0.1:8765/filter/type%3Aimage/",
     "threshold_ms": 5.5
   },
   {
     "name": "person-browser",
-    "url": "http://127.0.0.1:8765/person/Viljar/no-faces/item/1667",
+    "url": "http://127.0.0.1:8765/person/Viljar/no-faces/",
     "threshold_ms": 6.5
   },
   {
     "name": "sted-browser",
-    "url": "http://127.0.0.1:8765/geo/place/kj%C3%B8psvik/item/1206",
+    "url": "http://127.0.0.1:8765/geo/place/kj%C3%B8psvik/",
     "threshold_ms": 7.0
   },
   {
     "name": "kilde-browser",
-    "url": "http://127.0.0.1:8765/source/7/item/736",
+    "url": "http://127.0.0.1:8765/source/1/",
     "threshold_ms": 7.0
   }
 ]
