@@ -487,6 +487,5 @@ class ExportPersonTests(unittest.TestCase):
         self.assertEqual(args.command, "export-person")
         self.assertEqual(args.name, "Kari")
         self.assertTrue(args.dry_run)
-        self.assertIn("export-person", parser.format_help())
         reference = Path("docs/reference.md").read_text(encoding="utf-8")
         self.assertIn("[`export-person`](export-person.md)", reference)

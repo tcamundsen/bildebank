@@ -68,105 +68,26 @@ UNIMPORT_SOURCE_PROGRESS: ProgressMeter | None = None
 UNIMPORT_TARGET_PROGRESS: ProgressMeter | None = None
 
 
-HELP_COMMAND_GROUPS = (
+CLI_ONLY_HELP_GROUPS = (
     (
-        "kom i gang",
-        (
-            ("start", "Åpne Bildebank-vinduet"),
-            ("create", "Opprett en ny bildesamlingsmappe"),
-            ("import", "Importer en mappe, CD, USB eller annen kilde"),
-            ("config", "Slå valgfrie funksjoner på eller av"),
-            ("run-server", "Start lokal Bildebank-server"),
-            ("status", "Vis kort status for bildesamlingen"),
-            ("list-sources", "Vis registrerte kilder"),
-        ),
+        "Kontrollister",
+        "status, errors, conflicts, show-conflict, non-metadata",
     ),
     (
-        "kontrollere importen",
-        (
-            ("errors", "List registrerte feil"),
-            ("conflicts", "List filer med navnekollisjon"),
-            ("show-conflict", "Vis detaljer om en navnekollisjon"),
-            ("non-metadata", "List filer der datoen ikke kom fra metadata"),
-            ("show-source", "Vis hvor en importert fil kom fra"),
-            ("check-source", "Kontroller at en kildemappe er importert"),
-            ("rescan-source", "Scan en tidligere importert kilde på nytt"),
-        ),
+        "Metadata",
+        "explain-date, inspect-metadata, refresh-metadata",
     ),
     (
-        "rydde trygt",
-        (
-            ("remove", "Flytt en importert fil til deleted/"),
-            ("undelete", "Flytt en slettet fil tilbake fra deleted/"),
-            ("unimport", "Reverser en tidligere importert kilde"),
-            ("list-removed", "List filer som er slettet med `remove`"),
-            ("cleanup-pending-deletes", "Kontroller eller kjør ventende filsletting"),
-        ),
+        "Steder",
+        "geo-areas, geo-area",
     ),
     (
-        "metadata og steder",
-        (
-            ("refresh-metadata", "Sjekk filer uten metadata på nytt"),
-            ("inspect-metadata", "Vis metadatafragmenter og datokandidater"),
-            ("explain-date", "Forklar hvilken dato Bildebank ville brukt"),
-            ("date-set", "Sett manuell dato for en importert fil"),
-            ("date-clear", "Fjern manuell dato fra en importert fil"),
-            ("exiftool-install", "Installer ExifTool for GPS og metadata"),
-            ("exiftool-metadata-gaps", "Finn metadata Bildebank ikke leser ennå"),
-            ("tag-list", "List tagger eller tagger for én fil"),
-            ("tag-add", "Legg tagg på en importert fil"),
-            ("tag-remove", "Fjern tagg fra en importert fil"),
-            ("tag-files", "List filer med en tagg"),
-            ("geo-scan", "Scan GPS-koordinater fra metadata"),
-            ("geo-stats", "Vis GPS-status for bildesamlingen"),
-            ("geo-areas", "List H3-områder med bilder"),
-            ("geo-area", "List bilder i ett H3-område"),
-        ),
+        "Ansikter og bildesøk",
+        "face-report, face-reset, cleanup-image-search",
     ),
     (
-        "ansikter",
-        (
-            ("download-face-model", "Last ned valgt InsightFace-modell"),
-            ("face-scan", "Scanning etter ansikter"),
-            ("face-suggest", "Foreslå personer for ukjente ansikter"),
-            ("face-report", "Vis rapport for scannede ansikter"),
-            ("face-person-list", "List personer i ansiktsdatabasen"),
-            ("face-person-create", "Opprett person i ansiktsdatabasen"),
-            ("face-person-add-face", "Koble ett ansikt til person"),
-            ("face-person-remove-face", "Fjern ett ansikt fra person"),
-            ("face-person-delete", "Slett person fra ansiktsdatabasen"),
-            ("face-person-rename", "Endre navn på person i ansiktsdatabasen"),
-            ("export-person", "Eksporter bilder av en person"),
-            ("face-reset", "Slett ansiktsdata"),
-        ),
-    ),
-    (
-        "bildesøk",
-        (
-            ("image-scan", "Scan bilder for tekstbasert bildesøk"),
-            ("image-search", "Søk etter bilder med tekst"),
-            ("cleanup-image-search", "Rydd foreldreløse bildesøk-rader"),
-        ),
-    ),
-    (
-        "HTML-eksport",
-        (
-            ("make-thumbnails", "Lag thumbnails for rask månedsvisning"),
-            ("make-browser", "Lag index.html for nettleseren"),
-            ("make-people-browser", "Lag HTML-sider for alle personer"),
-            ("make-person-browser", "Lag HTML-side for en person"),
-        ),
-    ),
-    (
-        "vedlikehold",
-        (
-            ("doctor", "Vis diagnose for installasjon og aktiv bildesamling"),
-            ("backup", "Lag eller oppdater backup av bildesamlingen"),
-            ("migrate", "Oppgrader databasen etter programoppdatering"),
-            ("vacuum", "Pakk databasene så SQLite-filene krymper fysisk"),
-            ("update", "Oppdater programinstallasjonen"),
-            ("where-is", "Vis hvor Bildebank og kjente bildesamlinger ligger"),
-        ),
+        "Programplassering",
+        "where-is",
     ),
 )
 
@@ -1019,23 +940,23 @@ def add_command(
 
 
 def main_help_epilog() -> str:
-    lines = ["Vanlige kommandoer:"]
-    for heading, commands in HELP_COMMAND_GROUPS:
-        lines.append("")
-        lines.append(heading)
-        for command, description in commands:
-            lines.append(f"   {command:<22} {description}")
+    lines = ["Kom i gang:"]
+    lines.append("   bildebank start")
+    lines.append("")
+    lines.append(
+        "Bildebank-vinduet kan opprette samling, importere bilder, starte nettleseren,"
+    )
+    lines.append("ta backup og kjøre vanlig vedlikehold.")
+    lines.append("")
+    lines.append("Må fortsatt kjøres fra PowerShell:")
+    for heading, commands in CLI_ONLY_HELP_GROUPS:
+        lines.append(f"   {heading:<22} {commands}")
+    lines.append("")
+    lines.append("Full kommandoliste:")
+    lines.append("   docs\\reference.md")
     lines.append("")
     lines.append("Se hjelp for en kommando med:")
     lines.append("   bildebank <kommando> -h")
-    lines.append("")
-    lines.append("Vanlig start:")
-    lines.append("   bildebank start")
-    lines.append("   bildebank create \"C:\\Users\\Tom\\Bilder samlet\"")
-    lines.append("   cd \"C:\\Users\\Tom\\Bilder samlet\"")
-    lines.append("   bildebank import --name \"Mobil 2024\" --dry-run \"E:\\DCIM\"")
-    lines.append("   bildebank import --name \"Mobil 2024\" \"E:\\DCIM\"")
-    lines.append("   bildebank run-server")
     return "\n".join(lines)
 
 
