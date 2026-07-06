@@ -66,7 +66,7 @@ pretrained = "laion2b_s34b_b79k"
 
         self.assertEqual(code, 0)
         self.assertIn("usage: bildebank [-h] [--version] <kommando> [<args>]", stdout)
-        self.assertIn("Bildebank 0.4.0", stdout)
+        self.assertIn("Bildebank 0.9.0", stdout)
         self.assertIn("Kom i gang:", stdout)
         self.assertIn("bildebank start", stdout)
         self.assertIn("Bildebank-vinduet kan opprette samling", stdout)
@@ -87,7 +87,7 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual(raised.exception.code, 0)
         stdout = stdout_buffer.getvalue()
         self.assertIn("usage: bildebank [-h] [--version] <kommando> [<args>]", stdout)
-        self.assertIn("Bildebank 0.4.0", stdout)
+        self.assertIn("Bildebank 0.9.0", stdout)
         self.assertNotIn("--target", stdout)
         self.assertIn("Kom i gang:\n   bildebank start", stdout)
         self.assertIn("Bildebank-vinduet kan opprette samling", stdout)
