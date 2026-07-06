@@ -19,8 +19,12 @@ programmappen til Bildebank:
 C:\Users\Tom\kode\bildebank\bildebank-tools\exiftool
 ```
 
-Kommandoen støttes bare på Windows. På Linux installeres ExifTool med
-pakkesystemet, for eksempel `sudo apt install libimage-exiftool-perl`.
+Kommandoen støttes bare på Windows. `exiftool` installeres automatisk i nyere
+utgaver av Bildebank, men denne kommandoen kan installere det for deg hvis
+programmet mangler.
+
+På Linux installeres ExifTool med pakkesystemet, for eksempel `sudo apt install
+libimage-exiftool-perl`.
 
 Kjør kommandoen hvis `geo-scan` sier at ExifTool mangler:
 

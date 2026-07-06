@@ -79,7 +79,7 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 ## Geolokalisering
 
 - [`geo-scan`](geo-scan.md) **`vindu`**
-- [`exiftool-install`](exiftool-install.md)
+- [`exiftool-install`](exiftool-install.md) **`cli`**
 - [`geo-stats`](geo-stats.md) **`web`**
 - [`geo-areas`](geo-areas.md) **`cli`**
 - [`geo-area`](geo-area.md) **`cli`**

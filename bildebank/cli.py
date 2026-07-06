@@ -68,30 +68,6 @@ UNIMPORT_SOURCE_PROGRESS: ProgressMeter | None = None
 UNIMPORT_TARGET_PROGRESS: ProgressMeter | None = None
 
 
-CLI_ONLY_HELP_GROUPS = (
-    (
-        "Kontrollister",
-        "status, errors, conflicts, show-conflict, non-metadata",
-    ),
-    (
-        "Metadata",
-        "explain-date, inspect-metadata, refresh-metadata",
-    ),
-    (
-        "Steder",
-        "geo-areas, geo-area",
-    ),
-    (
-        "Ansikter og bildesøk",
-        "face-report, face-reset, cleanup-image-search",
-    ),
-    (
-        "Programplassering",
-        "where-is",
-    ),
-)
-
-
 class BildebankHelpFormatter(argparse.RawDescriptionHelpFormatter):
     def _format_action(self, action: argparse.Action) -> str:
         if isinstance(action, argparse._SubParsersAction):
@@ -948,12 +924,9 @@ def main_help_epilog() -> str:
     )
     lines.append("ta backup og kjøre vanlig vedlikehold.")
     lines.append("")
-    lines.append("Må fortsatt kjøres fra PowerShell:")
-    for heading, commands in CLI_ONLY_HELP_GROUPS:
-        lines.append(f"   {heading:<22} {commands}")
-    lines.append("")
     lines.append("Full kommandoliste:")
     lines.append("   docs\\reference.md")
+    lines.append("   Noen avanserte oppgaver gjøres fortsatt fra PowerShell.")
     lines.append("")
     lines.append("Se hjelp for en kommando med:")
     lines.append("   bildebank <kommando> -h")
