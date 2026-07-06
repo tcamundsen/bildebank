@@ -32,7 +32,6 @@ from tests.db_test_helpers import register_target_file
 from tests.test_media import (
     jpeg_with_exif_datetime,
     minimal_mp4_with_creation_date,
-    minimal_png,
     minimal_tiff_with_datetime,
 )
 

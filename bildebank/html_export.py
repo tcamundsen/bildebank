@@ -9,7 +9,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
 
-from . import db
 from .browser_dates import (
     browser_date_text as item_browser_date_text,
     manual_date_midpoint as shared_manual_date_midpoint,
