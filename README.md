@@ -60,7 +60,7 @@ Programmet vil da åpne dette vinduet:
 ![Screenshot av Bildebank-vinduet](docs/screenshots/bildebank.png)
 
 Hvis dette fungerer kan du fortsette med å lese
-[Kom i gang med bildebank](docs/kom-i-gang.md).
+[Kom i gang med bildebank](docs/web/kom-i-gang.md).
 
 Hvis dette ikke virker, ble ikke installasjonen ferdig.
 
@@ -170,7 +170,7 @@ virker:
 bildebank
 ```
 
-Nå skal forhåpentligvis [brukermanual](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md)
+Nå skal forhåpentligvis [brukermanual](docs/web/kom-i-gang.md)
 være neste trinn for deg.
 
 ## Vanlige problemer
