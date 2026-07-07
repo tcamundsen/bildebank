@@ -1,5 +1,5 @@
 Litt skriblerier om programmet [kan du lese her](om-bildebank.md).
-[Hvordan importere de første bildene](../kom-i-gang.md)
+[Hvordan importere de første bildene](kom-i-gang.md)
 
 Oversikt over alle kommandoer [finner du her](../reference.md).
 

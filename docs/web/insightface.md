@@ -16,9 +16,9 @@ annet enn lokal testing.
 
 Arbeidet består av tre hovedtrinn:
 
-1. [`face-scan`](face-scan.md) finner ansikter i bildene.
+1. [`face-scan`](../face-scan.md) finner ansikter i bildene.
 2. Du knytter noen sikre ansikter manuelt til personer.
-3. [`face-suggest`](face-suggest.md) bruker de sikre eksemplene til å foreslå flere bilder.
+3. [`face-suggest`](../face-suggest.md) bruker de sikre eksemplene til å foreslå flere bilder.
 
 ### Installer og slå på
 
@@ -120,7 +120,7 @@ bedre enn mange tvilsomme.
 
 ### La Bildebank foreslå flere bilder
 
-For å foreslå flere bilder kjøres kommandoen [`face-suggest`](face-suggest.md).
+For å foreslå flere bilder kjøres kommandoen [`face-suggest`](../face-suggest.md).
 Denne kan kjøres fra PowerShell, eller fra nettleseren.
 
 På siden **Personer** kan du trykke **Foreslå personer** for å kjøre
@@ -133,7 +133,7 @@ venter til jobben er ferdig. Verdien lagres som `suggest_threshold` under
 Når jobben er ferdig fra bildebrowseren, åpnes dialogen igjen med en kort
 oppsummering av resultatet. Knappen **Avbryt** heter da **Lukk**.
 
-[`face-suggest`](face-suggest.md) sammenligner de bekreftede ansiktene med
+[`face-suggest`](../face-suggest.md) sammenligner de bekreftede ansiktene med
 andre scannede ansikter og lagrer forslag til hvilke bilder som kan vise samme
 person. Du kan angi et tall mellom 0.0 og 1.0 (`threshold`) som avgjør
 hvor like bildene må være før programmet antar det er samme person. Du
@@ -199,7 +199,7 @@ De vanligste vedlikeholdsoppgavene er:
   [**Personer**](/people) og deretter **endre navn** bak navnet som skal endres.
 - slette en person: `bildebank face-person-delete` eller klikk **Slett** bak navnet til
   en person på siden [**Personer**](/people).
-- nullstille ansiktskoblinger: se [`face-reset`](face-reset.md)
+- nullstille ansiktskoblinger: se [`face-reset`](../face-reset.md)
 
 Se kommandosidene for detaljer og eksempler.
 
@@ -212,7 +212,7 @@ ansiktsdatabasen. Dette påvirker ikke `face-suggest`, og bildet vises ikke når
 ## Statiske HTML-filer
 
 Du kan lage en statisk bildebrowser som viser alle bildene med en person med
-kommandoen [`make-person-browser`](make-person-browser.md):
+kommandoen [`make-person-browser`](../make-person-browser.md):
 
 ```powershell
 bildebank make-person-browser "Tom"
@@ -220,7 +220,7 @@ bildebank make-person-browser "Tom"
 
 Du kan også lage statiske bildebrowsere for alle personer, sammen med
 oversiktsfilen `personer.html` med kommandoen
-[`make-people-browser`](make-people-browser.md):
+[`make-people-browser`](../make-people-browser.md):
 
 ```powershell
 bildebank make-people-browser
@@ -228,5 +228,5 @@ bildebank make-people-browser
 
 ## Mer informasjon
 
-- [Oversikt over kommandoer for ansiktsgjenkjenning](reference.md#ansiktsgjenkjenning)
+- [Oversikt over kommandoer for ansiktsgjenkjenning](../reference.md#ansiktsgjenkjenning)
 - [Strategier for `face-suggest`](face-suggest-strategier.md)

@@ -61,7 +61,7 @@ er merket har jeg ikke sett over ennå.
 
 ## Ansiktsgjenkjenning
 
-- [`insightface`](insightface.md) - innføring
+- [`insightface`](web/insightface.md) - innføring
 - [`export-person`](export-person.md) **`vindu`**
 - [`Strategier for face-suggest`](face-suggest-strategier.md)
 - [`face-scan`](face-scan.md) **`vindu`**

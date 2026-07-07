@@ -22,7 +22,7 @@ options:
 bestemt person finnes.
 
 Denne kommandoen krever at ansiktsgjenkjenning er aktivert og tatt i bruk.
-Se [InsightFace](insightface.md).
+Se [InsightFace](web/insightface.md).
 
 Siden viser bilder der personen enten er:
 

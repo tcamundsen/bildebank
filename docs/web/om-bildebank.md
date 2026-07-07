@@ -19,7 +19,7 @@ egendefinerte steder".
 ## Ansiktsgjenkjenning
 
 Er valgfritt å bruke. Kan slås av og på i **Innstillinger**. Opptar
-fort over 0,5 GB. Du leser om det [her](../insightface.md).
+fort over 0,5 GB. Du leser om det [her](insightface.md).
 
 ## Tekstsøk i bilder
 
