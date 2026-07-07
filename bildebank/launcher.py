@@ -673,6 +673,9 @@ class BildebankLauncher:
         self.buttons: list[Any] = []
         self.choose_collection_button: ttk.Button | None = None
         self.create_collection_button: ttk.Button | None = None
+        self.create_collection_tooltip: Tooltip | None = None
+        self.start_server_button: ttk.Button | None = None
+        self.backup_button: ttk.Button | None = None
         self.install_insightface_button: ttk.Button | None = None
         self.install_openclip_button: ttk.Button | None = None
         self.download_face_model_button: ttk.Button | None = None
@@ -832,12 +835,11 @@ class BildebankLauncher:
             text="Opprett bildesamling",
             command=self._create_collection,
         )
-        self._add_tooltip(
-            self.create_collection_button,
-            "Lag en bildesamling på stedet vist til venstre. Klikk 'Velg annen plassering' "
-            "for å finne bildesamlingen din eller opprette en ny et annet sted."
-        )
         self.create_collection_button.grid(row=1, column=1, sticky="w", padx=PADX, pady=PADY)
+        self.create_collection_tooltip = Tooltip(
+            self.create_collection_button,
+            self._create_collection_tooltip(False),
+        )
 
         separator = ttk.Separator(self.main_tab, orient="horizontal")
         separator.grid(row=1, column=0, sticky="ew", pady=PAD)
@@ -938,16 +940,21 @@ class BildebankLauncher:
 
         for tooltip in self.tooltips:
             tooltip.hide()
+        if self.create_collection_tooltip is not None:
+            self.create_collection_tooltip.hide()
         self.tooltips = []
         for frame in (self.main_button_frame, self.import_button_frame, self.tools_button_frame):
             for child in frame.winfo_children():
                 child.destroy()
         self.buttons = []
+        self.start_server_button = None
+        self.backup_button = None
         self.update_button = None
-        if self.create_collection_button is not None:
-            self.create_collection_button.grid_remove()
+        collection_created = is_collection_created(self.collection_path)
+        if self.create_collection_tooltip is not None:
+            self.create_collection_tooltip.text = self._create_collection_tooltip(collection_created)
 
-        if is_collection_created(self.collection_path):
+        if collection_created:
             if self.migration_required:
                 self.pending_deletes_status = "Ukjent"
                 self.pending_deletes_count = None
@@ -970,6 +977,7 @@ class BildebankLauncher:
                     text="Start Bildebank i nettleser",
                     command=self._start_server,
                 )
+                self.start_server_button = start_button
                 start_button.grid(row=0, column=0, padx=PADX, pady=PADY, columnspan=2, sticky="ew")
                 update_button = self._button(
                     self.main_button_frame,
@@ -988,6 +996,7 @@ class BildebankLauncher:
                     text="Ta backup",
                     command=self._start_backup_flow,
                 )
+                self.backup_button = backup_button
                 backup_button.grid(row=0, column=3, padx=PADX, pady=PADY, sticky="ew")
                 self._add_tooltip(
                     backup_button,
@@ -1211,9 +1220,37 @@ class BildebankLauncher:
         else:
             self.pending_deletes_status = "Ukjent"
             self.pending_deletes_count = None
-            assert self.create_collection_button is not None
-            self.create_collection_button.grid()
-            self.buttons.append(self.create_collection_button)
+            start_button = self._button(
+                self.main_button_frame,
+                text="Start Bildebank i nettleser",
+                command=self._start_server,
+            )
+            self.start_server_button = start_button
+            start_button.grid(row=0, column=0, padx=PADX, pady=PADY, columnspan=2, sticky="ew")
+            update_button = self._button(
+                self.main_button_frame,
+                text=self._update_button_text(),
+                command=self._on_update_button_clicked,
+            )
+            update_button.grid(row=0, column=2, padx=PADX, pady=PADY, sticky="ew")
+            self.update_button = update_button
+            self._add_tooltip(
+                update_button,
+                "Oppdaterer Bildebank til siste utgave. "
+                "Dette tilsvarer kommandoen 'bildebank update' ",
+            )
+            backup_button = self._button(
+                self.main_button_frame,
+                text="Ta backup",
+                command=self._start_backup_flow,
+            )
+            self.backup_button = backup_button
+            backup_button.grid(row=0, column=3, padx=PADX, pady=PADY, sticky="ew")
+            self._add_tooltip(
+                backup_button,
+                "Backup kan brukes etter at bildesamlingen er opprettet.",
+            )
+            self.buttons.extend([start_button, update_button, backup_button])
 
         self._set_buttons_enabled(not self.busy)
 
@@ -1223,6 +1260,14 @@ class BildebankLauncher:
 
     def _add_tooltip(self, widget: Any, text: str) -> None:
         self.tooltips.append(Tooltip(widget, text))
+
+    def _create_collection_tooltip(self, collection_created: bool) -> str:
+        if collection_created:
+            return "Mappen er allerede en bildesamling."
+        return (
+            "Lag en bildesamling på stedet vist til venstre. Klikk 'Velg annen plassering' "
+            "for å finne bildesamlingen din eller opprette en ny et annet sted."
+        )
 
     def _refresh_pending_deletes_status(self) -> None:
         try:
@@ -1363,13 +1408,21 @@ class BildebankLauncher:
         state = "normal" if enabled else "disabled"
         for button in self.buttons:
             button.configure(state=state)
+        collection_created = is_collection_created(self.collection_path)
         dependency_buttons_enabled = enabled and not self.migration_required and self.migration_status_error is None
         setup_buttons_enabled = enabled and not self.dependency_status_refreshing
         if self.choose_collection_button is not None:
             collection_state = "normal" if dependency_buttons_enabled else "disabled"
             self.choose_collection_button.configure(state=collection_state)
-        if self.create_collection_button is not None and self.create_collection_button not in self.buttons:
-            self.create_collection_button.configure(state="disabled")
+        if self.create_collection_button is not None:
+            create_state = "normal" if dependency_buttons_enabled and not collection_created else "disabled"
+            self.create_collection_button.configure(state=create_state)
+        if self.start_server_button is not None and not collection_created:
+            self.start_server_button.configure(state="disabled")
+        if self.backup_button is not None and not collection_created:
+            self.backup_button.configure(state="disabled")
+        if self.update_button is not None and (self.update_status.status == "checking" or not enabled):
+            self.update_button.configure(state="disabled")
         if self.install_insightface_button is not None:
             self.install_insightface_button.configure(
                 state=dependency_setup_button_state(

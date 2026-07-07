@@ -622,6 +622,65 @@ def test_update_button_click_runs_update_only_when_update_is_available() -> None
     assert actions == ["update", "check", "check"]
 
 
+def launcher_with_main_action_buttons(collection_path: Path) -> BildebankLauncher:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher.collection_path = collection_path
+    launcher.buttons = []
+    launcher.choose_collection_button = FakeButton()
+    launcher.create_collection_button = FakeButton()
+    launcher.start_server_button = FakeButton()
+    launcher.backup_button = FakeButton()
+    launcher.update_button = FakeButton()
+    launcher.buttons.extend([launcher.start_server_button, launcher.backup_button, launcher.update_button])
+    launcher.update_button_icons = {}
+    launcher.update_status = LauncherUpdateStatus("current")
+    launcher.busy = False
+    launcher.migration_required = False
+    launcher.migration_status_error = None
+    launcher.dependency_status_refreshing = False
+    launcher.install_insightface_button = None
+    launcher.install_openclip_button = None
+    launcher.download_face_model_button = None
+    launcher.exit_button = None
+    launcher.cancel_command_button = None
+    launcher.active_command_cancellable = False
+    launcher.active_command_cancel_requested = False
+    return launcher
+
+
+def test_main_action_buttons_without_collection_keep_update_available(tmp_path: Path) -> None:
+    launcher = launcher_with_main_action_buttons(tmp_path / "samling")
+
+    with patch("bildebank.launcher.is_collection_created", return_value=False):
+        launcher._set_buttons_enabled(True)
+
+    assert launcher.choose_collection_button.options["state"] == "normal"
+    assert launcher.create_collection_button.options["state"] == "normal"
+    assert launcher.start_server_button.options["state"] == "disabled"
+    assert launcher.backup_button.options["state"] == "disabled"
+    assert launcher.update_button.options.get("state", "normal") == "normal"
+
+
+def test_main_action_buttons_with_collection_disable_create(tmp_path: Path) -> None:
+    launcher = launcher_with_main_action_buttons(tmp_path / "samling")
+
+    with patch("bildebank.launcher.is_collection_created", return_value=True):
+        launcher._set_buttons_enabled(True)
+
+    assert launcher.choose_collection_button.options["state"] == "normal"
+    assert launcher.create_collection_button.options["state"] == "disabled"
+    assert launcher.start_server_button.options["state"] == "normal"
+    assert launcher.backup_button.options["state"] == "normal"
+    assert launcher.update_button.options.get("state", "normal") == "normal"
+
+
+def test_create_collection_tooltip_explains_disabled_existing_collection() -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+
+    assert launcher._create_collection_tooltip(True) == "Mappen er allerede en bildesamling."
+    assert "Lag en bildesamling" in launcher._create_collection_tooltip(False)
+
+
 def test_post_to_tk_ignores_callbacks_after_close_started() -> None:
     launcher = BildebankLauncher.__new__(BildebankLauncher)
     launcher.closing = True
