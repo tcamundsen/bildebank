@@ -18,7 +18,6 @@ from bildebank.server_pages import (
     geo_area_page_html,
     geo_index_page_html,
     geo_map_page_html,
-    geo_missing_page_html,
     geo_stats_page_html,
     h3_cells_page_html,
     item_page_html,
@@ -241,15 +240,15 @@ class ServerGeoCliTests(unittest.TestCase):
             stats_body = geo_stats_page_html(target)
             area_body = geo_area_page_html(target, cells["h3_res7"], resolution=7, limit=10)
             empty_area_body = geo_area_page_html(target, "8001fffffffffff", resolution=0, limit=10)
-            missing_body = geo_missing_page_html(target, limit=10, offset=0)
 
         self.assertIn("Steder", index_body)
+        self.assertIn('href="/filter/missing%3Agps">Bilder uten GPS</a>', index_body)
         self.assertIn("/geo/map?resolution=7&min_count=1&limit=10", index_body)
         self.assertIn("Heksagonkart", map_body)
         self.assertIn('href="/geo">Steder</a><span class="sep">/</span>Heksagonkart</nav>', map_body)
         self.assertIn('href="/geo">Steder</a><span class="sep">/</span>Geo-statistikk</nav>', stats_body)
+        self.assertIn('href="/filter/missing%3Agps">Bilder uten GPS</a>', stats_body)
         self.assertIn(f'href="/geo">Steder</a><span class="sep">/</span>{cells["h3_res7"]}</nav>', area_body)
-        self.assertIn('href="/geo">Steder</a><span class="sep">/</span>Bilder uten GPS</nav>', missing_body)
         self.assertIn('<form action="/geo/map" method="get" class="geo-filter">', map_body)
         self.assertIn('<select name="resolution">', map_body)
         self.assertIn('<option value="7" selected>H3-7 (ca. 5 km²)</option>', map_body)
@@ -274,7 +273,6 @@ class ServerGeoCliTests(unittest.TestCase):
         self.assertIn("Større område: H3-6 Oslo-området", area_body)
         self.assertNotIn(f"Større område: H3-6 {cells['h3_res6']}", area_body)
         self.assertNotIn("IMG_20240103.png", area_body)
-        self.assertIn("IMG_20240104.png", missing_body)
 
     def test_run_server_item_page_does_not_show_nearby_geo_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

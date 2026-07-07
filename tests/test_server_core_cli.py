@@ -465,6 +465,17 @@ class ServerCoreCliTests(unittest.TestCase):
 
         self.assertEqual(handler.routed_path, "web/screenshots/bildebank.png")
 
+    def test_run_server_does_not_route_geo_missing(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        handler.server = SimpleNamespace(read_only=False, target=Path("target"))
+        handler.path = "/geo/missing"
+        handler.file_path = ""
+        handler.respond_file = lambda raw_path: setattr(handler, "file_path", raw_path)
+
+        BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.file_path, "geo/missing")
+
     def test_run_server_renders_root_readme_as_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "program"

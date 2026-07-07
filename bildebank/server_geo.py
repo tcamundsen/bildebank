@@ -488,7 +488,7 @@ def geo_index_page_html(
         <nav class="subnav">
           <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a>
           <a href="/geo/stats">Geo-statistikk</a>
-          <a href="/geo/missing">Bilder uten GPS</a>
+          <a href="/filter/missing%3Agps">Bilder uten GPS</a>
           <a href="/help/web/steder">Hjelp</a>
         </nav>
         {geo_places_section_html(geo_places)}
@@ -586,7 +586,7 @@ def geo_stats_page_html(
         f"""
         <nav class="subnav">
           <a href="/geo">Steder</a>
-          <a href="/geo/missing">Bilder uten GPS</a>
+          <a href="/filter/missing%3Agps">Bilder uten GPS</a>
         </nav>
         <h1>Geo-statistikk</h1>
         {geo_stats_summary_html(stats)}
@@ -652,55 +652,6 @@ def geo_area_page_html(
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
         title_html=geo_breadcrumb_html(title if place_name else h3_cell),
-    )
-
-
-def geo_missing_page_html(
-    target: Path,
-    *,
-    shell_page_html: ShellPageRenderer,
-    limit: int = DEFAULT_GEO_LIMIT,
-    offset: int = 0,
-    face_enabled: bool = True,
-    openclip_enabled: bool = True,
-    hide_out_of_focus: bool = False,
-) -> str:
-    from .server_browser_overview_html import source_month_item_html
-    from .server_browser_queries import filter_out_of_focus_items
-    from .server_browser_sources import all_browser_source
-
-    items = geo_missing_items(target, limit=limit, offset=offset)
-    if hide_out_of_focus:
-        items = filter_out_of_focus_items(target, all_browser_source(), items, hide_out_of_focus)
-    cards = "\n".join(source_month_item_html(target, all_browser_source(), item) for item in items)
-    previous_offset = max(0, offset - limit)
-    next_offset = offset + limit
-    previous_link = (
-        f'<a class="server-search-link" href="/geo/missing?limit={limit}&offset={previous_offset}">Forrige side</a>'
-        if offset > 0
-        else '<span class="nav-button disabled">Forrige side</span>'
-    )
-    next_link = (
-        f'<a class="server-search-link" href="/geo/missing?limit={limit}&offset={next_offset}">Neste side</a>'
-        if len(items) == limit
-        else '<span class="nav-button disabled">Neste side</span>'
-    )
-    content = cards if cards else '<p class="meta">Ingen aktive bilder mangler GPS.</p>'
-    return shell_page_html(
-        "Bilder uten GPS",
-        f"""
-        <nav class="subnav">
-          <a href="/geo">Steder</a>
-          <a href="/geo/stats">Geo-statistikk</a>
-        </nav>
-        <h1>Bilder uten GPS</h1>
-        <p class="meta">Viser {len(items)} bilder fra offset {offset}.</p>
-        <nav class="controls">{previous_link}{next_link}</nav>
-        <section class="month-grid-server">{content}</section>
-        """,
-        face_enabled=face_enabled,
-        openclip_enabled=openclip_enabled,
-        title_html=geo_breadcrumb_html("Bilder uten GPS"),
     )
 
 
@@ -871,14 +822,6 @@ def geo_child_area_items(target: Path, *, h3_cell: str, resolution: int) -> list
             parent_h3_cell=h3_cell,
             child_column=child_column,
         )
-    finally:
-        conn.close()
-
-
-def geo_missing_items(target: Path, *, limit: int, offset: int) -> list[Any]:
-    conn = db.connect(target)
-    try:
-        return db.geo_missing_files(conn, limit=limit, offset=offset)
     finally:
         conn.close()
 

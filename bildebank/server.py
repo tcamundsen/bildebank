@@ -48,7 +48,6 @@ from .server_pages import (
     geo_index_page_html,
     h3_cells_page_html,
     geo_map_page_html,
-    geo_missing_page_html,
     geo_stats_page_html,
     index_html,
     markdown_doc_page_html,
@@ -699,9 +698,6 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         openclip_enabled=self.server.openclip_enabled,
                     )
                 )
-                return
-            if parsed.path == "/geo/missing":
-                self.respond_geo_missing(parsed.query)
                 return
             if parsed.path == "/geo/custom-places":
                 self.respond_html(
@@ -1598,21 +1594,6 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             )
             return
         self.respond_text(invalid_page_message, status=HTTPStatus.NOT_FOUND)
-
-    def respond_geo_missing(self, query: str) -> None:
-        params = urllib.parse.parse_qs(query)
-        limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
-        offset = nonnegative_int_param(params, "offset", 0)
-        self.respond_html(
-            geo_missing_page_html(
-                self.server.target,
-                limit=limit,
-                offset=offset,
-                face_enabled=self.server.face_enabled,
-                openclip_enabled=self.server.openclip_enabled,
-                hide_out_of_focus=self.server.hide_out_of_focus,
-            )
-        )
 
     def respond_set_geo_place_name(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)

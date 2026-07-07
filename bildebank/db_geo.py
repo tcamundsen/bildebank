@@ -481,19 +481,3 @@ def rename_custom_geo_place(
 
 def delete_custom_geo_place(conn: sqlite3.Connection, slug: str) -> None:
     conn.execute("DELETE FROM geo_places WHERE slug = ?", (slug.strip().lower(),))
-
-
-def geo_missing_files(conn: sqlite3.Connection, *, limit: int, offset: int = 0) -> list[sqlite3.Row]:
-    return list(
-        conn.execute(
-            f"""
-            SELECT {GEO_FILE_COLUMNS}
-            FROM files
-            WHERE deleted_at IS NULL
-              AND (gps_lat IS NULL OR gps_lon IS NULL)
-            ORDER BY {BROWSER_DATE_ORDER_SQL}, target_path_key
-            LIMIT ? OFFSET ?
-            """,
-            (limit, max(0, offset)),
-        )
-    )

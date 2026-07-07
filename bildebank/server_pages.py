@@ -176,26 +176,6 @@ def geo_area_page_html(
     )
 
 
-def geo_missing_page_html(
-    target: Path,
-    *,
-    limit: int = DEFAULT_GEO_LIMIT,
-    offset: int = 0,
-    face_enabled: bool = True,
-    openclip_enabled: bool = True,
-    hide_out_of_focus: bool = False,
-) -> str:
-    return server_geo.geo_missing_page_html(
-        target,
-        shell_page_html=shell_page_html,
-        limit=limit,
-        offset=offset,
-        face_enabled=face_enabled,
-        openclip_enabled=openclip_enabled,
-        hide_out_of_focus=hide_out_of_focus,
-    )
-
-
 def error_html(exc: Exception, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
     return server_shell.error_html(
         exc,
