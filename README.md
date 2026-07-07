@@ -57,7 +57,7 @@ bildebank start
 
 Programmet vil da åpne dette vinduet:
 
-![Screenshot av Bildebank-vinduet](docs/screenshots/bildebank.png)
+![Screenshot av Bildebank-vinduet](docs/web/screenshots/bildebank.png)
 
 Hvis dette fungerer kan du fortsette med å lese
 [Kom i gang med bildebank](docs/web/kom-i-gang.md).
