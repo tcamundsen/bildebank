@@ -2,13 +2,19 @@
 
 Bildebank er et program som kopierer bilder og videoer fra gamle mapper,
 minnekort, USB-disker og CD-er inn i én ryddig bildesamling sortert etter dato.
-Programmet endrer ikke originalmappene.
 
+Noen prinsipper som ligger til grunn for Bildebank:
+
+- Programmet skal ikke endre mappene det henter bilder fra. Alle bilder
+  kopieres inn i en ny mappestruktur.
+- Den nye bildesamlingen skal kunne brukes uten at Bildebank er installert.
+  Du skal kunne kopiere samlingen til en annen PC og bla i bildene med vanlige
+  filverktøy eller med en generert HTML-fil.
+- Du skal kunne se hvilken mappe, CD, USB-disk eller minnebrikke bildene
+  opprinnelig kom fra.
+- Programmet skal unngå å importere duplikater.
 
 # Installasjon
-
-Hvis du allerede har installert Bildebank, så kan du fortsette til
-[brukermanualen](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
 
 Denne oppskriften er skrevet for Windows 11 og for deg som ikke
 er vant til å bruke PowerShell eller andre terminalvinduer.
@@ -46,20 +52,19 @@ Når scriptet er ferdig, **lukk PowerShell og åpne PowerShell på nytt**. Da sk
 kunne skrive:
 
 ```powershell
-bildebank
+bildebank start
 ```
+
+Programmet vil da åpne dette vinduet:
+
+![Screenshot av Bildebank-vinduet](docs/screenshots/bildebank.png)
+
+Hvis dette fungerer kan du fortsette med å lese
+[Kom i gang med bildebank](docs/kom-i-gang.md).
 
 Hvis dette ikke virker, ble ikke installasjonen ferdig.
 
 Da er det på tide å ta kontakt med Tom Cato.
-
-Hvis dette fungerer kan du fortsette med å lese [brukermanualen](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md).
-
-Når programmet er installert, åpner du Bildebank-vinduet med:
-
-```powershell
-bildebank start
-```
 
 # Komplisert forklaring du ikke trenger å se på :-)
 
@@ -168,54 +173,12 @@ bildebank
 Nå skal forhåpentligvis [brukermanual](https://github.com/tcamundsen/bildebank/blob/main/docs/brukermanual.md)
 være neste trinn for deg.
 
-
-
 ## Vanlige problemer
 
-### `git` finnes ikke
+Hvis installasjonen stopper med en feilmelding, kopier hele feilmeldingen og
+send den til den som hjelper deg med Bildebank. Feilmeldingen sier vanligvis
+hvilket program eller hvilken rettighet som mangler.
 
-Git er ikke installert, eller PowerShell ble åpnet før Git ble installert.
-Installer Git for Windows og åpne PowerShell på nytt.
-
-### `py` finnes ikke
-
-Python er ikke installert, eller Python ble installert uten å bli lagt i PATH.
-Installer Python på nytt og huk av for `Add python.exe to PATH` hvis valget
-vises.
-
-### `bildebank.exe` virker ikke
-
-Ikke bruk `bildebank.exe` direkte. Bruk `bildebank.cmd`:
-
-```powershell
-.\bin\bildebank.cmd
-```
-
-Eller, hvis du står i en bildesamlingsmappe:
-
-```powershell
-..\kode\bildebank\bin\bildebank.cmd
-```
-
-### Programmet finner ikke kildemappen
-
-Sjekk at stien er riktig. Bruk hermetegn rundt stier med mellomrom:
-
-```powershell
-bildebank import --name etnavn "sti med mellomrom\bilder"
-```
-
-Unngå å avslutte stien med `\` rett før avsluttende hermetegn. Skriv heller:
-
-```powershell
-bildebank import --name etnavn "sti med mellomrom\bilder"
-```
-
-ikke:
-
-```powershell
-bildebank import --name "sti med mellomrom\bilder\"
-```
 
 ### Målmappen er låst
 

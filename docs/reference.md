@@ -1,18 +1,21 @@
 # Liste over alle kommandoer
 
+Bildebank begynte som et program der alt måtte gjøres fra PowerShell, og vi kun
+bladde i bildene i en statisk HTML-fil. I dag kan du gjøre alle de vanlige
+kommandoene fra Bildebank-vinduet eller fra nettleservinduet du åpner derfra,
+slik at du skjelden eller aldri trenger å kjøre dem selv i PowerShell.
+
 Kommandoer merket **cli** ("command line interface") kan bare kjøres fra
 PowerShell.
 
-Merket **vindu** betyr at det kommandoen gjør, kan gjøres fra Bildebank-vinduet
-som åpnes med `bildebank start`, i tillegg til fra PowerShell.
+Kommandoer merket **vindu** kjøres fra Bildebank-vinduet som åpnes med
+`bildebank start`, i tillegg til fra PowerShell.
 
 Merket **web** betyr at du kan få gjort det samme i nettleseren som det
-kommandoen gjør i powershell.
+kommandoen gjør i PowerShell.
 
 Merket **devel** betyr at kommandoen ikke er ment for sluttbrukere. De som ikke
 er merket har jeg ikke sett over ennå.
-
-Jeg har plassert det du trenger først og mest øverst i denne filen.
 
 ## Kom i gang
 

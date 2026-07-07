@@ -5,8 +5,8 @@
 usage: bildebank unimport [valg] --name navn
 
 Reverser en tidligere import. Kontrollerer først at alle registrerte
-originalfiler fortsatt finnes med samme innhold. Krever nøyaktig bekreftelse før
-noe endres.
+originalfiler fortsatt finnes med samme innhold. Krever nøyaktig bekreftelse
+før noe endres.
 
 options:
   -h, --help   show this help message and exit

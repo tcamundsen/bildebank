@@ -1,11 +1,15 @@
 Litt skriblerier om programmet [kan du lese her](om-bildebank.md).
+[Hvordan importere de første bildene](../kom-i-gang.md)
+
 Oversikt over alle kommandoer [finner du her](../reference.md).
+
 
 # Bildebrowser
 
-Her beskrives funksjonene til bildebrowseren vi får fra [`run-server`](../run-server.md).
+Her beskrives funksjonene til bildebrowseren i nettleseren, dvs nettsiden
+du får når du klikker **Start Bildebank i nettleser** fra Bildebank-vinduet.
 
-Vinduet som åpnes når du starter serveren viser en side der du ser første bilde
+Første side i bildebrowseren viser en side der du ser første bilde
 fra hvert år du har bilder fra. Når du klikker et bilde sendes du til
 månedsvisningen, som viser et bilde for hver måned du har bilder fra. Når du
 klikker på et bilde i månedsvisningen, åpnes bildesiden. Dette er visningen du
