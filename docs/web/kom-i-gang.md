@@ -1,6 +1,6 @@
 # Hvordan komme i gang med Bildebank
 
-Vi fortsetter her der vi slapp i [README](../README.md). For å starte Bildebank
+Vi fortsetter her der vi slapp i [README](../../README.md). For å starte Bildebank
 åpner du PowerShell og skriver følgende:
 
 ```powershell
