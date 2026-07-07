@@ -679,6 +679,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path.startswith("/help/"):
                 self.respond_help(parsed.path.removeprefix("/help/"))
                 return
+            if parsed.path == "/README.md":
+                self.respond_readme()
+                return
             if parsed.path in {"/geo", "/geo/"}:
                 self.respond_geo(parsed.query)
                 return
@@ -1976,6 +1979,25 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         self.respond_html(
             markdown_doc_page_html(
                 doc_path,
+                markdown,
+                face_enabled=self.server.face_enabled,
+                openclip_enabled=self.server.openclip_enabled,
+            )
+        )
+
+    def respond_readme(self) -> None:
+        readme_path = server_app.server_program_repo_root() / "README.md"
+        if not readme_path.is_file():
+            self.respond_text("README.md finnes ikke.", status=HTTPStatus.NOT_FOUND)
+            return
+        try:
+            markdown = readme_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        self.respond_html(
+            markdown_doc_page_html(
+                readme_path,
                 markdown,
                 face_enabled=self.server.face_enabled,
                 openclip_enabled=self.server.openclip_enabled,

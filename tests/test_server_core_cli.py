@@ -443,6 +443,44 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertEqual(absolute_handler.status, HTTPStatus.FORBIDDEN)
         self.assertEqual(text_handler.status, HTTPStatus.NOT_FOUND)
 
+    def test_run_server_routes_root_readme_to_markdown_page(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        handler.server = SimpleNamespace(read_only=False)
+        handler.path = "/README.md"
+        handler.routed = False
+        handler.respond_readme = lambda: setattr(handler, "routed", True)
+
+        BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
+
+        self.assertTrue(handler.routed)
+
+    def test_run_server_renders_root_readme_as_html(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "program"
+            root.mkdir()
+            (root / "README.md").write_text("# Bildebank\n\nSe `kommando`.", encoding="utf-8")
+
+            class FakeHandler:
+                server = SimpleNamespace(face_enabled=True, openclip_enabled=True)
+                body = ""
+                status = HTTPStatus.OK
+
+                def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+                def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                handler = FakeHandler()
+                BildebankRequestHandler.respond_readme(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.status, HTTPStatus.OK)
+        self.assertIn("<h1>Bildebank</h1>", handler.body)
+        self.assertIn("<code>kommando</code>", handler.body)
+
     def test_run_server_image_html_uses_display_source_and_original_link(self) -> None:
         body = item_media_html(
             Path("."),
