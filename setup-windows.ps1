@@ -95,6 +95,26 @@ function Remove-LegacyPythonMetadata {
     Remove-Item -LiteralPath (Join-Path $RepoDir "bilder.egg-info") -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+function Assert-BildebankPythonPackage {
+    param([string]$RepoDir)
+
+    $initFile = Join-Path $RepoDir "bildebank\__init__.py"
+    if (-not (Test-Path -LiteralPath $initFile)) {
+        throw "Installasjonen mangler $initFile. Slett installasjonsmappen og kjør setup på nytt."
+    }
+
+    $venvPython = Join-Path $RepoDir ".venv\Scripts\python.exe"
+    Push-Location $RepoDir
+    try {
+        Invoke-Native -FilePath $venvPython -ArgumentList @(
+            "-c",
+            "import sys, bildebank, bildebank.cli; from pathlib import Path; p = getattr(bildebank, '__file__', None); raise_error = p is None or Path(p).name != '__init__.py'; sys.exit('bildebank importeres ikke fra installasjonsmappen: %r' % (p,)) if raise_error else None"
+        )
+    } finally {
+        Pop-Location
+    }
+}
+
 function Refresh-ProcessPath {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -254,6 +274,7 @@ function Ensure-Venv {
     try {
         Remove-LegacyPythonMetadata -RepoDir $RepoDir
         Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "pip", "install", "-e", ".")
+        Assert-BildebankPythonPackage -RepoDir $RepoDir
     } finally {
         Pop-Location
     }
@@ -264,12 +285,15 @@ function Ensure-ExifTool {
 
     Write-Step "Installerer ExifTool"
     $venvPython = Join-Path $RepoDir ".venv\Scripts\python.exe"
+    Push-Location $RepoDir
     try {
-        Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "bildebank.cli", "exiftool-install")
+        Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "bildebank", "exiftool-install")
     } catch {
         Write-Host "Kunne ikke installere ExifTool automatisk: $($_.Exception.Message)"
         Write-Host "Du kan prøve igjen etter setup med:"
         Write-Host "  $CommandName exiftool-install"
+    } finally {
+        Pop-Location
     }
 }
 
