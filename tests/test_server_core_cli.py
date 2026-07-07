@@ -454,6 +454,17 @@ class ServerCoreCliTests(unittest.TestCase):
 
         self.assertTrue(handler.routed)
 
+    def test_run_server_routes_docs_paths_to_help_handler(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        handler.server = SimpleNamespace(read_only=False)
+        handler.path = "/docs/web/screenshots/bildebank.png"
+        handler.routed_path = ""
+        handler.respond_help = lambda raw_path: setattr(handler, "routed_path", raw_path)
+
+        BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.routed_path, "web/screenshots/bildebank.png")
+
     def test_run_server_renders_root_readme_as_html(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "program"

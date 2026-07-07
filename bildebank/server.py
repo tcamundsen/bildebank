@@ -679,6 +679,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path.startswith("/help/"):
                 self.respond_help(parsed.path.removeprefix("/help/"))
                 return
+            if parsed.path.startswith("/docs/"):
+                self.respond_help(parsed.path.removeprefix("/docs/"))
+                return
             if parsed.path == "/README.md":
                 self.respond_readme()
                 return
