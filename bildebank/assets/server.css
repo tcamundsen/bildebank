@@ -113,6 +113,14 @@
     .doc-content { line-height: 1.6; }
     .doc-content h1, .doc-content h2, .doc-content h3 { margin: 1.2em 0 0.45em; }
     .doc-content p, .doc-content ul, .doc-content pre, .doc-content table { margin: 0 0 1em; }
+    .doc-content img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+      margin: 0 0 1em;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
     .doc-content code {
       font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
       background: #303030;

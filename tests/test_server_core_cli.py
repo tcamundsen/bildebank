@@ -18,6 +18,7 @@ from bildebank.server import (
     BildebankRequestHandler,
     BildebankServer,
     is_local_bind_host,
+    resolve_doc_asset_path,
     run_server as run_http_server,
     validate_bind_host,
 )
@@ -368,6 +369,79 @@ class ServerCoreCliTests(unittest.TestCase):
 
         self.assertEqual(handler.status, HTTPStatus.BAD_REQUEST)
         self.assertIn("ikke et bilde", handler.body)
+
+    def test_run_server_resolves_help_images_under_docs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "program"
+            docs = root / "docs"
+            image_path = docs / "screenshots" / "bildebank.png"
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"png")
+            (docs / "not-image.txt").write_text("text", encoding="utf-8")
+
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                self.assertEqual(resolve_doc_asset_path("screenshots/bildebank.png"), image_path.resolve())
+                self.assertIsNone(resolve_doc_asset_path("../secret.png"))
+                self.assertIsNone(resolve_doc_asset_path("/screenshots/bildebank.png"))
+                self.assertIsNone(resolve_doc_asset_path("not-image.txt"))
+
+    def test_run_server_responds_with_help_image_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "program"
+            target = Path(tmp) / "target"
+            image_path = root / "docs" / "screenshots" / "bildebank.png"
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"png-bytes")
+
+            class FakeHandler:
+                server = SimpleNamespace(
+                    target=target,
+                    face_enabled=True,
+                    openclip_enabled=True,
+                )
+                content = b""
+                content_type = ""
+                body = ""
+                status = HTTPStatus.OK
+
+                def respond_bytes(
+                    self,
+                    content: bytes,
+                    content_type: str,
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.content = content
+                    self.content_type = content_type
+                    self.status = status
+
+                def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+                def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+            with patch("bildebank.server_app.server_program_repo_root", return_value=root):
+                handler = FakeHandler()
+                BildebankRequestHandler.respond_help(handler, "screenshots/bildebank.png")  # type: ignore[arg-type]
+                missing_handler = FakeHandler()
+                BildebankRequestHandler.respond_help(missing_handler, "screenshots/mangler.png")  # type: ignore[arg-type]
+                traversal_handler = FakeHandler()
+                BildebankRequestHandler.respond_help(traversal_handler, "../secret.png")  # type: ignore[arg-type]
+                absolute_handler = FakeHandler()
+                BildebankRequestHandler.respond_help(absolute_handler, "/screenshots/bildebank.png")  # type: ignore[arg-type]
+                text_handler = FakeHandler()
+                BildebankRequestHandler.respond_help(text_handler, "screenshots/not-image.txt")  # type: ignore[arg-type]
+
+        self.assertEqual(handler.content, b"png-bytes")
+        self.assertEqual(handler.content_type, "image/png")
+        self.assertEqual(handler.status, HTTPStatus.OK)
+        self.assertEqual(missing_handler.status, HTTPStatus.NOT_FOUND)
+        self.assertEqual(traversal_handler.status, HTTPStatus.FORBIDDEN)
+        self.assertEqual(absolute_handler.status, HTTPStatus.FORBIDDEN)
+        self.assertEqual(text_handler.status, HTTPStatus.NOT_FOUND)
 
     def test_run_server_image_html_uses_display_source_and_original_link(self) -> None:
         body = item_media_html(

@@ -8,6 +8,7 @@ from typing import Callable
 
 
 ShellPageRenderer = Callable[..., str]
+DOC_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
 
 def resolve_doc_path(raw_doc_path: str, docs_root: Path) -> Path | None:
@@ -26,6 +27,35 @@ def resolve_doc_path(raw_doc_path: str, docs_root: Path) -> Path | None:
     except ValueError:
         return None
     return candidate
+
+
+def resolve_doc_asset_path(raw_asset_path: str, docs_root: Path) -> Path | None:
+    raw_path = urllib.parse.unquote(raw_asset_path).strip()
+    if not raw_path or "\\" in raw_path:
+        return None
+    parsed = urllib.parse.urlsplit(raw_path)
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        return None
+    if parsed.path.startswith("/") or parsed.path.startswith("//"):
+        return None
+    relative = Path(parsed.path)
+    if relative.is_absolute() or any(part == ".." for part in relative.parts):
+        return None
+    if relative.suffix.casefold() not in DOC_IMAGE_SUFFIXES:
+        return None
+    clean_docs_root = docs_root.resolve()
+    candidate = (clean_docs_root / relative).resolve()
+    try:
+        candidate.relative_to(clean_docs_root)
+    except ValueError:
+        return None
+    return candidate
+
+
+def doc_asset_path_has_image_suffix(raw_asset_path: str) -> bool:
+    raw_path = urllib.parse.unquote(raw_asset_path).strip()
+    parsed = urllib.parse.urlsplit(raw_path)
+    return Path(parsed.path).suffix.casefold() in DOC_IMAGE_SUFFIXES
 
 
 def markdown_doc_page_html(
@@ -245,13 +275,33 @@ def strip_markdown_cli_help_markers(markdown: str) -> str:
 
 
 def markdown_inline_html(text: str) -> str:
+    image_replacements: list[str] = []
+
+    def store_image(match: re.Match[str]) -> str:
+        index = len(image_replacements)
+        image_replacements.append(markdown_image_html(match.group(1), match.group(2)))
+        return f"\x00BILDEBANK_IMAGE_{index}\x00"
+
+    text = re.sub(r"!\[([^\]]*)\]\(([^)]+)\)", store_image, text)
     escaped = html.escape(text)
     escaped = re.sub(r"`([^`]+)`", lambda match: f"<code>{match.group(1)}</code>", escaped)
     escaped = re.sub(r"\*\*([^*]+)\*\*", lambda match: f"<strong>{match.group(1)}</strong>", escaped)
-    return re.sub(
+    escaped = re.sub(
         r"\[([^\]]+)\]\(([^)]+)\)",
         lambda match: markdown_link_html(match.group(1), match.group(2)),
         escaped,
+    )
+    for index, replacement in enumerate(image_replacements):
+        escaped = escaped.replace(f"\x00BILDEBANK_IMAGE_{index}\x00", replacement)
+    return escaped
+
+
+def markdown_image_html(alt: str, url: str) -> str:
+    if not safe_markdown_image_url(url):
+        return html.escape(alt)
+    return (
+        f'<img src="{html.escape(url, quote=True)}" '
+        f'alt="{html.escape(alt, quote=True)}" loading="lazy">'
     )
 
 
@@ -264,3 +314,18 @@ def markdown_link_html(label: str, url: str) -> str:
 def safe_markdown_link(url: str) -> bool:
     parsed = urllib.parse.urlparse(url)
     return parsed.scheme in {"", "http", "https"} and not url.startswith("//")
+
+
+def safe_markdown_image_url(url: str) -> bool:
+    if "\\" in url:
+        return False
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme or parsed.netloc or parsed.query or parsed.fragment:
+        return False
+    if parsed.path.startswith("/") or parsed.path.startswith("//"):
+        return False
+    path = urllib.parse.unquote(parsed.path)
+    relative = Path(path)
+    if relative.is_absolute() or any(part == ".." for part in relative.parts):
+        return False
+    return relative.suffix.casefold() in DOC_IMAGE_SUFFIXES

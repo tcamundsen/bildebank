@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import ipaddress
+import mimetypes
 import secrets
 import sys
 import time
@@ -1943,6 +1944,23 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         self.respond_bytes(served_file.content, served_file.content_type)
 
     def respond_help(self, raw_help_path: str) -> None:
+        doc_asset_path = resolve_doc_asset_path(raw_help_path)
+        if doc_asset_path is not None:
+            if not doc_asset_path.is_file():
+                self.respond_text("Hjelpebildet finnes ikke.", status=HTTPStatus.NOT_FOUND)
+                return
+            content_type = mimetypes.guess_type(doc_asset_path.name)[0] or "application/octet-stream"
+            try:
+                content = doc_asset_path.read_bytes()
+            except OSError as exc:
+                self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                return
+            self.respond_bytes(content, content_type)
+            return
+        if server_markdown.doc_asset_path_has_image_suffix(raw_help_path):
+            self.respond_text("Ugyldig hjelpebilde.", status=HTTPStatus.FORBIDDEN)
+            return
+
         doc_path = resolve_doc_path(raw_help_path)
         if doc_path is None:
             self.respond_text("Ugyldig hjelpeside.", status=HTTPStatus.FORBIDDEN)
@@ -2563,6 +2581,10 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
 
 def resolve_doc_path(raw_doc_path: str) -> Path | None:
     return server_markdown.resolve_doc_path(raw_doc_path, server_app.server_program_repo_root() / "docs")
+
+
+def resolve_doc_asset_path(raw_asset_path: str) -> Path | None:
+    return server_markdown.resolve_doc_asset_path(raw_asset_path, server_app.server_program_repo_root() / "docs")
 
 
 def run_server(

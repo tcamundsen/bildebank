@@ -57,6 +57,32 @@ Vanlig dokumentasjon.
         )
         self.assertIn("<ul><li>Ferdig</li></ul>", html)
 
+    def test_markdown_help_renderer_supports_local_images(self) -> None:
+        html = markdown_to_html("![Screenshot av Bildebank-vinduet](screenshots/bildebank.png)")
+
+        self.assertIn(
+            '<img src="screenshots/bildebank.png" alt="Screenshot av Bildebank-vinduet" loading="lazy">',
+            html,
+        )
+
+    def test_markdown_help_renderer_keeps_regular_links(self) -> None:
+        html = markdown_to_html("Se [hjelpen](help.md).")
+
+        self.assertIn('<a href="help.md">hjelpen</a>', html)
+
+    def test_markdown_help_renderer_rejects_unsafe_images(self) -> None:
+        cases = [
+            "![Nettbilde](https://example.test/bilde.png)",
+            "![Nettbilde](//example.test/bilde.png)",
+            "![Absolutt](/screenshots/bildebank.png)",
+            "![Hemmelig](../secret.png)",
+        ]
+
+        for markdown in cases:
+            with self.subTest(markdown=markdown):
+                html = markdown_to_html(markdown)
+                self.assertNotIn("<img", html)
+
     def test_markdown_help_renderer_supports_wrapped_list_items(self) -> None:
         html = markdown_to_html(
             """- Første punkt går
