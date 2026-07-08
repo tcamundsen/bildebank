@@ -939,6 +939,50 @@ def test_image_search_enabled_reads_openclip_config_field(tmp_path: Path) -> Non
         assert not launcher._image_search_enabled()
 
 
+def test_image_scan_openclip_install_finish_refreshes_launcher_status(tmp_path: Path) -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher.collection_path = tmp_path / "samling"
+    launcher.busy = False
+    launcher.migration_required = False
+    launcher.migration_status_error = None
+    launcher.dependency_status_refreshing = False
+    launcher.buttons = []
+    launcher.choose_collection_button = None
+    launcher.create_collection_button = None
+    launcher.start_server_button = None
+    launcher.backup_button = None
+    launcher.face_scan_button = None
+    launcher.image_scan_button = None
+    launcher.update_button = None
+    launcher.install_insightface_button = None
+    launcher.install_openclip_button = None
+    launcher.download_face_model_button = None
+    launcher.exit_button = None
+    launcher.cancel_command_button = None
+    launcher.active_command_cancellable = False
+    launcher.active_command_cancel_requested = False
+    launcher.update_status = LauncherUpdateStatus("current")
+    launcher.update_button_icons = {}
+    launcher._apply_update_button_state = lambda: None
+    launcher._log = lambda _message: None
+    launcher._apply_dependency_status_values = lambda: None
+    actions: list[str] = []
+
+    with (
+        patch("bildebank.launcher.openclip_dependency_status", return_value="Installert"),
+        patch(
+            "bildebank.launcher.openclip_model_status",
+            return_value=OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig"),
+        ),
+        patch("bildebank.launcher.is_collection_created", return_value=True),
+    ):
+        launcher._image_scan_openclip_install_finished(lambda: actions.append("next"))
+
+    assert launcher.openclip_status == "Installert"
+    assert launcher.openclip_model_status.status == "Tilgjengelig"
+    assert actions == ["next"]
+
+
 def test_image_scan_preflight_can_be_cancelled(tmp_path: Path) -> None:
     launcher = BildebankLauncher.__new__(BildebankLauncher)
     launcher.collection_path = tmp_path / "samling"

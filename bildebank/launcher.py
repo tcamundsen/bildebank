@@ -1877,7 +1877,26 @@ class BildebankLauncher:
 
     def _image_scan_openclip_install_finished(self, on_success: Callable[[], None]) -> None:
         importlib.invalidate_caches()
+        self._refresh_openclip_status_after_install()
         on_success()
+
+    def _refresh_openclip_status_after_install(self) -> None:
+        try:
+            self.openclip_status = openclip_dependency_status()
+        except Exception as exc:  # noqa: BLE001 - setup status must not block launcher flow
+            self.openclip_status = f"Feil: {exc}"
+        try:
+            self.openclip_model_status = openclip_model_status()
+        except Exception as exc:  # noqa: BLE001 - setup status must not block launcher flow
+            self.openclip_model_status = OpenClipModelStatus("", "", "Feil", str(exc))
+        self._log_dependency_status_detail("OpenCLIP", self.openclip_status, "")
+        self._log_dependency_status_detail(
+            "OpenCLIP-modell",
+            self.openclip_model_status.status,
+            self.openclip_model_status.detail,
+        )
+        self._apply_dependency_status_values()
+        self._set_buttons_enabled(not self.busy)
 
     def _run_image_scan_enable_step(self, on_success: Callable[[], None]) -> None:
         try:
@@ -2227,6 +2246,7 @@ class BildebankLauncher:
 
     def _openclip_install_finished(self) -> None:
         importlib.invalidate_caches()
+        self._refresh_openclip_status_after_install()
         self._start_dependency_status_refresh()
 
     def _download_face_model(self) -> None:
