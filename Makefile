@@ -27,6 +27,9 @@ mtest:
 radontest:
 	python -m radon cc -s -a --min D bildebank/*.py
 
+README.html: README.md
+	python $(TOOLS_DIR)/gen-html-docs.py $< $@
+
 $(HTML_DIR)/%.html: $(DOCS_DIR)/%.md $(TOOLS_DIR)/gen-html-docs.py $(STAMP_DIR)/%.stamp
 	@mkdir -p $(@D)
 	python $(TOOLS_DIR)/gen-html-docs.py $< $@
