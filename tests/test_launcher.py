@@ -11,6 +11,8 @@ from unittest.mock import patch
 from bildebank import db
 from bildebank.launcher import (
     BildebankLauncher,
+    FACE_SCAN_INSIGHTFACE_MISSING_TOOLTIP,
+    FACE_SCAN_TOOLTIP,
     InsightFaceDependencyStatus,
     InsightFaceModelStatus,
     LauncherConfig,
@@ -671,8 +673,12 @@ def launcher_with_main_action_buttons(collection_path: Path) -> BildebankLaunche
     launcher.create_collection_button = FakeButton()
     launcher.start_server_button = FakeButton()
     launcher.backup_button = FakeButton()
+    launcher.face_scan_button = FakeButton()
+    launcher.face_scan_tooltip = type("FakeTooltip", (), {"text": FACE_SCAN_TOOLTIP})()
     launcher.update_button = FakeButton()
-    launcher.buttons.extend([launcher.start_server_button, launcher.backup_button, launcher.update_button])
+    launcher.buttons.extend(
+        [launcher.start_server_button, launcher.backup_button, launcher.face_scan_button, launcher.update_button]
+    )
     launcher.update_button_icons = {}
     launcher.update_status = LauncherUpdateStatus("current")
     launcher.busy = False
@@ -686,6 +692,7 @@ def launcher_with_main_action_buttons(collection_path: Path) -> BildebankLaunche
     launcher.cancel_command_button = None
     launcher.active_command_cancellable = False
     launcher.active_command_cancel_requested = False
+    launcher.insightface_status = InsightFaceDependencyStatus("Klar")
     return launcher
 
 
@@ -713,6 +720,23 @@ def test_main_action_buttons_with_collection_disable_create(tmp_path: Path) -> N
     assert launcher.start_server_button.options["state"] == "normal"
     assert launcher.backup_button.options["state"] == "normal"
     assert launcher.update_button.options.get("state", "normal") == "normal"
+
+
+def test_face_scan_button_disabled_and_tooltip_explains_missing_insightface(tmp_path: Path) -> None:
+    launcher = launcher_with_main_action_buttons(tmp_path / "samling")
+    launcher.insightface_status = InsightFaceDependencyStatus("Mangler", "mangler insightface")
+
+    with patch("bildebank.launcher.is_collection_created", return_value=True):
+        launcher._set_buttons_enabled(True)
+
+    assert launcher.face_scan_button.options["state"] == "disabled"
+    assert launcher.face_scan_tooltip.text == FACE_SCAN_INSIGHTFACE_MISSING_TOOLTIP
+
+    launcher.insightface_status = InsightFaceDependencyStatus("Klar")
+    launcher._set_buttons_enabled(True)
+
+    assert launcher.face_scan_button.options["state"] == "normal"
+    assert launcher.face_scan_tooltip.text == FACE_SCAN_TOOLTIP
 
 
 def test_create_collection_tooltip_explains_disabled_existing_collection() -> None:

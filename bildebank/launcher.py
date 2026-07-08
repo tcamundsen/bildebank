@@ -36,6 +36,13 @@ else:
 
 PAD_OUTER = 16
 BUTTON_STYLE = "Launcher.TButton"
+FACE_SCAN_TOOLTIP = (
+    "Kjører 'bildebank face-scan'. Denne kommandoen scanner bildene etter ansikter. "
+    "Må kjøres på nytt når du legger til nye biler."
+)
+FACE_SCAN_INSIGHTFACE_MISSING_TOOLTIP = (
+    "Trykk knappen 'Installer Insightface' på Oppsett-fanen for å slå på ansiktsgjenkjenning."
+)
 
 PROGRESS_LOG_LABELS = (
     "Import",
@@ -679,6 +686,8 @@ class BildebankLauncher:
         self.create_collection_tooltip: Tooltip | None = None
         self.start_server_button: ttk.Button | None = None
         self.backup_button: ttk.Button | None = None
+        self.face_scan_button: ttk.Button | None = None
+        self.face_scan_tooltip: Tooltip | None = None
         self.install_insightface_button: ttk.Button | None = None
         self.install_openclip_button: ttk.Button | None = None
         self.download_face_model_button: ttk.Button | None = None
@@ -1124,12 +1133,10 @@ class BildebankLauncher:
                     text="Finn ansikter",
                     command=self._run_face_scan,
                 )
+                self.face_scan_button = face_button
                 face_button.grid(row=0, column=2, padx=PADX, pady=PADY, sticky="ew")
-                self._add_tooltip(
-                    face_button,
-                    "Kjører 'bildebank face-scan'. Denne kommandoen scanner bildene etter ansikter. "
-                    "Må kjøres på nytt når du legger til nye biler."
-                )
+                self.face_scan_tooltip = Tooltip(face_button, FACE_SCAN_TOOLTIP)
+                self.tooltips.append(self.face_scan_tooltip)
                 image_scan_button = self._button(
                     self.tools_button_frame,
                     text="Klargjør bildesøk",
@@ -1476,6 +1483,15 @@ class BildebankLauncher:
             self.start_server_button.configure(state="disabled")
         if self.backup_button is not None and not collection_created:
             self.backup_button.configure(state="disabled")
+        if self.face_scan_button is not None:
+            face_scan_enabled = enabled and self.insightface_status.status == "Klar"
+            self.face_scan_button.configure(state="normal" if face_scan_enabled else "disabled")
+            if self.face_scan_tooltip is not None:
+                self.face_scan_tooltip.text = (
+                    FACE_SCAN_TOOLTIP
+                    if self.insightface_status.status == "Klar"
+                    else FACE_SCAN_INSIGHTFACE_MISSING_TOOLTIP
+                )
         if self.update_button is not None and (self.update_status.status == "checking" or not enabled):
             self.update_button.configure(state="disabled")
         if self.install_insightface_button is not None:
