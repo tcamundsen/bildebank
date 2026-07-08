@@ -79,12 +79,18 @@
   }
   function updateMaintenanceRow(row, payload) {
     const status = row?.querySelector("[data-maintenance-status]");
+    const coverageStatus = row?.querySelector("[data-maintenance-coverage-status]");
     const current = row?.querySelector("[data-maintenance-current]");
     const missing = row?.querySelector("[data-maintenance-missing]");
     const total = row?.querySelector("[data-maintenance-total]");
     if (current) current.textContent = String(payload.current);
     if (missing) missing.textContent = String(payload.missing);
     if (total) total.textContent = String(payload.total);
+    if (coverageStatus) {
+      coverageStatus.replaceChildren(
+        document.createTextNode(`${payload.current} av ${payload.total}`)
+      );
+    }
     setMaintenanceStatusMessage(status, payload);
     if (row?.classList.contains("dashboard-action")) {
       const severity = row.querySelector("strong");

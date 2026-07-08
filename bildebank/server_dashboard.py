@@ -315,12 +315,9 @@ def maintenance_info_row_html(name: str) -> str:
     <div class="info-row" data-maintenance-name="{html.escape(name)}">
       <dt>{html.escape(name)}</dt>
       <dd>
-        <a href="/help/{html.escape(name)}.md" data-maintenance-status>Oppdaterer...</a>
-        <span class="dashboard-maintenance-counts">
-          (<span data-maintenance-current>-</span> scannet,
-          <span data-maintenance-missing>-</span> mangler,
-          <span data-maintenance-total>-</span> totalt)
-        </span>
+        <a href="/help/{html.escape(name)}.md" data-maintenance-coverage-status>
+          <span data-maintenance-current>-</span> av <span data-maintenance-total>-</span>
+        </a>
       </dd>
     </div>
     """
