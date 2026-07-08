@@ -4,7 +4,7 @@ import html
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, cast
 
 from . import db
 from .config import AppConfig
@@ -84,9 +84,11 @@ def dashboard_summary(target: Path) -> DashboardSummary:
     conn = db.connect(target)
     try:
         status_counts = db.status_counts(conn)
-        media_counts = dict(status_counts["media"])
+        total_active = cast(int, status_counts["total"])
+        media_counts = cast(dict[str, int], status_counts["media"])
+        date_source_counts = cast(dict[str, int], status_counts["date_sources"])
         return DashboardSummary(
-            total_active=int(status_counts["total"]),
+            total_active=int(total_active),
             active_images=int(media_counts.get("bilder", 0)),
             active_videos=int(media_counts.get("videoer", 0)),
             deleted_files=len(list(db.deleted_files(conn))),
@@ -97,7 +99,7 @@ def dashboard_summary(target: Path) -> DashboardSummary:
             name_conflicts=count_name_conflicts(conn),
             undated_files=count_undated_files(conn),
             pending_file_moves=len(db.prepared_pending_file_moves(conn)),
-            date_source_counts={str(key): int(value) for key, value in dict(status_counts["date_sources"]).items()},
+            date_source_counts={str(key): int(value) for key, value in date_source_counts.items()},
             geo_stats=db.geo_stats(conn),
         )
     finally:
