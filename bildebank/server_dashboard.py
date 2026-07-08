@@ -23,6 +23,7 @@ class DashboardAction:
     link_path: str | None = None
     maintenance_name: str | None = None
     gui_label: str | None = None
+    thumbnail_maintenance: bool = False
 
 
 @dataclass(frozen=True)
@@ -189,6 +190,7 @@ def dashboard_actions(summary: DashboardSummary) -> tuple[DashboardAction, ...]:
             'I Bildebank-vinduet kan du trykke "Lag miniatyrbilder".',
             "bildebank make-thumbnails",
             "/help/make-thumbnails.md",
+            thumbnail_maintenance=True,
         )
     )
     actions.append(
@@ -282,7 +284,7 @@ def coverage_section_html(summary: DashboardSummary) -> str:
           {info_row_html("GPS uten treff", str(summary.geo_stats["without_gps"]), "/geo/stats")}
           {info_row_html("GPS-feil", str(summary.geo_stats["errors"]), "/geo/stats")}
           {maintenance_rows}
-          {info_row_html("Thumbnails", "Telles via /api/maintenance/thumbnails", "/help/make-thumbnails.md")}
+          {thumbnail_coverage_info_row_html()}
         </dl>
         """,
     )
@@ -323,6 +325,19 @@ def maintenance_info_row_html(name: str) -> str:
     """
 
 
+def thumbnail_coverage_info_row_html() -> str:
+    return """
+    <div class="info-row">
+      <dt>Thumbnails</dt>
+      <dd>
+        <a href="/help/make-thumbnails.md" data-thumbnail-coverage-status>
+          Telles under Anbefalte handlinger
+        </a>
+      </dd>
+    </div>
+    """
+
+
 def dashboard_action_html(action: DashboardAction) -> str:
     command_html = f'<code>{html.escape(action.command)}</code>' if action.command else ""
     help_html = f'<a href="{html.escape(action.help_path)}">Hjelp</a>' if action.help_path else ""
@@ -340,6 +355,7 @@ def dashboard_action_html(action: DashboardAction) -> str:
         if action.maintenance_name and action.gui_label
         else ""
     )
+    thumbnail_attr = " data-thumbnail-maintenance" if action.thumbnail_maintenance else ""
     detail_attr = " data-maintenance-status" if action.maintenance_name else ""
     counts_html = (
         """
@@ -352,8 +368,21 @@ def dashboard_action_html(action: DashboardAction) -> str:
         if action.maintenance_name
         else ""
     )
+    thumbnail_counts_html = (
+        """
+      <p class="status" data-thumbnail-status>Ikke telt ennå</p>
+      <button type="button" class="maintenance-action" title="Sjekk på disk hvor mange bilder som har thumbnails" data-count-thumbnails>Tell thumbnails</button>
+      <dl class="maintenance-counts">
+        <div><dt>Oppdatert</dt><dd data-thumbnail-current>-</dd></div>
+        <div><dt>Mangler</dt><dd data-thumbnail-missing>-</dd></div>
+        <div><dt>Totalt</dt><dd data-thumbnail-total>-</dd></div>
+      </dl>
+        """
+        if action.thumbnail_maintenance
+        else ""
+    )
     return f"""
-    <article class="dashboard-action dashboard-action-{severity_class}"{maintenance_attr}>
+    <article class="dashboard-action dashboard-action-{severity_class}"{maintenance_attr}{thumbnail_attr}>
       <div>
         <h3>{html.escape(action.title)}</h3>
         <p{detail_attr}>{html.escape(action.detail)}</p>
@@ -362,5 +391,6 @@ def dashboard_action_html(action: DashboardAction) -> str:
       {command_html}
       <div class="dashboard-action-links">{links}</div>
       {counts_html}
+      {thumbnail_counts_html}
     </article>
     """

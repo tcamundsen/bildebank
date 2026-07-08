@@ -103,7 +103,6 @@ def app_status_page_html(
           <a href="/settings/removed">Slettede bilder</a>
           <a href="/sources" title='Lister output fra "bildebank list-sources"'>Importerte mapper</a>
         </nav>
-        {maintenance_statuses_html()}
         <h2>Innstillinger</h2>
         <dl class="info-list app-status">
           {rows}

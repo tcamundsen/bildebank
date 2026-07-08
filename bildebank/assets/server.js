@@ -151,14 +151,19 @@
       if (current) current.textContent = String(payload.current);
       if (missing) missing.textContent = String(payload.missing);
       if (total) total.textContent = String(payload.total);
+      document.querySelectorAll("[data-thumbnail-coverage-status]").forEach(coverageStatus => {
+        coverageStatus.replaceChildren(
+          document.createTextNode(`${payload.current} av ${payload.total}`)
+        );
+      });
       if (status) {
         if (Number(payload.missing) === 0) {
           status.textContent = "Oppdatert";
         } else {
           status.replaceChildren(
-            document.createTextNode(`${payload.missing} bilder mangler thumbnails, kjør `),
-            Object.assign(document.createElement("code"), {textContent: "bildebank make-thumbnails"}),
-            document.createTextNode(" fra PowerShell.")
+            document.createTextNode(
+              `${payload.missing} bilder mangler thumbnails. Klikk "Lag miniatyrbilder" i Bildebank-vinduet.`
+            )
           );
         }
       }
