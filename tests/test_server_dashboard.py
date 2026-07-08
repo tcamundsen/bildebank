@@ -91,6 +91,9 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertIn("Uløste feil", body)
         self.assertIn("bildebank errors", body)
         self.assertIn("bildebank doctor", body)
+        self.assertIn("Navnekollisjoner", body)
+        self.assertIn("Ufarlig: Bildebank er designet for å håndtere dette.", body)
+        self.assertIn('href="/help/show-conflict.md"', body)
         self.assertIn("bildebank refresh-metadata", body)
         self.assertIn("bildebank geo-scan", body)
         self.assertIn("bildebank face-scan", body)
@@ -118,6 +121,35 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertNotIn("bildebank geo-scan", [action.command for action in actions])
         self.assertNotIn("bildebank face-scan", [action.command for action in actions])
         self.assertNotIn("bildebank image-scan", [action.command for action in actions])
+
+    def test_run_server_dashboard_name_conflicts_are_info_not_recommended_action(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = insert_test_file(target, "2024/01/image.jpg", sha256="sha-image")
+            conn = db.connect(target)
+            try:
+                conn.execute("UPDATE files SET name_conflict = 1 WHERE id = ?", (file_id,))
+                conn.commit()
+            finally:
+                conn.close()
+            statuses = (
+                MaintenanceStatus("face-scan", 1, 1, 0, "/help/face-scan.md"),
+                MaintenanceStatus("geo-scan", 1, 1, 0, "/help/geo-scan.md"),
+                MaintenanceStatus("image-scan", 1, 1, 0, "/help/image-scan.md"),
+            )
+            with patch("bildebank.server_dashboard.server_app.maintenance_statuses", return_value=statuses):
+                summary = dashboard_summary(target, AppConfig())
+                body = dashboard_page_html(
+                    target,
+                    AppConfig(),
+                    shell_page_html=lambda title, content, **kwargs: content,
+                )
+
+        self.assertEqual(summary.name_conflicts, 1)
+        self.assertNotIn("Navnekollisjoner", [action.title for action in dashboard_actions(summary)])
+        self.assertIn("Navnekollisjoner", body)
+        self.assertIn("Ufarlig: Bildebank er designet for å håndtere dette.", body)
 
     def test_run_server_dashboard_route_is_available_in_read_only_mode(self) -> None:
         handler = object.__new__(BildebankRequestHandler)
@@ -154,4 +186,3 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertIn('<header class="browser-header">', body)
         self.assertIn('href="/dashboard">Dashboard</a>', body)
         self.assertIn("Dashboard", body)
-

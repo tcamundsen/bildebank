@@ -171,16 +171,6 @@ def dashboard_actions(summary: DashboardSummary) -> tuple[DashboardAction, ...]:
                 "/help/doctor.md",
             )
         )
-    if summary.name_conflicts:
-        actions.append(
-            DashboardAction(
-                "Navnekollisjoner",
-                "bør gjøres",
-                f"{summary.name_conflicts} filer fikk justert filnavn ved import.",
-                None,
-                "/help/show-conflict.md",
-            )
-        )
     if summary.undated_files:
         actions.append(
             DashboardAction(
@@ -259,7 +249,15 @@ def control_section_html(summary: DashboardSummary) -> str:
         f"""
         <dl class="info-list">
           {info_row_html("Uløste feil", str(summary.unresolved_errors), "/help/errors.md")}
-          {info_row_html("Navnekollisjoner", str(summary.name_conflicts), "/help/show-conflict.md")}
+          {info_row_html(
+              "Navnekollisjoner",
+              str(summary.name_conflicts),
+              "/help/show-conflict.md",
+              title=(
+                  "Ufarlig: Bildebank er designet for å håndtere dette. "
+                  "Ved import får ulike filer med samme navn et nytt lagret filnavn."
+              ),
+          )}
           {info_row_html("Filer uten dato", str(summary.undated_files), "/help/refresh-metadata.md")}
           {info_row_html("Uavklarte filflyttinger", str(summary.pending_file_moves), "/help/doctor.md")}
         </dl>
@@ -304,10 +302,11 @@ def dashboard_card_html(title: str, content: str) -> str:
     """
 
 
-def info_row_html(label: str, value: str, href: str | None = None) -> str:
+def info_row_html(label: str, value: str, href: str | None = None, *, title: str | None = None) -> str:
     rendered_value = html.escape(value)
     if href:
-        rendered_value = f'<a href="{html.escape(href)}">{rendered_value}</a>'
+        title_attr = f' title="{html.escape(title)}"' if title else ""
+        rendered_value = f'<a href="{html.escape(href)}"{title_attr}>{rendered_value}</a>'
     return f"""
     <div class="info-row">
       <dt>{html.escape(label)}</dt>
