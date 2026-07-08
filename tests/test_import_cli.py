@@ -68,6 +68,42 @@ class ImportCliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_import_resolves_previous_file_errors_after_successful_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    "insert into errors(stage, source_path, message) values(?, ?, ?)",
+                    ("import", str(source_file), "cannot import name 'time_perf' from 'time'"),
+                )
+                conn.execute(
+                    "insert into errors(stage, source_path, message) values(?, ?, ?)",
+                    ("scan", str(source_file), "midlertidig scan-feil"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "errors"])
+            self.assertEqual(code, 0, stderr)
+            self.assertNotIn("time_perf", stdout)
+            self.assertNotIn("midlertidig scan-feil", stdout)
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "errors", "--include-resolved"])
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("time_perf", stdout)
+            self.assertIn("midlertidig scan-feil", stdout)
+
     def test_import_accepts_raw_nef_and_psd_archive_images(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

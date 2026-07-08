@@ -413,6 +413,44 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             self.assertIn("FEIL", stdout)
             self.assertIn("Filen finnes ikke", stdout)
 
+    def test_refresh_metadata_resolves_missing_file_error_when_file_exists_without_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"filename-date")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    "insert into errors(stage, source_path, message) values(?, ?, ?)",
+                    ("refresh-metadata", str(imported), f"Målfil finnes ikke: {imported}"),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "refresh-metadata", "--verbose"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("INGEN_METADATA", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                unresolved = conn.execute(
+                    "select count(*) from errors where resolved_at is null"
+                ).fetchone()[0]
+                self.assertEqual(unresolved, 0)
+            finally:
+                conn.close()
+
     def test_refresh_metadata_reports_missing_target_path_without_hash_repair(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -115,6 +115,7 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
             stats.scanned += 1
             try:
                 process_file(conn, target, source, path, stats)
+                resolve_successful_import_errors(conn, path)
             except Exception as exc:  # noqa: BLE001 - errors must be logged, not abort import
                 stats.errors += 1
                 db.insert_error(
@@ -149,6 +150,11 @@ def import_source(conn, target: Path, source: db.Source, *, verbose: bool = True
         db.mark_source_error(conn, source.id)
     conn.commit()
     return stats
+
+
+def resolve_successful_import_errors(conn, path: Path) -> None:
+    db.resolve_errors_for_path(conn, stage="scan", source_path=path)
+    db.resolve_errors_for_path(conn, stage="import", source_path=path)
 
 
 def import_source_dry_run(
@@ -650,6 +656,8 @@ def refresh_non_metadata_file(
                 camera_make=camera.make,
                 camera_model=camera.model,
             )
+        if not dry_run:
+            db.resolve_errors_for_path(conn, stage="refresh-metadata", source_path=current_path)
         return
 
     stats.metadata_found += 1
