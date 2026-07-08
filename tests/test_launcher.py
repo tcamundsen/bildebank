@@ -81,6 +81,7 @@ def test_load_config_uses_default_when_file_is_missing(tmp_path: Path) -> None:
     with (
         patch("pathlib.Path.home", return_value=tmp_path / "home"),
         patch("bildebank.launcher.program_repo_root", return_value=tmp_path / "repo"),
+        patch("bildebank.launcher.db.find_target", return_value=None),
     ):
         config = load_launcher_config()
 
@@ -98,8 +99,27 @@ def test_save_and_load_launcher_config_uses_bildebank_config_toml(tmp_path: Path
     config_text = (repo_root / "bildebank-config.toml").read_text(encoding="utf-8")
     assert "[launcher]" in config_text
     assert f'collection_path = "{collection_path}"' in config_text
-    with patch("bildebank.launcher.program_repo_root", return_value=repo_root):
+    with (
+        patch("bildebank.launcher.program_repo_root", return_value=repo_root),
+        patch("bildebank.launcher.db.find_target", return_value=None),
+    ):
         assert load_launcher_config().collection_path == collection_path
+
+
+def test_load_launcher_config_prefers_current_collection_over_saved_path(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    saved_path = tmp_path / "gammel"
+    current_path = tmp_path / "ny"
+
+    with patch("bildebank.launcher.program_repo_root", return_value=repo_root):
+        save_launcher_config(LauncherConfig(collection_path=saved_path))
+
+    with (
+        patch("bildebank.launcher.program_repo_root", return_value=repo_root),
+        patch("bildebank.launcher.db.find_target", return_value=current_path),
+    ):
+        assert load_launcher_config().collection_path == current_path
 
 
 def test_suggest_import_name_uses_last_folder_name() -> None:

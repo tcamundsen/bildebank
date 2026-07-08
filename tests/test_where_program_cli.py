@@ -56,6 +56,19 @@ class WhereProgramCliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIn(str(target.resolve()), stdout)
 
+    def test_where_is_reports_current_unregistered_collection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+
+            db.init_database(target)
+            with patch("pathlib.Path.cwd", return_value=target):
+                code, stdout, stderr = capture_cli(["where-is"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("bildesamling funnet:", stdout)
+            self.assertIn(str(target.resolve()), stdout)
+
     def test_program_state_ignores_temporary_targets_for_real_program_root(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -198,4 +211,3 @@ class WhereProgramCliTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertIn("Bildebank-program:", stdout)
         self.assertIn("Ingen registrert ennå.", stdout)
-

@@ -104,6 +104,9 @@ def default_collection_path() -> Path:
 
 
 def load_launcher_config() -> LauncherConfig:
+    current_target = db.find_target()
+    if current_target is not None:
+        return LauncherConfig(collection_path=current_target)
     collection_path = load_launcher_collection_path(program_repo_root())
     if collection_path is not None:
         return LauncherConfig(collection_path=collection_path)

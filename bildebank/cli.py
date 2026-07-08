@@ -1717,6 +1717,9 @@ def run_exiftool_install(*, force: bool = False) -> int:
 
 def run_where_is() -> int:
     repo_root = program_repo_root()
+    current_target = db.find_target()
+    if current_target is not None:
+        record_target_best_effort(repo_root, current_target)
     print("Bildebank-program:")
     print(f"  {repo_root}")
     print()
@@ -1725,6 +1728,9 @@ def run_where_is() -> int:
     print()
     print("Gjeldende mappe:")
     print(f"  {Path.cwd().resolve()}")
+    if current_target is not None:
+        print("  bildesamling funnet:")
+        print(f"  {current_target.resolve()}")
     print()
     print("Kjente bildesamlingsmapper:")
     targets = known_targets(repo_root)
