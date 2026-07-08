@@ -187,7 +187,7 @@ def dashboard_actions(summary: DashboardSummary) -> tuple[DashboardAction, ...]:
         DashboardAction(
             "Thumbnails",
             "valgfritt",
-            "Bruk eksisterende thumbnail-telling for å se om nettleservisningen kan gjøres raskere.",
+            'I Bildebank-vinduet kan du trykke "Lag miniatyrbilder".',
             "bildebank make-thumbnails",
             "/help/make-thumbnails.md",
         )
@@ -212,10 +212,17 @@ def scan_action(status: server_app.MaintenanceStatus | None) -> DashboardAction:
         return DashboardAction("Scan", "oppdatert", "Oppdatert")
     if status.missing == 0:
         return DashboardAction(status.name, "oppdatert", "Oppdatert", help_path=status.help_path)
+    button_labels = {
+        "geo-scan": "Les GPS fra bilder",
+        "face-scan": "Finn ansikter",
+        "image-scan": "Klargjør bildesøk",
+    }
+    button_label = button_labels.get(status.name)
+    gui_detail = f' I Bildebank-vinduet kan du trykke "{button_label}".' if button_label else ""
     return DashboardAction(
         status.name,
         "bør gjøres",
-        f"{status.missing} av {status.total} bilder mangler {status.name}.",
+        f"{status.missing} av {status.total} bilder mangler {status.name}.{gui_detail}",
         f"bildebank {status.name}",
         status.help_path,
     )

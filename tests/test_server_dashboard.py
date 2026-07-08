@@ -69,7 +69,7 @@ class ServerDashboardTests(unittest.TestCase):
             statuses = (
                 MaintenanceStatus("face-scan", 2, 1, 1, "/help/face-scan.md"),
                 MaintenanceStatus("geo-scan", 2, 1, 1, "/help/geo-scan.md"),
-                MaintenanceStatus("image-scan", 2, 2, 0, "/help/image-scan.md"),
+                MaintenanceStatus("image-scan", 2, 1, 1, "/help/image-scan.md"),
             )
             with patch("bildebank.server_dashboard.server_app.maintenance_statuses", return_value=statuses):
                 body = dashboard_page_html(
@@ -97,7 +97,11 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertIn("bildebank refresh-metadata", body)
         self.assertIn("bildebank geo-scan", body)
         self.assertIn("bildebank face-scan", body)
-        self.assertIn("Oppdatert", body)
+        self.assertIn("bildebank image-scan", body)
+        self.assertIn("I Bildebank-vinduet kan du trykke &quot;Les GPS fra bilder&quot;.", body)
+        self.assertIn("I Bildebank-vinduet kan du trykke &quot;Finn ansikter&quot;.", body)
+        self.assertIn("I Bildebank-vinduet kan du trykke &quot;Klargjør bildesøk&quot;.", body)
+        self.assertIn("I Bildebank-vinduet kan du trykke &quot;Lag miniatyrbilder&quot;.", body)
         self.assertIn(r"bildebank backup --dry-run D:\Backuper", body)
         self.assertIn("/settings", body)
         self.assertIn("/sources", body)
