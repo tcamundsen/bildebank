@@ -7,7 +7,7 @@ Vi fortsetter her der vi slapp i [README](../../README.md). For å starte Bildeb
 bildebank start
 ```
 
-Bildebankvinduet vil da åpne seg.
+Bildebankvinduet vil da åpne seg:
 
 ![Screenshot av Bildebank-vinduet](screenshots/bildebank.png)
 
@@ -54,7 +54,7 @@ Når du har valgt mappe frå du opp et vindu der du blir bedt om å gi navn til 
 
 Gi det gjerne et navn som gjør at du holder oversikt over hva du har importert.
 Du kan se listen over mapper som er importert [i nettleseren](/sources)
-etter at du har startet bildebank-serveren ved å klikke **Start bildebank i nettleseren**.
+etter at du har startet bildebank-serveren ved å klikke **Start bildebank i nettleseren**
 
 Hvis du importerer bilder fra mange CDer eller minnebrikker, og de alltid
 heter **F:\** på din PC, så må du gi hver import et eget navn.
@@ -74,7 +74,7 @@ nytt navn for en ny import.
 ## Se bildene i nettleser
 
 For å se bildene i nettleseren velger du fanen "Bildebank" i bildet og klikker
-**Start Bildebank i nettleser**.
+**Start Bildebank i nettleser**:
 
 ![Screenshot etter at samling er opprettet](screenshots/bildebank-created.png)
 
@@ -86,7 +86,9 @@ endrer seg til "Installer oppdatering" betyr det at du kan oppdatere programmet
 ved å klikke knappen. Programmet laster da ned oppdatering og restarter
 programmet.
 
-Hvis en oppdatering har ødelagt Bidlebank-vinduet, slik at du ikke kan gjøre
+![Screenshot av oppdatering finnes](screenshots/bildebank-installer-oppdatering.png)
+
+Hvis en oppdatering har ødelagt Bildebank-vinduet, slik at du ikke kan gjøre
 nye oppdateringer derfra, så kan dette gjøres fra PowerShell:
 
 ```powershell
