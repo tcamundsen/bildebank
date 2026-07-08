@@ -10,12 +10,12 @@ from typing import Any, Callable, Iterable
 
 from . import db
 from .config import FaceRecognitionConfig
-from .face import active_image_files, ensure_face_schema_path, face_db_path, normalize_person_name
+from .face import ensure_face_schema_path, face_db_path, normalize_person_name
 from .html_export import face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
 from .server_browser_item_html import rotation_style_attr
 from .server_browser_overview_html import thumbnail_media_html
-from .server_browser_queries import items_by_file_ids
+from .server_browser_queries import image_extension_sql, items_by_file_ids
 from .server_browser_sources import (
     BrowserSource,
     person_browser_source,
@@ -752,13 +752,22 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
 
 
 def people_face_summary(target: Path, face_config: FaceRecognitionConfig | None = None) -> PeopleFaceSummary:
+    db_path = current_face_db_path(target, face_config)
     main_conn = db.connect(target)
     try:
-        active_rows = active_image_files(main_conn)
+        active_rows = list(
+            main_conn.execute(
+                f"""
+                SELECT id, sha256
+                FROM files
+                WHERE deleted_at IS NULL
+                  AND {image_extension_sql('stored_filename')}
+                """
+            )
+        )
     finally:
         main_conn.close()
     total_images = len(active_rows)
-    db_path = current_face_db_path(target, face_config)
     if not db_path.exists() or total_images == 0:
         return PeopleFaceSummary(
             total_images=total_images,
