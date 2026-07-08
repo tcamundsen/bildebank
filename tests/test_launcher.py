@@ -13,6 +13,8 @@ from bildebank.launcher import (
     BildebankLauncher,
     FACE_SCAN_INSIGHTFACE_MISSING_TOOLTIP,
     FACE_SCAN_TOOLTIP,
+    IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP,
+    IMAGE_SCAN_TOOLTIP,
     InsightFaceDependencyStatus,
     InsightFaceModelStatus,
     LauncherConfig,
@@ -675,9 +677,17 @@ def launcher_with_main_action_buttons(collection_path: Path) -> BildebankLaunche
     launcher.backup_button = FakeButton()
     launcher.face_scan_button = FakeButton()
     launcher.face_scan_tooltip = type("FakeTooltip", (), {"text": FACE_SCAN_TOOLTIP})()
+    launcher.image_scan_button = FakeButton()
+    launcher.image_scan_tooltip = type("FakeTooltip", (), {"text": IMAGE_SCAN_TOOLTIP})()
     launcher.update_button = FakeButton()
     launcher.buttons.extend(
-        [launcher.start_server_button, launcher.backup_button, launcher.face_scan_button, launcher.update_button]
+        [
+            launcher.start_server_button,
+            launcher.backup_button,
+            launcher.face_scan_button,
+            launcher.image_scan_button,
+            launcher.update_button,
+        ]
     )
     launcher.update_button_icons = {}
     launcher.update_status = LauncherUpdateStatus("current")
@@ -693,6 +703,7 @@ def launcher_with_main_action_buttons(collection_path: Path) -> BildebankLaunche
     launcher.active_command_cancellable = False
     launcher.active_command_cancel_requested = False
     launcher.insightface_status = InsightFaceDependencyStatus("Klar")
+    launcher.openclip_status = "Installert"
     return launcher
 
 
@@ -737,6 +748,23 @@ def test_face_scan_button_disabled_and_tooltip_explains_missing_insightface(tmp_
 
     assert launcher.face_scan_button.options["state"] == "normal"
     assert launcher.face_scan_tooltip.text == FACE_SCAN_TOOLTIP
+
+
+def test_image_scan_button_disabled_and_tooltip_explains_missing_openclip(tmp_path: Path) -> None:
+    launcher = launcher_with_main_action_buttons(tmp_path / "samling")
+    launcher.openclip_status = "Mangler"
+
+    with patch("bildebank.launcher.is_collection_created", return_value=True):
+        launcher._set_buttons_enabled(True)
+
+    assert launcher.image_scan_button.options["state"] == "disabled"
+    assert launcher.image_scan_tooltip.text == IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP
+
+    launcher.openclip_status = "Installert"
+    launcher._set_buttons_enabled(True)
+
+    assert launcher.image_scan_button.options["state"] == "normal"
+    assert launcher.image_scan_tooltip.text == IMAGE_SCAN_TOOLTIP
 
 
 def test_create_collection_tooltip_explains_disabled_existing_collection() -> None:
