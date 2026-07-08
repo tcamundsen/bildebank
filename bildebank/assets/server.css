@@ -858,6 +858,55 @@
       font: inherit;
     }
     .manual-date-panel { align-self: start; justify-self: center; margin-top: 36px; }
+    .manual-h3-panel {
+      align-self: start;
+      justify-self: center;
+      width: min(680px, 100%);
+      max-height: calc(100vh - 96px);
+      margin-top: 36px;
+      overflow: auto;
+    }
+    .manual-h3-list {
+      display: grid;
+      gap: 6px;
+    }
+    .manual-h3-option {
+      display: grid;
+      grid-template-columns: minmax(140px, 1fr) minmax(180px, auto) auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 42px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #181818;
+      color: var(--text);
+      font: inherit;
+      text-align: left;
+    }
+    .manual-h3-option:hover,
+    .manual-h3-option:focus-visible {
+      border-color: #7aa2d8;
+    }
+    .manual-h3-option.active {
+      border-color: #62a36f;
+      background: #17331f;
+    }
+    .manual-h3-name {
+      font-weight: 700;
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .manual-h3-meta {
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+    .manual-h3-current {
+      color: #9ed28d;
+      font-size: 12px;
+      font-weight: 700;
+    }
     .manual-date-modes {
       display: grid;
       gap: 6px;
@@ -1187,6 +1236,7 @@
       .removed-row { grid-template-columns: 1fr; align-items: stretch; }
       .geo-row { grid-template-columns: 1fr; }
       .hotkey-form { grid-template-columns: 1fr; align-items: stretch; }
+      .manual-h3-option { grid-template-columns: 1fr; }
       .new-person-form { grid-template-columns: 1fr; align-items: stretch; }
       .info-row { grid-template-columns: 1fr; gap: 4px; }
     }

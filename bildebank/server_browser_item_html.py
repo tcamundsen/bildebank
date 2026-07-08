@@ -10,6 +10,8 @@ from typing import Any, Callable
 
 from . import db
 from .config import BrowserHotkeyConfig, FaceRecognitionConfig, HOTKEY_KEYS
+from .db_schema import SchemaMigrationRequired
+from .geo import h3_resolution
 from .html_paths import display_relative_path
 from .media import media_kind
 from .media_cache import cached_image_dimensions
@@ -246,6 +248,7 @@ def _source_item_controls_html(
     face_config: FaceRecognitionConfig | None,
     *,
     associated_file_buttons: str,
+    manual_h3_button: str,
     face_enabled: bool,
     person_has_confirmed_face: bool,
     hide_out_of_focus: bool,
@@ -267,7 +270,7 @@ def _source_item_controls_html(
         previous_item,
         next_item,
         rotation_buttons="" if read_only else rotation_buttons_html(source, item),
-        manual_date_button="" if read_only else manual_date_button_html(item),
+        manual_date_button="" if read_only else manual_date_button_html(item) + manual_h3_button,
         associated_file_buttons=associated_file_buttons,
         face_toggle_button=face_toggle_button_html(source, item, face_enabled=face_enabled),
         face_suggest_button="" if read_only else face_suggest_button_html(face_enabled=face_enabled),
@@ -489,6 +492,7 @@ def source_item_page_html(
     associated_file_buttons = associated_file_buttons_html(motion_video, raw_sidecar)
     if timing_callback is not None:
         timing_callback("html_associated_files", start)
+    named_h3_cells = named_manual_h3_cells(target, conn=conn) if not read_only else []
     controls = _source_item_controls_html(
         target,
         source,
@@ -504,10 +508,12 @@ def source_item_page_html(
         conn=conn,
         timing_callback=timing_callback,
         read_only=read_only,
+        manual_h3_button=manual_h3_button_html(item, named_h3_cells) if not read_only else "",
     )
     start = time.perf_counter()
     info_overlay = image_info_overlay_html()
     manual_date_overlay = "" if read_only else manual_date_overlay_html()
+    manual_h3_overlay = "" if read_only else manual_h3_overlay_html(item, named_h3_cells)
     face_suggest_dialog = ""
     if face_enabled and not read_only:
         from .server_faces import face_suggest_dialog_html
@@ -574,6 +580,7 @@ def source_item_page_html(
         {faces_overlay}
         {info_overlay}
         {manual_date_overlay}
+        {manual_h3_overlay}
         {face_suggest_dialog}
         """,
     )
@@ -1025,6 +1032,38 @@ def manual_date_button_html(item: Any) -> str:
     )
 
 
+def named_manual_h3_cells(target: Path, *, conn: sqlite3.Connection | None = None) -> list[Any]:
+    owned_conn = conn is None
+    if owned_conn and not (target / db.DB_FILENAME).exists():
+        return []
+    try:
+        conn = conn or db.connect(target)
+    except SchemaMigrationRequired:
+        return []
+    try:
+        return db.geo_place_names(conn)
+    finally:
+        if owned_conn:
+            conn.close()
+
+
+def item_has_real_gps(item: Any) -> bool:
+    return item_string_value(item, "gps_lat") != "" or item_string_value(item, "gps_lon") != ""
+
+
+def manual_h3_button_html(item: Any, named_h3_cells: Sequence[Any]) -> str:
+    if not named_h3_cells or item_has_real_gps(item):
+        return ""
+    file_id = int(item["id"])
+    title = "Endre manuelt sted" if gps_source_is_manual_h3(item) else "Sett manuelt sted"
+    return (
+        f'<button class="nav-button" type="button" '
+        f'title="{title}" '
+        f'data-open-manual-h3 '
+        f'data-manual-h3-item="{file_id}">🌐</button>'
+    )
+
+
 def item_string_value(item: Any, key: str) -> str:
     try:
         return str(item[key] or "")
@@ -1116,3 +1155,42 @@ def manual_date_overlay_html() -> str:
     </div>
     """
 
+
+def manual_h3_overlay_html(item: Any, named_h3_cells: Sequence[Any]) -> str:
+    if not named_h3_cells or item_has_real_gps(item):
+        return ""
+    file_id = int(item["id"])
+    current_cell = manual_h3_cell(item) if gps_source_is_manual_h3(item) else ""
+    rows = []
+    for row in named_h3_cells:
+        h3_cell = str(row["h3_cell"])
+        name = str(row["name"])
+        resolution = str(h3_resolution(h3_cell))
+        active = h3_cell == current_cell
+        active_class = " active" if active else ""
+        current_text = '<span class="manual-h3-current">valgt</span>' if active else ""
+        rows.append(
+            f'<button class="manual-h3-option{active_class}" type="button" '
+            f'data-manual-h3-cell="{html.escape(h3_cell)}">'
+            f'<span class="manual-h3-name">{html.escape(name)}</span>'
+            f'<span class="manual-h3-meta">res {html.escape(resolution)} · {html.escape(h3_cell)}</span>'
+            f'{current_text}</button>'
+        )
+    return f"""
+    <div id="manualH3Overlay" class="info-overlay" hidden>
+      <div class="lightbox-bar">
+        <div class="lightbox-title">Manuelt sted</div>
+        <button class="lightbox-close" type="button" data-close-manual-h3>Lukk</button>
+      </div>
+      <section class="modal-panel manual-h3-panel" data-manual-h3-panel data-file-id="{file_id}">
+        <h2>Manuelt sted</h2>
+        <div class="manual-h3-list">
+          {"".join(rows)}
+        </div>
+        <p class="assign-status" data-manual-h3-status></p>
+        <div class="modal-actions">
+          <button type="button" data-close-manual-h3>Avbryt</button>
+        </div>
+      </section>
+    </div>
+    """

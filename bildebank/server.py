@@ -905,6 +905,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/api/item-tag":
                 self.respond_tag_item()
                 return
+            if parsed.path == "/api/item-manual-location":
+                self.respond_manual_location_item()
+                return
             if parsed.path == "/api/item-manual-location-remove":
                 self.respond_remove_manual_location_item()
                 return
@@ -2366,6 +2369,90 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
         self.respond_json({"ok": True, "file_id": file_id, "gps_source": None})
+
+    def respond_manual_location_item(self) -> None:
+        payload = BildebankRequestHandler.read_json_payload(self)
+        try:
+            file_id = require_int(payload.get("file_id"), "file_id")
+        except ValueError:
+            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
+            return
+        h3_cell = str(payload.get("h3_cell") or "").strip()
+        filter_source = filter_source_from_url(self.server.target, payload.get("source_url"))
+        previous_filter_item, next_filter_item = BildebankRequestHandler.filter_adjacent_items_before_change(
+            self,
+            filter_source,
+            file_id,
+        )
+        try:
+            server_actions.set_manual_h3_location_on_file(self.server.target, file_id, h3_cell)
+        except TargetLockError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+            return
+        except ValueError as exc:
+            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        clear_browser_navigation_cache(self.server)
+        result: dict[str, object] = {
+            "ok": True,
+            "file_id": file_id,
+            "gps_source": "manual-h3",
+            "h3_cell": h3_cell,
+        }
+        redirect_url = BildebankRequestHandler.filter_redirect_after_change(
+            self,
+            filter_source,
+            file_id,
+            previous_filter_item,
+            next_filter_item,
+        )
+        if redirect_url:
+            result["redirect_url"] = redirect_url
+        self.respond_json(result)
+
+    def filter_adjacent_items_before_change(
+        self,
+        filter_source: BrowserSource | None,
+        file_id: int,
+    ) -> tuple[Any | None, Any | None]:
+        if filter_source is None:
+            return None, None
+        cached_source_item_order = getattr(self.server, "source_item_order", None)
+        if source_has_sql_filter(filter_source) and cached_source_item_order is not None:
+            item_ids, item_positions = cached_source_item_order(filter_source)
+            if file_id not in item_positions:
+                return None, None
+            return adjacent_items_from_id_order(item_ids, file_id, item_positions)
+        conn = db.connect(self.server.target)
+        try:
+            filter_item = source_item_by_id(self.server.target, filter_source, file_id, conn=conn)
+            if filter_item is None:
+                return None, None
+            return adjacent_source_items(self.server.target, filter_source, filter_item, conn=conn)
+        finally:
+            conn.close()
+
+    def filter_redirect_after_change(
+        self,
+        filter_source: BrowserSource | None,
+        file_id: int,
+        previous_filter_item: Any | None,
+        next_filter_item: Any | None,
+    ) -> str | None:
+        if filter_source is None:
+            return None
+        conn = db.connect(self.server.target)
+        try:
+            filter_item = source_item_by_id(self.server.target, filter_source, file_id, conn=conn)
+        finally:
+            conn.close()
+        if filter_item is not None:
+            return None
+        if next_filter_item is not None:
+            return source_item_url(filter_source, require_int(next_filter_item["id"], "neste file_id"))
+        if previous_filter_item is not None:
+            return source_item_url(filter_source, require_int(previous_filter_item["id"], "forrige file_id"))
+        return filter_source.root_url
 
     def respond_manual_date_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)

@@ -19,6 +19,10 @@
   const closeManualDateButtons = document.querySelectorAll("[data-close-manual-date]");
   const clearManualDateButton = document.querySelector("[data-clear-manual-date]");
   const manualDateFields = document.querySelectorAll("[data-manual-date-field]");
+  const manualH3Overlay = document.getElementById("manualH3Overlay");
+  const manualH3Panel = document.querySelector("[data-manual-h3-panel]");
+  const manualH3Status = document.querySelector("[data-manual-h3-status]");
+  const closeManualH3Buttons = document.querySelectorAll("[data-close-manual-h3]");
   const personRenameDialog = document.getElementById("personRenameDialog");
   const personRenameForm = document.querySelector("[data-person-rename-form]");
   const personRenameStatus = document.querySelector("[data-person-rename-status]");
@@ -442,6 +446,44 @@
     if (!manualDateOverlay) return;
     manualDateOverlay.hidden = true;
   }
+  function openManualH3Overlay() {
+    if (!manualH3Overlay) return;
+    if (manualH3Status) manualH3Status.textContent = "";
+    manualH3Overlay.hidden = false;
+    manualH3Overlay.querySelector("[data-manual-h3-cell]")?.focus();
+  }
+  function closeManualH3Overlay() {
+    if (!manualH3Overlay) return;
+    manualH3Overlay.hidden = true;
+  }
+  async function setManualH3Location(button) {
+    if (!button || button.disabled || !manualH3Panel) return;
+    const fileId = Number(manualH3Panel.dataset.fileId);
+    const h3Cell = button.dataset.manualH3Cell || "";
+    if (!fileId || !h3Cell) return;
+    const itemRoot = document.querySelector("[data-browser-item-id]");
+    const requestBody = {file_id: fileId, h3_cell: h3Cell};
+    if (itemRoot?.dataset.browserSourceUrl) requestBody.source_url = itemRoot.dataset.browserSourceUrl;
+    if (manualH3Status) manualH3Status.textContent = "Lagrer...";
+    manualH3Panel.querySelectorAll("button").forEach(item => item.disabled = true);
+    try {
+      const response = await csrfFetch("/api/item-manual-location", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(requestBody),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke lagre sted.");
+      if (payload.redirect_url) {
+        window.location.href = payload.redirect_url;
+        return;
+      }
+      window.location.reload();
+    } catch (error) {
+      if (manualH3Status) manualH3Status.textContent = error.message || "Kunne ikke lagre sted.";
+      manualH3Panel.querySelectorAll("button").forEach(item => item.disabled = false);
+    }
+  }
   function openPersonRenameDialog(name) {
     if (!personRenameDialog || !personRenameForm || !personRenameNameInput || !personRenameOldNameInput) return;
     personRenameOldNameInput.value = name || "";
@@ -566,6 +608,15 @@
   });
   document.querySelectorAll("[data-open-manual-date]").forEach(button => {
     button.addEventListener("click", () => openManualDateOverlay(button));
+  });
+  closeManualH3Buttons.forEach(button => {
+    button.addEventListener("click", closeManualH3Overlay);
+  });
+  document.querySelectorAll("[data-open-manual-h3]").forEach(button => {
+    button.addEventListener("click", openManualH3Overlay);
+  });
+  document.querySelectorAll("[data-manual-h3-cell]").forEach(button => {
+    button.addEventListener("click", () => setManualH3Location(button));
   });
   manualDateForm?.querySelectorAll('[name="mode"]').forEach(input => {
     input.addEventListener("change", updateManualDateFields);

@@ -468,6 +468,102 @@ class ServerItemActionsCliTests(unittest.TestCase):
         self.assertNotIn("Sette sted fra aktiv H3-celle?", SERVER_JS)
         self.assertIn('data-browser-item-id="1"', body)
 
+    def test_run_server_item_page_has_manual_h3_picker_for_items_without_real_gps(self) -> None:
+        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                db.set_geo_place_name(conn, h3_cell, "Brevik")
+                conn.commit()
+            finally:
+                conn.close()
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+
+        self.assertIn('data-open-manual-h3', body)
+        self.assertIn('data-manual-h3-item="1"', body)
+        self.assertIn("🌐</button>", body)
+        self.assertIn('id="manualH3Overlay"', body)
+        self.assertIn('data-manual-h3-panel data-file-id="1"', body)
+        self.assertIn('data-manual-h3-cell="' + h3_cell + '"', body)
+        self.assertIn("Brevik", body)
+        self.assertIn("res 7", body)
+        self.assertIn("/api/item-manual-location", SERVER_JS)
+
+    def test_run_server_item_page_marks_current_manual_h3_cell_in_picker(self) -> None:
+        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                db.set_geo_place_name(conn, h3_cell, "Brevik")
+                db.set_file_manual_h3_location(conn, file_id=1, h3_cells={"h3_res7": h3_cell})
+                conn.commit()
+            finally:
+                conn.close()
+            item = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item)
+            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+
+        self.assertIn('title="Endre manuelt sted"', body)
+        self.assertIn('class="manual-h3-option active"', body)
+        self.assertIn('class="manual-h3-current">valgt</span>', body)
+
+    def test_run_server_item_page_hides_manual_h3_picker_for_real_gps_or_no_named_cells(self) -> None:
+        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            item_without_places = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item_without_places)
+            body_without_places = item_page_html(
+                target,
+                item_without_places,
+                *adjacent_browser_items(target, item_without_places),
+                browser_month_navigation(target, item_without_places),
+            )
+            conn = db.connect(target)
+            try:
+                db.set_geo_place_name(conn, h3_cell, "Brevik")
+                conn.execute(
+                    "UPDATE files SET gps_lat = 59.91273, gps_lon = 10.74609, gps_source = 'exiftool' WHERE id = 1"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            item_with_gps = browser_item_by_id(target, 1)
+            self.assertIsNotNone(item_with_gps)
+            body_with_gps = item_page_html(
+                target,
+                item_with_gps,
+                *adjacent_browser_items(target, item_with_gps),
+                browser_month_navigation(target, item_with_gps),
+            )
+
+        self.assertNotIn('data-open-manual-h3', body_without_places)
+        self.assertNotIn('id="manualH3Overlay"', body_without_places)
+        self.assertNotIn('data-open-manual-h3', body_with_gps)
+        self.assertNotIn('id="manualH3Overlay"', body_with_gps)
+
     def test_run_server_item_page_can_show_hotkey_hints_in_tag_rail(self) -> None:
         h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
         with tempfile.TemporaryDirectory() as tmp:
@@ -776,6 +872,203 @@ class ServerItemActionsCliTests(unittest.TestCase):
             BildebankRequestHandler.respond_hotkey_action(handler)  # type: ignore[arg-type]
 
         self.assertEqual(handler.body["redirect_url"], "/filter/missing%3Agps")
+
+    def test_run_server_manual_h3_endpoint_sets_location(self) -> None:
+        import h3
+
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            data = json.dumps({"file_id": 1, "h3_cell": h3_cell}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+                status: HTTPStatus | None = None
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
+            conn = db.connect(target)
+            try:
+                row = conn.execute(
+                    "SELECT gps_lat, gps_lon, gps_alt, gps_source, gps_error, h3_res0, h3_res3, h3_res4 FROM files WHERE id = 1"
+                ).fetchone()
+            finally:
+                conn.close()
+
+        self.assertEqual(handler.status, HTTPStatus.OK)
+        self.assertEqual(
+            handler.body,
+            {"ok": True, "file_id": 1, "gps_source": "manual-h3", "h3_cell": h3_cell},
+        )
+        self.assertIsNone(row["gps_lat"])
+        self.assertIsNone(row["gps_lon"])
+        self.assertIsNone(row["gps_alt"])
+        self.assertIsNone(row["gps_error"])
+        self.assertEqual(row["gps_source"], "manual-h3")
+        self.assertTrue(row["h3_res0"])
+        self.assertEqual(row["h3_res3"], h3_cell)
+        self.assertIsNone(row["h3_res4"])
+
+    def test_run_server_manual_h3_endpoint_rejects_invalid_inputs(self) -> None:
+        h3_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            def post(payload: dict[str, object]) -> tuple[dict[str, object], HTTPStatus]:
+                data = json.dumps(payload).encode("utf-8")
+
+                class FakeHandler:
+                    headers = {
+                        "Content-Length": str(len(data)),
+                        "Content-Type": "application/json",
+                    }
+                    rfile = BytesIO(data)
+                    server = SimpleNamespace(target=target)
+                    body: dict[str, object] | None = None
+                    status: HTTPStatus | None = None
+
+                    def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                        self.body = content
+                        self.status = status
+
+                handler = FakeHandler()
+                BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
+                assert handler.body is not None
+                assert handler.status is not None
+                return handler.body, handler.status
+
+            invalid_file, invalid_file_status = post({"file_id": "x", "h3_cell": h3_cell})
+            missing_file, missing_file_status = post({"file_id": 999, "h3_cell": h3_cell})
+            empty_cell, empty_cell_status = post({"file_id": 1, "h3_cell": ""})
+            invalid_cell, invalid_cell_status = post({"file_id": 1, "h3_cell": "ikke-h3"})
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    "UPDATE files SET gps_lat = 59.91273, gps_lon = 10.74609, gps_source = 'exiftool' WHERE id = 1"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            gps_file, gps_file_status = post({"file_id": 1, "h3_cell": h3_cell})
+
+        self.assertEqual(invalid_file_status, HTTPStatus.BAD_REQUEST)
+        self.assertEqual(invalid_file["error"], "Ugyldig file_id.")
+        self.assertEqual(missing_file_status, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Filen finnes ikke", str(missing_file["error"]))
+        self.assertEqual(empty_cell_status, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Aktiv manuell H3-celle", str(empty_cell["error"]))
+        self.assertEqual(invalid_cell_status, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Ugyldig H3-celle", str(invalid_cell["error"]))
+        self.assertEqual(gps_file_status, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Filen har GPS-lokasjon", str(gps_file["error"]))
+
+    def test_run_server_manual_h3_endpoint_rejects_deleted_file_and_target_lock(self) -> None:
+        import h3
+
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+            (source / "IMG_20240103.png").write_bytes(minimal_png(101, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            conn = db.connect(target)
+            try:
+                conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 1")
+                conn.commit()
+            finally:
+                conn.close()
+
+            def post(file_id: int) -> tuple[dict[str, object], HTTPStatus]:
+                data = json.dumps({"file_id": file_id, "h3_cell": h3_cell}).encode("utf-8")
+
+                class FakeHandler:
+                    headers = {
+                        "Content-Length": str(len(data)),
+                        "Content-Type": "application/json",
+                    }
+                    rfile = BytesIO(data)
+                    server = SimpleNamespace(target=target)
+                    body: dict[str, object] | None = None
+                    status: HTTPStatus | None = None
+
+                    def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                        self.body = content
+                        self.status = status
+
+                handler = FakeHandler()
+                BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
+                assert handler.body is not None
+                assert handler.status is not None
+                return handler.body, handler.status
+
+            deleted_file, deleted_status = post(1)
+            (target / LOCK_FILENAME).write_text("command=geo-scan\n", encoding="utf-8")
+            locked_file, locked_status = post(2)
+
+        self.assertEqual(deleted_status, HTTPStatus.BAD_REQUEST)
+        self.assertIn("Filen er markert som slettet", str(deleted_file["error"]))
+        self.assertEqual(locked_status, HTTPStatus.CONFLICT)
+        self.assertIn("Bildesamlingen er låst", str(locked_file["error"]))
+
+    def test_run_server_manual_h3_endpoint_redirects_when_filter_no_longer_matches(self) -> None:
+        import h3
+
+        h3_cell = h3.latlng_to_cell(59.91273, 10.74609, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240101.png").write_bytes(minimal_png(100, 80))
+            (source / "IMG_20240102.png").write_bytes(minimal_png(101, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            filter_source = text_filter_browser_source("missing:gps", target)
+            data = json.dumps({"file_id": 1, "h3_cell": h3_cell, "source_url": filter_source.root_url}).encode("utf-8")
+
+            class FakeHandler:
+                headers = {
+                    "Content-Length": str(len(data)),
+                    "Content-Type": "application/json",
+                }
+                rfile = BytesIO(data)
+                server = SimpleNamespace(target=target)
+                body: dict[str, object] | None = None
+
+                def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    self.body = content
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_manual_location_item(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.body["gps_source"], "manual-h3")
+        self.assertEqual(handler.body["redirect_url"], "/filter/missing%3Agps/item/2")
 
     def test_run_server_item_manual_location_remove_endpoint_clears_manual_h3(self) -> None:
         import h3
