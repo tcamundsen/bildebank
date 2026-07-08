@@ -78,11 +78,16 @@ For å se bildene i nettleseren velger du fanen "Bildebank" i bildet og klikker
 
 ![Screenshot etter at samling er opprettet](screenshots/bildebank-created.png)
 
-
-
 ## Hente oppdateringer
 
-For å sikre at du har siste versjon av programmet, kjør:
+Du kan se etter oppdateringer ved å klikke på knappen "Se etter oppdateringer"
+i Bildebank-vinduet. Programmet vil også gjøre dette ved oppstart. Hvis knappen
+endrer seg til "Installer oppdatering" betyr det at du kan oppdatere programmet
+ved å klikke knappen. Programmet laster da ned oppdatering og restarter
+programmet.
+
+Hvis en oppdatering har ødelagt Bidlebank-vinduet, slik at du ikke kan gjøre
+nye oppdateringer derfra, så kan dette gjøres fra PowerShell:
 
 ```powershell
 bildebank update
@@ -103,24 +108,28 @@ git pull --ff-only
 .\.venv\Scripts\python.exe -m pip install -e .
 ```
 
-Deretter kan du bruke programmet som før.
+Deretter kan du bruke programmet som før. Disse siste alternativene er det
+lite sansynlig du vil støte på. Så hvis oppdateringsknappen ikke virker
+kan du gjerne kontakte Tom Cato før du prøver noe mer.
 
 ### Migrere gammel database
 
 Noen programoppdateringer kan kreve at databasen i bildesamlingsmappen
-oppgraderes før du kan importere eller gjøre andre endringer. Hvis Bildebank
-ber om det etter `bildebank update`, går du til bildesamlingsmappen og kjører:
+oppgraderes før du kan importere eller gjøre andre endringer. Bildebank-vinduet
+kan gjøre det, og da ser det slik ut:
+
+![Screenshot av migrerings-dialogen](screenshots/bildebank-migrate.png)
+
+Det er da helt trygt å klikke "Migrer". Det tas backup av filen som endres,
+og ingen bildefiler endres ved migrering.
+
+Hvis du jobber med Bildebank fra PowerShell, oppgraderer du ved å gå til
+mappen med bildesamlingen og kjøre migrate:
 
 ```powershell
 cd $HOME\BildeSamling
 bildebank migrate
 ```
-
-Migrering til gjeldende databaseformat gjelder bare brukere som har opprettet
-bildesamlingsdatabasen med en eldre versjon av Bildebank. Nye databaser
-opprettet med denne versjonen av Bildebank bruker riktig format allerede og
-trenger ikke denne migreringen.
-
 Du kan kontrollere hva migreringen vil gjøre uten å endre databasen:
 
 ```powershell
@@ -134,19 +143,9 @@ og backupen beholdes.
 ## Angre import av en kilde
 
 Hvis du har importert feil mappe, CD eller USB-disk, kan du bruke [`unimport`](unimport.md)
-for å angre akkurat den importen.
-
-## Finn filer uten metadata-dato
-
-Programmet sorterer bildene i mapper i mønsteret ÅR/MÅNED. Noen bilder
-mangler datoinformasjon. [`non-metadata`](non-metadata.md) lar deg finne
-de bildene.
-
-## Slette en importert fil
-
-Hvis du vil fjerne en importert fil bruker du [`remove`](remove.md). Kommandoen
-sletter ikke filen helt. Den flytter filen til `deleted`-mappen i
-bildesamlingsmappen og markerer den som slettet i databasen.
+eller trykke knappen "Angre import" i Bildebank-vinduet. Bildebank-vinduet lar deg
+velge hva du vil angre, og lar deg bare gjøre kommandoen hvis filene fortsatt finnes utenfor
+bildesamlingen, slik at ingen bilder mistes.
 
 ## Sikkerhet og backup
 
