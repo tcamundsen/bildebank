@@ -27,7 +27,6 @@ from bildebank.server_browser_item_html import item_media_html
 from bildebank.server_files import server_file_path_by_id
 from bildebank.server_pages import (
     app_status_page_html,
-    geo_stats_page_html,
     index_html,
     markdown_doc_page_html,
     search_html,
@@ -557,7 +556,6 @@ class ServerCoreCliTests(unittest.TestCase):
             pages = [
                 sources_page_html(target),
                 app_status_page_html(target, config),
-                geo_stats_page_html(target),
                 markdown_doc_page_html(Path("bildebrowser.md"), "# Hjelp\n\nTekst."),
                 search_html(server, ServerSearchStats("strand", ()), DEFAULT_SEARCH_LIMIT),
             ]

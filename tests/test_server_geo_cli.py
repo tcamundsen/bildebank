@@ -18,7 +18,6 @@ from bildebank.server_pages import (
     geo_area_page_html,
     geo_index_page_html,
     geo_map_page_html,
-    geo_stats_page_html,
     h3_cells_page_html,
     item_page_html,
 )
@@ -237,17 +236,15 @@ class ServerGeoCliTests(unittest.TestCase):
             index_body = geo_index_page_html(target, resolution=7, min_count=1, limit=10)
             map_body = geo_map_page_html(target, resolution=7, min_count=1, limit=10)
             map_zero_body = geo_map_page_html(target, resolution=0, min_count=1, limit=10)
-            stats_body = geo_stats_page_html(target)
             area_body = geo_area_page_html(target, cells["h3_res7"], resolution=7, limit=10)
             empty_area_body = geo_area_page_html(target, "8001fffffffffff", resolution=0, limit=10)
 
         self.assertIn("Steder", index_body)
         self.assertIn('href="/filter/missing%3Agps">Bilder uten GPS</a>', index_body)
         self.assertIn("/geo/map?resolution=7&min_count=1&limit=10", index_body)
+        self.assertNotIn("/geo/stats", index_body)
         self.assertIn("Heksagonkart", map_body)
         self.assertIn('href="/geo">Steder</a><span class="sep">/</span>Heksagonkart</nav>', map_body)
-        self.assertIn('href="/geo">Steder</a><span class="sep">/</span>Geo-statistikk</nav>', stats_body)
-        self.assertIn('href="/filter/missing%3Agps">Bilder uten GPS</a>', stats_body)
         self.assertIn(f'href="/geo">Steder</a><span class="sep">/</span>{cells["h3_res7"]}</nav>', area_body)
         self.assertIn('<form action="/geo/map" method="get" class="geo-filter">', map_body)
         self.assertIn('<select name="resolution">', map_body)
@@ -257,8 +254,6 @@ class ServerGeoCliTests(unittest.TestCase):
         self.assertIn(f'href="/geo/area/{neighbor_cell}"', map_body)
         self.assertIn("geo-hex", map_body)
         self.assertIn(">1</text>", map_body)
-        self.assertIn("Med GPS", stats_body)
-        self.assertIn("<div><strong>Manuell H3</strong><span>1</span></div>", stats_body)
         self.assertIn("IMG_20240102.png", area_body)
         self.assertIn("google.com/maps/@", area_body)
         self.assertIn(",11z", area_body)

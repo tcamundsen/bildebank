@@ -284,21 +284,6 @@ def geo_child_areas_section_html(rows: list[Any], *, resolution: int, inherited_
     """
 
 
-def geo_stats_summary_html(stats: dict[str, int]) -> str:
-    rows = "\n".join(
-        f"<div><strong>{label}</strong><span>{stats[key]}</span></div>"
-        for label, key in (
-            ("Aktive bilder", "total"),
-            ("Scannet", "scanned"),
-            ("Med GPS", "with_gps"),
-            ("Uten GPS", "without_gps"),
-            ("Manuell H3", "manual_h3"),
-            ("Feil", "errors"),
-        )
-    )
-    return f'<div class="geo-stats">{rows}</div>'
-
-
 def geo_area_row_html(row: Any, *, resolution: int, inherited_name: str | None = None) -> str:
     h3_cell = str(row["h3_cell"])
     count = require_int(row["count"], "antall bilder")
@@ -487,7 +472,6 @@ def geo_index_page_html(
         f"""
         <nav class="subnav">
           <a href="/geo/map?resolution={resolution}&min_count={min_count}&limit={limit}">Heksagonkart</a>
-          <a href="/geo/stats">Geo-statistikk</a>
           <a href="/filter/missing%3Agps">Bilder uten GPS</a>
           <a href="/help/web/steder">Hjelp</a>
         </nav>
@@ -566,35 +550,6 @@ def geo_map_page_html(
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
         title_html=geo_breadcrumb_html("Heksagonkart"),
-    )
-
-
-def geo_stats_page_html(
-    target: Path,
-    *,
-    shell_page_html: ShellPageRenderer,
-    face_enabled: bool = True,
-    openclip_enabled: bool = True,
-) -> str:
-    conn = db.connect(target)
-    try:
-        stats = db.geo_stats(conn)
-    finally:
-        conn.close()
-    return shell_page_html(
-        "Geo-statistikk",
-        f"""
-        <nav class="subnav">
-          <a href="/geo">Steder</a>
-          <a href="/filter/missing%3Agps">Bilder uten GPS</a>
-        </nav>
-        <h1>Geo-statistikk</h1>
-        {geo_stats_summary_html(stats)}
-        <p class="meta">Geo-data leses fra databasen. Kjør <tt>bildebank geo-scan</tt> for å fylle inn GPS og H3-celler.</p>
-        """,
-        face_enabled=face_enabled,
-        openclip_enabled=openclip_enabled,
-        title_html=geo_breadcrumb_html("Geo-statistikk"),
     )
 
 

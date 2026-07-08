@@ -24,6 +24,7 @@ class DashboardAction:
     maintenance_name: str | None = None
     gui_label: str | None = None
     thumbnail_maintenance: bool = False
+    fact_rows: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,6 @@ def dashboard_page_html(
           <a href="/settings">Innstillinger</a>
           <a href="/sources">Importerte mapper</a>
           <a href="/settings/removed">Slettede bilder</a>
-          <a href="/geo/stats">GPS-statistikk</a>
           <a href="/people">Personer</a>
         </nav>
         <section class="dashboard-section" aria-labelledby="dashboard-actions-heading">
@@ -182,7 +182,19 @@ def dashboard_actions(summary: DashboardSummary) -> tuple[DashboardAction, ...]:
             )
         )
 
-    actions.extend(scan_action(name) for name in ("geo-scan", "face-scan", "image-scan"))
+    actions.extend(
+        (
+            scan_action(
+                "geo-scan",
+                fact_rows=(
+                    ("Manuell H3", str(summary.geo_stats["manual_h3"])),
+                    ("Feil", str(summary.geo_stats["errors"])),
+                ),
+            ),
+            scan_action("face-scan"),
+            scan_action("image-scan"),
+        )
+    )
     actions.append(
         DashboardAction(
             "Thumbnails",
@@ -208,7 +220,7 @@ def dashboard_actions(summary: DashboardSummary) -> tuple[DashboardAction, ...]:
     return tuple(actions)
 
 
-def scan_action(name: str) -> DashboardAction:
+def scan_action(name: str, *, fact_rows: tuple[tuple[str, str], ...] = ()) -> DashboardAction:
     button_labels = {
         "geo-scan": "Les GPS fra bilder",
         "face-scan": "Finn ansikter",
@@ -222,6 +234,7 @@ def scan_action(name: str) -> DashboardAction:
         f"/help/{name}.md",
         maintenance_name=name,
         gui_label=button_labels.get(name),
+        fact_rows=fact_rows,
     )
 
 
@@ -279,10 +292,10 @@ def coverage_section_html(summary: DashboardSummary) -> str:
         f"""
         <dl class="info-list">
           {date_source_rows or info_row_html("Dato", "Ingen aktive filer")}
-          {info_row_html("GPS scannet", f'{summary.geo_stats["scanned"]} av {summary.geo_stats["total"]}', "/geo/stats")}
-          {info_row_html("GPS funnet", str(summary.geo_stats["with_gps"]), "/geo/stats")}
-          {info_row_html("GPS uten treff", str(summary.geo_stats["without_gps"]), "/geo/stats")}
-          {info_row_html("GPS-feil", str(summary.geo_stats["errors"]), "/geo/stats")}
+          {info_row_html("GPS scannet", f'{summary.geo_stats["scanned"]} av {summary.geo_stats["total"]}')}
+          {info_row_html("GPS funnet", str(summary.geo_stats["with_gps"]))}
+          {info_row_html("GPS uten treff", str(summary.geo_stats["without_gps"]))}
+          {info_row_html("GPS-feil", str(summary.geo_stats["errors"]))}
           {maintenance_rows}
           {thumbnail_coverage_info_row_html()}
         </dl>
@@ -368,6 +381,16 @@ def dashboard_action_html(action: DashboardAction) -> str:
         if action.maintenance_name
         else ""
     )
+    facts_html = (
+        '<dl class="maintenance-counts">'
+        + "".join(
+            f"<div><dt>{html.escape(label)}</dt><dd>{html.escape(value)}</dd></div>"
+            for label, value in action.fact_rows
+        )
+        + "</dl>"
+        if action.fact_rows
+        else ""
+    )
     thumbnail_counts_html = (
         """
       <p class="status" data-thumbnail-status>Ikke telt ennå</p>
@@ -391,6 +414,7 @@ def dashboard_action_html(action: DashboardAction) -> str:
       {command_html}
       <div class="dashboard-action-links">{links}</div>
       {counts_html}
+      {facts_html}
       {thumbnail_counts_html}
     </article>
     """

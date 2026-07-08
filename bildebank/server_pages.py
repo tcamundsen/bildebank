@@ -156,15 +156,6 @@ def geo_map_page_html(
     )
 
 
-def geo_stats_page_html(target: Path, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
-    return server_geo.geo_stats_page_html(
-        target,
-        shell_page_html=shell_page_html,
-        face_enabled=face_enabled,
-        openclip_enabled=openclip_enabled,
-    )
-
-
 def geo_area_page_html(
     target: Path,
     h3_cell: str,

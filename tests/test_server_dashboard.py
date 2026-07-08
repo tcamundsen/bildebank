@@ -10,6 +10,7 @@ from unittest.mock import patch
 from bildebank import db
 from bildebank.config import AppConfig
 from bildebank.db import init_database
+from bildebank.geo import h3_cells_for_point
 from bildebank.server import BildebankRequestHandler
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_dashboard import dashboard_actions, dashboard_page_html, dashboard_summary
@@ -24,6 +25,7 @@ class ServerDashboardTests(unittest.TestCase):
             init_database(target)
             image_id = insert_test_file(target, "2024/01/image.jpg", sha256="sha-image", gps_scanned=True)
             video_id = insert_test_file(target, "2024/01/video.mp4", sha256="sha-video")
+            manual_id = insert_test_file(target, "2024/01/manual.jpg", sha256="sha-manual")
             insert_test_file(target, "deleted/2024/01/deleted.jpg", sha256="sha-deleted", deleted=True)
 
             conn = db.connect(target)
@@ -52,6 +54,12 @@ class ServerDashboardTests(unittest.TestCase):
                 )
                 conn.execute("UPDATE files SET taken_date = NULL, date_source = 'unknown' WHERE id = ?", (video_id,))
                 conn.execute("UPDATE files SET name_conflict = 1 WHERE id = ?", (image_id,))
+                conn.execute("UPDATE files SET gps_error = 'exiftool' WHERE id = ?", (video_id,))
+                db.set_file_manual_h3_location(
+                    conn,
+                    file_id=manual_id,
+                    h3_cells=h3_cells_for_point(59.91273, 10.74609),
+                )
                 db.insert_error(conn, source_id=error_source, source_path=Path("bad.jpg"), stage="import", message="feil")
                 db.create_pending_file_move(
                     conn,
@@ -75,7 +83,7 @@ class ServerDashboardTests(unittest.TestCase):
 
         self.assertIn("Samlingsoversikt", body)
         self.assertIn("<dt>Aktive filer</dt>", body)
-        self.assertIn("<dd>2</dd>", body)
+        self.assertIn("<dd>3</dd>", body)
         self.assertIn("<dt>Bilder</dt>", body)
         self.assertIn("<dt>Videoer</dt>", body)
         self.assertIn("<dt>Slettede bilder</dt>", body)
@@ -94,6 +102,11 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertIn("bildebank face-scan", body)
         self.assertIn("bildebank image-scan", body)
         self.assertIn('data-maintenance-name="geo-scan"', body)
+        geo_scan_start = body.index('data-maintenance-name="geo-scan"')
+        geo_scan_end = body.index("</article>", geo_scan_start)
+        geo_scan_html = body[geo_scan_start:geo_scan_end]
+        self.assertIn("<dt>Manuell H3</dt><dd>1</dd>", geo_scan_html)
+        self.assertIn("<dt>Feil</dt><dd>1</dd>", geo_scan_html)
         self.assertIn('data-maintenance-name="face-scan"', body)
         self.assertIn('data-maintenance-name="image-scan"', body)
         self.assertIn('data-maintenance-gui-label="Les GPS fra bilder"', body)
@@ -136,7 +149,7 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertIn(r"bildebank backup --dry-run D:\Backuper", body)
         self.assertIn("/settings", body)
         self.assertIn("/sources", body)
-        self.assertIn("/geo/stats", body)
+        self.assertNotIn("/geo/stats", body)
 
     def test_run_server_dashboard_actions_defer_scan_counts_to_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -150,6 +163,7 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertEqual(set(scan_actions), {"geo-scan", "face-scan", "image-scan"})
         self.assertEqual(scan_actions["geo-scan"].detail, "Oppdaterer tall...")
         self.assertEqual(scan_actions["geo-scan"].gui_label, "Les GPS fra bilder")
+        self.assertEqual(scan_actions["geo-scan"].fact_rows, (("Manuell H3", "0"), ("Feil", "0")))
         self.assertEqual(scan_actions["face-scan"].gui_label, "Finn ansikter")
         self.assertEqual(scan_actions["image-scan"].gui_label, "Klargjør bildesøk")
 

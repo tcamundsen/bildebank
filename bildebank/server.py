@@ -49,7 +49,6 @@ from .server_pages import (
     geo_index_page_html,
     h3_cells_page_html,
     geo_map_page_html,
-    geo_stats_page_html,
     index_html,
     markdown_doc_page_html,
     people_page_html,
@@ -693,15 +692,6 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path == "/geo/map":
                 self.respond_geo_map(parsed.query)
-                return
-            if parsed.path == "/geo/stats":
-                self.respond_html(
-                    geo_stats_page_html(
-                        self.server.target,
-                        face_enabled=self.server.face_enabled,
-                        openclip_enabled=self.server.openclip_enabled,
-                    )
-                )
                 return
             if parsed.path == "/geo/custom-places":
                 self.respond_html(
