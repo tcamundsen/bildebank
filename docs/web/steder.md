@@ -2,12 +2,12 @@
 
 URL: `/geo`
 
-Først viser siden statistikk over bilder med og uten GPS-lokasjon.
+Klikk knappen **Les GPS fra bilder** på **Verktøy**-siden
+i Bildebank-vinduet for å kunne se bilder tatt på bestemte steder.
 
-Så under overskriften **Egendefinerte steder** er listen over steder
-du kan filtrere bilder med. Dessverre har ikke digitalkamera fra
-tidlig 2000-tall GPS-lokasjon
+For bilder som mangler GPS-data, for eksempel bilder tatt med
+digitalkamera fra tidlig 2000-tall, så er det mulig å sette posisjon
+manuelt. Se på hurtigtastene på siden [innstillinger](/settings)
 
-Nederst, under overskriften **H3-heksagoner** kan du browse alle
-H3-heksagoner som bildene dine er del av. Akkurat denne delen kan
-du bare overse for nå. 
+Lenken [Rediger egendefinerte steder](/geo/custom-places) lar deg
+definere egne steder som kan brukes til å filtrere bilder basert på sted.
