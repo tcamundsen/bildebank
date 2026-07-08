@@ -671,60 +671,69 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
     db_path = current_face_db_path(target, face_config)
     if not db_path.exists():
         return []
+    main_conn = db.connect(target)
+    try:
+        active_file_ids = {
+            int(row["id"])
+            for row in main_conn.execute(
+                """
+                SELECT id
+                FROM files
+                WHERE deleted_at IS NULL
+                """
+            )
+        }
+    finally:
+        main_conn.close()
     face_conn = sqlite3.connect(db_path)
     face_conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(face_conn):
             return []
+        people = [
+            {"id": int(row["id"]), "name": str(row["name"])}
+            for row in face_conn.execute("SELECT id, name FROM persons ORDER BY name")
+        ]
+        confirmed_counts_by_person: dict[int, dict[int, int]] = {int(person["id"]): {} for person in people}
+        suggested_file_ids_by_person: dict[int, set[int]] = {int(person["id"]): set() for person in people}
+        manual_file_ids_by_person: dict[int, set[int]] = {int(person["id"]): set() for person in people}
+
+        for row in face_conn.execute(
+            """
+            SELECT person_faces.person_id, faces.file_id
+            FROM person_faces
+            JOIN faces ON faces.id = person_faces.face_id
+            """
+        ):
+            file_id = int(row["file_id"])
+            if file_id in active_file_ids:
+                person_counts = confirmed_counts_by_person.setdefault(int(row["person_id"]), {})
+                person_counts[file_id] = person_counts.get(file_id, 0) + 1
+
+        for row in face_conn.execute(
+            """
+            SELECT face_suggestions.person_id, faces.file_id
+            FROM face_suggestions
+            JOIN faces ON faces.id = face_suggestions.face_id
+            """
+        ):
+            file_id = int(row["file_id"])
+            if file_id in active_file_ids:
+                suggested_file_ids_by_person.setdefault(int(row["person_id"]), set()).add(file_id)
+
+        for row in face_conn.execute("SELECT person_id, file_id FROM person_files"):
+            file_id = int(row["file_id"])
+            if file_id in active_file_ids:
+                manual_file_ids_by_person.setdefault(int(row["person_id"]), set()).add(file_id)
+
         rows: list[dict[str, object]] = []
-        for person in face_conn.execute("SELECT id, name FROM persons ORDER BY name"):
+        for person in people:
             person_id = int(person["id"])
-            confirmed_file_ids = [
-                int(row["file_id"])
-                for row in face_conn.execute(
-                    """
-                    SELECT faces.file_id
-                    FROM person_faces
-                    JOIN faces ON faces.id = person_faces.face_id
-                    WHERE person_faces.person_id = ?
-                    """,
-                    (person_id,),
-                )
-            ]
-            suggested_file_ids = [
-                int(row["file_id"])
-                for row in face_conn.execute(
-                    """
-                    SELECT faces.file_id
-                    FROM face_suggestions
-                    JOIN faces ON faces.id = face_suggestions.face_id
-                    WHERE face_suggestions.person_id = ?
-                    """,
-                    (person_id,),
-                )
-            ]
-            manual_file_ids = [
-                int(row["file_id"])
-                for row in face_conn.execute(
-                    """
-                    SELECT person_files.file_id
-                    FROM person_files
-                    WHERE person_files.person_id = ?
-                    """,
-                    (person_id,),
-                )
-            ]
-            active_file_ids = active_file_id_set(target, [*confirmed_file_ids, *suggested_file_ids, *manual_file_ids])
-            active_confirmed_file_ids = [file_id for file_id in confirmed_file_ids if file_id in active_file_ids]
-            active_suggested_file_ids = [file_id for file_id in suggested_file_ids if file_id in active_file_ids]
-            active_manual_file_ids = [file_id for file_id in manual_file_ids if file_id in active_file_ids]
-            confirmed_counts_by_file: dict[int, int] = {}
-            for file_id in active_confirmed_file_ids:
-                confirmed_counts_by_file[file_id] = confirmed_counts_by_file.get(file_id, 0) + 1
+            confirmed_counts_by_file = confirmed_counts_by_person.get(person_id, {})
             duplicate_counts = [count for count in confirmed_counts_by_file.values() if count > 1]
-            active_confirmed_file_id_set = set(active_confirmed_file_ids)
-            active_suggested_file_id_set = set(active_suggested_file_ids)
-            active_manual_file_id_set = set(active_manual_file_ids)
+            active_confirmed_file_id_set = set(confirmed_counts_by_file)
+            active_suggested_file_id_set = suggested_file_ids_by_person.get(person_id, set())
+            active_manual_file_id_set = manual_file_ids_by_person.get(person_id, set())
             rows.append(
                 {
                     "name": str(person["name"]),
