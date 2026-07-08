@@ -919,6 +919,20 @@ def test_collection_needs_migration_detects_old_schema_version(tmp_path: Path) -
     assert collection_needs_migration(collection)
 
 
+def test_collection_needs_migration_handles_old_schema_without_full_validation(tmp_path: Path) -> None:
+    collection = tmp_path / "samling"
+    db.init_database(collection)
+    conn = db.connect(collection)
+    try:
+        conn.execute("UPDATE meta SET value = '8' WHERE key = 'schema_version'")
+        conn.execute("DROP INDEX idx_files_active_browser_order")
+        conn.commit()
+    finally:
+        conn.close()
+
+    assert collection_needs_migration(collection)
+
+
 def test_insightface_status_is_ready_when_dependencies_are_available() -> None:
     with (
         patch("bildebank.face.insightface_runtime_error", return_value=None),

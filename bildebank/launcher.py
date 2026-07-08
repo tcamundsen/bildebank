@@ -538,7 +538,7 @@ def migration_plan_needs_action(plan: db.MigrationPlan) -> bool:
 
 
 def collection_needs_migration(collection_path: Path) -> bool:
-    return migration_plan_needs_action(db.migration_plan(collection_path))
+    return migration_plan_needs_action(db.migration_plan(collection_path, validate=False))
 
 
 def rescan_source_candidates(sources: list[db.Source]) -> list[db.Source]:
