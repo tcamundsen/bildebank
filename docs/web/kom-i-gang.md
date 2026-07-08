@@ -1,66 +1,66 @@
 # Hvordan komme i gang med Bildebank
 
-Vi fortsetter her der vi slapp i [README](../../README.md). For å starte Bildebank
+Vi fortsetter her der vi slapp i [README-filen](../../README.md). For å starte Bildebank
 åpner du PowerShell og skriver følgende:
 
 ```powershell
 bildebank start
 ```
 
-Bildebankvinduet vil da åpne seg:
+Bildebank-vinduet vil da åpne seg:
 
-![Screenshot av Bildebank-vinduet](screenshots/bildebank.png)
+![Skjermbilde av Bildebank-vinduet](screenshots/bildebank.png)
 
-Det første du må gjøre er å opprette en bildesamling. Dette er stedet er du
-skal samle alle bildefilene. Som du ser i vinduet, har bildebank allerede
+Det første du må gjøre er å opprette en bildesamling. Dette er stedet der du
+skal samle alle bildefilene. Som du ser i vinduet, har Bildebank allerede
 foreslått et sted bildesamlingen kan lagres. I ditt Bildebank-vindu vil du
 se at brukernavnet TA487 er erstattet med ditt brukernavn. For å opprette
 bildesamlingen klikker du **Opprett bildesamling**. Hvis du vil plassere
-bildesamlingen et annet sted, så klikker du **Velg annen plassering** og
+bildesamlingen et annet sted, klikker du **Velg annen plassering** og
 velger en annen tom mappe.
 
-Etter at du klikket **Opprett bildesamling** ser vinduet slik ut:
+Når du har klikket **Opprett bildesamling**, ser vinduet slik ut:
 
-![Screenshot etter at samling er opprettet](screenshots/bildebank-created.png)
+![Skjermbilde etter at samling er opprettet](screenshots/bildebank-created.png)
 
-I loggfeltet ser du kommandoen som ble kjørt som opprettet bildesamlingen.
+I loggfeltet ser du kommandoen som opprettet bildesamlingen.
 Knappen for å opprette bildesamling er også fjernet fordi bildesamlingen
-er opprettet i valgt felt. Hvis du vil opprette flere bildesamlinger, eller
-jobbe med en annen bildesamling gjøres det med knappen **Velg annen plassering**.
+er opprettet i valgt mappe. Hvis du vil opprette flere bildesamlinger eller
+jobbe med en annen bildesamling, gjør du det med knappen **Velg annen plassering**.
 Men jeg anbefaler å samle alt i en bildesamling.
 
-Knappen **Start bildebank i nettleser** starter bildebank-serveren og åpner
+Knappen **Start Bildebank i nettleser** starter Bildebank-serveren og åpner
 bildesamlingen i nettleseren. Du kan klikke flere ganger på knappen for å
-ha bildesamlingen åpen i flere nettleser-faner.
+ha bildesamlingen åpen i flere nettleserfaner.
 
 Knappen **Se etter oppdateringer** gjør nettopp det. Programmet sjekker også
-automatisk etter oppdateringer når du starter det. Hvis det finnes oppdateringer
-endres knappen til **Installer oppdateringer**.
+automatisk etter oppdateringer når du starter det. Hvis det finnes oppdateringer,
+endres knappen til **Installer oppdatering**.
 
 
 ## Importere bilder til bildesamlingen
 
 For å importere bilder velger du først fanen "Import av bilder":
 
-![Screenshot av Bildebank-vinduet, fanen import av bilder](screenshots/bildebank-page-import.png)
+![Skjermbilde av Bildebank-vinduet, fanen import av bilder](screenshots/bildebank-page-import.png)
 
-Når du trykker knappen **Importer bilder** får du først opp et vindu der du velger
-mappen eller minnebrikken som inneholder bilder. Det gjør ingen ting om bildene
+Når du trykker på knappen **Importer bilder**, får du først opp et vindu der du velger
+mappen eller minnebrikken som inneholder bilder. Det gjør ingenting om bildene
 allerede er delvis sortert i undermapper.
 
-Når du har valgt mappe frå du opp et vindu der du blir bedt om å gi navn til importen:
+Når du har valgt mappe, får du opp et vindu der du blir bedt om å gi navn til importen:
 
-![Screenshot av name-import dialogen](screenshots/name-import.png)
+![Skjermbilde av importnavn-dialogen](screenshots/name-import.png)
 
-Gi det gjerne et navn som gjør at du holder oversikt over hva du har importert.
+Gi importen gjerne et navn som gjør at du holder oversikt over hva du har importert.
 Du kan se listen over mapper som er importert [i nettleseren](/sources)
-etter at du har startet bildebank-serveren ved å klikke **Start bildebank i nettleseren**
+etter at du har startet Bildebank-serveren ved å klikke **Start Bildebank i nettleser**.
 
-Hvis du importerer bilder fra mange CDer eller minnebrikker, og de alltid
-heter **F:\** på din PC, så må du gi hver import et eget navn.
+Hvis du importerer bilder fra mange CD-er eller minnebrikker, og de alltid
+heter **F:\** på din PC, må du gi hver import et eget navn.
 
-Når importen er fullført skrives en oppsummering i logg-vinduet. Eksempelet under
-viser at 10 bilder ble scannet og importert, og at ingen av bildene allerede
+Når importen er fullført, skrives en oppsummering i loggvinduet. Eksempelet under
+viser at 10 bilder ble skannet og importert, og at ingen av bildene allerede
 fantes i bildesamlingen:
 
 ```text
@@ -73,29 +73,29 @@ nytt navn for en ny import.
 
 ## Se bildene i nettleser
 
-For å se bildene i nettleseren velger du fanen "Bildebank" i bildet og klikker
+For å se bildene i nettleseren velger du fanen "Bildebank" i vinduet og klikker
 **Start Bildebank i nettleser**:
 
-![Screenshot etter at samling er opprettet](screenshots/bildebank-created.png)
+![Skjermbilde etter at samling er opprettet](screenshots/bildebank-created.png)
 
 ## Hente oppdateringer
 
 Du kan se etter oppdateringer ved å klikke på knappen "Se etter oppdateringer"
 i Bildebank-vinduet. Programmet vil også gjøre dette ved oppstart. Hvis knappen
 endrer seg til "Installer oppdatering" betyr det at du kan oppdatere programmet
-ved å klikke knappen. Programmet laster da ned oppdatering og restarter
-programmet.
+ved å klikke på knappen. Programmet laster da ned oppdateringen og starter seg
+selv på nytt.
 
-![Screenshot av oppdatering finnes](screenshots/bildebank-installer-oppdatering.png)
+![Skjermbilde av tilgjengelig oppdatering](screenshots/bildebank-installer-oppdatering.png)
 
 Hvis en oppdatering har ødelagt Bildebank-vinduet, slik at du ikke kan gjøre
-nye oppdateringer derfra, så kan dette gjøres fra PowerShell:
+nye oppdateringer derfra, kan dette gjøres fra PowerShell:
 
 ```powershell
 bildebank update
 ```
 
-Hvis `bildebank update` ikke virker, kan du kjøre oppdateringsscriptet direkte:
+Hvis `bildebank update` ikke virker, kan du kjøre oppdateringsskriptet direkte:
 
 ```powershell
 cd $HOME\kode\bildebank
@@ -111,7 +111,7 @@ git pull --ff-only
 ```
 
 Deretter kan du bruke programmet som før. Disse siste alternativene er det
-lite sansynlig du vil støte på. Så hvis oppdateringsknappen ikke virker
+lite sannsynlig at du vil støte på. Hvis oppdateringsknappen ikke virker,
 kan du gjerne kontakte Tom Cato før du prøver noe mer.
 
 ### Migrere gammel database
@@ -120,13 +120,13 @@ Noen programoppdateringer kan kreve at databasen i bildesamlingsmappen
 oppgraderes før du kan importere eller gjøre andre endringer. Bildebank-vinduet
 kan gjøre det, og da ser det slik ut:
 
-![Screenshot av migrerings-dialogen](screenshots/bildebank-migrate.png)
+![Skjermbilde av migreringsdialogen](screenshots/bildebank-migrate.png)
 
-Det er da helt trygt å klikke "Migrer". Det tas backup av filen som endres,
+Det er da helt trygt å klikke "Migrer". Det tas sikkerhetskopi av filen som endres,
 og ingen bildefiler endres ved migrering.
 
 Hvis du jobber med Bildebank fra PowerShell, oppgraderer du ved å gå til
-mappen med bildesamlingen og kjøre migrate:
+mappen med bildesamlingen og kjøre `migrate`:
 
 ```powershell
 cd $HOME\BildeSamling
@@ -138,20 +138,20 @@ Du kan kontrollere hva migreringen vil gjøre uten å endre databasen:
 bildebank migrate --check
 ```
 
-Når `bildebank migrate` kjøres, lager programmet en backup av `.bilder.sqlite3`
+Når `bildebank migrate` kjøres, lager programmet en sikkerhetskopi av `.bilder.sqlite3`
 før databasen endres. Hvis migreringen feiler, skal databasen ikke oppgraderes,
-og backupen beholdes.
+og sikkerhetskopien beholdes.
 
 ## Angre import av en kilde
 
-Hvis du har importert feil mappe, CD eller USB-disk, kan du bruke [`unimport`](unimport.md)
+Hvis du har importert feil mappe, CD eller USB-disk, kan du bruke [`unimport`](../unimport.md)
 eller trykke knappen "Angre import" i Bildebank-vinduet. Bildebank-vinduet lar deg
-velge hva du vil angre, og lar deg bare gjøre kommandoen hvis filene fortsatt finnes utenfor
+velge hva du vil angre, og lar deg bare kjøre kommandoen hvis filene fortsatt finnes utenfor
 bildesamlingen, slik at ingen bilder mistes.
 
-## Sikkerhet og backup
+## Sikkerhet og sikkerhetskopier
 
-Bildebank er ikke en backup-løsning. Programmet organiserer og kopierer bilder
+Bildebank er ikke en backupløsning. Programmet organiserer og kopierer bilder
 og videoer inn i en ny samling, men det erstatter ikke sikkerhetskopier.
 
 Ikke slett originalkilder etter import bare fordi Bildebank har kopiert filene.
@@ -164,5 +164,5 @@ En enkel regel er 3-2-1-regelen: ha minst 3 kopier av viktige filer, på minst
 Behold gamle kilder til du er sikker på at den nye samlingen er kontrollert og
 sikkerhetskopiert.
 
-Kommandoen [`backup`](backup.md) kan brukes for å lage en backup-kopi av hele
+Kommandoen [`backup`](../backup.md) kan brukes for å lage en sikkerhetskopi av hele
 bildesamlingen.
