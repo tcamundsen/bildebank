@@ -465,6 +465,27 @@ def test_launcher_button_helper_uses_launcher_button_style() -> None:
     assert "return self.ttk.Button(parent, **kwargs)" in source
 
 
+def test_launcher_string_dialog_is_padded_and_replaces_simpledialog() -> None:
+    source = inspect.getsource(BildebankLauncher._ask_string)
+    cleanup_source = inspect.getsource(BildebankLauncher._confirm_cleanup_pending_deletes)
+    unimport_source = inspect.getsource(BildebankLauncher._confirm_unimport_source)
+    import_source = inspect.getsource(BildebankLauncher._start_import_flow)
+
+    assert "Toplevel(self.root)" in source
+    assert "ttk.Frame(dialog, padding=16)" in source
+    assert "wraplength=460" in source
+    assert "ttk.Entry" in source
+    assert "self._button" in source
+    assert "grab_set" in source
+    assert "wait_window" in source
+    assert "_ask_string" in cleanup_source
+    assert "_ask_string" in unimport_source
+    assert "_ask_string" in import_source
+    assert "simpledialog" not in cleanup_source
+    assert "simpledialog" not in unimport_source
+    assert "simpledialog" not in import_source
+
+
 def test_launcher_initializes_dependency_status_asynchronously() -> None:
     init_source = inspect.getsource(BildebankLauncher.__init__)
     refresh_source = inspect.getsource(BildebankLauncher._refresh_state)

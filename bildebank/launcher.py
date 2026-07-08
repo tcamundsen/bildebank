@@ -1261,6 +1261,58 @@ class BildebankLauncher:
         kwargs.setdefault("style", BUTTON_STYLE)
         return self.ttk.Button(parent, **kwargs)
 
+    def _ask_string(
+        self,
+        title: str,
+        message: str,
+        *,
+        initialvalue: str = "",
+    ) -> str | None:
+        tk = self.tk
+        ttk = self.ttk
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title(title)
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+
+        frame = ttk.Frame(dialog, padding=16)
+        frame.grid(row=0, column=0, sticky="nsew")
+        frame.columnconfigure(0, weight=1)
+
+        ttk.Label(frame, text=message, wraplength=460, justify="left").grid(row=0, column=0, sticky="w")
+        value = tk.StringVar(value=initialvalue)
+        entry = ttk.Entry(frame, textvariable=value, width=48)
+        entry.grid(row=1, column=0, sticky="ew", pady=(10, 16))
+        entry.focus_set()
+        entry.selection_range(0, tk.END)
+
+        result: str | None = None
+
+        def accept() -> None:
+            nonlocal result
+            result = value.get()
+            dialog.destroy()
+
+        def cancel() -> None:
+            dialog.destroy()
+
+        button_frame = ttk.Frame(frame)
+        button_frame.grid(row=2, column=0, sticky="e")
+        self._button(button_frame, text="Avbryt", command=cancel).grid(row=0, column=0, padx=(0, 8))
+        self._button(button_frame, text="OK", command=accept).grid(row=0, column=1)
+
+        dialog.bind("<Return>", lambda _event: accept())
+        dialog.bind("<Escape>", lambda _event: cancel())
+        dialog.protocol("WM_DELETE_WINDOW", cancel)
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + max((self.root.winfo_width() - dialog.winfo_width()) // 2, 0)
+        y = self.root.winfo_rooty() + max((self.root.winfo_height() - dialog.winfo_height()) // 2, 0)
+        dialog.geometry(f"+{x}+{y}")
+        dialog.grab_set()
+        self.root.wait_window(dialog)
+        return result
+
     def _add_tooltip(self, widget: Any, text: str) -> None:
         self.tooltips.append(Tooltip(widget, text))
 
@@ -1837,12 +1889,9 @@ class BildebankLauncher:
         )
 
     def _confirm_cleanup_pending_deletes(self) -> None:
-        from tkinter import simpledialog
-
-        confirmation = simpledialog.askstring(
+        confirmation = self._ask_string(
             "Bekreft ventende filsletting",
             'Skriv "ja, rydd opp" for å gjennomføre opprydding.',
-            parent=self.root,
         )
         if confirmation != "ja, rydd opp":
             self._log("Opprydding av ventende filsletting avbrutt.")
@@ -2157,7 +2206,7 @@ class BildebankLauncher:
         )
 
     def _confirm_unimport_source(self, source: db.Source, report_path: Path) -> None:
-        from tkinter import messagebox, simpledialog
+        from tkinter import messagebox
 
         try:
             changed_targets = read_unimport_target_change_report(report_path)
@@ -2178,10 +2227,9 @@ class BildebankLauncher:
                 "Unimport kan fjerne filer fra den aktive bildesamlingen."
             ),
         )
-        confirmation = simpledialog.askstring(
+        confirmation = self._ask_string(
             "Bekreft unimport",
             f'Skriv "ja, det vil jeg" for å unimporte kilden:\n{source.name}',
-            parent=self.root,
         )
         if confirmation != "ja, det vil jeg":
             self._log(f'Unimport avbrutt for kilde "{source.name}".')
@@ -2457,7 +2505,7 @@ class BildebankLauncher:
         )
 
     def _start_import_flow(self) -> None:
-        from tkinter import filedialog, messagebox, simpledialog
+        from tkinter import filedialog, messagebox
 
         selected = filedialog.askdirectory(title="Velg mappen som skal importeres")
         if not selected:
@@ -2473,11 +2521,10 @@ class BildebankLauncher:
 
         proposed_name = suggest_import_name(source_folder)
         while True:
-            import_name = simpledialog.askstring(
+            import_name = self._ask_string(
                 "Importnavn",
                 "Navn på importen:",
                 initialvalue=proposed_name,
-                parent=self.root,
             )
             if import_name is None:
                 self._log("Import avbrutt: importnavn ikke valgt.")
