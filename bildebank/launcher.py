@@ -23,6 +23,7 @@ from .config import (
     load_config,
     load_launcher_collection_path,
     set_face_recognition_enabled,
+    set_image_search_enabled,
     set_launcher_collection_path,
 )
 from .pending_deletes import list_pending_deletes
@@ -65,6 +66,15 @@ IMAGE_SCAN_TOOLTIP = (
 )
 IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP = (
     "Trykk knappen 'Installer OpenCLIP' på Oppsett-fanen for å slå på bildesøk."
+)
+IMAGE_SCAN_SETUP_DOWNLOAD_MESSAGE = (
+    "Bildesøk krever OpenCLIP og en lokal AI-modell. "
+    "Dette kan laste ned flere hundre MB.\n\n"
+    "Vil du installere det som mangler, slå på bildesøk og klargjøre bildene nå?"
+)
+IMAGE_SCAN_ENABLE_MESSAGE = (
+    "Bildesøk er slått av i innstillingene.\n\n"
+    "Vil du slå det på og klargjøre bildene nå?"
 )
 
 PROGRESS_LOG_LABELS = (
@@ -1514,12 +1524,11 @@ class BildebankLauncher:
                     else FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP
                 )
         if self.image_scan_button is not None:
-            image_scan_enabled = enabled and self.openclip_status == "Installert"
-            self.image_scan_button.configure(state="normal" if image_scan_enabled else "disabled")
+            self.image_scan_button.configure(state=state)
             if self.image_scan_tooltip is not None:
                 self.image_scan_tooltip.text = (
                     IMAGE_SCAN_TOOLTIP
-                    if self.openclip_status == "Installert"
+                    if self.openclip_status == "Installert" and self.openclip_model_status.status == "Tilgjengelig"
                     else IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP
                 )
         if self.update_button is not None and (self.update_status.status == "checking" or not enabled):
@@ -1799,6 +1808,38 @@ class BildebankLauncher:
         on_success()
 
     def _run_image_scan(self) -> None:
+        from tkinter import messagebox
+
+        openclip_missing = self.openclip_status != "Installert"
+        model_missing = self.openclip_model_status.status != "Tilgjengelig"
+        image_search_disabled = not self._image_search_enabled()
+        if not openclip_missing and not model_missing and not image_search_disabled:
+            self._start_image_scan_command()
+            return
+
+        if (openclip_missing or model_missing) and not openclip_install_supported():
+            messagebox.showerror(
+                "Bildesøk mangler",
+                "Bildesøk kan ikke klargjøres automatisk her. "
+                "Installer OpenCLIP og AI-modellen fra Oppsett-fanen på Windows.",
+                parent=self.root,
+            )
+            self._log("Bildesøk-scan avbrutt: OpenCLIP-oppsett kan ikke kjøres automatisk her.")
+            return
+
+        question = IMAGE_SCAN_SETUP_DOWNLOAD_MESSAGE if openclip_missing or model_missing else IMAGE_SCAN_ENABLE_MESSAGE
+        if not messagebox.askyesno("Klargjør bildesøk?", question, parent=self.root):
+            self._log("Bildesøk-scan avbrutt.")
+            return
+
+        steps: list[Callable[[Callable[[], None]], None]] = []
+        if openclip_missing or model_missing:
+            steps.append(self._run_image_scan_openclip_install_step)
+        if image_search_disabled:
+            steps.append(self._run_image_scan_enable_step)
+        self._run_image_scan_setup_steps(steps)
+
+    def _start_image_scan_command(self) -> None:
         self._log("Scanner bilder for bildesøk ...")
         self._run_waiting_command(
             image_scan_command(self.collection_path),
@@ -1808,6 +1849,44 @@ class BildebankLauncher:
             on_success=self._refresh_state,
             cancellable=True,
         )
+
+    def _image_search_enabled(self) -> bool:
+        try:
+            return bool(load_config(program_repo_root()).image_search.enabled)
+        except (OSError, ValueError) as exc:
+            self._log(f"Kunne ikke lese innstilling for bildesøk: {exc}")
+            return False
+
+    def _run_image_scan_setup_steps(self, steps: list[Callable[[Callable[[], None]], None]]) -> None:
+        if not steps:
+            self._start_image_scan_command()
+            return
+        step = steps[0]
+        remaining = steps[1:]
+        step(lambda: self._run_image_scan_setup_steps(remaining))
+
+    def _run_image_scan_openclip_install_step(self, on_success: Callable[[], None]) -> None:
+        self._log("Installerer OpenCLIP før bildesøk-scan ...")
+        self._run_waiting_command(
+            openclip_install_command(),
+            running_message="Installerer OpenCLIP ...",
+            success_message="OpenCLIP-installasjon fullført.",
+            failure_message="OpenCLIP-installasjon feilet.",
+            on_success=lambda: self._image_scan_openclip_install_finished(on_success),
+        )
+
+    def _image_scan_openclip_install_finished(self, on_success: Callable[[], None]) -> None:
+        importlib.invalidate_caches()
+        on_success()
+
+    def _run_image_scan_enable_step(self, on_success: Callable[[], None]) -> None:
+        try:
+            set_image_search_enabled(program_repo_root(), True)
+        except (OSError, ValueError) as exc:
+            self._show_error("Kunne ikke slå på bildesøk.", exc)
+            return
+        self._log("Bildesøk er slått på.")
+        on_success()
 
     def _run_make_thumbnails(self) -> None:
         self._log("Lager thumbnails ...")

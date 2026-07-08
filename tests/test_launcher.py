@@ -705,6 +705,7 @@ def launcher_with_main_action_buttons(collection_path: Path) -> BildebankLaunche
     launcher.insightface_status = InsightFaceDependencyStatus("Klar")
     launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Lastet ned")
     launcher.openclip_status = "Installert"
+    launcher.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig")
     return launcher
 
 
@@ -762,14 +763,14 @@ def test_face_scan_button_enabled_and_tooltip_explains_missing_face_model(tmp_pa
     assert launcher.face_scan_tooltip.text == FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP
 
 
-def test_image_scan_button_disabled_and_tooltip_explains_missing_openclip(tmp_path: Path) -> None:
+def test_image_scan_button_enabled_and_tooltip_explains_missing_openclip(tmp_path: Path) -> None:
     launcher = launcher_with_main_action_buttons(tmp_path / "samling")
     launcher.openclip_status = "Mangler"
 
     with patch("bildebank.launcher.is_collection_created", return_value=True):
         launcher._set_buttons_enabled(True)
 
-    assert launcher.image_scan_button.options["state"] == "disabled"
+    assert launcher.image_scan_button.options["state"] == "normal"
     assert launcher.image_scan_tooltip.text == IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP
 
     launcher.openclip_status = "Installert"
@@ -777,6 +778,17 @@ def test_image_scan_button_disabled_and_tooltip_explains_missing_openclip(tmp_pa
 
     assert launcher.image_scan_button.options["state"] == "normal"
     assert launcher.image_scan_tooltip.text == IMAGE_SCAN_TOOLTIP
+
+
+def test_image_scan_button_enabled_and_tooltip_explains_missing_openclip_model(tmp_path: Path) -> None:
+    launcher = launcher_with_main_action_buttons(tmp_path / "samling")
+    launcher.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Mangler")
+
+    with patch("bildebank.launcher.is_collection_created", return_value=True):
+        launcher._set_buttons_enabled(True)
+
+    assert launcher.image_scan_button.options["state"] == "normal"
+    assert launcher.image_scan_tooltip.text == IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP
 
 
 def test_face_scan_preflight_installs_downloads_enables_and_scans(tmp_path: Path) -> None:
@@ -853,6 +865,81 @@ def test_face_scan_preflight_can_be_cancelled(tmp_path: Path) -> None:
         launcher._run_face_scan()
 
     assert actions == ["Ansiktsscan avbrutt."]
+
+
+def test_image_scan_preflight_installs_enables_and_scans(tmp_path: Path) -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher.collection_path = tmp_path / "samling"
+    launcher.root = object()
+    launcher.openclip_status = "Mangler"
+    launcher.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Mangler")
+    actions: list[str] = []
+    launcher._image_search_enabled = lambda: False
+    launcher._run_image_scan_openclip_install_step = lambda on_success: (actions.append("install"), on_success())
+    launcher._run_image_scan_enable_step = lambda on_success: (actions.append("enable"), on_success())
+    launcher._start_image_scan_command = lambda: actions.append("scan")
+    launcher._log = actions.append
+
+    with (
+        patch("tkinter.messagebox.askyesno", return_value=True) as askyesno,
+        patch("bildebank.launcher.openclip_install_supported", return_value=True),
+    ):
+        launcher._run_image_scan()
+
+    askyesno.assert_called_once()
+    assert actions == ["install", "enable", "scan"]
+
+
+def test_image_scan_preflight_enables_disabled_config_before_scan(tmp_path: Path) -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher.collection_path = tmp_path / "samling"
+    launcher.root = object()
+    launcher.openclip_status = "Installert"
+    launcher.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig")
+    actions: list[str] = []
+    launcher._image_search_enabled = lambda: False
+    launcher._run_image_scan_enable_step = lambda on_success: (actions.append("enable"), on_success())
+    launcher._start_image_scan_command = lambda: actions.append("scan")
+    launcher._log = actions.append
+
+    with patch("tkinter.messagebox.askyesno", return_value=True) as askyesno:
+        launcher._run_image_scan()
+
+    askyesno.assert_called_once()
+    assert actions == ["enable", "scan"]
+
+
+def test_image_scan_enable_step_turns_on_image_search(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "bildebank-config.toml").write_text("[image_search]\nenabled = false\n", encoding="utf-8")
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher._log = lambda _message: None
+    launcher._show_error = lambda _message, _exc: None
+    actions: list[str] = []
+
+    with patch("bildebank.launcher.program_repo_root", return_value=repo_root):
+        launcher._run_image_scan_enable_step(lambda: actions.append("next"))
+
+    assert actions == ["next"]
+    assert "enabled = true" in (repo_root / "bildebank-config.toml").read_text(encoding="utf-8")
+
+
+def test_image_scan_preflight_can_be_cancelled(tmp_path: Path) -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher.collection_path = tmp_path / "samling"
+    launcher.root = object()
+    launcher.openclip_status = "Installert"
+    launcher.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig")
+    actions: list[str] = []
+    launcher._image_search_enabled = lambda: False
+    launcher._start_image_scan_command = lambda: actions.append("scan")
+    launcher._log = actions.append
+
+    with patch("tkinter.messagebox.askyesno", return_value=False):
+        launcher._run_image_scan()
+
+    assert actions == ["Bildesøk-scan avbrutt."]
 
 
 def test_create_collection_tooltip_explains_disabled_existing_collection() -> None:
