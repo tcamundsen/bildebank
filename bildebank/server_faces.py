@@ -1303,8 +1303,10 @@ def people_page_html(
         f"""
         <h1>Personer</h1>
         {f'<p class="assign-status">{html.escape(message)}</p>' if message else ''}
-        Kjør <a href="help/face-scan.md">face-scan</a> når du har lagt til nye bilder
-        og <a href="help/face-suggest.md">face-suggest</a> når du
+        Klikk knappen 'Finn ansikter' i Bildebank-vinduet (eller kjør
+        <a href="help/face-scan.md">face-scan</a>) når du har lagt til nye bilder
+        og  <button class="nav-button" type="button" title="Kjør face-suggest for å finne ansikter" data-open-face-suggest>Foreslå personer</button> (eller kjør
+        <a href="help/face-suggest.md">face-suggest</a>) når du
         har bekreftet at personer er et bestemt ansikt.
         {people_face_summary_html(summary)}
         {"" if read_only else '<button class="nav-button" type="button" title="Kjør face-suggest for å finne ansikter" data-open-face-suggest>Foreslå personer</button>'}
