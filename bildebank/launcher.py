@@ -19,7 +19,12 @@ from typing import Any, Callable
 from PIL import Image, ImageTk
 
 from . import db
-from .config import load_config, load_launcher_collection_path, set_launcher_collection_path
+from .config import (
+    load_config,
+    load_launcher_collection_path,
+    set_face_recognition_enabled,
+    set_launcher_collection_path,
+)
 from .pending_deletes import list_pending_deletes
 from .server import DEFAULT_HOST, DEFAULT_PORT
 
@@ -43,6 +48,15 @@ FACE_SCAN_TOOLTIP = (
 FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP = (
     "InsightFace må installeres og valgt ansiktsmodell må lastes ned på Oppsett-fanen "
     "for å slå på ansiktsgjenkjenning."
+)
+FACE_SCAN_SETUP_DOWNLOAD_MESSAGE = (
+    "Ansiktsgjenkjenning krever InsightFace og en ansiktsmodell. "
+    "Dette kan laste ned litt over 400 MB.\n\n"
+    "Vil du installere det som mangler, slå på ansiktsgjenkjenning og søke etter ansikter nå?"
+)
+FACE_SCAN_ENABLE_MESSAGE = (
+    "Ansiktsgjenkjenning er slått av i innstillingene.\n\n"
+    "Vil du slå den på og søke etter ansikter nå?"
 )
 IMAGE_SCAN_TOOLTIP = (
     "Kjører 'bildebank image-scan'. Denne kommandoen gjør at du "
@@ -1492,12 +1506,7 @@ class BildebankLauncher:
         if self.backup_button is not None and not collection_created:
             self.backup_button.configure(state="disabled")
         if self.face_scan_button is not None:
-            face_scan_enabled = (
-                enabled
-                and self.insightface_status.status == "Klar"
-                and self.face_model_status.status == "Lastet ned"
-            )
-            self.face_scan_button.configure(state="normal" if face_scan_enabled else "disabled")
+            self.face_scan_button.configure(state=state)
             if self.face_scan_tooltip is not None:
                 self.face_scan_tooltip.text = (
                     FACE_SCAN_TOOLTIP
@@ -1697,6 +1706,40 @@ class BildebankLauncher:
         )
 
     def _run_face_scan(self) -> None:
+        from tkinter import messagebox
+
+        insightface_missing = self.insightface_status.status != "Klar"
+        model_missing = self.face_model_status.status != "Lastet ned"
+        face_recognition_disabled = not self._face_recognition_enabled()
+        if not insightface_missing and not model_missing and not face_recognition_disabled:
+            self._start_face_scan_command()
+            return
+
+        if (insightface_missing or model_missing) and not insightface_install_supported():
+            messagebox.showerror(
+                "Ansiktsgjenkjenning mangler",
+                "Ansiktsgjenkjenning kan ikke klargjøres automatisk her. "
+                "Installer InsightFace og last ned ansiktsmodellen fra Oppsett-fanen på Windows.",
+                parent=self.root,
+            )
+            self._log("Ansiktsscan avbrutt: InsightFace-oppsett kan ikke kjøres automatisk her.")
+            return
+
+        question = FACE_SCAN_SETUP_DOWNLOAD_MESSAGE if insightface_missing or model_missing else FACE_SCAN_ENABLE_MESSAGE
+        if not messagebox.askyesno("Klargjør ansiktsgjenkjenning?", question, parent=self.root):
+            self._log("Ansiktsscan avbrutt.")
+            return
+
+        steps: list[Callable[[Callable[[], None]], None]] = []
+        if insightface_missing:
+            steps.append(self._run_face_scan_insightface_install_step)
+        if model_missing:
+            steps.append(self._run_face_scan_model_download_step)
+        if face_recognition_disabled:
+            steps.append(self._run_face_scan_enable_step)
+        self._run_face_scan_setup_steps(steps)
+
+    def _start_face_scan_command(self) -> None:
         self._log("Scanner ansikter ...")
         self._run_waiting_command(
             face_scan_command(self.collection_path),
@@ -1706,6 +1749,54 @@ class BildebankLauncher:
             on_success=self._refresh_state,
             cancellable=True,
         )
+
+    def _face_recognition_enabled(self) -> bool:
+        try:
+            return bool(load_config(program_repo_root()).face_recognition.enabled)
+        except (OSError, ValueError) as exc:
+            self._log(f"Kunne ikke lese innstilling for ansiktsgjenkjenning: {exc}")
+            return False
+
+    def _run_face_scan_setup_steps(self, steps: list[Callable[[Callable[[], None]], None]]) -> None:
+        if not steps:
+            self._start_face_scan_command()
+            return
+        step = steps[0]
+        remaining = steps[1:]
+        step(lambda: self._run_face_scan_setup_steps(remaining))
+
+    def _run_face_scan_insightface_install_step(self, on_success: Callable[[], None]) -> None:
+        self._log("Installerer InsightFace før ansiktsscan ...")
+        self._run_waiting_command(
+            insightface_install_command(),
+            running_message="Installerer InsightFace ...",
+            success_message="InsightFace-installasjon fullført.",
+            failure_message="InsightFace-installasjon feilet.",
+            on_success=lambda: self._face_scan_insightface_install_finished(on_success),
+        )
+
+    def _face_scan_insightface_install_finished(self, on_success: Callable[[], None]) -> None:
+        importlib.invalidate_caches()
+        on_success()
+
+    def _run_face_scan_model_download_step(self, on_success: Callable[[], None]) -> None:
+        self._log(f"Laster ned ansiktsmodell {self.face_model_status.model_name} før ansiktsscan ...")
+        self._run_waiting_command(
+            download_face_model_command(),
+            running_message="Laster ned ansiktsmodell ...",
+            success_message="Ansiktsmodell lastet ned.",
+            failure_message="Nedlasting av ansiktsmodell feilet.",
+            on_success=on_success,
+        )
+
+    def _run_face_scan_enable_step(self, on_success: Callable[[], None]) -> None:
+        try:
+            set_face_recognition_enabled(program_repo_root(), True)
+        except (OSError, ValueError) as exc:
+            self._show_error("Kunne ikke slå på ansiktsgjenkjenning.", exc)
+            return
+        self._log("Ansiktsgjenkjenning er slått på.")
+        on_success()
 
     def _run_image_scan(self) -> None:
         self._log("Scanner bilder for bildesøk ...")

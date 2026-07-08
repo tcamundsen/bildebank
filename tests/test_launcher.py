@@ -734,14 +734,14 @@ def test_main_action_buttons_with_collection_disable_create(tmp_path: Path) -> N
     assert launcher.update_button.options.get("state", "normal") == "normal"
 
 
-def test_face_scan_button_disabled_and_tooltip_explains_missing_insightface(tmp_path: Path) -> None:
+def test_face_scan_button_enabled_and_tooltip_explains_missing_insightface(tmp_path: Path) -> None:
     launcher = launcher_with_main_action_buttons(tmp_path / "samling")
     launcher.insightface_status = InsightFaceDependencyStatus("Mangler", "mangler insightface")
 
     with patch("bildebank.launcher.is_collection_created", return_value=True):
         launcher._set_buttons_enabled(True)
 
-    assert launcher.face_scan_button.options["state"] == "disabled"
+    assert launcher.face_scan_button.options["state"] == "normal"
     assert launcher.face_scan_tooltip.text == FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP
 
     launcher.insightface_status = InsightFaceDependencyStatus("Klar")
@@ -751,14 +751,14 @@ def test_face_scan_button_disabled_and_tooltip_explains_missing_insightface(tmp_
     assert launcher.face_scan_tooltip.text == FACE_SCAN_TOOLTIP
 
 
-def test_face_scan_button_disabled_and_tooltip_explains_missing_face_model(tmp_path: Path) -> None:
+def test_face_scan_button_enabled_and_tooltip_explains_missing_face_model(tmp_path: Path) -> None:
     launcher = launcher_with_main_action_buttons(tmp_path / "samling")
     launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Mangler")
 
     with patch("bildebank.launcher.is_collection_created", return_value=True):
         launcher._set_buttons_enabled(True)
 
-    assert launcher.face_scan_button.options["state"] == "disabled"
+    assert launcher.face_scan_button.options["state"] == "normal"
     assert launcher.face_scan_tooltip.text == FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP
 
 
@@ -777,6 +777,82 @@ def test_image_scan_button_disabled_and_tooltip_explains_missing_openclip(tmp_pa
 
     assert launcher.image_scan_button.options["state"] == "normal"
     assert launcher.image_scan_tooltip.text == IMAGE_SCAN_TOOLTIP
+
+
+def test_face_scan_preflight_installs_downloads_enables_and_scans(tmp_path: Path) -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher.collection_path = tmp_path / "samling"
+    launcher.root = object()
+    launcher.insightface_status = InsightFaceDependencyStatus("Mangler")
+    launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Mangler")
+    actions: list[str] = []
+    launcher._face_recognition_enabled = lambda: False
+    launcher._run_face_scan_insightface_install_step = lambda on_success: (actions.append("install"), on_success())
+    launcher._run_face_scan_model_download_step = lambda on_success: (actions.append("download"), on_success())
+    launcher._run_face_scan_enable_step = lambda on_success: (actions.append("enable"), on_success())
+    launcher._start_face_scan_command = lambda: actions.append("scan")
+    launcher._log = actions.append
+
+    with (
+        patch("tkinter.messagebox.askyesno", return_value=True) as askyesno,
+        patch("bildebank.launcher.insightface_install_supported", return_value=True),
+    ):
+        launcher._run_face_scan()
+
+    askyesno.assert_called_once()
+    assert actions == ["install", "download", "enable", "scan"]
+
+
+def test_face_scan_preflight_enables_disabled_config_before_scan(tmp_path: Path) -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher.collection_path = tmp_path / "samling"
+    launcher.root = object()
+    launcher.insightface_status = InsightFaceDependencyStatus("Klar")
+    launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Lastet ned")
+    actions: list[str] = []
+    launcher._face_recognition_enabled = lambda: False
+    launcher._run_face_scan_enable_step = lambda on_success: (actions.append("enable"), on_success())
+    launcher._start_face_scan_command = lambda: actions.append("scan")
+    launcher._log = actions.append
+
+    with patch("tkinter.messagebox.askyesno", return_value=True) as askyesno:
+        launcher._run_face_scan()
+
+    askyesno.assert_called_once()
+    assert actions == ["enable", "scan"]
+
+
+def test_face_scan_enable_step_turns_on_face_recognition(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / "bildebank-config.toml").write_text("[face_recognition]\nenabled = false\n", encoding="utf-8")
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher._log = lambda _message: None
+    launcher._show_error = lambda _message, _exc: None
+    actions: list[str] = []
+
+    with patch("bildebank.launcher.program_repo_root", return_value=repo_root):
+        launcher._run_face_scan_enable_step(lambda: actions.append("next"))
+
+    assert actions == ["next"]
+    assert "enabled = true" in (repo_root / "bildebank-config.toml").read_text(encoding="utf-8")
+
+
+def test_face_scan_preflight_can_be_cancelled(tmp_path: Path) -> None:
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher.collection_path = tmp_path / "samling"
+    launcher.root = object()
+    launcher.insightface_status = InsightFaceDependencyStatus("Klar")
+    launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Lastet ned")
+    actions: list[str] = []
+    launcher._face_recognition_enabled = lambda: False
+    launcher._start_face_scan_command = lambda: actions.append("scan")
+    launcher._log = actions.append
+
+    with patch("tkinter.messagebox.askyesno", return_value=False):
+        launcher._run_face_scan()
+
+    assert actions == ["Ansiktsscan avbrutt."]
 
 
 def test_create_collection_tooltip_explains_disabled_existing_collection() -> None:
@@ -1262,7 +1338,7 @@ def test_interrupt_process_sends_sigint_outside_windows() -> None:
 
 
 def test_face_scan_is_cancellable_from_launcher() -> None:
-    source = inspect.getsource(BildebankLauncher._run_face_scan)
+    source = inspect.getsource(BildebankLauncher._start_face_scan_command)
 
     assert "cancellable=True" in source
 
