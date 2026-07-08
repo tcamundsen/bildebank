@@ -1852,7 +1852,7 @@ class BildebankLauncher:
 
     def _image_search_enabled(self) -> bool:
         try:
-            return bool(load_config(program_repo_root()).image_search.enabled)
+            return bool(load_config(program_repo_root()).openclip.enabled)
         except (OSError, ValueError) as exc:
             self._log(f"Kunne ikke lese innstilling for bildesøk: {exc}")
             return False

@@ -925,6 +925,20 @@ def test_image_scan_enable_step_turns_on_image_search(tmp_path: Path) -> None:
     assert "enabled = true" in (repo_root / "bildebank-config.toml").read_text(encoding="utf-8")
 
 
+def test_image_search_enabled_reads_openclip_config_field(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    config_path = repo_root / "bildebank-config.toml"
+    launcher = BildebankLauncher.__new__(BildebankLauncher)
+    launcher._log = lambda _message: None
+
+    with patch("bildebank.launcher.program_repo_root", return_value=repo_root):
+        config_path.write_text("[image_search]\nenabled = true\n", encoding="utf-8")
+        assert launcher._image_search_enabled()
+        config_path.write_text("[image_search]\nenabled = false\n", encoding="utf-8")
+        assert not launcher._image_search_enabled()
+
+
 def test_image_scan_preflight_can_be_cancelled(tmp_path: Path) -> None:
     launcher = BildebankLauncher.__new__(BildebankLauncher)
     launcher.collection_path = tmp_path / "samling"
