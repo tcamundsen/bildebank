@@ -70,6 +70,12 @@
       Object.assign(document.createElement("code"), {textContent: `bildebank ${payload.name}`}),
       document.createTextNode(" fra PowerShell.")
     );
+    const guiLabel = status.closest("[data-maintenance-name]")?.dataset.maintenanceGuiLabel || "";
+    if (guiLabel) {
+      status.append(
+        document.createTextNode(` I Bildebank-vinduet kan du trykke "${guiLabel}".`)
+      );
+    }
   }
   function updateMaintenanceRow(row, payload) {
     const status = row?.querySelector("[data-maintenance-status]");
@@ -80,6 +86,13 @@
     if (missing) missing.textContent = String(payload.missing);
     if (total) total.textContent = String(payload.total);
     setMaintenanceStatusMessage(status, payload);
+    if (row?.classList.contains("dashboard-action")) {
+      const severity = row.querySelector("strong");
+      const current = Number(payload.missing) === 0;
+      row.classList.toggle("dashboard-action-current", current);
+      row.classList.toggle("dashboard-action-recommended", !current);
+      if (severity) severity.textContent = current ? "oppdatert" : "bør gjøres";
+    }
   }
   function loadMaintenanceStatuses() {
     const maintenanceRows = Array.from(document.querySelectorAll("[data-maintenance-name]"));

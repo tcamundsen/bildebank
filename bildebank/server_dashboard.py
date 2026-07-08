@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import db, server_app
+from . import db
 from .config import AppConfig
 
 
@@ -21,6 +21,8 @@ class DashboardAction:
     command: str | None = None
     help_path: str | None = None
     link_path: str | None = None
+    maintenance_name: str | None = None
+    gui_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -38,7 +40,6 @@ class DashboardSummary:
     pending_file_moves: int
     date_source_counts: dict[str, int]
     geo_stats: dict[str, int]
-    maintenance_statuses: tuple[server_app.MaintenanceStatus, ...]
 
 
 def dashboard_page_html(
@@ -49,7 +50,7 @@ def dashboard_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
 ) -> str:
-    summary = dashboard_summary(target, config)
+    summary = dashboard_summary(target)
     actions = dashboard_actions(summary)
     return shell_page_html(
         "Dashboard",
@@ -78,7 +79,7 @@ def dashboard_page_html(
     )
 
 
-def dashboard_summary(target: Path, config: AppConfig) -> DashboardSummary:
+def dashboard_summary(target: Path) -> DashboardSummary:
     conn = db.connect(target)
     try:
         status_counts = db.status_counts(conn)
@@ -97,7 +98,6 @@ def dashboard_summary(target: Path, config: AppConfig) -> DashboardSummary:
             pending_file_moves=len(db.prepared_pending_file_moves(conn)),
             date_source_counts={str(key): int(value) for key, value in dict(status_counts["date_sources"]).items()},
             geo_stats=db.geo_stats(conn),
-            maintenance_statuses=server_app.maintenance_statuses(target, config),
         )
     finally:
         conn.close()
@@ -148,7 +148,6 @@ def count_undated_files(conn: sqlite3.Connection) -> int:
 
 
 def dashboard_actions(summary: DashboardSummary) -> tuple[DashboardAction, ...]:
-    statuses = {status.name: status for status in summary.maintenance_statuses}
     actions: list[DashboardAction] = []
 
     if summary.unresolved_errors:
@@ -182,7 +181,7 @@ def dashboard_actions(summary: DashboardSummary) -> tuple[DashboardAction, ...]:
             )
         )
 
-    actions.extend(scan_action(statuses.get(name)) for name in ("geo-scan", "face-scan", "image-scan"))
+    actions.extend(scan_action(name) for name in ("geo-scan", "face-scan", "image-scan"))
     actions.append(
         DashboardAction(
             "Thumbnails",
@@ -207,24 +206,20 @@ def dashboard_actions(summary: DashboardSummary) -> tuple[DashboardAction, ...]:
     return tuple(actions)
 
 
-def scan_action(status: server_app.MaintenanceStatus | None) -> DashboardAction:
-    if status is None:
-        return DashboardAction("Scan", "oppdatert", "Oppdatert")
-    if status.missing == 0:
-        return DashboardAction(status.name, "oppdatert", "Oppdatert", help_path=status.help_path)
+def scan_action(name: str) -> DashboardAction:
     button_labels = {
         "geo-scan": "Les GPS fra bilder",
         "face-scan": "Finn ansikter",
         "image-scan": "Klargjør bildesøk",
     }
-    button_label = button_labels.get(status.name)
-    gui_detail = f' I Bildebank-vinduet kan du trykke "{button_label}".' if button_label else ""
     return DashboardAction(
-        status.name,
+        name,
         "bør gjøres",
-        f"{status.missing} av {status.total} bilder mangler {status.name}.{gui_detail}",
-        f"bildebank {status.name}",
-        status.help_path,
+        "Oppdaterer tall...",
+        f"bildebank {name}",
+        f"/help/{name}.md",
+        maintenance_name=name,
+        gui_label=button_labels.get(name),
     )
 
 
@@ -276,14 +271,7 @@ def coverage_section_html(summary: DashboardSummary) -> str:
     date_source_rows = "".join(
         info_row_html(f"Dato: {source}", str(count)) for source, count in sorted(summary.date_source_counts.items())
     )
-    maintenance_rows = "".join(
-        info_row_html(
-            status.name,
-            "Oppdatert" if status.missing == 0 else f"{status.missing} mangler av {status.total}",
-            status.help_path,
-        )
-        for status in summary.maintenance_statuses
-    )
+    maintenance_rows = "".join(maintenance_info_row_html(name) for name in ("face-scan", "geo-scan", "image-scan"))
     return dashboard_card_html(
         "Dekning",
         f"""
@@ -322,6 +310,22 @@ def info_row_html(label: str, value: str, href: str | None = None, *, title: str
     """
 
 
+def maintenance_info_row_html(name: str) -> str:
+    return f"""
+    <div class="info-row" data-maintenance-name="{html.escape(name)}">
+      <dt>{html.escape(name)}</dt>
+      <dd>
+        <a href="/help/{html.escape(name)}.md" data-maintenance-status>Oppdaterer...</a>
+        <span class="dashboard-maintenance-counts">
+          (<span data-maintenance-current>-</span> scannet,
+          <span data-maintenance-missing>-</span> mangler,
+          <span data-maintenance-total>-</span> totalt)
+        </span>
+      </dd>
+    </div>
+    """
+
+
 def dashboard_action_html(action: DashboardAction) -> str:
     command_html = f'<code>{html.escape(action.command)}</code>' if action.command else ""
     help_html = f'<a href="{html.escape(action.help_path)}">Hjelp</a>' if action.help_path else ""
@@ -333,14 +337,33 @@ def dashboard_action_html(action: DashboardAction) -> str:
         "valgfritt": "optional",
         "oppdatert": "current",
     }.get(action.severity, "optional")
+    maintenance_attr = (
+        f' data-maintenance-name="{html.escape(action.maintenance_name)}"'
+        f' data-maintenance-gui-label="{html.escape(action.gui_label)}"'
+        if action.maintenance_name and action.gui_label
+        else ""
+    )
+    detail_attr = " data-maintenance-status" if action.maintenance_name else ""
+    counts_html = (
+        """
+      <dl class="maintenance-counts">
+        <div><dt>Scannet</dt><dd data-maintenance-current>-</dd></div>
+        <div><dt>Mangler</dt><dd data-maintenance-missing>-</dd></div>
+        <div><dt>Totalt</dt><dd data-maintenance-total>-</dd></div>
+      </dl>
+        """
+        if action.maintenance_name
+        else ""
+    )
     return f"""
-    <article class="dashboard-action dashboard-action-{severity_class}">
+    <article class="dashboard-action dashboard-action-{severity_class}"{maintenance_attr}>
       <div>
         <h3>{html.escape(action.title)}</h3>
-        <p>{html.escape(action.detail)}</p>
+        <p{detail_attr}>{html.escape(action.detail)}</p>
       </div>
       <strong>{html.escape(action.severity)}</strong>
       {command_html}
       <div class="dashboard-action-links">{links}</div>
+      {counts_html}
     </article>
     """

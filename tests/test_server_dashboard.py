@@ -11,7 +11,7 @@ from bildebank import db
 from bildebank.config import AppConfig
 from bildebank.db import init_database
 from bildebank.server import BildebankRequestHandler
-from bildebank.server_app import MaintenanceStatus
+from bildebank.server_assets import SERVER_JS
 from bildebank.server_dashboard import dashboard_actions, dashboard_page_html, dashboard_summary
 from bildebank.server_pages import dashboard_page_html as routed_dashboard_page_html
 from tests.db_test_helpers import insert_test_file
@@ -66,12 +66,7 @@ class ServerDashboardTests(unittest.TestCase):
             finally:
                 conn.close()
 
-            statuses = (
-                MaintenanceStatus("face-scan", 2, 1, 1, "/help/face-scan.md"),
-                MaintenanceStatus("geo-scan", 2, 1, 1, "/help/geo-scan.md"),
-                MaintenanceStatus("image-scan", 2, 1, 1, "/help/image-scan.md"),
-            )
-            with patch("bildebank.server_dashboard.server_app.maintenance_statuses", return_value=statuses):
+            with patch("bildebank.server_app.maintenance_statuses", side_effect=AssertionError("maintenance count")):
                 body = dashboard_page_html(
                     target,
                     AppConfig(),
@@ -98,33 +93,39 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertIn("bildebank geo-scan", body)
         self.assertIn("bildebank face-scan", body)
         self.assertIn("bildebank image-scan", body)
-        self.assertIn("I Bildebank-vinduet kan du trykke &quot;Les GPS fra bilder&quot;.", body)
-        self.assertIn("I Bildebank-vinduet kan du trykke &quot;Finn ansikter&quot;.", body)
-        self.assertIn("I Bildebank-vinduet kan du trykke &quot;Klargjør bildesøk&quot;.", body)
+        self.assertIn('data-maintenance-name="geo-scan"', body)
+        self.assertIn('data-maintenance-name="face-scan"', body)
+        self.assertIn('data-maintenance-name="image-scan"', body)
+        self.assertIn('data-maintenance-gui-label="Les GPS fra bilder"', body)
+        self.assertIn('data-maintenance-gui-label="Finn ansikter"', body)
+        self.assertIn('data-maintenance-gui-label="Klargjør bildesøk"', body)
+        self.assertIn("Oppdaterer tall...", body)
+        self.assertIn("Oppdaterer...", body)
+        self.assertIn("data-maintenance-current", body)
+        self.assertIn("data-maintenance-missing", body)
+        self.assertIn("data-maintenance-total", body)
+        self.assertIn("maintenanceGuiLabel", SERVER_JS)
+        self.assertIn("dashboard-action-current", SERVER_JS)
         self.assertIn("I Bildebank-vinduet kan du trykke &quot;Lag miniatyrbilder&quot;.", body)
         self.assertIn(r"bildebank backup --dry-run D:\Backuper", body)
         self.assertIn("/settings", body)
         self.assertIn("/sources", body)
         self.assertIn("/geo/stats", body)
 
-    def test_run_server_dashboard_actions_show_updated_when_scans_are_current(self) -> None:
+    def test_run_server_dashboard_actions_defer_scan_counts_to_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
             insert_test_file(target, "2024/01/current.jpg", sha256="sha-current", gps_scanned=True)
-            statuses = (
-                MaintenanceStatus("face-scan", 1, 1, 0, "/help/face-scan.md"),
-                MaintenanceStatus("geo-scan", 1, 1, 0, "/help/geo-scan.md"),
-                MaintenanceStatus("image-scan", 1, 1, 0, "/help/image-scan.md"),
-            )
-            with patch("bildebank.server_dashboard.server_app.maintenance_statuses", return_value=statuses):
-                summary = dashboard_summary(target, AppConfig())
+            summary = dashboard_summary(target)
 
         actions = dashboard_actions(summary)
-        self.assertIn("oppdatert", [action.severity for action in actions])
-        self.assertNotIn("bildebank geo-scan", [action.command for action in actions])
-        self.assertNotIn("bildebank face-scan", [action.command for action in actions])
-        self.assertNotIn("bildebank image-scan", [action.command for action in actions])
+        scan_actions = {action.title: action for action in actions if action.maintenance_name}
+        self.assertEqual(set(scan_actions), {"geo-scan", "face-scan", "image-scan"})
+        self.assertEqual(scan_actions["geo-scan"].detail, "Oppdaterer tall...")
+        self.assertEqual(scan_actions["geo-scan"].gui_label, "Les GPS fra bilder")
+        self.assertEqual(scan_actions["face-scan"].gui_label, "Finn ansikter")
+        self.assertEqual(scan_actions["image-scan"].gui_label, "Klargjør bildesøk")
 
     def test_run_server_dashboard_name_conflicts_are_info_not_recommended_action(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -137,13 +138,8 @@ class ServerDashboardTests(unittest.TestCase):
                 conn.commit()
             finally:
                 conn.close()
-            statuses = (
-                MaintenanceStatus("face-scan", 1, 1, 0, "/help/face-scan.md"),
-                MaintenanceStatus("geo-scan", 1, 1, 0, "/help/geo-scan.md"),
-                MaintenanceStatus("image-scan", 1, 1, 0, "/help/image-scan.md"),
-            )
-            with patch("bildebank.server_dashboard.server_app.maintenance_statuses", return_value=statuses):
-                summary = dashboard_summary(target, AppConfig())
+            with patch("bildebank.server_app.maintenance_statuses", side_effect=AssertionError("maintenance count")):
+                summary = dashboard_summary(target)
                 body = dashboard_page_html(
                     target,
                     AppConfig(),
@@ -173,18 +169,15 @@ class ServerDashboardTests(unittest.TestCase):
 
         self.assertEqual(handler.html_response, ("<h1>Dashboard</h1>", HTTPStatus.OK))
         self.assertIsNone(handler.text_response)
+        self.assertFalse(handler.read_only_get_blocked("/api/maintenance/statuses"))
+        self.assertTrue(handler.read_only_get_blocked("/api/maintenance/thumbnails"))
 
     def test_run_server_dashboard_uses_common_header_link(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
             server = SimpleNamespace(target=target, config=AppConfig(), face_enabled=True, openclip_enabled=True)
-            statuses = (
-                MaintenanceStatus("face-scan", 0, 0, 0, "/help/face-scan.md"),
-                MaintenanceStatus("geo-scan", 0, 0, 0, "/help/geo-scan.md"),
-                MaintenanceStatus("image-scan", 0, 0, 0, "/help/image-scan.md"),
-            )
-            with patch("bildebank.server_dashboard.server_app.maintenance_statuses", return_value=statuses):
+            with patch("bildebank.server_app.maintenance_statuses", side_effect=AssertionError("maintenance count")):
                 body = routed_dashboard_page_html(server)
 
         self.assertIn('<header class="browser-header">', body)

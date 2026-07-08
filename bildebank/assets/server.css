@@ -971,6 +971,7 @@
     .dashboard-action p { margin: 3px 0 0; color: var(--muted); }
     .dashboard-action code { overflow-wrap: anywhere; }
     .dashboard-action strong { font-size: 13px; }
+    .dashboard-action .maintenance-counts { grid-column: 1 / -1; justify-content: flex-start; }
     .dashboard-action-critical { border-color: #c75252; }
     .dashboard-action-recommended { border-color: #a9843f; }
     .dashboard-action-current { border-color: #357a50; }

@@ -566,11 +566,11 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
 
     def read_only_get_blocked(self, path: str) -> bool:
         return (
-            path in {"/settings", "/sources", "/sources/", "/tags", "/tags/", "/api/maintenance/statuses"}
+            path in {"/settings", "/sources", "/sources/", "/tags", "/tags/"}
             or path.startswith("/settings/")
             or path.startswith("/people/missing-suggestions")
             or path.startswith("/geo/custom-places")
-            or path.startswith("/api/maintenance/")
+            or (path.startswith("/api/maintenance/") and path != "/api/maintenance/statuses")
         )
 
     def respond_read_only_forbidden(self, path: str) -> None:
