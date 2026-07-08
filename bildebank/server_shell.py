@@ -130,6 +130,7 @@ def source_action_links_html(
           all_items_label=all_items_label,
       )}
       {search_link}
+      <a class="server-search-link" href="/dashboard">Dashboard</a>
       <a class="server-search-link" href="/help/web/bildebrowser">Hjelp</a>
       <a class="server-search-link" href="/settings">Innstillinger</a>
     </div>

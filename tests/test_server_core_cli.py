@@ -562,12 +562,13 @@ class ServerCoreCliTests(unittest.TestCase):
                 search_html(server, ServerSearchStats("strand", ()), DEFAULT_SEARCH_LIMIT),
             ]
 
-        for body in pages:
-            self.assertIn('<header class="browser-header">', body)
-            self.assertIn('<div class="topline">', body)
-            self.assertIn('href="/">Alle bilder</a>', body)
-            self.assertIn('href="/settings">Innstillinger</a>', body)
-            self.assertIn('href="/help/web/bildebrowser">Hjelp</a>', body)
+            for body in pages:
+                self.assertIn('<header class="browser-header">', body)
+                self.assertIn('<div class="topline">', body)
+                self.assertIn('href="/">Alle bilder</a>', body)
+                self.assertIn('href="/dashboard">Dashboard</a>', body)
+                self.assertIn('href="/settings">Innstillinger</a>', body)
+                self.assertIn('href="/help/web/bildebrowser">Hjelp</a>', body)
 
     def test_run_server_common_topline_respects_feature_flags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -579,6 +580,7 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertIn('<header class="browser-header">', body)
         self.assertIn('href="/">Alle bilder</a>', body)
         self.assertIn('href="/geo">Steder</a>', body)
+        self.assertIn('href="/dashboard">Dashboard</a>', body)
         self.assertIn('href="/search" data-search-preload>Bildesøk</a>', enabled_body)
         self.assertIn('fetch("/api/search-preload", {keepalive: true})', SERVER_JS)
         self.assertIn('link.addEventListener("pointerdown", preloadSearchModel)', SERVER_JS)

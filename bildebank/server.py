@@ -42,6 +42,7 @@ from . import server_actions
 from .server_pages import (
     app_status_page_html,
     custom_geo_places_page_html,
+    dashboard_page_html,
     error_html,
     filter_start_html,
     geo_area_page_html,
@@ -589,6 +590,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path == "/":
                 self.respond_browser_root()
+                return
+            if parsed.path in {"/dashboard", "/dashboard/"}:
+                self.respond_html(dashboard_page_html(self.server))
                 return
             if parsed.path == "/people":
                 if not self.server.face_enabled:

@@ -6,6 +6,7 @@ from typing import Any
 
 from .config import AppConfig, BrowserHotkeyConfig, FaceRecognitionConfig
 from . import server_app
+from . import server_dashboard
 from .server_browser_admin_html import sources_page_html as browser_sources_page_html
 from .server_browser_admin_html import tags_page_html as browser_tags_page_html
 from .server_browser_item_html import item_page_html as browser_item_page_html
@@ -91,6 +92,16 @@ def filter_start_html(server: Any, *, query: str = "", message: str = "") -> str
         shell_page_html=shell_page_html,
         query=query,
         message=message,
+        face_enabled=server.face_enabled,
+        openclip_enabled=server.openclip_enabled,
+    )
+
+
+def dashboard_page_html(server: Any) -> str:
+    return server_dashboard.dashboard_page_html(
+        server.target,
+        server.config,
+        shell_page_html=shell_page_html,
         face_enabled=server.face_enabled,
         openclip_enabled=server.openclip_enabled,
     )
