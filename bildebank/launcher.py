@@ -40,8 +40,9 @@ FACE_SCAN_TOOLTIP = (
     "Kjører 'bildebank face-scan'. Denne kommandoen scanner bildene etter ansikter. "
     "Må kjøres på nytt når du legger til nye biler."
 )
-FACE_SCAN_INSIGHTFACE_MISSING_TOOLTIP = (
-    "Trykk knappen 'Installer Insightface' på Oppsett-fanen for å slå på ansiktsgjenkjenning."
+FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP = (
+    "InsightFace må installeres og valgt ansiktsmodell må lastes ned på Oppsett-fanen "
+    "for å slå på ansiktsgjenkjenning."
 )
 IMAGE_SCAN_TOOLTIP = (
     "Kjører 'bildebank image-scan'. Denne kommandoen gjør at du "
@@ -1491,13 +1492,17 @@ class BildebankLauncher:
         if self.backup_button is not None and not collection_created:
             self.backup_button.configure(state="disabled")
         if self.face_scan_button is not None:
-            face_scan_enabled = enabled and self.insightface_status.status == "Klar"
+            face_scan_enabled = (
+                enabled
+                and self.insightface_status.status == "Klar"
+                and self.face_model_status.status == "Lastet ned"
+            )
             self.face_scan_button.configure(state="normal" if face_scan_enabled else "disabled")
             if self.face_scan_tooltip is not None:
                 self.face_scan_tooltip.text = (
                     FACE_SCAN_TOOLTIP
-                    if self.insightface_status.status == "Klar"
-                    else FACE_SCAN_INSIGHTFACE_MISSING_TOOLTIP
+                    if self.insightface_status.status == "Klar" and self.face_model_status.status == "Lastet ned"
+                    else FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP
                 )
         if self.image_scan_button is not None:
             image_scan_enabled = enabled and self.openclip_status == "Installert"

@@ -11,7 +11,7 @@ from unittest.mock import patch
 from bildebank import db
 from bildebank.launcher import (
     BildebankLauncher,
-    FACE_SCAN_INSIGHTFACE_MISSING_TOOLTIP,
+    FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP,
     FACE_SCAN_TOOLTIP,
     IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP,
     IMAGE_SCAN_TOOLTIP,
@@ -703,6 +703,7 @@ def launcher_with_main_action_buttons(collection_path: Path) -> BildebankLaunche
     launcher.active_command_cancellable = False
     launcher.active_command_cancel_requested = False
     launcher.insightface_status = InsightFaceDependencyStatus("Klar")
+    launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Lastet ned")
     launcher.openclip_status = "Installert"
     return launcher
 
@@ -741,13 +742,24 @@ def test_face_scan_button_disabled_and_tooltip_explains_missing_insightface(tmp_
         launcher._set_buttons_enabled(True)
 
     assert launcher.face_scan_button.options["state"] == "disabled"
-    assert launcher.face_scan_tooltip.text == FACE_SCAN_INSIGHTFACE_MISSING_TOOLTIP
+    assert launcher.face_scan_tooltip.text == FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP
 
     launcher.insightface_status = InsightFaceDependencyStatus("Klar")
     launcher._set_buttons_enabled(True)
 
     assert launcher.face_scan_button.options["state"] == "normal"
     assert launcher.face_scan_tooltip.text == FACE_SCAN_TOOLTIP
+
+
+def test_face_scan_button_disabled_and_tooltip_explains_missing_face_model(tmp_path: Path) -> None:
+    launcher = launcher_with_main_action_buttons(tmp_path / "samling")
+    launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Mangler")
+
+    with patch("bildebank.launcher.is_collection_created", return_value=True):
+        launcher._set_buttons_enabled(True)
+
+    assert launcher.face_scan_button.options["state"] == "disabled"
+    assert launcher.face_scan_tooltip.text == FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP
 
 
 def test_image_scan_button_disabled_and_tooltip_explains_missing_openclip(tmp_path: Path) -> None:
