@@ -565,7 +565,15 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
 
     def read_only_get_blocked(self, path: str) -> bool:
         return (
-            path in {"/settings", "/sources", "/sources/", "/tags", "/tags/"}
+            path in {
+                "/settings",
+                "/sources",
+                "/sources/",
+                "/tags",
+                "/tags/",
+                "/search",
+                "/api/search-preload",
+            }
             or path.startswith("/settings/")
             or path.startswith("/people/missing-suggestions")
             or path.startswith("/geo/custom-places")
@@ -1996,7 +2004,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         if item is None:
             self.respond_json({"ok": False, "error": "Filen finnes ikke."}, status=HTTPStatus.NOT_FOUND)
             return
-        self.respond_json({"ok": True, "html": image_info_content_html(self.server.target, item)})
+        self.respond_json(
+            {
+                "ok": True,
+                "html": image_info_content_html(
+                    self.server.target,
+                    item,
+                    read_only=getattr(self.server, "read_only", False),
+                ),
+            }
+        )
 
     def respond_item_faces(self, query: str) -> None:
         if not self.server.face_enabled:
@@ -2020,6 +2037,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     item,
                     self.server.config.face_recognition,
                     person_reference_links_enabled=self.server.config.browser.person_reference_links_enabled,
+                    read_only=getattr(self.server, "read_only", False),
                 ),
             }
         )

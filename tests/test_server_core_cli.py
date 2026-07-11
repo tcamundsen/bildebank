@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bildebank import db
-from bildebank.cli import build_parser, main
+from bildebank.cli import build_parser, main, should_recover_pending_file_moves
 from bildebank.cli_server import lan_share_urls, run_server_command
 from bildebank.config import AppConfig, FaceRecognitionConfig, OpenClipConfig
 from bildebank.db import init_database
@@ -24,6 +24,7 @@ from bildebank.server import (
 )
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_item_html import item_media_html
+from bildebank.target_lock import LOCK_FILENAME
 from bildebank.server_files import server_file_path_by_id
 from bildebank.server_pages import (
     app_status_page_html,
@@ -80,6 +81,42 @@ class ServerCoreCliTests(unittest.TestCase):
 
         self.assertFalse(default_args.read_only)
         self.assertTrue(read_only_args.read_only)
+
+    def test_read_only_server_skips_pending_file_move_recovery(self) -> None:
+        args = build_parser().parse_args(["run-server", "--read-only"])
+        self.assertFalse(should_recover_pending_file_moves(args))
+
+        lan_share_args = build_parser().parse_args(["run-server", "--lan-share"])
+        self.assertFalse(should_recover_pending_file_moves(lan_share_args))
+
+    def test_read_only_server_can_start_while_target_is_locked(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            (target / LOCK_FILENAME).write_text("command=face-scan\n", encoding="utf-8")
+
+            with patch("bildebank.cli.run_server_command", return_value=0) as run_server:
+                code = main(["--target", str(target), "run-server", "--read-only", "--no-browser"])
+
+        self.assertEqual(code, 0)
+        run_server.assert_called_once()
+
+    def test_read_only_item_media_does_not_fill_missing_metadata_cache(self) -> None:
+        item = {
+            "id": 1,
+            "target_path": "2024/01/IMG_20240102.jpg",
+            "stored_filename": "IMG_20240102.jpg",
+            "view_rotation_degrees": 90,
+            "media_width": None,
+            "media_height": None,
+        }
+        with patch(
+            "bildebank.server_browser_item_html.cached_image_dimensions",
+            side_effect=AssertionError("read-only skal ikke skrive metadata-cache"),
+        ):
+            body = item_media_html(Path("target"), item, read_only=True)
+
+        self.assertIn('src="/display/1"', body)
 
     def test_run_server_lan_share_is_explicit_and_rejects_host(self) -> None:
         args = build_parser().parse_args(["run-server", "--lan-share", "--port", "8766"])
@@ -255,6 +292,11 @@ class ServerCoreCliTests(unittest.TestCase):
         BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
         self.assertEqual(handler.json_response[1], HTTPStatus.FORBIDDEN)
         self.assertIn("read-only", handler.json_response[0]["error"])
+
+        handler.path = "/search?q=strand"
+        handler.text_response = None
+        BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
+        self.assertEqual(handler.text_response[1], HTTPStatus.FORBIDDEN)
 
     def test_run_server_display_returns_original_when_preview_images_is_false(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

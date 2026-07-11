@@ -35,10 +35,17 @@ flytting.
   committed.
 - setting og fjerning av manuell H3-lokasjon holder låsen fra før filoppslag
   og validering til etter commit.
-- `face-scan`, `face-suggest`, `face-reset` og alle endringer av personer,
-  ansiktskoblinger og manuelle person-i-bilde-koblinger holder låsen gjennom
-  hele operasjonen. Den sammensatte weboperasjonen som oppretter en person og
-  kobler et ansikt bruker én lås og én transaksjon.
+- `face-scan` holder låsen mens den velger hvilke aktive filer som skal
+  scannes, og kort for hver lagring i ansiktsdatabasen. InsightFace-kjøringen
+  mellom disse periodene skjer uten target-lås. Før resultatet lagres,
+  kontrolleres det at filen fortsatt er aktiv og har samme SHA-256. Resultatet
+  forkastes hvis filen er endret eller fjernet i mellomtiden. En intern
+  skanneidentitet gjør også at en eldre scan ikke kan skrive resultater etter
+  `face-reset --all` eller etter at en ny scan er startet.
+- `face-suggest`, `face-reset` og alle endringer av personer, ansiktskoblinger
+  og manuelle person-i-bilde-koblinger holder låsen gjennom hele operasjonen.
+  Den sammensatte weboperasjonen som oppretter en person og kobler et ansikt
+  bruker én lås og én transaksjon.
 - `date-set`, `date-clear` og tilsvarende weboperasjoner for manuell dato
   holder låsen fra før filoppslag og validering til etter commit.
 - visningsrotasjon fra web holder låsen gjennom oppslag, beregning av ny

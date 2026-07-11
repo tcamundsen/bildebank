@@ -85,26 +85,36 @@ def item_view_rotation(item: Any) -> int:
         return 0
 
 
-def rotation_style_attr(item: Any, target: Path | None = None) -> str:
+def rotation_style_attr(
+    item: Any,
+    target: Path | None = None,
+    *,
+    write_metadata_cache: bool = True,
+) -> str:
     rotation = item_view_rotation(item)
     if rotation == 0:
         return ""
     style = f"transform: rotate({rotation}deg);"
     if rotation in {90, 270}:
-        ratio = item_media_width_height_ratio(item, target)
+        ratio = item_media_width_height_ratio(item, target, write_metadata_cache=write_metadata_cache)
         if ratio is not None:
             style += f" --quarter-turn-width: {ratio * 100:.6f}%;"
     return f' style="{style}" data-view-rotation="{rotation}"'
 
 
-def item_media_width_height_ratio(item: Any, target: Path | None = None) -> float | None:
+def item_media_width_height_ratio(
+    item: Any,
+    target: Path | None = None,
+    *,
+    write_metadata_cache: bool = True,
+) -> float | None:
     try:
         width = int(item["media_width"])
         height = int(item["media_height"])
     except (KeyError, IndexError, TypeError, ValueError):
         width = 0
         height = 0
-    if (width <= 0 or height <= 0) and target is not None:
+    if (width <= 0 or height <= 0) and target is not None and write_metadata_cache:
         dimensions = cached_image_dimensions(target, db.absolute_target_path(target, Path(str(item["target_path"]))))
         if dimensions is not None:
             width = dimensions.width
@@ -465,7 +475,7 @@ def source_item_page_html(
 ) -> str:
     target_path = Path(str(item["target_path"]))
     start = time.perf_counter()
-    media = source_item_media_html(target, source, item, face_config)
+    media = source_item_media_html(target, source, item, face_config, read_only=read_only)
     if timing_callback is not None:
         timing_callback("html_media", start)
     face_rail_html, faces_overlay, duplicate_warning, person_has_confirmed_face = _source_item_face_html(
@@ -952,10 +962,12 @@ def source_item_media_html(
     source: BrowserSource,
     item: Any,
     face_config: FaceRecognitionConfig | None = None,
+    *,
+    read_only: bool = False,
 ) -> str:
     if source.person_name is not None:
         if not source.show_faces:
-            return item_media_html(target, item)
+            return item_media_html(target, item, read_only=read_only)
         from .server_faces import person_faces_for_item, person_item_media_html
 
         faces = person_faces_for_item(
@@ -964,12 +976,13 @@ def source_item_media_html(
             item,
             include_suggestions=source.include_suggestions,
             face_config=face_config,
+            read_only=read_only,
         )
         return person_item_media_html(item, faces)
-    return item_media_html(target, item)
+    return item_media_html(target, item, read_only=read_only)
 
 
-def item_media_html(target: Path, item: Any) -> str:
+def item_media_html(target: Path, item: Any, *, read_only: bool = False) -> str:
     file_id = int(item["id"])
     target_path = Path(str(item["target_path"]))
     url = f"/file/{file_id}"
@@ -980,7 +993,7 @@ def item_media_html(target: Path, item: Any) -> str:
         return f'<video src="{url}" controls></video>'
     if kind != "image":
         return f'<a class="file-card" href="{url}" target="_blank">Fil<br>{name}</a>'
-    return f'<a href="{url}" target="_blank"{media_link_class_attr(item)}><img src="{display_url}" alt="{name}"{rotation_style_attr(item, target)}></a>'
+    return f'<a href="{url}" target="_blank"{media_link_class_attr(item)}><img src="{display_url}" alt="{name}"{rotation_style_attr(item, target, write_metadata_cache=not read_only)}></a>'
 
 
 def person_item_page_html(

@@ -1088,6 +1088,8 @@ def run_no_target_command(args: argparse.Namespace) -> int:
 def should_recover_pending_file_moves(args: argparse.Namespace) -> bool:
     if args.command == "migrate":
         return False
+    if args.command == "run-server" and (args.read_only or args.lan_share):
+        return False
     if getattr(args, "dry_run", False):
         return False
     return True
