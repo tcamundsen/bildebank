@@ -47,6 +47,22 @@ python3 -m venv .venv
 ./.venv/bin/python -m pip install -e .
 ```
 
+## Installer InsightFace (valgfritt)
+
+Hvis du vil bruke ansiktsgjenkjenning, installer InsightFace-tillegget fra
+programmappen:
+
+```bash
+./install-insightface.sh
+```
+
+Slå deretter på ansiktsgjenkjenning og kontroller installasjonen:
+
+```bash
+bildebank config face_recognition enable
+bildebank doctor
+```
+
 ## Kjør Bildebank
 
 Du kan alltid kjøre programmet med Python fra `.venv`:
