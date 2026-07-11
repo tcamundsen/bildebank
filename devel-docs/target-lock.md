@@ -50,8 +50,11 @@ flytting.
   holder låsen fra før filoppslag og validering til etter commit.
 - visningsrotasjon fra web holder låsen gjennom oppslag, beregning av ny
   rotasjon og commit.
-- `image-scan` holder låsen mens aktive bilder velges, bildefilene leses og
-  embeddings lagres.
+- `image-scan` holder låsen mens aktive bilder velges, og kort for hver
+  embedding som lagres. OpenCLIP-kjøringen mellom disse periodene skjer uten
+  target-lås. Før lagring kontrolleres det at filen fortsatt er aktiv og har
+  samme SHA-256. En intern skanneidentitet hindrer at en eldre scan skriver
+  etter at en ny scan er startet.
 - `image-search` fra CLI og web holder låsen mens embeddings leses og
   søkeresultater lagres. CLI holder den også til `image-search.html` er skrevet.
 - oppretting, endring og sletting av brukertaggdefinisjoner holder låsen fra
