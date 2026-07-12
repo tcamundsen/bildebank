@@ -304,9 +304,13 @@ class CheckSourceCliTests(unittest.TestCase):
             imported = target / "2024" / "01" / "IMG_20240102.jpg"
             imported.write_bytes(b"changed")
 
-            code, stdout, stderr = capture_cli(["--target", str(target), "check-source", "--quiet", str(source)])
+            with patch("bildebank.cli_check_source.open_check_source_missing_report") as open_report:
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "check-source", "--quiet", str(source)]
+                )
 
             self.assertEqual(code, 2, stderr)
             self.assertIn("scannet=1, dekket=0, mangler=0", stdout)
             self.assertIn("målfeil=1", stdout)
             self.assertIn("matchende fil i bildesamlingen mangler eller har endret innhold", stdout)
+            open_report.assert_called_once()
