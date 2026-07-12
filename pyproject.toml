@@ -19,6 +19,7 @@ dev = [
     "mypy",
     "pyflakes",
     "pytest",
+    "ruff",
 ]
 face = [
     "insightface==1.0.1",
