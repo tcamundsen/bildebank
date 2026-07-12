@@ -66,10 +66,13 @@ class FaceSuggestServerTests(unittest.TestCase):
         self.assertIn("Face-suggest fullført", body)
         self.assertIn("data-face-suggest-success", body)
         self.assertIn("data-face-suggest-status", body)
+        self.assertIn("Klikk knappen 'Finn ansikter'", body)
+        self.assertEqual(body.count("data-open-face-suggest"), 2)
 
         self.assertNotIn('action="/people/face-suggest"', read_only_body)
         self.assertNotIn('href="/people/missing-suggestions"', read_only_body)
         self.assertNotIn("data-open-face-suggest", read_only_body)
+        self.assertNotIn("Klikk knappen 'Finn ansikter'", read_only_body)
         self.assertNotIn("personRenameDialog", read_only_body)
 
     def make_handler(self, *, enabled: bool, threshold: str = "0.65", return_url: str = ""):

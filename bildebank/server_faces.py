@@ -1300,16 +1300,23 @@ def people_page_html(
         if rows
         else '<p class="meta">Ingen personer registrert.</p>'
     )
+    face_scan_guidance = (
+        ""
+        if read_only
+        else """
+        <p>Klikk knappen 'Finn ansikter' i Bildebank-vinduet (eller kjør
+        <a href="help/face-scan.md">face-scan</a>) når du har lagt til nye bilder
+        og <button class="nav-button" type="button" title="Kjør face-suggest for å finne ansikter" data-open-face-suggest>Foreslå personer</button> (eller kjør
+        <a href="help/face-suggest.md">face-suggest</a>) når du
+        har bekreftet at personer er et bestemt ansikt.</p>
+        """
+    )
     return shell_page_html(
         "Personer",
         f"""
         <h1>Personer</h1>
         {f'<p class="assign-status">{html.escape(message)}</p>' if message else ''}
-        Klikk knappen 'Finn ansikter' i Bildebank-vinduet (eller kjør
-        <a href="help/face-scan.md">face-scan</a>) når du har lagt til nye bilder
-        og  <button class="nav-button" type="button" title="Kjør face-suggest for å finne ansikter" data-open-face-suggest>Foreslå personer</button> (eller kjør
-        <a href="help/face-suggest.md">face-suggest</a>) når du
-        har bekreftet at personer er et bestemt ansikt.
+        {face_scan_guidance}
         {people_face_summary_html(summary)}
         {"" if read_only else '<button class="nav-button" type="button" title="Kjør face-suggest for å finne ansikter" data-open-face-suggest>Foreslå personer</button>'}
         {"" if read_only else '<a class="nav-button" href="/people/missing-suggestions" title="Se alle bildene som face-scan har funnet et ansikt som face-suggest ikke har forslag til">Ansikter uten forslag</a>'}
