@@ -26,9 +26,9 @@ beslutninger skal oppdateres her underveis.
 
 | Trinn | Status | Commit |
 |---|---|---|
-| 0. Opprett plan og baseline | ferdig | ikke committet |
-| 0A. Stabiliser utviklerverktøy | ferdig | ikke committet |
-| 1. Trekk ut kommandobyggere | ikke startet | |
+| 0. Opprett plan og baseline | ferdig | `2d2310b` |
+| 0A. Stabiliser utviklerverktøy | ferdig | `4fef0e8` |
+| 1. Trekk ut kommandobyggere | ferdig | ikke committet |
 | 2. Trekk ut status og miljøkontroll | ikke startet | |
 | 3. Trekk ut prosesskjøring | ikke startet | |
 | 4. Trekk ut generelle widgets og dialoger | ikke startet | |
@@ -39,7 +39,7 @@ beslutninger skal oppdateres her underveis.
 | 9. Gjør `launcher.py` til et tynt inngangspunkt | ikke startet | |
 | 10. Avsluttende testopprydding og dokumentasjon | ikke startet | |
 
-Neste trinn: **1. Trekk ut kommandobyggere**, etter at trinn 0 og 0A er
+Neste trinn: **2. Trekk ut status og miljøkontroll**, etter at trinn 1 er
 committet.
 
 ## Regler for hele refaktoreringen
@@ -189,6 +189,17 @@ Stabiliser statisk analyse før launcher-oppsplitting
 ```text
 Trekk launcher-kommandoer ut i egen modul
 ```
+
+### Resultat
+
+- `launcher_commands.py` er opprettet med 177 linjer.
+- `launcher.py` er redusert fra 2955 til 2818 linjer.
+- Fire kommandotester er flyttet til `test_launcher_commands.py`, og
+  `run-server`-kommandoen har fått en eksplisitt kontroll.
+- Gjenværende kommandonavn som launcheren bruker er fortsatt tilgjengelige
+  fra `bildebank.launcher` i overgangsperioden.
+- 744 tester og 148 subtester består.
+- Ruff, pyflakes og mypy er grønne.
 
 ## Trinn 2 – Trekk ut status og miljøkontroll
 
