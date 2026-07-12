@@ -16,6 +16,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "mcp",
+    "mypy",
+    "pyflakes",
     "pytest",
 ]
 face = [
