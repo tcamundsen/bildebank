@@ -695,9 +695,15 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
             {"id": int(row["id"]), "name": str(row["name"])}
             for row in face_conn.execute("SELECT id, name FROM persons ORDER BY name")
         ]
-        confirmed_counts_by_person: dict[int, dict[int, int]] = {int(person["id"]): {} for person in people}
-        suggested_file_ids_by_person: dict[int, set[int]] = {int(person["id"]): set() for person in people}
-        manual_file_ids_by_person: dict[int, set[int]] = {int(person["id"]): set() for person in people}
+        confirmed_counts_by_person: dict[int, dict[int, int]] = {
+            require_int(person["id"], "person-id"): {} for person in people
+        }
+        suggested_file_ids_by_person: dict[int, set[int]] = {
+            require_int(person["id"], "person-id"): set() for person in people
+        }
+        manual_file_ids_by_person: dict[int, set[int]] = {
+            require_int(person["id"], "person-id"): set() for person in people
+        }
 
         for row in face_conn.execute(
             """
@@ -729,7 +735,7 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
 
         rows: list[dict[str, object]] = []
         for person in people:
-            person_id = int(person["id"])
+            person_id = require_int(person["id"], "person-id")
             confirmed_counts_by_file = confirmed_counts_by_person.get(person_id, {})
             duplicate_counts = [count for count in confirmed_counts_by_file.values() if count > 1]
             active_confirmed_file_id_set = set(confirmed_counts_by_file)
