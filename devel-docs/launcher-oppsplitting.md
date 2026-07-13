@@ -35,11 +35,11 @@ beslutninger skal oppdateres her underveis.
 | 5. Trekk ut Oppsett-fanen | ferdig | `3b6648c` |
 | 6. Trekk ut Import-fanen | ferdig | `c213343` |
 | 7. Trekk ut Verktøy-fanen | ferdig | `559a551` |
-| 8. Trekk ut hovedfanen | ferdig, ikke committet | |
-| 9. Gjør `launcher.py` til et tynt inngangspunkt | ikke startet | |
+| 8. Trekk ut hovedfanen | ferdig | `f097c15` |
+| 9. Gjør `launcher.py` til et tynt inngangspunkt | ferdig, ikke committet | |
 | 10. Avsluttende testopprydding og dokumentasjon | ikke startet | |
 
-Neste trinn: **9. Gjør `launcher.py` til et tynt inngangspunkt.**
+Neste trinn: **10. Avsluttende testopprydding og dokumentasjon.**
 
 ## Regler for hele refaktoreringen
 
@@ -529,6 +529,23 @@ Trekk hovedfanen ut av launcher
 ```text
 Gjør launcher til et tynt inngangspunkt
 ```
+
+### Resultat
+
+- `launcher_app.py` er opprettet med 481 linjer og inneholder `LauncherApp`,
+  som eier rotvindu, notebook, felles busy-status, logg og koordinering.
+- `launcher.py` er redusert fra 505 til 9 linjer og eksponerer bare det
+  stabile `main()`-inngangspunktet.
+- CLI-flyten for `bildebank start` og aliaset `bildebank launcher` importerer
+  fortsatt `bildebank.launcher.main` som før.
+- De midlertidige re-eksportene fra `launcher.py` er fjernet, og interne
+  tester importerer nå klasser og hjelpefunksjoner fra modulene som eier dem.
+- Avhengighetsretningen er `launcher` → `launcher_app` → faner og
+  fellesmoduler. Ingen av fanene eller fellesmodulene importerer appen tilbake.
+- To inngangspunkttester ligger i `test_launcher.py`, mens fem tester av
+  appskallet ligger i `test_launcher_app.py`.
+- 764 tester og 163 subtester består.
+- Ruff, pyflakes og mypy er grønne.
 
 ## Trinn 10 – Avsluttende testopprydding og dokumentasjon
 

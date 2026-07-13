@@ -92,9 +92,9 @@ def test_open_server_browser_window_opens_default_run_server_url() -> None:
 
 
 def test_launcher_initializes_update_status_asynchronously() -> None:
-    from bildebank.launcher import BildebankLauncher
+    from bildebank.launcher_app import LauncherApp
 
-    init_source = inspect.getsource(BildebankLauncher.__init__)
+    init_source = inspect.getsource(LauncherApp.__init__)
     start_source = inspect.getsource(MainTab.start_update_status_refresh)
     worker_source = inspect.getsource(MainTab._update_status_worker)
 

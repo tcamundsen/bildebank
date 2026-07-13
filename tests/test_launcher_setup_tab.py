@@ -3,7 +3,7 @@ from __future__ import annotations
 import inspect
 from unittest.mock import patch
 
-from bildebank.launcher import BildebankLauncher
+from bildebank.launcher_app import LauncherApp
 from bildebank.launcher_setup_tab import SetupTab
 from bildebank.launcher_status import (
     InsightFaceDependencyStatus,
@@ -59,8 +59,8 @@ def test_setup_tab_builds_insightface_and_openclip_sections() -> None:
 
 
 def test_launcher_starts_setup_status_asynchronously() -> None:
-    init_source = inspect.getsource(BildebankLauncher.__init__)
-    refresh_source = inspect.getsource(BildebankLauncher._refresh_state)
+    init_source = inspect.getsource(LauncherApp.__init__)
+    refresh_source = inspect.getsource(LauncherApp._refresh_state)
     start_source = inspect.getsource(SetupTab.start_status_refresh)
     worker_source = inspect.getsource(SetupTab._status_worker)
 
