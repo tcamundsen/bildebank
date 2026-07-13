@@ -32,14 +32,14 @@ beslutninger skal oppdateres her underveis.
 | 2. Trekk ut status og miljøkontroll | ferdig | `f4fe0fc` |
 | 3. Trekk ut prosesskjøring | ferdig | `f7a0abf` |
 | 4. Trekk ut generelle widgets og dialoger | ferdig | `1b9e309` |
-| 5. Trekk ut Oppsett-fanen | ferdig, ikke committet | |
-| 6. Trekk ut Import-fanen | ikke startet | |
+| 5. Trekk ut Oppsett-fanen | ferdig | `3b6648c` |
+| 6. Trekk ut Import-fanen | ferdig, ikke committet | |
 | 7. Trekk ut Verktøy-fanen | ikke startet | |
 | 8. Trekk ut hovedfanen | ikke startet | |
 | 9. Gjør `launcher.py` til et tynt inngangspunkt | ikke startet | |
 | 10. Avsluttende testopprydding og dokumentasjon | ikke startet | |
 
-Neste trinn: **6. Trekk ut Import-fanen**, etter at trinn 5 er committet.
+Neste trinn: **7. Trekk ut Verktøy-fanen**, etter at trinn 6 er committet.
 
 ## Regler for hele refaktoreringen
 
@@ -392,6 +392,21 @@ Trekk Oppsett-fanen ut av launcher
 ```text
 Trekk Import-fanen ut av launcher
 ```
+
+### Resultat
+
+- `launcher_import_tab.py` er opprettet med 399 linjer.
+- `ImportTab` bygger fanen og eier import, rescan-source, check-source og hele
+  unimport-flyten.
+- Unimport kjører fortsatt dry-run først, krever nøyaktig tekstbekreftelse og
+  krever en ekstra bekreftelse når dry-run rapporterer endrede målfiler.
+- Importfanen får samlingssti, kommandokjøring, logg, refresh og dialoghjelpere
+  gjennom eksplisitte callbacks.
+- `launcher.py` er redusert videre fra 1958 til 1655 linjer.
+- Ni målrettede import- og sikkerhetstester ligger i
+  `test_launcher_import_tab.py`.
+- 755 tester og 148 subtester består.
+- Ruff, pyflakes og mypy er grønne.
 
 ## Trinn 7 – Trekk ut Verktøy-fanen
 

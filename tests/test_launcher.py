@@ -16,31 +16,12 @@ from bildebank.launcher import (
     close_blocked_by_running_command,
     open_server_browser_window,
     server_browser_url,
-    source_is_collection_or_inside,
-    suggest_import_name,
 )
 from bildebank.launcher_status import (
     InsightFaceDependencyStatus,
     InsightFaceModelStatus,
     OpenClipModelStatus,
 )
-
-
-def test_suggest_import_name_uses_last_folder_name() -> None:
-    assert suggest_import_name(Path(r"D:\Bilder\Sommer 2024")) == "Sommer 2024"
-
-
-def test_source_is_collection_or_inside_rejects_collection_and_child(tmp_path: Path) -> None:
-    collection = tmp_path / "samling"
-    source = tmp_path / "bilder"
-    child = collection / "2024"
-    collection.mkdir()
-    source.mkdir()
-    child.mkdir()
-
-    assert source_is_collection_or_inside(collection, collection)
-    assert source_is_collection_or_inside(child, collection)
-    assert not source_is_collection_or_inside(source, collection)
 
 
 def test_open_server_browser_window_opens_default_run_server_url() -> None:
@@ -57,7 +38,8 @@ def test_launcher_layout_source_defines_notebook_tabs_and_log_below_tabs() -> No
 
     assert "ttk.Notebook(outer)" in source
     assert 'self.notebook.add(self.main_tab, text="Bildebank")' in source
-    assert 'self.notebook.add(self.import_tab, text="Import av bilder")' in source
+    assert "self.import_tab = ImportTab(" in source
+    assert 'self.notebook.add(self.import_tab.frame, text="Import av bilder")' in source
     assert 'self.notebook.add(self.tools_tab, text="Verktøy")' in source
     assert "self.setup = SetupTab(" in source
     assert 'self.notebook.add(self.setup.frame, text="Oppsett")' in source

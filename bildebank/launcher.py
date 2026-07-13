@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 from importlib import resources
-import json
 import os
 import subprocess
 import threading
-import tempfile
 import webbrowser
-from pathlib import Path, PureWindowsPath
+from pathlib import Path
 from typing import Any, Callable
 
 from PIL import Image, ImageTk
 
-from . import db, launcher_status as _launcher_status
+from . import launcher_import_tab as _launcher_import_tab
+from . import launcher_status as _launcher_status
 from .config import (
     load_config,
     set_face_recognition_enabled,
@@ -20,7 +19,6 @@ from .config import (
 )
 from .launcher_commands import (
     backup_command,
-    check_source_command,
     cleanup_pending_deletes_apply_command,
     cleanup_pending_deletes_list_command,
     create_command,
@@ -30,19 +28,14 @@ from .launcher_commands import (
     face_scan_command,
     geo_scan_command,
     image_scan_command,
-    import_command,
     launcher_command,
     make_browser_command,
     make_people_browser_command,
     make_person_browser_command,
     make_thumbnails_command,
     migrate_command,
-    read_unimport_target_change_report,
-    rescan_source_command,
     run_server_command,
     server_browser_url,
-    unimport_source_command,
-    unimport_source_dry_run_command,
     update_command,
     vacuum_command,
 )
@@ -58,17 +51,15 @@ from .launcher_status import (
     openclip_install_supported,
     program_repo_root,
     registered_persons,
-    registered_sources,
-    rescan_source_candidates,
     save_launcher_config,
 )
 from .launcher_runner import CommandRunner, progress_log_key
+from .launcher_import_tab import ImportTab
 from .launcher_setup_tab import SetupTab
 from .launcher_widgets import (
     Tooltip,
     ask_string_dialog,
     select_person_dialog,
-    select_source_dialog,
     show_log_review_question,
 )
 from .pending_deletes import list_pending_deletes
@@ -77,6 +68,8 @@ from .pending_deletes import list_pending_deletes
 InsightFaceDependencyStatus = _launcher_status.InsightFaceDependencyStatus
 InsightFaceModelStatus = _launcher_status.InsightFaceModelStatus
 OpenClipModelStatus = _launcher_status.OpenClipModelStatus
+suggest_import_name = _launcher_import_tab.suggest_import_name
+source_is_collection_or_inside = _launcher_import_tab.source_is_collection_or_inside
 
 if os.name == "nt":
     PADX = 2
@@ -126,43 +119,6 @@ IMAGE_SCAN_ENABLE_MESSAGE = (
     "Vil du slå det på og klargjøre bildene nå?"
 )
 
-def suggest_import_name(source_folder: Path) -> str:
-    raw_path = str(source_folder)
-    if "\\" in raw_path:
-        name = PureWindowsPath(raw_path).name.strip()
-    else:
-        name = source_folder.name.strip()
-    if name:
-        return name
-    return str(source_folder).strip()
-
-
-def _resolved_path(path: Path) -> Path:
-    try:
-        return path.resolve()
-    except OSError:
-        return path.absolute()
-
-
-def _path_key(path: Path) -> str:
-    value = os.path.normpath(str(_resolved_path(path)))
-    if os.name == "nt":
-        value = value.lower()
-    return value
-
-
-def source_is_collection_or_inside(source_folder: Path, collection_path: Path) -> bool:
-    source = _resolved_path(source_folder)
-    collection = _resolved_path(collection_path)
-    if _path_key(source) == _path_key(collection):
-        return True
-    try:
-        source.relative_to(collection)
-    except ValueError:
-        return False
-    return True
-
-
 def open_server_browser_window() -> bool:
     return bool(webbrowser.open(server_browser_url(), new=1))
 
@@ -194,11 +150,10 @@ class BildebankLauncher:
         self.static_browser_hide_out_of_focus_var: tk.BooleanVar = tk.BooleanVar(value=False)
         self.notebook: ttk.Notebook | None = None
         self.main_tab: ttk.Frame | None = None
-        self.import_tab: ttk.Frame | None = None
+        self.import_tab: ImportTab | None = None
         self.tools_tab: ttk.Frame | None = None
         self.setup: SetupTab | None = None
         self.main_button_frame: ttk.Frame | None = None
-        self.import_button_frame: ttk.Frame | None = None
         self.tools_button_frame: ttk.Frame | None = None
         self.log_text: tk.Text | None = None
         self.buttons: list[Any] = []
@@ -327,10 +282,25 @@ class BildebankLauncher:
 
         # padding er paddingen inni hver side av notebook
         self.main_tab = ttk.Frame(self.notebook, padding=PAD)
-        self.import_tab = ttk.Frame(self.notebook, padding=PAD)
         self.tools_tab = ttk.Frame(self.notebook, padding=PAD)
         self.notebook.add(self.main_tab, text="Bildebank")
-        self.notebook.add(self.import_tab, text="Import av bilder")
+        self.import_tab = ImportTab(
+            tk=tk,
+            ttk=ttk,
+            notebook=self.notebook,
+            root=self.root,
+            button=self._button,
+            run_waiting_command=self._run_waiting_command,
+            get_collection_path=lambda: self.collection_path,
+            log=self._log,
+            refresh_launcher=self._refresh_state,
+            add_tooltip=self._add_tooltip,
+            ask_string=self._ask_string,
+            padding=PAD,
+            padx=PADX,
+            pady=PADY,
+        )
+        self.notebook.add(self.import_tab.frame, text="Import av bilder")
         self.notebook.add(self.tools_tab, text="Verktøy")
         self.setup = SetupTab(
             tk=tk,
@@ -349,7 +319,6 @@ class BildebankLauncher:
         self.notebook.add(self.setup.frame, text="Oppsett")
 
         self.main_tab.columnconfigure(0, weight=1)
-        self.import_tab.columnconfigure(0, weight=1)
         self.tools_tab.columnconfigure(0, weight=1)
 
         collection_frame = ttk.Frame(self.main_tab)
@@ -380,9 +349,6 @@ class BildebankLauncher:
 
         self.main_button_frame = ttk.Frame(self.main_tab)
         self.main_button_frame.grid(row=2, column=0, sticky="w")
-
-        self.import_button_frame = ttk.Frame(self.import_tab)
-        self.import_button_frame.grid(row=0, column=0, sticky="w")
 
         self.tools_button_frame = ttk.Frame(self.tools_tab)
         self.tools_button_frame.grid(row=2, column=0, sticky="w")
@@ -419,7 +385,7 @@ class BildebankLauncher:
 
     def _refresh_state(self) -> None:
         assert self.main_button_frame is not None
-        assert self.import_button_frame is not None
+        assert self.import_tab is not None
         assert self.tools_button_frame is not None
 
         for tooltip in self.tooltips:
@@ -427,7 +393,7 @@ class BildebankLauncher:
         if self.create_collection_tooltip is not None:
             self.create_collection_tooltip.hide()
         self.tooltips = []
-        for frame in (self.main_button_frame, self.import_button_frame, self.tools_button_frame):
+        for frame in (self.main_button_frame, self.tools_button_frame):
             for child in frame.winfo_children():
                 child.destroy()
         self.buttons = []
@@ -435,6 +401,15 @@ class BildebankLauncher:
         self.backup_button = None
         self.update_button = None
         collection_created = is_collection_created(self.collection_path)
+        self.buttons.extend(
+            self.import_tab.refresh(
+                available=(
+                    collection_created
+                    and not self.migration_required
+                    and self.migration_status_error is None
+                )
+            )
+        )
         if self.create_collection_tooltip is not None:
             self.create_collection_tooltip.text = self._create_collection_tooltip(collection_created)
 
@@ -488,50 +463,6 @@ class BildebankLauncher:
                     "Faktisk backup speiler bildesamlingen og kan slette filer i backupmålet.",
                 )
 
-                import_button = self._button(
-                    self.import_button_frame,
-                    text="Importer bilder",
-                    command=self._start_import_flow,
-                )
-                import_button.grid(row=0, column=0, padx=PADX, pady=PADY, sticky="ew")
-                self._add_tooltip(
-                    import_button,
-                    "Registrerer og importerer bildene fra en mappe, USB-brikke, CD eller disk."
-                )
-                unimport_button = self._button(
-                    self.import_button_frame,
-                    text="Angre import",
-                    command=self._start_unimport_source_flow,
-                )
-                unimport_button.grid(row=0, column=1, padx=PADX, pady=PADY, sticky="ew")
-                self._add_tooltip(
-                    unimport_button,
-                    "Reverser en tidligere import. Kontrollerer først at alle registrerte originalfiler "
-                    "fortsatt finnes med samme innhold. Krever nøyaktig bekreftelse før noe endres."
-                )
-                rescan_button = self._button(
-                    self.import_button_frame,
-                    text="Rescan kilde",
-                    command=self._start_rescan_source_flow,
-                )
-                rescan_button.grid(row=0, column=2, padx=PADX, pady=PADY, sticky="ew")
-                self._add_tooltip(
-                    rescan_button,
-                    "Scan en mappe du har importert bilder fra en gang til. Bruk dette hvis bildebank "
-                    "har blitt forbedret, og nå støtter flere bildefiler."
-                )
-                check_button = self._button(
-                    self.import_button_frame,
-                    text="Sjekk kilde",
-                    command=self._start_check_source_flow,
-                )
-                check_button.grid(row=0, column=3, padx=PADX, pady=PADY, sticky="ew")
-                self._add_tooltip(
-                    check_button,
-                    "Sjekker at filene i en kildemappe finnes i bildesamlingen med samme SHA-256. "
-                    "Hvis alle filene i mappen du har importert fra finnes i bildesamlingen "
-                    "så er det i prinsippet trygt å slette mappen du importerte bildene fra.",
-                )
                 geo_button = self._button(
                     self.tools_button_frame,
                     text="Les GPS fra bilder",
@@ -677,10 +608,6 @@ class BildebankLauncher:
                         start_button,
                         update_button,
                         backup_button,
-                        import_button,
-                        rescan_button,
-                        check_button,
-                        unimport_button,
                         geo_button,
                         face_button,
                         image_scan_button,
@@ -1490,176 +1417,6 @@ class BildebankLauncher:
             on_no=on_no,
         )
 
-    def _start_rescan_source_flow(self) -> None:
-        from tkinter import messagebox
-
-        sources = self._load_registered_sources()
-        if sources is None:
-            return
-        candidates = rescan_source_candidates(sources)
-        if not candidates:
-            messagebox.showinfo("Ingen kilder", "Fant ingen aktive kilder som kan rescannes.")
-            self._log("Rescan avbrutt: fant ingen aktive kilder.")
-            return
-        self._select_source(
-            candidates,
-            title="Velg kilde for rescan",
-            action_label="Rescan",
-            on_cancel=lambda: self._log("Rescan avbrutt: ingen kilde valgt."),
-            on_select=self._run_rescan_source,
-        )
-
-    def _run_rescan_source(self, source: db.Source) -> None:
-        self._log(f'Rescanner kilde "{source.name}" fra {source.path} ...')
-        self._run_waiting_command(
-            rescan_source_command(self.collection_path, source.name),
-            running_message="Scanner kilde på nytt ...",
-            success_message="Rescan fullført.",
-            failure_message="Rescan feilet.",
-            on_success=self._refresh_state,
-            cancellable=True,
-        )
-
-    def _start_check_source_flow(self) -> None:
-        from tkinter import messagebox
-
-        sources = self._load_registered_sources()
-        if sources is None:
-            return
-        if not sources:
-            messagebox.showinfo("Ingen kilder", "Fant ingen registrerte kilder.")
-            self._log("Sjekk kilde avbrutt: fant ingen registrerte kilder.")
-            return
-        self._select_source(
-            sources,
-            title="Velg kilde som skal sjekkes",
-            action_label="Sjekk kilde",
-            on_cancel=lambda: self._log("Sjekk kilde avbrutt: ingen kilde valgt."),
-            on_select=self._run_check_source,
-        )
-
-    def _run_check_source(self, source: db.Source) -> None:
-        self._log(f'Sjekker kilde "{source.name}" fra {source.path} ...')
-        self._run_waiting_command(
-            check_source_command(self.collection_path, source.path),
-            running_message="Sjekker kilde ...",
-            success_message="Kildesjekk fullført.",
-            failure_message="Kildesjekk feilet.",
-            on_success=self._refresh_state,
-            cancellable=True,
-        )
-
-    def _start_unimport_source_flow(self) -> None:
-        from tkinter import messagebox
-
-        sources = self._load_registered_sources()
-        if sources is None:
-            return
-        candidates = rescan_source_candidates(sources)
-        if not candidates:
-            messagebox.showinfo("Ingen kilder", "Fant ingen aktive kilder som kan unimporteres.")
-            self._log("Unimport avbrutt: fant ingen aktive kilder.")
-            return
-        self._select_source(
-            candidates,
-            title="Velg kilde for unimport",
-            action_label="Unimport",
-            on_cancel=lambda: self._log("Unimport avbrutt: ingen kilde valgt."),
-            on_select=self._run_unimport_source_dry_run,
-        )
-
-    def _run_unimport_source_dry_run(self, source: db.Source) -> None:
-        report_file = tempfile.NamedTemporaryFile(
-            prefix="bildebank-unimport-",
-            suffix=".json",
-            delete=False,
-        )
-        report_path = Path(report_file.name)
-        report_file.close()
-        self._log(f'Kontrollerer unimport for kilde "{source.name}" fra {source.path} ...')
-        self._run_waiting_command(
-            unimport_source_dry_run_command(
-                self.collection_path,
-                source.name,
-                target_change_report_json=report_path,
-            ),
-            running_message="Kontrollerer unimport ...",
-            success_message="Unimport dry-run fullført. Se planen i loggen.",
-            failure_message="Unimport dry-run feilet.",
-            on_success=lambda: self._confirm_unimport_source(source, report_path),
-        )
-
-    def _confirm_unimport_source(self, source: db.Source, report_path: Path) -> None:
-        from tkinter import messagebox
-
-        try:
-            changed_targets = read_unimport_target_change_report(report_path)
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            self._log(f'Unimport avbrutt for kilde "{source.name}": kunne ikke lese dry-run-rapport: {exc}')
-            messagebox.showerror("Unimport", "Kunne ikke lese dry-run-rapporten for unimport.")
-            return
-        finally:
-            try:
-                report_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-        messagebox.showwarning(
-            "Unimport",
-            (
-                "Dry-run er fullført og planen står i loggen.\n\n"
-                "Unimport kan fjerne filer fra den aktive bildesamlingen."
-            ),
-        )
-        confirmation = self._ask_string(
-            "Bekreft unimport",
-            f'Skriv "ja, det vil jeg" for å unimporte kilden:\n{source.name}',
-        )
-        if confirmation != "ja, det vil jeg":
-            self._log(f'Unimport avbrutt for kilde "{source.name}".')
-            return
-        target_change_answer = "nei"
-        if changed_targets:
-            preview = "\n".join(f"  {path}" for path in changed_targets[:10])
-            if len(changed_targets) > 10:
-                preview += f"\n  ... og {len(changed_targets) - 10} til"
-            if not messagebox.askyesno(
-                "Endrede filer",
-                (
-                    "Noen fil(er) i bildesamlingen er endret siden import.\n\n"
-                    "Filene i kilden er verifisert, men disse filene matcher ikke "
-                    "lenger databaseført størrelse/SHA-256 og kan inneholde "
-                    f"manuelle endringer:\n\n{preview}\n\n"
-                    "Fortsette unimport og la disse filene slettes?"
-                ),
-                parent=self.root,
-            ):
-                self._log(f'Unimport avbrutt for kilde "{source.name}": endrede filer.')
-                return
-            target_change_answer = "ja"
-        self._run_unimport_source(source, target_change_answer=target_change_answer)
-
-    def _run_unimport_source(self, source: db.Source, *, target_change_answer: str = "nei") -> None:
-        self._log(f'Unimporterer kilde "{source.name}" fra {source.path} ...')
-        self._run_waiting_command(
-            unimport_source_command(self.collection_path, source.name),
-            running_message="Kjører unimport ...",
-            success_message="Unimport-kommando avsluttet. Se loggen for resultat.",
-            failure_message="Unimport feilet.",
-            stdin_text=f"ja, det vil jeg\n{target_change_answer}\n",
-            on_success=self._refresh_state,
-        )
-
-    def _load_registered_sources(self) -> list[db.Source] | None:
-        from tkinter import messagebox
-
-        try:
-            return registered_sources(self.collection_path)
-        except Exception as exc:  # noqa: BLE001 - GUI should show readable errors
-            messagebox.showerror("Kunne ikke lese kilder", "Kunne ikke lese registrerte kilder.")
-            self._log(f"Kunne ikke lese registrerte kilder: {exc}")
-            return None
-
     def _load_registered_persons(self) -> list[RegisteredPerson] | None:
         from tkinter import messagebox
 
@@ -1669,27 +1426,6 @@ class BildebankLauncher:
             messagebox.showerror("Kunne ikke lese personer", "Kunne ikke lese registrerte personer.")
             self._log(f"Kunne ikke lese registrerte personer: {exc}")
             return None
-
-    def _select_source(
-        self,
-        sources: list[db.Source],
-        *,
-        title: str,
-        action_label: str,
-        on_select: Callable[[db.Source], None],
-        on_cancel: Callable[[], None],
-    ) -> None:
-        select_source_dialog(
-            sources,
-            tk=self.tk,
-            ttk=self.ttk,
-            root=self.root,
-            button=self._button,
-            title=title,
-            action_label=action_label,
-            on_select=on_select,
-            on_cancel=on_cancel,
-        )
 
     def _start_export_person_flow(self) -> None:
         from tkinter import filedialog, messagebox
@@ -1780,45 +1516,6 @@ class BildebankLauncher:
             failure_message="Personeksport feilet.",
             on_success=self._refresh_state,
             cancellable=True,
-        )
-
-    def _start_import_flow(self) -> None:
-        from tkinter import filedialog, messagebox
-
-        selected = filedialog.askdirectory(title="Velg mappen som skal importeres")
-        if not selected:
-            self._log("Import avbrutt: ingen mappe valgt.")
-            return
-
-        source_folder = Path(selected)
-        if source_is_collection_or_inside(source_folder, self.collection_path):
-            message = "Du kan ikke importere selve bildesamlingen eller en mappe inni den."
-            messagebox.showerror("Kan ikke importere", message)
-            self._log(f"Import avvist: {source_folder} ligger i bildesamlingen {self.collection_path}")
-            return
-
-        proposed_name = suggest_import_name(source_folder)
-        while True:
-            import_name = self._ask_string(
-                "Importnavn",
-                "Navn på importen:",
-                initialvalue=proposed_name,
-            )
-            if import_name is None:
-                self._log("Import avbrutt: importnavn ikke valgt.")
-                return
-            import_name = import_name.strip()
-            if import_name:
-                break
-            messagebox.showerror("Importnavn mangler", "Importnavn kan ikke være tomt.")
-
-        self._log(f'Importerer bilder fra {source_folder} med navn "{import_name}" ...')
-        self._run_waiting_command(
-            import_command(self.collection_path, source_folder, import_name),
-            running_message="Importerer bilder ...",
-            success_message="Import fullført.",
-            failure_message="Import feilet.",
-            on_success=self._refresh_state,
         )
 
     def _start_server(self) -> None:

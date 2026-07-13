@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 
 from bildebank.launcher import BildebankLauncher
+from bildebank.launcher_import_tab import ImportTab
 from bildebank.launcher_widgets import (
     ask_string_dialog,
     select_person_dialog,
@@ -13,8 +14,8 @@ from bildebank.launcher_widgets import (
 def test_launcher_string_dialog_is_padded_and_replaces_simpledialog() -> None:
     source = inspect.getsource(ask_string_dialog)
     cleanup_source = inspect.getsource(BildebankLauncher._confirm_cleanup_pending_deletes)
-    unimport_source = inspect.getsource(BildebankLauncher._confirm_unimport_source)
-    import_source = inspect.getsource(BildebankLauncher._start_import_flow)
+    unimport_source = inspect.getsource(ImportTab._confirm_unimport_source)
+    import_source = inspect.getsource(ImportTab._start_import_flow)
 
     assert "Toplevel(root)" in source
     assert "ttk.Frame(dialog, padding=16)" in source
