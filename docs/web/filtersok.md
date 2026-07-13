@@ -341,6 +341,13 @@ path:"Sommer 2023"
 
 Søket er et delstrengsøk.
 
+Både `/` og `\` kan brukes som mappeskilletegn:
+
+```text
+path:2024/01
+path:2024\01
+```
+
 ## Filstørrelse
 
 ### `size`

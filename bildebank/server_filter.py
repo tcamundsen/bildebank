@@ -413,11 +413,44 @@ def parse_height_pixels(value: str) -> int:
 
 def tokenize_filter_query(query: str) -> tuple[list[str], str]:
     try:
-        raw_tokens = shlex.split(query.strip())
+        raw_tokens = shlex.split(preserve_unquoted_backslashes(query.strip()))
     except ValueError as exc:
         raise ValueError("Ugyldige anførselstegn i filtersøk.") from exc
     tokens = normalize_filter_tokens(raw_tokens)
     return tokens, " ".join(canonical_filter_token(token) for token in tokens)
+
+
+def preserve_unquoted_backslashes(query: str) -> str:
+    """Keep Windows path separators that POSIX shlex would treat as escapes."""
+    result: list[str] = []
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(query):
+        if escaped:
+            result.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            next_char = query[index + 1] if index + 1 < len(query) else ""
+            if quote is None:
+                if not next_char or (
+                    not next_char.isspace() and next_char not in {"\\", '"', "'"}
+                ):
+                    result.append("\\")
+                result.append(char)
+                escaped = True
+                continue
+            result.append(char)
+            if quote == '"' and next_char in {"\\", '"'}:
+                escaped = True
+            continue
+        if char in {'"', "'"}:
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+        result.append(char)
+    return "".join(result)
 
 
 def normalize_filter_tokens(tokens: list[str]) -> list[str]:
