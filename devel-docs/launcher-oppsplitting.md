@@ -30,8 +30,8 @@ beslutninger skal oppdateres her underveis.
 | 0A. Stabiliser utviklerverktøy | ferdig | `4fef0e8` |
 | 1. Trekk ut kommandobyggere | ferdig | `c2ec28a` |
 | 2. Trekk ut status og miljøkontroll | ferdig | `f4fe0fc` |
-| 3. Trekk ut prosesskjøring | ferdig | ikke committet |
-| 4. Trekk ut generelle widgets og dialoger | ikke startet | |
+| 3. Trekk ut prosesskjøring | ferdig | `f7a0abf` |
+| 4. Trekk ut generelle widgets og dialoger | ferdig, ikke committet | |
 | 5. Trekk ut Oppsett-fanen | ikke startet | |
 | 6. Trekk ut Import-fanen | ikke startet | |
 | 7. Trekk ut Verktøy-fanen | ikke startet | |
@@ -39,8 +39,7 @@ beslutninger skal oppdateres her underveis.
 | 9. Gjør `launcher.py` til et tynt inngangspunkt | ikke startet | |
 | 10. Avsluttende testopprydding og dokumentasjon | ikke startet | |
 
-Neste trinn: **4. Trekk ut generelle widgets og dialoger**, etter at trinn 3
-er committet.
+Neste trinn: **5. Trekk ut Oppsett-fanen**, etter at trinn 4 er committet.
 
 ## Regler for hele refaktoreringen
 
@@ -310,6 +309,18 @@ Trekk launcher-prosesskjøring ut i egen modul
 ```text
 Trekk launcher-widgets ut i egen modul
 ```
+
+### Resultat
+
+- `launcher_widgets.py` er opprettet med 262 linjer.
+- `Tooltip`, strengdialogen, loggvurderingsdialogen og velgerne for kilde og
+  person er flyttet med eksplisitte avhengigheter og callbacks.
+- `launcher.py` beholder tynne delegasjonsmetoder og er redusert videre fra
+  2453 til 2229 linjer.
+- Fire dialogtester er flyttet til `test_launcher_widgets.py` og tester de nye
+  eierfunksjonene.
+- 746 tester og 148 subtester består.
+- Ruff, pyflakes og mypy er grønne.
 
 ## Trinn 5 – Trekk ut Oppsett-fanen
 
