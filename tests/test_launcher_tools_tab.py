@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -9,6 +8,7 @@ from bildebank.launcher_status import (
     InsightFaceDependencyStatus,
     InsightFaceModelStatus,
     OpenClipModelStatus,
+    RegisteredPerson,
 )
 from bildebank.launcher_tools_tab import (
     FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP,
@@ -302,44 +302,78 @@ def test_image_scan_preflight_can_be_cancelled(tmp_path: Path) -> None:
     assert actions == ["Bildesøk-scan avbrutt."]
 
 
-def test_tools_tab_exposes_export_person_dry_run_flow() -> None:
-    refresh_source = inspect.getsource(ToolsTab.refresh)
-    flow_source = inspect.getsource(ToolsTab._start_export_person_flow)
-    dry_run_source = inspect.getsource(ToolsTab._run_export_person_dry_run)
-    confirm_source = inspect.getsource(ToolsTab._confirm_export_person)
+def test_export_person_runs_dry_run_before_confirmed_export(tmp_path: Path) -> None:
+    tab = bare_tools_tab(tmp_path, ready_setup())
+    person = RegisteredPerson("Kari", 3, 4, 1, "2026-07-13")
+    destination = tmp_path / "eksport"
+    selections: list[dict[str, object]] = []
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    questions: list[dict[str, object]] = []
+    tab._load_registered_persons = lambda: [person]
+    tab._select_person = lambda _persons, **options: selections.append(options)
+    tab._run_waiting_command = lambda command, **options: calls.append((command, options))
+    tab._show_log_review_question = (
+        lambda _title, _message, **options: questions.append(options)
+    )
 
-    assert 'text="Eksporter person"' in refresh_source
-    assert "_start_export_person_flow" in refresh_source
-    assert "Denne funksjonen eksporterer en kopi av alle bildene av en person" in flow_source
-    assert "description: str" in inspect.getsource(ToolsTab._select_person)
-    assert "dry_run=True" in dry_run_source
-    assert "_confirm_export_person" in dry_run_source
-    assert "_show_log_review_question" in confirm_source
-    assert "_run_export_person(person, destination_root)" in confirm_source
+    tab._start_export_person_flow()
+
+    assert "eksporterer en kopi" in str(selections[0]["description"])
+    assert selections[0]["action_label"] == "Velg mappe"
+
+    tab._run_export_person_dry_run(person, destination)
+    assert calls[0][0][-5:] == ["export-person", "Kari", "--dest", str(destination), "--dry-run"]
+
+    on_dry_run_success = calls[0][1]["on_success"]
+    assert callable(on_dry_run_success)
+    on_dry_run_success()
+    assert questions[0]["yes_text"] == "Eksporter"
+
+    on_yes = questions[0]["on_yes"]
+    assert callable(on_yes)
+    on_yes()
+    assert calls[1][0][-4:] == ["export-person", "Kari", "--dest", str(destination)]
+    assert calls[1][1]["cancellable"] is True
 
 
-def test_tools_tab_exposes_static_browser_commands_and_shared_hide_checkbox() -> None:
-    refresh_source = inspect.getsource(ToolsTab.refresh)
-    make_browser_source = inspect.getsource(ToolsTab._run_make_browser)
-    start_make_person_source = inspect.getsource(ToolsTab._start_make_person_browser_flow)
-    make_person_source = inspect.getsource(ToolsTab._run_make_person_browser)
-    make_people_source = inspect.getsource(ToolsTab._run_make_people_browser)
+def test_static_browser_commands_share_hide_out_of_focus_option(tmp_path: Path) -> None:
+    tab = bare_tools_tab(tmp_path, ready_setup())
+    person = RegisteredPerson("Kari", 3, 4, 1, "2026-07-13")
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    selections: list[dict[str, object]] = []
+    tab.static_browser_hide_out_of_focus_var = FakeVariable(True)
+    tab._run_waiting_command = lambda command, **options: calls.append((command, options))
+    tab._load_registered_persons = lambda: [person]
+    tab._select_person = lambda _persons, **options: selections.append(options)
 
-    assert 'text="Lag HTML-browser"' in refresh_source
-    assert 'text="Lag personbrowser"' in refresh_source
-    assert 'text="Lag alle personbrowsere"' in refresh_source
-    assert 'text=\'Skjul "Ute av fokus"\'' in refresh_source
-    assert "static_browser_hide_out_of_focus_var" in refresh_source
-    assert "de statiske HTML-browserkommandoene" in refresh_source
-    assert "Velg personen det skal lages statisk HTML-browser for." in start_make_person_source
-    for source_code in (make_browser_source, make_person_source, make_people_source):
-        assert "static_browser_hide_out_of_focus_var.get()" in source_code
-        assert "hide_out_of_focus=hide_out_of_focus" in source_code
+    tab._run_make_browser()
+    tab._run_make_person_browser(person)
+    tab._run_make_people_browser()
+    tab._start_make_person_browser_flow()
+
+    assert [call[0][-1] for call in calls] == [
+        "--hide-out-of-focus",
+        "--hide-out-of-focus",
+        "--hide-out-of-focus",
+    ]
+    assert all(call[1]["cancellable"] is True for call in calls)
+    assert "Kari" in calls[1][0]
+    assert selections[0]["description"] == (
+        "Velg personen det skal lages statisk HTML-browser for."
+    )
 
 
-def test_face_and_image_scan_commands_are_cancellable() -> None:
-    assert "cancellable=True" in inspect.getsource(ToolsTab._start_face_scan_command)
-    assert "cancellable=True" in inspect.getsource(ToolsTab._start_image_scan_command)
+def test_face_and_image_scan_commands_are_cancellable(tmp_path: Path) -> None:
+    tab = bare_tools_tab(tmp_path, ready_setup())
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    tab._run_waiting_command = lambda command, **options: calls.append((command, options))
+
+    tab._start_face_scan_command()
+    tab._start_image_scan_command()
+
+    assert calls[0][0][-1] == "face-scan"
+    assert calls[1][0][-1] == "image-scan"
+    assert all(call[1]["cancellable"] is True for call in calls)
 
 
 def test_pending_delete_cleanup_requires_exact_confirmation(tmp_path: Path) -> None:

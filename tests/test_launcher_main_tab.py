@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import inspect
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -91,17 +90,38 @@ def test_open_server_browser_window_opens_default_run_server_url() -> None:
     open_browser.assert_called_once_with("http://127.0.0.1:8765/", new=1)
 
 
-def test_launcher_initializes_update_status_asynchronously() -> None:
-    from bildebank.launcher_app import LauncherApp
+def test_update_status_refresh_starts_background_worker(tmp_path: Path) -> None:
+    tab = bare_main_tab(tmp_path / "samling")
+    tab._set_launcher_buttons_enabled = lambda _enabled: None
 
-    init_source = inspect.getsource(LauncherApp.__init__)
-    start_source = inspect.getsource(MainTab.start_update_status_refresh)
-    worker_source = inspect.getsource(MainTab._update_status_worker)
+    with patch("bildebank.launcher_main_tab.threading.Thread") as thread:
+        tab.start_update_status_refresh()
 
-    assert "self.main_tab.start_update_status_refresh()" in init_source
-    assert "check_launcher_update_status()" not in init_source
-    assert "threading.Thread" in start_source
-    assert "self._post_to_ui(" in worker_source
+    thread.assert_called_once_with(target=tab._update_status_worker, daemon=True)
+    thread.return_value.start.assert_called_once_with()
+    assert tab.update_checking
+    assert tab.update_status.status == "checking"
+
+
+def test_update_status_worker_posts_result_to_ui(tmp_path: Path) -> None:
+    tab = bare_main_tab(tmp_path / "samling")
+    callbacks: list[object] = []
+    finished: list[LauncherUpdateStatus] = []
+    expected = LauncherUpdateStatus("available", commits_behind=2)
+    tab._post_to_ui = lambda callback: callbacks.append(callback) or True
+    tab._update_status_finished = finished.append
+
+    with patch(
+        "bildebank.launcher_main_tab.check_launcher_update_status",
+        return_value=expected,
+    ):
+        tab._update_status_worker()
+
+    assert len(callbacks) == 1
+    callback = callbacks[0]
+    assert callable(callback)
+    callback()
+    assert finished == [expected]
 
 
 def test_update_button_text_reflects_update_status(tmp_path: Path) -> None:
@@ -272,23 +292,40 @@ def test_create_collection_tooltip_explains_disabled_existing_collection(tmp_pat
     assert "Lag en bildesamling" in tab._create_collection_tooltip(False)
 
 
-def test_main_tab_exposes_backup_dry_run_flow() -> None:
-    refresh_source = inspect.getsource(MainTab.refresh)
-    flow_source = inspect.getsource(MainTab._start_backup_flow)
-    dry_run_source = inspect.getsource(MainTab._run_backup_dry_run)
-    confirm_source = inspect.getsource(MainTab._confirm_backup)
-    backup_source = inspect.getsource(MainTab._run_backup)
+def test_main_tab_backup_runs_dry_run_before_confirmed_backup(tmp_path: Path) -> None:
+    collection = tmp_path / "samling"
+    backup_parent = tmp_path / "backup"
+    tab = bare_main_tab(collection)
+    calls: list[tuple[list[str], dict[str, object]]] = []
+    questions: list[dict[str, object]] = []
+    tab._log = lambda _message: None
+    tab._refresh_launcher = lambda: None
+    tab._run_waiting_command = lambda command, **options: calls.append((command, options))
+    tab._show_log_review_question = (
+        lambda _title, _message, **options: questions.append(options)
+    )
 
-    assert 'text="Ta backup"' in refresh_source
-    assert "_start_backup_flow" in refresh_source
-    assert "askdirectory" in flow_source
-    assert 'title="Velg backup-plassering"' in flow_source
-    assert "_run_backup_dry_run" in flow_source
-    assert "dry_run=True" in dry_run_source
-    assert "_confirm_backup" in dry_run_source
-    assert "_show_log_review_question" in confirm_source
-    assert "_run_backup(backup_parent)" in confirm_source
-    assert "cancellable=True" in backup_source
+    with patch("tkinter.filedialog.askdirectory", return_value=str(backup_parent)) as chooser:
+        tab._start_backup_flow()
+
+    chooser.assert_called_once_with(
+        title="Velg backup-plassering",
+        initialdir=str(collection.parent),
+    )
+    assert calls[0][0][-3:] == ["backup", "--dry-run", str(backup_parent)]
+    assert calls[0][1]["cancellable"] is True
+
+    on_dry_run_success = calls[0][1]["on_success"]
+    assert callable(on_dry_run_success)
+    on_dry_run_success()
+    assert questions[0]["yes_text"] == "Kjør backup"
+
+    on_yes = questions[0]["on_yes"]
+    assert callable(on_yes)
+    on_yes()
+    assert "--dry-run" not in calls[1][0]
+    assert calls[1][0][-2:] == ["backup", str(backup_parent)]
+    assert calls[1][1]["cancellable"] is True
 
 
 def test_start_server_stops_when_migration_is_required(tmp_path: Path) -> None:

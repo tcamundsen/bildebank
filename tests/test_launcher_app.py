@@ -1,69 +1,183 @@
 from __future__ import annotations
 
-import inspect
+import sys
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from unittest.mock import patch
 
-from bildebank.launcher_app import LauncherApp, close_blocked_by_running_command
-
-
-def test_launcher_layout_source_defines_notebook_tabs_and_log_below_tabs() -> None:
-    source = inspect.getsource(LauncherApp._build_gui)
-    refresh_source = inspect.getsource(LauncherApp._refresh_state)
-
-    assert "ttk.Notebook(outer)" in source
-    assert "self.main_tab = MainTab(" in source
-    assert 'self.notebook.add(self.main_tab.frame, text="Bildebank")' in source
-    assert "self.import_tab = ImportTab(" in source
-    assert 'self.notebook.add(self.import_tab.frame, text="Import av bilder")' in source
-    assert "self.tools_tab = ToolsTab(" in source
-    assert 'self.notebook.add(self.tools_tab.frame, text="Verktøy")' in source
-    assert "self.setup = SetupTab(" in source
-    assert 'self.notebook.add(self.setup.frame, text="Oppsett")' in source
-    assert "log_frame = ttk.Frame(outer)" in source
-    assert "log_frame = ttk.Frame(self.notebook)" not in source
-    assert "footer = ttk.Frame(outer)" in source
-    assert "ttk.Style(self.root).configure(BUTTON_STYLE, padding=BUTTON_PADDING)" in source
-    assert "self.cancel_command_button = self._button(" in source
-    assert 'text="Avbryt jobb"' in source
-    assert "self.exit_button = self._button(" in source
-    assert 'text="Avslutt Bildebank"' in source
-    assert 'text="Avslutt Bildebank"' not in refresh_source
-    assert "self.import_tab.refresh(available=main_state.available)" in refresh_source
-    assert "self.tools_tab.refresh(available=main_state.available)" in refresh_source
+from bildebank.launcher_app import BUTTON_STYLE, LauncherApp, close_blocked_by_running_command
+from bildebank.launcher_status import LauncherConfig
 
 
-def test_launcher_button_helper_uses_launcher_button_style() -> None:
-    source = inspect.getsource(LauncherApp._button)
+class FakeWidget:
+    def __init__(self, parent: FakeWidget | None = None, **options: object) -> None:
+        self.parent = parent
+        self.options = options
+        self.children: list[FakeWidget] = []
+        self.grid_options: dict[str, object] = {}
+        if parent is not None:
+            parent.children.append(self)
 
-    assert 'kwargs.setdefault("style", BUTTON_STYLE)' in source
-    assert "return self.ttk.Button(parent, **kwargs)" in source
+    def columnconfigure(self, *_args: object, **_kwargs: object) -> None:
+        pass
+
+    def configure(self, **options: object) -> None:
+        self.options.update(options)
+
+    def grid(self, **options: object) -> None:
+        self.grid_options = options
+
+    def rowconfigure(self, *_args: object, **_kwargs: object) -> None:
+        pass
+
+    def yview(self, *_args: object) -> None:
+        pass
+
+    def set(self, *_args: object) -> None:
+        pass
+
+
+class FakeNotebook(FakeWidget):
+    def __init__(self, parent: FakeWidget | None = None, **options: object) -> None:
+        super().__init__(parent, **options)
+        self.tabs: list[tuple[FakeWidget, str]] = []
+
+    def add(self, frame: FakeWidget, *, text: str) -> None:
+        self.tabs.append((frame, text))
+
+
+class FakeStyle:
+    configured: list[tuple[str, dict[str, object]]] = []
+
+    def __init__(self, _root: FakeWidget) -> None:
+        pass
+
+    def configure(self, name: str, **options: object) -> None:
+        self.configured.append((name, options))
+
+
+class FakeRoot(FakeWidget):
+    def title(self, _title: str) -> None:
+        pass
+
+    def minsize(self, _width: int, _height: int) -> None:
+        pass
+
+    def protocol(self, _name: str, _callback: object) -> None:
+        pass
+
+
+def fake_tab(**kwargs: object) -> SimpleNamespace:
+    return SimpleNamespace(frame=FakeWidget(kwargs["notebook"]))
+
+
+def test_launcher_app_builds_tabs_log_and_footer_outside_notebook(tmp_path: Path) -> None:
+    app = LauncherApp.__new__(LauncherApp)
+    app.tk = SimpleNamespace(Text=FakeWidget)
+    app.ttk = SimpleNamespace(
+        Style=FakeStyle,
+        Frame=FakeWidget,
+        Label=FakeWidget,
+        Notebook=FakeNotebook,
+        Scrollbar=FakeWidget,
+        Button=FakeWidget,
+    )
+    app.root = FakeRoot()
+    app.status_value = object()
+    app.collection_path = tmp_path / "samling"
+    app.busy = False
+    app.tooltips = []
+
+    with (
+        patch("bildebank.launcher_app.MainTab", side_effect=fake_tab),
+        patch("bildebank.launcher_app.ImportTab", side_effect=fake_tab),
+        patch("bildebank.launcher_app.ToolsTab", side_effect=fake_tab),
+        patch("bildebank.launcher_app.SetupTab", side_effect=fake_tab),
+    ):
+        app._build_gui()
+
+    assert [text for _frame, text in app.notebook.tabs] == [
+        "Bildebank",
+        "Import av bilder",
+        "Verktøy",
+        "Oppsett",
+    ]
+    outer = app.notebook.parent
+    assert outer is not None
+    assert app.log_text.parent is not app.notebook
+    assert app.log_text.parent is not None
+    assert app.log_text.parent.parent is outer
+    assert app.cancel_command_button.options["text"] == "Avbryt jobb"
+    assert app.exit_button.options["text"] == "Avslutt Bildebank"
+    assert app.cancel_command_button.options["style"] == BUTTON_STYLE
+
+
+def test_launcher_app_starts_tab_status_refreshes(tmp_path: Path) -> None:
+    actions: list[str] = []
+    fake_tkinter = ModuleType("tkinter")
+    fake_tkinter.Tk = FakeRoot
+    fake_tkinter.StringVar = lambda **kwargs: SimpleNamespace(**kwargs)
+    fake_tkinter.ttk = SimpleNamespace()
+
+    def build_gui(app: LauncherApp) -> None:
+        app.main_tab = SimpleNamespace(
+            update_migration_status=lambda: actions.append("migration"),
+            start_update_status_refresh=lambda: actions.append("update-status"),
+            show_initial_migration_status=lambda: actions.append("migration-dialog"),
+        )
+        app.setup = SimpleNamespace(
+            start_status_refresh=lambda: actions.append("setup-status"),
+            log_unsupported_installers=lambda: actions.append("installer-info"),
+        )
+
+    with (
+        patch.dict(sys.modules, {"tkinter": fake_tkinter}),
+        patch(
+            "bildebank.launcher_app.load_launcher_config",
+            return_value=LauncherConfig(tmp_path / "samling"),
+        ),
+        patch("bildebank.launcher_app.CommandRunner"),
+        patch.object(LauncherApp, "_build_gui", build_gui),
+        patch.object(LauncherApp, "_refresh_state", lambda self: actions.append("refresh")),
+        patch.object(LauncherApp, "_log", lambda self, message: actions.append(message)),
+    ):
+        LauncherApp()
+
+    assert actions == [
+        "migration",
+        "refresh",
+        "update-status",
+        "setup-status",
+        f"Valgt bildesamling: {tmp_path / 'samling'}",
+        "migration-dialog",
+        "installer-info",
+    ]
 
 
 def test_post_to_tk_ignores_callbacks_after_close_started() -> None:
-    launcher = LauncherApp.__new__(LauncherApp)
-    launcher.closing = True
+    app = LauncherApp.__new__(LauncherApp)
+    app.closing = True
 
-    class FakeRoot:
+    class RootThatMustNotSchedule:
         def after(self, *_args: object) -> None:
             raise AssertionError("after should not be called while closing")
 
-    launcher.root = FakeRoot()
+    app.root = RootThatMustNotSchedule()
 
-    assert not launcher._post_to_tk(lambda: None)
+    assert not app._post_to_tk(lambda: None)
 
 
 def test_close_stops_server_owned_by_main_tab() -> None:
-    launcher = LauncherApp.__new__(LauncherApp)
+    app = LauncherApp.__new__(LauncherApp)
     actions: list[str] = []
-    launcher.busy = False
-    launcher.closing = False
-    launcher.main_tab = type(
-        "FakeMainTab",
-        (),
-        {"stop_server_process": lambda self: actions.append("stop-server")},
-    )()
-    launcher._destroy_root = lambda: actions.append("destroy-root")
+    app.busy = False
+    app.closing = False
+    app.main_tab = SimpleNamespace(
+        stop_server_process=lambda: actions.append("stop-server")
+    )
+    app._destroy_root = lambda: actions.append("destroy-root")
 
-    launcher._on_close()
+    app._on_close()
 
     assert actions == ["stop-server", "destroy-root"]
 

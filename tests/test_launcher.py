@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-import inspect
 from unittest.mock import Mock, patch
 
 from bildebank import launcher
 
 
 def test_launcher_module_is_a_thin_public_entrypoint() -> None:
-    source = inspect.getsource(launcher)
-
-    assert "def main() -> int:" in source
-    assert "from .launcher_app import LauncherApp" in source
-    assert "tkinter" not in source
-    assert "launcher_import_tab" not in source
-    assert "launcher_tools_tab" not in source
+    assert launcher.main.__module__ == "bildebank.launcher"
+    assert not hasattr(launcher, "LauncherApp")
+    assert not hasattr(launcher, "ImportTab")
+    assert not hasattr(launcher, "ToolsTab")
 
 
 def test_launcher_main_runs_launcher_app() -> None:

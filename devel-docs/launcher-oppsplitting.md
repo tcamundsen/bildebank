@@ -36,10 +36,10 @@ beslutninger skal oppdateres her underveis.
 | 6. Trekk ut Import-fanen | ferdig | `c213343` |
 | 7. Trekk ut Verktøy-fanen | ferdig | `559a551` |
 | 8. Trekk ut hovedfanen | ferdig | `f097c15` |
-| 9. Gjør `launcher.py` til et tynt inngangspunkt | ferdig, ikke committet | |
-| 10. Avsluttende testopprydding og dokumentasjon | ikke startet | |
+| 9. Gjør `launcher.py` til et tynt inngangspunkt | ferdig | `7126a66` |
+| 10. Avsluttende testopprydding og dokumentasjon | ferdig, ikke commitet | — |
 
-Neste trinn: **10. Avsluttende testopprydding og dokumentasjon.**
+Neste trinn: **Ingen. Oppsplittingsplanen er ferdig.**
 
 ## Regler for hele refaktoreringen
 
@@ -579,6 +579,40 @@ Gjør launcher til et tynt inngangspunkt
 ```text
 Fullfør oppsplitting av launcher-tester
 ```
+
+### Resultat
+
+- `tests/test_launcher.py` er redusert til 22 linjer og tester bare det
+  offentlige `main()`-inngangspunktet.
+- Kildekodetester for appskall, bakgrunnsstatus, backup, personeksport,
+  statiske browsere og scan-avbrytelse er erstattet med atferdstester.
+- Seks strukturelle Tk-tester i Import-, Oppsett- og widget-testene leser
+  fortsatt kildekode. De beholdes fordi tilsvarende atferdstester nå ville
+  kreve uforholdsmessig omfattende og skjøre GUI-testdobler.
+- `devel-docs/launcher.md` beskriver endelig modulansvar,
+  avhengighetsretning, trådmodell og testplassering.
+- Endelige størrelser for produksjonsmodulene er:
+
+| Modul | Linjer |
+|---|---:|
+| `launcher.py` | 9 |
+| `launcher_app.py` | 481 |
+| `launcher_commands.py` | 177 |
+| `launcher_status.py` | 266 |
+| `launcher_runner.py` | 181 |
+| `launcher_widgets.py` | 262 |
+| `launcher_main_tab.py` | 606 |
+| `launcher_import_tab.py` | 399 |
+| `launcher_tools_tab.py` | 791 |
+| `launcher_setup_tab.py` | 356 |
+
+- 765 tester og 163 subtester består.
+- Ruff, pyflakes, mypy og `git diff --check` er grønne.
+- Windows-smoketest er ikke utført på Linux-laptopen. Den gjenstår som en
+  eksplisitt kontroll før neste versjon, med punktene under «Brukerens
+  oppgave» over.
+- Trinn 10 er ferdig i arbeidstreet, men har ingen commit-hash før brukeren
+  har gjennomgått og commitet endringene.
 
 ## Arbeidsflyt mellom hvert trinn
 

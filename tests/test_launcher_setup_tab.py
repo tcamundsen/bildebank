@@ -3,7 +3,6 @@ from __future__ import annotations
 import inspect
 from unittest.mock import patch
 
-from bildebank.launcher_app import LauncherApp
 from bildebank.launcher_setup_tab import SetupTab
 from bildebank.launcher_status import (
     InsightFaceDependencyStatus,
@@ -58,19 +57,15 @@ def test_setup_tab_builds_insightface_and_openclip_sections() -> None:
     assert 'text="Installer OpenCLIP"' in source
 
 
-def test_launcher_starts_setup_status_asynchronously() -> None:
-    init_source = inspect.getsource(LauncherApp.__init__)
-    refresh_source = inspect.getsource(LauncherApp._refresh_state)
-    start_source = inspect.getsource(SetupTab.start_status_refresh)
-    worker_source = inspect.getsource(SetupTab._status_worker)
+def test_setup_status_refresh_starts_background_worker() -> None:
+    setup = bare_setup_tab()
 
-    assert "self.setup.start_status_refresh()" in init_source
-    assert "insightface_dependency_status()" not in init_source
-    assert "openclip_model_status()" not in init_source
-    assert "insightface_dependency_status()" not in refresh_source
-    assert "openclip_model_status()" not in refresh_source
-    assert "threading.Thread" in start_source
-    assert "self._post_to_ui(" in worker_source
+    with patch("bildebank.launcher_setup_tab.threading.Thread") as thread:
+        setup.start_status_refresh()
+
+    thread.assert_called_once_with(target=setup._status_worker, daemon=True)
+    thread.return_value.start.assert_called_once_with()
+    assert setup.status_refreshing
 
 
 def test_status_finished_updates_values_and_logs_error_details() -> None:
