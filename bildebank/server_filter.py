@@ -1116,7 +1116,7 @@ def filter_help_html() -> str:
         </div>
         <div class="info-row">
           <dt>Alle bilder med Per og Kari</dt>
-          <dd><a href="/filter/month:12 day:24"><code>person:Per person:Kari</code></a></dd>
+          <dd><a href="/filter/person%3APer%20person%3AKari"><code>person:Per person:Kari</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Alle julaftener</dt>
