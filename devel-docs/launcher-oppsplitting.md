@@ -28,8 +28,8 @@ beslutninger skal oppdateres her underveis.
 |---|---|---|
 | 0. Opprett plan og baseline | ferdig | `2d2310b` |
 | 0A. Stabiliser utviklerverktøy | ferdig | `4fef0e8` |
-| 1. Trekk ut kommandobyggere | ferdig | ikke committet |
-| 2. Trekk ut status og miljøkontroll | ikke startet | |
+| 1. Trekk ut kommandobyggere | ferdig | `c2ec28a` |
+| 2. Trekk ut status og miljøkontroll | ferdig | ikke committet |
 | 3. Trekk ut prosesskjøring | ikke startet | |
 | 4. Trekk ut generelle widgets og dialoger | ikke startet | |
 | 5. Trekk ut Oppsett-fanen | ikke startet | |
@@ -39,8 +39,7 @@ beslutninger skal oppdateres her underveis.
 | 9. Gjør `launcher.py` til et tynt inngangspunkt | ikke startet | |
 | 10. Avsluttende testopprydding og dokumentasjon | ikke startet | |
 
-Neste trinn: **2. Trekk ut status og miljøkontroll**, etter at trinn 1 er
-committet.
+Neste trinn: **3. Trekk ut prosesskjøring**, etter at trinn 2 er committet.
 
 ## Regler for hele refaktoreringen
 
@@ -228,6 +227,18 @@ Trekk launcher-kommandoer ut i egen modul
 ```text
 Trekk launcher-status ut i egen modul
 ```
+
+### Resultat
+
+- `launcher_status.py` er opprettet med 266 linjer og utfører ingen
+  Tk-operasjoner.
+- `launcher.py` er redusert videre fra 2818 til 2577 linjer.
+- 32 config-, Git-, migrerings-, kilde-, person- og AI-statustester er flyttet
+  til `test_launcher_status.py`.
+- Git-oppdateringssjekkens eksisterende `git fetch` er uendret; øvrige
+  statuskontroller er read-only.
+- 744 tester og 148 subtester består.
+- Ruff, pyflakes og mypy er grønne.
 
 ## Trinn 3 – Trekk ut prosesskjøring
 
