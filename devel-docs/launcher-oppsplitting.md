@@ -29,8 +29,8 @@ beslutninger skal oppdateres her underveis.
 | 0. Opprett plan og baseline | ferdig | `2d2310b` |
 | 0A. Stabiliser utviklerverktøy | ferdig | `4fef0e8` |
 | 1. Trekk ut kommandobyggere | ferdig | `c2ec28a` |
-| 2. Trekk ut status og miljøkontroll | ferdig | ikke committet |
-| 3. Trekk ut prosesskjøring | ikke startet | |
+| 2. Trekk ut status og miljøkontroll | ferdig | `f4fe0fc` |
+| 3. Trekk ut prosesskjøring | ferdig | ikke committet |
 | 4. Trekk ut generelle widgets og dialoger | ikke startet | |
 | 5. Trekk ut Oppsett-fanen | ikke startet | |
 | 6. Trekk ut Import-fanen | ikke startet | |
@@ -39,7 +39,8 @@ beslutninger skal oppdateres her underveis.
 | 9. Gjør `launcher.py` til et tynt inngangspunkt | ikke startet | |
 | 10. Avsluttende testopprydding og dokumentasjon | ikke startet | |
 
-Neste trinn: **3. Trekk ut prosesskjøring**, etter at trinn 2 er committet.
+Neste trinn: **4. Trekk ut generelle widgets og dialoger**, etter at trinn 3
+er committet.
 
 ## Regler for hele refaktoreringen
 
@@ -269,6 +270,19 @@ Trekk launcher-status ut i egen modul
 ```text
 Trekk launcher-prosesskjøring ut i egen modul
 ```
+
+### Resultat
+
+- `launcher_runner.py` er opprettet med 181 linjer.
+- `CommandRunner` eier aktiv subprocess, cancellable-status og
+  avbruddsforespørsel.
+- Worker-tråden leverer fortsatt output og sluttstatus via UI-callback;
+  runneren utfører ingen Tk-kall.
+- `launcher.py` er redusert videre fra 2577 til 2453 linjer.
+- Prosess- og progresjonstester er flyttet til `test_launcher_runner.py`, og
+  to nye tester dekker cancellation-state og callback-flyten.
+- 746 tester og 148 subtester består.
+- Ruff, pyflakes og mypy er grønne.
 
 ## Trinn 4 – Trekk ut generelle widgets og dialoger
 

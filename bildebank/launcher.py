@@ -3,9 +3,7 @@ from __future__ import annotations
 import importlib
 from importlib import resources
 import json
-import locale
 import os
-import signal
 import subprocess
 import threading
 import tempfile
@@ -77,6 +75,7 @@ from .launcher_status import (
     rescan_source_candidates,
     save_launcher_config,
 )
+from .launcher_runner import CommandRunner, progress_log_key
 from .pending_deletes import list_pending_deletes
 
 if os.name == "nt":
@@ -127,26 +126,6 @@ IMAGE_SCAN_ENABLE_MESSAGE = (
     "Vil du slå det på og klargjøre bildene nå?"
 )
 
-PROGRESS_LOG_LABELS = (
-    "Import",
-    "Import dry-run",
-    "Rescan-source",
-    "Rescan-source dry-run",
-    "Thumbnails",
-    "Unimport",
-    "Check-source",
-    "geo-scan",
-    "Doctor filer",
-    "Doctor SHA-256",
-    "Doctor orphan",
-    "Image-scan",
-    "Image-search",
-    "Face-scan",
-    "Face-suggest",
-    "Refresh-metadata",
-)
-
-
 def suggest_import_name(source_folder: Path) -> str:
     raw_path = str(source_folder)
     if "\\" in raw_path:
@@ -190,55 +169,6 @@ def open_server_browser_window() -> bool:
 
 def close_blocked_by_running_command(busy: bool) -> bool:
     return busy
-
-
-def interruptible_command_creationflags() -> int:
-    if os.name != "nt":
-        return 0
-    return int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-
-
-def interrupt_process(process: subprocess.Popen[str]) -> None:
-    if os.name == "nt":
-        ctrl_break_event = getattr(signal, "CTRL_BREAK_EVENT", None)
-        if ctrl_break_event is not None:
-            process.send_signal(ctrl_break_event)
-            return
-    else:
-        process.send_signal(signal.SIGINT)
-        return
-    process.terminate()
-
-
-def subprocess_output_encoding() -> str:
-    return locale.getpreferredencoding(False) or "utf-8"
-
-
-def progress_log_key(message: str) -> str | None:
-    if _is_tqdm_progress_line(message):
-        return "tqdm-progress"
-    for label in PROGRESS_LOG_LABELS:
-        prefix = f"{label}:"
-        rest = message[len(prefix):] if message.startswith(prefix) else ""
-        if rest and not rest.lstrip().startswith("ferdig") and ("=" in rest or _contains_progress_count(rest)):
-            return label
-    return None
-
-
-def _is_tqdm_progress_line(message: str) -> bool:
-    stripped = message.lstrip()
-    percent, separator, rest = stripped.partition("%|")
-    return bool(separator) and percent.isdigit() and _contains_progress_count(rest)
-
-
-def _contains_progress_count(message: str) -> bool:
-    parts = message.replace(",", " ").split()
-    return any(_is_progress_count(part) for part in parts)
-
-
-def _is_progress_count(part: str) -> bool:
-    current, separator, total = part.partition("/")
-    return bool(separator) and current.isdigit() and total.isdigit()
 
 
 class Tooltip:
@@ -309,9 +239,6 @@ class BildebankLauncher:
         self.collection_path = self.config.collection_path
         self.busy = False
         self.server_process: subprocess.Popen[Any] | None = None
-        self.active_command_process: subprocess.Popen[str] | None = None
-        self.active_command_cancel_requested = False
-        self.active_command_cancellable = False
         self.closing = False
 
         self.root = tk.Tk()
@@ -367,6 +294,10 @@ class BildebankLauncher:
         self.openclip_model_status = OpenClipModelStatus("", "", "Sjekker")
         self.active_progress_log_key: str | None = None
         self.active_progress_log_range: tuple[str, str] | None = None
+        self.command_runner = CommandRunner(
+            post_to_ui=self._post_to_tk,
+            on_output=self._log_process_output,
+        )
         self._set_dependency_status_placeholder()
         self.update_button_icons = self._load_update_button_icons()
 
@@ -1188,7 +1119,7 @@ class BildebankLauncher:
         if self.cancel_command_button is not None:
             cancel_state = (
                 "normal"
-                if self.busy and self.active_command_cancellable and not self.active_command_cancel_requested
+                if self.busy and self.command_runner.cancellable and not self.command_runner.cancel_requested
                 else "disabled"
             )
             self.cancel_command_button.configure(state=cancel_state)
@@ -1199,23 +1130,16 @@ class BildebankLauncher:
         self._set_buttons_enabled(not busy)
 
     def _cancel_active_command(self) -> None:
-        process = self.active_command_process
-        if process is None and self.busy and self.active_command_cancellable:
-            self.active_command_cancel_requested = True
-            self._set_buttons_enabled(False)
-            self.status_value.set("Avbryter jobb ...")
-            self._log("Ber jobben avbryte kontrollert ...")
+        try:
+            cancel_requested = self.command_runner.request_cancel()
+        except OSError as exc:
+            self._log(f"Kunne ikke avbryte jobben: {exc}")
             return
-        if process is None or process.poll() is not None:
+        if not cancel_requested:
             return
-        self.active_command_cancel_requested = True
         self._set_buttons_enabled(False)
         self.status_value.set("Avbryter jobb ...")
         self._log("Ber jobben avbryte kontrollert ...")
-        try:
-            interrupt_process(process)
-        except OSError as exc:
-            self._log(f"Kunne ikke avbryte jobben: {exc}")
 
     def _update_migration_status(self) -> None:
         self.migration_required = False
@@ -2433,74 +2357,29 @@ class BildebankLauncher:
         stdin_text: str | None = None,
         cancellable: bool = False,
     ) -> None:
-        self.active_command_process = None
-        self.active_command_cancel_requested = False
-        self.active_command_cancellable = cancellable
-        self._set_busy(True, running_message)
-        self._clear_active_progress_log()
-        self._log("$ " + " ".join(command))
+        def on_start() -> None:
+            self._set_busy(True, running_message)
+            self._clear_active_progress_log()
+            self._log("$ " + " ".join(command))
 
-        def worker() -> None:
-            try:
-                process: subprocess.Popen[str] = subprocess.Popen(
-                    command,
-                    stdin=subprocess.PIPE if stdin_text is not None else None,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding=subprocess_output_encoding(),
-                    errors="replace",
-                    bufsize=1,
-                    creationflags=interruptible_command_creationflags() if cancellable else 0,
-                )
-            except OSError as exc:
-                def report_start_failed(exc: OSError = exc) -> None:
-                    self._command_start_failed(failure_message, exc)
-
-                self._post_to_tk(report_start_failed)
-                return
-            self.active_command_process = process
-            if self.active_command_cancel_requested:
-                try:
-                    interrupt_process(process)
-                except OSError:
-                    pass
-
-            if stdin_text is not None:
-                assert process.stdin is not None
-                process.stdin.write(stdin_text)
-                process.stdin.flush()
-                process.stdin.close()
-
-            assert process.stdout is not None
-            for line in process.stdout:
-                message = line.rstrip()
-
-                def log_message(message: str = message) -> None:
-                    self._log_process_output(message)
-
-                self._post_to_tk(log_message)
-            return_code = process.wait()
-            cancel_requested = self.active_command_cancel_requested
-            def report_finished() -> None:
-                self._command_finished(
-                    return_code,
-                    success_message=success_message,
-                    failure_message=failure_message,
-                    on_success=on_success,
-                    cancel_requested=cancel_requested,
-                )
-
-            self._post_to_tk(report_finished)
-
-        threading.Thread(target=worker, daemon=True).start()
+        self.command_runner.start(
+            command,
+            on_start=on_start,
+            on_start_failed=lambda exc: self._command_start_failed(failure_message, exc),
+            on_finished=lambda return_code, cancel_requested: self._command_finished(
+                return_code,
+                success_message=success_message,
+                failure_message=failure_message,
+                on_success=on_success,
+                cancel_requested=cancel_requested,
+            ),
+            stdin_text=stdin_text,
+            cancellable=cancellable,
+        )
 
     def _command_start_failed(self, failure_message: str, exc: OSError) -> None:
         from tkinter import messagebox
 
-        self.active_command_process = None
-        self.active_command_cancel_requested = False
-        self.active_command_cancellable = False
         self._set_busy(False)
         self._clear_active_progress_log()
         self._log(f"{failure_message} {exc}")
@@ -2517,9 +2396,6 @@ class BildebankLauncher:
     ) -> None:
         from tkinter import messagebox
 
-        self.active_command_process = None
-        self.active_command_cancel_requested = False
-        self.active_command_cancellable = False
         self._set_busy(False)
         self._clear_active_progress_log()
         if return_code == 0:

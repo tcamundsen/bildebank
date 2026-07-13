@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import inspect
-import signal
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from bildebank.launcher import (
@@ -17,13 +17,9 @@ from bildebank.launcher import (
     LauncherUpdateStatus,
     OpenClipModelStatus,
     close_blocked_by_running_command,
-    interrupt_process,
-    interruptible_command_creationflags,
     open_server_browser_window,
-    progress_log_key,
     server_browser_url,
     source_is_collection_or_inside,
-    subprocess_output_encoding,
     suggest_import_name,
 )
 
@@ -316,8 +312,7 @@ def launcher_with_main_action_buttons(collection_path: Path) -> BildebankLaunche
     launcher.download_face_model_button = None
     launcher.exit_button = None
     launcher.cancel_command_button = None
-    launcher.active_command_cancellable = False
-    launcher.active_command_cancel_requested = False
+    launcher.command_runner = SimpleNamespace(cancellable=False, cancel_requested=False)
     launcher.insightface_status = InsightFaceDependencyStatus("Klar")
     launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Lastet ned")
     launcher.openclip_status = "Installert"
@@ -575,8 +570,7 @@ def test_image_scan_openclip_install_finish_refreshes_launcher_status(tmp_path: 
     launcher.download_face_model_button = None
     launcher.exit_button = None
     launcher.cancel_command_button = None
-    launcher.active_command_cancellable = False
-    launcher.active_command_cancel_requested = False
+    launcher.command_runner = SimpleNamespace(cancellable=False, cancel_requested=False)
     launcher.update_status = LauncherUpdateStatus("current")
     launcher.update_button_icons = {}
     launcher._apply_update_button_state = lambda: None
@@ -783,44 +777,7 @@ def test_close_is_blocked_while_command_is_running() -> None:
     assert not close_blocked_by_running_command(False)
 
 
-def test_subprocess_output_encoding_uses_locale() -> None:
-    with patch("locale.getpreferredencoding", return_value="cp1252"):
-        assert subprocess_output_encoding() == "cp1252"
-
-
-def test_interruptible_command_creationflags_are_zero_outside_windows() -> None:
-    with patch("bildebank.launcher.os.name", "posix"):
-        assert interruptible_command_creationflags() == 0
-
-
-def test_interrupt_process_sends_sigint_outside_windows() -> None:
-    class FakeProcess:
-        signal_sent: object | None = None
-
-        def send_signal(self, value: object) -> None:
-            self.signal_sent = value
-
-    process = FakeProcess()
-
-    with patch("bildebank.launcher.os.name", "posix"):
-        interrupt_process(process)  # type: ignore[arg-type]
-
-    assert process.signal_sent is signal.SIGINT
-
-
 def test_face_scan_is_cancellable_from_launcher() -> None:
     source = inspect.getsource(BildebankLauncher._start_face_scan_command)
 
     assert "cancellable=True" in source
-
-
-def test_progress_log_key_recognizes_progress_updates_only() -> None:
-    assert progress_log_key("Thumbnails: kontrollert=25/84, sjekket=25") == "Thumbnails"
-    assert progress_log_key("Check-source: kontrollert=4/10, filer=4") == "Check-source"
-    assert progress_log_key("geo-scan: scannet=12/40, gps=3, feil=0") == "geo-scan"
-    assert progress_log_key("Import: importert=2/10, duplikater=1") == "Import"
-    assert progress_log_key("Rescan-source: kontrollert=2/10, nye=1") == "Rescan-source"
-    assert progress_log_key(" 59%|#####     | 206485/352210 [00:13<00:08, 16523.67KB/s]") == "tqdm-progress"
-    assert progress_log_key("Thumbnails: 84 filer skal kontrolleres.") is None
-    assert progress_log_key("Thumbnails: ferdig kontrollert 84/84 filer.") is None
-    assert progress_log_key("Import fullført.") is None
