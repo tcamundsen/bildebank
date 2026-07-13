@@ -34,12 +34,12 @@ beslutninger skal oppdateres her underveis.
 | 4. Trekk ut generelle widgets og dialoger | ferdig | `1b9e309` |
 | 5. Trekk ut Oppsett-fanen | ferdig | `3b6648c` |
 | 6. Trekk ut Import-fanen | ferdig | `c213343` |
-| 7. Trekk ut Verktøy-fanen | ferdig, ikke committet | |
-| 8. Trekk ut hovedfanen | ikke startet | |
+| 7. Trekk ut Verktøy-fanen | ferdig | `559a551` |
+| 8. Trekk ut hovedfanen | ferdig, ikke committet | |
 | 9. Gjør `launcher.py` til et tynt inngangspunkt | ikke startet | |
 | 10. Avsluttende testopprydding og dokumentasjon | ikke startet | |
 
-Neste trinn: **8. Trekk ut hovedfanen.**
+Neste trinn: **9. Gjør `launcher.py` til et tynt inngangspunkt.**
 
 ## Regler for hele refaktoreringen
 
@@ -481,6 +481,25 @@ Trekk Verktøy-fanen ut av launcher
 ```text
 Trekk hovedfanen ut av launcher
 ```
+
+### Resultat
+
+- `launcher_main_tab.py` er opprettet med 606 linjer.
+- `MainTab` bygger hovedfanen og eier samlingsvalg, oppretting, migrering,
+  serverprosess, oppdateringsstatus og backupflyt.
+- Backup beholder dry-run, loggvurdering og eksplisitt bekreftelse før den
+  faktiske speilingen kjøres.
+- Migreringskrav og feil ved lesing av migreringsstatus blokkerer fortsatt
+  import-, verktøy- og oppsettshandlinger.
+- Serverprosessen stoppes fortsatt kontrollert ved bytte av samling,
+  oppdatering og avslutning av launcheren.
+- Hovedfanen kommuniserer med launcher-appen gjennom eksplisitte callbacks;
+  appen eier fortsatt rotvindu, busy-status, logg og samlet refresh.
+- `launcher.py` er redusert videre fra 1000 til 505 linjer.
+- 19 målrettede tester ligger i `test_launcher_main_tab.py`, mens
+  `test_launcher.py` er redusert til fem tester av appskallet.
+- 762 tester og 163 subtester består i det samlede arbeidstreet.
+- Ruff, pyflakes og mypy er grønne.
 
 ## Trinn 9 – Gjør launcher.py til et tynt inngangspunkt
 

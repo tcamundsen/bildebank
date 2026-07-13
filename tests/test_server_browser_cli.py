@@ -31,6 +31,7 @@ from bildebank.server_browser_queries import (
     browser_year_month_cards,
     source_item_by_id,
     source_item_ids,
+    source_items,
     source_month_items,
     source_month_keys,
     source_month_navigation,
@@ -840,6 +841,84 @@ class ServerBrowserCliTests(unittest.TestCase):
                 with self.subTest(query=query):
                     source_filter = text_filter_browser_source(query, target)
                     self.assertIsNotNone(source_item_by_id(target, source_filter, 1))
+
+    def test_run_server_filter_supports_user_wildcards_and_literal_sql_wildcards(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            first_source = root / "first-source"
+            second_source = root / "second-source"
+            first_source.mkdir()
+            second_source.mkdir()
+            (first_source / "IMG_100%_20240102.png").write_bytes(minimal_png(100, 80))
+            (second_source / "IMGX1000_20240103.png").write_bytes(minimal_png(101, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "Kilde_100%",
+                        "--quiet",
+                        str(first_source),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "KildeX1000",
+                        "--quiet",
+                        str(second_source),
+                    ]
+                ),
+                0,
+            )
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET camera_make = CASE stored_filename
+                        WHEN 'IMG_100%_20240102.png' THEN 'Kamera_100%'
+                        ELSE 'KameraX1000'
+                    END
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            def matching_filenames(query: str) -> set[str]:
+                source_filter = text_filter_browser_source(query, target)
+                return {
+                    str(item["stored_filename"])
+                    for item in source_items(target, source_filter)
+                }
+
+            first_filename = "IMG_100%_20240102.png"
+            both_filenames = {first_filename, "IMGX1000_20240103.png"}
+            for query in (
+                "filename:IMG_100%",
+                "path:IMG_100%",
+                "camera:Kamera_100%",
+                "source:Kilde_100%",
+                "filename:IMG_*",
+            ):
+                with self.subTest(query=query):
+                    self.assertEqual(matching_filenames(query), {first_filename})
+
+            for query in ("filename:IMG?100*", "source:Kilde?100*"):
+                with self.subTest(query=query):
+                    self.assertEqual(matching_filenames(query), both_filenames)
 
     def test_run_server_archive_image_page_links_file_without_image_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
