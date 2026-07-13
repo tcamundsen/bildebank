@@ -796,14 +796,15 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         params.append(text_filter.date_source)
     if text_filter.camera is not None:
         where.append(
-            "bildebank_casefold(coalesce(camera_make, '') || ' ' || coalesce(camera_model, '')) LIKE ?"
+            "bildebank_casefold(coalesce(camera_make, '') || ' ' || coalesce(camera_model, '')) "
+            "LIKE ? ESCAPE '!'"
         )
         params.append(like_contains_param(text_filter.camera))
     if text_filter.extension is not None:
         where.append("lower(stored_filename) LIKE ?")
         params.append(f"%.{text_filter.extension}")
     if text_filter.filename is not None:
-        where.append("bildebank_casefold(stored_filename) LIKE ?")
+        where.append("bildebank_casefold(stored_filename) LIKE ? ESCAPE '!'")
         params.append(like_contains_param(text_filter.filename))
     if text_filter.media_type in {"image", "video"}:
         where.append(extension_condition_for_type(text_filter.media_type))
@@ -826,7 +827,7 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     elif text_filter.orientation == "landscape":
         where.append("media_width IS NOT NULL AND media_height IS NOT NULL AND media_width > media_height")
     if text_filter.path is not None:
-        where.append("bildebank_casefold(target_path) LIKE ?")
+        where.append("bildebank_casefold(target_path) LIKE ? ESCAPE '!'")
         params.append(like_contains_param(text_filter.path.replace("\\", "/")))
     for person in text_filter.persons:
         person_name = person.strip().casefold()
@@ -936,7 +937,7 @@ def source_where_clause(value: str) -> tuple[str, tuple[object, ...]]:
             FROM file_sources
             JOIN sources ON sources.id = file_sources.source_id
             WHERE file_sources.file_id = files.id
-              AND bildebank_casefold(sources.name) LIKE ?
+              AND bildebank_casefold(sources.name) LIKE ? ESCAPE '!'
         )
         """,
         (like_contains_param(clean_value),),
@@ -984,7 +985,15 @@ def person_where_clause() -> str:
 
 
 def like_contains_param(value: str) -> str:
-    return f"%{value.strip().casefold()}%"
+    replacements = {
+        "!": "!!",
+        "%": "!%",
+        "_": "!_",
+        "*": "%",
+        "?": "_",
+    }
+    pattern = "".join(replacements.get(char, char) for char in value.strip().casefold())
+    return f"%{pattern}%"
 
 
 def text_filter_has_runtime_filter(text_filter: BrowserTextFilter) -> bool:

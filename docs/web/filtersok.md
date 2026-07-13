@@ -52,6 +52,27 @@ width>=3000
 size<2MB
 ```
 
+## Jokertegn i tekstsøk
+
+Tekstsøkene `filename`, `path`, `camera` og `source` støtter to jokertegn:
+
+| Jokertegn | Betydning                       |
+| --------- | ------------------------------- |
+| `*`       | null eller flere vilkårlige tegn |
+| `?`       | nøyaktig ett vilkårlig tegn      |
+
+Eksempel:
+
+```text
+filename:IMG_*.jpg
+filename:IMG_????.jpg
+source:"Mobil *"
+```
+
+Prosenttegn (`%`) og understrek (`_`) behandles som vanlige, bokstavelige tegn.
+Et søk etter `filename:IMG_100%` ser derfor etter akkurat `_` og `%` i
+filnavnet. Tekstsøk uten jokertegn er fortsatt vanlige delstrengsøk.
+
 ## Operatorer
 
 Disse operatorene brukes i numeriske filtre:
