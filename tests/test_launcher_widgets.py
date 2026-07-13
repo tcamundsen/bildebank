@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import inspect
 
-from bildebank.launcher import BildebankLauncher
 from bildebank.launcher_import_tab import ImportTab
+from bildebank.launcher_tools_tab import ToolsTab
 from bildebank.launcher_widgets import (
     ask_string_dialog,
     select_person_dialog,
@@ -13,7 +13,7 @@ from bildebank.launcher_widgets import (
 
 def test_launcher_string_dialog_is_padded_and_replaces_simpledialog() -> None:
     source = inspect.getsource(ask_string_dialog)
-    cleanup_source = inspect.getsource(BildebankLauncher._confirm_cleanup_pending_deletes)
+    cleanup_source = inspect.getsource(ToolsTab._confirm_cleanup_pending_deletes)
     unimport_source = inspect.getsource(ImportTab._confirm_unimport_source)
     import_source = inspect.getsource(ImportTab._start_import_flow)
 
@@ -49,7 +49,7 @@ def test_select_person_does_not_run_nested_tk_event_loop() -> None:
 
 def test_launcher_log_review_question_is_nonmodal() -> None:
     source = inspect.getsource(show_log_review_question)
-    pending_source = inspect.getsource(BildebankLauncher._pending_deletes_list_finished)
+    pending_source = inspect.getsource(ToolsTab._pending_deletes_list_finished)
 
     assert "Toplevel" in source
     assert "grab_set" not in source

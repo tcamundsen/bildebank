@@ -794,6 +794,53 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("const itemRoot = button.closest(\"[data-browser-item-id]\");", SERVER_JS)
         self.assertIn("requestBody.source_url = itemRoot.dataset.browserSourceUrl", SERVER_JS)
 
+    def test_run_server_filter_uses_unicode_casefold_for_text_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "ÅRETS_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "Øyblikk",
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            conn = db.connect(target)
+            try:
+                conn.execute("UPDATE files SET camera_make = 'Ægir' WHERE id = 1")
+                conn.commit()
+            finally:
+                conn.close()
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Åse')")
+                face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(1, 1)")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            for query in (
+                "filename:årets",
+                "path:årets",
+                "camera:ÆGIR",
+                "source:ØYBLIKK",
+                "person:ÅSE",
+            ):
+                with self.subTest(query=query):
+                    source_filter = text_filter_browser_source(query, target)
+                    self.assertIsNotNone(source_item_by_id(target, source_filter, 1))
+
     def test_run_server_archive_image_page_links_file_without_image_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -1459,6 +1506,25 @@ class ServerBrowserCliTests(unittest.TestCase):
             with self.subTest(query=query):
                 self.assertEqual(parse_text_filter(query).query, query)
 
+        for query, expected_path, canonical_query in (
+            (r"path:2024\01", r"2024\01", r"path:2024\01"),
+            (r'path:"C:\Users\Tom"', r"C:\Users\Tom", r"path:C:\Users\Tom"),
+            (
+                r'path:"C:\Users\Tom\Mine bilder"',
+                r"C:\Users\Tom\Mine bilder",
+                r'path:"C:\\Users\\Tom\\Mine bilder"',
+            ),
+        ):
+            with self.subTest(query=query):
+                parsed = parse_text_filter(query)
+                self.assertEqual(parsed.path, expected_path)
+                self.assertEqual(parsed.query, canonical_query)
+
+        self.assertEqual(
+            text_filter_browser_source(r'path:"C:\Users\Tom"').root_url,
+            "/filter/path%3AC%3A%5CUsers%5CTom",
+        )
+
         for query, message in (
             ("month >", "Filteret mangler verdi: month>"),
             ("width >=", "Filteret mangler verdi: width>="),
@@ -1737,6 +1803,9 @@ class ServerBrowserCliTests(unittest.TestCase):
 
             BildebankRequestHandler.respond_filter(handler, "q=after%3A2023-12-01+location%3Agps+size%3E2MB")  # type: ignore[arg-type]
             self.assertEqual(response["location"], "/filter/after%3A2023-12-01%20location%3Agps%20size%3E2MB")
+
+            BildebankRequestHandler.respond_filter(handler, "q=path%3A2024%5C01")  # type: ignore[arg-type]
+            self.assertEqual(response["location"], "/filter/path%3A2024%5C01")
 
             BildebankRequestHandler.respond_filter(handler, "q=location%3Aukjent-sted")  # type: ignore[arg-type]
             self.assertIn("Ukjent sted: ukjent-sted", str(response["html"]))

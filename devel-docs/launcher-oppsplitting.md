@@ -33,13 +33,13 @@ beslutninger skal oppdateres her underveis.
 | 3. Trekk ut prosesskjøring | ferdig | `f7a0abf` |
 | 4. Trekk ut generelle widgets og dialoger | ferdig | `1b9e309` |
 | 5. Trekk ut Oppsett-fanen | ferdig | `3b6648c` |
-| 6. Trekk ut Import-fanen | ferdig, ikke committet | |
-| 7. Trekk ut Verktøy-fanen | ikke startet | |
+| 6. Trekk ut Import-fanen | ferdig | `c213343` |
+| 7. Trekk ut Verktøy-fanen | ferdig, ikke committet | |
 | 8. Trekk ut hovedfanen | ikke startet | |
 | 9. Gjør `launcher.py` til et tynt inngangspunkt | ikke startet | |
 | 10. Avsluttende testopprydding og dokumentasjon | ikke startet | |
 
-Neste trinn: **7. Trekk ut Verktøy-fanen**, etter at trinn 6 er committet.
+Neste trinn: **8. Trekk ut hovedfanen.**
 
 ## Regler for hele refaktoreringen
 
@@ -436,6 +436,23 @@ Trekk Import-fanen ut av launcher
 ```text
 Trekk Verktøy-fanen ut av launcher
 ```
+
+### Resultat
+
+- `launcher_tools_tab.py` er opprettet med 791 linjer.
+- `ToolsTab` bygger fanen og eier scannerne, miniatyrbilder, statiske
+  browsere, doctor, vacuum, pending-deletes og personeksport.
+- Face- og image-scan bruker et eksplisitt, typekontrollert grensesnitt mot
+  Oppsett-fanen for status, installasjon og modellnedlasting.
+- Alle 13 verktøykontroller opprettes fortsatt bare for en tilgjengelig,
+  ferdig migrert bildesamling, og registreres for felles enabled/disabled-
+  styring.
+- Eksisterende dry-run, bekreftelser, kommandolinjer og avbrytbarhet er
+  beholdt.
+- `launcher.py` er redusert videre fra 1655 til 1000 linjer.
+- 16 målrettede tester ligger i `test_launcher_tools_tab.py`.
+- 756 tester og 153 subtester består i det samlede arbeidstreet.
+- Ruff, pyflakes og mypy er grønne.
 
 ## Trinn 8 – Trekk ut hovedfanen
 
