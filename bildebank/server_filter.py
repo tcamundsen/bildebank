@@ -762,13 +762,15 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         where.append("date_source = ?")
         params.append(text_filter.date_source)
     if text_filter.camera is not None:
-        where.append("lower(coalesce(camera_make, '') || ' ' || coalesce(camera_model, '')) LIKE ?")
+        where.append(
+            "bildebank_casefold(coalesce(camera_make, '') || ' ' || coalesce(camera_model, '')) LIKE ?"
+        )
         params.append(like_contains_param(text_filter.camera))
     if text_filter.extension is not None:
         where.append("lower(stored_filename) LIKE ?")
         params.append(f"%.{text_filter.extension}")
     if text_filter.filename is not None:
-        where.append("lower(stored_filename) LIKE ?")
+        where.append("bildebank_casefold(stored_filename) LIKE ?")
         params.append(like_contains_param(text_filter.filename))
     if text_filter.media_type in {"image", "video"}:
         where.append(extension_condition_for_type(text_filter.media_type))
@@ -791,10 +793,10 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     elif text_filter.orientation == "landscape":
         where.append("media_width IS NOT NULL AND media_height IS NOT NULL AND media_width > media_height")
     if text_filter.path is not None:
-        where.append("lower(target_path) LIKE ?")
+        where.append("bildebank_casefold(target_path) LIKE ?")
         params.append(like_contains_param(text_filter.path.replace("\\", "/")))
     for person in text_filter.persons:
-        person_name = person.strip().lower()
+        person_name = person.strip().casefold()
         where.append(person_where_clause())
         params.extend((person_name, person_name))
     if text_filter.source is not None:
@@ -901,7 +903,7 @@ def source_where_clause(value: str) -> tuple[str, tuple[object, ...]]:
             FROM file_sources
             JOIN sources ON sources.id = file_sources.source_id
             WHERE file_sources.file_id = files.id
-              AND lower(sources.name) LIKE ?
+              AND bildebank_casefold(sources.name) LIKE ?
         )
         """,
         (like_contains_param(clean_value),),
@@ -937,19 +939,19 @@ def person_where_clause() -> str:
         ) person_matches ON person_matches.person_id = face_db.persons.id
         JOIN face_db.faces ON face_db.faces.id = person_matches.face_id
         WHERE face_db.faces.file_id = files.id
-          AND lower(face_db.persons.name) = ?
+          AND bildebank_casefold(face_db.persons.name) = ?
         UNION ALL
         SELECT 1
         FROM face_db.persons
         JOIN face_db.person_files ON face_db.person_files.person_id = face_db.persons.id
         WHERE face_db.person_files.file_id = files.id
-          AND lower(face_db.persons.name) = ?
+          AND bildebank_casefold(face_db.persons.name) = ?
     )
     """
 
 
 def like_contains_param(value: str) -> str:
-    return f"%{value.strip().lower()}%"
+    return f"%{value.strip().casefold()}%"
 
 
 def text_filter_has_runtime_filter(text_filter: BrowserTextFilter) -> bool:
@@ -974,6 +976,7 @@ def text_filter_shows_sidecar_files(text_filter: BrowserTextFilter) -> bool:
 
 
 def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTextFilter) -> None:
+    conn.create_function("bildebank_casefold", 1, unicode_casefold, deterministic=True)
     if not text_filter.persons:
         return
     from .face import connect_face_db, face_db_path
@@ -983,6 +986,10 @@ def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTe
     face_conn = connect_face_db(target)
     face_conn.close()
     conn.execute("ATTACH DATABASE ? AS face_db", (str(face_db_path(target)),))
+
+
+def unicode_casefold(value: str | None) -> str:
+    return "" if value is None else value.casefold()
 
 
 def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_of_focus: bool = False) -> list[Any]:
