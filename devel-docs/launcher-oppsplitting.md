@@ -31,15 +31,15 @@ beslutninger skal oppdateres her underveis.
 | 1. Trekk ut kommandobyggere | ferdig | `c2ec28a` |
 | 2. Trekk ut status og miljøkontroll | ferdig | `f4fe0fc` |
 | 3. Trekk ut prosesskjøring | ferdig | `f7a0abf` |
-| 4. Trekk ut generelle widgets og dialoger | ferdig, ikke committet | |
-| 5. Trekk ut Oppsett-fanen | ikke startet | |
+| 4. Trekk ut generelle widgets og dialoger | ferdig | `1b9e309` |
+| 5. Trekk ut Oppsett-fanen | ferdig, ikke committet | |
 | 6. Trekk ut Import-fanen | ikke startet | |
 | 7. Trekk ut Verktøy-fanen | ikke startet | |
 | 8. Trekk ut hovedfanen | ikke startet | |
 | 9. Gjør `launcher.py` til et tynt inngangspunkt | ikke startet | |
 | 10. Avsluttende testopprydding og dokumentasjon | ikke startet | |
 
-Neste trinn: **5. Trekk ut Oppsett-fanen**, etter at trinn 4 er committet.
+Neste trinn: **6. Trekk ut Import-fanen**, etter at trinn 5 er committet.
 
 ## Regler for hele refaktoreringen
 
@@ -350,6 +350,20 @@ Trekk launcher-widgets ut i egen modul
 ```text
 Trekk Oppsett-fanen ut av launcher
 ```
+
+### Resultat
+
+- `launcher_setup_tab.py` er opprettet med 356 linjer.
+- `SetupTab` bygger Oppsett-fanen og eier status, statusoppdatering,
+  knappetilstand, installasjon av InsightFace/OpenCLIP og modellnedlasting.
+- Statusinnhenting kjører fortsatt i en bakgrunnstråd og leverer resultatet
+  tilbake gjennom launcherens UI-callback.
+- Face- og image-scan bruker et eksplisitt grensesnitt mot `SetupTab` for
+  status og installasjonstrinn.
+- `launcher.py` er redusert videre fra 2229 til 1958 linjer.
+- Seks målrettede Oppsett-tester ligger i `test_launcher_setup_tab.py`.
+- 748 tester og 148 subtester består.
+- Ruff, pyflakes og mypy er grønne.
 
 ## Trinn 6 – Trekk ut Import-fanen
 

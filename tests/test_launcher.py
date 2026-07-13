@@ -12,15 +12,17 @@ from bildebank.launcher import (
     FACE_SCAN_TOOLTIP,
     IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP,
     IMAGE_SCAN_TOOLTIP,
-    InsightFaceDependencyStatus,
-    InsightFaceModelStatus,
     LauncherUpdateStatus,
-    OpenClipModelStatus,
     close_blocked_by_running_command,
     open_server_browser_window,
     server_browser_url,
     source_is_collection_or_inside,
     suggest_import_name,
+)
+from bildebank.launcher_status import (
+    InsightFaceDependencyStatus,
+    InsightFaceModelStatus,
+    OpenClipModelStatus,
 )
 
 
@@ -57,12 +59,8 @@ def test_launcher_layout_source_defines_notebook_tabs_and_log_below_tabs() -> No
     assert 'self.notebook.add(self.main_tab, text="Bildebank")' in source
     assert 'self.notebook.add(self.import_tab, text="Import av bilder")' in source
     assert 'self.notebook.add(self.tools_tab, text="Verktøy")' in source
-    assert 'self.notebook.add(self.setup_tab, text="Oppsett")' in source
-    assert "insightface_frame = ttk.Frame(self.setup_tab)" in source
-    assert 'ttk.Separator(self.setup_tab, orient="horizontal")' in source
-    assert "openclip_frame = ttk.Frame(self.setup_tab)" in source
-    assert "insightface_frame = ttk.Frame(self.tools_tab)" not in source
-    assert "openclip_frame = ttk.Frame(self.tools_tab)" not in source
+    assert "self.setup = SetupTab(" in source
+    assert 'self.notebook.add(self.setup.frame, text="Oppsett")' in source
     assert "log_frame = ttk.Frame(outer)" in source
     assert "log_frame = ttk.Frame(self.notebook)" not in source
     assert "footer = ttk.Frame(outer)" in source
@@ -79,21 +77,6 @@ def test_launcher_button_helper_uses_launcher_button_style() -> None:
 
     assert 'kwargs.setdefault("style", BUTTON_STYLE)' in source
     assert "return self.ttk.Button(parent, **kwargs)" in source
-
-
-def test_launcher_initializes_dependency_status_asynchronously() -> None:
-    init_source = inspect.getsource(BildebankLauncher.__init__)
-    refresh_source = inspect.getsource(BildebankLauncher._refresh_state)
-    start_source = inspect.getsource(BildebankLauncher._start_dependency_status_refresh)
-    worker_source = inspect.getsource(BildebankLauncher._dependency_status_worker)
-
-    assert "self._start_dependency_status_refresh()" in init_source
-    assert "insightface_dependency_status()" not in init_source
-    assert "openclip_model_status()" not in init_source
-    assert "insightface_dependency_status()" not in refresh_source
-    assert "openclip_model_status()" not in refresh_source
-    assert "threading.Thread" in start_source
-    assert "self._post_to_tk(" in worker_source
 
 
 def test_launcher_initializes_update_status_asynchronously() -> None:
@@ -285,17 +268,16 @@ def launcher_with_main_action_buttons(collection_path: Path) -> BildebankLaunche
     launcher.busy = False
     launcher.migration_required = False
     launcher.migration_status_error = None
-    launcher.dependency_status_refreshing = False
-    launcher.install_insightface_button = None
-    launcher.install_openclip_button = None
-    launcher.download_face_model_button = None
+    launcher.setup = SimpleNamespace(
+        insightface_status=InsightFaceDependencyStatus("Klar"),
+        face_model_status=InsightFaceModelStatus("buffalo_l", "Lastet ned"),
+        openclip_status="Installert",
+        openclip_model_status=OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig"),
+        set_buttons_enabled=lambda *_args, **_kwargs: None,
+    )
     launcher.exit_button = None
     launcher.cancel_command_button = None
     launcher.command_runner = SimpleNamespace(cancellable=False, cancel_requested=False)
-    launcher.insightface_status = InsightFaceDependencyStatus("Klar")
-    launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Lastet ned")
-    launcher.openclip_status = "Installert"
-    launcher.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig")
     return launcher
 
 
@@ -327,7 +309,7 @@ def test_main_action_buttons_with_collection_disable_create(tmp_path: Path) -> N
 
 def test_face_scan_button_enabled_and_tooltip_explains_missing_insightface(tmp_path: Path) -> None:
     launcher = launcher_with_main_action_buttons(tmp_path / "samling")
-    launcher.insightface_status = InsightFaceDependencyStatus("Mangler", "mangler insightface")
+    launcher.setup.insightface_status = InsightFaceDependencyStatus("Mangler", "mangler insightface")
 
     with patch("bildebank.launcher.is_collection_created", return_value=True):
         launcher._set_buttons_enabled(True)
@@ -335,7 +317,7 @@ def test_face_scan_button_enabled_and_tooltip_explains_missing_insightface(tmp_p
     assert launcher.face_scan_button.options["state"] == "normal"
     assert launcher.face_scan_tooltip.text == FACE_SCAN_DEPENDENCY_MISSING_TOOLTIP
 
-    launcher.insightface_status = InsightFaceDependencyStatus("Klar")
+    launcher.setup.insightface_status = InsightFaceDependencyStatus("Klar")
     launcher._set_buttons_enabled(True)
 
     assert launcher.face_scan_button.options["state"] == "normal"
@@ -344,7 +326,7 @@ def test_face_scan_button_enabled_and_tooltip_explains_missing_insightface(tmp_p
 
 def test_face_scan_button_enabled_and_tooltip_explains_missing_face_model(tmp_path: Path) -> None:
     launcher = launcher_with_main_action_buttons(tmp_path / "samling")
-    launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Mangler")
+    launcher.setup.face_model_status = InsightFaceModelStatus("buffalo_l", "Mangler")
 
     with patch("bildebank.launcher.is_collection_created", return_value=True):
         launcher._set_buttons_enabled(True)
@@ -355,7 +337,7 @@ def test_face_scan_button_enabled_and_tooltip_explains_missing_face_model(tmp_pa
 
 def test_image_scan_button_enabled_and_tooltip_explains_missing_openclip(tmp_path: Path) -> None:
     launcher = launcher_with_main_action_buttons(tmp_path / "samling")
-    launcher.openclip_status = "Mangler"
+    launcher.setup.openclip_status = "Mangler"
 
     with patch("bildebank.launcher.is_collection_created", return_value=True):
         launcher._set_buttons_enabled(True)
@@ -363,7 +345,7 @@ def test_image_scan_button_enabled_and_tooltip_explains_missing_openclip(tmp_pat
     assert launcher.image_scan_button.options["state"] == "normal"
     assert launcher.image_scan_tooltip.text == IMAGE_SCAN_OPENCLIP_MISSING_TOOLTIP
 
-    launcher.openclip_status = "Installert"
+    launcher.setup.openclip_status = "Installert"
     launcher._set_buttons_enabled(True)
 
     assert launcher.image_scan_button.options["state"] == "normal"
@@ -372,7 +354,7 @@ def test_image_scan_button_enabled_and_tooltip_explains_missing_openclip(tmp_pat
 
 def test_image_scan_button_enabled_and_tooltip_explains_missing_openclip_model(tmp_path: Path) -> None:
     launcher = launcher_with_main_action_buttons(tmp_path / "samling")
-    launcher.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Mangler")
+    launcher.setup.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Mangler")
 
     with patch("bildebank.launcher.is_collection_created", return_value=True):
         launcher._set_buttons_enabled(True)
@@ -385,8 +367,10 @@ def test_face_scan_preflight_installs_downloads_enables_and_scans(tmp_path: Path
     launcher = BildebankLauncher.__new__(BildebankLauncher)
     launcher.collection_path = tmp_path / "samling"
     launcher.root = object()
-    launcher.insightface_status = InsightFaceDependencyStatus("Mangler")
-    launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Mangler")
+    launcher.setup = SimpleNamespace(
+        insightface_status=InsightFaceDependencyStatus("Mangler"),
+        face_model_status=InsightFaceModelStatus("buffalo_l", "Mangler"),
+    )
     actions: list[str] = []
     launcher._face_recognition_enabled = lambda: False
     launcher._run_face_scan_insightface_install_step = lambda on_success: (actions.append("install"), on_success())
@@ -409,8 +393,10 @@ def test_face_scan_preflight_enables_disabled_config_before_scan(tmp_path: Path)
     launcher = BildebankLauncher.__new__(BildebankLauncher)
     launcher.collection_path = tmp_path / "samling"
     launcher.root = object()
-    launcher.insightface_status = InsightFaceDependencyStatus("Klar")
-    launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Lastet ned")
+    launcher.setup = SimpleNamespace(
+        insightface_status=InsightFaceDependencyStatus("Klar"),
+        face_model_status=InsightFaceModelStatus("buffalo_l", "Lastet ned"),
+    )
     actions: list[str] = []
     launcher._face_recognition_enabled = lambda: False
     launcher._run_face_scan_enable_step = lambda on_success: (actions.append("enable"), on_success())
@@ -444,8 +430,10 @@ def test_face_scan_preflight_can_be_cancelled(tmp_path: Path) -> None:
     launcher = BildebankLauncher.__new__(BildebankLauncher)
     launcher.collection_path = tmp_path / "samling"
     launcher.root = object()
-    launcher.insightface_status = InsightFaceDependencyStatus("Klar")
-    launcher.face_model_status = InsightFaceModelStatus("buffalo_l", "Lastet ned")
+    launcher.setup = SimpleNamespace(
+        insightface_status=InsightFaceDependencyStatus("Klar"),
+        face_model_status=InsightFaceModelStatus("buffalo_l", "Lastet ned"),
+    )
     actions: list[str] = []
     launcher._face_recognition_enabled = lambda: False
     launcher._start_face_scan_command = lambda: actions.append("scan")
@@ -461,8 +449,10 @@ def test_image_scan_preflight_installs_enables_and_scans(tmp_path: Path) -> None
     launcher = BildebankLauncher.__new__(BildebankLauncher)
     launcher.collection_path = tmp_path / "samling"
     launcher.root = object()
-    launcher.openclip_status = "Mangler"
-    launcher.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Mangler")
+    launcher.setup = SimpleNamespace(
+        openclip_status="Mangler",
+        openclip_model_status=OpenClipModelStatus("ViT-B-32", "laion", "Mangler"),
+    )
     actions: list[str] = []
     launcher._image_search_enabled = lambda: False
     launcher._run_image_scan_openclip_install_step = lambda on_success: (actions.append("install"), on_success())
@@ -484,8 +474,10 @@ def test_image_scan_preflight_enables_disabled_config_before_scan(tmp_path: Path
     launcher = BildebankLauncher.__new__(BildebankLauncher)
     launcher.collection_path = tmp_path / "samling"
     launcher.root = object()
-    launcher.openclip_status = "Installert"
-    launcher.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig")
+    launcher.setup = SimpleNamespace(
+        openclip_status="Installert",
+        openclip_model_status=OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig"),
+    )
     actions: list[str] = []
     launcher._image_search_enabled = lambda: False
     launcher._run_image_scan_enable_step = lambda on_success: (actions.append("enable"), on_success())
@@ -529,55 +521,14 @@ def test_image_search_enabled_reads_openclip_config_field(tmp_path: Path) -> Non
         assert not launcher._image_search_enabled()
 
 
-def test_image_scan_openclip_install_finish_refreshes_launcher_status(tmp_path: Path) -> None:
-    launcher = BildebankLauncher.__new__(BildebankLauncher)
-    launcher.collection_path = tmp_path / "samling"
-    launcher.busy = False
-    launcher.migration_required = False
-    launcher.migration_status_error = None
-    launcher.dependency_status_refreshing = False
-    launcher.buttons = []
-    launcher.choose_collection_button = None
-    launcher.create_collection_button = None
-    launcher.start_server_button = None
-    launcher.backup_button = None
-    launcher.face_scan_button = None
-    launcher.image_scan_button = None
-    launcher.update_button = None
-    launcher.install_insightface_button = None
-    launcher.install_openclip_button = None
-    launcher.download_face_model_button = None
-    launcher.exit_button = None
-    launcher.cancel_command_button = None
-    launcher.command_runner = SimpleNamespace(cancellable=False, cancel_requested=False)
-    launcher.update_status = LauncherUpdateStatus("current")
-    launcher.update_button_icons = {}
-    launcher._apply_update_button_state = lambda: None
-    launcher._log = lambda _message: None
-    launcher._apply_dependency_status_values = lambda: None
-    actions: list[str] = []
-
-    with (
-        patch("bildebank.launcher.openclip_dependency_status", return_value="Installert"),
-        patch(
-            "bildebank.launcher.openclip_model_status",
-            return_value=OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig"),
-        ),
-        patch("bildebank.launcher.is_collection_created", return_value=True),
-    ):
-        launcher._image_scan_openclip_install_finished(lambda: actions.append("next"))
-
-    assert launcher.openclip_status == "Installert"
-    assert launcher.openclip_model_status.status == "Tilgjengelig"
-    assert actions == ["next"]
-
-
 def test_image_scan_preflight_can_be_cancelled(tmp_path: Path) -> None:
     launcher = BildebankLauncher.__new__(BildebankLauncher)
     launcher.collection_path = tmp_path / "samling"
     launcher.root = object()
-    launcher.openclip_status = "Installert"
-    launcher.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig")
+    launcher.setup = SimpleNamespace(
+        openclip_status="Installert",
+        openclip_model_status=OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig"),
+    )
     actions: list[str] = []
     launcher._image_search_enabled = lambda: False
     launcher._start_image_scan_command = lambda: actions.append("scan")
@@ -607,58 +558,6 @@ def test_post_to_tk_ignores_callbacks_after_close_started() -> None:
     launcher.root = FakeRoot()
 
     assert not launcher._post_to_tk(lambda: None)
-
-
-def test_dependency_status_finished_logs_error_details() -> None:
-    launcher = BildebankLauncher.__new__(BildebankLauncher)
-    launcher.busy = False
-    launcher.dependency_status_refreshing = True
-    logged: list[str] = []
-    launcher._log = logged.append
-    launcher._apply_dependency_status_values = lambda: None
-    launcher._set_buttons_enabled = lambda enabled: None
-
-    launcher._dependency_status_finished(
-        InsightFaceDependencyStatus("Feil", "runtime-feil"),
-        InsightFaceModelStatus("buffalo_l", "Mangler", "forventet mangler"),
-        "Feil: open_clip-feil",
-        OpenClipModelStatus("ViT-B-32", "laion", "Feil", "modell-feil"),
-    )
-
-    assert logged == [
-        "InsightFace-status feilet: runtime-feil",
-        "OpenCLIP-modell-status feilet: modell-feil",
-    ]
-
-    logged.clear()
-    launcher._dependency_status_finished(
-        InsightFaceDependencyStatus("Feil"),
-        InsightFaceModelStatus("buffalo_l", "Klar"),
-        "Mangler",
-        OpenClipModelStatus("ViT-B-32", "laion", "Mangler", "forventet mangler"),
-    )
-
-    assert logged == []
-
-
-def test_load_dependency_status_calls_openclip_model_status() -> None:
-    launcher = BildebankLauncher.__new__(BildebankLauncher)
-    expected_openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig", "modellmappe")
-
-    with (
-        patch("bildebank.launcher.insightface_dependency_status", return_value=InsightFaceDependencyStatus("Klar")),
-        patch("bildebank.launcher.insightface_model_status", return_value=InsightFaceModelStatus("buffalo_l", "Lastet ned")),
-        patch("bildebank.launcher.openclip_dependency_status", return_value="Installert"),
-        patch("bildebank.launcher.openclip_model_status", return_value=expected_openclip_model_status),
-    ):
-        status = launcher._load_dependency_status()
-
-    assert status == (
-        InsightFaceDependencyStatus("Klar"),
-        InsightFaceModelStatus("buffalo_l", "Lastet ned"),
-        "Installert",
-        expected_openclip_model_status,
-    )
 
 
 def test_launcher_source_exposes_export_person_dry_run_flow() -> None:
