@@ -42,13 +42,13 @@ oppdateres her underveis.
 | 0. Opprett plan og baseline | ferdig | `44c9ad8` |
 | 1. Trekk ut endepunkter for felles bildebrowser | ferdig | `654644a` |
 | 2. Trekk ut admin- og innstillingsendepunkter | ferdig | `5a4ae77` |
-| 3. Trekk ut person- og ansiktsendepunkter | ferdig, ikke commitet | — |
-| 4. Trekk ut handlinger på enkeltbilder | ikke startet | — |
+| 3. Trekk ut person- og ansiktsendepunkter | ferdig | `0ae570c` |
+| 4. Trekk ut handlinger på enkeltbilder | ferdig, ikke commitet | — |
 | 5. Trekk ut HTTP-handler og ruting | ikke startet | — |
 | 6. Trekk ut server-runtime og gjør `server.py` tynt | ikke startet | — |
 | 7. Avsluttende opprydding og utviklerdokumentasjon | ikke startet | — |
 
-Neste trinn etter at trinn 3 er gjennomgått og commitet: **Trinn 4.**
+Neste trinn etter at trinn 4 er gjennomgått og commitet: **Trinn 5.**
 
 ## Datamodell som skal ligge fast
 
@@ -361,6 +361,22 @@ Trekk person- og ansiktsendepunkter ut av server
 ```text
 Trekk bildehandlinger ut av server
 ```
+
+### Resultat
+
+- `server_endpoints_items.py` er opprettet med 472 linjer og eier
+  HTTP-adapterne for rotasjon, tag, manuelt sted, manuell dato, hotkeys,
+  remove og undelete.
+- Hjelpefunksjonene for filterutvalg og redirect etter en bildeendring er
+  flyttet sammen med endepunktene.
+- Selve operasjonene eies fortsatt av `server_actions` og underliggende
+  livssyklusmoduler. `remove` flytter fortsatt filer til `deleted/`; ingen
+  permanent sletting er innført.
+- Target-lås, CSRF og read-only-rutingen er uendret, og eksisterende
+  handlerdelegater er beholdt i overgangsperioden.
+- `server.py` er redusert fra 1676 til 1284 linjer.
+- 766 tester og 163 subtester består.
+- Ruff, pyflakes, mypy og `git diff --check` er grønne.
 
 ## Trinn 5 – Trekk ut HTTP-handler og ruting
 
