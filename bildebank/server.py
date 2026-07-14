@@ -35,6 +35,7 @@ from .face import (
 )
 from . import server_app
 from . import server_actions
+from . import server_endpoints_admin
 from . import server_endpoints_browser
 from .server_pages import (
     app_status_page_html,
@@ -89,11 +90,8 @@ from .server_faces import (
     person_by_name,
     person_item_url_for_face,
 )
-from . import server_geo
-from .server_geo import DEFAULT_GEO_LIMIT
 from . import server_markdown
 from . import server_files
-from .file_tags import create_user_tag, delete_user_tag, rename_user_tag
 from .server_search import (
     DEFAULT_SEARCH_LIMIT,
     OpenClipSearchCache,
@@ -117,19 +115,6 @@ BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS = 1.0
 def clear_sidecar_caches() -> None:
     clear_sidecar_data_caches()
     clear_tag_control_rows_cache()
-
-
-def settings_redirect_location(params: dict[str, list[str]]) -> str:
-    raw_scroll_y = first_param(params, "scroll_y").strip()
-    if not raw_scroll_y:
-        return "/settings"
-    try:
-        scroll_y = int(raw_scroll_y)
-    except ValueError:
-        return "/settings"
-    if scroll_y <= 0:
-        return "/settings"
-    return f"/settings?scroll={scroll_y}"
 
 
 def is_local_bind_host(host: str) -> bool:
@@ -1170,280 +1155,52 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         )
 
     def respond_set_geo_place_name(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        h3_cell = first_param(params, "h3_cell").strip()
-        name = first_param(params, "name")
-        limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
-        try:
-            server_geo.set_geo_place_name(self.server.target, h3_cell, name)
-        except TargetLockError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.CONFLICT)
-            return
-        except ValueError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
-            return
-        url = "/geo/area/" + urllib.parse.quote(h3_cell, safe="") + f"?limit={limit}"
-        self.redirect(url)
+        server_endpoints_admin.respond_set_geo_place_name(self)
 
     def respond_set_custom_geo_place(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        try:
-            server_geo.save_custom_geo_place(
-                self.server.target,
-                raw_original_slug=first_param(params, "original_slug"),
-                raw_slug=first_param(params, "slug"),
-                name=first_param(params, "name"),
-                raw_h3_cells=first_param(params, "h3_cells"),
-            )
-        except TargetLockError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.CONFLICT,
-            )
-            return
-        except ValueError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.BAD_REQUEST,
-            )
-            return
-        self.redirect("/geo/custom-places")
+        server_endpoints_admin.respond_set_custom_geo_place(self)
 
     def respond_delete_custom_geo_place(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        try:
-            server_geo.delete_custom_geo_place(
-                self.server.target,
-                first_param(params, "original_slug") or first_param(params, "slug"),
-            )
-        except TargetLockError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.CONFLICT,
-            )
-            return
-        except ValueError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.BAD_REQUEST,
-            )
-            return
-        self.redirect("/geo")
+        server_endpoints_admin.respond_delete_custom_geo_place(self)
 
     def respond_set_face_config(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
-        self.server.config = server_app.update_face_enabled_config(
-            self.server.config,
-            server_app.server_program_repo_root(),
-            enabled,
-        )
-        self.redirect(settings_redirect_location(params))
+        server_endpoints_admin.respond_set_face_config(self)
 
     def respond_set_image_search(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
-        self.server.config = server_app.update_image_search_enabled_config(
-            self.server.config,
-            server_app.server_program_repo_root(),
-            enabled,
-        )
-        self.server.search_cache = OpenClipSearchCache(self.server.config)
-        self.redirect(settings_redirect_location(params))
+        server_endpoints_admin.respond_set_image_search(self)
 
     def respond_set_hide_out_of_focus(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
-        self.server.config = server_app.update_hide_out_of_focus_config(
-            self.server.config,
-            server_app.server_program_repo_root(),
-            enabled,
-        )
-        clear_browser_navigation_cache(self.server)
-        self.redirect(settings_redirect_location(params))
+        server_endpoints_admin.respond_set_hide_out_of_focus(self)
 
     def respond_set_manual_person_controls(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
-        self.server.config = server_app.update_manual_person_controls_config(
-            self.server.config,
-            server_app.server_program_repo_root(),
-            enabled,
-        )
-        self.redirect(settings_redirect_location(params))
+        server_endpoints_admin.respond_set_manual_person_controls(self)
 
     def respond_set_person_reference_links(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
-        self.server.config = server_app.update_person_reference_links_config(
-            self.server.config,
-            server_app.server_program_repo_root(),
-            enabled,
-        )
-        clear_face_caches()
-        self.redirect(settings_redirect_location(params))
+        server_endpoints_admin.respond_set_person_reference_links(self)
 
     def respond_set_hotkey(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        key = first_param(params, "key").strip()
-        action = first_param(params, "action").strip()
-        if action == "h3":
-            hotkey = BrowserHotkeyConfig(action=action, h3_cell=first_param(params, "h3_cell").strip())
-        elif action == "person":
-            hotkey = BrowserHotkeyConfig(action=action, person_name=first_param(params, "person_name").strip())
-        elif action == "tag":
-            hotkey = BrowserHotkeyConfig(action=action, tag_name=first_param(params, "tag_name").strip())
-        elif action == "manual_date":
-            hotkey = BrowserHotkeyConfig(
-                action=action,
-                mode=first_param(params, "mode").strip(),
-                date=first_param(params, "date").strip(),
-                uncertainty=first_param(params, "uncertainty").strip(),
-                date_from=first_param(params, "date_from").strip(),
-                date_to=first_param(params, "date_to").strip(),
-                note=first_param(params, "note").strip(),
-            )
-        else:
-            hotkey = BrowserHotkeyConfig(action=action)
-        try:
-            self.server.config = server_app.update_hotkey_config(
-                self.server.config,
-                server_app.server_program_repo_root(),
-                key,
-                hotkey,
-            )
-        except ValueError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
-            return
-        self.redirect(settings_redirect_location(params))
+        server_endpoints_admin.respond_set_hotkey(self)
 
     def respond_set_hotkey_hints(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        enabled = "true" in {value.strip().lower() for value in params.get("enabled", [])}
-        self.server.config = server_app.update_hotkey_hints_config(
-            self.server.config,
-            server_app.server_program_repo_root(),
-            enabled,
-        )
-        self.redirect(settings_redirect_location(params))
+        server_endpoints_admin.respond_set_hotkey_hints(self)
 
     def respond_set_h3_cell_name(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        try:
-            server_app.save_h3_cell_name(
-                self.server.target,
-                original_h3_cell=first_param(params, "original_h3_cell"),
-                h3_cell=first_param(params, "h3_cell"),
-                name=first_param(params, "name"),
-            )
-        except TargetLockError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.CONFLICT,
-            )
-            return
-        except ValueError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.BAD_REQUEST,
-            )
-            return
-        self.redirect("/settings/h3-cells")
+        server_endpoints_admin.respond_set_h3_cell_name(self)
 
     def respond_delete_h3_cell_name(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        try:
-            server_app.delete_h3_cell_name(
-                self.server.target,
-                h3_cell=first_param(params, "original_h3_cell") or first_param(params, "h3_cell"),
-            )
-        except TargetLockError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.CONFLICT,
-            )
-            return
-        except ValueError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.BAD_REQUEST,
-            )
-            return
-        self.redirect("/settings/h3-cells")
+        server_endpoints_admin.respond_delete_h3_cell_name(self)
 
     def respond_set_face_model(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        model_name = (params.get("model_name") or [""])[0].strip()
-        self.server.config = server_app.update_face_model_config(
-            self.server.config,
-            server_app.server_program_repo_root(),
-            model_name,
-        )
-        self.redirect(settings_redirect_location(params))
+        server_endpoints_admin.respond_set_face_model(self)
 
     def respond_create_tag(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        try:
-            create_user_tag(self.server.target, first_param(params, "name"))
-        except TargetLockError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.CONFLICT,
-            )
-            return
-        except ValueError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.BAD_REQUEST,
-            )
-            return
-        self.redirect("/tags")
+        server_endpoints_admin.respond_create_tag(self)
 
     def respond_rename_tag(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        try:
-            tag_id = int(first_param(params, "tag_id"))
-        except ValueError:
-            self.respond_text("Ugyldig tagg-id.", status=HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            rename_user_tag(self.server.target, tag_id=tag_id, new_name=first_param(params, "name"))
-        except TargetLockError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.CONFLICT,
-            )
-            return
-        except ValueError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.BAD_REQUEST,
-            )
-            return
-        self.redirect("/tags")
+        server_endpoints_admin.respond_rename_tag(self)
 
     def respond_delete_tag(self) -> None:
-        params = server_request.read_form_params(self.headers, self.rfile)
-        try:
-            tag_id = int(first_param(params, "tag_id"))
-        except ValueError:
-            self.respond_text("Ugyldig tagg-id.", status=HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            delete_user_tag(self.server.target, tag_id=tag_id)
-        except TargetLockError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.CONFLICT,
-            )
-            return
-        except ValueError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=self.server.face_enabled, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.BAD_REQUEST,
-            )
-            return
-        self.redirect("/tags")
+        server_endpoints_admin.respond_delete_tag(self)
 
     def respond_display(self, raw_file_id: str) -> None:
         try:

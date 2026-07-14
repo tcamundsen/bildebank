@@ -40,15 +40,15 @@ oppdateres her underveis.
 | Trinn | Status | Commit |
 |---|---|---|
 | 0. Opprett plan og baseline | ferdig | `44c9ad8` |
-| 1. Trekk ut endepunkter for felles bildebrowser | ferdig, ikke commitet | — |
-| 2. Trekk ut admin- og innstillingsendepunkter | ikke startet | — |
+| 1. Trekk ut endepunkter for felles bildebrowser | ferdig | `654644a` |
+| 2. Trekk ut admin- og innstillingsendepunkter | ferdig, ikke commitet | — |
 | 3. Trekk ut person- og ansiktsendepunkter | ikke startet | — |
 | 4. Trekk ut handlinger på enkeltbilder | ikke startet | — |
 | 5. Trekk ut HTTP-handler og ruting | ikke startet | — |
 | 6. Trekk ut server-runtime og gjør `server.py` tynt | ikke startet | — |
 | 7. Avsluttende opprydding og utviklerdokumentasjon | ikke startet | — |
 
-Neste trinn etter at trinn 1 er gjennomgått og commitet: **Trinn 2.**
+Neste trinn etter at trinn 2 er gjennomgått og commitet: **Trinn 3.**
 
 ## Datamodell som skal ligge fast
 
@@ -264,6 +264,21 @@ Trekk browser-endepunkter ut av server
 ```text
 Trekk admin-endepunkter ut av server
 ```
+
+### Resultat
+
+- `server_endpoints_admin.py` er opprettet med 381 linjer og eier
+  HTTP-adapterne for serverinnstillinger, hotkeys, navngitte H3-celler,
+  egendefinerte steder og tag-definisjoner.
+- Configskriving eies fortsatt av `server_app`, stedlogikk av `server_geo` og
+  tagoperasjoner av `file_tags`. Target-lås og transaksjoner er ikke flyttet.
+- `BildebankRequestHandler` beholder midlertidige delegasjonsmetoder, og
+  GET/POST-rutingen er uendret.
+- Scroll-posisjon ved redirect, valideringsfeil, statuskoder og cachetømming
+  er bevart.
+- `server.py` er redusert fra 2291 til 2048 linjer.
+- 766 tester og 163 subtester består.
+- Ruff, pyflakes, mypy og `git diff --check` er grønne.
 
 ## Trinn 3 – Trekk ut person- og ansiktsendepunkter
 
