@@ -5,9 +5,9 @@ import unittest
 from http import HTTPStatus
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
-from bildebank import db
+from bildebank import db, server_endpoints_faces
 from bildebank.config import AppConfig, FaceRecognitionConfig
 from bildebank.face import connect_face_db
 from bildebank.server_handler import BildebankRequestHandler
@@ -174,7 +174,7 @@ class PersonReferencesServerTests(unittest.TestCase):
             patch("bildebank.server_endpoints_faces.person_by_name", return_value={"name": "Kari / Åse"}) as find_person,
             patch("bildebank.server_endpoints_faces.person_references_page_html", return_value="references") as render,
         ):
-            handler.respond_person_references("Kari%20%2F%20%C3%85se")
+            server_endpoints_faces.respond_person_references(handler, "Kari%20%2F%20%C3%85se")
         find_person.assert_called_once_with(handler.server.target, "Kari / Åse", handler.server.config.face_recognition)
         render.assert_called_once()
         self.assertEqual(handler.response, ("references", HTTPStatus.OK))
@@ -183,28 +183,28 @@ class PersonReferencesServerTests(unittest.TestCase):
             patch("bildebank.server_endpoints_faces.person_by_name", return_value=None),
             patch("bildebank.server_endpoints_faces.person_not_found_html", return_value="not-found"),
         ):
-            handler.respond_person_references("Ukjent")
+            server_endpoints_faces.respond_person_references(handler, "Ukjent")
         self.assertEqual(handler.response, ("not-found", HTTPStatus.NOT_FOUND))
 
     def test_get_route_dispatches_to_reference_handler(self) -> None:
         handler = object.__new__(BildebankRequestHandler)
         handler.path = "/people/Kari%20%2F%20%C3%85se/references"
         handler.server = SimpleNamespace(face_enabled=True)
-        handler.respond_person_references = Mock()
+        with patch("bildebank.server_endpoints_faces.respond_person_references") as respond_person_references:
+            handler.do_GET()
 
-        handler.do_GET()
-
-        handler.respond_person_references.assert_called_once_with("Kari%20%2F%20%C3%85se")
+        respond_person_references.assert_called_once_with(handler, "Kari%20%2F%20%C3%85se")
 
     def test_get_route_dispatches_reference_suggestions_to_browser_handler(self) -> None:
         handler = object.__new__(BildebankRequestHandler)
         handler.path = "/people/Kari%20%2F%20%C3%85se/references/1/item/2"
         handler.server = SimpleNamespace(face_enabled=True)
-        handler.respond_person_reference_suggestions = Mock()
+        with patch(
+            "bildebank.server_endpoints_faces.respond_person_reference_suggestions"
+        ) as respond_suggestions:
+            handler.do_GET()
 
-        handler.do_GET()
-
-        handler.respond_person_reference_suggestions.assert_called_once_with("Kari%20%2F%20%C3%85se/references/1/item/2")
+        respond_suggestions.assert_called_once_with(handler, "Kari%20%2F%20%C3%85se/references/1/item/2")
 
 
 if __name__ == "__main__":

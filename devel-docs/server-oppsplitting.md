@@ -45,10 +45,11 @@ oppdateres her underveis.
 | 3. Trekk ut person- og ansiktsendepunkter | ferdig | `0ae570c` |
 | 4. Trekk ut handlinger på enkeltbilder | ferdig | `192d0e8` |
 | 5. Trekk ut HTTP-handler og ruting | ferdig | `c5b4a59` |
-| 6. Trekk ut server-runtime og gjør `server.py` tynt | ferdig, ikke commitet | — |
-| 7. Avsluttende opprydding og utviklerdokumentasjon | ikke startet | — |
+| 6. Trekk ut server-runtime og gjør `server.py` tynt | ferdig | `d2bfcb6` |
+| 7. Avsluttende opprydding og utviklerdokumentasjon | ferdig, ikke commitet | — |
 
-Neste trinn etter at trinn 6 er gjennomgått og commitet: **Trinn 7.**
+Oppsplittingen er ferdig. Nye endringer i serveren skal følge
+`devel-docs/server-moduler.md`.
 
 ## Datamodell som skal ligge fast
 
@@ -523,6 +524,28 @@ Gjør server til et tynt inngangspunkt
 ```text
 Fullfør oppsplitting av server
 ```
+
+### Resultat
+
+- Ruting i `server_handler.py` kaller nå endepunktfunksjonene direkte.
+  Overgangsdelegatene på `BildebankRequestHandler` er fjernet.
+- Endepunktmodulene kaller den felles browserfunksjonen direkte der det er
+  nødvendig. De har fortsatt bare typeimport av handleren, aldri en
+  runtime-import av `server.py`.
+- Direkte enhetstester importerer nå funksjonen fra eiermodulen. Rutetester
+  patcher den direkte endepunktfunksjonen, slik at de fortsatt tester
+  handlerens faktiske ruting.
+- `devel-docs/server-moduler.md` beskriver modulansvar, avhengighetsretning
+  og regler for framtidige endringer.
+- Endelige størrelser: `server.py` 23 linjer, `server_runtime.py` 381 linjer,
+  `server_handler.py` 926 linjer. Handleren beholder bare HTTP-fellesfunksjoner
+  og generelle ressurser; domeneendepunktene eies av de fire
+  `server_endpoints_*`-modulene.
+- Ingen URL-er, HTTP-metoder, sikkerhetskontroller, databaseoppførsel eller
+  filflytting er endret. `remove` flytter fortsatt bare til `deleted/`.
+- 766 tester og 163 subtester består. Ruff, pyflakes, mypy og
+  `git diff --check` er grønne.
+- Windows-smoketest mot testsamling er gjenstående før neste versjon.
 
 ## Arbeidsflyt mellom hvert trinn
 

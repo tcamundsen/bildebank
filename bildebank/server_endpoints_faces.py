@@ -5,7 +5,7 @@ from dataclasses import replace
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
-from . import server_app, server_request
+from . import server_app, server_endpoints_browser, server_request
 from .config import set_face_suggest_threshold, validate_face_suggest_threshold
 from .face import (
     add_face_to_person,
@@ -138,7 +138,8 @@ def respond_person(handler: BildebankRequestHandler, raw_path: str) -> None:
         include_suggestions=person_mode != "confirmed",
         show_faces=show_faces,
     )
-    handler.respond_browser_source(
+    server_endpoints_browser.respond_browser_source(
+        handler,
         source,
         page_mode,
         raw_value,
@@ -203,7 +204,8 @@ def respond_person_reference_suggestions(handler: BildebankRequestHandler, raw_p
         return
     canonical_name = str(person["name"])
     source = person_reference_suggestions_browser_source(canonical_name, reference_file_id)
-    handler.respond_browser_source(
+    server_endpoints_browser.respond_browser_source(
+        handler,
         source,
         page_mode,
         raw_value,
@@ -219,7 +221,8 @@ def respond_missing_face_suggestions(handler: BildebankRequestHandler, raw_path:
     if source_part != "missing-suggestions":
         handler.respond_text("Ugyldig ansiktsside.", status=HTTPStatus.NOT_FOUND)
         return
-    handler.respond_browser_source(
+    server_endpoints_browser.respond_browser_source(
+        handler,
         missing_face_suggestions_browser_source(),
         page_mode,
         raw_value,

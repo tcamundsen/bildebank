@@ -7,13 +7,16 @@ from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 
-from bildebank import db
+from bildebank import db, server_endpoints_admin
 from bildebank.db import init_database
 from bildebank.geo import h3_cells_for_manual_cell, h3_cells_for_point
-from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_info_html import image_info_content_html
-from bildebank.server_browser_queries import adjacent_browser_items, browser_item_by_id, browser_month_navigation
+from bildebank.server_browser_queries import (
+    adjacent_browser_items,
+    browser_item_by_id,
+    browser_month_navigation,
+)
 from bildebank.server_pages import (
     geo_area_page_html,
     geo_index_page_html,
@@ -63,7 +66,10 @@ class ServerGeoCliTests(unittest.TestCase):
                     gps_source="test",
                     gps_error=None,
                 )
-                conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", (deleted_id,))
+                conn.execute(
+                    "UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (deleted_id,),
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -74,17 +80,23 @@ class ServerGeoCliTests(unittest.TestCase):
                     "Content-Type": "application/x-www-form-urlencoded",
                 }
                 rfile = BytesIO(form)
-                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                server = SimpleNamespace(
+                    target=target, face_enabled=True, openclip_enabled=True
+                )
                 redirect_url = ""
 
                 def redirect(self, url: str) -> None:
                     self.redirect_url = url
 
-                def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
-                    raise AssertionError(f"Unexpected error response {status}: {content}")
+                def respond_html(
+                    self, content: str, *, status: HTTPStatus = HTTPStatus.OK
+                ) -> None:
+                    raise AssertionError(
+                        f"Unexpected error response {status}: {content}"
+                    )
 
             handler = FakeHandler()
-            BildebankRequestHandler.respond_set_h3_cell_name(handler)  # type: ignore[arg-type]
+            server_endpoints_admin.respond_set_h3_cell_name(handler)  # type: ignore[arg-type]
             body = h3_cells_page_html(target)
 
             conn = db.connect(target)
@@ -94,7 +106,9 @@ class ServerGeoCliTests(unittest.TestCase):
                 conn.close()
 
         self.assertEqual(handler.redirect_url, "/settings/h3-cells")
-        self.assertEqual([(row["h3_cell"], row["name"]) for row in rows], [(h3_cell, "Oslo")])
+        self.assertEqual(
+            [(row["h3_cell"], row["name"]) for row in rows], [(h3_cell, "Oslo")]
+        )
         self.assertIn("Oslo", body)
         self.assertIn(h3_cell, body)
         self.assertIn(
@@ -105,7 +119,9 @@ class ServerGeoCliTests(unittest.TestCase):
         self.assertIn('<details class="custom-place-edit">', body)
         self.assertIn('<span class="status">1 bilder</span>', body)
         self.assertIn('<span class="status">H3-7</span>', body)
-        self.assertIn(f'<input type="hidden" name="original_h3_cell" value="{h3_cell}">', body)
+        self.assertIn(
+            f'<input type="hidden" name="original_h3_cell" value="{h3_cell}">', body
+        )
         self.assertIn(f'name="h3_cell" value="{h3_cell}"', body)
         self.assertIn('formaction="/settings/h3-cell-delete"', body)
         self.assertIn('data-confirm-submit="Slette navn gitt til H3-celle?"', body)
@@ -116,8 +132,12 @@ class ServerGeoCliTests(unittest.TestCase):
     def test_run_server_h3_cells_page_updates_and_deletes_named_cell(self) -> None:
         original_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
         updated_cell = h3_cells_for_point(60.39299, 5.32415)["h3_res7"]
-        update_form = f"original_h3_cell={original_cell}&name=Bergen&h3_cell={updated_cell}".encode("utf-8")
-        delete_form = f"original_h3_cell={updated_cell}&name=Bergen&h3_cell={updated_cell}".encode("utf-8")
+        update_form = f"original_h3_cell={original_cell}&name=Bergen&h3_cell={updated_cell}".encode(
+            "utf-8"
+        )
+        delete_form = f"original_h3_cell={updated_cell}&name=Bergen&h3_cell={updated_cell}".encode(
+            "utf-8"
+        )
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
@@ -129,7 +149,9 @@ class ServerGeoCliTests(unittest.TestCase):
                 conn.close()
 
             class FakeHandler:
-                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                server = SimpleNamespace(
+                    target=target, face_enabled=True, openclip_enabled=True
+                )
                 redirect_url = ""
 
                 def __init__(self, data: bytes) -> None:
@@ -142,22 +164,30 @@ class ServerGeoCliTests(unittest.TestCase):
                 def redirect(self, url: str) -> None:
                     self.redirect_url = url
 
-                def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
-                    raise AssertionError(f"Unexpected error response {status}: {content}")
+                def respond_html(
+                    self, content: str, *, status: HTTPStatus = HTTPStatus.OK
+                ) -> None:
+                    raise AssertionError(
+                        f"Unexpected error response {status}: {content}"
+                    )
 
             update_handler = FakeHandler(update_form)
-            BildebankRequestHandler.respond_set_h3_cell_name(update_handler)  # type: ignore[arg-type]
+            server_endpoints_admin.respond_set_h3_cell_name(update_handler)  # type: ignore[arg-type]
             conn = db.connect(target)
             try:
-                after_update = [(row["h3_cell"], row["name"]) for row in db.geo_place_names(conn)]
+                after_update = [
+                    (row["h3_cell"], row["name"]) for row in db.geo_place_names(conn)
+                ]
             finally:
                 conn.close()
 
             delete_handler = FakeHandler(delete_form)
-            BildebankRequestHandler.respond_delete_h3_cell_name(delete_handler)  # type: ignore[arg-type]
+            server_endpoints_admin.respond_delete_h3_cell_name(delete_handler)  # type: ignore[arg-type]
             conn = db.connect(target)
             try:
-                after_delete = [(row["h3_cell"], row["name"]) for row in db.geo_place_names(conn)]
+                after_delete = [
+                    (row["h3_cell"], row["name"]) for row in db.geo_place_names(conn)
+                ]
             finally:
                 conn.close()
 
@@ -175,12 +205,27 @@ class ServerGeoCliTests(unittest.TestCase):
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
-                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
                 0,
             )
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
-            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
 
         self.assertIn('<a class="server-search-link" href="/geo">Steder</a>', body)
         self.assertLess(body.index('href="/geo">Steder'), body.index('href="/search"'))
@@ -197,13 +242,27 @@ class ServerGeoCliTests(unittest.TestCase):
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
-                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
                 0,
             )
             import h3
 
             cells = h3_cells_for_point(59.91273, 10.74609)
-            neighbor_cell = next(cell for cell in sorted(h3.grid_disk(cells["h3_res7"], 1)) if cell != cells["h3_res7"])
+            neighbor_cell = next(
+                cell
+                for cell in sorted(h3.grid_disk(cells["h3_res7"], 1))
+                if cell != cells["h3_res7"]
+            )
             conn = db.connect(target)
             try:
                 db.update_file_gps(
@@ -226,30 +285,53 @@ class ServerGeoCliTests(unittest.TestCase):
                     gps_source="test",
                     gps_error=None,
                 )
-                db.set_file_manual_h3_location(conn, file_id=4, h3_cells=h3_cells_for_manual_cell(neighbor_cell))
+                db.set_file_manual_h3_location(
+                    conn, file_id=4, h3_cells=h3_cells_for_manual_cell(neighbor_cell)
+                )
                 db.set_geo_place_name(conn, cells["h3_res6"], "Oslo-området")
-                conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 2")
+                conn.execute(
+                    "UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 2"
+                )
                 conn.commit()
             finally:
                 conn.close()
 
-            index_body = geo_index_page_html(target, resolution=7, min_count=1, limit=10)
+            index_body = geo_index_page_html(
+                target, resolution=7, min_count=1, limit=10
+            )
             map_body = geo_map_page_html(target, resolution=7, min_count=1, limit=10)
-            map_zero_body = geo_map_page_html(target, resolution=0, min_count=1, limit=10)
-            area_body = geo_area_page_html(target, cells["h3_res7"], resolution=7, limit=10)
-            empty_area_body = geo_area_page_html(target, "8001fffffffffff", resolution=0, limit=10)
+            map_zero_body = geo_map_page_html(
+                target, resolution=0, min_count=1, limit=10
+            )
+            area_body = geo_area_page_html(
+                target, cells["h3_res7"], resolution=7, limit=10
+            )
+            empty_area_body = geo_area_page_html(
+                target, "8001fffffffffff", resolution=0, limit=10
+            )
 
         self.assertIn("Steder", index_body)
         self.assertIn('href="/filter/missing%3Agps">Bilder uten GPS</a>', index_body)
         self.assertIn("/geo/map?resolution=7&min_count=1&limit=10", index_body)
         self.assertNotIn("/geo/stats", index_body)
         self.assertIn("Heksagonkart", map_body)
-        self.assertIn('href="/geo">Steder</a><span class="sep">/</span>Heksagonkart</nav>', map_body)
-        self.assertIn(f'href="/geo">Steder</a><span class="sep">/</span>{cells["h3_res7"]}</nav>', area_body)
-        self.assertIn('<form action="/geo/map" method="get" class="geo-filter">', map_body)
+        self.assertIn(
+            'href="/geo">Steder</a><span class="sep">/</span>Heksagonkart</nav>',
+            map_body,
+        )
+        self.assertIn(
+            f'href="/geo">Steder</a><span class="sep">/</span>{cells["h3_res7"]}</nav>',
+            area_body,
+        )
+        self.assertIn(
+            '<form action="/geo/map" method="get" class="geo-filter">', map_body
+        )
         self.assertIn('<select name="resolution">', map_body)
         self.assertIn('<option value="7" selected>H3-7 (ca. 5 km²)</option>', map_body)
-        self.assertIn('<option value="0" selected>H3-0 (ca. 4 357 450 km²)</option>', map_zero_body)
+        self.assertIn(
+            '<option value="0" selected>H3-0 (ca. 4 357 450 km²)</option>',
+            map_zero_body,
+        )
         self.assertIn(f'href="/geo/area/{cells["h3_res7"]}"', map_body)
         self.assertIn(f'href="/geo/area/{neighbor_cell}"', map_body)
         self.assertIn("geo-hex", map_body)
@@ -261,7 +343,9 @@ class ServerGeoCliTests(unittest.TestCase):
         self.assertIn('href="https://www.google.com/maps/@', empty_area_body)
         self.assertIn(",2z", empty_area_body)
         self.assertIn("Ingen aktive bilder i dette området.", empty_area_body)
-        self.assertIn('href="https://h3geo.org/#hex=' + cells["h3_res7"] + '"', area_body)
+        self.assertIn(
+            'href="https://h3geo.org/#hex=' + cells["h3_res7"] + '"', area_body
+        )
         self.assertIn(">H3Geo</a>", area_body)
         self.assertIn("oppløsning 7, ca. 5 km²", area_body)
         self.assertIn(f'href="/geo/area/{cells["h3_res6"]}"', area_body)
@@ -278,7 +362,20 @@ class ServerGeoCliTests(unittest.TestCase):
             (source / "IMG_20240103.png").write_bytes(minimal_png(11, 10))
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             cells = h3_cells_for_point(59.91273, 10.74609)
             conn = db.connect(target)
             try:
@@ -298,7 +395,12 @@ class ServerGeoCliTests(unittest.TestCase):
                 conn.close()
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
-            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
 
         self.assertNotIn("Nærliggende bilder", body)
         self.assertNotIn("IMG_20240103.png", body)
@@ -311,7 +413,20 @@ class ServerGeoCliTests(unittest.TestCase):
             (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
             body = image_info_content_html(target, item)

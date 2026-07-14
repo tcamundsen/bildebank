@@ -53,7 +53,7 @@ if TYPE_CHECKING:
 
 
 def respond_browser_root(handler: BildebankRequestHandler) -> None:
-    handler.respond_years()
+    respond_years(handler)
 
 
 def respond_item(handler: BildebankRequestHandler, raw_file_id: str) -> None:
@@ -238,7 +238,8 @@ def respond_filter_source(handler: BildebankRequestHandler, raw_path: str) -> No
     except ValueError as exc:
         handler.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
         return
-    handler.respond_browser_source(
+    respond_browser_source(
+        handler,
         source,
         page_mode,
         raw_value,
@@ -260,7 +261,8 @@ def respond_imported_source(handler: BildebankRequestHandler, raw_path: str) -> 
         handler.respond_text("Fant ikke kilde.", status=HTTPStatus.NOT_FOUND)
         return
     source = imported_source_browser_source(source_row)
-    handler.respond_browser_source(
+    respond_browser_source(
+        handler,
         source,
         page_mode,
         raw_value,
@@ -278,7 +280,8 @@ def respond_tag(handler: BildebankRequestHandler, raw_path: str) -> None:
     except ValueError as exc:
         handler.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
         return
-    handler.respond_browser_source(
+    respond_browser_source(
+        handler,
         source,
         page_mode,
         raw_value,
@@ -358,7 +361,8 @@ def respond_geo_place(handler: BildebankRequestHandler, raw_path: str) -> None:
         handler.respond_text("Ukjent sted.", status=HTTPStatus.NOT_FOUND)
         return
     source = geo_place_browser_source(place)
-    handler.respond_browser_source(
+    respond_browser_source(
+        handler,
         source,
         page_mode,
         raw_value,
