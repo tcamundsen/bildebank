@@ -43,12 +43,12 @@ oppdateres her underveis.
 | 1. Trekk ut endepunkter for felles bildebrowser | ferdig | `654644a` |
 | 2. Trekk ut admin- og innstillingsendepunkter | ferdig | `5a4ae77` |
 | 3. Trekk ut person- og ansiktsendepunkter | ferdig | `0ae570c` |
-| 4. Trekk ut handlinger på enkeltbilder | ferdig, ikke commitet | — |
-| 5. Trekk ut HTTP-handler og ruting | ikke startet | — |
+| 4. Trekk ut handlinger på enkeltbilder | ferdig | `192d0e8` |
+| 5. Trekk ut HTTP-handler og ruting | ferdig, ikke commitet | — |
 | 6. Trekk ut server-runtime og gjør `server.py` tynt | ikke startet | — |
 | 7. Avsluttende opprydding og utviklerdokumentasjon | ikke startet | — |
 
-Neste trinn etter at trinn 4 er gjennomgått og commitet: **Trinn 5.**
+Neste trinn etter at trinn 5 er gjennomgått og commitet: **Trinn 6.**
 
 ## Datamodell som skal ligge fast
 
@@ -414,6 +414,29 @@ Trekk bildehandlinger ut av server
 ```text
 Trekk HTTP-handler ut av server
 ```
+
+### Resultat
+
+- `server_handler.py` er opprettet og eier `BildebankRequestHandler`, inkludert
+  request-livssyklus, databaseforbindelse per request, klientfrakobling,
+  logging, timing, read-only, CSRF, GET/POST-ruting og generelle ressurser.
+- `BildebankServer` oppretter nå handleren fra den nye modulen. `server.py`
+  re-eksporterer handlerklassen midlertidig, slik at offentlige og interne
+  kallesteder fortsatt virker fram til runtime-flyttingen.
+- Rekkefølgen på ruter og fallback til `/file/` er bevart. Den eksisterende
+  rutetesten dekker representative GET- og POST-ruter, ukjent endepunkt og
+  fallback.
+- Delegatmetodene til `server_endpoints_*` er bevisst beholdt. Mange direkte
+  enhetstester bruker dem fortsatt, og de er allerede uttrykkelig tillatt som
+  overgangs-API i planens regel 8. De skal fjernes samlet i trinn 7, når
+  testene kan flyttes uten å blande den oppryddingen med handlerflyttingen.
+- Testen for dashboard-ruten patcher nå navnet i `server_handler`, som er
+  modulen hvor funksjonen faktisk slås opp.
+- `server.py` er redusert fra 1284 til 426 linjer;
+  `server_handler.py` er 985 linjer. Den siste størrelsen inkluderer de
+  midlertidige delegatene som skal bort i trinn 7.
+- 766 tester og 163 subtester består.
+- Ruff, pyflakes, mypy og `git diff --check` er grønne.
 
 ## Trinn 6 – Trekk ut server-runtime og gjør server.py tynt
 

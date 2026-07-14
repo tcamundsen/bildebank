@@ -204,7 +204,7 @@ class ServerDashboardTests(unittest.TestCase):
             handler, "text_response", (content, status)
         )
 
-        with patch("bildebank.server.dashboard_page_html", return_value="<h1>Dashboard</h1>"):
+        with patch("bildebank.server_handler.dashboard_page_html", return_value="<h1>Dashboard</h1>"):
             BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
 
         self.assertEqual(handler.html_response, ("<h1>Dashboard</h1>", HTTPStatus.OK))
