@@ -538,7 +538,7 @@ Fullfør oppsplitting av server
 - `devel-docs/server-moduler.md` beskriver modulansvar, avhengighetsretning
   og regler for framtidige endringer.
 - Endelige størrelser: `server.py` 23 linjer, `server_runtime.py` 381 linjer,
-  `server_handler.py` 926 linjer. Handleren beholder bare HTTP-fellesfunksjoner
+  `server_handler.py` 865 linjer. Handleren beholder bare HTTP-fellesfunksjoner
   og generelle ressurser; domeneendepunktene eies av de fire
   `server_endpoints_*`-modulene.
 - Ingen URL-er, HTTP-metoder, sikkerhetskontroller, databaseoppførsel eller

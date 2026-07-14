@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hmac
-import ipaddress
 import mimetypes
 import time
 import urllib.parse
@@ -32,14 +31,11 @@ from .server_pages import (
     tags_page_html,
 )
 from .server_browser_info_html import image_info_content_html
-from .server_browser_item_html import clear_tag_control_rows_cache
 from .server_browser_queries import (
     active_item_by_id_including_hidden,
     browser_item_by_id,
     item_by_id,
-    valid_day_key,
 )
-from .server_browser_sidecars import clear_sidecar_data_caches
 from .server_faces import (
     face_overlay_content_html,
 )
@@ -61,36 +57,7 @@ from .server_request import (
 from .server_assets import SERVER_CSS, SERVER_JS
 
 
-DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8765
 PREVIEW_MAX_SIZE = 1600
-BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS = 1.0
-
-
-def clear_sidecar_caches() -> None:
-    clear_sidecar_data_caches()
-    clear_tag_control_rows_cache()
-
-
-def is_local_bind_host(host: str) -> bool:
-    if not host:
-        return False
-    if host.casefold() == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
-
-
-def validate_bind_host(host: str, *, allow_remote: bool) -> None:
-    if is_local_bind_host(host) or allow_remote:
-        return
-    raise ValueError(
-        f"Kan ikke starte Bildebank-serveren på {host!r} uten --allow-remote. "
-        "Denne adressen kan gjøre Bildebank tilgjengelig fra andre maskiner på nettverket. "
-        "Angi --allow-remote hvis du vil gjøre dette bevisst."
-    )
 
 
 def client_disconnected_error(exc: OSError) -> bool:
@@ -117,34 +84,6 @@ def validate_csrf_request(handler: Any) -> bool:
         status=HTTPStatus.FORBIDDEN,
     )
     return False
-
-
-def first_day_item_ids_for_order(target: Path, item_ids: list[int]) -> dict[str, int]:
-    if not item_ids:
-        return {}
-    dates_by_id: dict[int, str] = {}
-    conn = db.connect(target)
-    try:
-        for index in range(0, len(item_ids), 900):
-            chunk = item_ids[index : index + 900]
-            placeholders = ",".join("?" for _ in chunk)
-            for row in conn.execute(
-                f"""
-                SELECT id, {db.BROWSER_DATE_ORDER_SQL} AS browser_date
-                FROM files
-                WHERE id IN ({placeholders})
-                """,
-                chunk,
-            ):
-                dates_by_id[int(row["id"])] = str(row["browser_date"])
-    finally:
-        conn.close()
-    first_by_day: dict[str, int] = {}
-    for file_id in item_ids:
-        day_key = dates_by_id.get(file_id, "")
-        if valid_day_key(day_key) and day_key not in first_by_day:
-            first_by_day[day_key] = file_id
-    return first_by_day
 
 
 def resolve_doc_path(raw_doc_path: str) -> Path | None:
