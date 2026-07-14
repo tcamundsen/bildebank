@@ -86,7 +86,7 @@ class ServerBrowserCliTests(unittest.TestCase):
         handler.respond_browser_source = Mock()  # type: ignore[method-assign]
 
         with (
-            patch("bildebank.server.person_by_name", return_value={"name": "Ada"}),
+            patch("bildebank.server_endpoints_faces.person_by_name", return_value={"name": "Ada"}),
             patch(
                 "bildebank.server_endpoints_browser.imported_source_by_id",
                 return_value=SimpleNamespace(id=9, name="Telefon"),

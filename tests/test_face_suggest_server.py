@@ -172,8 +172,8 @@ class FaceSuggestServerTests(unittest.TestCase):
         self.assertIn('faceSuggestStatus.textContent = ""', SERVER_JS)
         self.assertIn('closeFaceSuggestButton.textContent = "Avbryt"', SERVER_JS)
 
-    @patch("bildebank.server.set_face_suggest_threshold")
-    @patch("bildebank.server.suggest_faces")
+    @patch("bildebank.server_endpoints_faces.set_face_suggest_threshold")
+    @patch("bildebank.server_endpoints_faces.suggest_faces")
     def test_disabled_and_invalid_threshold_do_not_run(self, suggest: Mock, save: Mock) -> None:
         disabled = self.make_handler(enabled=False)
         disabled.respond_face_suggest()
@@ -186,10 +186,10 @@ class FaceSuggestServerTests(unittest.TestCase):
         suggest.assert_not_called()
         save.assert_not_called()
 
-    @patch("bildebank.server.people_page_html", return_value="people-result")
-    @patch("bildebank.server.clear_face_caches")
-    @patch("bildebank.server.suggest_faces")
-    @patch("bildebank.server.set_face_suggest_threshold")
+    @patch("bildebank.server_endpoints_faces.people_page_html", return_value="people-result")
+    @patch("bildebank.server_endpoints_faces.clear_face_caches")
+    @patch("bildebank.server_endpoints_faces.suggest_faces")
+    @patch("bildebank.server_endpoints_faces.set_face_suggest_threshold")
     def test_success_updates_config_caches_and_status(
         self,
         save: Mock,
@@ -215,10 +215,10 @@ class FaceSuggestServerTests(unittest.TestCase):
             render.call_args.kwargs["message"],
         )
 
-    @patch("bildebank.server.people_page_html")
-    @patch("bildebank.server.clear_face_caches")
-    @patch("bildebank.server.suggest_faces", return_value=FaceSuggestStats(2, 8, 5, 0.65))
-    @patch("bildebank.server.set_face_suggest_threshold")
+    @patch("bildebank.server_endpoints_faces.people_page_html")
+    @patch("bildebank.server_endpoints_faces.clear_face_caches")
+    @patch("bildebank.server_endpoints_faces.suggest_faces", return_value=FaceSuggestStats(2, 8, 5, 0.65))
+    @patch("bildebank.server_endpoints_faces.set_face_suggest_threshold")
     def test_success_redirects_only_to_local_return_url(
         self,
         _save: Mock,
@@ -247,8 +247,11 @@ class FaceSuggestServerTests(unittest.TestCase):
             self.assertIsNone(handler.redirect_location)
             self.assertEqual(handler.response, (render.return_value, HTTPStatus.OK))
 
-    @patch("bildebank.server.set_face_suggest_threshold")
-    @patch("bildebank.server.suggest_faces", side_effect=ValueError("Face-database finnes ikke. Kjør bildebank face-scan først."))
+    @patch("bildebank.server_endpoints_faces.set_face_suggest_threshold")
+    @patch(
+        "bildebank.server_endpoints_faces.suggest_faces",
+        side_effect=ValueError("Face-database finnes ikke. Kjør bildebank face-scan først."),
+    )
     def test_missing_face_database_is_readable_html_error(self, _suggest: Mock, save: Mock) -> None:
         handler = self.make_handler(enabled=True)
         handler.respond_face_suggest()

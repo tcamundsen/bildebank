@@ -41,14 +41,14 @@ oppdateres her underveis.
 |---|---|---|
 | 0. Opprett plan og baseline | ferdig | `44c9ad8` |
 | 1. Trekk ut endepunkter for felles bildebrowser | ferdig | `654644a` |
-| 2. Trekk ut admin- og innstillingsendepunkter | ferdig, ikke commitet | — |
-| 3. Trekk ut person- og ansiktsendepunkter | ikke startet | — |
+| 2. Trekk ut admin- og innstillingsendepunkter | ferdig | `5a4ae77` |
+| 3. Trekk ut person- og ansiktsendepunkter | ferdig, ikke commitet | — |
 | 4. Trekk ut handlinger på enkeltbilder | ikke startet | — |
 | 5. Trekk ut HTTP-handler og ruting | ikke startet | — |
 | 6. Trekk ut server-runtime og gjør `server.py` tynt | ikke startet | — |
 | 7. Avsluttende opprydding og utviklerdokumentasjon | ikke startet | — |
 
-Neste trinn etter at trinn 2 er gjennomgått og commitet: **Trinn 3.**
+Neste trinn etter at trinn 3 er gjennomgått og commitet: **Trinn 4.**
 
 ## Datamodell som skal ligge fast
 
@@ -311,6 +311,22 @@ Trekk admin-endepunkter ut av server
 ```text
 Trekk person- og ansiktsendepunkter ut av server
 ```
+
+### Resultat
+
+- `server_endpoints_faces.py` er opprettet med 439 linjer og eier
+  HTTP-adapterne for personvisninger, referansevisninger, ansiktsforslag og
+  person-/ansiktsendringer.
+- Ansikts- og personlogikken eies fortsatt av `face.py` og
+  `server_faces.py`. Payloadlesing, feature-flagg, target-lås, statuskoder og
+  JSON-felter er uendret.
+- `BildebankRequestHandler` beholder midlertidige delegasjonsmetoder, og
+  GET/POST-rutingen er uendret.
+- Testmocker peker nå på navnet i den nye eiermodulen. Eksisterende tester av
+  redirects, cachetømming, validering og personlenker er beholdt.
+- `server.py` er redusert fra 2048 til 1676 linjer.
+- 766 tester og 163 subtester består.
+- Ruff, pyflakes, mypy og `git diff --check` er grønne.
 
 ## Trinn 4 – Trekk ut handlinger på enkeltbilder
 

@@ -8,7 +8,6 @@ import sys
 import time
 import urllib.parse
 from io import BytesIO
-from dataclasses import replace
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -20,23 +19,12 @@ from .config import (
     BrowserHotkeyConfig,
     FaceRecognitionConfig,
     HOTKEY_KEYS,
-    set_face_suggest_threshold,
-    validate_face_suggest_threshold,
-)
-from .face import (
-    add_face_to_person,
-    add_person_to_file,
-    create_person_and_add_face,
-    delete_person,
-    remove_face_from_person,
-    remove_person_from_file,
-    rename_person,
-    suggest_faces,
 )
 from . import server_app
 from . import server_actions
 from . import server_endpoints_admin
 from . import server_endpoints_browser
+from . import server_endpoints_faces
 from .server_pages import (
     app_status_page_html,
     custom_geo_places_page_html,
@@ -46,8 +34,6 @@ from .server_pages import (
     index_html,
     markdown_doc_page_html,
     people_page_html,
-    person_references_page_html,
-    person_not_found_html,
     removed_files_page_html,
     search_html,
     sources_page_html,
@@ -72,14 +58,8 @@ from .server_browser_queries import (
 from .server_browser_sidecars import clear_sidecar_data_caches
 from .server_browser_sources import (
     BrowserSource,
-    missing_face_suggestions_browser_source,
-    parse_person_reference_suggestions_path,
-    parse_person_path,
     parse_source_path,
-    person_browser_source,
     person_item_url,
-    person_reference_suggestions_browser_source,
-    person_url,
     source_has_sql_filter,
     source_item_url,
 )
@@ -87,8 +67,6 @@ from .server_faces import (
     clear_face_caches,
     current_face_db_path,
     face_overlay_content_html,
-    person_by_name,
-    person_item_url_for_face,
 )
 from . import server_markdown
 from . import server_files
@@ -166,28 +144,6 @@ def validate_csrf_request(handler: Any) -> bool:
         status=HTTPStatus.FORBIDDEN,
     )
     return False
-
-
-def local_return_url(value: str) -> str | None:
-    if not value or "\\" in value or any(ord(character) < 32 or ord(character) == 127 for character in value):
-        return None
-    try:
-        parsed = urllib.parse.urlsplit(value)
-    except ValueError:
-        return None
-    if parsed.scheme or parsed.netloc or parsed.fragment:
-        return None
-    if not parsed.path.startswith("/") or parsed.path.startswith("//"):
-        return None
-    return value
-
-
-def face_suggest_summary(stats: Any) -> str:
-    return (
-        "Ansiktsforslag: "
-        f"personer={stats.persons}, ukjente_ansikter={stats.unknown_faces}, "
-        f"forslag={stats.suggestions}, threshold={stats.threshold:.3f}"
-    )
 
 
 def filter_source_from_url(target: Path, source_url: object) -> BrowserSource | None:
@@ -902,59 +858,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         return validate_csrf_request(self)
 
     def respond_face_suggest(self) -> None:
-        if not self.server.face_enabled:
-            self.respond_html(
-                error_html(
-                    ValueError("Ansiktsgjenkjenning er av."),
-                    face_enabled=False,
-                    openclip_enabled=self.server.openclip_enabled,
-                ),
-                status=HTTPStatus.FORBIDDEN,
-            )
-            return
-        params = server_request.read_form_params(self.headers, self.rfile)
-        return_url = local_return_url(first_param(params, "return_url"))
-        try:
-            threshold = validate_face_suggest_threshold(first_param(params, "threshold"))
-        except ValueError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=True, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.BAD_REQUEST,
-            )
-            return
-        set_face_suggest_threshold(server_app.server_program_repo_root(), threshold)
-        face_config = replace(self.server.config.face_recognition, suggest_threshold=threshold)
-        self.server.config = replace(self.server.config, face_recognition=face_config)
-        try:
-            stats = suggest_faces(self.server.target, threshold=threshold, config=face_config)
-        except TargetLockError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=True, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.CONFLICT,
-            )
-            return
-        except ValueError as exc:
-            self.respond_html(
-                error_html(exc, face_enabled=True, openclip_enabled=self.server.openclip_enabled),
-                status=HTTPStatus.BAD_REQUEST,
-            )
-            return
-        clear_face_caches()
-        self.server.clear_browser_navigation_cache()
-        message = face_suggest_summary(stats)
-        if return_url is not None:
-            fragment = urllib.parse.urlencode({"face-suggest-status": message})
-            self.redirect(f"{return_url}#{fragment}")
-            return
-        self.respond_html(
-            people_page_html(
-                self.server.target,
-                face_config,
-                openclip_enabled=self.server.openclip_enabled,
-                message=message,
-                read_only=getattr(self.server, "read_only", False),
-            )
-        )
+        server_endpoints_faces.respond_face_suggest(self)
 
     def respond_search_preload(self) -> None:
         if not self.server.openclip_enabled:
@@ -1002,111 +906,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         server_endpoints_browser.respond_year(self, raw_year)
 
     def respond_person(self, raw_path: str) -> None:
-        raw_name, person_mode, show_faces, page_mode, raw_value = parse_person_path(raw_path)
-        person_name = urllib.parse.unquote(raw_name).strip()
-        if not person_name:
-            self.respond_text("Personnavn mangler.", status=HTTPStatus.BAD_REQUEST)
-            return
-        person = person_by_name(self.server.target, person_name, self.server.config.face_recognition)
-        if person is None:
-            self.respond_html(
-                person_not_found_html(
-                    person_name,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                ),
-                status=HTTPStatus.NOT_FOUND,
-            )
-            return
-        canonical_name = str(person["name"])
-        source = person_browser_source(canonical_name, include_suggestions=person_mode != "confirmed", show_faces=show_faces)
-        self.respond_browser_source(
-            source,
-            page_mode,
-            raw_value,
-            face_config=self.server.config.face_recognition,
-            hide_out_of_focus=self.server.hide_out_of_focus,
-            item_not_found_message="Filen finnes ikke for denne personen.",
-            invalid_page_message="Ugyldig personside.",
-        )
+        server_endpoints_faces.respond_person(self, raw_path)
 
     def respond_person_references(self, raw_name: str) -> None:
-        person_name = urllib.parse.unquote(raw_name).strip()
-        if not person_name:
-            self.respond_text("Personnavn mangler.", status=HTTPStatus.BAD_REQUEST)
-            return
-        person = person_by_name(self.server.target, person_name, self.server.config.face_recognition)
-        if person is None:
-            self.respond_html(
-                person_not_found_html(
-                    person_name,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                ),
-                status=HTTPStatus.NOT_FOUND,
-            )
-            return
-        canonical_name = str(person["name"])
-        self.respond_html(
-            person_references_page_html(
-                self.server.target,
-                canonical_name,
-                self.server.config.face_recognition,
-                openclip_enabled=self.server.openclip_enabled,
-            )
-        )
+        server_endpoints_faces.respond_person_references(self, raw_name)
 
     def respond_person_reference_suggestions(self, raw_path: str) -> None:
-        raw_name, raw_reference_file_id, page_mode, raw_value = parse_person_reference_suggestions_path(raw_path)
-        person_name = urllib.parse.unquote(raw_name).strip()
-        if not person_name:
-            self.respond_text("Personnavn mangler.", status=HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            reference_file_id = int(urllib.parse.unquote(raw_reference_file_id).strip())
-        except ValueError:
-            self.respond_text("Ugyldig referansebilde.", status=HTTPStatus.BAD_REQUEST)
-            return
-        if reference_file_id <= 0:
-            self.respond_text("Ugyldig referansebilde.", status=HTTPStatus.BAD_REQUEST)
-            return
-        person = person_by_name(self.server.target, person_name, self.server.config.face_recognition)
-        if person is None:
-            self.respond_html(
-                person_not_found_html(
-                    person_name,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                ),
-                status=HTTPStatus.NOT_FOUND,
-            )
-            return
-        canonical_name = str(person["name"])
-        source = person_reference_suggestions_browser_source(canonical_name, reference_file_id)
-        self.respond_browser_source(
-            source,
-            page_mode,
-            raw_value,
-            face_config=self.server.config.face_recognition,
-            hide_out_of_focus=self.server.hide_out_of_focus,
-            item_not_found_message="Filen finnes ikke for dette referansebildet.",
-            invalid_page_message="Ugyldig referansebildeside.",
-        )
+        server_endpoints_faces.respond_person_reference_suggestions(self, raw_path)
 
     def respond_missing_face_suggestions(self, raw_path: str) -> None:
-        source_part, page_mode, raw_value = parse_source_path("missing-suggestions" + raw_path)
-        if source_part != "missing-suggestions":
-            self.respond_text("Ugyldig ansiktsside.", status=HTTPStatus.NOT_FOUND)
-            return
-        self.respond_browser_source(
-            missing_face_suggestions_browser_source(),
-            page_mode,
-            raw_value,
-            face_config=self.server.config.face_recognition,
-            hide_out_of_focus=self.server.hide_out_of_focus,
-            item_not_found_message="Filen finnes ikke i denne ansiktsvisningen.",
-            invalid_page_message="Ugyldig ansiktsside.",
-        )
+        server_endpoints_faces.respond_missing_face_suggestions(self, raw_path)
 
     def respond_filter(self, query: str) -> None:
         server_endpoints_browser.respond_filter(self, query)
@@ -1404,206 +1213,25 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         )
 
     def respond_add_face_to_person(self) -> None:
-        payload = BildebankRequestHandler.read_face_person_payload(self)
-        if isinstance(payload[0], dict):
-            self.respond_json(payload[0], status=payload[1])
-            return
-        person_name, face_id = payload
-        try:
-            config = self.server.config.face_recognition
-            result = add_face_to_person(self.server.target, person_name, face_id, config)
-        except TargetLockError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
-            return
-        except ValueError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-            return
-        clear_face_caches()
-        person_link_url = person_item_url_for_face(self.server.target, result.person_name, result.face_id, config)
-        self.respond_json(
-            {
-                "ok": True,
-                "person_name": result.person_name,
-                "person_url": person_link_url,
-                "confirmed": True,
-                "face_id": result.face_id,
-                "added": result.added,
-            }
-        )
+        server_endpoints_faces.respond_add_face_to_person(self)
 
     def respond_remove_face_from_person(self) -> None:
-        payload = BildebankRequestHandler.read_face_person_payload(self)
-        if isinstance(payload[0], dict):
-            self.respond_json(payload[0], status=payload[1])
-            return
-        person_name, face_id = payload
-        try:
-            config = self.server.config.face_recognition
-            result = remove_face_from_person(self.server.target, person_name, face_id, config)
-        except TargetLockError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
-            return
-        except ValueError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-            return
-        clear_face_caches()
-        self.respond_json(
-            {
-                "ok": True,
-                "person_name": result.person_name,
-                "person_url": person_url(result.person_name),
-                "face_id": result.face_id,
-                "file_id": result.file_id,
-                "redirect_url": f"/item/{result.file_id}",
-                "removed": result.removed,
-            }
-        )
+        server_endpoints_faces.respond_remove_face_from_person(self)
 
     def respond_add_person_to_file(self) -> None:
-        payload = BildebankRequestHandler.read_json_payload(self)
-        person_name = str(payload.get("person_name") or "").strip()
-        if not person_name:
-            self.respond_json({"ok": False, "error": "Personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            file_id = require_int(payload.get("file_id"), "file_id")
-        except ValueError:
-            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            config = self.server.config.face_recognition
-            result = add_person_to_file(self.server.target, person_name, file_id, config)
-        except TargetLockError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
-            return
-        except ValueError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-            return
-        clear_face_caches()
-        self.respond_json(
-            {
-                "ok": True,
-                "person_name": result.person_name,
-                "person_url": person_item_url(result.person_name, result.file_id, show_faces=False),
-                "confirmed": True,
-                "file_id": result.file_id,
-                "added": result.added,
-            }
-        )
+        server_endpoints_faces.respond_add_person_to_file(self)
 
     def respond_remove_person_from_file(self) -> None:
-        payload = BildebankRequestHandler.read_json_payload(self)
-        person_name = str(payload.get("person_name") or "").strip()
-        if not person_name:
-            self.respond_json({"ok": False, "error": "Personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            file_id = require_int(payload.get("file_id"), "file_id")
-        except ValueError:
-            self.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            config = self.server.config.face_recognition
-            result = remove_person_from_file(self.server.target, person_name, file_id, config)
-        except TargetLockError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
-            return
-        except ValueError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-            return
-        clear_face_caches()
-        self.respond_json(
-            {
-                "ok": True,
-                "person_name": result.person_name,
-                "person_url": person_url(result.person_name),
-                "file_id": result.file_id,
-                "removed": result.removed,
-            }
-        )
+        server_endpoints_faces.respond_remove_person_from_file(self)
 
     def respond_create_person_and_add_face(self) -> None:
-        payload = BildebankRequestHandler.read_face_person_payload(self)
-        if isinstance(payload[0], dict):
-            self.respond_json(payload[0], status=payload[1])
-            return
-        person_name, face_id = payload
-        try:
-            config = self.server.config.face_recognition
-            result = create_person_and_add_face(self.server.target, person_name, face_id, config)
-        except TargetLockError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
-            return
-        except ValueError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-            return
-        clear_face_caches()
-        person_link_url = person_item_url_for_face(self.server.target, result.person_name, result.face_id, config)
-        self.respond_json(
-            {
-                "ok": True,
-                "person_name": result.person_name,
-                "person_url": person_link_url,
-                "confirmed": True,
-                "face_id": result.face_id,
-                "added": result.added,
-            }
-        )
+        server_endpoints_faces.respond_create_person_and_add_face(self)
 
     def respond_rename_person(self) -> None:
-        payload = BildebankRequestHandler.read_json_payload(self)
-        old_name = str(payload.get("old_name") or "").strip()
-        new_name = str(payload.get("new_name") or "").strip()
-        if not old_name:
-            self.respond_json({"ok": False, "error": "Gammelt personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
-            return
-        if not new_name:
-            self.respond_json({"ok": False, "error": "Nytt personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            config = self.server.config.face_recognition
-            result = rename_person(self.server.target, old_name, new_name, config)
-        except TargetLockError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
-            return
-        except ValueError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-            return
-        clear_face_caches()
-        self.respond_json(
-            {
-                "ok": True,
-                "old_name": result.old_name,
-                "new_name": result.new_name,
-                "person_url": f"{person_url(result.new_name)}/no-faces",
-            }
-        )
+        server_endpoints_faces.respond_rename_person(self)
 
     def respond_delete_person(self) -> None:
-        payload = BildebankRequestHandler.read_json_payload(self)
-        person_name = str(payload.get("person_name") or "").strip()
-        if not person_name:
-            self.respond_json({"ok": False, "error": "Personnavn mangler."}, status=HTTPStatus.BAD_REQUEST)
-            return
-        try:
-            config = self.server.config.face_recognition
-            result = delete_person(self.server.target, person_name, config)
-        except TargetLockError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
-            return
-        except ValueError as exc:
-            self.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-            return
-        clear_face_caches()
-        self.respond_json(
-            {
-                "ok": True,
-                "person_name": result.person_name,
-                "removed_faces": result.removed_faces,
-                "removed_files": result.removed_files,
-                "removed_suggestions": result.removed_suggestions,
-            }
-        )
+        server_endpoints_faces.respond_delete_person(self)
 
     def respond_rotate_item(self) -> None:
         payload = BildebankRequestHandler.read_json_payload(self)

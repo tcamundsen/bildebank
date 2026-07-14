@@ -171,8 +171,8 @@ class PersonReferencesServerTests(unittest.TestCase):
         handler.respond_html = lambda content, status=HTTPStatus.OK: setattr(handler, "response", (content, status))
 
         with (
-            patch("bildebank.server.person_by_name", return_value={"name": "Kari / Åse"}) as find_person,
-            patch("bildebank.server.person_references_page_html", return_value="references") as render,
+            patch("bildebank.server_endpoints_faces.person_by_name", return_value={"name": "Kari / Åse"}) as find_person,
+            patch("bildebank.server_endpoints_faces.person_references_page_html", return_value="references") as render,
         ):
             handler.respond_person_references("Kari%20%2F%20%C3%85se")
         find_person.assert_called_once_with(handler.server.target, "Kari / Åse", handler.server.config.face_recognition)
@@ -180,8 +180,8 @@ class PersonReferencesServerTests(unittest.TestCase):
         self.assertEqual(handler.response, ("references", HTTPStatus.OK))
 
         with (
-            patch("bildebank.server.person_by_name", return_value=None),
-            patch("bildebank.server.person_not_found_html", return_value="not-found"),
+            patch("bildebank.server_endpoints_faces.person_by_name", return_value=None),
+            patch("bildebank.server_endpoints_faces.person_not_found_html", return_value="not-found"),
         ):
             handler.respond_person_references("Ukjent")
         self.assertEqual(handler.response, ("not-found", HTTPStatus.NOT_FOUND))
