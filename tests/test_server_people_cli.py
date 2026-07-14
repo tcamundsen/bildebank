@@ -1338,8 +1338,14 @@ class ServerPeopleCliTests(unittest.TestCase):
                 handler = FakeHandler()
                 with (
                     patch("bildebank.server.source_item_ids", wraps=source_item_ids) as item_ids_mock,
-                    patch("bildebank.server.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock,
-                    patch("bildebank.server.adjacent_source_items", wraps=adjacent_source_items) as adjacent_mock,
+                    patch(
+                        "bildebank.server_endpoints_browser.source_item_by_id",
+                        wraps=source_item_by_id,
+                    ) as item_by_id_mock,
+                    patch(
+                        "bildebank.server_endpoints_browser.adjacent_source_items",
+                        wraps=adjacent_source_items,
+                    ) as adjacent_mock,
                     patch(
                         "bildebank.server_browser_queries.first_source_day_item",
                         side_effect=AssertionError("handler should pass cached first day item"),

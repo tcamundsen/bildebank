@@ -33,22 +33,15 @@ from .face import (
     rename_person,
     suggest_faces,
 )
-from .geo import (
-    H3_COLUMNS,
-    h3_resolution,
-)
 from . import server_app
 from . import server_actions
+from . import server_endpoints_browser
 from .server_pages import (
     app_status_page_html,
     custom_geo_places_page_html,
     dashboard_page_html,
     error_html,
-    filter_start_html,
-    geo_area_page_html,
-    geo_index_page_html,
     h3_cells_page_html,
-    geo_map_page_html,
     index_html,
     markdown_doc_page_html,
     people_page_html,
@@ -56,14 +49,8 @@ from .server_pages import (
     person_not_found_html,
     removed_files_page_html,
     search_html,
-    source_item_page_html,
-    source_month_page_html,
-    source_year_months_page_html,
-    source_years_page_html,
     sources_page_html,
     tags_page_html,
-    year_months_page_html,
-    years_page_html,
 )
 from .server_browser_info_html import image_info_content_html
 from .server_browser_item_html import clear_tag_control_rows_cache
@@ -71,30 +58,19 @@ from .server_browser_queries import (
     active_item_by_id_including_hidden,
     adjacent_items_from_id_order,
     adjacent_source_items,
-    browser_date_for_item,
     browser_item_by_id,
     browser_item_ids,
     browser_month_keys,
-    imported_source_by_id,
     item_by_id,
-    month_key_for_item,
-    month_navigation_for_keys,
     source_item_count as browser_source_item_count,
     source_item_ids,
     source_item_by_id,
     source_month_keys,
-    source_month_items,
-    source_month_navigation,
     valid_day_key,
-    valid_month_key,
-    valid_year_key,
 )
 from .server_browser_sidecars import clear_sidecar_data_caches
 from .server_browser_sources import (
     BrowserSource,
-    all_browser_source,
-    geo_place_browser_source,
-    imported_source_browser_source,
     missing_face_suggestions_browser_source,
     parse_person_reference_suggestions_path,
     parse_person_path,
@@ -105,7 +81,6 @@ from .server_browser_sources import (
     person_url,
     source_has_sql_filter,
     source_item_url,
-    tag_browser_source,
 )
 from .server_faces import (
     clear_face_caches,
@@ -115,7 +90,7 @@ from .server_faces import (
     person_item_url_for_face,
 )
 from . import server_geo
-from .server_geo import DEFAULT_GEO_LIMIT, DEFAULT_GEO_MIN_COUNT, DEFAULT_GEO_RESOLUTION, geo_place_by_slug
+from .server_geo import DEFAULT_GEO_LIMIT
 from . import server_markdown
 from . import server_files
 from .file_tags import create_user_tag, delete_user_tag, rename_user_tag
@@ -127,7 +102,7 @@ from .server_search import (
 from .target_lock import TargetLockError
 from .value_parsing import require_int
 from .server_filter import text_filter_browser_source
-from .server_response import ServerResponseMixin, add_csrf_to_html, read_only_html
+from .server_response import ServerResponseMixin
 from . import server_request
 from .server_request import first_param, nonnegative_int_param, parse_file_id, positive_int_param
 from .server_assets import SERVER_CSS, SERVER_JS
@@ -1027,156 +1002,19 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         steps[name] = (time.perf_counter() - start) * 1000.0
 
     def respond_browser_root(self) -> None:
-        self.respond_years()
+        server_endpoints_browser.respond_browser_root(self)
 
     def respond_item(self, raw_file_id: str) -> None:
-        start = time.perf_counter()
-        file_id = parse_file_id(raw_file_id)
-        self.record_server_timing("parse", start)
-
-        start = time.perf_counter()
-        source = all_browser_source()
-        browser_db_connection = getattr(self, "browser_db_connection", None)
-        conn, close_conn = (
-            browser_db_connection() if browser_db_connection is not None else (db.connect(self.server.target), True)
-        )
-        self.record_server_timing("db_connect", start)
-        try:
-            start = time.perf_counter()
-            item_ids, item_positions = self.server.browser_item_order(hide_out_of_focus=self.server.hide_out_of_focus)
-            self.record_server_timing("browser_item_order", start)
-
-            start = time.perf_counter()
-            item = item_by_id(self.server.target, file_id, conn=conn) if file_id in item_positions else None
-            self.record_server_timing("item_by_id", start)
-            if item is None:
-                self.respond_text("Filen finnes ikke i bildesamlingen.", status=HTTPStatus.NOT_FOUND)
-                return
-            if source == all_browser_source():
-                start = time.perf_counter()
-                previous_item, next_item = adjacent_items_from_id_order(
-                    item_ids,
-                    int(item["id"]),
-                    item_positions,
-                )
-                self.record_server_timing("adjacent", start)
-
-                start = time.perf_counter()
-                month_nav = month_navigation_for_keys(
-                    self.server.browser_month_keys(hide_out_of_focus=self.server.hide_out_of_focus),
-                    month_key_for_item(self.server.target, item),
-                )
-                self.record_server_timing("month_nav", start)
-            else:
-                start = time.perf_counter()
-                previous_item, next_item = adjacent_source_items(
-                    self.server.target,
-                    source,
-                    item,
-                    hide_out_of_focus=self.server.hide_out_of_focus,
-                    conn=conn,
-                )
-                self.record_server_timing("adjacent", start)
-
-                start = time.perf_counter()
-                month_nav = source_month_navigation(
-                    self.server.target,
-                    source,
-                    item,
-                    hide_out_of_focus=self.server.hide_out_of_focus,
-                    conn=conn,
-                )
-                self.record_server_timing("month_nav", start)
-
-            start = time.perf_counter()
-            first_day_item_id = self.server.browser_first_day_item_id(
-                browser_date_for_item(item),
-                hide_out_of_focus=self.server.hide_out_of_focus,
-            )
-            self.record_server_timing("first_day_item", start)
-
-            start = time.perf_counter()
-            html = source_item_page_html(
-                self.server.target,
-                source,
-                item,
-                previous_item,
-                next_item,
-                month_nav,
-                face_enabled=self.server.face_enabled,
-                openclip_enabled=self.server.openclip_enabled,
-                face_config=self.server.config.face_recognition,
-                manual_person_controls_enabled=self.server.config.browser.manual_person_controls_enabled,
-                person_reference_links_enabled=self.server.config.browser.person_reference_links_enabled,
-                hotkey_hints_enabled=self.server.config.browser.hotkey_hints_enabled,
-                hotkeys=self.server.config.browser.hotkeys,
-                hide_out_of_focus=self.server.hide_out_of_focus,
-                conn=conn,
-                first_day_item_id=first_day_item_id,
-                timing_callback=self.record_server_timing,
-                read_only=getattr(self.server, "read_only", False),
-            )
-            self.record_server_timing("source_item_page_html", start)
-
-            start = time.perf_counter()
-            if getattr(self.server, "read_only", False):
-                html = read_only_html(html)
-            encoded = add_csrf_to_html(html, self.server.csrf_token).encode("utf-8")
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(encoded)))
-            self.record_server_timing("encode/respond_before_write", start)
-            self.respond_timing_headers()
-            self.end_headers()
-            self.wfile.write(encoded)
-        finally:
-            if close_conn:
-                conn.close()
+        server_endpoints_browser.respond_item(self, raw_file_id)
 
     def respond_month(self, raw_month: str) -> None:
-        month_key = urllib.parse.unquote(raw_month).strip()
-        if not valid_month_key(month_key):
-            self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
-            return
-        source = all_browser_source()
-        items = source_month_items(self.server.target, source, month_key, hide_out_of_focus=self.server.hide_out_of_focus)
-        self.respond_html(
-            source_month_page_html(
-                self.server.target,
-                source,
-                month_key,
-                items,
-                face_enabled=self.server.face_enabled,
-                openclip_enabled=self.server.openclip_enabled,
-                face_config=self.server.config.face_recognition,
-                hide_out_of_focus=self.server.hide_out_of_focus,
-            )
-        )
+        server_endpoints_browser.respond_month(self, raw_month)
 
     def respond_years(self) -> None:
-        self.respond_html(
-            years_page_html(
-                self.server.target,
-                face_enabled=self.server.face_enabled,
-                openclip_enabled=self.server.openclip_enabled,
-                hide_out_of_focus=self.server.hide_out_of_focus,
-            )
-        )
+        server_endpoints_browser.respond_years(self)
 
     def respond_year(self, raw_year: str) -> None:
-        year = urllib.parse.unquote(raw_year).strip().strip("/")
-        if not valid_year_key(year):
-            self.respond_text("Ugyldig år.", status=HTTPStatus.BAD_REQUEST)
-            return
-        self.respond_html(
-            year_months_page_html(
-                self.server.target,
-                year,
-                face_enabled=self.server.face_enabled,
-                openclip_enabled=self.server.openclip_enabled,
-                hide_out_of_focus=self.server.hide_out_of_focus,
-            )
-        )
+        server_endpoints_browser.respond_year(self, raw_year)
 
     def respond_person(self, raw_path: str) -> None:
         raw_name, person_mode, show_faces, page_mode, raw_value = parse_person_path(raw_path)
@@ -1286,148 +1124,28 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         )
 
     def respond_filter(self, query: str) -> None:
-        params = urllib.parse.parse_qs(query)
-        raw_query = first_param(params, "q").strip()
-        if not raw_query:
-            self.respond_html(filter_start_html(self.server))
-            return
-        try:
-            url = text_filter_browser_source(raw_query, self.server.target).root_url
-        except ValueError as exc:
-            self.respond_html(filter_start_html(self.server, query=raw_query, message=str(exc)))
-            return
-        self.redirect(url)
+        server_endpoints_browser.respond_filter(self, query)
 
     def respond_filter_source(self, raw_path: str) -> None:
-        raw_query, page_mode, raw_value = parse_source_path(raw_path)
-        query = urllib.parse.unquote(raw_query).strip()
-        try:
-            source = text_filter_browser_source(query, self.server.target)
-        except ValueError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
-            return
-        self.respond_browser_source(
-            source,
-            page_mode,
-            raw_value,
-            hide_out_of_focus=self.server.hide_out_of_focus,
-            item_not_found_message="Filen finnes ikke for dette filtersøket.",
-            invalid_page_message="Ugyldig filtersøkside.",
-        )
+        server_endpoints_browser.respond_filter_source(self, raw_path)
 
     def respond_imported_source(self, raw_path: str) -> None:
-        raw_source_id, page_mode, raw_value = parse_source_path(raw_path)
-        try:
-            source_id = int(urllib.parse.unquote(raw_source_id).strip())
-        except ValueError:
-            self.respond_text("Ugyldig kilde.", status=HTTPStatus.BAD_REQUEST)
-            return
-        source_row = imported_source_by_id(self.server.target, source_id)
-        if source_row is None:
-            self.respond_text("Fant ikke kilde.", status=HTTPStatus.NOT_FOUND)
-            return
-        source = imported_source_browser_source(source_row)
-        self.respond_browser_source(
-            source,
-            page_mode,
-            raw_value,
-            hide_out_of_focus=self.server.hide_out_of_focus,
-            item_not_found_message="Filen finnes ikke for denne kilden.",
-            invalid_page_message="Ugyldig kildeside.",
-        )
+        server_endpoints_browser.respond_imported_source(self, raw_path)
 
     def respond_tag(self, raw_path: str) -> None:
-        raw_tag_name, page_mode, raw_value = parse_source_path(raw_path)
-        tag_name = urllib.parse.unquote(raw_tag_name).strip()
-        try:
-            source = tag_browser_source(tag_name)
-        except ValueError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
-            return
-        self.respond_browser_source(
-            source,
-            page_mode,
-            raw_value,
-            hide_out_of_focus=self.server.hide_out_of_focus,
-            item_not_found_message="Filen finnes ikke for denne taggen.",
-            invalid_page_message="Ugyldig taggside.",
-        )
+        server_endpoints_browser.respond_tag(self, raw_path)
 
     def respond_geo(self, query: str) -> None:
-        params = urllib.parse.parse_qs(query)
-        resolution = nonnegative_int_param(params, "resolution", DEFAULT_GEO_RESOLUTION)
-        min_count = positive_int_param(params, "min_count", DEFAULT_GEO_MIN_COUNT)
-        limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
-        if resolution not in H3_COLUMNS:
-            self.respond_text("H3-oppløsning må være mellom 0 og 11.", status=HTTPStatus.BAD_REQUEST)
-            return
-        self.respond_html(
-            geo_index_page_html(
-                self.server.target,
-                resolution=resolution,
-                min_count=min_count,
-                limit=limit,
-                face_enabled=self.server.face_enabled,
-                openclip_enabled=self.server.openclip_enabled,
-            )
-        )
+        server_endpoints_browser.respond_geo(self, query)
 
     def respond_geo_map(self, query: str) -> None:
-        params = urllib.parse.parse_qs(query)
-        resolution = nonnegative_int_param(params, "resolution", DEFAULT_GEO_RESOLUTION)
-        min_count = positive_int_param(params, "min_count", DEFAULT_GEO_MIN_COUNT)
-        limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
-        if resolution not in H3_COLUMNS:
-            self.respond_text("H3-oppløsning må være mellom 0 og 11.", status=HTTPStatus.BAD_REQUEST)
-            return
-        self.respond_html(
-            geo_map_page_html(
-                self.server.target,
-                resolution=resolution,
-                min_count=min_count,
-                limit=limit,
-                face_enabled=self.server.face_enabled,
-                openclip_enabled=self.server.openclip_enabled,
-            )
-        )
+        server_endpoints_browser.respond_geo_map(self, query)
 
     def respond_geo_area(self, raw_cell: str, query: str) -> None:
-        h3_cell = urllib.parse.unquote(raw_cell).strip()
-        params = urllib.parse.parse_qs(query)
-        limit = positive_int_param(params, "limit", DEFAULT_GEO_LIMIT)
-        try:
-            resolution = h3_resolution(h3_cell)
-        except ValueError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
-            return
-        self.respond_html(
-            geo_area_page_html(
-                self.server.target,
-                h3_cell,
-                resolution=resolution,
-                limit=limit,
-                face_enabled=self.server.face_enabled,
-                openclip_enabled=self.server.openclip_enabled,
-                hide_out_of_focus=self.server.hide_out_of_focus,
-            )
-        )
+        server_endpoints_browser.respond_geo_area(self, raw_cell, query)
 
     def respond_geo_place(self, raw_path: str) -> None:
-        raw_slug, page_mode, raw_value = parse_source_path(raw_path)
-        slug = urllib.parse.unquote(raw_slug).strip()
-        place = geo_place_by_slug(self.server.target, slug)
-        if place is None:
-            self.respond_text("Ukjent sted.", status=HTTPStatus.NOT_FOUND)
-            return
-        source = geo_place_browser_source(place)
-        self.respond_browser_source(
-            source,
-            page_mode,
-            raw_value,
-            hide_out_of_focus=self.server.hide_out_of_focus,
-            item_not_found_message="Filen finnes ikke for dette stedet.",
-            invalid_page_message="Ugyldig stedsside.",
-        )
+        server_endpoints_browser.respond_geo_place(self, raw_path)
 
     def respond_browser_source(
         self,
@@ -1440,165 +1158,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         face_config: FaceRecognitionConfig | None = None,
         hide_out_of_focus: bool = False,
     ) -> None:
-        if page_mode is None:
-            self.respond_html(
-                source_years_page_html(
-                    self.server.target,
-                    source,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                    face_config=self.server.config.face_recognition,
-                    hide_out_of_focus=hide_out_of_focus,
-                )
-            )
-            return
-        if page_mode == "item":
-            start = time.perf_counter()
-            file_id = parse_file_id(raw_value)
-            self.record_server_timing("parse", start)
-            start = time.perf_counter()
-            browser_db_connection = getattr(self, "browser_db_connection", None)
-            conn, close_conn = (
-                browser_db_connection() if browser_db_connection is not None else (db.connect(self.server.target), True)
-            )
-            self.record_server_timing("db_connect", start)
-            try:
-                if source_has_sql_filter(source):
-                    start = time.perf_counter()
-                    item_ids, item_positions = self.server.source_item_order(source, hide_out_of_focus=hide_out_of_focus)
-                    self.record_server_timing("source_item_order", start)
-                    start = time.perf_counter()
-                    item = item_by_id(self.server.target, file_id, conn=conn) if file_id in item_positions else None
-                    self.record_server_timing("item_by_id", start)
-                else:
-                    start = time.perf_counter()
-                    item = source_item_by_id(
-                        self.server.target,
-                        source,
-                        file_id,
-                        face_config,
-                        hide_out_of_focus=hide_out_of_focus,
-                        conn=conn,
-                    )
-                    self.record_server_timing("item_by_id", start)
-                if item is None:
-                    self.respond_text(item_not_found_message, status=HTTPStatus.NOT_FOUND)
-                    return
-                if source_has_sql_filter(source):
-                    start = time.perf_counter()
-                    previous_item, next_item = adjacent_items_from_id_order(item_ids, int(item["id"]), item_positions)
-                    self.record_server_timing("adjacent", start)
-                    start = time.perf_counter()
-                    month_nav = month_navigation_for_keys(
-                        self.server.source_month_keys(source, hide_out_of_focus=hide_out_of_focus),
-                        month_key_for_item(self.server.target, item),
-                    )
-                    self.record_server_timing("month_nav", start)
-                    start = time.perf_counter()
-                    first_day_item_id = self.server.source_first_day_item_id(
-                        source,
-                        browser_date_for_item(item),
-                        hide_out_of_focus=hide_out_of_focus,
-                    )
-                    self.record_server_timing("first_day_item", start)
-                else:
-                    start = time.perf_counter()
-                    previous_item, next_item = adjacent_source_items(
-                        self.server.target,
-                        source,
-                        item,
-                        face_config,
-                        hide_out_of_focus=hide_out_of_focus,
-                        conn=conn,
-                    )
-                    self.record_server_timing("adjacent", start)
-                    start = time.perf_counter()
-                    month_nav = source_month_navigation(
-                        self.server.target,
-                        source,
-                        item,
-                        face_config,
-                        hide_out_of_focus=hide_out_of_focus,
-                        conn=conn,
-                    )
-                    self.record_server_timing("month_nav", start)
-                    first_day_item_id = None
-                start = time.perf_counter()
-                self.respond_html(
-                    source_item_page_html(
-                        self.server.target,
-                        source,
-                        item,
-                        previous_item,
-                        next_item,
-                        month_nav,
-                        face_enabled=self.server.face_enabled,
-                        openclip_enabled=self.server.openclip_enabled,
-                        face_config=self.server.config.face_recognition,
-                        manual_person_controls_enabled=self.server.config.browser.manual_person_controls_enabled,
-                        person_reference_links_enabled=self.server.config.browser.person_reference_links_enabled,
-                        hotkey_hints_enabled=self.server.config.browser.hotkey_hints_enabled,
-                        hotkeys=self.server.config.browser.hotkeys,
-                        hide_out_of_focus=hide_out_of_focus,
-                        conn=conn,
-                        source_item_count_value=(
-                            self.server.source_item_count(source, hide_out_of_focus=hide_out_of_focus)
-                            if source.text_filter is not None
-                            else None
-                        ),
-                        first_day_item_id=first_day_item_id,
-                        timing_callback=self.record_server_timing,
-                        read_only=getattr(self.server, "read_only", False),
-                    )
-                )
-                self.record_server_timing("source_item_page_html", start)
-            finally:
-                if close_conn:
-                    conn.close()
-            return
-        if page_mode == "month":
-            month_key = urllib.parse.unquote(raw_value).strip()
-            if not valid_month_key(month_key):
-                self.respond_text("Ugyldig måned.", status=HTTPStatus.BAD_REQUEST)
-                return
-            items = source_month_items(
-                self.server.target,
-                source,
-                month_key,
-                face_config,
-                hide_out_of_focus=hide_out_of_focus,
-            )
-            self.respond_html(
-                source_month_page_html(
-                    self.server.target,
-                    source,
-                    month_key,
-                    items,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                    face_config=self.server.config.face_recognition,
-                    hide_out_of_focus=hide_out_of_focus,
-                )
-            )
-            return
-        if page_mode == "year":
-            year = urllib.parse.unquote(raw_value).strip()
-            if not valid_year_key(year):
-                self.respond_text("Ugyldig år.", status=HTTPStatus.BAD_REQUEST)
-                return
-            self.respond_html(
-                source_year_months_page_html(
-                    self.server.target,
-                    source,
-                    year,
-                    face_enabled=self.server.face_enabled,
-                    openclip_enabled=self.server.openclip_enabled,
-                    face_config=self.server.config.face_recognition,
-                    hide_out_of_focus=hide_out_of_focus,
-                )
-            )
-            return
-        self.respond_text(invalid_page_message, status=HTTPStatus.NOT_FOUND)
+        server_endpoints_browser.respond_browser_source(
+            self,
+            source,
+            page_mode,
+            raw_value,
+            item_not_found_message=item_not_found_message,
+            invalid_page_message=invalid_page_message,
+            face_config=face_config,
+            hide_out_of_focus=hide_out_of_focus,
+        )
 
     def respond_set_geo_place_name(self) -> None:
         params = server_request.read_form_params(self.headers, self.rfile)

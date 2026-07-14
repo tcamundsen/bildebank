@@ -11,7 +11,7 @@ from http import HTTPStatus
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from bildebank import db, server_browser_item_html, server_browser_queries, server_browser_sidecars
 from bildebank.config import AppConfig, BrowserConfig, FaceRecognitionConfig
@@ -73,6 +73,44 @@ from tests.test_media import (
 
 
 class ServerBrowserCliTests(unittest.TestCase):
+    def test_browser_selections_delegate_to_common_source_responder(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        handler.server = SimpleNamespace(  # type: ignore[attr-defined]
+            target=Path("target"),
+            config=AppConfig(),
+            hide_out_of_focus=False,
+            face_enabled=False,
+            openclip_enabled=False,
+        )
+        handler.respond_text = Mock()  # type: ignore[method-assign]
+        handler.respond_browser_source = Mock()  # type: ignore[method-assign]
+
+        with (
+            patch("bildebank.server.person_by_name", return_value={"name": "Ada"}),
+            patch(
+                "bildebank.server_endpoints_browser.imported_source_by_id",
+                return_value=SimpleNamespace(id=9, name="Telefon"),
+            ),
+        ):
+            handler.respond_person("Ada/item/1")
+            handler.respond_imported_source("9/month/2024-01")
+            handler.respond_tag("Ferie/year/2024")
+            handler.respond_filter_source("type%3Aimage")
+            handler.respond_geo_place("kreta/item/4")
+
+        roots = [call.args[0].root_url for call in handler.respond_browser_source.call_args_list]
+        self.assertEqual(
+            roots,
+            [
+                "/person/Ada",
+                "/source/9",
+                "/tag/Ferie",
+                "/filter/type%3Aimage",
+                "/geo/place/kreta",
+            ],
+        )
+        handler.respond_text.assert_not_called()
+
     def test_run_server_browser_month_keys_uses_existing_database_path_helper(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -2205,8 +2243,11 @@ class ServerBrowserCliTests(unittest.TestCase):
             with (
                 patch("bildebank.server.source_item_ids", wraps=source_item_ids) as item_ids_mock,
                 patch("bildebank.server.source_month_keys", wraps=source_month_keys) as month_keys_mock,
-                patch("bildebank.server.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock,
-                patch("bildebank.server.adjacent_source_items", wraps=adjacent_source_items) as adjacent_mock,
+                patch("bildebank.server_endpoints_browser.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock,
+                patch(
+                    "bildebank.server_endpoints_browser.adjacent_source_items",
+                    wraps=adjacent_source_items,
+                ) as adjacent_mock,
             ):
                 for file_id in (1, 2):
                     BildebankRequestHandler.respond_browser_source(  # type: ignore[arg-type]
