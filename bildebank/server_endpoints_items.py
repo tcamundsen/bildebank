@@ -22,7 +22,7 @@ from .target_lock import TargetLockError
 from .value_parsing import require_int
 
 if TYPE_CHECKING:
-    from .server import BildebankRequestHandler
+    from .server_handler import BildebankRequestHandler
 
 
 def clear_browser_navigation_cache(server: Any) -> None:

@@ -16,7 +16,7 @@ from bildebank.config import (
     set_face_suggest_threshold,
 )
 from bildebank.face import FaceSuggestStats, connect_face_db
-from bildebank.server import BildebankRequestHandler
+from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_queries import source_item_ids
 from bildebank.server_browser_sources import missing_face_suggestions_browser_source

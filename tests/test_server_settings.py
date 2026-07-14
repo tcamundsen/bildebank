@@ -14,7 +14,7 @@ from bildebank.config import AppConfig, BrowserConfig, BrowserHotkeyConfig, Face
 from bildebank.db import init_database
 from bildebank.geo import h3_cells_for_point
 from bildebank.openclip import connect_openclip_db, embedding_blob
-from bildebank.server import BildebankRequestHandler
+from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_app import MaintenanceStatus, maintenance_statuses, thumbnail_maintenance_status
 from bildebank.server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS
 from bildebank.server_pages import app_status_page_html

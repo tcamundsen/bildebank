@@ -18,7 +18,8 @@ from bildebank.config import AppConfig, BrowserConfig, FaceRecognitionConfig
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.face import connect_face_db
 from bildebank.geo import h3_cells_for_point
-from bildebank.server import BildebankRequestHandler, BildebankServer
+from bildebank.server_handler import BildebankRequestHandler
+from bildebank.server_runtime import BildebankServer
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_info_html import image_info_content_html
 from bildebank.server_browser_queries import (
@@ -137,8 +138,10 @@ class ServerBrowserCliTests(unittest.TestCase):
             server._browser_navigation_db_mtime_ns = None
             server._browser_navigation_checked_at = 0.0
 
-            with patch("bildebank.server.time.monotonic", side_effect=[10.0, 10.5]):
-                with patch("bildebank.server.db.db_path_for_target", wraps=db.db_path_for_target) as db_path_for_target:
+            with patch("bildebank.server_runtime.time.monotonic", side_effect=[10.0, 10.5]):
+                with patch(
+                    "bildebank.server_runtime.db.db_path_for_target", wraps=db.db_path_for_target
+                ) as db_path_for_target:
                     self.assertEqual(server.browser_navigation_cache_version(), 0)
                     self.assertEqual(server.browser_navigation_cache_version(), 0)
 
@@ -2241,8 +2244,8 @@ class ServerBrowserCliTests(unittest.TestCase):
 
             handler = FakeHandler()
             with (
-                patch("bildebank.server.source_item_ids", wraps=source_item_ids) as item_ids_mock,
-                patch("bildebank.server.source_month_keys", wraps=source_month_keys) as month_keys_mock,
+                patch("bildebank.server_runtime.source_item_ids", wraps=source_item_ids) as item_ids_mock,
+                patch("bildebank.server_runtime.source_month_keys", wraps=source_month_keys) as month_keys_mock,
                 patch("bildebank.server_endpoints_browser.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock,
                 patch(
                     "bildebank.server_endpoints_browser.adjacent_source_items",

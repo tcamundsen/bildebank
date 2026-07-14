@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from bildebank import db
 from bildebank.config import AppConfig, FaceRecognitionConfig
 from bildebank.face import connect_face_db
-from bildebank.server import BildebankRequestHandler
+from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_faces import (
     people_page_html,
     person_reference_items,

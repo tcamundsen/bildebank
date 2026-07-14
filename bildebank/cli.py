@@ -56,7 +56,7 @@ from .platform_guard import validate_collection_platform
 from .pending_deletes import cleanup_pending_deletes, list_pending_deletes
 from .progress import ProgressMeter
 from .program_state import known_targets, program_db_path, record_target_best_effort
-from .server import DEFAULT_HOST, DEFAULT_PORT
+from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
 from .target_lock import TargetLock
 from .thumbnails import ThumbnailStats, run_make_thumbnails
 from .unimport import TargetContentChange, run_unimport as execute_unimport

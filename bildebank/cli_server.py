@@ -6,7 +6,7 @@ import webbrowser
 from pathlib import Path
 
 from .config import load_config
-from .server import run_server as run_local_server
+from .server_runtime import run_server as run_local_server
 
 
 def run_server_command(

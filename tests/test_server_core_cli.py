@@ -14,11 +14,13 @@ from bildebank.cli import build_parser, main, should_recover_pending_file_moves
 from bildebank.cli_server import lan_share_urls, run_server_command
 from bildebank.config import AppConfig, FaceRecognitionConfig, OpenClipConfig
 from bildebank.db import init_database
-from bildebank.server import (
+from bildebank.server_handler import (
     BildebankRequestHandler,
+    resolve_doc_asset_path,
+)
+from bildebank.server_runtime import (
     BildebankServer,
     is_local_bind_host,
-    resolve_doc_asset_path,
     run_server as run_http_server,
     validate_bind_host,
 )
@@ -231,8 +233,8 @@ class ServerCoreCliTests(unittest.TestCase):
         )
         stderr = StringIO()
         with (
-            patch("bildebank.server.db.prepare_database"),
-            patch("bildebank.server.BildebankServer", return_value=fake_server) as server_class,
+            patch("bildebank.server_runtime.db.prepare_database"),
+            patch("bildebank.server_runtime.BildebankServer", return_value=fake_server) as server_class,
             redirect_stderr(stderr),
         ):
             run_http_server(
@@ -259,8 +261,8 @@ class ServerCoreCliTests(unittest.TestCase):
             server_close=lambda: None,
         )
         with (
-            patch("bildebank.server.db.prepare_database"),
-            patch("bildebank.server.BildebankServer", return_value=fake_server) as server_class,
+            patch("bildebank.server_runtime.db.prepare_database"),
+            patch("bildebank.server_runtime.BildebankServer", return_value=fake_server) as server_class,
         ):
             run_http_server(Path("."), AppConfig(), read_only=True)
 
@@ -715,8 +717,8 @@ class ServerCoreCliTests(unittest.TestCase):
 
     def test_run_server_generates_one_csrf_token_at_startup(self) -> None:
         with (
-            patch("bildebank.server.ThreadingHTTPServer.__init__", return_value=None),
-            patch("bildebank.server.secrets.token_urlsafe", return_value="generated-token") as token_urlsafe,
+            patch("bildebank.server_runtime.ThreadingHTTPServer.__init__", return_value=None),
+            patch("bildebank.server_runtime.secrets.token_urlsafe", return_value="generated-token") as token_urlsafe,
         ):
             server = BildebankServer(("127.0.0.1", 0), Path("."), AppConfig())
 

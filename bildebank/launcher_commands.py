@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from .server import DEFAULT_HOST, DEFAULT_PORT
+from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
 
 
 def bildebank_command(*args: str | Path) -> list[str]:

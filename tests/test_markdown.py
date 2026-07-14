@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from bildebank.server import resolve_doc_path
+from bildebank.server_handler import resolve_doc_path
 from bildebank.server_pages import markdown_doc_page_html
 from bildebank.server_markdown import markdown_to_html
 

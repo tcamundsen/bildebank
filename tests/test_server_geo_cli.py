@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from bildebank import db
 from bildebank.db import init_database
 from bildebank.geo import h3_cells_for_manual_cell, h3_cells_for_point
-from bildebank.server import BildebankRequestHandler
+from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_info_html import image_info_content_html
 from bildebank.server_browser_queries import adjacent_browser_items, browser_item_by_id, browser_month_navigation

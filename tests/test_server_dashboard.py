@@ -11,7 +11,7 @@ from bildebank import db
 from bildebank.config import AppConfig
 from bildebank.db import init_database
 from bildebank.geo import h3_cells_for_point
-from bildebank.server import BildebankRequestHandler
+from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_dashboard import dashboard_actions, dashboard_page_html, dashboard_summary
 from bildebank.server_pages import dashboard_page_html as routed_dashboard_page_html

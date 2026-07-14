@@ -12,7 +12,7 @@ from bildebank import db
 from bildebank.config import AppConfig, BrowserConfig, OpenClipConfig
 from bildebank.db import init_database
 from bildebank.openclip import ImageSearchResult, connect_openclip_db, embedding_blob, openclip_db_path
-from bildebank.server import BildebankRequestHandler
+from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_pages import search_html, search_start_html
 from bildebank.server_search import (
     DEFAULT_SEARCH_LIMIT,

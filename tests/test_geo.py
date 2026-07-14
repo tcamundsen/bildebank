@@ -25,7 +25,7 @@ from bildebank.geo import (
     scan_geo,
 )
 from bildebank.media import sha256_file
-from bildebank.server import (
+from bildebank.server_handler import (
     BildebankRequestHandler,
 )
 from bildebank.server_app import delete_h3_cell_name, save_h3_cell_name

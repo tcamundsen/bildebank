@@ -34,7 +34,7 @@ from .target_lock import TargetLockError
 from .value_parsing import require_int
 
 if TYPE_CHECKING:
-    from .server import BildebankRequestHandler
+    from .server_handler import BildebankRequestHandler
 
 
 def local_return_url(value: str) -> str | None:

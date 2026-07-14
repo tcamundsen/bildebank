@@ -44,11 +44,11 @@ oppdateres her underveis.
 | 2. Trekk ut admin- og innstillingsendepunkter | ferdig | `5a4ae77` |
 | 3. Trekk ut person- og ansiktsendepunkter | ferdig | `0ae570c` |
 | 4. Trekk ut handlinger på enkeltbilder | ferdig | `192d0e8` |
-| 5. Trekk ut HTTP-handler og ruting | ferdig, ikke commitet | — |
-| 6. Trekk ut server-runtime og gjør `server.py` tynt | ikke startet | — |
+| 5. Trekk ut HTTP-handler og ruting | ferdig | `c5b4a59` |
+| 6. Trekk ut server-runtime og gjør `server.py` tynt | ferdig, ikke commitet | — |
 | 7. Avsluttende opprydding og utviklerdokumentasjon | ikke startet | — |
 
-Neste trinn etter at trinn 5 er gjennomgått og commitet: **Trinn 6.**
+Neste trinn etter at trinn 6 er gjennomgått og commitet: **Trinn 7.**
 
 ## Datamodell som skal ligge fast
 
@@ -475,6 +475,22 @@ Trekk HTTP-handler ut av server
 ```text
 Gjør server til et tynt inngangspunkt
 ```
+
+### Resultat
+
+- `server_runtime.py` er opprettet med bind-validering, `BildebankServer`,
+  browsernavigasjonscache og `run_server()` samlet i 381 linjer.
+- `server.py` er nå et 23-linjers stabilt inngangspunkt. Det re-eksporterer
+  `run_server`, konstanter og de to serverklassene for kompatibilitet.
+- `cli_server.py`, CLI og launcher bruker runtime-modulen direkte.
+  Endepunktmodulenes typeannotasjoner og tester importerer nå fra
+  `server_handler` eller `server_runtime`, altså modulen der navnet eies.
+- Oppstart, ready-callback, port `0`, remote-bind-advarsel, CSRF-token og
+  browsernavigasjonscache er dekket av eksisterende tester med oppdatert
+  patching på riktig oppslagssted.
+- Ingen endring er gjort i URL-er, HTTP-håndtering, database eller filflytting.
+- 766 tester og 163 subtester består.
+- Ruff, pyflakes, mypy og `git diff --check` er grønne.
 
 ## Trinn 7 – Avsluttende opprydding og utviklerdokumentasjon
 

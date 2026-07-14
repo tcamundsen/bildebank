@@ -15,7 +15,7 @@ from .server_search import OpenClipSearchCache
 from .target_lock import TargetLockError
 
 if TYPE_CHECKING:
-    from .server import BildebankRequestHandler
+    from .server_handler import BildebankRequestHandler
 
 
 def settings_redirect_location(params: dict[str, list[str]]) -> str:

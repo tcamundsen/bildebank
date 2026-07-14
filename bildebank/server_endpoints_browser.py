@@ -49,7 +49,7 @@ from .server_request import first_param, nonnegative_int_param, parse_file_id, p
 from .server_response import add_csrf_to_html, read_only_html
 
 if TYPE_CHECKING:
-    from .server import BildebankRequestHandler
+    from .server_handler import BildebankRequestHandler
 
 
 def respond_browser_root(handler: BildebankRequestHandler) -> None:

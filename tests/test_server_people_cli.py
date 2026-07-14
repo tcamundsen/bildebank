@@ -14,7 +14,8 @@ from bildebank import db
 from bildebank.config import AppConfig, FaceRecognitionConfig, OpenClipConfig
 from bildebank.face import add_person_to_file, connect_face_db, remove_person_from_file
 from bildebank.media_cache import cached_image_dimensions, cached_image_orientation
-from bildebank.server import BildebankRequestHandler, BildebankServer
+from bildebank.server_handler import BildebankRequestHandler
+from bildebank.server_runtime import BildebankServer
 from bildebank.server_assets import SERVER_CSS, SERVER_JS
 from bildebank.server_browser_queries import (
     adjacent_browser_items,
@@ -1337,7 +1338,7 @@ class ServerPeopleCliTests(unittest.TestCase):
 
                 handler = FakeHandler()
                 with (
-                    patch("bildebank.server.source_item_ids", wraps=source_item_ids) as item_ids_mock,
+                    patch("bildebank.server_runtime.source_item_ids", wraps=source_item_ids) as item_ids_mock,
                     patch(
                         "bildebank.server_endpoints_browser.source_item_by_id",
                         wraps=source_item_by_id,

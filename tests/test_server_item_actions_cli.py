@@ -15,7 +15,7 @@ from bildebank.config import AppConfig, BrowserConfig, BrowserHotkeyConfig, Face
 from bildebank.db import DB_FILENAME
 from bildebank.face import connect_face_db, create_person
 from bildebank.geo import h3_cells_for_point
-from bildebank.server import BildebankRequestHandler
+from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_actions import undelete_file_from_browser
 from bildebank.server_assets import SERVER_CSS, SERVER_JS
 from bildebank.server_browser_info_html import image_info_content_html
