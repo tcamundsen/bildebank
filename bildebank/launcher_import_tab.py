@@ -321,13 +321,17 @@ class ImportTab:
             except OSError:
                 pass
 
-        messagebox.showwarning(
+        if not messagebox.askokcancel(
             "Unimport",
             (
                 "Dry-run er fullført og planen står i loggen.\n\n"
                 "Unimport kan fjerne filer fra den aktive bildesamlingen."
             ),
-        )
+            parent=self.root,
+            icon="warning",
+        ):
+            self._log(f'Unimport avbrutt for kilde "{source.name}" etter dry-run.')
+            return
         confirmation = self._ask_string(
             "Bekreft unimport",
             f'Skriv "ja, det vil jeg" for å unimporte kilden:\n{source.name}',

@@ -156,9 +156,39 @@ def test_unimport_requires_exact_confirmation_before_running(tmp_path: Path) -> 
         AssertionError("unimport should not run without exact confirmation")
     )
 
-    with patch("tkinter.messagebox.showwarning"):
+    with patch("tkinter.messagebox.askokcancel", return_value=True):
         tab._confirm_unimport_source(source(tmp_path / "bilder"), report_path)
 
+    assert not report_path.exists()
+
+
+def test_unimport_can_be_cancelled_after_dry_run(tmp_path: Path) -> None:
+    report_path = tmp_path / "report.json"
+    report_path.write_text('{"changed_targets": []}', encoding="utf-8")
+    tab = bare_import_tab(tmp_path / "samling")
+    logged: list[str] = []
+    tab._log = logged.append
+    tab._ask_string = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("text confirmation should not open after cancellation")
+    )
+    tab._run_unimport_source = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("unimport should not run after cancellation")
+    )
+    selected_source = source(tmp_path / "bilder")
+
+    with patch("tkinter.messagebox.askokcancel", return_value=False) as askokcancel:
+        tab._confirm_unimport_source(selected_source, report_path)
+
+    askokcancel.assert_called_once_with(
+        "Unimport",
+        (
+            "Dry-run er fullført og planen står i loggen.\n\n"
+            "Unimport kan fjerne filer fra den aktive bildesamlingen."
+        ),
+        parent=tab.root,
+        icon="warning",
+    )
+    assert logged == ['Unimport avbrutt for kilde "Sommer 2024" etter dry-run.']
     assert not report_path.exists()
 
 
@@ -177,7 +207,7 @@ def test_unimport_changed_target_requires_extra_confirmation(tmp_path: Path) -> 
     selected_source = source(tmp_path / "bilder")
 
     with (
-        patch("tkinter.messagebox.showwarning"),
+        patch("tkinter.messagebox.askokcancel", return_value=True),
         patch("tkinter.messagebox.askyesno", return_value=True) as askyesno,
     ):
         tab._confirm_unimport_source(selected_source, report_path)
