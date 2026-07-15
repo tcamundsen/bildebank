@@ -345,7 +345,7 @@ def store_verified_file(repository: Path, staging: Path, source: Path) -> Stored
         raise SourceFileChangedError(f"Filen endret seg under snapshotkopiering: {source}")
 
     reference = ObjectReference(sha256=digest.hexdigest(), size_bytes=size_bytes)
-    verify_file_hash(candidate, reference)
+    verify_file_hash(candidate, reference, label="Stagingobjekt")
     destination = snapshot_object_path(repository, reference.sha256, reference.size_bytes)
     validate_existing_path_components(destination.parent)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -353,6 +353,7 @@ def store_verified_file(repository: Path, staging: Path, source: Path) -> Stored
         validate_regular_file_without_links(destination, label="Backupobjekt")
         if destination.stat().st_size != reference.size_bytes:
             raise SnapshotStorageError(f"Eksisterende backupobjekt har feil størrelse: {destination}")
+        verify_file_hash(destination, reference, label="Eksisterende backupobjekt")
         candidate.unlink()
         return StoredObject(reference=reference, reused=True, source_mtime_ns=after.st_mtime_ns)
 
@@ -914,7 +915,7 @@ def copy_and_hash(source: BinaryIO, destination: BinaryIO, digest: object) -> in
         size_bytes += len(chunk)
 
 
-def verify_file_hash(path: Path, reference: ObjectReference) -> None:
+def verify_file_hash(path: Path, reference: ObjectReference, *, label: str) -> None:
     digest = hashlib.sha256()
     size_bytes = 0
     with path.open("rb") as file:
@@ -922,7 +923,7 @@ def verify_file_hash(path: Path, reference: ObjectReference) -> None:
             digest.update(chunk)
             size_bytes += len(chunk)
     if size_bytes != reference.size_bytes or digest.hexdigest() != reference.sha256:
-        raise SnapshotStorageError(f"Stagingobjektet besto ikke kontroll etter kopiering: {path}")
+        raise SnapshotStorageError(f"{label} besto ikke SHA-256-kontroll: {path}")
 
 
 def validate_staging_path(repository: Path, staging: Path) -> None:

@@ -1471,8 +1471,13 @@ Implementeringsstatus 2026-07-15:
   hoveddatabasen er implementert og testet. Det krever tidligere bekreftet
   maskin, absolutt samlingssti og `collection_id`, bevarer lesbare vanlige
   filer og rå databasefiler og publiserer identiteten som ikke verifisert.
-- Full kjøreorkestrering og kobling til reell `snapshot create` gjenstår i
-  trinn 2. Kommandoen uten `--dry-run` er fortsatt eksplisitt sperret.
+- Full kjøreorkestrering og reell CLI-kjøring av `snapshot create` er
+  implementert. Repositorylåsen tas før samlingslåsen, ny initialisering skjer
+  først etter vellykket hoveddatabasekontroll, og publiserte resultater bruker
+  exitkode `0`, `3` eller `4` for henholdsvis `complete`, `degraded` og
+  `recovery`.
+- Kobling av den samme interne plan- og opprettingsfunksjonen til launcheren
+  gjenstår i trinn 2.
 - Trinn 3–5 er ikke påbegynt.
 
 ### Trinn 0 – Enighet om design

@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from bildebank.db import DB_FILENAME
 from bildebank.snapshot import (
+    REPOSITORY_LOCK_FILENAME,
     REPOSITORY_METADATA_FILENAME,
     plan_snapshot,
     snapshot_object_path,
@@ -95,7 +96,7 @@ class SnapshotCliTests(unittest.TestCase):
             self.assertEqual(unrelated.read_text(encoding="utf-8"), "ikke rør\n")
             self.assertFalse((repository / REPOSITORY_METADATA_FILENAME).exists())
 
-    def test_snapshot_without_dry_run_is_rejected_before_any_write(self) -> None:
+    def test_snapshot_create_initializes_repository_and_publishes_complete_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -105,15 +106,207 @@ class SnapshotCliTests(unittest.TestCase):
             program_database_before = program_database.read_bytes()
 
             code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "snapshot",
+                    "create",
+                    "--note",
+                    "Første snapshot",
+                    str(repository),
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Snapshot opprettet", stdout)
+            self.assertIn("Status: complete", stdout)
+            self.assertIn("Repositoryet ble initialisert", stdout)
+            self.assertEqual(stderr, "")
+            self.assertTrue((repository / REPOSITORY_METADATA_FILENAME).is_file())
+            snapshots = list((repository / "snapshots").iterdir())
+            self.assertEqual(len(snapshots), 1)
+            manifest = json.loads((snapshots[0] / "manifest.json").read_bytes())
+            self.assertEqual(manifest["status"], "complete")
+            self.assertEqual(manifest["note"], "Første snapshot")
+            self.assertEqual(manifest["collection_identity"], {"source": "database", "verified": True})
+            self.assertEqual(list((repository / "incomplete").iterdir()), [])
+            self.assertFalse((target / LOCK_FILENAME).exists())
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
+            self.assertEqual(program_database.read_bytes(), program_database_before)
+
+    def test_snapshot_create_appends_second_snapshot_without_changing_first(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            first_code, _stdout, first_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+            self.assertEqual(first_code, 0, first_stderr)
+            first_snapshot = next((repository / "snapshots").iterdir())
+            first_snapshot_before = tree_file_bytes(first_snapshot)
+
+            second_code, _stdout, second_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+
+            self.assertEqual(second_code, 0, second_stderr)
+            self.assertEqual(len(list((repository / "snapshots").iterdir())), 2)
+            self.assertEqual(tree_file_bytes(first_snapshot), first_snapshot_before)
+
+    def test_snapshot_create_returns_degraded_exit_code_for_media_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            expected = b"original"
+            observed = b"changed!"
+            self.assertEqual(len(expected), len(observed))
+            relative_path = "2026/07/familie.jpg"
+            media_path = target / relative_path
+            media_path.parent.mkdir(parents=True)
+            media_path.write_bytes(observed)
+            insert_database_file(
+                target,
+                relative_path,
+                hashlib.sha256(expected).hexdigest(),
+                len(expected),
+            )
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+
+            self.assertEqual(code, 3)
+            self.assertIn("Status: degraded", stdout)
+            self.assertIn("hash_mismatch", stderr)
+            snapshot = next((repository / "snapshots").iterdir())
+            manifest = json.loads((snapshot / "manifest.json").read_bytes())
+            self.assertEqual(manifest["status"], "degraded")
+
+    def test_snapshot_create_publishes_recovery_only_for_previously_bound_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            first_code, _stdout, first_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+            self.assertEqual(first_code, 0, first_stderr)
+            (target / DB_FILENAME).write_bytes(b"skadet hoveddatabase")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+
+            self.assertEqual(code, 4)
+            self.assertIn("Status: recovery", stdout)
+            self.assertIn("Hoveddatabasen", stderr)
+            snapshots = list((repository / "snapshots").iterdir())
+            self.assertEqual(len(snapshots), 2)
+            manifests = [json.loads((snapshot / "manifest.json").read_bytes()) for snapshot in snapshots]
+            recovery_manifest = next(manifest for manifest in manifests if manifest["status"] == "recovery")
+            self.assertEqual(recovery_manifest["status"], "recovery")
+            self.assertEqual(
+                recovery_manifest["collection_identity"],
+                {"source": "repository", "verified": False},
+            )
+
+    def test_snapshot_create_refuses_recovery_with_new_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / DB_FILENAME).write_bytes(b"skadet hoveddatabase")
+
+            code, stdout, stderr = capture_cli(
                 ["--target", str(target), "snapshot", "create", str(repository)]
             )
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
-            self.assertIn("Reell snapshot-oppretting er ikke implementert ennå", stderr)
-            self.assertFalse(repository.exists())
+            self.assertIn("Recovery krever et allerede initialisert repository", stderr)
+            self.assertTrue(repository.is_dir())
+            self.assertEqual(list(repository.iterdir()), [])
             self.assertFalse((target / LOCK_FILENAME).exists())
-            self.assertEqual(program_database.read_bytes(), program_database_before)
+
+    def test_snapshot_create_takes_both_locks_before_initializing_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            target_lock = target / LOCK_FILENAME
+            target_lock.write_text("command=import\npid=123\n", encoding="utf-8")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("låst av en annen bildebank-kommando", stderr)
+            self.assertTrue(repository.is_dir())
+            self.assertEqual(list(repository.iterdir()), [])
+            self.assertEqual(target_lock.read_text(encoding="utf-8"), "command=import\npid=123\n")
+
+    def test_snapshot_create_rejects_same_size_corrupt_existing_object(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            content = b"familiebilde"
+            relative_path = "2026/07/familie.jpg"
+            media_path = target / relative_path
+            media_path.parent.mkdir(parents=True)
+            media_path.write_bytes(content)
+            sha256 = hashlib.sha256(content).hexdigest()
+            insert_database_file(target, relative_path, sha256, len(content))
+            first_code, _stdout, first_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+            self.assertEqual(first_code, 0, first_stderr)
+            object_path = snapshot_object_path(repository, sha256, len(content))
+            corrupt_content = b"x" * len(content)
+            object_path.write_bytes(corrupt_content)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Eksisterende backupobjekt besto ikke SHA-256-kontroll", stderr)
+            self.assertEqual(object_path.read_bytes(), corrupt_content)
+            self.assertEqual(len(list((repository / "snapshots").iterdir())), 1)
+
+    def test_snapshot_create_publish_failure_keeps_staging_and_releases_locks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with patch("bildebank.snapshot_repository.os.rename", side_effect=OSError("avbrutt")):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "snapshot", "create", str(repository)]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Kunne ikke publisere snapshotet atomisk", stderr)
+            self.assertEqual(list((repository / "snapshots").iterdir()), [])
+            incomplete_runs = list((repository / "incomplete").iterdir())
+            self.assertEqual(len(incomplete_runs), 1)
+            self.assertTrue((incomplete_runs[0] / "snapshot" / "commit.json").is_file())
+            self.assertFalse((target / LOCK_FILENAME).exists())
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
 
     def test_snapshot_dry_run_compares_database_files_and_reuses_existing_object(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -58,6 +58,7 @@ from .progress import ProgressMeter
 from .program_state import known_targets, program_db_path, record_target_best_effort
 from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
 from .snapshot import SnapshotPlan, plan_snapshot
+from .snapshot_create import SnapshotCreationResult, create_snapshot
 from .target_lock import TargetLock
 from .thumbnails import ThumbnailStats, run_make_thumbnails
 from .unimport import TargetContentChange, run_unimport as execute_unimport
@@ -1834,14 +1835,19 @@ def run_backup_command(target: Path, destination: Path, *, dry_run: bool = False
 def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
     if args.snapshot_command != "create":
         raise ValueError(f"Ukjent snapshot-kommando: {args.snapshot_command}")
-    if not args.dry_run:
-        raise ValueError(
-            "Reell snapshot-oppretting er ikke implementert ennå. "
-            "Bruk --dry-run for den skrivefrie planen."
-        )
 
     config = load_config(program_repo_root(), migrate_legacy=False)
     configured_face_dir = config.face_recognition.database_dir
+    if not args.dry_run:
+        result = create_snapshot(
+            target,
+            args.repository,
+            face_config=config.face_recognition,
+            note=args.note,
+        )
+        print_snapshot_creation_result(result)
+        return result.exit_code
+
     plan = plan_snapshot(
         target,
         args.repository,
@@ -1850,6 +1856,24 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
     )
     print_snapshot_plan(plan)
     return 0
+
+
+def print_snapshot_creation_result(result: SnapshotCreationResult) -> None:
+    status_text = {
+        "complete": "fullført uten kjente avvik",
+        "degraded": "opprettet med problemer",
+        "recovery": "recovery-snapshot opprettet",
+    }[result.status]
+    print("Snapshot opprettet")
+    print(f"  Status: {result.status} ({status_text})")
+    print(f"  Snapshot-ID: {result.published.snapshot_id}")
+    print(f"  Snapshotmappe: {result.published.snapshot_dir}")
+    print(f"  Filposter: {result.published.entry_count}")
+    print(f"  Repository: {result.repository}")
+    if result.repository_initialized:
+        print("  Repositoryet ble initialisert")
+    for warning in result.build.warnings:
+        print(f"ADVARSEL: {warning}", file=sys.stderr)
 
 
 def print_snapshot_plan(plan: SnapshotPlan) -> None:
