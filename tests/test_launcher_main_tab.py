@@ -51,6 +51,7 @@ def bare_main_tab(collection_path: Path) -> MainTab:
     tab.update_checking = False
     tab.migration_required = False
     tab.migration_status_error = None
+    tab.server_port = 8765
     return tab
 
 
@@ -88,6 +89,14 @@ def test_open_server_browser_window_opens_default_run_server_url() -> None:
 
     assert server_browser_url() == "http://127.0.0.1:8765/"
     open_browser.assert_called_once_with("http://127.0.0.1:8765/", new=1)
+
+
+def test_open_server_browser_window_uses_selected_port() -> None:
+    with patch("webbrowser.open", return_value=True) as open_browser:
+        assert open_server_browser_window(9000)
+
+    assert server_browser_url(9000) == "http://127.0.0.1:9000/"
+    open_browser.assert_called_once_with("http://127.0.0.1:9000/", new=1)
 
 
 def test_update_status_refresh_starts_background_worker(tmp_path: Path) -> None:
@@ -341,6 +350,70 @@ def test_start_server_stops_when_migration_is_required(tmp_path: Path) -> None:
 
     popen.assert_not_called()
     assert actions == ["refresh", "dialog"]
+
+
+def test_start_server_uses_advanced_options(tmp_path: Path) -> None:
+    tab = bare_main_tab(tmp_path / "samling")
+    tab.server_process = None
+    tab.update_migration_status = lambda: None
+    tab._log = lambda _message: None
+
+    with patch("bildebank.launcher_main_tab.subprocess.Popen") as popen:
+        tab.start_server(port=9000, read_only=True)
+
+    assert popen.call_args.args[0][-3:] == ["--port", "9000", "--read-only"]
+    assert tab.server_port == 9000
+
+
+def test_lan_start_cancel_does_not_start_process(tmp_path: Path) -> None:
+    tab = bare_main_tab(tmp_path / "samling")
+    tab.server_process = None
+    tab.update_migration_status = lambda: None
+    tab._log = lambda _message: None
+
+    with patch("bildebank.launcher_main_tab.subprocess.Popen") as popen:
+        tab.start_server(port=8765, lan_share=True, confirm_lan_start=lambda: False)
+
+    popen.assert_not_called()
+
+
+def test_lan_start_confirmation_starts_with_lan_share_only(tmp_path: Path) -> None:
+    tab = bare_main_tab(tmp_path / "samling")
+    tab.server_process = None
+    tab.update_migration_status = lambda: None
+    tab._log = lambda _message: None
+
+    with patch("bildebank.launcher_main_tab.subprocess.Popen") as popen:
+        tab.start_server(port=8765, lan_share=True, confirm_lan_start=lambda: True)
+
+    command = popen.call_args.args[0]
+    assert command[-3:] == ["--port", "8765", "--lan-share"]
+    assert "--read-only" not in command
+
+
+def test_running_server_opens_recorded_port_without_confirmation_or_new_process(
+    tmp_path: Path,
+) -> None:
+    tab = bare_main_tab(tmp_path / "samling")
+    tab.server_process = SimpleNamespace(poll=lambda: None)
+    tab.server_port = 9000
+    tab.update_migration_status = lambda: None
+    tab._log = lambda _message: None
+    confirmations: list[str] = []
+
+    with (
+        patch("bildebank.launcher_main_tab.subprocess.Popen") as popen,
+        patch("bildebank.launcher_main_tab.open_server_browser_window") as open_browser,
+    ):
+        tab.start_server(
+            port=8766,
+            lan_share=True,
+            confirm_lan_start=lambda: confirmations.append("confirm") or True,
+        )
+
+    popen.assert_not_called()
+    open_browser.assert_called_once_with(9000)
+    assert confirmations == []
 
 
 def test_stop_server_process_terminates_running_server(tmp_path: Path) -> None:

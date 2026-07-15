@@ -6,11 +6,13 @@ from typing import Any, Callable
 
 from .launcher_status import (
     LauncherConfig,
+    is_collection_created,
     load_launcher_config,
     save_launcher_config,
 )
 from .launcher_runner import CommandRunner, progress_log_key
 from .launcher_import_tab import ImportTab
+from .launcher_advanced_start_tab import AdvancedStartTab
 from .launcher_main_tab import MainTab
 from .launcher_setup_tab import SetupTab
 from .launcher_tools_tab import ToolsTab
@@ -59,6 +61,7 @@ class LauncherApp:
         self.status_value: tk.StringVar = tk.StringVar(value="")
         self.notebook: ttk.Notebook | None = None
         self.main_tab: MainTab | None = None
+        self.advanced_start_tab: AdvancedStartTab | None = None
         self.import_tab: ImportTab | None = None
         self.tools_tab: ToolsTab | None = None
         self.setup: SetupTab | None = None
@@ -182,6 +185,19 @@ class LauncherApp:
             pady=PADY,
         )
         self.notebook.add(self.main_tab.frame, text="Bildebank")
+        self.advanced_start_tab = AdvancedStartTab(
+            tk=tk,
+            ttk=ttk,
+            notebook=self.notebook,
+            root=self.root,
+            button=self._button,
+            start_server=self.main_tab.start_server,
+            log=self._log,
+            padding=PAD,
+            padx=PADX,
+            pady=PADY,
+        )
+        self.notebook.add(self.advanced_start_tab.frame, text="Nettleser og deling")
         self.import_tab = ImportTab(
             tk=tk,
             ttk=ttk,
@@ -269,12 +285,14 @@ class LauncherApp:
         assert self.main_tab is not None
         assert self.import_tab is not None
         assert self.tools_tab is not None
+        assert self.advanced_start_tab is not None
 
         for tooltip in self.tooltips:
             tooltip.hide()
         self.tooltips = []
         self.buttons = []
         main_state = self.main_tab.refresh()
+        self.advanced_start_tab.set_available(main_state.available)
         self.buttons.extend(
             self.import_tab.refresh(available=main_state.available)
         )
@@ -315,6 +333,13 @@ class LauncherApp:
             button.configure(state=state)
         if self.main_tab is not None:
             self.main_tab.set_buttons_enabled(enabled)
+        if self.advanced_start_tab is not None and self.main_tab is not None:
+            self.advanced_start_tab.set_available(
+                enabled
+                and is_collection_created(self.collection_path)
+                and not self.main_tab.migration_required
+                and self.main_tab.migration_status_error is None
+            )
         if self.tools_tab is not None:
             self.tools_tab.update_dependency_tooltips()
         if self.setup is not None:

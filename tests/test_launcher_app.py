@@ -68,7 +68,10 @@ class FakeRoot(FakeWidget):
 
 
 def fake_tab(**kwargs: object) -> SimpleNamespace:
-    return SimpleNamespace(frame=FakeWidget(kwargs["notebook"]))
+    return SimpleNamespace(
+        frame=FakeWidget(kwargs["notebook"]),
+        start_server=lambda **_options: None,
+    )
 
 
 def test_launcher_app_builds_tabs_log_and_footer_outside_notebook(tmp_path: Path) -> None:
@@ -90,6 +93,7 @@ def test_launcher_app_builds_tabs_log_and_footer_outside_notebook(tmp_path: Path
 
     with (
         patch("bildebank.launcher_app.MainTab", side_effect=fake_tab),
+        patch("bildebank.launcher_app.AdvancedStartTab", side_effect=fake_tab),
         patch("bildebank.launcher_app.ImportTab", side_effect=fake_tab),
         patch("bildebank.launcher_app.ToolsTab", side_effect=fake_tab),
         patch("bildebank.launcher_app.SetupTab", side_effect=fake_tab),
@@ -98,6 +102,7 @@ def test_launcher_app_builds_tabs_log_and_footer_outside_notebook(tmp_path: Path
 
     assert [text for _frame, text in app.notebook.tabs] == [
         "Bildebank",
+        "Nettleser og deling",
         "Import av bilder",
         "Verktøy",
         "Oppsett",
@@ -152,6 +157,24 @@ def test_launcher_app_starts_tab_status_refreshes(tmp_path: Path) -> None:
         "migration-dialog",
         "installer-info",
     ]
+
+
+def test_refresh_state_applies_main_availability_to_advanced_start() -> None:
+    app = LauncherApp.__new__(LauncherApp)
+    availability: list[bool] = []
+    app.main_tab = SimpleNamespace(
+        refresh=lambda: SimpleNamespace(available=False, buttons=[])
+    )
+    app.advanced_start_tab = SimpleNamespace(set_available=availability.append)
+    app.import_tab = SimpleNamespace(refresh=lambda *, available: [])
+    app.tools_tab = SimpleNamespace(refresh=lambda *, available: [])
+    app.tooltips = []
+    app.busy = False
+    app._set_buttons_enabled = lambda _enabled: None
+
+    app._refresh_state()
+
+    assert availability == [False]
 
 
 def test_post_to_tk_ignores_callbacks_after_close_started() -> None:

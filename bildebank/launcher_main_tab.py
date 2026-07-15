@@ -20,6 +20,7 @@ from .launcher_commands import (
     server_browser_url,
     update_command,
 )
+from .server_runtime import DEFAULT_PORT
 from .launcher_status import (
     LauncherUpdateStatus,
     check_launcher_update_status,
@@ -29,8 +30,8 @@ from .launcher_status import (
 from .launcher_widgets import Tooltip
 
 
-def open_server_browser_window() -> bool:
-    return bool(webbrowser.open(server_browser_url(), new=1))
+def open_server_browser_window(port: int = DEFAULT_PORT) -> bool:
+    return bool(webbrowser.open(server_browser_url(port), new=1))
 
 
 class ButtonFactory(Protocol):
@@ -121,6 +122,7 @@ class MainTab:
         self.frame.columnconfigure(0, weight=1)
         self.collection_value = tk.StringVar(value="Bildesamling: " + str(self.collection_path))
         self.server_process: subprocess.Popen[Any] | None = None
+        self.server_port = DEFAULT_PORT
         self.migration_required = False
         self.migration_status_error: str | None = None
         self.migration_dialog_shown = False
@@ -576,6 +578,16 @@ class MainTab:
         self._destroy_root()
 
     def _start_server(self) -> None:
+        self.start_server()
+
+    def start_server(
+        self,
+        *,
+        port: int = DEFAULT_PORT,
+        read_only: bool = False,
+        lan_share: bool = False,
+        confirm_lan_start: Callable[[], bool] | None = None,
+    ) -> None:
         from tkinter import messagebox
 
         self.update_migration_status()
@@ -591,16 +603,30 @@ class MainTab:
         if self.server_process is not None:
             if self.server_process.poll() is None:
                 self._log("Bildebank-server kjører allerede. Åpner nytt vindu.")
-                if not open_server_browser_window():
-                    self._log(f"Kunne ikke åpne nettleser automatisk. Åpne {server_browser_url()} manuelt.")
+                if not open_server_browser_window(self.server_port):
+                    self._log(
+                        "Kunne ikke åpne nettleser automatisk. "
+                        f"Åpne {server_browser_url(self.server_port)} manuelt."
+                    )
                 return
             self.server_process = None
 
+        if lan_share and confirm_lan_start is not None and not confirm_lan_start():
+            return
+
         self._log("Starter Bildebank ...")
         try:
-            self.server_process = subprocess.Popen(run_server_command(self.collection_path))
+            self.server_process = subprocess.Popen(
+                run_server_command(
+                    self.collection_path,
+                    port=None if port == DEFAULT_PORT and not read_only and not lan_share else port,
+                    read_only=read_only,
+                    lan_share=lan_share,
+                )
+            )
         except OSError as exc:
             messagebox.showerror("Kunne ikke starte Bildebank", "Bildebank-serveren kunne ikke startes.")
             self._log(f"Kunne ikke starte Bildebank: {exc}")
             return
+        self.server_port = port
         self._log("Bildebank-serveren starter. Nettleseren åpnes av Bildebank når serveren er klar.")

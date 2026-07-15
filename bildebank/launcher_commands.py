@@ -19,12 +19,25 @@ def import_command(collection_path: Path, source_folder: Path, import_name: str)
     return bildebank_command("--target", collection_path, "import", "--name", import_name, source_folder)
 
 
-def run_server_command(collection_path: Path) -> list[str]:
-    return bildebank_command("--target", collection_path, "run-server")
+def run_server_command(
+    collection_path: Path,
+    *,
+    port: int | None = None,
+    read_only: bool = False,
+    lan_share: bool = False,
+) -> list[str]:
+    command = bildebank_command("--target", collection_path, "run-server")
+    if port is not None:
+        command.extend(["--port", str(port)])
+    if read_only:
+        command.append("--read-only")
+    if lan_share:
+        command.append("--lan-share")
+    return command
 
 
-def server_browser_url() -> str:
-    return f"http://{DEFAULT_HOST}:{DEFAULT_PORT}/"
+def server_browser_url(port: int = DEFAULT_PORT) -> str:
+    return f"http://{DEFAULT_HOST}:{port}/"
 
 
 def launcher_command() -> list[str]:

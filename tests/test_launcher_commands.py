@@ -52,6 +52,27 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
     assert os.path.basename(import_args[0]).startswith("python")
 
     assert run_server_command(collection)[-3:] == ["--target", str(collection), "run-server"]
+    assert run_server_command(collection, port=8766)[-5:] == [
+        "--target",
+        str(collection),
+        "run-server",
+        "--port",
+        "8766",
+    ]
+    assert run_server_command(collection, port=8765, read_only=True)[-5:] == [
+        str(collection),
+        "run-server",
+        "--port",
+        "8765",
+        "--read-only",
+    ]
+    assert run_server_command(collection, port=9000, lan_share=True)[-5:] == [
+        str(collection),
+        "run-server",
+        "--port",
+        "9000",
+        "--lan-share",
+    ]
     assert geo_scan_command(collection)[-3:] == ["--target", str(collection), "geo-scan"]
     assert doctor_command(collection)[-3:] == ["--target", str(collection), "doctor"]
     assert deep_doctor_command(collection)[-4:] == ["--target", str(collection), "doctor", "--deep"]

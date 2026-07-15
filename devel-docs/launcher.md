@@ -1,6 +1,6 @@
 # Launcher-arkitektur
 
-Launcheren er delt i et tynt offentlig inngangspunkt, et appskall, fire faner
+Launcheren er delt i et tynt offentlig inngangspunkt, et appskall, fem faner
 og fire fellesmoduler. Oppdelingen skal gjøre det mulig å endre og teste én
 del uten å måtte kjenne hele Tk-applikasjonen.
 
@@ -11,6 +11,7 @@ del uten å måtte kjenne hele Tk-applikasjonen.
 | `launcher.py` | Stabilt offentlig `main()`-inngangspunkt. |
 | `launcher_app.py` | Rotvindu, notebook, felles logg, busy-status og koordinering mellom fanene. |
 | `launcher_main_tab.py` | Valg og oppretting av samling, server, oppdatering, backup og migrering. |
+| `launcher_advanced_start_tab.py` | Avansert servermodus og portvalg. Bruker serverprosessen som eies av hovedfanen. |
 | `launcher_import_tab.py` | Import, rescan, check-source og unimport. |
 | `launcher_tools_tab.py` | Scanner, statiske browsere, doctor, vacuum, filslettingsopprydding og eksport. |
 | `launcher_setup_tab.py` | Status og installasjon for InsightFace, OpenCLIP og modellene deres. |
@@ -29,7 +30,9 @@ Tk-operasjoner skal utføres på Tk-tråden. Arbeid som kan blokkere legges i en
 bakgrunnstråd, og resultatet leveres tilbake gjennom callbacken `post_to_ui`.
 `CommandRunner` eier subprocessen for én launcher-kommando om gangen, mens
 serverprosessen eies av hovedfanen fordi den kan leve videre etter at knappen
-som startet den er ferdig.
+som startet den er ferdig. Både hovedfanen og **Nettleser og deling** bruker den
+samme startmekanismen. En kjørende servers port lagres hos hovedfanen, slik at
+neste klikk åpner riktig lokal adresse uten å starte en konkurrerende prosess.
 
 ## Tester
 
