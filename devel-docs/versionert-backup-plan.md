@@ -1460,9 +1460,14 @@ Implementeringsstatus 2026-07-15:
   Deterministisk, strømmet `files.jsonl`, `manifest.json`, `commit.json`,
   kontroll av objektreferanser og atomisk append-only-publisering er også
   implementert og testet.
-- Bygging av snapshotposter fra den virkelige samlingen, håndtering av alle
-  fil- og databaseavvik og kobling til reell `snapshot create` gjenstår i
-  trinn 2. Kommandoen uten `--dry-run` er fortsatt eksplisitt sperret.
+- Normal samlingsbygging er implementert for databaseførte, slettede og
+  ukjente filer, inkludert observerte hash-/størrelsesavvik, manglende filer,
+  kontrollert nytt forsøk og databasekatalog med hoveddatabase, OpenCLIP,
+  face-modeller og andre SQLite-databaser.
+- Recovery ved feil i hoveddatabasen, `raw_recovery` ved feil i en
+  tilleggsdatabase, full kjøreorkestrering og kobling til reell
+  `snapshot create` gjenstår i trinn 2. Kommandoen uten `--dry-run` er fortsatt
+  eksplisitt sperret.
 - Trinn 3–5 er ikke påbegynt.
 
 ### Trinn 0 – Enighet om design

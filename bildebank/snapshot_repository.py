@@ -58,6 +58,18 @@ class SourceDatabaseError(RuntimeError):
     pass
 
 
+class SourceFileError(SnapshotStorageError):
+    pass
+
+
+class SourceFileChangedError(SourceFileError):
+    pass
+
+
+class SourceFileUnreadableError(SourceFileError):
+    pass
+
+
 @dataclass(frozen=True)
 class ObjectReference:
     sha256: str
@@ -297,22 +309,28 @@ def store_verified_file(repository: Path, staging: Path, source: Path) -> Stored
     candidate_directory.mkdir(exist_ok=True)
     candidate = candidate_directory / f"{uuid.uuid4()}.tmp"
 
-    before = source.lstat()
+    try:
+        before = source.lstat()
+    except OSError as exc:
+        raise SourceFileUnreadableError(f"Kunne ikke lese objektkilden: {source}: {exc}") from exc
     if not stat.S_ISREG(before.st_mode) or source.is_symlink():
-        raise SnapshotStorageError(f"Objektkilden er ikke en vanlig fil uten lenke: {source}")
+        raise SourceFileUnreadableError(f"Objektkilden er ikke en vanlig fil uten lenke: {source}")
     source_fd = open_source_without_following_links(source)
     digest = hashlib.sha256()
     size_bytes = 0
     try:
         opened = os.fstat(source_fd)
         if not stat.S_ISREG(opened.st_mode) or not same_file_identity(before, opened):
-            raise SnapshotStorageError(f"Objektkilden ble byttet før kopiering: {source}")
+            raise SourceFileChangedError(f"Objektkilden ble byttet før kopiering: {source}")
         with os.fdopen(source_fd, "rb", closefd=True) as source_file, candidate.open("xb") as target_file:
             source_fd = -1
             size_bytes = copy_and_hash(source_file, target_file, digest)
             target_file.flush()
             os.fsync(target_file.fileno())
-        after = source.lstat()
+        try:
+            after = source.lstat()
+        except OSError as exc:
+            raise SourceFileChangedError(f"Objektkilden forsvant under kopiering: {source}: {exc}") from exc
     except Exception:
         if source_fd >= 0:
             os.close(source_fd)
@@ -324,7 +342,7 @@ def store_verified_file(repository: Path, staging: Path, source: Path) -> Stored
 
     if not stable_source(before, after, size_bytes):
         candidate.unlink(missing_ok=True)
-        raise SnapshotStorageError(f"Filen endret seg under snapshotkopiering: {source}")
+        raise SourceFileChangedError(f"Filen endret seg under snapshotkopiering: {source}")
 
     reference = ObjectReference(sha256=digest.hexdigest(), size_bytes=size_bytes)
     verify_file_hash(candidate, reference)
@@ -882,7 +900,7 @@ def open_source_without_following_links(path: Path) -> int:
     try:
         return os.open(path, flags)
     except OSError as exc:
-        raise SnapshotStorageError(f"Kunne ikke åpne objektkilden: {path}: {exc}") from exc
+        raise SourceFileUnreadableError(f"Kunne ikke åpne objektkilden: {path}: {exc}") from exc
 
 
 def copy_and_hash(source: BinaryIO, destination: BinaryIO, digest: object) -> int:
