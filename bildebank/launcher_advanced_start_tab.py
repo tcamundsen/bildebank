@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol
 
+from .cli_server import lan_share_urls
 from .server_runtime import DEFAULT_PORT
 
 NORMAL_MODE = "normal"
@@ -52,6 +53,7 @@ class AdvancedStartTab:
         self._log = log
         self.mode = tk.StringVar(value=NORMAL_MODE)
         self.port = tk.StringVar(value=str(DEFAULT_PORT))
+        self.lan_addresses = tk.StringVar(value="")
 
         self.frame = ttk.Frame(notebook, padding=padding)
         self.frame.columnconfigure(0, weight=1)
@@ -77,15 +79,55 @@ class AdvancedStartTab:
         ttk.Entry(port_frame, textvariable=self.port, width=8).grid(
             row=0, column=1, sticky="w", padx=(padx, 0)
         )
+        self.lan_address_frame = ttk.Frame(self.frame)
+        self.lan_address_frame.grid(row=5, column=0, sticky="ew", padx=padx, pady=pady)
+        ttk.Label(
+            self.lan_address_frame,
+            text="Adresse som andre skal åpne:",
+        ).grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            self.lan_address_frame,
+            textvariable=self.lan_addresses,
+            justify="left",
+            wraplength=640,
+        ).grid(row=1, column=0, sticky="w")
         self.start_button = self._button(
             self.frame,
             text="Start Bildebank i nettleser",
             command=self._on_start,
         )
-        self.start_button.grid(row=5, column=0, sticky="w", padx=padx, pady=(padding, pady))
+        self.start_button.grid(row=6, column=0, sticky="w", padx=padx, pady=(padding, pady))
+
+        self.mode.trace_add("write", self._on_lan_settings_changed)
+        self.port.trace_add("write", self._on_lan_settings_changed)
+        self._update_lan_addresses()
 
     def set_available(self, available: bool) -> None:
         self.start_button.configure(state="normal" if available else "disabled")
+
+    def _on_lan_settings_changed(self, *_args: object) -> None:
+        self._update_lan_addresses()
+
+    def _update_lan_addresses(self) -> None:
+        if self.mode.get() != LAN_SHARE_MODE:
+            self.lan_address_frame.grid_remove()
+            return
+
+        self.lan_address_frame.grid()
+        try:
+            port = parse_server_port(self.port.get())
+        except ValueError:
+            self.lan_addresses.set("Angi en gyldig port fra 1 til 65535.")
+            return
+
+        urls = lan_share_urls(port)
+        if urls:
+            self.lan_addresses.set("\n".join(urls))
+            return
+        self.lan_addresses.set(
+            "Fant ikke lokal LAN-adresse automatisk. Finn IPv4-adressen med "
+            f"ipconfig og bruk http://<IP-adresse>:{port}/."
+        )
 
     def _on_start(self) -> None:
         from tkinter import messagebox
@@ -97,6 +139,8 @@ class AdvancedStartTab:
             return
 
         mode = self.mode.get()
+        if mode == LAN_SHARE_MODE:
+            self._update_lan_addresses()
         self._start_server(
             port=port,
             read_only=mode == READ_ONLY_MODE,
