@@ -59,8 +59,13 @@ dagens samling.
   beholdes permanent, kunne gjenbrukes og aldri slettes av en cleanup- eller
   prune-kommando.
 - Hvert snapshot skal ha `manifest.json` for overordnet metadata og
-  `files.jsonl` med én filpost per linje. Begge skal være UTF-8-tekst og være
-  tilstrekkelige for kontroll og restore uten en repositorydatabase.
+  `files.jsonl` med én filpost per linje, samt en liten `commit.json` som
+  kontrollerer begge filene. De skal være tilstrekkelige for kontroll og
+  restore uten en repositorydatabase.
+- Repositorymetadata og hvert snapshotmanifest skal ha `format_version: 1`.
+  Publiserte snapshots skal aldri migreres eller skrives om. En skriver skal
+  avvise et repository med en formatversjon eller påkrevd egenskap den ikke
+  forstår.
 - Repositoryet skal være teknisk manuelt gjenopprettbart, men trenger ikke
   kunne blaes som en vanlig bildemappe. Råobjekter og tekstmanifest skal være
   nok til å finne, kopiere og gi en fil tilbake riktig navn.
@@ -78,6 +83,10 @@ dagens samling.
 - Bekreftet feil i hoveddatabasen skal gi et publisert `recovery`-snapshot som
   bevarer alt lesbart innhold og rå databasefiler, men som ikke presenteres som
   en normalt gjenopprettbar bildesamling.
+- Hvis `collection_id` ikke kan leses fra en skadet hoveddatabase, skal
+  `recovery` bare tillates mot et allerede initialisert repository på sist
+  bekreftede maskin og samlingssti. Et nytt repository skal ikke opprettes med
+  en ukjent eller konstruert samlings-ID.
 - Bekreftet feil i en tilleggsdatabase, som OpenCLIP- eller ansiktsdatabase,
   skal gi `degraded`, ikke `recovery`. Rå databasefiler skal bevares for
   undersøkelse mens den gyldige hoveddatabasen sikres normalt.
@@ -129,9 +138,14 @@ dagens samling.
 - Hel restore kan opprette manglende målmappe etter bekreftelse når
   foreldremappen finnes. Tom målmappe kan brukes; ikke-tom, innkapslet eller
   repositorybasert målmappe skal avvises urørt.
+- Hel restore skal bygges og kontrolleres i unike søsken-stagingmapper på
+  samme filsystem. Eventuell recovery-mappe publiseres først og den ferdige
+  samlingsmappen sist. Avbrutte stagingmapper med mediefiler skal aldri slettes
+  automatisk.
 - Enkeltfil-restore skal eksportere under filens opprinnelige relative sti,
   aldri overskrive eksisterende fil og avbryte ved kollisjon. Observerte
-  avviksvarianter skal få tydelig hash-suffiks i filnavnet.
+  avviksvarianter skal få tydelig hash-suffiks i filnavnet. Hvis både forventet
+  og observert variant finnes, skal varianten velges eksplisitt.
 - Bildebank skal ikke ha innebygd tidsplanlegging i første versjon. Snapshot
   startes manuelt fra CLI eller launcher; eventuell automatisering håndteres
   utenfor Bildebank.
@@ -143,6 +157,9 @@ dagens samling.
   få konkret avviksstatus og snapshotet publiseres som `degraded` uten at en
   ustabil kopi presenteres som gyldig objekt.
 - Symbolske lenker, junctions og andre reparse points skal oppdages og avvises.
+- Alle logiske snapshotstier skal følge en portabel, Windows-sikker
+  stikontrakt. Hele restoreplanen skal valideres for traversal, ugyldige navn og
+  målfilsystemkollisjoner før én eneste utdatafil skrives.
 
 ## Ikke mål i første versjon
 
@@ -216,6 +233,7 @@ før første formatversjon fryses:
 backup-repository/
   .bildebank-backup-repository.json
   .bildebank-repository.lock                 # bare mens en kommando kjører
+  README.txt
   objects/
     sha256/
       ab/
@@ -225,6 +243,7 @@ backup-repository/
     2026-07-15T183045Z-<snapshot-id>/
       manifest.json
       files.jsonl
+      commit.json
   incomplete/
     <run-id>/
   tmp/
@@ -264,6 +283,9 @@ Dry-run skal være en rask plan, ikke en full integritetskontroll. Den skal:
 - gjennomføre read-only kontroll for symbolske lenker og reparse points
 - kontrollere at hoveddatabasen kan åpnes og leses
 - kontrollere filtilstedeværelse og størrelse mot databasen
+- bygge foreløpig databasekatalog, kontrollere eventuell absolutt
+  face-databasekatalog og validere logiske stier og kollisjoner uten å åpne
+  stagingkopier
 - bruke databaseførte SHA-256-verdier og eksisterende objektstørrelser til å
   anslå hvilke objekter og hvor mange byte som må kopieres
 - anslå nødvendig ledig plass
@@ -284,42 +306,98 @@ Repositorymetadata skal minst ha:
   identitet
 - sist bekreftede maskinnavn og absolutte samlingssti
 - `format_version`
+- `required_features`, som er en tom liste i første versjon
 - `created_by` og Bildebank-versjon
 - opprettelsestidspunkt
 
+`format_version` i repositorymetadata skal være heltallet `1` i første
+versjon. En skriver skal bare legge til snapshots når den støtter den eksakte
+repositoryversjonen og alle egenskaper som repositoryet erklærer som
+påkrevd. Ukjente valgfrie JSON-felter skal ignoreres ved lesing og bevares når
+den muterbare metadatafilen skrives på nytt. En egenskap som endrer nødvendig
+lese- eller skriveatferd, krever en ny formatversjon eller en uttrykkelig
+påkrevd egenskap; den kan ikke innføres som et felt eldre skrivere trygt
+ignorerer.
+
+Publiserte snapshotmapper skal være permanent skrivebeskyttet fra Bildebanks
+side og aldri migreres. En fremtidig programversjon må lese gamle støttede
+snapshotversjoner som de er. Bare den muterbare repositorymetadatafilen kan få
+en senere, eksplisitt migrering. En slik migrering skal bruke tempfil, flush og
+atomisk replace og skal aldri endre `repository_id`, `collection_id` eller
+publiserte snapshots. Hvis oppdateringen av sist bekreftede maskin eller sti
+avbrytes, skal enten hele gammel eller hele ny metadatafil være gjeldende; en
+ufullstendig tempfil skal ikke tas i bruk automatisk.
+
 Repositoryroten skal også ha en vanlig UTF-8-kodet `README.txt` som forklarer
 formatversjonen, katalogstrukturen, at objektene inneholder rå ukomprimerte
-byte, og hvordan `files.jsonl` kobler objekter til opprinnelige relative stier.
-Instruksjonen skal være tilstrekkelig for teknisk manuell redning uten
-Bildebank, men trenger ikke gjøre repositoryet direkte bla-bart som en vanlig
-bildemappe.
+byte, hvordan `files.jsonl` kobler objekter til opprinnelige relative stier,
+hvordan `entry_id` og recovery-navn brukes, hvordan databasekatalogen brukes,
+og hvordan `commit.json` kontrollerer manifestet og fillisten. Instruksjonen
+skal være tilstrekkelig for teknisk
+manuell redning uten Bildebank, men trenger ikke gjøre repositoryet direkte
+bla-bart som en vanlig bildemappe.
 
 `manifest.json` skal minst ha:
 
+- `format_version`, som er `1` i første snapshotformat
+- `required_features`, som er en tom liste i første versjon
 - `snapshot_id`, `collection_id` og repository-ID
+- `collection_id_source` og `collection_id_verified`, slik at recovery ikke
+  skjuler at identiteten eventuelt bare kom fra repositorymetadata
 - valgfri brukerkommentar
 - start- og sluttidspunkt
 - Bildebank-versjon og schema-versjoner
-- hvilke filer som er laget med SQLite backup-API
+- en databasekatalog med stabil rolle, logisk original- og restore-sti,
+  schema- eller modellversjon når den finnes, nødvendig/regenererbar-status,
+  objekt og om objektet er laget med SQLite backup-API
 - antall filer og byte, samt SHA-256 og størrelse for `files.jsonl`
 - samlet snapshotstatus: `complete`, `degraded` eller `recovery`
 - eksplisitte eksklusjoner og eventuelle advarsler
 
-`files.jsonl` skal være UTF-8 med én selvstendig JSON-post per linje. Hver post
-skal minst inneholde relativ sti, objekthash, størrelse, filtype og
-integritetsstatus, samt opprinnelig filendringstid som `mtime_ns`. Poster med
-avvik skal i tillegg ha forventede og observerte verdier som beskrevet under
-integritetskontroll. Formatet skal kunne skrives og leses fortløpende uten at
-hele fillisten må ligge i minnet.
+Når hoveddatabasen består integritetskontrollen og ID-en leses som en gyldig
+UUID, skal manifestet ha `collection_id_source: "database"` og
+`collection_id_verified: true`. Hvis hoveddatabasen er korrupt, men en
+syntaktisk gyldig ID fortsatt kan leses, brukes
+`collection_id_source: "database"` og `collection_id_verified: false`. Feil
+bare i en tilleggsdatabase gjør ikke identiteten uverifisert.
 
-En ferdig snapshotmappe med `manifest.json` og den hashkontrollerte
-`files.jsonl` skal publiseres atomisk som siste steg. Status kan være
+`files.jsonl` skal være UTF-8 med én selvstendig JSON-post per linje. En normal
+post skal minst inneholde en unik, uforanderlig `entry_id`, portabel relativ
+`path`, filtype og integritetsstatus. Når observerte byte finnes, skal posten
+også ha objekthash, størrelse og opprinnelig filendringstid som `mtime_ns`.
+Poster med avvik skal ha forventede og observerte verdier som beskrevet under
+integritetskontroll; manglende eller uleselige filer har ingen observert
+objektreferanse. En
+`recovery_only`-post skal ha `entry_id`, `path: null`, opprinnelig sti bare som
+visningstekst og et programgenerert, portabelt recovery-navn. `entry_id` skal
+genereres av Bildebank, være unik innen snapshotet og aldri avledes direkte fra
+en utrygg sti. Manglende eller duplisert `entry_id` gjør snapshotmanifestet
+ugyldig. Formatet skal kunne skrives og leses fortløpende uten at hele fillisten
+må ligge i minnet.
+
+`files.jsonl` arver formatreglene fra `manifest.json`; første versjon skal ikke
+ha eget versjonsnummer per filpost. Råobjektene er de opprinnelige,
+ukomprimerte byte og trenger heller ikke en separat objektkodingsversjon i
+første format.
+
+`commit.json` skal være den siste filen som lages i stagingmappen. Den skal
+minst inneholde snapshot-ID, formatversjon, størrelse og SHA-256 for både
+`manifest.json` og `files.jsonl`. Den skal selv være deterministisk UTF-8-JSON.
+Et snapshot er bare publisert når snapshotmappen har en gyldig `commit.json`
+som kontrollerer begge filene. Dette oppdager tilfeldig skade i selve
+manifestet, men beskytter ikke mot en angriper som kan endre både innhold og
+kontrollsummer.
+
+En ferdig snapshotmappe med `manifest.json`, `files.jsonl` og `commit.json`
+skal publiseres atomisk som siste steg. Status kan være
 `complete`, `degraded` eller `recovery`. `complete` og `degraded` er normalt
-gjenopprettbare snapshots; `degraded` betyr at minst én konkret filpost har et
-integritetsavvik. `recovery` bevarer tilgjengelig innhold etter alvorlig feil i
-hoveddatabasen, men er ikke en normalt gjenopprettbar bildesamling. En avbrutt
-kjøring uten ferdig publisert snapshotmappe er ikke et publisert snapshot. En
-separat, overskrivbar statusfil skal ikke være nødvendig for å avgjøre dette.
+gjenopprettbare snapshots; `degraded` betyr at minst én filpost eller
+tilleggsdatabase har et integritetsavvik eller bare kan bevares som
+redningsmateriale. `recovery` bevarer tilgjengelig innhold etter alvorlig feil
+i hoveddatabasen, men er ikke en normalt gjenopprettbar bildesamling. En
+avbrutt kjøring uten ferdig publisert snapshotmappe er ikke et publisert
+snapshot. En separat, overskrivbar statusfil skal ikke være nødvendig for å
+avgjøre dette.
 
 Kommandoresultatet skal skille mellom:
 
@@ -332,9 +410,12 @@ Kommandoresultatet skal skille mellom:
 - `failed`: Ingen snapshot er publisert og kommandoen returnerer vanlig
   feilstatus.
 
-Eksakte tallverdier fastsettes sammen med CLI-kontrakten. Launcheren skal
-tolke resultatene og vise henholdsvis fullført, opprettet med problemer,
-recovery-snapshot opprettet eller feilet. Den skal ikke presentere et publisert
+CLI-kontrakten skal bruke exitkode `0` for publisert `complete`, `1` for
+`failed` uten publisert snapshot, `2` for syntaks-/argumentfeil, `3` for
+publisert `degraded` og `4` for publisert `recovery`. Launcheren skal bruke det
+samme interne resultatobjektet, ikke tolke tekst eller starte CLI-en som
+underprosess. Den skal vise henholdsvis fullført, opprettet med problemer,
+recovery-snapshot opprettet eller feilet, og aldri presentere et publisert
 `degraded` eller `recovery` snapshot som om ingen data ble sikret.
 
 En SQLite-indeks eller et globalt repositoryregister kan brukes som
@@ -394,6 +475,43 @@ Kopiering skal gå til en unik midlertidig fil på samme filsystem. Etter
 verifisering får objektet endelig navn med en atomisk rename. Implementasjonen
 skal ikke være avhengig av hardlinks, reflinks eller filsystem-snapshots.
 
+Atomisk rename er ikke alene en garanti for at nylig skrevne data overlever
+strømbrudd. Før et objekt, en metadatafil eller en snapshotmappe publiseres,
+skal alle filhåndtak lukkes, filinnhold flushes med plattformens sterkeste
+praktiske mekanisme, og foreldrekatalogen flushes der operativsystemet støtter
+det. Staging og endelig plass skal alltid ligge på samme filsystem. Windows og
+flyttbare medier kan fortsatt ha skrivecache utenfor programmets kontroll;
+dokumentasjonen skal ikke love sterkere varighet enn operativsystemet og
+mediet faktisk gir.
+
+### Logiske stier i snapshotformatet
+
+En normal `path` i `files.jsonl` skal være en relativ, portabel UTF-8-sti med
+`/` som eneste separator. Den skal ikke være tom eller absolutt, inneholde
+tomme komponenter, `.` eller `..`, bakstrek, kolon, kontrolltegn eller tegnene
+`<`, `>`, `"`, `|`, `?` og `*`. Ingen komponent kan ende med punktum eller
+mellomrom eller være et Windows-reservert navn som `CON`, `PRN`, `AUX`, `NUL`,
+`COM1`–`COM9` eller `LPT1`–`LPT9`, heller ikke med filendelse. UNC-stier,
+drive-prefiks og Windows device-stier er dermed heller ikke gyldige.
+
+Under snapshotoppretting skal alle normale stier få en kanonisk nøkkel med
+Windows-regler for separatorer og store/små bokstaver. To filer som kolliderer
+på denne nøkkelen, kan ikke begge få en normal restore-sti. Hvis inventaret på
+et annet filsystem faktisk inneholder en fil med ikke-portabel sti eller en
+slik kollisjon, skal byte sikres som et tydelig `recovery_only`-objekt når
+filen kan leses. Posten skal ha opprinnelig sti som visningstekst, `path: null`
+og et programgenerert, portabelt recovery-navn. Snapshotet blir `degraded`.
+En ugyldig databaseført sti skal aldri følges utenfor samlingen; den får avvik
+uten observert objekt hvis ingen trygg inventarfil kan knyttes til den.
+
+Ved restore skal alle normale `path`-verdier valideres på nytt; manifestet kan
+være skadet eller manipulert. Før skriving skal hele settet med stier for
+samlingsmappe, eksportmappe og eventuell recovery-mappe konverteres til
+kanoniske nøkler etter reglene til det faktiske målfilsystemet. Traversal,
+ugyldig komponent, duplikat eller kollisjon skal avbryte før første utdatafil
+skrives. `recovery_only`-poster skal aldri bruke visningsteksten som målsti,
+bare det programgenererte recovery-navnet.
+
 ## Hva et snapshot skal inneholde
 
 Snapshotet skal inventere hele samlingsmappen, ikke bare radene i `files`. Det
@@ -407,6 +525,8 @@ Snapshotet skal inkludere:
 - `.bilder.sqlite3`
 - andre Bildebank-databaser som ligger i samlingen, blant annet databaser for
   søk og ansiktsmodeller
+- kontrollerte ansiktsdatabaser i konfigurert absolutt `database_dir`, lagret
+  med trygg restore-sti inne i den gjenopprettede samlingen
 - nødvendige konfigurasjons- og metadatafiler i samlingen
 - andre vanlige filer med mindre de er eksplisitt klassifisert som
   regenererbare eller runtime-filer
@@ -414,6 +534,11 @@ Snapshotet skal inkludere:
 Kjente runtime-filer som target-lås og aktiv logg skal ikke tas med. Det må
 lages én eksplisitt og testet liste over eksklusjoner. Ukjente filer skal som
 hovedregel tas med og rapporteres, ikke ignoreres.
+
+Databasefiler og SQLite-sidefiler som er klassifisert av databasekatalogen,
+skal heller ikke kopieres en gang til av det vanlige filinventaret. Den
+konsistente SQLite-kopien er normalvarianten; rå database- og sidefiler brukes
+bare som særskilt redningsmateriale når databasekopien feiler.
 
 Genererte HTML-filer og thumbnails skal ikke tas med. De er regenererbare og
 skal stå på den eksplisitte og testede eksklusjonslisten. Backupen skal ikke
@@ -489,7 +614,7 @@ oversikt over alle avvik og en eksplisitt måte å hente ut observerte og
 tidligere forventede varianter til en mappe utenfor aktiv samling.
 
 Verifiserte objekter som blir liggende uten referanse fordi en kjøring avbrytes
-før manifestet publiseres, skal beholdes permanent. En senere kjøring kan
+før snapshotmappen publiseres, skal beholdes permanent. En senere kjøring kan
 gjenbruke dem etter kontroll. `snapshot check` skal rapportere antall og samlet
 størrelse, men Bildebank skal ikke tilby cleanup eller prune som sletter dem.
 
@@ -509,13 +634,44 @@ av samlingen fortsatt blir sikret.
 ## Konsistent snapshot av databaser og filer
 
 Reell snapshot-oppretting skal holde samlingens `TargetLock` fra før første
-databaseoppslag og filinventar til snapshotmanifestet er publisert eller
+databaseoppslag og filinventar til snapshotmappen er publisert eller
 kjøringen har feilet. Det viderefører sikkerhetsmodellen til dagens backup og
 hindrer andre Bildebank-kommandoer i å endre samlingen underveis.
 
+Før kopiering skal Bildebank bygge én databasekatalog med disse rollene:
+
+- `main` for `.bilder.sqlite3`; denne er nødvendig for normal hel restore
+- `openclip` for `.bilder-openclip.sqlite3` når den finnes; innholdet er
+  regenererbart, men skal likevel tas med
+- `face:<model_name>` for hver kontrollert modellfil i den konfigurerte
+  face-databasemappen; personer, bekreftelser og andre manuelle data gjør disse
+  databasene ikke-regenererbare
+- `auxiliary:<relative-path>` for andre SQLite-databaser som oppdages i
+  samlingsmappen; ukjent rolle skal vises som en advarsel
+
+Hver katalogpost skal ha stabil rolle, fysisk kildesti, portabel logisk
+restore-sti, schema-versjon eller modellnavn når det finnes,
+nødvendig/regenererbar-status og forventet restore-policy. Den fysiske
+kildestien skal aldri brukes direkte som restore-mål.
+
+Hvis `face_recognition.database_dir` er relativ, skal alle kontrollerte
+modellfiler under den katalogen gjenopprettes til samme relative katalog. Hvis
+den er absolutt, skal første versjon fortsatt sikre alle kontrollerte
+modellfiler med SQLite backup-API, men gi dem restore-stier under
+`.bildebank-faces/` i den gjenopprettede samlingen. Restore skal aldri skrive
+til den gamle absolutte stien eller endre brukerens konfigurasjon automatisk.
+Rapporten skal forklare at en fortsatt absolutt `database_dir` må vurderes og
+eventuelt endres før face-funksjonene tas i bruk. En absolutt databasekatalog
+skal være en vanlig lokal katalog uten lenker eller reparse points. Den og
+repositoryet skal heller ikke ligge i hverandre. Hvis en av disse kontrollene
+feiler, skal snapshotet avbryte før repositorydata skrives.
+
 SQLite-databaser skal ikke kopieres som vanlige åpne filer. Det skal opprettes
 en konsistent kopi gjennom SQLite backup-API til et stagingområde. Kopien skal
-integritetskontrolleres og deretter lagres som et vanlig backupobjekt.
+integritetskontrolleres og deretter lagres som et vanlig backupobjekt med den
+logiske restore-stien fra databasekatalogen. Den aktive databasefilen og dens
+`-wal`, `-shm` eller journalfil skal tas ut av det vanlige filinventaret, slik
+at de ikke samtidig får en konkurrerende restorebetydning.
 
 Hoveddatabasen skal kontrolleres både som kilde og etter at SQLite backup-API
 har laget stagingkopien. Hvis kildedatabasen ikke kan åpnes eller har en
@@ -524,6 +680,15 @@ Den skal sikre alle lesbare vanlige filer og bevare rå `.bilder.sqlite3` med
 eventuelle tilhørende SQLite-sidefiler som egne, tydelig merkede objekter når
 de kan leses. Manifestet skal inneholde databasefeilen og hvilke råfiler som
 ble bevart.
+
+Hvis `collection_id` ikke kan leses fra hoveddatabasen, skal recovery bare
+tillates når repositoryet allerede er initialisert og lagret maskinnavn og
+absolutt samlingssti stemmer med gjeldende arbeidssted. Snapshotet bruker da
+repositoryets `collection_id`, og manifestet skal ha
+`collection_id_source: "repository"` og `collection_id_verified: false`.
+Hvis repositoryet er nytt eller tomt, eller arbeidsstedet ikke stemmer, skal
+kjøringen avbryte uten å initialisere repositoryet. Første versjon skal ikke
+ha `collection_id: unknown` eller en automatisk generert ID for recovery.
 
 Hvis kildedatabasen er gyldig, men stagingkopien feiler på grunn av skrivefeil,
 fullt medium eller korrupsjon på backupmålet, er dette ikke recovery-modus.
@@ -537,10 +702,11 @@ skal avvises fordi det ikke finnes en kontrollert, gyldig hoveddatabasekopi.
 Hvis hoveddatabasen er gyldig, men SQLite backup eller integritetskontroll
 feiler for en tilleggsdatabase, skal snapshotet publiseres som `degraded`.
 Tilleggsdatabasens rå database- og sidefiler skal bevares som tydelig merkede
-objekter når de kan leses. Restore skal bruke den gyldige hoveddatabasen og
-rapportere hvilken tilleggsfunksjon som må kontrolleres, gjenopprettes manuelt
-eller bygges opp igjen. En tilleggsdatabasefeil skal aldri oppgraderes til
-`recovery` så lenge hoveddatabasen er gyldig.
+`recovery_only`-objekter når de kan leses. De skal ikke gjenopprettes som den
+ordinære databasen eller få normal restore-sti. Restore skal bruke den gyldige
+hoveddatabasen og rapportere hvilken tilleggsfunksjon som må kontrolleres,
+gjenopprettes manuelt eller bygges opp igjen. En tilleggsdatabasefeil skal
+aldri oppgraderes til `recovery` så lenge hoveddatabasen er gyldig.
 
 Det finnes ingen felles transaksjon på tvers av alle databasefilene. Target-
 låsen skal derfor hindre Bildebank fra å skrive til noen av dem mens snapshotet
@@ -571,29 +737,49 @@ brukeren må først kontrollere at ingen operasjon fortsatt kjører.
 
 `snapshot create` skal ta repositorylåsen før samlingens `TargetLock`, og
 frigjøre låsene i motsatt rekkefølge. Alle kodeveier som trenger begge låsene
-skal bruke samme rekkefølge.
+skal bruke samme rekkefølge. For et manglende repository kan kommandoen etter
+de innledende read-only stisjekkene opprette bare den eksakte repositorymappen
+for å kunne opprette låsen eksklusivt. Metadata og backupdata skal ikke skrives
+før begge låser er tatt og kilden er kontrollert. Hvis kjøringen stopper før
+initialisering, kan den nyopprettede mappen bli stående tom; den skal fortsatt
+kunne brukes ved neste kjøring.
 
 ## Foreslått kjøresekvens
 
-1. Valider aktiv samling, repository og `collection_id`.
-2. Kontroller at den eksakte repositorymappen ligger på lokal eller ekstern
-   disk, har riktig type og ikke ligger i eller over samlingsmappen.
-3. Ta `TargetLock`.
-4. Kjør read-only forhåndskontroll for lenker og avbryt før repositoryet
-   endres hvis noen finnes.
-5. Opprett unik `run-id` og stagingområde.
-6. Inventer samlingsmappen uten å følge lenker eller reparse points.
-7. Kontroller hoveddatabasen og avgjør om kjøringen er normal eller
-   `recovery`.
-8. I normal modus: les `files`, valider databaseførte stier, størrelser og
-   SHA-256, og lag konsistente kopier av alle SQLite-databaser med SQLite
-   backup-API.
-9. I recovery-modus: sikre alle lesbare vanlige filer og rå databasefiler, og
-   registrer hva som ikke kunne leses eller valideres.
-10. Kopier og verifiser objekter som ikke allerede finnes gyldig i repository.
-11. Bygg et deterministisk manifest og kontroller alle referanser.
-12. Publiser snapshotet atomisk.
-13. Skriv sluttrapport og frigjør låsen.
+1. Gjør read-only kontroll av aktiv samlingssti og repositoryplassering uten å
+   konkludere om `collection_id` ennå. Kontroller at repositoryet ligger på
+   lokal eller ekstern disk, har riktig type og ikke ligger i eller over
+   samlingsmappen.
+2. Forhåndsvalider eksisterende repositorymetadata. Hvis den eksakte
+   repositorymappen mangler, opprett bare denne mappen. Ta deretter
+   repositorylåsen med eksklusiv oppretting.
+3. Valider repositorytilstanden og metadatafilen på nytt under låsen. Avvis en
+   ikke-tom, uinitialisert mappe uten å flytte eller skrive andre filer.
+   Låsfilen som denne kjøringen nettopp opprettet, skal ignoreres når en
+   opprinnelig tom mappe vurderes.
+4. Ta samlingens `TargetLock`.
+5. Kjør read-only forhåndskontroll for lenker og reparse points. Avbryt før
+   repositorymetadata, staging eller objekter skrives hvis noen finnes.
+6. Kontroller hoveddatabasen, les `collection_id` når mulig, og avgjør om
+   kjøringen er normal eller `recovery`. Bruk de særskilte recoveryreglene hvis
+   ID-en ikke kan leses.
+7. Valider repositoryets `collection_id`, maskin og samlingssti under begge
+   låser. Initialiser først nå metadata for et nytt repository, og bare i
+   en kjøring der gyldig `collection_id` faktisk ble lest fra hoveddatabasen.
+8. Opprett unik `run-id` og stagingområde.
+9. Inventer samlingsmappen uten å følge lenker eller reparse points, bygg
+   databasekatalogen og valider alle logiske stier.
+10. I normal modus: les `files`, valider databaseførte stier, størrelser og
+    SHA-256, og lag konsistente kopier av alle SQLite-databaser med SQLite
+    backup-API.
+11. I recovery-modus: sikre alle lesbare vanlige filer og rå databasefiler, og
+    registrer hva som ikke kunne leses eller valideres.
+12. Kopier og verifiser objekter som ikke allerede finnes gyldig i repository.
+13. Bygg deterministisk `files.jsonl` og `manifest.json`, flush dem, bygg
+    `commit.json` og kontroller alle referanser og kontrollsummer.
+14. Flush staging og publiser snapshotmappen atomisk.
+15. Skriv sluttrapport, frigjør `TargetLock` og frigjør deretter
+    repositorylåsen.
 
 Ved feil skal ingen tidligere snapshots eller objekter endres. En ny kjøring
 skal kunne gjenbruke ferdig verifiserte objekter og ellers starte en ny,
@@ -629,7 +815,10 @@ bildebank snapshot list PLASSERING
 bildebank snapshot problems PLASSERING [SNAPSHOT-ID]
 bildebank snapshot check PLASSERING [--full]
 bildebank snapshot restore PLASSERING SNAPSHOT-ID NY-MAPPE [--dry-run]
-bildebank snapshot restore-file PLASSERING SNAPSHOT-ID FILSTI MÅLMAPPE [--dry-run]
+bildebank snapshot restore-file
+  PLASSERING SNAPSHOT-ID MÅLMAPPE
+  (--path FILSTI | --entry-id ENTRY-ID)
+  [--variant expected|observed] [--dry-run]
 ```
 
 Alle skrivende restore-operasjoner skal ha dry-run. Hel gjenoppretting skal som
@@ -649,6 +838,40 @@ atomisk publiserte snapshotet og kan derfor ikke redigeres senere i første
 versjon. Snapshot-ID og mappenavn skal aldri komme fra kommentaren. CLI-en skal
 ha en rimelig lengdegrense og avvise kontrolltegn; launcheren kan tilby et
 valgfritt tekstfelt med samme grense.
+
+`restore-file` skal kreve nøyaktig én av `--path` og `--entry-id`. Normal eller
+forventet variant brukes uten `--variant` når posten bare har én ordinær
+variant. Når både forventet og observert objekt finnes, skal kommandoen avbryte
+uten eksplisitt `--variant`; `observed` skal alltid få hash-suffiks i
+eksportnavnet. `recovery_only`-poster kan bare velges med `--entry-id` og skal
+alltid eksporteres under det programgenererte portable recovery-navnet.
+`problems` og restoreplanen skal vise både sti og `entry_id`, slik at også rå
+databasefiler og andre redningsposter kan hentes uten manuell tolking av
+objektlageret.
+
+Den observerbare CLI-kontrakten i første versjon skal være:
+
+- `snapshot create`: `0` for publisert `complete`, `3` for publisert
+  `degraded`, `4` for publisert `recovery` og `1` for `failed` uten publisert
+  snapshot
+- hel restore: `0` når en kontrollert samling er publisert, også når
+  observerte ekstravarianter er lagt i recovery-mappen; `3` når en bevisst
+  ufullstendig samling er publisert fordi en forventet variant mangler; og `1`
+  når ingen samlingsmappe er publisert
+- `snapshot check`: `0` når kontrollen fullføres uten ny repositoryskade, `3`
+  når kontrollen fullføres og finner manglende eller korrupte repositorydata,
+  og `1` når kontrollen selv feiler eller avbrytes før resultatet er komplett
+- alle kommandoer: `2` for syntaks- eller argumentfeil; vellykket `list` og
+  `problems` returnerer `0` selv om listen viser tidligere kildeavvik
+
+En vellykket dry-run returnerer `0`, og en avvist plan returnerer `1`. Dry-run
+skal ikke returnere `3` eller `4` som en spådom om reell kjøring, fordi den ikke
+har fullhashet kilden eller publisert noe.
+
+Planer, fremdrift og sluttresultat skal gå til stdout. Advarsler og feil skal
+gå til stderr. Launcheren skal bruke det felles interne resultatobjektet og
+skal ikke tolke disse tekststrømmene. Første versjon skal ikke love et stabilt
+`--json`-format; automatisering kan bruke dokumenterte argumenter og exitkoder.
 
 ### Launcherflyt for snapshot
 
@@ -698,13 +921,19 @@ En backup er ikke ferdig designet før restore er spesifisert og testet.
 
 Hel restore skal:
 
-- validere repositorymetadata, snapshotmanifest og alle nødvendige objekter
+- validere repositorymetadata, `commit.json`, snapshotmanifest og alle
+  nødvendige objekter
 - vise valgt samling, snapshotdato, antall filer og plassbehov
 - avvise eksisterende ikke-tom målmappe som standard
 - opprette manglende målmappe først etter bekreftelse når foreldremappen finnes
 - avvise målmappe inne i aktiv samling eller repository, og avvise målmappe som
   inneholder aktiv samling eller repository
-- kopiere via midlertidige filer og verifisere SHA-256 etter kopiering
+- validere alle normale og recovery-baserte målstier og kollisjoner samlet før
+  skriving
+- bygge samlingen og eventuell recovery-mappe i en unik stagingrot som er
+  søster til målet og ligger på samme filsystem
+- kopiere via midlertidige filer i staging og verifisere SHA-256 etter
+  kopiering
 - gjenopprette opprinnelige relative stier, inkludert `deleted/`
 - sette tilbake filendringstid fra `mtime_ns` så langt målfilsystemet støtter
 - gjenopprette databasekopiene som vanlige SQLite-filer
@@ -712,6 +941,24 @@ Hel restore skal:
 - ikke kopiere repositorymetadata inn i den gjenopprettede samlingen
 - kjøre database- og filintegritetskontroll før samlingen tas i bruk
 - skrive en tydelig rapport, men ikke automatisk reparere avvik
+
+Stagingroten skal ha unik `run-id`, en liten kjørepost og separate undermapper
+for samling og eventuell recovery. Alle data, databaser, stier og hasher skal
+kontrolleres ferdig der. Hvis brukeren valgte en eksisterende tom målmappe,
+skal den kontrolleres på nytt rett før publisering og bare fjernes med en
+operasjon som lykkes dersom den fortsatt er tom. Hvis den ikke lenger er tom,
+skal publisering avbrytes og staging beholdes.
+
+Når recovery-mappe trengs, skal den publiseres med rename først. Den ferdig
+kontrollerte samlingsmappen publiseres med rename sist; at denne endelige
+mappen finnes er definisjonen på en publisert hel restore. Etter vellykket
+publisering kan bare kjørepost og tomme stagingkataloger ryddes. Et avbrudd før
+samlingsmappen er publisert gir exitkode `1`, også hvis en recovery-mappe
+allerede rakk å bli publisert. Neste restorekommando skal oppdage kjente
+staging- og recoveryrester, avbryte før ny skriving og forklare hva som er
+fullført. Første versjon skal ikke automatisk fortsette, overskrive eller slette
+slike mapper; brukeren må beholde dem eller flytte dem eksplisitt før et nytt
+forsøk.
 
 Før restore starter, skal Bildebank kontrollere repositoryets sist bekreftede
 maskin og samlingssti. Hvis den opprinnelige samlingen fortsatt ser ut til å
@@ -721,10 +968,11 @@ skal aldri generere en ny ID automatisk. Første snapshot fra den gjenopprettede
 plasseringen skal utløse den vanlige eksplisitte bekreftelsen på at samme
 logiske samling er flyttet.
 
-Restore av enkeltfil skal kreve eksplisitt snapshot og filsti. Standardmålet
-skal være en vanlig eksportmappe utenfor aktiv samling. Restore direkte inn i
-aktiv samling skal ikke være med i første versjon, fordi det krever koordinert
-oppdatering av både filsystem og database.
+Restore av enkeltfil skal kreve eksplisitt snapshot og enten normal filsti
+eller `entry_id`, og eksplisitt variant når både forventet og observert objekt
+finnes. Standardmålet skal være en vanlig eksportmappe utenfor aktiv samling.
+Restore direkte inn i aktiv samling skal ikke være med i første versjon, fordi
+det krever koordinert oppdatering av både filsystem og database.
 
 Eksportmappen kan opprettes etter bekreftelse når foreldremappen finnes. En
 eksisterende eksportmappe kan brukes, men restore skal legge filen under dens
@@ -743,10 +991,13 @@ Ved hel restore av et `degraded` snapshot gjelder denne standarden:
   undersøkelse og plasseres ikke i den gjenopprettede bildesamlingen.
 - Hvis forventet variant ikke finnes, skal filen mangle på ordinær plass.
   Observert variant eksporteres fortsatt til recovery-mappen, og restore skal
-  rapportere tydelig at den gjenopprettede samlingen er ufullstendig.
+  rapportere tydelig at den gjenopprettede samlingen er ufullstendig og
+  returnere exitkode `3` etter publisering.
 
 Recovery-mappen skal opprettes automatisk som en søstermappe og bare hvis minst
-én fil må eksporteres dit. Hvis den gjenopprettede samlingen er:
+én observert variant eller `recovery_only`-post må eksporteres dit. Dette
+omfatter blant annet rå tilleggsdatabasefiler og lesbare filer uten portabel
+normalsti. Hvis den gjenopprettede samlingen er:
 
 ```text
 C:\Gjenopprettet\Familiebilder
@@ -760,16 +1011,20 @@ C:\Gjenopprettet\Familiebilder-recovery-20260715
 
 Navnet skal inneholde snapshotdato eller snapshot-ID og aldri kollidere med
 eller overskrive en eksisterende mappe. Ved kollisjon skal restore avbryte før
-den skriver filer. Recovery-mappen skal bevare filenes opprinnelige relative
-mappestruktur, merke observerte varianter tydelig i filnavnet og inneholde en
-UTF-8-rapport med forventet og observert SHA-256. Den skal ligge utenfor
-bildesamlingen slik at innholdet ikke senere tas med som vanlige samlingsfiler.
+den skriver filer. For normale stier skal recovery-mappen bevare opprinnelig
+relativ mappestruktur og merke observerte varianter tydelig i filnavnet.
+`recovery_only`-poster skal bruke sitt programgenererte portable navn.
+Recovery-mappen skal inneholde en UTF-8-rapport med opprinnelig visningstekst,
+grunn til recoveryplassering og forventet og observert SHA-256 når de finnes.
+Den skal ligge utenfor bildesamlingen slik at innholdet ikke senere tas med som
+vanlige samlingsfiler.
 
 ## Kontroll av backupen
 
 Det skal finnes to kontrollnivåer:
 
-- En rask kontroll validerer repositorystruktur, manifester, objektnavn,
+- En rask kontroll validerer repositorystruktur, formatversjoner,
+  `commit.json`, kontrollsummene for manifest og `files.jsonl`, objektnavn,
   størrelser og at alle refererte objekter finnes.
 - En full kontroll leser alle objekter i repositoryet, også urefererte
   verifiserte objekter, og beregner SHA-256 på nytt.
@@ -783,6 +1038,7 @@ mellom:
 - manglende objekt
 - objekt med feil størrelse eller hash
 - ugyldig eller uleselig manifest
+- manglende, ugyldig eller avvikende `commit.json`
 - ufullstendig kjøring som aldri ble publisert
 - ureferert objekt som ikke gjør eksisterende snapshots ugyldige
 
@@ -923,7 +1179,7 @@ Minstekrav til automatiserte tester:
   første launcherutgave
 - gyldig kildedatabase kombinert med skrivefeil eller korrupt stagingkopi på
   backupmålet; kjøringen skal da feile uten publisert snapshot
-- avbrudd under objektkopiering og før manifestpublisering
+- avbrudd under objektkopiering og før snapshotpublisering
 - full disk og andre skrivefeil
 - ugyldig repository-ID eller feil `collection_id`
 - oppretting i eksakt repositorymappe, manglende foreldremappe og
@@ -946,6 +1202,43 @@ Minstekrav til automatiserte tester:
 - hel restore og restore av enkeltfil
 - restore til eksisterende eller for liten målmappe
 - kontroll av at gamle snapshots fortsatt kan gjenopprettes etter nye kjøringer
+- fryste format-v1-fixtures, ignorering og bevaring av ukjente valgfrie
+  JSON-felter, avvisning av ukjent påkrevd egenskap og avvisning av nyere
+  inkompatibel repository- eller snapshotversjon
+- kontroll av at en eldre skriver ikke kan legge snapshot til et repository
+  med format eller påkrevd egenskap den ikke forstår
+- `recovery` med uleselig `collection_id` mot et allerede bundet repository på
+  samme arbeidssted, samt avvisning mot nytt/tomt repository og mot endret
+  arbeidssted
+- databasekatalog med hoveddatabase, OpenCLIP, flere face-modeller, ukjent
+  SQLite-database og absolutt `face_recognition.database_dir`
+- avvisning av absolutt face-databasekatalog på nettverksmål, gjennom lenke
+  eller i overlapp med repositoryet
+- kontroll av at en konsistent databasekopi får normal restore-sti, mens rå
+  database- og sidefiler ved feil bare blir `recovery_only`
+- path traversal, absolutt sti, UNC-/device-sti, NTFS alternativ datastrøm,
+  Windows-reserverte navn, avsluttende punkt/mellomrom og to ulike poster som
+  kolliderer etter normalisering eller store/små bokstaver
+- manglende og duplisert `entry_id`
+- ikke-portabel kildefil som sikres som `recovery_only` uten at visningsstien
+  noen gang brukes som restore-mål
+- enkeltfil-restore som krever eksplisitt valg mellom `expected` og `observed`
+  når begge finnes
+- enkeltfil-restore med `--entry-id` for rå databasefil og annen
+  `recovery_only`-post, uten bruk av opprinnelig visningssti som mål
+- avbrudd før og etter hvert publiseringstrinn for hel restore, også mellom
+  publisering av recovery-mappe og samlingsmappe, med gjenkjenning og bevaring
+  av alle ufullstendige mapper
+- restore til en eksisterende tom målmappe som blir fylt av en annen prosess
+  før publisering; staging skal beholdes og ingen fil overskrives
+- manglende eller korrupt `commit.json`, endret `manifest.json` med uendret
+  `files.jsonl`, og avbrudd under atomisk oppdatering av repositorymetadata
+- injiserte avbrudd rundt flush og rename, og kontroll av at et snapshot uten
+  gyldig commit-post aldri regnes som publisert
+- test som håndhever repositorylås før `TargetLock` i alle kodeveier og motsatt
+  rekkefølge ved frigjøring
+- eksakte exitkoder og stdout/stderr-regler for snapshot, check og restore,
+  inkludert publisert ufullstendig restore
 
 Før bruk på den virkelige samlingen må det gjennomføres en Windows-test med et
 lite, representativt datasett på samme type backupmedium som skal brukes.
@@ -961,6 +1254,8 @@ Ingen av trinnene skal startes før de åpne beslutningene nedenfor er behandlet
 - Beskriv førstversjonen med `snapshot` ved siden av uendret `backup`-mirror,
   og planlegg brukertest av navnene.
 - Frys første versjon av repository- og manifestformatet.
+- Frys kompatibilitetsreglene, den portable stikontrakten, databasekatalogen og
+  CLI-resultatkontrakten.
 - Avgjør om andre regenererbare filer enn HTML og thumbnails kan utelates.
 - Beskriv restorekontrakten fullstendig.
 
@@ -974,6 +1269,8 @@ Ingen av trinnene skal startes før de åpne beslutningene nedenfor er behandlet
 ### Trinn 2 – Objekter og atomisk snapshot
 
 - Implementer staging, verifisert objektkopiering og manifest.
+- Implementer `commit.json`, atomisk metadataoppdatering og flush før
+  publisering.
 - Implementer konsistent SQLite-backup.
 - Test alle avbruddsgrenser og at eldre snapshots aldri endres.
 - Koble samme plan- og opprettingsfunksjon til CLI og launcher.
@@ -986,8 +1283,11 @@ Ingen av trinnene skal startes før de åpne beslutningene nedenfor er behandlet
 
 ### Trinn 4 – Gjenoppretting
 
-- Implementer dry-run og hel restore til tom mappe.
-- Implementer restore av enkeltfil til eksportmappe.
+- Implementer full stivalidering, dry-run og stagingbasert hel restore til ny
+  eller tom mappe.
+- Implementer konservativ oppdagelse av avbrutte restoremapper uten automatisk
+  sletting eller overskriving.
+- Implementer restore av enkeltfil med eksplisitt variantvalg til eksportmappe.
 - Test faktisk bruk av en gjenopprettet samling.
 
 ### Trinn 5 – Dokumentasjon og Windows-pilot
@@ -1013,6 +1313,8 @@ Inntil punktene over er avgjort, er anbefalt retning:
 - initialisering bare av manglende eller helt tom mappe, uten `--adopt` i
   første versjon
 - Bildebank-eid repositoryformat uten ekstern backupmotor
+- `format_version: 1` i repositorymetadata og manifest, med avvisning av
+  ukjente påkrevde egenskaper og uten omskriving av publiserte snapshots
 - nøyaktig én `collection_id` per repository
 - ukomprimerte objekter i første formatversjon
 - ingen Bildebank-kryptering i første formatversjon
@@ -1026,8 +1328,8 @@ Inntil punktene over er avgjort, er anbefalt retning:
 - repository bare på lokal eller ekstern disk i første versjon; nettverksmål
   avvises
 - støtte for FAT32 når alle konkrete filer er innenfor per-fil-grensen
-- tydelige exit- og launcherresultater for `complete`, `degraded`, `recovery`
-  og `failed`
+- faste exitkoder og tydelige launcherresultater for `complete`, `degraded`,
+  `recovery` og `failed`
 - hel restore bevarer opprinnelig `collection_id` og advarer mot parallell bruk
   av original og gjenopprettet kopi
 - valgfri, uforanderlig snapshotkommentar uten innvirkning på snapshot-ID eller
@@ -1038,13 +1340,15 @@ Inntil punktene over er avgjort, er anbefalt retning:
   versjon
 - tekstbekreftelse før reell hel restore og restore av enkeltfil, med `--yes`
   som eksplisitt unntak
-- konservativ oppretting og validering av målmappe ved hel restore
-- enkeltfil-restore uten overskriving, med relativ eksportsti og tydelig
-  navngiving av observert variant
+- konservativ, stagingbasert oppretting og full stivalidering av målmappe ved
+  hel restore, uten automatisk sletting av avbrutte mediefiler
+- enkeltfil-restore uten overskriving, med relativ eksportsti, eksplisitt
+  variantvalg, stabil `entry_id` for redningsposter og tydelig navngiving av
+  observert variant
 - ingen innebygd tidsplanlegging i første versjon
 - snapshotliste, problemliste og restore som CLI-only i første launcherutgave
-- `manifest.json` og strømbar `files.jsonl` som sannhetskilde uten krav om en
-  repositorydatabase
+- `manifest.json`, strømbar `files.jsonl` og kontrollerende `commit.json` som
+  sannhetskilde uten krav om en repositorydatabase
 - rå, ukomprimerte objekter og `README.txt` som muliggjør teknisk manuell
   gjenoppretting; direkte mappeblaing og snapshot-browser er ikke krav i første
   versjon
@@ -1062,13 +1366,20 @@ Inntil punktene over er avgjort, er anbefalt retning:
   uten gyldig objektreferanse
 - publisering av `recovery`-snapshot ved bekreftet feil i hoveddatabasen, uten
   å tillate vanlig hel restore
+- recovery uten lesbar `collection_id` bare mot et allerede bundet repository
+  på sist bekreftede arbeidssted
 - `degraded` ved feil i tilleggsdatabase, med rå databasefiler bevart for
   undersøkelse
-- SQLite backup-API og target-lås for konsistente snapshots
+- eksplisitt databasekatalog for hoveddatabase, OpenCLIP, alle face-modeller og
+  andre SQLite-databaser, også med trygg policy for absolutt face-databasesti
+- SQLite backup-API og target-lås for konsistente snapshots, uten at aktive
+  database- eller sidefiler samtidig behandles som vanlige restorefiler
+- portabel Windows-sikker stikontrakt og `recovery_only`-bevaring av lesbare
+  filer som ikke kan få en normal restore-sti
 - read-only forhåndskontroll som oppdager og avviser alle lenker og reparse
-  points før repositoryet endres
-- atomisk publisert manifest som eneste definisjon av et `complete`,
-  `degraded` eller `recovery` snapshot
+  points før repositorymetadata eller backupdata skrives
+- flush og atomisk publisert snapshotmappe med gyldig `commit.json` som eneste
+  definisjon av et `complete`, `degraded` eller `recovery` snapshot
 - read-only kontroll før restorefunksjonen regnes som ferdig
 - restore til ny mappe, aldri automatisk overskriving av aktiv samling
 
