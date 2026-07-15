@@ -57,6 +57,7 @@ from .pending_deletes import cleanup_pending_deletes, list_pending_deletes
 from .progress import ProgressMeter
 from .program_state import known_targets, program_db_path, record_target_best_effort
 from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
+from .snapshot import SnapshotPlan, plan_snapshot
 from .target_lock import TargetLock
 from .thumbnails import ThumbnailStats, run_make_thumbnails
 from .unimport import TargetContentChange, run_unimport as execute_unimport
@@ -555,6 +556,34 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Registrer en eksisterende backupmappe som backup av denne bildesamlingen",
     )
+    snapshot = add_command(
+        subparsers,
+        "snapshot",
+        usage="bildebank snapshot <kommando> [valg]",
+        help="Lag og kontroller versjonerte snapshots",
+        description="Lag og kontroller versjonerte snapshots uten å endre dagens backup-mirror.",
+    )
+    snapshot_subparsers = snapshot.add_subparsers(dest="snapshot_command", required=True)
+    snapshot_create = snapshot_subparsers.add_parser(
+        "create",
+        usage="bildebank snapshot create [valg] repository",
+        description="Planlegg eller opprett et versjonert snapshot.",
+    )
+    snapshot_create.add_argument(
+        "repository",
+        metavar="repository",
+        type=Path,
+        help="Den eksakte repositorymappen",
+    )
+    snapshot_create.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Valider og estimer uten å skrive filer eller ta låser",
+    )
+    snapshot_create.add_argument(
+        "--note",
+        help="Valgfri, uforanderlig kommentar på høyst 1000 tegn",
+    )
     doctor = add_command(
         subparsers,
         "doctor",
@@ -950,6 +979,7 @@ NO_TARGET_COMMANDS = {
 TARGET_COMMANDS = {
     "migrate",
     "backup",
+    "snapshot",
     "vacuum",
     "geo-scan",
     "geo-stats",
@@ -987,7 +1017,8 @@ def run(args: argparse.Namespace) -> int:
     validate_collection_platform(target)
     if should_recover_pending_file_moves(args):
         recover_pending_file_moves(target)
-    record_target_best_effort(program_repo_root(), target)
+    if args.command != "snapshot":
+        record_target_best_effort(program_repo_root(), target)
 
     if args.command in TARGET_COMMANDS or (
         args.command in {"import", "rescan-source"} and args.dry_run
@@ -1092,6 +1123,8 @@ def should_recover_pending_file_moves(args: argparse.Namespace) -> bool:
         return False
     if getattr(args, "dry_run", False):
         return False
+    if args.command == "snapshot":
+        return False
     return True
 
 
@@ -1101,6 +1134,9 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
 
     if args.command == "backup":
         return run_backup_command(target, args.destination, dry_run=args.dry_run, adopt=args.adopt)
+
+    if args.command == "snapshot":
+        return run_snapshot_command(args, target)
 
     if args.command == "vacuum":
         return run_vacuum(target)
@@ -1793,6 +1829,81 @@ def run_backup_command(target: Path, destination: Path, *, dry_run: bool = False
             f"dirs_created={stats.dirs_created}, dirs_deleted={stats.dirs_deleted}"
         )
     return 0
+
+
+def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
+    if args.snapshot_command != "create":
+        raise ValueError(f"Ukjent snapshot-kommando: {args.snapshot_command}")
+    if not args.dry_run:
+        raise ValueError(
+            "Reell snapshot-oppretting er ikke implementert ennå. "
+            "Bruk --dry-run for den skrivefrie planen."
+        )
+
+    config = load_config(program_repo_root(), migrate_legacy=False)
+    configured_face_dir = config.face_recognition.database_dir
+    plan = plan_snapshot(
+        target,
+        args.repository,
+        configured_face_database_dir=configured_face_dir,
+        note=args.note,
+    )
+    print_snapshot_plan(plan)
+    return 0
+
+
+def print_snapshot_plan(plan: SnapshotPlan) -> None:
+    inventory = plan.inventory
+    storage = plan.storage
+    state_text = {
+        "missing": "Mangler; ville blitt opprettet og initialisert",
+        "empty": "Finnes og er tom; ville blitt initialisert",
+        "existing": "Eksisterende repository med gyldig metadata",
+    }.get(plan.repository_state, plan.repository_state)
+
+    print("Snapshot dry-run")
+    print(f"  Bildesamling: {plan.source_dir}")
+    print(f"  Repository: {plan.repository_dir}")
+    print(f"  Repositorytilstand: {state_text}")
+    print(f"  collection_id: {plan.collection_id}")
+    if plan.note is not None:
+        print(f"  Kommentar: {plan.note}")
+    print()
+    print("Inventar")
+    print(f"  Alle filer: {inventory.total_files} ({format_bytes(inventory.total_bytes)})")
+    print(f"  Ekskludert: {inventory.excluded_files} ({format_bytes(inventory.excluded_bytes)})")
+    exclusion_labels = {
+        "thumbnails": "thumbnails",
+        "generated_html": "generert HTML",
+        "runtime": "runtime-filer",
+    }
+    for exclusion in inventory.exclusions:
+        label = exclusion_labels.get(exclusion.reason, exclusion.reason)
+        print(f"    {label}: {exclusion.files} ({format_bytes(exclusion.bytes)})")
+    print(
+        "  Databaselagring: "
+        f"{inventory.database_storage_files} ({format_bytes(inventory.database_storage_bytes)})"
+    )
+    print(f"  SQLite-sidefiler: {inventory.database_side_files}")
+    print(f"  Databaseførte mediefiler: {inventory.database_files}")
+    print(f"    størrelse stemmer: {inventory.matched_database_files}")
+    print(f"    mangler: {inventory.missing_database_files}")
+    print(f"    feil størrelse: {inventory.wrong_size_database_files}")
+    print(f"    ugyldig portabel sti: {inventory.invalid_database_paths}")
+    print(f"  Ukjente filer: {inventory.unknown_files} ({format_bytes(inventory.unknown_bytes)})")
+    print(f"  Planlagt recovery_only: {inventory.recovery_only_files}")
+    print(f"  Windows-stikollisjoner: {inventory.path_collisions}")
+    print()
+    print("Konservativt plassestimat")
+    print(f"  Gjenbrukbare objekter: {storage.reusable_objects}")
+    print(f"  Estimerte nye objekter: {storage.estimated_new_objects}")
+    print(f"  Estimerte nye byte: {format_bytes(storage.estimated_new_bytes)}")
+    print(f"  Ledig plass: {format_bytes(storage.free_bytes)}")
+    print(f"  Estimert plass er tilstrekkelig: {'ja' if storage.has_estimated_capacity else 'nei'}")
+    for warning in plan.warnings:
+        print(f"ADVARSEL: {warning}", file=sys.stderr)
+    print()
+    print("Dry-run: Ingen filer, metadata, mapper eller låser er opprettet eller endret.")
 
 
 def run_backup_adopt_command(target: Path, destination: Path, *, dry_run: bool = False) -> int:

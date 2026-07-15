@@ -712,14 +712,26 @@ Kjente runtime-filer som target-lås og aktiv logg skal ikke tas med. Det må
 lages én eksplisitt og testet liste over eksklusjoner. Ukjente filer skal som
 hovedregel tas med og rapporteres, ikke ignoreres.
 
+Eksklusjonslisten gjelder bare de programgenererte standardplasseringene:
+`thumbs/` i roten, samt `.bildebank.lock`, `.bildebank.log`, `index.html`,
+`image-search.html`, `personer.html` og `person-*.html` direkte i roten. Filer
+med de samme navnene andre steder i samlingen skal tas med. Brukeren må regne
+navnene og rotmappen `thumbs/` som reserverte for regenererbart innhold.
+
 Databasefiler og SQLite-sidefiler som er klassifisert av databasekatalogen,
 skal heller ikke kopieres en gang til av det vanlige filinventaret. Den
 konsistente SQLite-kopien er normalvarianten; rå database- og sidefiler brukes
 bare som særskilt redningsmateriale når databasekopien feiler.
+En fil med endelsen `.sqlite3-wal`, `.sqlite3-shm` eller `.sqlite3-journal`
+skal bare behandles som sidefil når den tilsvarende `.sqlite3`-filen finnes i
+databasekatalogen. En foreldreløs fil med et slikt navn skal tas med og
+rapporteres som en ukjent vanlig fil.
 
 Genererte HTML-filer og thumbnails skal ikke tas med. De er regenererbare og
 skal stå på den eksplisitte og testede eksklusjonslisten. Backupen skal ikke
 betrakte dem som manglende filer eller integritetsfeil.
+Dry-run og ordinær rapport skal vise antall og størrelse separat for
+thumbnails, generert HTML og runtime-filer.
 
 ### Symbolske lenker og junctions
 
@@ -1335,6 +1347,10 @@ Minstekrav til automatiserte tester:
 - teknisk manuell uthenting av en fil ved hjelp av `README.txt`, `files.jsonl`
   og råobjektet, uten Bildebank-programmet
 - ukjent mediafil som ikke finnes i `files`
+- genererte standardfiler ekskluderes bare i roten, mens samme filnavn i en
+  annen mappe tas med
+- SQLite-sidefil til en katalogført database tas ut av normalinventaret, mens
+  en foreldreløs sidefil tas med og rapporteres som ukjent
 - ukjent fil som er uleselig, forsvinner eller endres under kopiering, både med
   vellykket nytt forsøk og med `degraded` etter andre feil
 - kontroll av at en ustabil midlertidig kopi ikke publiseres som gyldig objekt
