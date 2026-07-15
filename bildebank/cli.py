@@ -65,6 +65,12 @@ from .snapshot_check import (
     list_repository_snapshots,
 )
 from .snapshot_create import SnapshotCreationResult, create_snapshot
+from .snapshot_restore import (
+    FullRestorePlan,
+    SingleFileRestorePlan,
+    plan_full_restore,
+    plan_single_file_restore,
+)
 from .target_lock import TargetLock
 from .thumbnails import ThumbnailStats, run_make_thumbnails
 from .unimport import TargetContentChange, run_unimport as execute_unimport
@@ -618,6 +624,45 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Les og beregn SHA-256 for alle objekter, også urefererte",
     )
+    snapshot_restore = snapshot_subparsers.add_parser(
+        "restore",
+        usage="bildebank snapshot restore repository snapshot-id ny-mappe [--dry-run]",
+        description="Planlegg gjenoppretting av en hel bildesamling.",
+    )
+    snapshot_restore.add_argument("repository", type=Path, help="Den eksakte repositorymappen")
+    snapshot_restore.add_argument("snapshot_id", metavar="snapshot-id", help="Snapshot-ID som skal brukes")
+    snapshot_restore.add_argument("destination", metavar="ny-mappe", type=Path, help="Ny eller tom målmappe")
+    snapshot_restore.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Vis en fullstendig plan uten å opprette eller kopiere filer",
+    )
+    snapshot_restore.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)
+    snapshot_restore_file = snapshot_subparsers.add_parser(
+        "restore-file",
+        usage=(
+            "bildebank snapshot restore-file repository snapshot-id eksportmappe "
+            "(--path filsti | --entry-id id) [--variant expected|observed] [--dry-run]"
+        ),
+        description="Planlegg eksport av én fil fra et snapshot.",
+    )
+    snapshot_restore_file.add_argument("repository", type=Path, help="Den eksakte repositorymappen")
+    snapshot_restore_file.add_argument("snapshot_id", metavar="snapshot-id", help="Snapshot-ID som skal brukes")
+    snapshot_restore_file.add_argument("destination", metavar="eksportmappe", type=Path, help="Eksportmappe")
+    restore_selection = snapshot_restore_file.add_mutually_exclusive_group(required=True)
+    restore_selection.add_argument("--path", help="Normal relativ filsti i snapshotet")
+    restore_selection.add_argument("--entry-id", help="Stabil entry-ID, også for recovery_only")
+    snapshot_restore_file.add_argument(
+        "--variant",
+        choices=("expected", "observed"),
+        help="Velg variant eksplisitt når både forventet og observert innhold finnes",
+    )
+    snapshot_restore_file.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Vis eksportplanen uten å opprette eller kopiere filer",
+    )
+    snapshot_restore_file.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)
     doctor = add_command(
         subparsers,
         "doctor",
@@ -1047,7 +1092,12 @@ def run(args: argparse.Namespace) -> int:
     if args.command in NO_TARGET_COMMANDS:
         return run_no_target_command(args)
 
-    if args.command == "snapshot" and args.snapshot_command in {"list", "check"}:
+    if args.command == "snapshot" and args.snapshot_command in {
+        "list",
+        "check",
+        "restore",
+        "restore-file",
+    }:
         return run_snapshot_repository_command(args)
 
     target = resolve_target(args.target)
@@ -1899,6 +1949,30 @@ def run_snapshot_repository_command(args: argparse.Namespace) -> int:
         result = list_repository_snapshots(args.repository)
         print_snapshot_list(result)
         return 0
+    if args.snapshot_command == "restore":
+        if not args.dry_run:
+            raise ValueError(
+                "Reell hel restore er ikke implementert ennå. Bruk --dry-run for å kontrollere planen."
+            )
+        full_restore_plan = plan_full_restore(args.repository, args.snapshot_id, args.destination)
+        print_full_restore_plan(full_restore_plan)
+        return 0
+    if args.snapshot_command == "restore-file":
+        if not args.dry_run:
+            raise ValueError(
+                "Reell enkeltfil-restore er ikke implementert ennå. "
+                "Bruk --dry-run for å kontrollere planen."
+            )
+        file_restore_plan = plan_single_file_restore(
+            args.repository,
+            args.snapshot_id,
+            args.destination,
+            path=args.path,
+            entry_id=args.entry_id,
+            variant=args.variant,
+        )
+        print_single_file_restore_plan(file_restore_plan)
+        return 0
     if args.snapshot_command != "check":
         raise ValueError(f"Ukjent repositorykommando: {args.snapshot_command}")
 
@@ -1992,6 +2066,52 @@ def format_duration_seconds(seconds: int) -> str:
         return f"{minutes}m {remaining_seconds:02d}s"
     hours, remaining_minutes = divmod(minutes, 60)
     return f"{hours}t {remaining_minutes:02d}m"
+
+
+def print_full_restore_plan(plan: FullRestorePlan) -> None:
+    target_state = "mangler og ville blitt opprettet" if plan.target_state == "missing" else "er tom"
+    print("Hel restore dry-run")
+    print(f"  Repository: {plan.repository}")
+    print(f"  Snapshot-ID: {plan.snapshot.snapshot_id}")
+    print(f"  Snapshotdato: {plan.snapshot.completed_at}")
+    print(f"  Snapshotstatus: {plan.snapshot.status}")
+    if plan.note is not None:
+        print(f"  Kommentar: {plan.note}")
+    print(f"  Målmappe: {plan.target} ({target_state})")
+    print(f"  Ordinære utdatafiler: {len(plan.collection_outputs)}")
+    print(f"  Recovery-filer: {len(plan.recovery_outputs)}")
+    if plan.recovery_target is not None:
+        print(f"  Recovery-mappe: {plan.recovery_target}")
+    print(f"  Manglende forventede varianter: {len(plan.missing_expected_entries)}")
+    for entry_id in plan.missing_expected_entries:
+        print(f"ADVARSEL: Forventet variant mangler for {entry_id}.", file=sys.stderr)
+    print(f"  Estimert datamengde: {format_bytes(plan.required_bytes)}")
+    print(f"  Ledig plass: {format_bytes(plan.free_bytes)}")
+    print(f"  Estimert plass er tilstrekkelig: {'ja' if plan.has_estimated_capacity else 'nei'}")
+    if plan.original_collection_exists:
+        print(
+            "ADVARSEL: Den opprinnelige samlingen finnes fortsatt. Original og restore får samme "
+            f"collection_id og må ikke brukes som uavhengige samlinger: {plan.original_collection}",
+            file=sys.stderr,
+        )
+    print("Dry-run: Ingen mapper, filer eller restore-staging er opprettet eller endret.")
+
+
+def print_single_file_restore_plan(plan: SingleFileRestorePlan) -> None:
+    export_state = "mangler og ville blitt opprettet" if plan.export_state == "missing" else "finnes"
+    print("Enkeltfil-restore dry-run")
+    print(f"  Repository: {plan.repository}")
+    print(f"  Snapshot-ID: {plan.snapshot.snapshot_id}")
+    print(f"  Snapshotstatus: {plan.snapshot.status}")
+    if plan.note is not None:
+        print(f"  Kommentar: {plan.note}")
+    print(f"  Entry-ID: {plan.output.entry_id}")
+    print(f"  Opprinnelig sti: {plan.output.original_path_display}")
+    print(f"  Variant: {plan.output.variant}")
+    print(f"  Eksportmappe: {plan.export_directory} ({export_state})")
+    print(f"  Utdatafil: {plan.output_path}")
+    print(f"  Størrelse: {format_bytes(plan.output.object.size_bytes)}")
+    print("Dry-run: Ingen mapper eller filer er opprettet eller endret.")
 
 
 def print_snapshot_creation_result(result: SnapshotCreationResult) -> None:

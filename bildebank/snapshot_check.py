@@ -129,7 +129,7 @@ class _RepositoryObject:
 
 
 @dataclass(frozen=True)
-class _SnapshotRead:
+class SnapshotRead:
     summary: SnapshotSummary
     usages: dict[ObjectKey, tuple[ObjectUsage, ...]]
 
@@ -381,7 +381,7 @@ def read_snapshot(
     repository_id: str,
     collection_id: str,
     should_cancel: CancelCallback | None = None,
-) -> _SnapshotRead:
+) -> SnapshotRead:
     if _SNAPSHOT_DIRECTORY_RE.fullmatch(snapshot_path.name) is None:
         raise SnapshotStorageError("snapshotmappen har ugyldig navn")
     entries = sorted(entry.name for entry in os.scandir(snapshot_path))
@@ -426,7 +426,7 @@ def read_snapshot(
     )
     for key, values in database_usages.items():
         usages.setdefault(key, []).extend(values)
-    return _SnapshotRead(
+    return SnapshotRead(
         summary=SnapshotSummary(
             snapshot_id=snapshot_id,
             directory=snapshot_path,
