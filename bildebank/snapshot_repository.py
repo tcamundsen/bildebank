@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import hashlib
 import json
 import os
@@ -19,6 +20,9 @@ from .snapshot import (
     REPOSITORY_LOCK_FILENAME,
     REPOSITORY_METADATA_FILENAME,
     snapshot_object_path,
+    portable_path_key,
+    read_repository_metadata,
+    validate_snapshot_note,
     validate_existing_path_components,
     validate_regular_file_without_links,
 )
@@ -27,6 +31,19 @@ from .target_lock import lock_details
 
 COPY_CHUNK_SIZE = 1024 * 1024
 README_FILENAME = "README.txt"
+FILE_INTEGRITY_STATUSES = frozenset(
+    {
+        "ok",
+        "missing",
+        "unreadable",
+        "hash_mismatch",
+        "size_mismatch",
+        "changed_during_snapshot",
+        "unsafe_path",
+        "database_backup_failed",
+    }
+)
+SNAPSHOT_STATUSES = frozenset({"complete", "degraded", "recovery"})
 
 
 class RepositoryLockError(RuntimeError):
@@ -65,7 +82,66 @@ class StoredObject:
 class SQLiteBackup:
     object: StoredObject
     schema_version: int | None
-    staging_path: Path
+
+
+@dataclass(frozen=True)
+class ExpectedFile:
+    sha256: str
+    size_bytes: int
+
+    def as_json(self) -> dict[str, str]:
+        validate_sha256(self.sha256)
+        validate_nonnegative_integer(self.size_bytes, label="expected.size_bytes")
+        return {"sha256": self.sha256, "size_bytes": str(self.size_bytes)}
+
+
+@dataclass(frozen=True)
+class SnapshotFileRecord:
+    original_path_display: str
+    restore_kind: str
+    integrity_status: str
+    object: ObjectReference | None
+    mtime_ns: int | None
+    expected: ExpectedFile | None = None
+    path: str | None = None
+    record_type: str = "file"
+
+
+@dataclass(frozen=True)
+class SnapshotDatabaseRecord:
+    role: str
+    source_path_display: str
+    restore_path: str | None
+    required: bool
+    regenerable: bool
+    capture: str
+    status: str
+    object: ObjectReference | None
+    schema_version: int | None
+    model_name: str | None
+
+    def as_json(self) -> dict[str, builtins.object]:
+        validate_database_record(self)
+        return {
+            "capture": self.capture,
+            "model_name": self.model_name,
+            "object": self.object.as_json() if self.object is not None else None,
+            "regenerable": self.regenerable,
+            "required": self.required,
+            "restore_path": self.restore_path,
+            "role": self.role,
+            "schema_version": self.schema_version,
+            "source_path_display": self.source_path_display,
+            "status": self.status,
+        }
+
+
+@dataclass(frozen=True)
+class PublishedSnapshot:
+    snapshot_id: str
+    snapshot_dir: Path
+    status: str
+    entry_count: int
 
 
 class RepositoryLock:
@@ -303,7 +379,173 @@ def backup_sqlite_database(repository: Path, staging: Path, source: Path) -> SQL
         raise SnapshotStorageError(f"Kunne ikke kontrollere SQLite-stagingkopien: {staging_path}: {exc}") from exc
 
     stored = store_verified_file(repository, staging, staging_path)
-    return SQLiteBackup(object=stored, schema_version=schema_version, staging_path=staging_path)
+    staging_path.unlink()
+    fsync_directory(sqlite_directory)
+    return SQLiteBackup(object=stored, schema_version=schema_version)
+
+
+def publish_snapshot(
+    repository: Path,
+    staging: Path,
+    *,
+    collection_id: str,
+    repository_id: str,
+    status: str,
+    collection_identity_source: str,
+    started_at: str,
+    completed_at: str,
+    files: tuple[SnapshotFileRecord, ...],
+    databases: tuple[SnapshotDatabaseRecord, ...],
+    schema_versions: dict[str, int | None],
+    exclusions: tuple[str, ...] = (),
+    warnings: tuple[str, ...] = (),
+    note: str | None = None,
+    snapshot_id: str | None = None,
+) -> PublishedSnapshot:
+    validate_staging_path(repository, staging)
+    canonical_collection_id = canonical_uuid(collection_id, label="collection_id")
+    canonical_repository_id = canonical_uuid(repository_id, label="repository_id")
+    canonical_snapshot_id = canonical_uuid(snapshot_id or str(uuid.uuid4()), label="snapshot_id")
+    validate_snapshot_manifest_parameters(
+        status=status,
+        collection_identity_source=collection_identity_source,
+        started_at=started_at,
+        completed_at=completed_at,
+        schema_versions=schema_versions,
+        exclusions=exclusions,
+        warnings=warnings,
+        note=note,
+    )
+    validate_repository_binding(
+        repository,
+        collection_id=canonical_collection_id,
+        repository_id=canonical_repository_id,
+    )
+    validate_snapshot_status_consistency(status, files, databases)
+
+    file_entries = build_file_entries(repository, files)
+    database_entries = tuple(
+        record.as_json()
+        for record in sorted(databases, key=lambda item: (item.role, item.source_path_display))
+    )
+    for record in databases:
+        if record.object is not None:
+            validate_published_object(repository, record.object)
+        if record.role not in schema_versions or schema_versions[record.role] != record.schema_version:
+            raise SnapshotStorageError(
+                f"Databaseposten {record.role!r} stemmer ikke med manifestets schema_versions."
+            )
+
+    snapshot_staging = staging / "snapshot"
+    try:
+        snapshot_staging.mkdir()
+    except FileExistsError as exc:
+        raise SnapshotStorageError(f"Snapshot-staging finnes allerede: {snapshot_staging}") from exc
+
+    files_path = snapshot_staging / "files.jsonl"
+    files_reference = write_files_jsonl(files_path, file_entries)
+
+    manifest: dict[str, object] = {
+        "collection_id": canonical_collection_id,
+        "collection_identity": {
+            "source": collection_identity_source,
+            "verified": collection_identity_source == "database",
+        },
+        "completed_at": completed_at,
+        "created_by": {"program": "bildebank", "version": __version__},
+        "databases": list(database_entries),
+        "exclusions": sorted(exclusions),
+        "files_jsonl": {
+            "entry_count": str(len(file_entries)),
+            "sha256": files_reference.sha256,
+            "size_bytes": str(files_reference.size_bytes),
+        },
+        "format_version": REPOSITORY_FORMAT_VERSION,
+        "note": note,
+        "repository_id": canonical_repository_id,
+        "required_features": [],
+        "schema_versions": dict(schema_versions),
+        "snapshot_id": canonical_snapshot_id,
+        "started_at": started_at,
+        "status": status,
+        "warnings": sorted(warnings),
+    }
+    manifest_content = canonical_json_bytes(manifest)
+    manifest_path = snapshot_staging / "manifest.json"
+    write_new_durable_file(manifest_path, manifest_content)
+    manifest_reference = reference_for_bytes(manifest_content)
+
+    commit = {
+        "files_jsonl": {
+            "sha256": files_reference.sha256,
+            "size_bytes": str(files_reference.size_bytes),
+        },
+        "format_version": REPOSITORY_FORMAT_VERSION,
+        "manifest": {
+            "sha256": manifest_reference.sha256,
+            "size_bytes": str(manifest_reference.size_bytes),
+        },
+        "snapshot_id": canonical_snapshot_id,
+    }
+    write_new_durable_file(snapshot_staging / "commit.json", canonical_json_bytes(commit))
+    verify_snapshot_staging(snapshot_staging, commit)
+    fsync_directory(snapshot_staging)
+    fsync_directory(staging)
+
+    snapshots_directory = repository / "snapshots"
+    validate_existing_path_components(snapshots_directory)
+    snapshots_directory.mkdir(exist_ok=True)
+    destination = snapshots_directory / snapshot_directory_name(completed_at, canonical_snapshot_id)
+    if destination.exists() or destination.is_symlink():
+        raise SnapshotStorageError(f"Snapshotmålet finnes allerede og blir ikke overskrevet: {destination}")
+    try:
+        os.rename(snapshot_staging, destination)
+    except OSError as exc:
+        raise SnapshotStorageError(f"Kunne ikke publisere snapshotet atomisk: {destination}: {exc}") from exc
+    fsync_directory(snapshots_directory)
+    remove_empty_staging_directories(staging)
+    return PublishedSnapshot(
+        snapshot_id=canonical_snapshot_id,
+        snapshot_dir=destination,
+        status=status,
+        entry_count=len(file_entries),
+    )
+
+
+def build_file_entries(
+    repository: Path,
+    records: tuple[SnapshotFileRecord, ...],
+) -> tuple[dict[str, object], ...]:
+    normal_keys: set[str] = set()
+    sorted_records = sorted(records, key=file_record_sort_key)
+    entries: list[dict[str, object]] = []
+    for index, record in enumerate(sorted_records, start=1):
+        validate_file_record(record)
+        if record.object is not None:
+            validate_published_object(repository, record.object)
+        if record.restore_kind == "normal":
+            assert record.path is not None
+            path_key = portable_path_key(record.path)
+            assert path_key is not None
+            if path_key in normal_keys:
+                raise SnapshotStorageError(f"Flere snapshotposter har samme portable restore-sti: {record.path}")
+            normal_keys.add(path_key)
+        sequence = f"{index:012d}"
+        entries.append(
+            {
+                "entry_id": f"e-{sequence}",
+                "expected": record.expected.as_json() if record.expected is not None else None,
+                "integrity_status": record.integrity_status,
+                "mtime_ns": str(record.mtime_ns) if record.mtime_ns is not None else None,
+                "object": record.object.as_json() if record.object is not None else None,
+                "original_path_display": record.original_path_display,
+                "path": record.path,
+                "record_type": record.record_type,
+                "recovery_name": f"entry-{sequence}.bin" if record.restore_kind == "recovery_only" else None,
+                "restore_kind": record.restore_kind,
+            }
+        )
+    return tuple(entries)
 
 
 def require_sqlite_integrity(connection: sqlite3.Connection, path: Path, *, source_error: bool) -> None:
@@ -331,6 +573,252 @@ def optional_schema_version(connection: sqlite3.Connection) -> int | None:
     except (TypeError, ValueError):
         return None
     return value if value >= 0 else None
+
+
+def validate_snapshot_manifest_parameters(
+    *,
+    status: str,
+    collection_identity_source: str,
+    started_at: str,
+    completed_at: str,
+    schema_versions: dict[str, int | None],
+    exclusions: tuple[str, ...],
+    warnings: tuple[str, ...],
+    note: str | None,
+) -> None:
+    if status not in SNAPSHOT_STATUSES:
+        raise SnapshotStorageError(f"Ugyldig snapshotstatus: {status!r}")
+    expected_identity_source = "repository" if status == "recovery" else "database"
+    if collection_identity_source != expected_identity_source:
+        raise SnapshotStorageError(
+            f"Snapshotstatus {status!r} krever collection identity fra {expected_identity_source!r}."
+        )
+    validate_timestamp(started_at)
+    validate_timestamp(completed_at)
+    started = datetime.strptime(started_at, "%Y-%m-%dT%H:%M:%SZ")
+    completed = datetime.strptime(completed_at, "%Y-%m-%dT%H:%M:%SZ")
+    if completed < started:
+        raise SnapshotStorageError("Snapshotets completed_at kan ikke være før started_at.")
+    try:
+        validate_snapshot_note(note)
+    except ValueError as exc:
+        raise SnapshotStorageError(str(exc)) from exc
+    if not all(isinstance(item, str) for item in exclusions):
+        raise SnapshotStorageError("Snapshotets exclusions må bare inneholde strenger.")
+    if not all(isinstance(item, str) for item in warnings):
+        raise SnapshotStorageError("Snapshotets warnings må bare inneholde strenger.")
+    for role, version in schema_versions.items():
+        if not isinstance(role, str) or not role:
+            raise SnapshotStorageError("schema_versions har en ugyldig databaserolle.")
+        if version is not None:
+            validate_nonnegative_integer(version, label=f"schema_versions[{role!r}]")
+
+
+def validate_repository_binding(repository: Path, *, collection_id: str, repository_id: str) -> None:
+    metadata = read_repository_metadata(repository / REPOSITORY_METADATA_FILENAME)
+    if metadata.get("collection_id") != collection_id:
+        raise SnapshotStorageError("Snapshotets collection_id stemmer ikke med repositorymetadata.")
+    if metadata.get("repository_id") != repository_id:
+        raise SnapshotStorageError("Snapshotets repository_id stemmer ikke med repositorymetadata.")
+
+
+def validate_file_record(record: SnapshotFileRecord) -> None:
+    if not record.original_path_display:
+        raise SnapshotStorageError("Snapshotposten mangler original_path_display.")
+    if record.restore_kind not in {"normal", "recovery_only"}:
+        raise SnapshotStorageError(f"Ugyldig restore_kind: {record.restore_kind!r}")
+    if record.record_type not in {"file", "database_raw"}:
+        raise SnapshotStorageError(f"Ugyldig record_type: {record.record_type!r}")
+    if record.integrity_status not in FILE_INTEGRITY_STATUSES:
+        raise SnapshotStorageError(f"Ugyldig integrity_status: {record.integrity_status!r}")
+    if record.mtime_ns is not None:
+        validate_nonnegative_integer(record.mtime_ns, label="mtime_ns")
+    if record.expected is not None:
+        record.expected.as_json()
+    if record.object is not None:
+        validate_object_reference(record.object)
+    if record.restore_kind == "normal":
+        if record.path is None or portable_path_key(record.path) is None:
+            raise SnapshotStorageError(f"Normal snapshotpost har en utrygg restore-sti: {record.path!r}")
+    elif record.path is not None:
+        raise SnapshotStorageError("En recovery_only-post kan ikke ha normal restore-sti.")
+    if record.integrity_status == "ok" and record.object is None:
+        raise SnapshotStorageError("En snapshotpost med integrity_status 'ok' må ha et objekt.")
+    if record.integrity_status == "missing" and record.object is not None:
+        raise SnapshotStorageError("En manglende fil kan ikke ha en observert objektreferanse.")
+    if record.record_type == "database_raw" and (
+        record.restore_kind != "recovery_only" or record.expected is not None
+    ):
+        raise SnapshotStorageError("En rå databasepost må være recovery_only uten forventet mediehash.")
+
+
+def file_record_sort_key(record: SnapshotFileRecord) -> tuple[int, str, str]:
+    if record.restore_kind == "normal":
+        return (0, record.path or "", record.original_path_display)
+    return (1, "", record.original_path_display)
+
+
+def validate_database_record(record: SnapshotDatabaseRecord) -> None:
+    valid_role = record.role in {"main", "openclip"} or record.role.startswith(("face:", "auxiliary:"))
+    if not valid_role or record.role.endswith(":"):
+        raise SnapshotStorageError(f"Ugyldig databaserolle: {record.role!r}")
+    if not record.source_path_display:
+        raise SnapshotStorageError("Databaseposten mangler source_path_display.")
+    if type(record.required) is not bool or type(record.regenerable) is not bool:
+        raise SnapshotStorageError("Databasepostens required og regenerable må være boolske verdier.")
+    if record.capture not in {"sqlite_backup", "raw_recovery"}:
+        raise SnapshotStorageError(f"Ugyldig database-capture: {record.capture!r}")
+    if record.status not in {"ok", "backup_failed", "unreadable"}:
+        raise SnapshotStorageError(f"Ugyldig databasestatus: {record.status!r}")
+    if record.schema_version is not None:
+        validate_nonnegative_integer(record.schema_version, label="database.schema_version")
+    if record.model_name is not None and not isinstance(record.model_name, str):
+        raise SnapshotStorageError("Databasepostens model_name må være en streng eller null.")
+    if record.object is not None:
+        validate_object_reference(record.object)
+    if record.capture == "sqlite_backup":
+        if record.status != "ok" or record.object is None:
+            raise SnapshotStorageError("En konsistent SQLite-kopi må ha status ok og objektreferanse.")
+        if record.restore_path is None or portable_path_key(record.restore_path) is None:
+            raise SnapshotStorageError("En konsistent SQLite-kopi må ha en portabel restore_path.")
+    elif record.restore_path is not None:
+        raise SnapshotStorageError("En raw_recovery-database kan ikke ha normal restore_path.")
+    if record.capture == "raw_recovery" and record.status == "ok":
+        raise SnapshotStorageError("En raw_recovery-database kan ikke ha status ok.")
+
+
+def validate_snapshot_status_consistency(
+    status: str,
+    files: tuple[SnapshotFileRecord, ...],
+    databases: tuple[SnapshotDatabaseRecord, ...],
+) -> None:
+    roles = [database.role for database in databases]
+    if len(set(roles)) != len(roles):
+        raise SnapshotStorageError("Snapshotet kan ikke ha flere databaseposter med samme rolle.")
+    main_records = [database for database in databases if database.role == "main"]
+    if len(main_records) != 1:
+        raise SnapshotStorageError("Snapshotet må ha nøyaktig én databasepost med rollen main.")
+    main = main_records[0]
+    if status in {"complete", "degraded"}:
+        if main.capture != "sqlite_backup" or main.status != "ok" or main.object is None:
+            raise SnapshotStorageError(f"Et {status}-snapshot krever en gyldig SQLite-kopi av hoveddatabasen.")
+    elif main.capture != "raw_recovery" or main.status == "ok":
+        raise SnapshotStorageError("Et recovery-snapshot krever hoveddatabasen som raw_recovery.")
+    if status == "complete":
+        if any(file.integrity_status != "ok" or file.restore_kind != "normal" for file in files):
+            raise SnapshotStorageError("Et complete-snapshot kan ikke inneholde filavvik eller recovery_only-poster.")
+        if any(database.status != "ok" for database in databases):
+            raise SnapshotStorageError("Et complete-snapshot kan ikke inneholde databaseavvik.")
+
+
+def validate_object_reference(reference: ObjectReference) -> None:
+    validate_sha256(reference.sha256)
+    validate_nonnegative_integer(reference.size_bytes, label="object.size_bytes")
+
+
+def validate_sha256(value: str) -> None:
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        raise SnapshotStorageError(f"Ugyldig SHA-256: {value!r}")
+
+
+def validate_nonnegative_integer(value: int, *, label: str) -> None:
+    if type(value) is not int or value < 0:
+        raise SnapshotStorageError(f"{label} må være et ikke-negativt heltall.")
+
+
+def validate_published_object(repository: Path, reference: ObjectReference) -> None:
+    validate_object_reference(reference)
+    path = snapshot_object_path(repository, reference.sha256, reference.size_bytes)
+    try:
+        validate_regular_file_without_links(path, label="Snapshotobjekt")
+    except ValueError as exc:
+        raise SnapshotStorageError(str(exc)) from exc
+    if path.stat().st_size != reference.size_bytes:
+        raise SnapshotStorageError(f"Snapshotobjektet har feil størrelse: {path}")
+
+
+def reference_for_bytes(content: bytes) -> ObjectReference:
+    return ObjectReference(sha256=hashlib.sha256(content).hexdigest(), size_bytes=len(content))
+
+
+def write_files_jsonl(path: Path, entries: tuple[dict[str, object], ...]) -> ObjectReference:
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    fd: int | None = None
+    digest = hashlib.sha256()
+    size_bytes = 0
+    try:
+        fd = os.open(path, flags, 0o600)
+        for entry in entries:
+            line = canonical_json_bytes(entry)
+            write_all(fd, line)
+            digest.update(line)
+            size_bytes += len(line)
+        os.fsync(fd)
+        os.close(fd)
+        fd = None
+        fsync_directory(path.parent)
+    except Exception:
+        if fd is not None:
+            os.close(fd)
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
+    return ObjectReference(sha256=digest.hexdigest(), size_bytes=size_bytes)
+
+
+def snapshot_directory_name(completed_at: str, snapshot_id: str) -> str:
+    validate_timestamp(completed_at)
+    compact_timestamp = completed_at[:10] + "T" + completed_at[11:19].replace(":", "") + "Z"
+    return f"{compact_timestamp}-{snapshot_id}"
+
+
+def verify_snapshot_staging(snapshot_staging: Path, commit: dict[str, object]) -> None:
+    files_path = snapshot_staging / "files.jsonl"
+    manifest_path = snapshot_staging / "manifest.json"
+    commit_path = snapshot_staging / "commit.json"
+    for path in (files_path, manifest_path, commit_path):
+        validate_regular_file_without_links(path, label="Snapshotmetadata")
+    files_reference = reference_for_bytes(files_path.read_bytes())
+    manifest_reference = reference_for_bytes(manifest_path.read_bytes())
+    expected_files = commit["files_jsonl"]
+    expected_manifest = commit["manifest"]
+    if not isinstance(expected_files, dict) or not isinstance(expected_manifest, dict):
+        raise SnapshotStorageError("commit.json har ugyldige kontrollsummereferanser.")
+    if expected_files != {
+        "sha256": files_reference.sha256,
+        "size_bytes": str(files_reference.size_bytes),
+    }:
+        raise SnapshotStorageError("files.jsonl stemmer ikke med commit.json.")
+    if expected_manifest != {
+        "sha256": manifest_reference.sha256,
+        "size_bytes": str(manifest_reference.size_bytes),
+    }:
+        raise SnapshotStorageError("manifest.json stemmer ikke med commit.json.")
+    try:
+        stored_commit = json.loads(commit_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise SnapshotStorageError("commit.json kunne ikke leses tilbake etter skriving.") from exc
+    if stored_commit != commit:
+        raise SnapshotStorageError("commit.json endret seg etter skriving.")
+
+
+def remove_empty_staging_directories(staging: Path) -> None:
+    directories = sorted(
+        (path for path in staging.rglob("*") if path.is_dir() and not path.is_symlink()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for directory in directories:
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    try:
+        staging.rmdir()
+    except OSError:
+        pass
 
 
 def canonical_json_bytes(value: object) -> bytes:

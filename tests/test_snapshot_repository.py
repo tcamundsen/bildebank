@@ -7,17 +7,23 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 from bildebank.snapshot import REPOSITORY_LOCK_FILENAME, REPOSITORY_METADATA_FILENAME, plan_snapshot
 from bildebank.snapshot_repository import (
     RepositoryLock,
     RepositoryLockError,
     SnapshotStorageError,
+    ExpectedFile,
+    ObjectReference,
+    SnapshotDatabaseRecord,
+    SnapshotFileRecord,
     SourceDatabaseError,
     backup_sqlite_database,
     canonical_json_bytes,
     create_staging_run,
     initialize_repository,
+    publish_snapshot,
     store_verified_file,
 )
 from tests.cli_helpers import run_cli
@@ -259,6 +265,268 @@ class SnapshotRepositoryTests(unittest.TestCase):
             object_files = list((repository / "objects" / "sha256").rglob("*"))
             self.assertEqual([path for path in object_files if path.is_file()], [])
 
+    def test_publish_snapshot_writes_canonical_v1_files_in_deterministic_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository = root / "repository"
+            repository.mkdir()
+            collection = root / "collection"
+            collection.mkdir()
+            collection_id = str(uuid.uuid4())
+            repository_id = str(uuid.uuid4())
+            snapshot_id = str(uuid.uuid4())
+            first_source = root / "b.jpg"
+            second_source = root / "a.jpg"
+            first_source.write_bytes(b"bilde b")
+            second_source.write_bytes(b"bilde a")
+
+            with RepositoryLock(repository, command="snapshot create"):
+                initialize_repository(
+                    repository,
+                    collection,
+                    collection_id,
+                    repository_id=repository_id,
+                    created_at="2026-07-15T10:00:00Z",
+                )
+                staging = create_staging_run(repository)
+                first = store_verified_file(repository, staging, first_source)
+                second = store_verified_file(repository, staging, second_source)
+                published = publish_snapshot(
+                    repository,
+                    staging,
+                    collection_id=collection_id,
+                    repository_id=repository_id,
+                    status="complete",
+                    collection_identity_source="database",
+                    started_at="2026-07-15T12:00:00Z",
+                    completed_at="2026-07-15T12:01:02Z",
+                    files=(
+                        SnapshotFileRecord(
+                            path="2026/07/b.jpg",
+                            original_path_display="2026/07/b.jpg",
+                            restore_kind="normal",
+                            integrity_status="ok",
+                            expected=ExpectedFile(first.reference.sha256, first.reference.size_bytes),
+                            object=first.reference,
+                            mtime_ns=first.source_mtime_ns,
+                        ),
+                        SnapshotFileRecord(
+                            path="2026/07/a.jpg",
+                            original_path_display="2026/07/a.jpg",
+                            restore_kind="normal",
+                            integrity_status="ok",
+                            object=second.reference,
+                            mtime_ns=second.source_mtime_ns,
+                        ),
+                    ),
+                    databases=(main_database_record(first.reference),),
+                    schema_versions={"main": 14},
+                    exclusions=("thumbnails",),
+                    note="Før ferien",
+                    snapshot_id=snapshot_id,
+                )
+
+                self.assertTrue((repository / REPOSITORY_LOCK_FILENAME).exists())
+
+            expected_directory = repository / "snapshots" / f"2026-07-15T120102Z-{snapshot_id}"
+            self.assertEqual(published.snapshot_dir, expected_directory)
+            self.assertEqual(published.entry_count, 2)
+            self.assertFalse(staging.exists())
+            lines = expected_directory.joinpath("files.jsonl").read_text(encoding="utf-8").splitlines()
+            entries = [json.loads(line) for line in lines]
+            self.assertEqual([entry["path"] for entry in entries], ["2026/07/a.jpg", "2026/07/b.jpg"])
+            self.assertEqual([entry["entry_id"] for entry in entries], ["e-000000000001", "e-000000000002"])
+            self.assertEqual(
+                expected_directory.joinpath("files.jsonl").read_bytes(),
+                b"".join(canonical_json_bytes(entry) for entry in entries),
+            )
+            manifest_bytes = expected_directory.joinpath("manifest.json").read_bytes()
+            manifest = json.loads(manifest_bytes)
+            commit = json.loads(expected_directory.joinpath("commit.json").read_bytes())
+            self.assertEqual(manifest["snapshot_id"], snapshot_id)
+            self.assertEqual(manifest["files_jsonl"]["entry_count"], "2")
+            self.assertEqual(commit["manifest"]["sha256"], hashlib.sha256(manifest_bytes).hexdigest())
+            self.assertEqual(
+                commit["files_jsonl"]["sha256"],
+                hashlib.sha256(expected_directory.joinpath("files.jsonl").read_bytes()).hexdigest(),
+            )
+
+    def test_publish_snapshot_refuses_missing_object_before_writing_snapshot_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository, collection_id, repository_id, staging = initialized_staging(root)
+            missing = ObjectReference("a" * 64, 12)
+
+            with RepositoryLock(repository, command="snapshot create"):
+                with self.assertRaisesRegex(SnapshotStorageError, "Snapshotobjekt"):
+                    publish_snapshot(
+                        repository,
+                        staging,
+                        collection_id=collection_id,
+                        repository_id=repository_id,
+                        status="complete",
+                        collection_identity_source="database",
+                        started_at="2026-07-15T12:00:00Z",
+                        completed_at="2026-07-15T12:01:00Z",
+                        files=(normal_file_record("2026/07/a.jpg", missing),),
+                        databases=(main_database_record(missing),),
+                        schema_versions={"main": 14},
+                    )
+
+            self.assertFalse((staging / "snapshot").exists())
+            self.assertEqual(list((repository / "snapshots").iterdir()), [])
+
+    def test_publish_failure_leaves_complete_staging_and_no_published_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository = root / "repository"
+            repository.mkdir()
+            collection = root / "collection"
+            collection.mkdir()
+            collection_id = str(uuid.uuid4())
+            repository_id = str(uuid.uuid4())
+            source = root / "a.jpg"
+            source.write_bytes(b"a")
+
+            with RepositoryLock(repository, command="snapshot create"):
+                initialize_repository(repository, collection, collection_id, repository_id=repository_id)
+                staging = create_staging_run(repository)
+                stored = store_verified_file(repository, staging, source)
+                with patch("bildebank.snapshot_repository.os.rename", side_effect=OSError("avbrutt")):
+                    with self.assertRaisesRegex(SnapshotStorageError, "atomisk"):
+                        publish_snapshot(
+                            repository,
+                            staging,
+                            collection_id=collection_id,
+                            repository_id=repository_id,
+                            status="complete",
+                            collection_identity_source="database",
+                            started_at="2026-07-15T12:00:00Z",
+                            completed_at="2026-07-15T12:01:00Z",
+                            files=(normal_file_record("2026/07/a.jpg", stored.reference),),
+                            databases=(main_database_record(stored.reference),),
+                            schema_versions={"main": 14},
+                        )
+
+            self.assertTrue((staging / "snapshot" / "files.jsonl").is_file())
+            self.assertTrue((staging / "snapshot" / "manifest.json").is_file())
+            self.assertTrue((staging / "snapshot" / "commit.json").is_file())
+            self.assertEqual(list((repository / "snapshots").iterdir()), [])
+
+    def test_publishing_new_snapshot_never_changes_or_overwrites_older_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository = root / "repository"
+            repository.mkdir()
+            collection = root / "collection"
+            collection.mkdir()
+            collection_id = str(uuid.uuid4())
+            repository_id = str(uuid.uuid4())
+            first_snapshot_id = str(uuid.uuid4())
+            source = root / "a.jpg"
+            source.write_bytes(b"a")
+
+            with RepositoryLock(repository, command="snapshot create"):
+                initialize_repository(repository, collection, collection_id, repository_id=repository_id)
+                first_staging = create_staging_run(repository)
+                stored = store_verified_file(repository, first_staging, source)
+                first = publish_snapshot(
+                    repository,
+                    first_staging,
+                    collection_id=collection_id,
+                    repository_id=repository_id,
+                    status="complete",
+                    collection_identity_source="database",
+                    started_at="2026-07-15T12:00:00Z",
+                    completed_at="2026-07-15T12:01:00Z",
+                    files=(),
+                    databases=(main_database_record(stored.reference),),
+                    schema_versions={"main": 14},
+                    snapshot_id=first_snapshot_id,
+                )
+                first_before = tree_file_bytes(first.snapshot_dir)
+                self.assertEqual(first.snapshot_dir.joinpath("files.jsonl").read_bytes(), b"")
+
+                second_staging = create_staging_run(repository)
+                second = publish_snapshot(
+                    repository,
+                    second_staging,
+                    collection_id=collection_id,
+                    repository_id=repository_id,
+                    status="complete",
+                    collection_identity_source="database",
+                    started_at="2026-07-15T12:02:00Z",
+                    completed_at="2026-07-15T12:03:00Z",
+                    files=(normal_file_record("2026/07/a.jpg", stored.reference),),
+                    databases=(main_database_record(stored.reference),),
+                    schema_versions={"main": 14},
+                )
+
+                collision_staging = create_staging_run(repository)
+                with self.assertRaisesRegex(SnapshotStorageError, "ikke overskrevet"):
+                    publish_snapshot(
+                        repository,
+                        collision_staging,
+                        collection_id=collection_id,
+                        repository_id=repository_id,
+                        status="complete",
+                        collection_identity_source="database",
+                        started_at="2026-07-15T12:00:00Z",
+                        completed_at="2026-07-15T12:01:00Z",
+                        files=(),
+                        databases=(main_database_record(stored.reference),),
+                        schema_versions={"main": 14},
+                        snapshot_id=first_snapshot_id,
+                    )
+
+            self.assertNotEqual(first.snapshot_dir, second.snapshot_dir)
+            self.assertEqual(tree_file_bytes(first.snapshot_dir), first_before)
+            self.assertTrue((collision_staging / "snapshot" / "commit.json").is_file())
+
+    def test_degraded_snapshot_assigns_safe_generated_name_to_recovery_only_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository = root / "repository"
+            repository.mkdir()
+            collection = root / "collection"
+            collection.mkdir()
+            collection_id = str(uuid.uuid4())
+            repository_id = str(uuid.uuid4())
+            source = root / "unsafe.bin"
+            source.write_bytes(b"bevar")
+
+            with RepositoryLock(repository, command="snapshot create"):
+                initialize_repository(repository, collection, collection_id, repository_id=repository_id)
+                staging = create_staging_run(repository)
+                stored = store_verified_file(repository, staging, source)
+                published = publish_snapshot(
+                    repository,
+                    staging,
+                    collection_id=collection_id,
+                    repository_id=repository_id,
+                    status="degraded",
+                    collection_identity_source="database",
+                    started_at="2026-07-15T12:00:00Z",
+                    completed_at="2026-07-15T12:01:00Z",
+                    files=(
+                        SnapshotFileRecord(
+                            path=None,
+                            original_path_display="CON.jpg",
+                            restore_kind="recovery_only",
+                            integrity_status="unsafe_path",
+                            object=stored.reference,
+                            mtime_ns=stored.source_mtime_ns,
+                        ),
+                    ),
+                    databases=(main_database_record(stored.reference),),
+                    schema_versions={"main": 14},
+                )
+
+            entry = json.loads(published.snapshot_dir.joinpath("files.jsonl").read_text(encoding="utf-8"))
+            self.assertIsNone(entry["path"])
+            self.assertEqual(entry["entry_id"], "e-000000000001")
+            self.assertEqual(entry["recovery_name"], "entry-000000000001.bin")
+
 
 def read_collection_id(target: Path) -> str:
     connection = sqlite3.connect(target / ".bilder.sqlite3")
@@ -268,3 +536,50 @@ def read_collection_id(target: Path) -> str:
         return str(row[0])
     finally:
         connection.close()
+
+
+def initialized_staging(root: Path) -> tuple[Path, str, str, Path]:
+    repository = root / "repository"
+    repository.mkdir()
+    collection = root / "collection"
+    collection.mkdir()
+    collection_id = str(uuid.uuid4())
+    repository_id = str(uuid.uuid4())
+    with RepositoryLock(repository, command="snapshot create"):
+        initialize_repository(repository, collection, collection_id, repository_id=repository_id)
+        staging = create_staging_run(repository)
+    return repository, collection_id, repository_id, staging
+
+
+def normal_file_record(path: str, reference: ObjectReference) -> SnapshotFileRecord:
+    return SnapshotFileRecord(
+        path=path,
+        original_path_display=path,
+        restore_kind="normal",
+        integrity_status="ok",
+        object=reference,
+        mtime_ns=0,
+    )
+
+
+def main_database_record(reference: ObjectReference) -> SnapshotDatabaseRecord:
+    return SnapshotDatabaseRecord(
+        role="main",
+        source_path_display=".bilder.sqlite3",
+        restore_path=".bilder.sqlite3",
+        required=True,
+        regenerable=False,
+        capture="sqlite_backup",
+        status="ok",
+        object=reference,
+        schema_version=14,
+        model_name=None,
+    )
+
+
+def tree_file_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file()
+    }
