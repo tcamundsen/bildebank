@@ -72,6 +72,10 @@ class DatabaseFileRow:
     size_bytes: int
 
 
+class MainDatabaseSourceError(ValueError):
+    pass
+
+
 @dataclass(frozen=True)
 class SnapshotExclusionStats:
     reason: str
@@ -201,26 +205,40 @@ def read_main_database(source: Path) -> tuple[str, tuple[DatabaseFileRow, ...]]:
     try:
         conn = sqlite3.connect(uri, uri=True)
     except sqlite3.Error as exc:
-        raise ValueError(f"Kunne ikke åpne hoveddatabasen skrivebeskyttet: {database_path}") from exc
+        raise MainDatabaseSourceError(
+            f"Kunne ikke åpne hoveddatabasen skrivebeskyttet: {database_path}"
+        ) from exc
     conn.row_factory = sqlite3.Row
     try:
-        conn.execute("PRAGMA query_only = ON")
-        conn.execute("PRAGMA foreign_keys = ON")
-        db.require_current_schema(conn)
-        db.validate_database_health(conn)
-        collection_id = db.validate_collection_id(conn)
-        rows = tuple(
-            validate_database_file_row(row)
-            for row in conn.execute(
-                """
-                SELECT target_path, sha256, size_bytes
-                FROM files
-                ORDER BY target_path_key, id
-                """
+        try:
+            conn.execute("PRAGMA query_only = ON")
+            conn.execute("PRAGMA foreign_keys = ON")
+        except sqlite3.Error as exc:
+            raise MainDatabaseSourceError(f"Hoveddatabasen kunne ikke leses: {exc}") from exc
+        try:
+            db.validate_database_health(conn)
+        except (sqlite3.Error, ValueError) as exc:
+            raise MainDatabaseSourceError(f"Hoveddatabasen har integritetsfeil: {exc}") from exc
+        try:
+            db.require_current_schema(conn)
+        except sqlite3.Error as exc:
+            raise MainDatabaseSourceError(f"Hoveddatabasen kunne ikke leses: {exc}") from exc
+        try:
+            collection_id = db.validate_collection_id(conn)
+            rows = tuple(
+                validate_database_file_row(row)
+                for row in conn.execute(
+                    """
+                    SELECT target_path, sha256, size_bytes
+                    FROM files
+                    ORDER BY target_path_key, id
+                    """
+                )
             )
-        )
-    except (sqlite3.Error, ValueError) as exc:
-        raise ValueError(f"Hoveddatabasen kunne ikke valideres: {exc}") from exc
+        except sqlite3.Error as exc:
+            raise MainDatabaseSourceError(f"Hoveddatabasen kunne ikke leses: {exc}") from exc
+        except ValueError as exc:
+            raise ValueError(f"Hoveddatabasen kunne ikke valideres: {exc}") from exc
     finally:
         conn.close()
     return collection_id, rows

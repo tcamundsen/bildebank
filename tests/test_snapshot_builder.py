@@ -5,12 +5,18 @@ import json
 import sqlite3
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-from bildebank import snapshot_builder as snapshot_builder_module
+from bildebank import db, snapshot_builder as snapshot_builder_module
 from bildebank.config import FaceRecognitionConfig
-from bildebank.snapshot_builder import SnapshotBuildResult, build_normal_snapshot
+from bildebank.snapshot_builder import (
+    SnapshotBuildResult,
+    SnapshotRecoveryRequiredError,
+    build_normal_snapshot,
+    build_recovery_snapshot,
+)
 from bildebank.snapshot_repository import (
     RepositoryLock,
     PublishedSnapshot,
@@ -146,6 +152,200 @@ class SnapshotBuilderTests(unittest.TestCase):
             self.assertEqual(result.schema_versions["face:antelopev2"], 5)
             self.assertTrue(any("Ukjent SQLite-database" in warning for warning in result.warnings))
 
+    def test_corrupt_auxiliary_database_is_preserved_as_raw_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            auxiliary = target / "metadata" / "damaged.sqlite3"
+            auxiliary.parent.mkdir()
+            auxiliary.write_bytes(b"ikke en sqlite-database")
+            Path(f"{auxiliary}-wal").write_bytes(b"ra wal-data")
+
+            result, published = build_and_publish(target, repository)
+
+            self.assertEqual(result.status, "degraded")
+            database = next(item for item in result.databases if item.role.startswith("auxiliary:"))
+            self.assertEqual(database.capture, "raw_recovery")
+            self.assertEqual(database.status, "backup_failed")
+            self.assertIsNone(database.restore_path)
+            self.assertIsNone(database.schema_version)
+            raw_files = [item for item in result.files if item.record_type == "database_raw"]
+            self.assertGreaterEqual(
+                {item.original_path_display for item in raw_files},
+                {"metadata/damaged.sqlite3", "metadata/damaged.sqlite3-wal"},
+            )
+            self.assertTrue(all(item.restore_kind == "recovery_only" for item in raw_files))
+            self.assertTrue(all(item.integrity_status == "database_backup_failed" for item in raw_files))
+            self.assertTrue(all(item.object is not None for item in raw_files))
+            assert database.object is not None
+            self.assertEqual(
+                object_path(repository, database.object.sha256, database.object.size_bytes).read_bytes(),
+                b"ikke en sqlite-database",
+            )
+            manifest = json.loads(published.snapshot_dir.joinpath("manifest.json").read_bytes())
+            self.assertEqual(manifest["status"], "degraded")
+
+    def test_auxiliary_database_target_failure_aborts_instead_of_using_raw_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            auxiliary = target / "metadata" / "extra.sqlite3"
+            create_sqlite_database(auxiliary, schema_version=2)
+            original_backup = snapshot_builder_module.backup_sqlite_database
+
+            def fail_backup(repository_path: Path, staging_path: Path, source_path: Path):  # noqa: ANN202
+                if source_path == auxiliary:
+                    raise SnapshotStorageError("backupmediet er fullt")
+                return original_backup(repository_path, staging_path, source_path)
+
+            with patch("bildebank.snapshot_builder.backup_sqlite_database", side_effect=fail_backup):
+                with self.assertRaisesRegex(SnapshotStorageError, "backupmediet er fullt"):
+                    build_and_publish(target, repository)
+
+            self.assertEqual(list((repository / "snapshots").iterdir()), [])
+
+    def test_main_database_recovery_preserves_files_and_raw_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            write_file(target, "2026/07/photo.jpg", b"familiebilde")
+            collection_id = read_collection_id(target)
+            initialize_bound_repository(target, repository, collection_id)
+            main_database = target / ".bilder.sqlite3"
+            main_database.write_bytes(b"skadet hoveddatabase")
+            Path(f"{main_database}-journal").write_bytes(b"journaldata")
+
+            with RepositoryLock(repository, command="snapshot create"):
+                with TargetLock(target, command="snapshot create"):
+                    staging = create_staging_run(repository)
+                    result = build_recovery_snapshot(
+                        target,
+                        repository,
+                        staging,
+                        database_error="database disk image is malformed",
+                    )
+                    published = publish_build_result(repository, staging, result)
+
+            self.assertEqual(result.status, "recovery")
+            self.assertEqual(result.collection_identity_source, "repository")
+            main = next(item for item in result.databases if item.role == "main")
+            self.assertEqual(main.capture, "raw_recovery")
+            self.assertEqual(main.status, "backup_failed")
+            raw_names = {
+                item.original_path_display
+                for item in result.files
+                if item.record_type == "database_raw"
+            }
+            self.assertEqual(raw_names, {".bilder.sqlite3", ".bilder.sqlite3-journal"})
+            photo = next(item for item in result.files if item.original_path_display == "2026/07/photo.jpg")
+            self.assertEqual(photo.integrity_status, "ok")
+            self.assertIsNotNone(photo.object)
+            manifest = json.loads(published.snapshot_dir.joinpath("manifest.json").read_bytes())
+            self.assertEqual(manifest["collection_identity"], {"source": "repository", "verified": False})
+            self.assertTrue(any("database disk image is malformed" in item for item in result.warnings))
+
+    def test_corrupt_main_database_produces_explicit_recovery_signal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            collection_id = read_collection_id(target)
+            initialize_bound_repository(target, repository, collection_id)
+            (target / ".bilder.sqlite3").write_bytes(b"skadet hoveddatabase")
+
+            with RepositoryLock(repository, command="snapshot create"):
+                with TargetLock(target, command="snapshot create"):
+                    staging = create_staging_run(repository)
+                    with self.assertRaisesRegex(SnapshotRecoveryRequiredError, "Hoveddatabasen"):
+                        build_normal_snapshot(target, repository, staging)
+
+    def test_old_main_database_schema_requires_migration_instead_of_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            collection_id = read_collection_id(target)
+            initialize_bound_repository(target, repository, collection_id)
+            connection = sqlite3.connect(target / ".bilder.sqlite3")
+            try:
+                connection.execute("UPDATE meta SET value = '13' WHERE key = 'schema_version'")
+                connection.commit()
+            finally:
+                connection.close()
+
+            with RepositoryLock(repository, command="snapshot create"):
+                with TargetLock(target, command="snapshot create"):
+                    staging = create_staging_run(repository)
+                    with self.assertRaises(db.SchemaMigrationRequired):
+                        build_normal_snapshot(target, repository, staging)
+
+    def test_recovery_rejects_collection_id_readable_from_damaged_database_when_it_differs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            collection_id = read_collection_id(target)
+            initialize_bound_repository(target, repository, collection_id)
+
+            with RepositoryLock(repository, command="snapshot create"):
+                with TargetLock(target, command="snapshot create"):
+                    staging = create_staging_run(repository)
+                    with patch(
+                        "bildebank.snapshot_builder.read_damaged_database_collection_id",
+                        return_value=str(uuid.uuid4()),
+                    ):
+                        with self.assertRaisesRegex(SnapshotStorageError, "annen collection_id"):
+                            build_recovery_snapshot(
+                                target,
+                                repository,
+                                staging,
+                                database_error="integritetsfeil",
+                            )
+
+            object_files = [path for path in (repository / "objects").rglob("*") if path.is_file()]
+            self.assertEqual(object_files, [])
+
+    def test_recovery_rejects_a_different_source_path_before_storing_objects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            moved_target = root / "moved-collection"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            collection_id = read_collection_id(target)
+            initialize_bound_repository(target, repository, collection_id)
+            target.rename(moved_target)
+
+            with RepositoryLock(repository, command="snapshot create"):
+                with TargetLock(moved_target, command="snapshot create"):
+                    staging = create_staging_run(repository)
+                    with self.assertRaisesRegex(SnapshotStorageError, "annen samlingssti"):
+                        build_recovery_snapshot(
+                            moved_target,
+                            repository,
+                            staging,
+                            database_error="integritetsfeil",
+                        )
+
+            object_files = [path for path in (repository / "objects").rglob("*") if path.is_file()]
+            self.assertEqual(object_files, [])
+
     def test_unknown_file_is_retried_once_after_a_transient_change(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -248,23 +448,36 @@ def build_and_publish(
                 staging,
                 face_config=face_config,
             )
-            published = publish_snapshot(
-                repository,
-                staging,
-                collection_id=result.collection_id,
-                repository_id=result.repository_id,
-                status=result.status,
-                collection_identity_source="database",
-                started_at="2026-07-15T12:00:00Z",
-                completed_at="2026-07-15T12:01:00Z",
-                files=result.files,
-                databases=result.databases,
-                schema_versions=result.schema_versions,
-                exclusions=result.exclusions,
-                warnings=result.warnings,
-            )
+            published = publish_build_result(repository, staging, result)
             assert metadata["repository_id"] == result.repository_id
             return result, published
+
+
+def initialize_bound_repository(target: Path, repository: Path, collection_id: str) -> None:
+    with RepositoryLock(repository, command="snapshot create"):
+        initialize_repository(repository, target, collection_id)
+
+
+def publish_build_result(
+    repository: Path,
+    staging: Path,
+    result: SnapshotBuildResult,
+) -> PublishedSnapshot:
+    return publish_snapshot(
+        repository,
+        staging,
+        collection_id=result.collection_id,
+        repository_id=result.repository_id,
+        status=result.status,
+        collection_identity_source=result.collection_identity_source,
+        started_at="2026-07-15T12:00:00Z",
+        completed_at="2026-07-15T12:01:00Z",
+        files=result.files,
+        databases=result.databases,
+        schema_versions=result.schema_versions,
+        exclusions=result.exclusions,
+        warnings=result.warnings,
+    )
 
 
 def insert_database_file(

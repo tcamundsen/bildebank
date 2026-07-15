@@ -1464,10 +1464,15 @@ Implementeringsstatus 2026-07-15:
   ukjente filer, inkludert observerte hash-/størrelsesavvik, manglende filer,
   kontrollert nytt forsøk og databasekatalog med hoveddatabase, OpenCLIP,
   face-modeller og andre SQLite-databaser.
-- Recovery ved feil i hoveddatabasen, `raw_recovery` ved feil i en
-  tilleggsdatabase, full kjøreorkestrering og kobling til reell
-  `snapshot create` gjenstår i trinn 2. Kommandoen uten `--dry-run` er fortsatt
-  eksplisitt sperret.
+- `raw_recovery` ved bekreftet kildefeil i en tilleggsdatabase er implementert:
+  lesbare database- og sidefiler bevares som `recovery_only`, mens mål- og
+  stagingfeil fortsatt avbryter uten publisering.
+- Repositorybundet `recovery` ved åpne-, lese- eller integritetsfeil i
+  hoveddatabasen er implementert og testet. Det krever tidligere bekreftet
+  maskin, absolutt samlingssti og `collection_id`, bevarer lesbare vanlige
+  filer og rå databasefiler og publiserer identiteten som ikke verifisert.
+- Full kjøreorkestrering og kobling til reell `snapshot create` gjenstår i
+  trinn 2. Kommandoen uten `--dry-run` er fortsatt eksplisitt sperret.
 - Trinn 3–5 er ikke påbegynt.
 
 ### Trinn 0 – Enighet om design
