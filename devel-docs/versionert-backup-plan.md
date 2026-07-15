@@ -39,7 +39,7 @@ Første versjon skal ikke:
   bildefiler
 - automatisk reparere den aktive bildesamlingen
 - skrive tilbake til eller endre opprinnelige kildemapper
-- følge symbolske lenker, junctions eller andre lenker ut av samlingen
+- støtte symbolske lenker, junctions eller andre reparse points i samlingen
 - love beskyttelse mot ransomware når backupmediet står tilkoblet og skrivbart
 - erstatte behovet for flere backupmedier, frakoblet kopi og kopi utenfor
   boligen
@@ -164,20 +164,42 @@ Kjente runtime-filer som target-lås og aktiv logg skal ikke tas med. Det må
 lages én eksplisitt og testet liste over eksklusjoner. Ukjente filer skal som
 hovedregel tas med og rapporteres, ikke ignoreres.
 
-Det må avgjøres om generert HTML og thumbnails skal tas med. Det sikreste er å
-ta dem med, mens det mest plassbesparende er å klassifisere dem som
-regenererbare. Dette er en åpen beslutning.
+Genererte HTML-filer og thumbnails skal ikke tas med. De er regenererbare og
+skal stå på den eksplisitte og testede eksklusjonslisten. Backupen skal ikke
+betrakte dem som manglende filer eller integritetsfeil.
 
-Symbolske lenker, junctions og reparse points skal ikke følges. De skal
-rapporteres tydelig, og snapshotet skal som utgangspunkt ikke markeres komplett
-før policyen for det konkrete tilfellet er avklart.
+### Symbolske lenker og junctions
+
+Symbolske lenker skal normalt ikke finnes i en Bildebank-samling, fordi
+brukeren ikke skal flytte filer manuelt. Første versjon skal derfor bruke en
+enkel regel: oppdag og avvis.
+
+Før backupen skriver til repositoryet, skal en read-only forhåndskontroll lete
+etter symbolske lenker, Windows-junctions og andre reparse points i hele
+samlingsmappen. Kontrollen skal ikke følge lenkene. Hvis den finner én eller
+flere, skal backupen avbryte og vise type, logisk sti og oppløst målsti når
+denne kan bestemmes trygt.
+
+Kontrollen skal både gå gjennom samlingstreet og kontrollere alle
+mappekomponentene i databaseførte `files.target_path`. Det siste er nødvendig
+fordi for eksempel `2020/05/bilde.jpg` kan ha en lenke i komponenten `2020`.
+
+Etter forhåndskontrollen skal selve filinventaret fortsatt bruke
+ikke-følgende filsystemoperasjoner. Hvis en lenke opprettes eller endres etter
+forhåndskontrollen, skal kjøringen avbryte i stedet for å følge den.
+
+Feilmeldingen skal forklare at lenker ikke støttes i versjonert backup og at
+brukeren må gjøre samlingen selvstendig før backup kan tas. Støtte for et
+konkret brukstilfelle, som en årsmappe flyttet til en annen disk, kan vurderes
+senere hvis behovet faktisk oppstår.
 
 ## Integritetskontroll mot hoveddatabasen
 
 For hver `files`-rad skal backupen finne den forventede filen under samlingen,
 og kontrollere:
 
-- at stien er innenfor samlingsmappen
+- at både den logiske og oppløste stien er innenfor samlingsmappen uten å
+  krysse en lenke eller et reparse point
 - at stien er en vanlig fil
 - at størrelsen er lik `files.size_bytes`
 - at SHA-256 er lik `files.sha256`
@@ -221,14 +243,16 @@ endres under kopiering, skal den aktuelle kjøringen feile konservativt.
 1. Valider aktiv samling, repository og `collection_id`.
 2. Kontroller at repository ikke ligger i eller over samlingsmappen.
 3. Ta `TargetLock`.
-4. Opprett unik `run-id` og stagingområde.
-5. Inventer samlingsmappen uten å følge lenker.
-6. Les `files` og valider databaseførte stier, størrelser og SHA-256.
-7. Lag konsistente kopier av alle SQLite-databaser med SQLite backup-API.
-8. Kopier og verifiser objekter som ikke allerede finnes gyldig i repository.
-9. Bygg et deterministisk manifest og kontroller alle referanser.
-10. Publiser snapshotet atomisk.
-11. Skriv sluttrapport og frigjør låsen.
+4. Kjør read-only forhåndskontroll for lenker og avbryt før repositoryet
+   endres hvis noen finnes.
+5. Opprett unik `run-id` og stagingområde.
+6. Inventer samlingsmappen uten å følge lenker eller reparse points.
+7. Les `files` og valider databaseførte stier, størrelser og SHA-256.
+8. Lag konsistente kopier av alle SQLite-databaser med SQLite backup-API.
+9. Kopier og verifiser objekter som ikke allerede finnes gyldig i repository.
+10. Bygg et deterministisk manifest og kontroller alle referanser.
+11. Publiser snapshotet atomisk.
+12. Skriv sluttrapport og frigjør låsen.
 
 Ved feil skal ingen tidligere snapshots eller objekter endres. En ny kjøring
 skal kunne gjenbruke ferdig verifiserte objekter og ellers starte en ny,
@@ -365,7 +389,8 @@ Minstekrav til automatiserte tester:
 - avbrudd under objektkopiering og før manifestpublisering
 - full disk og andre skrivefeil
 - ugyldig repository-ID eller feil `collection_id`
-- symlink, junction/reparse point og sti som forsøker å gå ut av samlingen
+- symbolsk fil- og kataloglenke, Windows-junction, brutt lenke og andre reparse
+  points; alle skal avbryte før repositoryet endres
 - Unicode, mellomrom, lange stier og store/små bokstaver på Windows
 - rask og full `check`
 - hel restore og restore av enkeltfil
@@ -387,7 +412,7 @@ Ingen av trinnene skal startes før de åpne beslutningene nedenfor er behandlet
 - Avgjør om formatet skal implementeres av Bildebank eller gjennom et etablert
   backupverktøy.
 - Frys første versjon av repository- og manifestformatet.
-- Avgjør hvilke regenererbare filer som eventuelt kan utelates.
+- Avgjør om andre regenererbare filer enn HTML og thumbnails kan utelates.
 - Beskriv restorekontrakten fullstendig.
 
 ### Trinn 1 – Read-only plan og inventar
@@ -430,7 +455,7 @@ Disse punktene bør behandles eksplisitt i neste iterasjoner:
 2. Skal dagens mirror fortsatt hete `backup`, eller skal navnet etter hvert
    reserveres for den versjonerte løsningen?
 3. Er `snapshot` et forståelig kommandonavn for målgruppen?
-4. Skal generert HTML, thumbnails og andre regenererbare data inngå?
+4. Skal andre regenererbare data enn HTML og thumbnails inngå?
 5. Skal alle vanlige filer i samlingsmappen tas med, eller bare en eksplisitt
    tillatt liste?
 6. Skal én integritetsfeil hindre hele snapshotet i å bli publisert, eller kan
@@ -458,6 +483,8 @@ Inntil punktene over er avgjort, er anbefalt retning:
 - hele samlingsmappen som utgangspunkt, med svært få eksplisitte eksklusjoner
 - SHA-256-verifisering mot `files` for både aktive og slettede filer
 - SQLite backup-API og target-lås for konsistente snapshots
+- read-only forhåndskontroll som oppdager og avviser alle lenker og reparse
+  points før repositoryet endres
 - atomisk publisert manifest som eneste definisjon av komplett snapshot
 - read-only kontroll før restorefunksjonen regnes som ferdig
 - restore til ny mappe, aldri automatisk overskriving av aktiv samling
