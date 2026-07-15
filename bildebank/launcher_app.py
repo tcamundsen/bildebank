@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
@@ -168,6 +169,7 @@ class LauncherApp:
             root=self.root,
             button=self._button,
             run_waiting_command=self._run_waiting_command,
+            run_background_task=self._run_background_task,
             get_collection_path=lambda: self.collection_path,
             set_collection_path=self._set_collection_path,
             is_busy=lambda: self.busy,
@@ -435,6 +437,50 @@ class LauncherApp:
             stdin_text=stdin_text,
             cancellable=cancellable,
         )
+
+    def _run_background_task(
+        self,
+        task: Callable[[], Any],
+        *,
+        running_message: str,
+        failure_message: str,
+        on_success: Callable[[Any], None],
+    ) -> None:
+        if self.busy:
+            return
+        self._set_busy(True, running_message)
+        self._clear_active_progress_log()
+        self._log(running_message)
+
+        def worker() -> None:
+            try:
+                result = task()
+            except Exception as exc:  # noqa: BLE001 - shown as a controlled launcher error
+                def report_failure(error: Exception = exc) -> None:
+                    self._background_task_failed(failure_message, error)
+
+                self._post_to_tk(report_failure)
+                return
+            self._post_to_tk(lambda: self._background_task_finished(result, on_success))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _background_task_finished(
+        self,
+        result: Any,
+        on_success: Callable[[Any], None],
+    ) -> None:
+        self._set_busy(False)
+        self._clear_active_progress_log()
+        on_success(result)
+
+    def _background_task_failed(self, failure_message: str, exc: BaseException) -> None:
+        from tkinter import messagebox
+
+        self._set_busy(False)
+        self._clear_active_progress_log()
+        self._log(f"{failure_message} {exc}")
+        messagebox.showerror("Feil", f"{failure_message}\n\n{exc}", parent=self.root)
 
     def _command_start_failed(self, failure_message: str, exc: OSError) -> None:
         from tkinter import messagebox

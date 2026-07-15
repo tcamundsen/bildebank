@@ -193,6 +193,35 @@ def prepare_repository_path(source: Path, repository_arg: Path) -> Path:
     return repository
 
 
+def validate_existing_recovery_repository(source_dir: Path, repository_arg: Path) -> Path:
+    source = source_dir.resolve()
+    validate_source_collection(source)
+    repository_input = repository_arg.expanduser()
+    validate_non_network_path(repository_input, label="Repositoryet")
+    validate_existing_path_components(repository_input)
+    repository = repository_input.resolve()
+    validate_repository_location(source, repository)
+    if not repository.is_dir():
+        raise SnapshotStorageError(
+            "Recovery krever et allerede initialisert repository. "
+            f"Repositoryet finnes ikke som mappe: {repository}"
+        )
+    lock_path = repository / REPOSITORY_LOCK_FILENAME
+    if lock_path.exists() or lock_path.is_symlink():
+        raise RepositoryLockError(
+            "Repositoryet er låst av en annen snapshot-operasjon. "
+            f"Recovery-forhåndskontrollen har ikke gjort endringer: {lock_path}"
+        )
+    inspection = inspect_repository(repository, source)
+    if not inspection.initialized or inspection.metadata is None:
+        raise SnapshotStorageError(
+            "Recovery krever et allerede initialisert repository som tidligere er "
+            "bekreftet for denne bildesamlingen."
+        )
+    validate_recovery_identity_before_staging(source, inspection.metadata)
+    return repository
+
+
 def inspect_repository(repository: Path, source: Path) -> RepositoryInspection:
     lock_path = repository / REPOSITORY_LOCK_FILENAME
     if lock_path.is_symlink():

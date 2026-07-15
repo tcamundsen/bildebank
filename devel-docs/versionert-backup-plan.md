@@ -1476,8 +1476,11 @@ Implementeringsstatus 2026-07-15:
   først etter vellykket hoveddatabasekontroll, og publiserte resultater bruker
   exitkode `0`, `3` eller `4` for henholdsvis `complete`, `degraded` og
   `recovery`.
-- Kobling av den samme interne plan- og opprettingsfunksjonen til launcheren
-  gjenstår i trinn 2.
+- Den samme interne plan- og opprettingsfunksjonen er koblet til launcheren via
+  en bakgrunnsjobb som ikke fryser vinduet. Launcheren viser alltid en
+  skrivefri plan og krever bekreftelse før oppretting, og skiller tydelig
+  mellom `complete`, `degraded`, `recovery` og feil uten å tolke CLI-tekst.
+- Trinn 2 er fullført.
 - Trinn 3–5 er ikke påbegynt.
 
 ### Trinn 0 – Enighet om design

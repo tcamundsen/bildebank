@@ -11,6 +11,8 @@ import webbrowser
 
 from PIL import Image, ImageTk
 
+from .config import load_config
+from .formatting import format_bytes
 from .launcher_commands import (
     backup_command,
     create_command,
@@ -26,12 +28,90 @@ from .launcher_status import (
     check_launcher_update_status,
     collection_needs_migration,
     is_collection_created,
+    program_repo_root,
+)
+from .snapshot import MainDatabaseSourceError, SnapshotPlan, plan_snapshot
+from .snapshot_create import (
+    SnapshotCreationResult,
+    create_snapshot,
+    validate_existing_recovery_repository,
 )
 from .launcher_widgets import Tooltip
 
 
 def open_server_browser_window(port: int = DEFAULT_PORT) -> bool:
     return bool(webbrowser.open(server_browser_url(port), new=1))
+
+
+@dataclass(frozen=True)
+class LauncherRecoveryPlan:
+    source_dir: Path
+    repository_dir: Path
+    database_error: str
+
+
+def plan_launcher_snapshot(
+    collection: Path,
+    repository: Path,
+) -> SnapshotPlan | LauncherRecoveryPlan:
+    config = load_config(program_repo_root(), migrate_legacy=False)
+    try:
+        return plan_snapshot(
+            collection,
+            repository,
+            configured_face_database_dir=config.face_recognition.database_dir,
+        )
+    except MainDatabaseSourceError as exc:
+        validated_repository = validate_existing_recovery_repository(collection, repository)
+        return LauncherRecoveryPlan(
+            source_dir=collection.resolve(),
+            repository_dir=validated_repository,
+            database_error=str(exc),
+        )
+
+
+def create_launcher_snapshot(collection: Path, repository: Path) -> SnapshotCreationResult:
+    config = load_config(program_repo_root(), migrate_legacy=False)
+    return create_snapshot(
+        collection,
+        repository,
+        face_config=config.face_recognition,
+    )
+
+
+def snapshot_plan_log_lines(plan: SnapshotPlan | LauncherRecoveryPlan) -> tuple[str, ...]:
+    if isinstance(plan, LauncherRecoveryPlan):
+        return (
+            "Plan for recovery-snapshot:",
+            f"  Bildesamling: {plan.source_dir}",
+            f"  Repository: {plan.repository_dir}",
+            "  Hoveddatabasen kunne ikke valideres normalt.",
+            f"  Databasefeil: {plan.database_error}",
+            "  Repositorybindingen er kontrollert skrivefritt.",
+            "  Reell kjøring vil sikre lesbare filer og rå databaser som recovery-data.",
+        )
+    state_text = {
+        "missing": "mangler og vil bli opprettet",
+        "empty": "er tomt og vil bli initialisert",
+        "existing": "er et eksisterende, gyldig repository",
+    }.get(plan.repository_state, plan.repository_state)
+    lines = [
+        "Plan for versjonert backup:",
+        f"  Bildesamling: {plan.source_dir}",
+        f"  Repository: {plan.repository_dir}",
+        f"  Repositoryet {state_text}",
+        f"  Filer i inventaret: {plan.inventory.total_files} "
+        f"({format_bytes(plan.inventory.total_bytes)})",
+        f"  Ekskludert: {plan.inventory.excluded_files} "
+        f"({format_bytes(plan.inventory.excluded_bytes)})",
+        f"  Estimerte nye objekter: {plan.storage.estimated_new_objects}",
+        f"  Estimert ny datamengde: {format_bytes(plan.storage.estimated_new_bytes)}",
+        f"  Ledig plass: {format_bytes(plan.storage.free_bytes)}",
+        "  Estimert plass er tilstrekkelig: "
+        + ("ja" if plan.storage.has_estimated_capacity else "nei"),
+    ]
+    lines.extend(f"  ADVARSEL: {warning}" for warning in plan.warnings)
+    return tuple(lines)
 
 
 class ButtonFactory(Protocol):
@@ -49,6 +129,17 @@ class WaitingCommandRunner(Protocol):
         on_success: Callable[[], None] | None = None,
         stdin_text: str | None = None,
         cancellable: bool = False,
+    ) -> None: ...
+
+
+class BackgroundTaskRunner(Protocol):
+    def __call__(
+        self,
+        task: Callable[[], Any],
+        *,
+        running_message: str,
+        failure_message: str,
+        on_success: Callable[[Any], None],
     ) -> None: ...
 
 
@@ -82,6 +173,7 @@ class MainTab:
         root: Any,
         button: ButtonFactory,
         run_waiting_command: WaitingCommandRunner,
+        run_background_task: BackgroundTaskRunner,
         get_collection_path: Callable[[], Path],
         set_collection_path: Callable[[Path], None],
         is_busy: Callable[[], bool],
@@ -103,6 +195,7 @@ class MainTab:
         self.root = root
         self._button = button
         self._run_waiting_command = run_waiting_command
+        self._run_background_task = run_background_task
         self._get_collection_path = get_collection_path
         self._set_collection_path = set_collection_path
         self._is_busy = is_busy
@@ -131,6 +224,7 @@ class MainTab:
         self.update_button_icons = self._load_update_button_icons()
         self.start_server_button: Any | None = None
         self.backup_button: Any | None = None
+        self.snapshot_button: Any | None = None
         self.update_button: Any | None = None
 
         collection_frame = ttk.Frame(self.frame)
@@ -169,6 +263,7 @@ class MainTab:
             child.destroy()
         self.start_server_button = None
         self.backup_button = None
+        self.snapshot_button = None
         self.update_button = None
         collection_created = is_collection_created(self.collection_path)
         available = (
@@ -229,8 +324,33 @@ class MainTab:
                 backup_button,
                 "Backup kan brukes etter at bildesamlingen er opprettet.",
             )
+        snapshot_button = self._button(
+            self.button_frame,
+            text="Ta versjonert backup",
+            command=self._start_snapshot_flow,
+        )
+        self.snapshot_button = snapshot_button
+        snapshot_button.grid(
+            row=1,
+            column=0,
+            columnspan=4,
+            padx=self.padx,
+            pady=self.pady,
+            sticky="ew",
+        )
+        if collection_created:
+            self._add_tooltip(
+                snapshot_button,
+                "Lager et nytt, uforanderlig snapshot uten å slette eldre snapshots. "
+                "En skrivefri plan vises før du bekrefter.",
+            )
+        else:
+            self._add_tooltip(
+                snapshot_button,
+                "Versjonert backup kan brukes etter at bildesamlingen er opprettet.",
+            )
         return MainTabRefresh(
-            [start_button, update_button, backup_button],
+            [start_button, update_button, backup_button, snapshot_button],
             collection_created,
             available,
         )
@@ -254,6 +374,8 @@ class MainTab:
             self.start_server_button.configure(state="disabled")
         if self.backup_button is not None and not collection_created:
             self.backup_button.configure(state="disabled")
+        if self.snapshot_button is not None and not collection_created:
+            self.snapshot_button.configure(state="disabled")
         if self.update_button is not None and (
             self.update_status.status == "checking" or not enabled
         ):
@@ -464,6 +586,107 @@ class MainTab:
             on_success=lambda: self._confirm_backup(backup_parent),
             cancellable=True,
         )
+
+    def _start_snapshot_flow(self) -> None:
+        from tkinter import filedialog
+
+        selected = filedialog.askdirectory(
+            title="Velg mappe for versjonert backup",
+            initialdir=str(self.collection_path.parent),
+            mustexist=False,
+        )
+        if not selected:
+            self._log("Versjonert backup avbrutt: ingen mappe valgt.")
+            return
+        self._run_snapshot_plan(Path(selected))
+
+    def _run_snapshot_plan(self, repository: Path) -> None:
+        self._run_background_task(
+            lambda: plan_launcher_snapshot(self.collection_path, repository),
+            running_message=f"Kontrollerer versjonert backup til {repository} ...",
+            failure_message="Kontroll av versjonert backup feilet.",
+            on_success=lambda plan: self._snapshot_plan_finished(repository, plan),
+        )
+
+    def _snapshot_plan_finished(
+        self,
+        repository: Path,
+        plan: SnapshotPlan | LauncherRecoveryPlan,
+    ) -> None:
+        for line in snapshot_plan_log_lines(plan):
+            self._log(line)
+        if isinstance(plan, LauncherRecoveryPlan):
+            explanation = (
+                "Hoveddatabasen kunne ikke valideres. Repositorybindingen er kontrollert, "
+                "men normal plassberegning er ikke mulig.\n\n"
+                "Hvis du fortsetter, vil Bildebank forsøke å publisere et recovery-snapshot "
+                "med alle lesbare filer og rå databasefiler."
+            )
+            estimated_size = ""
+        else:
+            explanation = (
+                "Et nytt snapshot legges til. Eldre snapshots og backupobjekter "
+                "blir ikke slettet eller overskrevet."
+            )
+            estimated_size = (
+                f"\n\nEstimert ny datamengde: {format_bytes(plan.storage.estimated_new_bytes)}"
+            )
+        self._show_log_review_question(
+            "Opprett versjonert backup?",
+            (
+                "Den skrivefrie kontrollen er fullført og planen står i loggen.\n\n"
+                f"{explanation}\n\n"
+                f"Repository:\n{repository}"
+                f"{estimated_size}\n\n"
+                "Vil du opprette snapshotet nå?"
+            ),
+            yes_text="Opprett snapshot",
+            no_text="Avbryt",
+            on_yes=lambda: self._run_snapshot_create(repository),
+            on_no=lambda: self._log("Versjonert backup avbrutt etter kontrollen."),
+        )
+
+    def _run_snapshot_create(self, repository: Path) -> None:
+        self._run_background_task(
+            lambda: create_launcher_snapshot(self.collection_path, repository),
+            running_message=f"Oppretter versjonert backup i {repository} ...",
+            failure_message="Versjonert backup feilet. Ingen snapshot ble publisert.",
+            on_success=self._snapshot_creation_finished,
+        )
+
+    def _snapshot_creation_finished(self, result: SnapshotCreationResult) -> None:
+        from tkinter import messagebox
+
+        self._log(f"Snapshot opprettet med status {result.status}.")
+        self._log(f"Snapshot-ID: {result.published.snapshot_id}")
+        self._log(f"Snapshotmappe: {result.published.snapshot_dir}")
+        for warning in result.build.warnings:
+            self._log(f"ADVARSEL: {warning}")
+
+        details = (
+            f"Snapshot-ID:\n{result.published.snapshot_id}\n\n"
+            f"Snapshotmappe:\n{result.published.snapshot_dir}"
+        )
+        if result.status == "complete":
+            messagebox.showinfo(
+                "Versjonert backup fullført",
+                "Snapshotet ble opprettet uten kjente avvik.\n\n" + details,
+                parent=self.root,
+            )
+        elif result.status == "degraded":
+            messagebox.showwarning(
+                "Versjonert backup opprettet med problemer",
+                "Snapshotet ble publisert, men har avvik som må kontrolleres.\n\n" + details,
+                parent=self.root,
+            )
+        else:
+            messagebox.showwarning(
+                "Recovery-snapshot opprettet",
+                "Hoveddatabasen kunne ikke sikres normalt. Et recovery-snapshot ble publisert.\n\n"
+                + details,
+                parent=self.root,
+            )
+        self._refresh_launcher()
 
     def _confirm_backup(self, backup_parent: Path) -> None:
         backup_dir = backup_parent / self.collection_path.name

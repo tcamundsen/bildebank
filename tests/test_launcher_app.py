@@ -208,3 +208,80 @@ def test_close_stops_server_owned_by_main_tab() -> None:
 def test_close_is_blocked_while_command_is_running() -> None:
     assert close_blocked_by_running_command(True)
     assert not close_blocked_by_running_command(False)
+
+
+def test_background_task_runs_work_off_ui_path_and_reports_success() -> None:
+    app = LauncherApp.__new__(LauncherApp)
+    events: list[object] = []
+    app.busy = False
+    app._set_busy = lambda busy, message="": (
+        setattr(app, "busy", busy),
+        events.append(("busy", busy, message)),
+    )
+    app._clear_active_progress_log = lambda: None
+    app._log = lambda message: events.append(("log", message))
+    app._post_to_tk = lambda callback: (callback(), True)[1]
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon: bool) -> None:
+            self.target = target
+            assert daemon
+
+        def start(self) -> None:
+            self.target()
+
+    with patch("bildebank.launcher_app.threading.Thread", ImmediateThread):
+        app._run_background_task(
+            lambda: "resultat",
+            running_message="Jobber ...",
+            failure_message="Feilet.",
+            on_success=lambda result: events.append(("resultat", result)),
+        )
+
+    assert events == [
+        ("busy", True, "Jobber ..."),
+        ("log", "Jobber ..."),
+        ("busy", False, ""),
+        ("resultat", "resultat"),
+    ]
+
+
+def test_background_task_reports_exception_and_unlocks_launcher() -> None:
+    app = LauncherApp.__new__(LauncherApp)
+    app.busy = False
+    app.root = object()
+    logged: list[str] = []
+    app._set_busy = lambda busy, message="": setattr(app, "busy", busy)
+    app._clear_active_progress_log = lambda: None
+    app._log = logged.append
+    app._post_to_tk = lambda callback: (callback(), True)[1]
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon: bool) -> None:
+            self.target = target
+            assert daemon
+
+        def start(self) -> None:
+            self.target()
+
+    def fail() -> object:
+        raise ValueError("detalj")
+
+    with (
+        patch("bildebank.launcher_app.threading.Thread", ImmediateThread),
+        patch("tkinter.messagebox.showerror") as showerror,
+    ):
+        app._run_background_task(
+            fail,
+            running_message="Jobber ...",
+            failure_message="Snapshot feilet.",
+            on_success=lambda _result: None,
+        )
+
+    assert not app.busy
+    assert logged[-1] == "Snapshot feilet. detalj"
+    showerror.assert_called_once_with(
+        "Feil",
+        "Snapshot feilet.\n\ndetalj",
+        parent=app.root,
+    )
