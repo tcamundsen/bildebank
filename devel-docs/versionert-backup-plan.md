@@ -1481,7 +1481,15 @@ Implementeringsstatus 2026-07-15:
   skrivefri plan og krever bekreftelse før oppretting, og skiller tydelig
   mellom `complete`, `degraded`, `recovery` og feil uten å tolke CLI-tekst.
 - Trinn 2 er fullført.
-- Trinn 3–5 er ikke påbegynt.
+- Snapshotliste, rask kontroll og full SHA-256-kontroll er implementert med en
+  felles, read-only kontrollmotor. `list` og `check` er uavhengige av aktiv
+  bildesamling, bruker eksklusiv repositorylås og endrer ikke repositoryet
+  utover den midlertidige låsfilen. Kontrollen validerer v1-metadata fortløpende,
+  rapporterer ufullstendige kjøringer og urefererte objekter, og kobler manglende
+  eller korrupte objekter til alle berørte snapshot-ID-er og logiske stier.
+- Full kontroll er koblet til launcheren med samme resultatmodell, fremdrift i
+  objekter og byte og kontrollert avbrudd. Ingen kontrollhistorikk lagres.
+- Trinn 3 er fullført. Trinn 4–5 er ikke påbegynt.
 
 ### Trinn 0 – Enighet om design
 

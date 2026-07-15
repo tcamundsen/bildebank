@@ -58,6 +58,12 @@ from .progress import ProgressMeter
 from .program_state import known_targets, program_db_path, record_target_best_effort
 from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
 from .snapshot import SnapshotPlan, plan_snapshot
+from .snapshot_check import (
+    SnapshotCheckProgress,
+    SnapshotCheckResult,
+    check_snapshot_repository,
+    list_repository_snapshots,
+)
 from .snapshot_create import SnapshotCreationResult, create_snapshot
 from .target_lock import TargetLock
 from .thumbnails import ThumbnailStats, run_make_thumbnails
@@ -585,6 +591,33 @@ def build_parser() -> argparse.ArgumentParser:
         "--note",
         help="Valgfri, uforanderlig kommentar på høyst 1000 tegn",
     )
+    snapshot_list = snapshot_subparsers.add_parser(
+        "list",
+        usage="bildebank snapshot list repository",
+        description="Vis publiserte snapshots i et repository.",
+    )
+    snapshot_list.add_argument(
+        "repository",
+        metavar="repository",
+        type=Path,
+        help="Den eksakte repositorymappen",
+    )
+    snapshot_check = snapshot_subparsers.add_parser(
+        "check",
+        usage="bildebank snapshot check repository [--full]",
+        description="Kontroller snapshotmetadata og backupobjekter uten å endre dem.",
+    )
+    snapshot_check.add_argument(
+        "repository",
+        metavar="repository",
+        type=Path,
+        help="Den eksakte repositorymappen",
+    )
+    snapshot_check.add_argument(
+        "--full",
+        action="store_true",
+        help="Les og beregn SHA-256 for alle objekter, også urefererte",
+    )
     doctor = add_command(
         subparsers,
         "doctor",
@@ -1013,6 +1046,9 @@ FACE_COMMANDS = {
 def run(args: argparse.Namespace) -> int:
     if args.command in NO_TARGET_COMMANDS:
         return run_no_target_command(args)
+
+    if args.command == "snapshot" and args.snapshot_command in {"list", "check"}:
+        return run_snapshot_repository_command(args)
 
     target = resolve_target(args.target)
     validate_collection_platform(target)
@@ -1856,6 +1892,106 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
     )
     print_snapshot_plan(plan)
     return 0
+
+
+def run_snapshot_repository_command(args: argparse.Namespace) -> int:
+    if args.snapshot_command == "list":
+        result = list_repository_snapshots(args.repository)
+        print_snapshot_list(result)
+        return 0
+    if args.snapshot_command != "check":
+        raise ValueError(f"Ukjent repositorykommando: {args.snapshot_command}")
+
+    meter = ProgressMeter("Snapshot check") if args.full else None
+
+    def show_progress(progress: SnapshotCheckProgress) -> None:
+        assert meter is not None
+        meter.update(
+            progress.checked_bytes,
+            progress.total_bytes,
+            action="byte",
+            details=f"objekter={progress.checked_objects}/{progress.total_objects}",
+            eta=True,
+            force=progress.checked_bytes == 0 or progress.checked_bytes >= progress.total_bytes,
+        )
+
+    result = check_snapshot_repository(
+        args.repository,
+        full=args.full,
+        progress=show_progress if meter is not None else None,
+    )
+    if meter is not None:
+        meter.done()
+    print_snapshot_check_result(result)
+    return result.exit_code
+
+
+def print_snapshot_list(result: SnapshotCheckResult) -> None:
+    print("Versjonerte snapshots")
+    print(f"  Repository: {result.repository}")
+    print(f"  Publiserte snapshots: {len(result.snapshots)}")
+    for snapshot in result.snapshots:
+        print()
+        print(f"  {snapshot.completed_at}  {snapshot.snapshot_id}")
+        print(f"    Status: {snapshot.status}")
+        print(f"    Filposter: {snapshot.entry_count}")
+        if snapshot.source_problem_count:
+            print(f"    Kildeavvik: {snapshot.source_problem_count}")
+        if snapshot.note is not None:
+            print(f"    Kommentar: {snapshot.note}")
+    for issue in result.issues:
+        print(f"ADVARSEL: {issue.message}", file=sys.stderr)
+
+
+def print_snapshot_check_result(result: SnapshotCheckResult) -> None:
+    title = "Full snapshotkontroll" if result.full else "Rask snapshotkontroll"
+    state = "avbrutt" if result.cancelled else "fullført"
+    print(f"{title} {state}")
+    print(f"  Repository: {result.repository}")
+    print(f"  Publiserte, lesbare snapshots: {len(result.snapshots)}")
+    status_counts = {
+        status: sum(snapshot.status == status for snapshot in result.snapshots)
+        for status in ("complete", "degraded", "recovery")
+    }
+    print(
+        "  Snapshotstatus: "
+        f"complete={status_counts['complete']}, "
+        f"degraded={status_counts['degraded']}, "
+        f"recovery={status_counts['recovery']}"
+    )
+    print(f"  Refererte objekter: {result.referenced_objects}")
+    print(f"  Urefererte objekter: {result.unreferenced_objects}")
+    if result.full:
+        print(f"  Fullhash-kontrollerte objekter: {result.checked_objects}/{result.total_objects}")
+        print(f"  Fullhash-kontrollerte byte: {format_bytes(result.checked_bytes)}")
+    print(f"  Ufullstendige kjøringer: {len(result.incomplete_runs)}")
+    for run in result.incomplete_runs:
+        print(
+            f"ADVARSEL: Ufullstendig kjøring {run.run_id}: "
+            f"{format_bytes(run.size_bytes)}, alder {format_duration_seconds(run.age_seconds)}",
+            file=sys.stderr,
+        )
+    print(f"  Repositoryavvik: {len(result.issues)}")
+    for issue in result.issues:
+        print(f"FEIL: {issue.message}", file=sys.stderr)
+        for affected in issue.affected:
+            entry = f", entry_id={affected.entry_id}" if affected.entry_id is not None else ""
+            print(
+                f"  Berørt: snapshot={affected.snapshot_id}{entry}, sti={affected.logical_path}",
+                file=sys.stderr,
+            )
+    if result.cancelled:
+        print("ADVARSEL: Kontrollen ble avbrutt før hele repositoryet var kontrollert.", file=sys.stderr)
+
+
+def format_duration_seconds(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, remaining_seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {remaining_seconds:02d}s"
+    hours, remaining_minutes = divmod(minutes, 60)
+    return f"{hours}t {remaining_minutes:02d}m"
 
 
 def print_snapshot_creation_result(result: SnapshotCreationResult) -> None:

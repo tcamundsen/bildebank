@@ -6,6 +6,7 @@ from importlib import resources
 from pathlib import Path
 import subprocess
 import threading
+import time
 from typing import Any, Protocol
 import webbrowser
 
@@ -31,6 +32,11 @@ from .launcher_status import (
     program_repo_root,
 )
 from .snapshot import MainDatabaseSourceError, SnapshotPlan, plan_snapshot
+from .snapshot_check import (
+    SnapshotCheckProgress,
+    SnapshotCheckResult,
+    check_snapshot_repository,
+)
 from .snapshot_create import (
     SnapshotCreationResult,
     create_snapshot,
@@ -135,11 +141,12 @@ class WaitingCommandRunner(Protocol):
 class BackgroundTaskRunner(Protocol):
     def __call__(
         self,
-        task: Callable[[], Any],
+        task: Callable[[Callable[[], bool]], Any],
         *,
         running_message: str,
         failure_message: str,
         on_success: Callable[[Any], None],
+        cancellable: bool = False,
     ) -> None: ...
 
 
@@ -225,6 +232,7 @@ class MainTab:
         self.start_server_button: Any | None = None
         self.backup_button: Any | None = None
         self.snapshot_button: Any | None = None
+        self.snapshot_check_button: Any | None = None
         self.update_button: Any | None = None
 
         collection_frame = ttk.Frame(self.frame)
@@ -264,6 +272,7 @@ class MainTab:
         self.start_server_button = None
         self.backup_button = None
         self.snapshot_button = None
+        self.snapshot_check_button = None
         self.update_button = None
         collection_created = is_collection_created(self.collection_path)
         available = (
@@ -349,8 +358,33 @@ class MainTab:
                 snapshot_button,
                 "Versjonert backup kan brukes etter at bildesamlingen er opprettet.",
             )
+        snapshot_check_button = self._button(
+            self.button_frame,
+            text="Kontroller versjonert backup",
+            command=self._start_snapshot_check_flow,
+        )
+        self.snapshot_check_button = snapshot_check_button
+        snapshot_check_button.grid(
+            row=2,
+            column=0,
+            columnspan=4,
+            padx=self.padx,
+            pady=self.pady,
+            sticky="ew",
+        )
+        self._add_tooltip(
+            snapshot_check_button,
+            "Leser og SHA-256-kontrollerer alle objekter i et eksisterende repository. "
+            "Kontrollen endrer ikke snapshots eller backupobjekter.",
+        )
         return MainTabRefresh(
-            [start_button, update_button, backup_button, snapshot_button],
+            [
+                start_button,
+                update_button,
+                backup_button,
+                snapshot_button,
+                snapshot_check_button,
+            ],
             collection_created,
             available,
         )
@@ -602,7 +636,7 @@ class MainTab:
 
     def _run_snapshot_plan(self, repository: Path) -> None:
         self._run_background_task(
-            lambda: plan_launcher_snapshot(self.collection_path, repository),
+            lambda _cancel_requested: plan_launcher_snapshot(self.collection_path, repository),
             running_message=f"Kontrollerer versjonert backup til {repository} ...",
             failure_message="Kontroll av versjonert backup feilet.",
             on_success=lambda plan: self._snapshot_plan_finished(repository, plan),
@@ -648,7 +682,7 @@ class MainTab:
 
     def _run_snapshot_create(self, repository: Path) -> None:
         self._run_background_task(
-            lambda: create_launcher_snapshot(self.collection_path, repository),
+            lambda _cancel_requested: create_launcher_snapshot(self.collection_path, repository),
             running_message=f"Oppretter versjonert backup i {repository} ...",
             failure_message="Versjonert backup feilet. Ingen snapshot ble publisert.",
             on_success=self._snapshot_creation_finished,
@@ -687,6 +721,130 @@ class MainTab:
                 parent=self.root,
             )
         self._refresh_launcher()
+
+    def _start_snapshot_check_flow(self) -> None:
+        from tkinter import filedialog
+
+        selected = filedialog.askdirectory(
+            title="Velg versjonert backup som skal kontrolleres",
+            initialdir=str(self.collection_path.parent),
+            mustexist=True,
+        )
+        if not selected:
+            self._log("Full kontroll av versjonert backup avbrutt: ingen mappe valgt.")
+            return
+        repository = Path(selected)
+        self._show_log_review_question(
+            "Kontroller hele den versjonerte backupen?",
+            (
+                "Bildebank vil lese og beregne SHA-256 for alle backupobjekter, "
+                "også objekter som ikke lenger refereres av et snapshot.\n\n"
+                "Dette kan ta lang tid, men endrer ikke snapshots eller objekter. "
+                "Kontrollen kan avbrytes kontrollert.\n\n"
+                f"Repository:\n{repository}"
+            ),
+            yes_text="Start full kontroll",
+            no_text="Avbryt",
+            on_yes=lambda: self._run_snapshot_check(repository),
+            on_no=lambda: self._log("Full kontroll av versjonert backup avbrutt."),
+        )
+
+    def _run_snapshot_check(self, repository: Path) -> None:
+        last_progress_at = [0.0]
+        last_objects = [-1]
+
+        def report_progress(progress: SnapshotCheckProgress) -> None:
+            now = time.monotonic()
+            finished = progress.checked_objects >= progress.total_objects
+            if (
+                progress.checked_objects == last_objects[0]
+                and not finished
+                and now - last_progress_at[0] < 0.5
+            ):
+                return
+            if (
+                progress.checked_objects not in {0, progress.total_objects}
+                and progress.checked_objects % 25 != 0
+                and now - last_progress_at[0] < 0.5
+            ):
+                return
+            last_progress_at[0] = now
+            last_objects[0] = progress.checked_objects
+            message = (
+                "Snapshot check: "
+                f"objekter={progress.checked_objects}/{progress.total_objects}, "
+                f"lest={format_bytes(progress.checked_bytes)}/{format_bytes(progress.total_bytes)}"
+            )
+            self._post_to_ui(lambda: self._log(message))
+
+        self._run_background_task(
+            lambda cancel_requested: check_snapshot_repository(
+                repository,
+                full=True,
+                progress=report_progress,
+                should_cancel=cancel_requested,
+            ),
+            running_message=f"Kontrollerer alle objekter i {repository} ...",
+            failure_message="Full kontroll av versjonert backup feilet.",
+            on_success=self._snapshot_check_finished,
+            cancellable=True,
+        )
+
+    def _snapshot_check_finished(self, result: SnapshotCheckResult) -> None:
+        from tkinter import messagebox
+
+        self._log("Full snapshotkontroll " + ("avbrutt." if result.cancelled else "fullført."))
+        self._log(f"Repository: {result.repository}")
+        self._log(f"Kontrollerte objekter: {result.checked_objects}/{result.total_objects}")
+        self._log(f"Kontrollerte byte: {format_bytes(result.checked_bytes)}")
+        self._log(f"Repositoryavvik: {len(result.issues)}")
+        for run in result.incomplete_runs:
+            self._log(
+                f"ADVARSEL: Ufullstendig kjøring {run.run_id}: {format_bytes(run.size_bytes)}"
+            )
+        for issue in result.issues:
+            self._log(f"FEIL: {issue.message}")
+            for affected in issue.affected:
+                entry = f", entry_id={affected.entry_id}" if affected.entry_id else ""
+                self._log(
+                    f"  Berørt: snapshot={affected.snapshot_id}{entry}, "
+                    f"sti={affected.logical_path}"
+                )
+
+        if result.cancelled:
+            messagebox.showwarning(
+                "Kontroll avbrutt",
+                "Kontrollen ble avbrutt før alle objekter var lest. Repositoryet ble ikke endret.",
+                parent=self.root,
+            )
+        elif result.issues:
+            messagebox.showwarning(
+                "Backupen har integritetsavvik",
+                (
+                    f"Kontrollen fant {len(result.issues)} repositoryavvik. "
+                    "Berørte snapshots og stier står i loggen.\n\n"
+                    "Ikke bruk denne backupen som eneste kopi."
+                ),
+                parent=self.root,
+            )
+        elif result.incomplete_runs:
+            messagebox.showwarning(
+                "Backupen er kontrollert med advarsler",
+                (
+                    "Alle publiserte data besto kontrollen, men repositoryet inneholder "
+                    "ufullstendige kjøringer. Se loggen."
+                ),
+                parent=self.root,
+            )
+        else:
+            messagebox.showinfo(
+                "Versjonert backup kontrollert",
+                (
+                    f"Alle {result.checked_objects} objekter besto full SHA-256-kontroll.\n\n"
+                    f"Kontrollert datamengde: {format_bytes(result.checked_bytes)}"
+                ),
+                parent=self.root,
+            )
 
     def _confirm_backup(self, backup_parent: Path) -> None:
         backup_dir = backup_parent / self.collection_path.name

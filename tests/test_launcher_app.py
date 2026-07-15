@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
@@ -232,7 +233,7 @@ def test_background_task_runs_work_off_ui_path_and_reports_success() -> None:
 
     with patch("bildebank.launcher_app.threading.Thread", ImmediateThread):
         app._run_background_task(
-            lambda: "resultat",
+            lambda _cancel_requested: "resultat",
             running_message="Jobber ...",
             failure_message="Feilet.",
             on_success=lambda result: events.append(("resultat", result)),
@@ -264,7 +265,7 @@ def test_background_task_reports_exception_and_unlocks_launcher() -> None:
         def start(self) -> None:
             self.target()
 
-    def fail() -> object:
+    def fail(_cancel_requested: object) -> object:
         raise ValueError("detalj")
 
     with (
@@ -285,3 +286,22 @@ def test_background_task_reports_exception_and_unlocks_launcher() -> None:
         "Snapshot feilet.\n\ndetalj",
         parent=app.root,
     )
+
+
+def test_cancel_active_background_task_sets_cooperative_cancel_event() -> None:
+    app = LauncherApp.__new__(LauncherApp)
+    app.background_cancel_event = threading.Event()
+    app.background_cancellable = True
+    states: list[bool] = []
+    statuses: list[str] = []
+    logged: list[str] = []
+    app._set_buttons_enabled = states.append
+    app.status_value = SimpleNamespace(set=statuses.append)
+    app._log = logged.append
+
+    app._cancel_active_command()
+
+    assert app.background_cancel_event.is_set()
+    assert states == [False]
+    assert statuses == ["Avbryter jobb ..."]
+    assert logged == ["Ber jobben avbryte kontrollert ..."]

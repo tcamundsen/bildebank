@@ -53,6 +53,8 @@ class LauncherApp:
         self.collection_path = self.config.collection_path
         self.busy = False
         self.closing = False
+        self.background_cancel_event: threading.Event | None = None
+        self.background_cancellable = False
 
         self.root = tk.Tk()
         self.root.title("Bildebank")
@@ -354,9 +356,18 @@ class LauncherApp:
         if self.exit_button is not None:
             self.exit_button.configure(state=state)
         if self.cancel_command_button is not None:
+            background_can_cancel = (
+                self.background_cancellable
+                and self.background_cancel_event is not None
+                and not self.background_cancel_event.is_set()
+            )
             cancel_state = (
                 "normal"
-                if self.busy and self.command_runner.cancellable and not self.command_runner.cancel_requested
+                if self.busy
+                and (
+                    background_can_cancel
+                    or (self.command_runner.cancellable and not self.command_runner.cancel_requested)
+                )
                 else "disabled"
             )
             self.cancel_command_button.configure(state=cancel_state)
@@ -367,6 +378,14 @@ class LauncherApp:
         self._set_buttons_enabled(not busy)
 
     def _cancel_active_command(self) -> None:
+        if self.background_cancellable and self.background_cancel_event is not None:
+            if self.background_cancel_event.is_set():
+                return
+            self.background_cancel_event.set()
+            self._set_buttons_enabled(False)
+            self.status_value.set("Avbryter jobb ...")
+            self._log("Ber jobben avbryte kontrollert ...")
+            return
         try:
             cancel_requested = self.command_runner.request_cancel()
         except OSError as exc:
@@ -440,21 +459,25 @@ class LauncherApp:
 
     def _run_background_task(
         self,
-        task: Callable[[], Any],
+        task: Callable[[Callable[[], bool]], Any],
         *,
         running_message: str,
         failure_message: str,
         on_success: Callable[[Any], None],
+        cancellable: bool = False,
     ) -> None:
         if self.busy:
             return
+        cancel_event = threading.Event()
+        self.background_cancel_event = cancel_event
+        self.background_cancellable = cancellable
         self._set_busy(True, running_message)
         self._clear_active_progress_log()
         self._log(running_message)
 
         def worker() -> None:
             try:
-                result = task()
+                result = task(cancel_event.is_set)
             except Exception as exc:  # noqa: BLE001 - shown as a controlled launcher error
                 def report_failure(error: Exception = exc) -> None:
                     self._background_task_failed(failure_message, error)
@@ -470,6 +493,7 @@ class LauncherApp:
         result: Any,
         on_success: Callable[[Any], None],
     ) -> None:
+        self._clear_background_task()
         self._set_busy(False)
         self._clear_active_progress_log()
         on_success(result)
@@ -477,10 +501,15 @@ class LauncherApp:
     def _background_task_failed(self, failure_message: str, exc: BaseException) -> None:
         from tkinter import messagebox
 
+        self._clear_background_task()
         self._set_busy(False)
         self._clear_active_progress_log()
         self._log(f"{failure_message} {exc}")
         messagebox.showerror("Feil", f"{failure_message}\n\n{exc}", parent=self.root)
+
+    def _clear_background_task(self) -> None:
+        self.background_cancel_event = None
+        self.background_cancellable = False
 
     def _command_start_failed(self, failure_message: str, exc: OSError) -> None:
         from tkinter import messagebox

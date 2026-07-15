@@ -156,6 +156,83 @@ class SnapshotCliTests(unittest.TestCase):
             self.assertEqual(len(list((repository / "snapshots").iterdir())), 2)
             self.assertEqual(tree_file_bytes(first_snapshot), first_snapshot_before)
 
+    def test_snapshot_list_and_check_do_not_require_active_collection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            moved_target = root / "flyttet-target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / "notater.txt").write_text("familienotat\n", encoding="utf-8")
+            create_code, _stdout, create_stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "snapshot",
+                    "create",
+                    "--note",
+                    "Før flytting",
+                    str(repository),
+                ]
+            )
+            self.assertEqual(create_code, 0, create_stderr)
+            target.rename(moved_target)
+
+            list_code, list_stdout, list_stderr = capture_cli(
+                ["snapshot", "list", str(repository)]
+            )
+            check_code, check_stdout, check_stderr = capture_cli(
+                ["snapshot", "check", str(repository)]
+            )
+
+            self.assertEqual(list_code, 0, list_stderr)
+            self.assertIn("Publiserte snapshots: 1", list_stdout)
+            self.assertIn("Status: complete", list_stdout)
+            self.assertIn("Kommentar: Før flytting", list_stdout)
+            self.assertEqual(check_code, 0, check_stderr)
+            self.assertIn("Rask snapshotkontroll fullført", check_stdout)
+            self.assertIn("Repositoryavvik: 0", check_stdout)
+
+    def test_snapshot_full_check_reports_same_size_corruption_and_affected_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / "notater.txt").write_text("familienotat\n", encoding="utf-8")
+            create_code, _stdout, create_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+            self.assertEqual(create_code, 0, create_stderr)
+            snapshot = next((repository / "snapshots").iterdir())
+            entries = [
+                json.loads(line)
+                for line in (snapshot / "files.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            entry = next(item for item in entries if item["path"] == "notater.txt")
+            reference = entry["object"]
+            object_path = snapshot_object_path(
+                repository,
+                reference["sha256"],
+                int(reference["size_bytes"]),
+            )
+            object_path.write_bytes(b"x" * object_path.stat().st_size)
+
+            quick_code, _quick_stdout, quick_stderr = capture_cli(
+                ["snapshot", "check", str(repository)]
+            )
+            full_code, full_stdout, full_stderr = capture_cli(
+                ["snapshot", "check", str(repository), "--full"]
+            )
+
+            self.assertEqual(quick_code, 0, quick_stderr)
+            self.assertEqual(full_code, 3)
+            self.assertIn("Full snapshotkontroll fullført", full_stdout)
+            self.assertIn("Repositoryavvik: 1", full_stdout)
+            self.assertIn("feil SHA-256", full_stderr)
+            self.assertIn("sti=notater.txt", full_stderr)
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
+
     def test_snapshot_create_returns_degraded_exit_code_for_media_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

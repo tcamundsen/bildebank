@@ -322,6 +322,34 @@ def validate_repository_metadata(
     source: Path,
     collection_id: str,
 ) -> None:
+    validate_repository_metadata_for_read(metadata)
+
+    stored_collection_id = metadata["collection_id"]
+    if stored_collection_id != collection_id:
+        raise ValueError("Repositoryet er bundet til en annen bildesamling (collection_id er ulik).")
+
+    last_source = metadata["last_confirmed_source"]
+    assert isinstance(last_source, dict)
+    stored_path = last_source["collection_path"]
+    stored_machine = last_source["machine_name"]
+    assert isinstance(stored_path, str)
+    assert isinstance(stored_machine, str)
+    if normalized_path_text(Path(stored_path)) != normalized_path_text(source):
+        raise ValueError(
+            "Repositoryet er sist brukt med en annen samlingssti. "
+            "Flytting av en samling krever en senere, eksplisitt bekreftelsesflyt."
+        )
+    current_machine = platform.node()
+    if current_machine and stored_machine.casefold() != current_machine.casefold():
+        raise ValueError(
+            "Repositoryet er sist brukt på en annen maskin. "
+            "Flytting av en samling krever en senere, eksplisitt bekreftelsesflyt."
+        )
+
+
+def validate_repository_metadata_for_read(metadata: dict[str, object]) -> None:
+    """Validate repository metadata without requiring an active collection."""
+
     required_fields = {
         "collection_id",
         "collection_name",
@@ -344,8 +372,6 @@ def validate_repository_metadata(
     validate_canonical_uuid(repository_id, label="repository_id")
     stored_collection_id = metadata["collection_id"]
     validate_canonical_uuid(stored_collection_id, label="collection_id")
-    if stored_collection_id != collection_id:
-        raise ValueError("Repositoryet er bundet til en annen bildesamling (collection_id er ulik).")
 
     collection_name = metadata["collection_name"]
     if not isinstance(collection_name, str) or not collection_name:
@@ -379,17 +405,6 @@ def validate_repository_metadata(
     if not isinstance(stored_machine, str) or not stored_machine:
         raise ValueError("Repositorymetadata mangler last_confirmed_source.machine_name.")
     validate_utc_timestamp(last_source.get("confirmed_at"), label="last_confirmed_source.confirmed_at")
-    if normalized_path_text(Path(stored_path)) != normalized_path_text(source):
-        raise ValueError(
-            "Repositoryet er sist brukt med en annen samlingssti. "
-            "Flytting av en samling krever en senere, eksplisitt bekreftelsesflyt."
-        )
-    current_machine = platform.node()
-    if current_machine and stored_machine.casefold() != current_machine.casefold():
-        raise ValueError(
-            "Repositoryet er sist brukt på en annen maskin. "
-            "Flytting av en samling krever en senere, eksplisitt bekreftelsesflyt."
-        )
 
 
 def validate_repository_root_entries(repository: Path, entries: list[Path]) -> None:

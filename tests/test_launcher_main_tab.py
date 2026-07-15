@@ -55,6 +55,7 @@ def bare_main_tab(collection_path: Path) -> MainTab:
     tab.start_server_button = FakeButton()
     tab.backup_button = FakeButton()
     tab.snapshot_button = FakeButton()
+    tab.snapshot_check_button = FakeButton()
     tab.update_button = FakeButton()
     tab.update_button_icons = {}
     tab.update_status = LauncherUpdateStatus("current")
@@ -83,6 +84,7 @@ def test_main_tab_refresh_builds_normal_and_migration_actions(tmp_path: Path) ->
             "Se etter oppdateringer",
             "Ta backup",
             "Ta versjonert backup",
+            "Kontroller versjonert backup",
         ]
 
         tab.migration_required = True
@@ -266,7 +268,13 @@ def test_update_button_click_runs_update_only_when_update_is_available(tmp_path:
 
 def test_main_action_buttons_without_collection_keep_update_available(tmp_path: Path) -> None:
     tab = bare_main_tab(tmp_path / "samling")
-    for button in (tab.start_server_button, tab.backup_button, tab.snapshot_button, tab.update_button):
+    for button in (
+        tab.start_server_button,
+        tab.backup_button,
+        tab.snapshot_button,
+        tab.snapshot_check_button,
+        tab.update_button,
+    ):
         button.configure(state="normal")
 
     with patch("bildebank.launcher_main_tab.is_collection_created", return_value=False):
@@ -277,12 +285,19 @@ def test_main_action_buttons_without_collection_keep_update_available(tmp_path: 
     assert tab.start_server_button.options["state"] == "disabled"
     assert tab.backup_button.options["state"] == "disabled"
     assert tab.snapshot_button.options["state"] == "disabled"
+    assert tab.snapshot_check_button.options["state"] == "normal"
     assert tab.update_button.options["state"] == "normal"
 
 
 def test_main_action_buttons_with_collection_disable_create(tmp_path: Path) -> None:
     tab = bare_main_tab(tmp_path / "samling")
-    for button in (tab.start_server_button, tab.backup_button, tab.snapshot_button, tab.update_button):
+    for button in (
+        tab.start_server_button,
+        tab.backup_button,
+        tab.snapshot_button,
+        tab.snapshot_check_button,
+        tab.update_button,
+    ):
         button.configure(state="normal")
 
     with patch("bildebank.launcher_main_tab.is_collection_created", return_value=True):
@@ -293,6 +308,7 @@ def test_main_action_buttons_with_collection_disable_create(tmp_path: Path) -> N
     assert tab.start_server_button.options["state"] == "normal"
     assert tab.backup_button.options["state"] == "normal"
     assert tab.snapshot_button.options["state"] == "normal"
+    assert tab.snapshot_check_button.options["state"] == "normal"
     assert tab.update_button.options["state"] == "normal"
 
 
@@ -507,7 +523,7 @@ def test_main_tab_snapshot_uses_internal_plan_then_internal_create(tmp_path: Pat
     plan_task = jobs[0][0]
     assert callable(plan_task)
     with patch("bildebank.launcher_main_tab.plan_launcher_snapshot", return_value=plan) as planner:
-        assert plan_task() is plan
+        assert plan_task(lambda: False) is plan
     planner.assert_called_once_with(collection, repository)
 
     plan_success = jobs[0][1]["on_success"]
@@ -526,7 +542,7 @@ def test_main_tab_snapshot_uses_internal_plan_then_internal_create(tmp_path: Pat
         "bildebank.launcher_main_tab.create_launcher_snapshot",
         return_value=expected_result,
     ) as creator:
-        assert create_task() is expected_result
+        assert create_task(lambda: False) is expected_result
     creator.assert_called_once_with(collection, repository)
 
 
@@ -555,6 +571,85 @@ def test_snapshot_result_distinguishes_complete_degraded_and_recovery(tmp_path: 
     assert showwarning.call_count == 2
     assert showwarning.call_args_list[0].args[0] == "Versjonert backup opprettet med problemer"
     assert showwarning.call_args_list[1].args[0] == "Recovery-snapshot opprettet"
+
+
+def test_launcher_full_snapshot_check_uses_shared_cancellable_control(tmp_path: Path) -> None:
+    collection = tmp_path / "samling"
+    repository = tmp_path / "repository"
+    tab = bare_main_tab(collection)
+    questions: list[dict[str, object]] = []
+    jobs: list[tuple[object, dict[str, object]]] = []
+    tab._log = lambda _message: None
+    tab._post_to_ui = lambda callback: (callback(), True)[1]
+    tab._show_log_review_question = (
+        lambda _title, _message, **options: questions.append(options)
+    )
+    tab._run_background_task = lambda task, **options: jobs.append((task, options))
+
+    with patch("tkinter.filedialog.askdirectory", return_value=str(repository)) as chooser:
+        tab._start_snapshot_check_flow()
+
+    chooser.assert_called_once_with(
+        title="Velg versjonert backup som skal kontrolleres",
+        initialdir=str(collection.parent),
+        mustexist=True,
+    )
+    assert questions[0]["yes_text"] == "Start full kontroll"
+    on_yes = questions[0]["on_yes"]
+    assert callable(on_yes)
+    on_yes()
+    assert jobs[0][1]["cancellable"] is True
+
+    task = jobs[0][0]
+    expected = object()
+
+    def cancel_requested() -> bool:
+        return False
+
+    assert callable(task)
+    with patch(
+        "bildebank.launcher_main_tab.check_snapshot_repository",
+        return_value=expected,
+    ) as check:
+        assert task(cancel_requested) is expected
+    assert check.call_args.args == (repository,)
+    assert check.call_args.kwargs["full"] is True
+    assert check.call_args.kwargs["should_cancel"] is cancel_requested
+    assert callable(check.call_args.kwargs["progress"])
+
+
+def test_launcher_snapshot_check_result_distinguishes_success_damage_and_cancel(
+    tmp_path: Path,
+) -> None:
+    tab = bare_main_tab(tmp_path / "samling")
+    tab.root = object()
+    tab._log = lambda _message: None
+
+    def result(*, cancelled: bool = False, issues: tuple[object, ...] = ()) -> SimpleNamespace:
+        return SimpleNamespace(
+            cancelled=cancelled,
+            repository=tmp_path / "repository",
+            checked_objects=3,
+            total_objects=3,
+            checked_bytes=100,
+            issues=issues,
+            incomplete_runs=(),
+        )
+
+    issue = SimpleNamespace(message="korrupt objekt", affected=())
+    with (
+        patch("tkinter.messagebox.showinfo") as showinfo,
+        patch("tkinter.messagebox.showwarning") as showwarning,
+    ):
+        tab._snapshot_check_finished(result())
+        tab._snapshot_check_finished(result(issues=(issue,)))
+        tab._snapshot_check_finished(result(cancelled=True))
+
+    showinfo.assert_called_once()
+    assert [call.args[0] for call in showwarning.call_args_list] == [
+        "Backupen har integritetsavvik",
+        "Kontroll avbrutt",
+    ]
 
 
 def test_start_server_stops_when_migration_is_required(tmp_path: Path) -> None:
