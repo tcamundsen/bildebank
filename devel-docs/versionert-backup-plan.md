@@ -80,13 +80,14 @@ dagens samling.
 - Integritetsavvik i én fil skal ikke hindre at resten av samlingen får et
   gjenopprettbart snapshot. Snapshotet og den aktuelle filposten skal
   merkes som beskrevet under integritetskontroll.
-- Bekreftet feil i hoveddatabasen skal gi et publisert `recovery`-snapshot som
-  bevarer alt lesbart innhold og rå databasefiler, men som ikke presenteres som
-  en normalt gjenopprettbar bildesamling.
-- Hvis `collection_id` ikke kan leses fra en skadet hoveddatabase, skal
-  `recovery` bare tillates mot et allerede initialisert repository på sist
-  bekreftede maskin og samlingssti. Et nytt repository skal ikke opprettes med
-  en ukjent eller konstruert samlings-ID.
+- Bekreftet feil i hoveddatabasen skal gi et publisert `recovery`-snapshot når
+  et allerede initialisert repository er bundet til sist bekreftede maskin og
+  samlingssti. Snapshotet skal bevare alt lesbart innhold og rå databasefiler,
+  men skal ikke presenteres som en normalt gjenopprettbar bildesamling.
+- Recovery etter feil i hoveddatabasen skal bare tillates mot et allerede
+  initialisert repository på sist bekreftede maskin og samlingssti. En UUID som
+  kan leses fra den skadede databasen er uverifisert og skal aldri initialisere
+  eller binde et nytt repository.
 - Bekreftet feil i en tilleggsdatabase, som OpenCLIP- eller ansiktsdatabase,
   skal gi `degraded`, ikke `recovery`. Rå databasefiler skal bevares for
   undersøkelse mens den gyldige hoveddatabasen sikres normalt.
@@ -238,7 +239,7 @@ backup-repository/
     sha256/
       ab/
         cd/
-          abcdef...                                 
+          abcdef...-123456
   snapshots/
     2026-07-15T183045Z-<snapshot-id>/
       manifest.json
@@ -246,7 +247,6 @@ backup-repository/
       commit.json
   incomplete/
     <run-id>/
-  tmp/
 ```
 
 `PLASSERING` skal peke direkte på `backup-repository/` i eksemplet. Kommandoen:
@@ -259,6 +259,21 @@ bruker dermed `D:\Backuper\Familiebilder` som repositoryrot. Bildebank kan
 opprette den siste mappen når `D:\Backuper` finnes. Repositorymappen skal ikke
 få navn automatisk fra samlingsmappen; den skal fortsatt være den samme hvis
 samlingen senere flyttes eller får nytt navn.
+
+`incomplete/<run-id>/` er det eneste stagingområdet for snapshotoppretting.
+Hver reelle kjøring får en ny, unik `run-id`. Kandidatobjekter og
+SQLite-stagingkopier lages der først; et objekt flyttes atomisk til sin
+kanoniske sti under `objects/` først etter at størrelse og SHA-256 er
+verifisert. Snapshotmappen bygges også der og flyttes atomisk til `snapshots/`
+først når den har gyldig `commit.json`.
+
+Et avbrudd kan dermed bare etterlate upubliserte data under `incomplete/`.
+Bildebank skal aldri automatisk fortsette, endre, slette eller prune en slik
+mappe. Etter en vellykket kjøring kan bare kjøreposten og tomme
+stagingkataloger fjernes. `snapshot check` skal rapportere hver ikke-tomme
+`incomplete/<run-id>/` med run-ID, alder og samlet størrelse, men ikke endre
+den. Neste `snapshot create` skal starte en ny kjøring og kan bare gjenbruke
+ferdig verifiserte objekter under `objects/`.
 
 Initialisering skal følge disse reglene:
 
@@ -333,21 +348,20 @@ formatversjonen, katalogstrukturen, at objektene inneholder rå ukomprimerte
 byte, hvordan `files.jsonl` kobler objekter til opprinnelige relative stier,
 hvordan `entry_id` og recovery-navn brukes, hvordan databasekatalogen brukes,
 og hvordan `commit.json` kontrollerer manifestet og fillisten. Instruksjonen
-skal være tilstrekkelig for teknisk
-manuell redning uten Bildebank, men trenger ikke gjøre repositoryet direkte
-bla-bart som en vanlig bildemappe.
+skal være tilstrekkelig for teknisk manuell redning uten Bildebank, men trenger
+ikke gjøre repositoryet direkte bla-bart som en vanlig bildemappe.
 
 `manifest.json` skal minst ha:
 
 - `format_version`, som er `1` i første snapshotformat
 - `required_features`, som er en tom liste i første versjon
 - `snapshot_id`, `collection_id` og repository-ID
-- `collection_id_source` og `collection_id_verified`, slik at recovery ikke
+- `collection_identity` med `source` og `verified`, slik at recovery ikke
   skjuler at identiteten eventuelt bare kom fra repositorymetadata
 - valgfri brukerkommentar
 - start- og sluttidspunkt
 - Bildebank-versjon og schema-versjoner
-- en databasekatalog med stabil rolle, logisk original- og restore-sti,
+- en `databases`-katalog med stabil rolle, logisk original- og restore-sti,
   schema- eller modellversjon når den finnes, nødvendig/regenererbar-status,
   objekt og om objektet er laget med SQLite backup-API
 - antall filer og byte, samt SHA-256 og størrelse for `files.jsonl`
@@ -355,20 +369,23 @@ bla-bart som en vanlig bildemappe.
 - eksplisitte eksklusjoner og eventuelle advarsler
 
 Når hoveddatabasen består integritetskontrollen og ID-en leses som en gyldig
-UUID, skal manifestet ha `collection_id_source: "database"` og
-`collection_id_verified: true`. Hvis hoveddatabasen er korrupt, men en
-syntaktisk gyldig ID fortsatt kan leses, brukes
-`collection_id_source: "database"` og `collection_id_verified: false`. Feil
+UUID, skal manifestet ha `collection_identity` med `source: "database"` og
+`verified: true`. Et `recovery`-snapshot skal alltid ha
+`source: "repository"` og `verified: false`, fordi det bruker den tidligere
+bekreftede bindingen i repositorymetadata. En syntaktisk gyldig ID som kan
+leses fra den skadede databasen kan bare sammenlignes med repositoryets ID;
+den kan aldri gjøre identiteten verifisert eller binde et nytt repository. Feil
 bare i en tilleggsdatabase gjør ikke identiteten uverifisert.
 
 `files.jsonl` skal være UTF-8 med én selvstendig JSON-post per linje. En normal
 post skal minst inneholde en unik, uforanderlig `entry_id`, portabel relativ
-`path`, filtype og integritetsstatus. Når observerte byte finnes, skal posten
-også ha objekthash, størrelse og opprinnelig filendringstid som `mtime_ns`.
+`path`, `record_type` og integritetsstatus. Når observerte byte finnes, skal
+posten også ha objekthash, størrelse og opprinnelig filendringstid som
+`mtime_ns`.
 Poster med avvik skal ha forventede og observerte verdier som beskrevet under
 integritetskontroll; manglende eller uleselige filer har ingen observert
-objektreferanse. En
-`recovery_only`-post skal ha `entry_id`, `path: null`, opprinnelig sti bare som
+objektreferanse. En `recovery_only`-post skal ha `entry_id`, `path: null`,
+opprinnelig sti bare som
 visningstekst og et programgenerert, portabelt recovery-navn. `entry_id` skal
 genereres av Bildebank, være unik innen snapshotet og aldri avledes direkte fra
 en utrygg sti. Manglende eller duplisert `entry_id` gjør snapshotmanifestet
@@ -398,6 +415,166 @@ i hoveddatabasen, men er ikke en normalt gjenopprettbar bildesamling. En
 avbrutt kjøring uten ferdig publisert snapshotmappe er ikke et publisert
 snapshot. En separat, overskrivbar statusfil skal ikke være nødvendig for å
 avgjøre dette.
+
+### Nøyaktig v1-format
+
+Dette avsnittet er den normative v1-kontrakten. Felt som ikke er oppført her,
+kan legges til som valgfrie JSON-felter. De må ignoreres av lesere som ikke
+kjenner dem og bevares når repositorymetadata skrives på nytt. Et nytt felt
+som endrer nødvendig lese- eller skriveatferd, skal i stedet innføres gjennom
+ny `format_version` eller en oppført `required_features`-verdi.
+
+Alle JSON-filer og JSONL-linjer skal være UTF-8 uten BOM, bruke LF som
+linjeslutt, ha objektfelter sortert etter Unicode-kodepunkt, ingen overflødig
+mellomrom, og én avsluttende LF i vanlige JSON-filer. Strenger skal skrives som
+vanlige UTF-8-JSON-strenger, med bare JSON-påkrevde escaping-tegn.
+`files.jsonl` skal ha én slik kanonisk JSON-post per linje, uten tomme linjer;
+en tom filliste er en tom fil. Disse reglene gjør at kontrollsummene og
+v1-fixtures er stabile uavhengig av hvilken Bildebank-prosess som skrev dem.
+
+Alle SHA-256-verdier er 64 små hex-tegn. `size_bytes` og `mtime_ns` er
+desimalstrenger uten fortegn og uten ledende nuller, bortsett fra `"0"`.
+Tidspunkter er UTC på formen `YYYY-MM-DDTHH:MM:SSZ`. `snapshot_id`,
+`repository_id` og `collection_id` er små UUID-er med bindestreker.
+Snapshotkatalogen heter `YYYY-MM-DDTHHMMSSZ-<snapshot_id>`, der tidspunktet er
+snapshotets sluttid.
+
+En objektreferanse har alltid nøyaktig denne formen:
+
+```json
+{"algorithm":"sha256","sha256":"<64 små hex-tegn>","size_bytes":"123456"}
+```
+
+Den fysiske objektstien utledes utelukkende av referansen:
+
+```text
+objects/sha256/<hash[0:2]>/<hash[2:4]>/<hash>-<size_bytes>
+```
+
+Objektet skal være en vanlig fil med nøyaktig den angitte størrelsen. Dermed
+er både hash og størrelse en del av objektnøkkelen, slik planen forutsetter.
+Å legge til størrelsen i filnavnet krever ingen ekstra lesing eller hashing,
+fordi størrelsen allerede er kjent når objektet planlegges og verifiseres.
+
+Repositorymetadatafilen skal ha nøyaktig disse påkrevde feltene:
+
+```json
+{
+  "collection_id":"5d7b9c2e-6c4d-4d80-8a7f-857287c6c5d5",
+  "collection_name":"Familiebilder",
+  "created_at":"2026-07-15T18:30:45Z",
+  "created_by":{"program":"bildebank","version":"1.0.0"},
+  "format_version":1,
+  "last_confirmed_source":{
+    "collection_path":"D:\\Bilder\\Familiebilder",
+    "confirmed_at":"2026-07-15T18:30:45Z",
+    "machine_name":"FAMILIE-PC"
+  },
+  "repository_id":"a0c2e2ce-2920-44a5-9e39-2d3e24f08e73",
+  "required_features":[]
+}
+```
+
+`required_features` er en liste med små ASCII-navn. Den er tom i v1. En leser
+eller skriver skal avvise repositoryet hvis listen inneholder et navn den ikke
+støtter.
+
+`manifest.json` skal ha disse påkrevde feltene:
+
+```json
+{
+  "collection_id":"5d7b9c2e-6c4d-4d80-8a7f-857287c6c5d5",
+  "collection_identity":{"source":"database","verified":true},
+  "completed_at":"2026-07-15T18:30:45Z",
+  "created_by":{"program":"bildebank","version":"1.0.0"},
+  "databases":[],
+  "exclusions":[],
+  "files_jsonl":{"entry_count":"0","sha256":"<64 små hex-tegn>","size_bytes":"0"},
+  "format_version":1,
+  "note":null,
+  "repository_id":"a0c2e2ce-2920-44a5-9e39-2d3e24f08e73",
+  "required_features":[],
+  "schema_versions":{"main":14},
+  "snapshot_id":"a5696ae6-6799-4b4e-a842-430cf14f3484",
+  "started_at":"2026-07-15T18:30:00Z",
+  "status":"complete",
+  "warnings":[]
+}
+```
+
+`status` er nøyaktig én av `complete`, `degraded` og `recovery`.
+`collection_identity` skal være nøyaktig ett av
+`{"source":"database","verified":true}` og
+`{"source":"repository","verified":false}`. Det første krever en
+integritetskontrollert hoveddatabase; det andre krever `status: "recovery"` og
+den tidligere bekreftede repositorybindingen. Andre kombinasjoner skal
+avvises. `note` er enten `null` eller høyst 1 000 Unicode-tegn uten
+kontrolltegn. `exclusions` og `warnings` er lister med forklarende strenger.
+`schema_versions` er en påkrevd objektmapping fra databaserolle til
+ikke-negativt heltall eller `null` når schemaet ikke kunne leses. Andre
+valgfrie felt kan ha videre opplysninger om Bildebank eller databaser, men kan
+ikke endre betydningen av feltene over.
+
+Hver databasepost i `databases` skal ha `role`, `source_path_display`,
+`restore_path`, `required`, `regenerable`, `capture`, `status`, `object`,
+`schema_version` og `model_name`. `role` er `main`, `openclip`,
+`face:<model_name>` eller `auxiliary:<relative-path>`. `capture` er
+`sqlite_backup` for en gyldig konsistent databasekopi eller `raw_recovery` for
+redningsmateriale. `status` er `ok`, `backup_failed` eller `unreadable`.
+`object` er en objektreferanse eller `null`; `restore_path` er en normal
+portabel sti eller `null` for `raw_recovery`. `schema_version` er et
+ikke-negativt heltall eller `null`; `model_name` er streng eller `null`.
+`required` og `regenerable` er JSON-boolske verdier. `source_path_display` er
+bare informasjon og skal aldri brukes som restore-mål.
+
+Hver post i `files.jsonl` skal ha disse feltene:
+
+```json
+{
+  "entry_id":"e-000000000001",
+  "expected":null,
+  "integrity_status":"ok",
+  "mtime_ns":"1721068245123456789",
+  "object":{"algorithm":"sha256","sha256":"<64 små hex-tegn>","size_bytes":"123456"},
+  "original_path_display":"2024/07/IMG_0001.jpg",
+  "path":"2024/07/IMG_0001.jpg",
+  "record_type":"file",
+  "recovery_name":null,
+  "restore_kind":"normal"
+}
+```
+
+`entry_id` er `e-` etterfulgt av tolv sifre. Poster sorteres først på normal
+`path`, deretter på `original_path_display` for `recovery_only`-poster, og får
+løpende `entry_id` i denne rekkefølgen. `record_type` er `file` eller
+`database_raw`; `restore_kind` er `normal` eller `recovery_only`.
+`integrity_status` er én av `ok`, `missing`, `unreadable`, `hash_mismatch`,
+`size_mismatch`, `changed_during_snapshot`, `unsafe_path` eller
+`database_backup_failed`.
+
+For en databaseført fil skal `expected` være
+`{"sha256":"<64 små hex-tegn>","size_bytes":"123456"}`. For en ukjent
+fil er den `null`. `object` er den observerte og lagrede objektreferansen, eller
+`null` når ingen sammenhengende byte kunne sikres. `mtime_ns` er `null` når den
+ikke kunne leses. En normal post har gyldig `path` og `recovery_name: null`.
+En `recovery_only`-post har `path: null` og et `recovery_name` på formen
+`entry-<tolv sifre>.bin`; det programgenererte navnet er det eneste navnet som
+kan brukes ved eksport eller hel restore.
+
+`commit.json` skal ha nøyaktig disse feltene:
+
+```json
+{
+  "files_jsonl":{"sha256":"<64 små hex-tegn>","size_bytes":"123456"},
+  "format_version":1,
+  "manifest":{"sha256":"<64 små hex-tegn>","size_bytes":"123456"},
+  "snapshot_id":"a5696ae6-6799-4b4e-a842-430cf14f3484"
+}
+```
+
+`snapshot check` skal avvise et snapshot dersom en påkrevd v1-nøkkel mangler,
+har feil type eller format, har ukjent enum-verdi, eller dersom objektstien ikke
+stemmer med objektreferansen. Valgfrie, ukjente felt alene skal ikke gi avvik.
 
 Kommandoresultatet skal skille mellom:
 
@@ -681,11 +858,13 @@ eventuelle tilhørende SQLite-sidefiler som egne, tydelig merkede objekter når
 de kan leses. Manifestet skal inneholde databasefeilen og hvilke råfiler som
 ble bevart.
 
-Hvis `collection_id` ikke kan leses fra hoveddatabasen, skal recovery bare
-tillates når repositoryet allerede er initialisert og lagret maskinnavn og
-absolutt samlingssti stemmer med gjeldende arbeidssted. Snapshotet bruker da
-repositoryets `collection_id`, og manifestet skal ha
-`collection_id_source: "repository"` og `collection_id_verified: false`.
+Ved bekreftet feil i hoveddatabasen skal recovery bare tillates når
+repositoryet allerede er initialisert og lagret maskinnavn og absolutt
+samlingssti stemmer med gjeldende arbeidssted. Snapshotet bruker repositoryets
+`collection_id`, og manifestets `collection_identity` skal ha
+`source: "repository"` og `verified: false`. Hvis en syntaktisk gyldig
+`collection_id` fortsatt kan leses fra den skadede databasen, skal den være
+lik repositoryets ID; ellers skal kjøringen avbryte uten å skrive data.
 Hvis repositoryet er nytt eller tomt, eller arbeidsstedet ikke stemmer, skal
 kjøringen avbryte uten å initialisere repositoryet. Første versjon skal ikke
 ha `collection_id: unknown` eller en automatisk generert ID for recovery.
@@ -761,11 +940,12 @@ kunne brukes ved neste kjøring.
 5. Kjør read-only forhåndskontroll for lenker og reparse points. Avbryt før
    repositorymetadata, staging eller objekter skrives hvis noen finnes.
 6. Kontroller hoveddatabasen, les `collection_id` når mulig, og avgjør om
-   kjøringen er normal eller `recovery`. Bruk de særskilte recoveryreglene hvis
-   ID-en ikke kan leses.
+   kjøringen er normal eller `recovery`. Bruk de særskilte recoveryreglene ved
+   bekreftet feil i hoveddatabasen, også når en ID fortsatt kan leses.
 7. Valider repositoryets `collection_id`, maskin og samlingssti under begge
    låser. Initialiser først nå metadata for et nytt repository, og bare i
-   en kjøring der gyldig `collection_id` faktisk ble lest fra hoveddatabasen.
+   normal kjøring der hoveddatabasen besto integritetskontrollen og gyldig
+   `collection_id` faktisk ble lest.
 8. Opprett unik `run-id` og stagingområde.
 9. Inventer samlingsmappen uten å følge lenker eller reparse points, bygg
    databasekatalogen og valider alle logiske stier.
@@ -1180,6 +1360,8 @@ Minstekrav til automatiserte tester:
 - gyldig kildedatabase kombinert med skrivefeil eller korrupt stagingkopi på
   backupmålet; kjøringen skal da feile uten publisert snapshot
 - avbrudd under objektkopiering og før snapshotpublisering
+- avbrutt snapshot med data under `incomplete/<run-id>/`; kontroll skal
+  rapportere mappen, og ny kjøring skal verken endre, gjenoppta eller slette den
 - full disk og andre skrivefeil
 - ugyldig repository-ID eller feil `collection_id`
 - oppretting i eksakt repositorymappe, manglende foreldremappe og
@@ -1202,13 +1384,16 @@ Minstekrav til automatiserte tester:
 - hel restore og restore av enkeltfil
 - restore til eksisterende eller for liten målmappe
 - kontroll av at gamle snapshots fortsatt kan gjenopprettes etter nye kjøringer
-- fryste format-v1-fixtures, ignorering og bevaring av ukjente valgfrie
-  JSON-felter, avvisning av ukjent påkrevd egenskap og avvisning av nyere
+- fryste format-v1-fixtures som verifiserer kanoniske JSON- og JSONL-byte,
+  utledning av objektsti fra hash og størrelse, alle påkrevde felt, enum-verdier
+  og null-former; dessuten ignorering og bevaring av ukjente valgfrie
+  JSON-felter, avvisning av ukjent `required_features`-verdi og avvisning av nyere
   inkompatibel repository- eller snapshotversjon
 - kontroll av at en eldre skriver ikke kan legge snapshot til et repository
   med format eller påkrevd egenskap den ikke forstår
-- `recovery` med uleselig `collection_id` mot et allerede bundet repository på
-  samme arbeidssted, samt avvisning mot nytt/tomt repository og mot endret
+- `recovery` med uleselig eller bare syntaktisk lesbar `collection_id` mot et
+  allerede bundet repository på samme arbeidssted, kontroll av ID-likhet når
+  den kan leses, samt avvisning mot nytt/tomt repository og mot endret
   arbeidssted
 - databasekatalog med hoveddatabase, OpenCLIP, flere face-modeller, ukjent
   SQLite-database og absolutt `face_recognition.database_dir`
@@ -1366,8 +1551,8 @@ Inntil punktene over er avgjort, er anbefalt retning:
   uten gyldig objektreferanse
 - publisering av `recovery`-snapshot ved bekreftet feil i hoveddatabasen, uten
   å tillate vanlig hel restore
-- recovery uten lesbar `collection_id` bare mot et allerede bundet repository
-  på sist bekreftede arbeidssted
+- recovery etter enhver bekreftet feil i hoveddatabasen bare mot et allerede
+  bundet repository på sist bekreftede arbeidssted
 - `degraded` ved feil i tilleggsdatabase, med rå databasefiler bevart for
   undersøkelse
 - eksplisitt databasekatalog for hoveddatabase, OpenCLIP, alle face-modeller og
