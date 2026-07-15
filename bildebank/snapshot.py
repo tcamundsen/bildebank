@@ -270,6 +270,12 @@ def validate_repository(repository: Path, source: Path, collection_id: str) -> s
     entries = list(repository.iterdir())
     if not entries:
         return "empty"
+    lock_path = repository / REPOSITORY_LOCK_FILENAME
+    if lock_path.exists() or lock_path.is_symlink():
+        raise ValueError(
+            "Repositoryet er låst av en annen snapshot-operasjon. "
+            f"Dry-run har ikke gjort noen endringer. Låsfil: {lock_path}"
+        )
     if not metadata_path.exists():
         raise ValueError(
             "Repositorymappen er ikke tom og mangler gyldig Bildebank-metadata:\n"

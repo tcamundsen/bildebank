@@ -1450,6 +1450,18 @@ backup.
 
 Ingen av trinnene skal startes før de åpne beslutningene nedenfor er behandlet.
 
+Implementeringsstatus 2026-07-15:
+
+- Trinn 0 og 1 er ferdige. `snapshot create --dry-run` er implementert og
+  skrivefri.
+- Trinn 2 er påbegynt. Eksklusiv repositorylås, initialisering, unike
+  `incomplete/<run-id>`-områder, verifisert objektlagring og konsistent kopi
+  med SQLite backup-API er implementert som testede grunnprimitiver.
+- Manifestbygging, atomisk snapshotpublisering, avviksmodusene og kobling til
+  reell `snapshot create` gjenstår i trinn 2. Kommandoen uten `--dry-run` er
+  fortsatt eksplisitt sperret.
+- Trinn 3–5 er ikke påbegynt.
+
 ### Trinn 0 – Enighet om design
 
 - Beskriv førstversjonen med `snapshot` ved siden av uendret `backup`-mirror,
