@@ -24,6 +24,7 @@ from .snapshot import (
     validate_regular_file_without_links,
 )
 from .snapshot_check import (
+    SnapshotCheckIssue,
     SnapshotSummary,
     expected_file,
     hash_regular_file,
@@ -31,6 +32,7 @@ from .snapshot_check import (
     read_canonical_json,
     read_snapshot,
     resolve_repository_for_check,
+    snapshot_directories,
     validate_locked_repository_for_check,
 )
 from .snapshot_repository import (
@@ -114,6 +116,30 @@ class SingleFileRestoreResult:
     plan: SingleFileRestorePlan
     output_path: Path
     exit_code: int
+
+
+@dataclass(frozen=True)
+class SnapshotFileProblem:
+    snapshot: SnapshotSummary
+    entry: RestoreEntry
+    recorded_variants: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SnapshotDatabaseProblem:
+    snapshot: SnapshotSummary
+    role: str
+    status: str
+    capture: str
+    source_path_display: str
+
+
+@dataclass(frozen=True)
+class SnapshotProblemsResult:
+    repository: Path
+    snapshots: tuple[SnapshotSummary, ...]
+    file_problems: tuple[SnapshotFileProblem, ...]
+    database_problems: tuple[SnapshotDatabaseProblem, ...]
 
 
 @dataclass(frozen=True)
@@ -759,6 +785,80 @@ def copy_verified_restore_object_exclusive(
     if output.mtime_ns is not None:
         os.utime(destination, ns=(output.mtime_ns, output.mtime_ns), follow_symlinks=False)
     fsync_directory(destination.parent)
+
+
+def list_snapshot_problems(
+    repository_arg: Path,
+    snapshot_id: str | None = None,
+) -> SnapshotProblemsResult:
+    canonical_snapshot_id = (
+        validate_canonical_uuid(snapshot_id, label="snapshot_id")
+        if snapshot_id is not None
+        else None
+    )
+    repository = resolve_repository_for_check(repository_arg)
+    with RepositoryLock(repository, command="snapshot problems"):
+        metadata = validate_locked_repository_for_check(repository)
+        paths: tuple[Path, ...]
+        if canonical_snapshot_id is not None:
+            paths = (find_snapshot_path(repository, canonical_snapshot_id),)
+        else:
+            directory_issues: list[SnapshotCheckIssue] = []
+            paths = snapshot_directories(repository, directory_issues)
+            if directory_issues:
+                raise SnapshotStorageError(directory_issues[0].message)
+
+        summaries: list[SnapshotSummary] = []
+        file_problems: list[SnapshotFileProblem] = []
+        database_problems: list[SnapshotDatabaseProblem] = []
+        for snapshot_path in paths:
+            read = read_snapshot(
+                snapshot_path,
+                repository_id=str(metadata["repository_id"]),
+                collection_id=str(metadata["collection_id"]),
+            )
+            manifest, _content = read_canonical_json(
+                snapshot_path / "manifest.json",
+                label="manifest.json",
+            )
+            entries = load_restore_entries(snapshot_path / "files.jsonl")
+            summaries.append(read.summary)
+            for entry in entries:
+                if entry.integrity_status == "ok" and entry.restore_kind == "normal":
+                    continue
+                variants: list[str] = []
+                if entry.expected is not None:
+                    variants.append("expected")
+                if entry.object is not None:
+                    variants.append("observed")
+                file_problems.append(
+                    SnapshotFileProblem(
+                        snapshot=read.summary,
+                        entry=entry,
+                        recorded_variants=tuple(variants),
+                    )
+                )
+            databases = manifest["databases"]
+            assert isinstance(databases, list)
+            for database in databases:
+                assert isinstance(database, dict)
+                if database["status"] == "ok":
+                    continue
+                database_problems.append(
+                    SnapshotDatabaseProblem(
+                        snapshot=read.summary,
+                        role=str(database["role"]),
+                        status=str(database["status"]),
+                        capture=str(database["capture"]),
+                        source_path_display=str(database["source_path_display"]),
+                    )
+                )
+        return SnapshotProblemsResult(
+            repository=repository,
+            snapshots=tuple(summaries),
+            file_problems=tuple(file_problems),
+            database_problems=tuple(database_problems),
+        )
 
 
 @contextmanager

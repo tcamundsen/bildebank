@@ -15,6 +15,7 @@ from bildebank.snapshot_create import create_snapshot
 from bildebank.snapshot_repository import SnapshotStorageError
 from bildebank.snapshot_restore import (
     RECOVERY_REPORT_FILENAME,
+    list_snapshot_problems,
     plan_full_restore,
     plan_single_file_restore,
     restore_full_snapshot,
@@ -24,6 +25,44 @@ from tests.cli_helpers import capture_cli
 
 
 class SnapshotRestorePlanTests(unittest.TestCase):
+    def test_snapshot_problems_lists_degraded_entry_variants_and_is_read_only(self) -> None:
+        with degraded_snapshot() as (root, _target, repository, snapshot_id, _expected, _observed):
+            repository_before = tree_file_bytes(repository)
+
+            result = list_snapshot_problems(repository, snapshot_id)
+
+            self.assertEqual(len(result.snapshots), 1)
+            self.assertEqual(len(result.file_problems), 1)
+            problem = result.file_problems[0]
+            self.assertEqual(problem.snapshot.snapshot_id, snapshot_id)
+            self.assertEqual(problem.entry.path, "2026/07/familie.jpg")
+            self.assertEqual(problem.recorded_variants, ("expected", "observed"))
+            self.assertEqual(tree_file_bytes(repository), repository_before)
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
+
+    def test_snapshot_problems_lists_recovery_only_entry_and_database_problem(self) -> None:
+        with recovery_only_snapshot() as (_root, repository, snapshot_id, entry_id, _raw_bytes):
+            result = list_snapshot_problems(repository)
+
+            self.assertEqual(len(result.snapshots), 1)
+            self.assertTrue(
+                any(problem.entry.entry_id == entry_id for problem in result.file_problems)
+            )
+            self.assertTrue(
+                any(problem.role == "openclip" for problem in result.database_problems)
+            )
+
+    def test_cli_snapshot_problems_shows_entry_id_for_restore(self) -> None:
+        with degraded_snapshot() as (_root, _target, repository, snapshot_id, _expected, _observed):
+            code, stdout, stderr = capture_cli(
+                ["snapshot", "problems", str(repository), snapshot_id]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Problemer i versjonerte snapshots", stdout)
+            self.assertIn("Entry-ID: e-000000000001", stdout)
+            self.assertIn("Registrerte varianter: expected, observed", stdout)
+
     def test_full_restore_plan_is_read_only_and_includes_files_and_main_database(self) -> None:
         with normal_snapshot() as (root, target, repository, snapshot_id):
             restore_target = root / "restored"

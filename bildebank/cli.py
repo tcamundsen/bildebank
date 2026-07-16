@@ -70,6 +70,8 @@ from .snapshot_restore import (
     FullRestoreResult,
     SingleFileRestorePlan,
     SingleFileRestoreResult,
+    SnapshotProblemsResult,
+    list_snapshot_problems,
     plan_full_restore,
     plan_single_file_restore,
     restore_full_snapshot,
@@ -612,6 +614,23 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Den eksakte repositorymappen",
     )
+    snapshot_problems = snapshot_subparsers.add_parser(
+        "problems",
+        usage="bildebank snapshot problems repository [snapshot-id]",
+        description="Vis kildeavvik og entry-ID-er fra publiserte snapshots.",
+    )
+    snapshot_problems.add_argument(
+        "repository",
+        metavar="repository",
+        type=Path,
+        help="Den eksakte repositorymappen",
+    )
+    snapshot_problems.add_argument(
+        "snapshot_id",
+        metavar="snapshot-id",
+        nargs="?",
+        help="Vis bare problemer fra dette snapshotet",
+    )
     snapshot_check = snapshot_subparsers.add_parser(
         "check",
         usage="bildebank snapshot check repository [--full]",
@@ -1098,6 +1117,7 @@ def run(args: argparse.Namespace) -> int:
 
     if args.command == "snapshot" and args.snapshot_command in {
         "list",
+        "problems",
         "check",
         "restore",
         "restore-file",
@@ -1950,8 +1970,12 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
 
 def run_snapshot_repository_command(args: argparse.Namespace) -> int:
     if args.snapshot_command == "list":
-        result = list_repository_snapshots(args.repository)
-        print_snapshot_list(result)
+        list_result = list_repository_snapshots(args.repository)
+        print_snapshot_list(list_result)
+        return 0
+    if args.snapshot_command == "problems":
+        problems_result = list_snapshot_problems(args.repository, args.snapshot_id)
+        print_snapshot_problems(problems_result)
         return 0
     if args.snapshot_command == "restore":
         full_restore_plan = plan_full_restore(args.repository, args.snapshot_id, args.destination)
@@ -2050,6 +2074,35 @@ def print_snapshot_list(result: SnapshotCheckResult) -> None:
             print(f"    Kommentar: {snapshot.note}")
     for issue in result.issues:
         print(f"ADVARSEL: {issue.message}", file=sys.stderr)
+
+
+def print_snapshot_problems(result: SnapshotProblemsResult) -> None:
+    print("Problemer i versjonerte snapshots")
+    print(f"  Repository: {result.repository}")
+    print(f"  Kontrollerte snapshots: {len(result.snapshots)}")
+    print(f"  Filavvik: {len(result.file_problems)}")
+    print(f"  Databaseavvik: {len(result.database_problems)}")
+    for problem in result.file_problems:
+        entry = problem.entry
+        print()
+        print(f"  Snapshot-ID: {problem.snapshot.snapshot_id}")
+        print(f"    Entry-ID: {entry.entry_id}")
+        print(f"    Opprinnelig sti: {entry.original_path_display}")
+        if entry.path is not None:
+            print(f"    Snapshotsti: {entry.path}")
+        if entry.recovery_name is not None:
+            print(f"    Recovery-navn: {entry.recovery_name}")
+        print(f"    Avvik: {entry.integrity_status}")
+        print(f"    Restoretype: {entry.restore_kind}")
+        variants = ", ".join(problem.recorded_variants) or "ingen lagrede byte"
+        print(f"    Registrerte varianter: {variants}")
+    for database_problem in result.database_problems:
+        print()
+        print(f"  Snapshot-ID: {database_problem.snapshot.snapshot_id}")
+        print(f"    Database: {database_problem.role}")
+        print(f"    Opprinnelig sti: {database_problem.source_path_display}")
+        print(f"    Avvik: {database_problem.status}")
+        print(f"    Sikring: {database_problem.capture}")
 
 
 def print_snapshot_check_result(result: SnapshotCheckResult) -> None:

@@ -1485,6 +1485,10 @@ Implementeringsstatus 2026-07-16:
   utover den midlertidige låsfilen. Kontrollen validerer v1-metadata fortløpende,
   rapporterer ufullstendige kjøringer og urefererte objekter, og kobler manglende
   eller korrupte objekter til alle berørte snapshot-ID-er og logiske stier.
+- `snapshot problems` er implementert som en read-only problemliste for alle
+  snapshots eller én valgt snapshot-ID. Den viser fil- og databaseavvik,
+  stabil `entry_id`, ordinær eller recovery-basert sti og registrerte varianter,
+  slik at problemfiler kan velges sikkert med `restore-file`.
 - Full kontroll er koblet til launcheren med samme resultatmodell, fremdrift i
   objekter og byte og kontrollert avbrudd. Ingen kontrollhistorikk lagres.
 - Trinn 3 er fullført.
