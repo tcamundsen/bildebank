@@ -11,7 +11,7 @@ del uten å måtte kjenne hele Tk-applikasjonen.
 | `launcher.py` | Stabilt offentlig `main()`-inngangspunkt. |
 | `launcher_app.py` | Rotvindu, notebook, felles logg, busy-status og koordinering mellom fanene. |
 | `launcher_main_tab.py` | Valg og oppretting av samling, server, oppdatering, backup og migrering. |
-| `launcher_advanced_start_tab.py` | Avansert servermodus og portvalg. Bruker serverprosessen som eies av hovedfanen. |
+| `launcher_advanced_start_tab.py` | Normal, read-only, LAN-share og slideshow med port, filter og delay. Bruker serverprosessen som eies av hovedfanen. |
 | `launcher_import_tab.py` | Import, rescan, check-source og unimport. |
 | `launcher_tools_tab.py` | Scanner, statiske browsere, doctor, vacuum, filslettingsopprydding og eksport. |
 | `launcher_setup_tab.py` | Status og installasjon for InsightFace, OpenCLIP og modellene deres. |
@@ -31,8 +31,16 @@ bakgrunnstråd, og resultatet leveres tilbake gjennom callbacken `post_to_ui`.
 `CommandRunner` eier subprocessen for én launcher-kommando om gangen, mens
 serverprosessen eies av hovedfanen fordi den kan leve videre etter at knappen
 som startet den er ferdig. Både hovedfanen og **Nettleser og deling** bruker den
-samme startmekanismen. En kjørende servers port lagres hos hovedfanen, slik at
-neste klikk åpner riktig lokal adresse uten å starte en konkurrerende prosess.
+samme startmekanismen.
+
+Hovedfanen lagrer normaliserte oppstartsvalg for prosessen den eier: modus,
+port og eventuelt slideshow-delay og filter. Samme valg åpner adressen til den
+eksisterende serveren. Endrede valg krever bekreftet omstart; avvisning lar
+prosessen fortsette, mens godkjenning stopper den kontrollert før ny prosess
+startes. LAN-share og slideshow krever i tillegg den samme sikkerhetsadvarselen
+før oppstart. Slideshowkommandoen inneholder bare `--slideshow`, `--delay` og
+eventuelt `--filter`; CLI-en gjør selv modusen read-only, aktiverer previews og
+binder den til LAN.
 
 ## Tester
 

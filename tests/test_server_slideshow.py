@@ -195,7 +195,7 @@ class ServerSlideshowTests(unittest.TestCase):
                     delay_seconds=10,
                 )
 
-    def test_slideshow_html_is_minimal_starts_first_and_uses_cover(self) -> None:
+    def test_slideshow_html_is_minimal_starts_first_and_shows_whole_image(self) -> None:
         slideshow = Slideshow(
             items=(
                 SlideshowItem(4, 90),
@@ -207,7 +207,8 @@ class ServerSlideshowTests(unittest.TestCase):
 
         body = slideshow_html(slideshow)
 
-        self.assertIn('object-fit: cover', body)
+        self.assertIn('object-fit: contain', body)
+        self.assertIn('background: #000', body)
         self.assertIn('show(0);', body)
         self.assertIn('const delayMs = 10000;', body)
         self.assertIn('new Image()', body)

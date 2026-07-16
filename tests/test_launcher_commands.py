@@ -73,6 +73,36 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "9000",
         "--lan-share",
     ]
+    assert run_server_command(collection, slideshow=True)[-4:] == [
+        "run-server",
+        "--slideshow",
+        "--delay",
+        "10",
+    ]
+    assert run_server_command(
+        collection,
+        port=9000,
+        slideshow=True,
+        delay=20,
+        filter="year=1999",
+    )[-7:] == [
+        "--port",
+        "9000",
+        "--slideshow",
+        "--delay",
+        "20",
+        "--filter",
+        "year=1999",
+    ]
+    slideshow_command = run_server_command(
+        collection,
+        slideshow=True,
+        delay=10,
+        read_only=True,
+        lan_share=True,
+    )
+    assert "--read-only" not in slideshow_command
+    assert "--lan-share" not in slideshow_command
     assert geo_scan_command(collection)[-3:] == ["--target", str(collection), "geo-scan"]
     assert doctor_command(collection)[-3:] == ["--target", str(collection), "doctor"]
     assert deep_doctor_command(collection)[-4:] == ["--target", str(collection), "doctor", "--deep"]

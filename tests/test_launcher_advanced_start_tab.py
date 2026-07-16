@@ -11,7 +11,9 @@ from bildebank.launcher_advanced_start_tab import (
     LAN_SHARE_MODE,
     NORMAL_MODE,
     READ_ONLY_MODE,
+    SLIDESHOW_MODE,
     parse_server_port,
+    parse_slideshow_delay,
 )
 
 
@@ -78,7 +80,11 @@ def test_advanced_start_defaults_and_availability() -> None:
 
     assert tab.mode.get() == NORMAL_MODE
     assert tab.port.get() == "8765"
+    assert tab.slideshow_delay.get() == "10"
+    assert tab.slideshow_filter.get() == ""
+    assert not tab.slideshow_settings_frame.visible
     assert not tab.lan_address_frame.visible
+    assert tab.start_button.options["text"] == "Start Bildebank i nettleser"
     tab.set_available(False)
     assert tab.start_button.options["state"] == "disabled"
     tab.set_available(True)
@@ -109,6 +115,33 @@ def test_lan_address_updates_for_custom_port() -> None:
         tab.port.set("9000")
 
     assert tab.lan_addresses.get() == "http://192.168.1.20:9000/"
+
+
+def test_slideshow_mode_shows_fields_and_lan_address_and_preserves_values() -> None:
+    tab, _starts, _logs = make_tab()
+
+    tab.slideshow_delay.set("17")
+    tab.slideshow_filter.set("year=1999")
+    with patch(
+        "bildebank.launcher_advanced_start_tab.lan_share_urls",
+        return_value=["http://192.168.1.20:8765/"],
+    ):
+        tab.mode.set(SLIDESHOW_MODE)
+
+    assert tab.slideshow_settings_frame.visible
+    assert tab.lan_address_frame.visible
+    assert tab.start_button.options["text"] == "Start slideshow"
+    assert tab.slideshow_delay.get() == "17"
+    assert tab.slideshow_filter.get() == "year=1999"
+
+    tab.mode.set(NORMAL_MODE)
+    assert not tab.slideshow_settings_frame.visible
+    assert not tab.lan_address_frame.visible
+    assert tab.start_button.options["text"] == "Start Bildebank i nettleser"
+
+    tab.mode.set(SLIDESHOW_MODE)
+    assert tab.slideshow_delay.get() == "17"
+    assert tab.slideshow_filter.get() == "year=1999"
 
 
 def test_lan_mode_shows_all_detected_addresses() -> None:
@@ -172,15 +205,16 @@ def test_lan_address_field_is_hidden_outside_lan_mode(mode: str) -> None:
 
 
 @pytest.mark.parametrize(
-    ("mode", "read_only", "lan_share"),
+    ("mode", "read_only", "lan_share", "slideshow"),
     [
-        (NORMAL_MODE, False, False),
-        (READ_ONLY_MODE, True, False),
-        (LAN_SHARE_MODE, False, True),
+        (NORMAL_MODE, False, False, False),
+        (READ_ONLY_MODE, True, False, False),
+        (LAN_SHARE_MODE, False, True, False),
+        (SLIDESHOW_MODE, False, False, True),
     ],
 )
 def test_advanced_start_passes_selected_mode(
-    mode: str, read_only: bool, lan_share: bool
+    mode: str, read_only: bool, lan_share: bool, slideshow: bool
 ) -> None:
     tab, starts, _logs = make_tab()
     tab.mode.set(mode)
@@ -191,7 +225,30 @@ def test_advanced_start_passes_selected_mode(
     assert starts[0]["port"] == 9000
     assert starts[0]["read_only"] is read_only
     assert starts[0]["lan_share"] is lan_share
-    assert (starts[0]["confirm_lan_start"] is not None) is lan_share
+    assert starts[0]["slideshow"] is slideshow
+    assert (starts[0]["confirm_lan_start"] is not None) is (lan_share or slideshow)
+
+
+def test_slideshow_start_passes_normalized_delay_and_optional_filter() -> None:
+    tab, starts, _logs = make_tab()
+    tab.mode.set(SLIDESHOW_MODE)
+    tab.slideshow_delay.set("20")
+    tab.slideshow_filter.set("  person:Ola year=1999  ")
+
+    tab._on_start()
+
+    assert starts[0]["delay"] == 20
+    assert starts[0]["filter"] == "person:Ola year=1999"
+
+
+def test_empty_slideshow_filter_is_passed_as_none() -> None:
+    tab, starts, _logs = make_tab()
+    tab.mode.set(SLIDESHOW_MODE)
+    tab.slideshow_filter.set("   ")
+
+    tab._on_start()
+
+    assert starts[0]["filter"] is None
 
 
 @pytest.mark.parametrize("value", ["", "abc", "1.5", "0", "65536"])
@@ -200,9 +257,27 @@ def test_parse_server_port_rejects_invalid_values(value: str) -> None:
         parse_server_port(value)
 
 
+@pytest.mark.parametrize("value", ["", "abc", "1.5", "0", "-1"])
+def test_parse_slideshow_delay_rejects_invalid_values(value: str) -> None:
+    with pytest.raises(ValueError, match="positivt heltall"):
+        parse_slideshow_delay(value)
+
+
 def test_invalid_port_shows_error_without_starting() -> None:
     tab, starts, _logs = make_tab()
     tab.port.set("0")
+
+    with patch("tkinter.messagebox.showerror") as showerror:
+        tab._on_start()
+
+    showerror.assert_called_once()
+    assert starts == []
+
+
+def test_invalid_slideshow_delay_shows_error_without_starting() -> None:
+    tab, starts, _logs = make_tab()
+    tab.mode.set(SLIDESHOW_MODE)
+    tab.slideshow_delay.set("0")
 
     with patch("tkinter.messagebox.showerror") as showerror:
         tab._on_start()

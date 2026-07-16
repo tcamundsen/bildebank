@@ -135,7 +135,7 @@ def slideshow_html(slideshow: Slideshow) -> str:
   <title>Bildebank slideshow</title>
   <style>
     html, body {{ width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; cursor: none; }}
-    #slideshow {{ position: fixed; left: 50%; top: 50%; object-fit: cover; transform-origin: center; }}
+    #slideshow {{ position: fixed; left: 50%; top: 50%; object-fit: contain; transform-origin: center; }}
     #slideshow[data-quarter-turn="false"] {{ width: 100vw; height: 100vh; }}
     #slideshow[data-quarter-turn="true"] {{ width: 100vh; height: 100vw; }}
   </style>

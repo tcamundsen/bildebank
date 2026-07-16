@@ -24,6 +24,7 @@ from .launcher_commands import (
     update_command,
 )
 from .server_runtime import DEFAULT_PORT
+from .server_slideshow import DEFAULT_SLIDESHOW_DELAY_SECONDS
 from .launcher_status import (
     LauncherUpdateStatus,
     check_launcher_update_status,
@@ -170,6 +171,36 @@ class MainTabRefresh:
     available: bool
 
 
+@dataclass(frozen=True)
+class ServerLaunchOptions:
+    port: int
+    read_only: bool
+    lan_share: bool
+    slideshow: bool
+    delay: int | None
+    filter: str | None
+
+
+def normalize_server_launch_options(
+    *,
+    port: int,
+    read_only: bool = False,
+    lan_share: bool = False,
+    slideshow: bool = False,
+    delay: int = DEFAULT_SLIDESHOW_DELAY_SECONDS,
+    filter: str | None = None,
+) -> ServerLaunchOptions:
+    normalized_filter = filter.strip() if slideshow and filter else None
+    return ServerLaunchOptions(
+        port=port,
+        read_only=read_only if not slideshow else False,
+        lan_share=lan_share if not slideshow else False,
+        slideshow=slideshow,
+        delay=delay if slideshow else None,
+        filter=normalized_filter or None,
+    )
+
+
 class MainTab:
     def __init__(
         self,
@@ -223,6 +254,7 @@ class MainTab:
         self.collection_value = tk.StringVar(value="Bildesamling: " + str(self.collection_path))
         self.server_process: subprocess.Popen[Any] | None = None
         self.server_port = DEFAULT_PORT
+        self.server_launch_options: ServerLaunchOptions | None = None
         self.migration_required = False
         self.migration_status_error: str | None = None
         self.migration_dialog_shown = False
@@ -435,9 +467,11 @@ class MainTab:
     def stop_server_process(self) -> None:
         process = self.server_process
         if process is None:
+            self.server_launch_options = None
             return
         if process.poll() is not None:
             self.server_process = None
+            self.server_launch_options = None
             return
         self._log("Stopper Bildebank-server ...")
         process.terminate()
@@ -448,6 +482,7 @@ class MainTab:
             process.kill()
             process.wait(timeout=5)
         self.server_process = None
+        self.server_launch_options = None
         self._log("Bildebank-server stoppet.")
 
     def _create_collection_tooltip(self, collection_created: bool) -> str:
@@ -967,9 +1002,21 @@ class MainTab:
         port: int = DEFAULT_PORT,
         read_only: bool = False,
         lan_share: bool = False,
+        slideshow: bool = False,
+        delay: int = DEFAULT_SLIDESHOW_DELAY_SECONDS,
+        filter: str | None = None,
         confirm_lan_start: Callable[[], bool] | None = None,
     ) -> None:
         from tkinter import messagebox
+
+        options = normalize_server_launch_options(
+            port=port,
+            read_only=read_only,
+            lan_share=lan_share,
+            slideshow=slideshow,
+            delay=delay,
+            filter=filter,
+        )
 
         self.update_migration_status()
         if self.migration_required:
@@ -981,18 +1028,45 @@ class MainTab:
             self._show_migration_status_error()
             return
 
+        lan_confirmed = False
         if self.server_process is not None:
             if self.server_process.poll() is None:
-                self._log("Bildebank-server kjører allerede. Åpner nytt vindu.")
-                if not open_server_browser_window(self.server_port):
-                    self._log(
-                        "Kunne ikke åpne nettleser automatisk. "
-                        f"Åpne {server_browser_url(self.server_port)} manuelt."
-                    )
-                return
-            self.server_process = None
+                if self.server_launch_options == options:
+                    self._log("Bildebank-server kjører allerede. Åpner nytt vindu.")
+                    if not open_server_browser_window(options.port):
+                        self._log(
+                            "Kunne ikke åpne nettleser automatisk. "
+                            f"Åpne {server_browser_url(options.port)} manuelt."
+                        )
+                    return
+                if not messagebox.askokcancel(
+                    "Starte serveren på nytt?",
+                    (
+                        "Bildebank-serveren kjører med andre oppstartsvalg.\n\n"
+                        "Vil du stoppe den og starte på nytt med de valgte innstillingene?"
+                    ),
+                    parent=self.root,
+                ):
+                    self._log("Omstart av Bildebank-server avbrutt.")
+                    return
+                if (
+                    (options.lan_share or options.slideshow)
+                    and confirm_lan_start is not None
+                    and not confirm_lan_start()
+                ):
+                    return
+                lan_confirmed = options.lan_share or options.slideshow
+                self.stop_server_process()
+            else:
+                self.server_process = None
+                self.server_launch_options = None
 
-        if lan_share and confirm_lan_start is not None and not confirm_lan_start():
+        if (
+            (options.lan_share or options.slideshow)
+            and not lan_confirmed
+            and confirm_lan_start is not None
+            and not confirm_lan_start()
+        ):
             return
 
         self._log("Starter Bildebank ...")
@@ -1000,14 +1074,29 @@ class MainTab:
             self.server_process = subprocess.Popen(
                 run_server_command(
                     self.collection_path,
-                    port=None if port == DEFAULT_PORT and not read_only and not lan_share else port,
-                    read_only=read_only,
-                    lan_share=lan_share,
+                    port=(
+                        None
+                        if options.port == DEFAULT_PORT
+                        and not options.read_only
+                        and not options.lan_share
+                        and not options.slideshow
+                        else options.port
+                    ),
+                    read_only=options.read_only,
+                    lan_share=options.lan_share,
+                    slideshow=options.slideshow,
+                    delay=(
+                        options.delay
+                        if options.delay is not None
+                        else DEFAULT_SLIDESHOW_DELAY_SECONDS
+                    ),
+                    filter=options.filter,
                 )
             )
         except OSError as exc:
             messagebox.showerror("Kunne ikke starte Bildebank", "Bildebank-serveren kunne ikke startes.")
             self._log(f"Kunne ikke starte Bildebank: {exc}")
             return
-        self.server_port = port
+        self.server_port = options.port
+        self.server_launch_options = options
         self._log("Bildebank-serveren starter. Nettleseren åpnes av Bildebank når serveren er klar.")

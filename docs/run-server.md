@@ -104,8 +104,9 @@ nettverk, gjestenett eller nettverk du ikke stoler på.
 ## Automatisk slideshow på LAN
 
 Slideshowmodus viser ett stillbilde om gangen uten knapper, lenker eller annen
-navigasjon. Bildet dekker hele nettleservinduet. Det kan derfor bli beskåret
-langs kantene for å unngå tomme felt.
+navigasjon. Hele bildet er alltid synlig og skaleres så stort som mulig innenfor
+nettleservinduet. Når formen på bildet og vinduet er forskjellig, vises svarte
+felt på sidene eller over og under bildet.
 
 Dette eksempelet viser bilder fra 1999 og bytter bilde hvert tiende sekund:
 

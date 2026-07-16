@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
+from .server_slideshow import DEFAULT_SLIDESHOW_DELAY_SECONDS
 
 
 def bildebank_command(*args: str | Path) -> list[str]:
@@ -25,14 +26,22 @@ def run_server_command(
     port: int | None = None,
     read_only: bool = False,
     lan_share: bool = False,
+    slideshow: bool = False,
+    delay: int = DEFAULT_SLIDESHOW_DELAY_SECONDS,
+    filter: str | None = None,
 ) -> list[str]:
     command = bildebank_command("--target", collection_path, "run-server")
     if port is not None:
         command.extend(["--port", str(port)])
-    if read_only:
+    if read_only and not slideshow:
         command.append("--read-only")
-    if lan_share:
+    if lan_share and not slideshow:
         command.append("--lan-share")
+    if slideshow:
+        command.append("--slideshow")
+        command.extend(["--delay", str(delay)])
+        if filter:
+            command.extend(["--filter", filter])
     return command
 
 

@@ -8,7 +8,9 @@ from unittest.mock import patch
 from bildebank.launcher_main_tab import (
     LauncherRecoveryPlan,
     MainTab,
+    ServerLaunchOptions,
     create_launcher_snapshot,
+    normalize_server_launch_options,
     open_server_browser_window,
     plan_launcher_snapshot,
     server_browser_url,
@@ -63,6 +65,8 @@ def bare_main_tab(collection_path: Path) -> MainTab:
     tab.migration_required = False
     tab.migration_status_error = None
     tab.server_port = 8765
+    tab.server_launch_options = None
+    tab.root = object()
     return tab
 
 
@@ -678,6 +682,49 @@ def test_start_server_uses_advanced_options(tmp_path: Path) -> None:
 
     assert popen.call_args.args[0][-3:] == ["--port", "9000", "--read-only"]
     assert tab.server_port == 9000
+    assert tab.server_launch_options == ServerLaunchOptions(
+        port=9000,
+        read_only=True,
+        lan_share=False,
+        slideshow=False,
+        delay=None,
+        filter=None,
+    )
+
+
+def test_start_server_uses_normalized_slideshow_options(tmp_path: Path) -> None:
+    tab = bare_main_tab(tmp_path / "samling")
+    tab.server_process = None
+    tab.update_migration_status = lambda: None
+    tab._log = lambda _message: None
+
+    with patch("bildebank.launcher_main_tab.subprocess.Popen") as popen:
+        tab.start_server(
+            port=9000,
+            slideshow=True,
+            delay=20,
+            filter="  year=1999  ",
+            confirm_lan_start=lambda: True,
+        )
+
+    command = popen.call_args.args[0]
+    assert command[-7:] == [
+        "--port",
+        "9000",
+        "--slideshow",
+        "--delay",
+        "20",
+        "--filter",
+        "year=1999",
+    ]
+    assert "--lan-share" not in command
+    assert "--read-only" not in command
+    assert tab.server_launch_options == normalize_server_launch_options(
+        port=9000,
+        slideshow=True,
+        delay=20,
+        filter="year=1999",
+    )
 
 
 def test_lan_start_cancel_does_not_start_process(tmp_path: Path) -> None:
@@ -712,6 +759,12 @@ def test_running_server_opens_recorded_port_without_confirmation_or_new_process(
     tab = bare_main_tab(tmp_path / "samling")
     tab.server_process = SimpleNamespace(poll=lambda: None)
     tab.server_port = 9000
+    tab.server_launch_options = normalize_server_launch_options(
+        port=9000,
+        slideshow=True,
+        delay=20,
+        filter="year=1999",
+    )
     tab.update_migration_status = lambda: None
     tab._log = lambda _message: None
     confirmations: list[str] = []
@@ -721,14 +774,91 @@ def test_running_server_opens_recorded_port_without_confirmation_or_new_process(
         patch("bildebank.launcher_main_tab.open_server_browser_window") as open_browser,
     ):
         tab.start_server(
-            port=8766,
-            lan_share=True,
+            port=9000,
+            slideshow=True,
+            delay=20,
+            filter="  year=1999 ",
             confirm_lan_start=lambda: confirmations.append("confirm") or True,
         )
 
     popen.assert_not_called()
     open_browser.assert_called_once_with(9000)
     assert confirmations == []
+
+
+def test_changed_running_configuration_can_keep_existing_process(tmp_path: Path) -> None:
+    tab = bare_main_tab(tmp_path / "samling")
+    events: list[str] = []
+    process = SimpleNamespace(
+        poll=lambda: None,
+        terminate=lambda: events.append("terminate"),
+        wait=lambda *, timeout: events.append(f"wait:{timeout}"),
+    )
+    tab.server_process = process
+    tab.server_launch_options = normalize_server_launch_options(port=8765)
+    tab.update_migration_status = lambda: None
+    tab._log = events.append
+
+    with (
+        patch("tkinter.messagebox.askokcancel", return_value=False) as ask_restart,
+        patch("bildebank.launcher_main_tab.subprocess.Popen") as popen,
+    ):
+        tab.start_server(port=9000, read_only=True)
+
+    ask_restart.assert_called_once()
+    popen.assert_not_called()
+    assert tab.server_process is process
+    assert tab.server_launch_options == normalize_server_launch_options(port=8765)
+    assert "terminate" not in events
+
+
+def test_changed_configuration_stops_before_starting_slideshow(tmp_path: Path) -> None:
+    tab = bare_main_tab(tmp_path / "samling")
+    events: list[str] = []
+    process = SimpleNamespace(
+        poll=lambda: None,
+        terminate=lambda: events.append("terminate"),
+        wait=lambda *, timeout: events.append(f"wait:{timeout}"),
+    )
+    tab.server_process = process
+    tab.server_launch_options = normalize_server_launch_options(port=8765)
+    tab.update_migration_status = lambda: None
+    tab._log = events.append
+
+    def start_process(command: list[str]) -> SimpleNamespace:
+        events.append("popen")
+        assert command[-5:] == [
+            "--slideshow",
+            "--delay",
+            "10",
+            "--filter",
+            "year=1999",
+        ]
+        return SimpleNamespace()
+
+    with (
+        patch(
+            "tkinter.messagebox.askokcancel",
+            side_effect=lambda *_args, **_kwargs: events.append("restart-confirm") or True,
+        ),
+        patch("bildebank.launcher_main_tab.subprocess.Popen", side_effect=start_process),
+    ):
+        tab.start_server(
+            port=8765,
+            slideshow=True,
+            filter="year=1999",
+            confirm_lan_start=lambda: events.append("lan-confirm") or True,
+        )
+
+    assert events.index("restart-confirm") < events.index("lan-confirm")
+    assert events.index("lan-confirm") < events.index("terminate")
+    assert events.index("terminate") < events.index("popen")
+    assert tab.server_process is not process
+    assert tab.server_launch_options == normalize_server_launch_options(
+        port=8765,
+        slideshow=True,
+        filter="year=1999",
+    )
 
 
 def test_stop_server_process_terminates_running_server(tmp_path: Path) -> None:
