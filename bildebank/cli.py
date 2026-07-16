@@ -2600,6 +2600,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  opprette pending_file_moves")
     if plan.adds_metadata_datetime_column:
         print("  legge til metadata_datetime i files")
+    if plan.adds_comment_column:
+        print("  legge til comment i files")
     if plan.removes_superseded_sources:
         print("  fjerne gammel superseded-kildemodell")
     if plan.refreshes_performance_indexes:
@@ -2655,6 +2657,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
     if result.adds_metadata_datetime_column:
         print("Legger til metadata_datetime i files.")
         print("Kjør bildebank refresh-metadata --rescan for å fylle tidspunkt for eksisterende filer.")
+    if result.adds_comment_column:
+        print("Legger til comment i files.")
     if result.removes_superseded_sources:
         print("Fjerner gammel superseded-kildemodell.")
     if result.refreshes_performance_indexes:

@@ -50,6 +50,8 @@ flytting.
   holder låsen fra før filoppslag og validering til etter commit.
 - visningsrotasjon fra web holder låsen gjennom oppslag, beregning av ny
   rotasjon og commit.
+- lagring og fjerning av kommentarer fra web holder låsen gjennom filoppslag
+  og commit.
 - `image-scan` holder låsen mens aktive bilder velges, og kort for hver
   embedding som lagres. OpenCLIP-kjøringen mellom disse periodene skjer uten
   target-lås. Før lagring kontrolleres det at filen fortsatt er aktiv og har

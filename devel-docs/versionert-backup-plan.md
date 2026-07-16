@@ -187,7 +187,7 @@ lokal første versjon.
 
 ## Forholdet mellom `files` og `file_sources`
 
-I databaseschema v14 er `files` den kanoniske raden for en fysisk fil i
+I databaseschema v15 er `files` den kanoniske raden for en fysisk fil i
 bildesamlingen. Den inneholder blant annet:
 
 - `target_path` og `target_path_key`

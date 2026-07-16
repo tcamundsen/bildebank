@@ -13,6 +13,17 @@ from .manual_dates import date_range_from_uncertainty
 from .target_lock import TargetLock
 
 
+def set_comment_on_file(target: Path, file_id: int, comment: str | None) -> str | None:
+    with TargetLock(target, command="item-comment"):
+        conn = db.connect(target)
+        try:
+            normalized = db.set_file_comment(conn, file_id=file_id, comment=comment)
+            conn.commit()
+            return normalized
+        finally:
+            conn.close()
+
+
 def rotate_file_view(target: Path, file_id: int, direction: str) -> int:
     with TargetLock(target, command="rotate-view"):
         conn = db.connect(target)

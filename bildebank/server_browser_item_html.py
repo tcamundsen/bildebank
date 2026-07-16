@@ -524,6 +524,7 @@ def source_item_page_html(
     info_overlay = image_info_overlay_html()
     manual_date_overlay = "" if read_only else manual_date_overlay_html()
     manual_h3_overlay = "" if read_only else manual_h3_overlay_html(item, named_h3_cells)
+    comment_dialog = "" if read_only else comment_dialog_html(item)
     face_suggest_dialog = ""
     if face_enabled and not read_only:
         from .server_faces import face_suggest_dialog_html
@@ -584,6 +585,7 @@ def source_item_page_html(
             {side_panel}
             <section class="stage">
               {media}
+              {comment_overlay_html(item)}
             </section>
           </div>
         </main>
@@ -591,6 +593,7 @@ def source_item_page_html(
         {info_overlay}
         {manual_date_overlay}
         {manual_h3_overlay}
+        {comment_dialog}
         {face_suggest_dialog}
         """,
     )
@@ -846,6 +849,15 @@ def item_side_panel_html(
         if owned_conn:
             conn.close()
     buttons = []
+    if not read_only:
+        comment = item_string_value(item, "comment")
+        active_class = " active" if comment else ""
+        pressed = "true" if comment else "false"
+        buttons.append(
+            f'<button class="comment-button{active_class}" type="button" '
+            f'data-open-item-comment data-comment-item="{file_id}" '
+            f'aria-pressed="{pressed}">Kommentar</button>'
+        )
     for tag in defined_tags:
         tag_name, tag_name_key = tag
         active = tag_name_key in active_names
@@ -994,6 +1006,15 @@ def item_media_html(target: Path, item: Any, *, read_only: bool = False) -> str:
     if kind != "image":
         return f'<a class="file-card" href="{url}" target="_blank">Fil<br>{name}</a>'
     return f'<a href="{url}" target="_blank"{media_link_class_attr(item)}><img src="{display_url}" alt="{name}"{rotation_style_attr(item, target, write_metadata_cache=not read_only)}></a>'
+
+
+def comment_overlay_html(item: Any) -> str:
+    comment = item_string_value(item, "comment")
+    hidden = "" if comment else " hidden"
+    return (
+        f'<div class="item-comment-overlay" data-item-comment-overlay{hidden}>'
+        f'{html.escape(comment)}</div>'
+    )
 
 
 def person_item_page_html(
@@ -1162,6 +1183,28 @@ def manual_date_overlay_html() -> str:
         <div class="modal-actions">
           <button class="danger-button" type="button" data-clear-manual-date hidden>Fjern manuell dato</button>
           <button type="button" data-close-manual-date>Avbryt</button>
+          <button type="submit">Lagre</button>
+        </div>
+      </form>
+    </div>
+    """
+
+
+def comment_dialog_html(item: Any) -> str:
+    file_id = int(item["id"])
+    comment = item_string_value(item, "comment")
+    remove_hidden = "" if comment else " hidden"
+    return f"""
+    <div id="itemCommentDialog" class="modal-overlay" hidden>
+      <form class="modal-panel item-comment-panel" data-item-comment-form data-file-id="{file_id}">
+        <h2>Kommentar</h2>
+        <label>Kommentar til bildet eller filen
+          <textarea name="comment" maxlength="{db.MAX_FILE_COMMENT_LENGTH}" rows="8">{html.escape(comment)}</textarea>
+        </label>
+        <p class="assign-status" data-item-comment-status></p>
+        <div class="modal-actions">
+          <button class="danger-button" type="button" data-remove-item-comment{remove_hidden}>Fjern kommentar</button>
+          <button type="button" data-close-item-comment>Avbryt</button>
           <button type="submit">Lagre</button>
         </div>
       </form>

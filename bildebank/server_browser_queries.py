@@ -38,6 +38,7 @@ from .server_browser_sources import (
 FILE_COLUMNS = (
     "id, target_path, target_path_key, original_filename, stored_filename, taken_date, date_source, "
     "metadata_datetime, "
+    "comment, "
     "manual_date_from, manual_date_to, manual_date_note, "
     "camera_make, camera_model, "
     "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_source, "
@@ -1146,6 +1147,7 @@ def imported_source_items(target: Path, source_id: int, *, hide_out_of_focus: bo
                     files.stored_filename,
                     files.taken_date,
                     files.date_source,
+                    files.comment,
                     files.camera_make,
                     files.camera_model,
                     files.size_bytes,

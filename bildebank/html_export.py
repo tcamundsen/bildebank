@@ -201,6 +201,7 @@ STATIC_BROWSER_CSS = f"""
       overflow: hidden;
     }}
     .viewer {{
+      position: relative;
       width: 100%;
       height: 100%;
       min-height: 0;
@@ -228,6 +229,20 @@ STATIC_BROWSER_CSS = f"""
       object-fit: contain;
       object-position: center center;
       display: block;
+    }}
+    .item-comment-overlay {{
+      position: absolute;
+      z-index: 3;
+      box-sizing: border-box;
+      padding: 9px 12px;
+      background: rgb(0 0 0 / 68%);
+      color: #fff;
+      font-size: clamp(13px, 1.6vw, 20px);
+      line-height: 1.35;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      pointer-events: none;
+      text-align: left;
     }}
 {VIEW_ROTATION_CSS}
     .month-grid {{
@@ -469,6 +484,7 @@ def render_html(
     const titleEl = document.getElementById("title");
     const statusEl = document.getElementById("status");
     const viewer = document.getElementById("viewer");
+    let commentResizeObserver = null;
     const buttons = {{
       prevYear: document.getElementById("prevYear"),
       nextYear: document.getElementById("nextYear"),
@@ -677,6 +693,10 @@ def render_html(
     }}
     function render() {{
       renderBreadcrumb();
+      if (state.viewMode !== "item" && commentResizeObserver) {{
+        commentResizeObserver.disconnect();
+        commentResizeObserver = null;
+      }}
       if (state.viewMode === "years") {{
         renderYears();
         return;
@@ -698,7 +718,7 @@ def render_html(
         const video = document.createElement("video");
         video.src = item.url;
         video.controls = true;
-        viewer.replaceChildren(video);
+        showItemMedia(video, video, item);
       }} else if (item.kind === "image") {{
         const link = document.createElement("a");
         link.className = "media-link";
@@ -709,16 +729,45 @@ def render_html(
         img.alt = item.name;
         link.append(img);
         applyImageViewRotation(img, item, "contain");
-        viewer.replaceChildren(link);
+        showItemMedia(link, img, item);
       }} else {{
         const link = document.createElement("a");
         link.className = "media-link file-card";
         link.href = item.url;
         link.target = "_blank";
         link.textContent = `Fil\\n${{item.name}}`;
-        viewer.replaceChildren(link);
+        showItemMedia(link, link, item);
       }}
       updateButtons();
+    }}
+    function showItemMedia(primary, media, item) {{
+      if (commentResizeObserver) {{
+        commentResizeObserver.disconnect();
+        commentResizeObserver = null;
+      }}
+      viewer.replaceChildren(primary);
+      if (!item.comment) return;
+      const overlay = document.createElement("div");
+      overlay.className = "item-comment-overlay";
+      overlay.textContent = item.comment;
+      viewer.append(overlay);
+      const position = () => {{
+        const viewerRect = viewer.getBoundingClientRect();
+        const mediaRect = media.getBoundingClientRect();
+        const left = Math.max(0, mediaRect.left - viewerRect.left);
+        const width = Math.min(viewerRect.width - left, mediaRect.width);
+        overlay.style.left = `${{left}}px`;
+        overlay.style.width = `${{Math.max(width, 1)}}px`;
+        overlay.style.bottom = `${{Math.max(0, viewerRect.bottom - mediaRect.bottom)}}px`;
+      }};
+      media.addEventListener("load", position);
+      media.addEventListener("loadedmetadata", position);
+      if (typeof ResizeObserver !== "undefined") {{
+        commentResizeObserver = new ResizeObserver(position);
+        commentResizeObserver.observe(viewer);
+        commentResizeObserver.observe(media);
+      }}
+      requestAnimationFrame(() => requestAnimationFrame(position));
     }}
     function renderYears() {{
       const grid = document.createElement("div");

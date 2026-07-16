@@ -53,7 +53,7 @@ Oppsplittingen er ferdig. Nye endringer i serveren skal følge
 
 ## Datamodell som skal ligge fast
 
-Gjeldende runtime-schema er v14. `files` og `file_sources` har ulike ansvar:
+Gjeldende runtime-schema er v15. `files` og `file_sources` har ulike ansvar:
 
 - `files` beskriver den ene lagrede bildefilen i samlingen, med blant annet
   `target_path`, SHA-256, metadata og eventuell `deleted_at`.

@@ -25,6 +25,7 @@ DEFAULT_SLIDESHOW_DELAY_SECONDS = 10
 class SlideshowItem:
     file_id: int
     view_rotation_degrees: int
+    comment: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,7 @@ def build_slideshow(
                 view_rotation_degrees=db.normalize_view_rotation(
                     row["view_rotation_degrees"]
                 ),
+                comment=str(row["comment"]) if row["comment"] is not None else None,
             )
         )
     if not items:
@@ -102,7 +104,7 @@ def slideshow_rows_by_id(target: Path, file_ids: list[int]) -> dict[int, Any]:
             placeholders = ",".join("?" for _ in chunk)
             for row in conn.execute(
                 f"""
-                SELECT id, target_path, view_rotation_degrees
+                SELECT id, target_path, view_rotation_degrees, comment
                 FROM files
                 WHERE deleted_at IS NULL
                   AND id IN ({placeholders})
@@ -116,15 +118,22 @@ def slideshow_rows_by_id(target: Path, file_ids: list[int]) -> dict[int, Any]:
 
 
 def slideshow_html(slideshow: Slideshow) -> str:
-    slides_json = json.dumps(
-        [
-            {
-                "url": f"/slideshow/media/{item.file_id}",
-                "rotation": item.view_rotation_degrees,
-            }
-            for item in slideshow.items
-        ],
-        separators=(",", ":"),
+    slides_json = (
+        json.dumps(
+            [
+                {
+                    "url": f"/slideshow/media/{item.file_id}",
+                    "rotation": item.view_rotation_degrees,
+                    "comment": item.comment,
+                }
+                for item in slideshow.items
+            ],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
     )
     delay_ms = slideshow.delay_seconds * 1000
     return f"""<!doctype html>
@@ -135,27 +144,50 @@ def slideshow_html(slideshow: Slideshow) -> str:
   <title>Bildebank slideshow</title>
   <style>
     html, body {{ width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; cursor: none; }}
-    #slideshow {{ position: fixed; left: 50%; top: 50%; object-fit: contain; transform-origin: center; }}
-    #slideshow[data-quarter-turn="false"] {{ width: 100vw; height: 100vh; }}
-    #slideshow[data-quarter-turn="true"] {{ width: 100vh; height: 100vw; }}
+    #stage {{ position: fixed; inset: 0; overflow: hidden; }}
+    #slideshow {{ position: absolute; left: 50%; top: 50%; max-width: none; max-height: none; object-fit: contain; transform-origin: center; }}
+    #comment {{ position: absolute; z-index: 2; box-sizing: border-box; padding: 10px 14px; background: rgb(0 0 0 / 68%); color: #fff; font: clamp(14px, 2vw, 24px)/1.35 system-ui, sans-serif; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; }}
+    #comment[hidden] {{ display: none; }}
   </style>
 </head>
 <body>
-  <img id="slideshow" alt="" data-quarter-turn="false">
+  <div id="stage">
+    <img id="slideshow" alt="">
+    <div id="comment" hidden></div>
+  </div>
   <script>
     const slides = {slides_json};
     const delayMs = {delay_ms};
     const image = document.getElementById("slideshow");
+    const comment = document.getElementById("comment");
     let preloader = null;
+    let currentSlide = null;
+
+    function layout(slide) {{
+      if (!slide || !image.naturalWidth || !image.naturalHeight) return;
+      const quarterTurn = slide.rotation === 90 || slide.rotation === 270;
+      const rotatedWidth = quarterTurn ? image.naturalHeight : image.naturalWidth;
+      const rotatedHeight = quarterTurn ? image.naturalWidth : image.naturalHeight;
+      const scale = Math.min(window.innerWidth / rotatedWidth, window.innerHeight / rotatedHeight);
+      image.style.width = `${{image.naturalWidth * scale}}px`;
+      image.style.height = `${{image.naturalHeight * scale}}px`;
+      image.style.transform = `translate(-50%, -50%) rotate(${{slide.rotation}}deg)`;
+      const rect = image.getBoundingClientRect();
+      comment.style.left = `${{Math.max(0, rect.left)}}px`;
+      comment.style.width = `${{Math.max(1, Math.min(window.innerWidth - Math.max(0, rect.left), rect.width))}}px`;
+      comment.style.bottom = `${{Math.max(0, window.innerHeight - rect.bottom)}}px`;
+    }}
 
     function show(index, failedCount = 0) {{
       const slide = slides[index];
       const loader = new Image();
       loader.onload = () => {{
-        const quarterTurn = slide.rotation === 90 || slide.rotation === 270;
-        image.dataset.quarterTurn = quarterTurn ? "true" : "false";
-        image.style.transform = `translate(-50%, -50%) rotate(${{slide.rotation}}deg)`;
+        currentSlide = slide;
+        image.onload = () => layout(slide);
         image.src = slide.url;
+        comment.textContent = slide.comment || "";
+        comment.hidden = !slide.comment;
+        requestAnimationFrame(() => layout(slide));
         const nextIndex = (index + 1) % slides.length;
         preloader = new Image();
         preloader.src = slides[nextIndex].url;
@@ -172,6 +204,7 @@ def slideshow_html(slideshow: Slideshow) -> str:
       loader.src = slide.url;
     }}
 
+    window.addEventListener("resize", () => layout(currentSlide));
     show(0);
   </script>
 </body>

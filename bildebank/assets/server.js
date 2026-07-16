@@ -19,6 +19,13 @@
   const closeManualDateButtons = document.querySelectorAll("[data-close-manual-date]");
   const clearManualDateButton = document.querySelector("[data-clear-manual-date]");
   const manualDateFields = document.querySelectorAll("[data-manual-date-field]");
+  const itemCommentDialog = document.getElementById("itemCommentDialog");
+  const itemCommentForm = document.querySelector("[data-item-comment-form]");
+  const itemCommentInput = itemCommentForm?.querySelector('textarea[name="comment"]');
+  const itemCommentStatus = document.querySelector("[data-item-comment-status]");
+  const removeItemCommentButton = document.querySelector("[data-remove-item-comment]");
+  const openItemCommentButton = document.querySelector("[data-open-item-comment]");
+  const itemCommentOverlay = document.querySelector("[data-item-comment-overlay]");
   const manualH3Overlay = document.getElementById("manualH3Overlay");
   const manualH3Panel = document.querySelector("[data-manual-h3-panel]");
   const manualH3Status = document.querySelector("[data-manual-h3-status]");
@@ -40,6 +47,7 @@
   let infoLoaded = false;
   let infoFileId = "";
   let manualDateFileId = "";
+  let savedItemComment = itemCommentInput?.value || "";
   function isSettingsForm(form) {
     if (!form) return false;
     const action = new URL(form.getAttribute("action") || form.action || window.location.href, window.location.href);
@@ -377,6 +385,7 @@
     rotationTarget.dataset.viewRotation = String(normalizedRotation);
     if (normalizedRotation === 0) {
       rotationTarget.removeAttribute("data-view-rotation");
+      scheduleCommentOverlayPosition();
       return;
     }
     rotationTarget.style.transform = `rotate(${normalizedRotation}deg)`;
@@ -388,11 +397,32 @@
     } else if (personMedia instanceof HTMLElement) {
       fitPersonFaceLayer(personMedia);
     }
+    scheduleCommentOverlayPosition();
+  }
+  function positionItemCommentOverlay() {
+    if (!(itemCommentOverlay instanceof HTMLElement) || itemCommentOverlay.hidden) return;
+    const stage = itemCommentOverlay.closest(".stage");
+    const media = stage?.querySelector("img, video, .file-card");
+    if (!(stage instanceof HTMLElement) || !(media instanceof HTMLElement)) return;
+    const stageRect = stage.getBoundingClientRect();
+    const mediaRect = media.getBoundingClientRect();
+    const left = Math.max(0, mediaRect.left - stageRect.left);
+    const width = Math.min(stageRect.width - left, mediaRect.width);
+    const bottom = Math.max(0, stageRect.bottom - mediaRect.bottom);
+    itemCommentOverlay.style.left = `${left}px`;
+    itemCommentOverlay.style.width = `${Math.max(width, 1)}px`;
+    itemCommentOverlay.style.bottom = `${bottom}px`;
+  }
+  function scheduleCommentOverlayPosition() {
+    requestAnimationFrame(positionItemCommentOverlay);
   }
   function scheduleQuarterTurnFit() {
     requestAnimationFrame(() => {
       fitQuarterTurnMedia();
-      requestAnimationFrame(fitQuarterTurnMedia);
+      requestAnimationFrame(() => {
+        fitQuarterTurnMedia();
+        positionItemCommentOverlay();
+      });
     });
   }
   function manualDateInput(name) {
@@ -593,6 +623,10 @@
   });
   observePersonFaceLayers();
   window.addEventListener("resize", scheduleQuarterTurnFit);
+  document.querySelectorAll(".stage img, .stage video").forEach(media => {
+    media.addEventListener("load", scheduleCommentOverlayPosition);
+    media.addEventListener("loadedmetadata", scheduleCommentOverlayPosition);
+  });
   scheduleQuarterTurnFit();
   openFacesButton?.addEventListener("click", openFacesOverlay);
   closeFacesButton?.addEventListener("click", closeFacesOverlay);
@@ -608,6 +642,73 @@
   });
   document.querySelectorAll("[data-open-manual-date]").forEach(button => {
     button.addEventListener("click", () => openManualDateOverlay(button));
+  });
+  function setItemCommentFormDisabled(disabled) {
+    itemCommentForm?.querySelectorAll("button, textarea").forEach(item => {
+      item.disabled = disabled;
+    });
+  }
+  function applyItemComment(comment) {
+    savedItemComment = comment || "";
+    if (itemCommentInput) itemCommentInput.value = savedItemComment;
+    if (itemCommentOverlay) {
+      itemCommentOverlay.textContent = savedItemComment;
+      itemCommentOverlay.hidden = !savedItemComment;
+    }
+    if (openItemCommentButton) {
+      openItemCommentButton.classList.toggle("active", Boolean(savedItemComment));
+      openItemCommentButton.setAttribute("aria-pressed", savedItemComment ? "true" : "false");
+    }
+    if (removeItemCommentButton) removeItemCommentButton.hidden = !savedItemComment;
+    scheduleCommentOverlayPosition();
+  }
+  function closeItemCommentDialog() {
+    if (!itemCommentDialog) return;
+    itemCommentDialog.hidden = true;
+    if (itemCommentInput) itemCommentInput.value = savedItemComment;
+    if (itemCommentStatus) itemCommentStatus.textContent = "";
+  }
+  openItemCommentButton?.addEventListener("click", () => {
+    if (!itemCommentDialog) return;
+    itemCommentDialog.hidden = false;
+    if (itemCommentInput) itemCommentInput.value = savedItemComment;
+    if (removeItemCommentButton) removeItemCommentButton.hidden = !savedItemComment;
+    itemCommentInput?.focus();
+  });
+  document.querySelectorAll("[data-close-item-comment]").forEach(button => {
+    button.addEventListener("click", closeItemCommentDialog);
+  });
+  itemCommentDialog?.addEventListener("click", event => {
+    if (event.target === itemCommentDialog) closeItemCommentDialog();
+  });
+  async function saveItemComment(comment) {
+    const fileId = Number(itemCommentForm?.dataset.fileId);
+    if (!fileId) return;
+    if (itemCommentStatus) itemCommentStatus.textContent = comment === null ? "Fjerner..." : "Lagrer...";
+    setItemCommentFormDisabled(true);
+    try {
+      const response = await csrfFetch("/api/item-comment", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({file_id: fileId, comment}),
+      });
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke lagre kommentar.");
+      applyItemComment(payload.comment);
+      closeItemCommentDialog();
+    } catch (error) {
+      if (itemCommentStatus) itemCommentStatus.textContent = error.message || "Kunne ikke lagre kommentar.";
+    } finally {
+      setItemCommentFormDisabled(false);
+    }
+  }
+  itemCommentForm?.addEventListener("submit", event => {
+    event.preventDefault();
+    saveItemComment(itemCommentInput?.value || "");
+  });
+  removeItemCommentButton?.addEventListener("click", () => {
+    if (!confirm("Fjerne kommentaren fra bildet eller filen?")) return;
+    saveItemComment(null);
   });
   closeManualH3Buttons.forEach(button => {
     button.addEventListener("click", closeManualH3Overlay);
@@ -1109,6 +1210,13 @@
       if (event.key === "Escape") {
         event.preventDefault();
         closeInfoOverlay();
+      }
+      return;
+    }
+    if (itemCommentDialog && !itemCommentDialog.hidden) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeItemCommentDialog();
       }
       return;
     }

@@ -216,6 +216,7 @@ def geo_areas(
 
 GEO_FILE_COLUMNS = (
     "id, target_path, target_path_key, stored_filename, taken_date, date_source, "
+    "comment, "
     "manual_date_from, manual_date_to, manual_date_note, "
     "camera_make, camera_model, "
     "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_alt, gps_source, "

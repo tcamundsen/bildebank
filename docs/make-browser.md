@@ -32,6 +32,10 @@ oversikt. RAW/NEF og PSD vises som fil-lenker, ikke som bildevisning.
 Bildene vises med visningsrotasjonen som er lagret i Bildebank. Rotasjonen
 gjøres bare i HTML-browseren. Selve bildefilene blir ikke endret.
 
+Kommentarer vises nederst på mediet i full filvisning. De vises ikke på års-
+eller månedsoversiktene. Kjør `make-browser` på nytt etter at en kommentar er
+endret, slik at HTML-filen får den nye teksten.
+
 Hvis du importerer flere filer senere, må du kjøre `make-browser` på nytt for å
 oppdatere HTML-filen.
 

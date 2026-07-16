@@ -564,6 +564,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path == "/api/item-rotate":
                 server_endpoints_items.respond_rotate_item(self)
                 return
+            if parsed.path == "/api/item-comment":
+                server_endpoints_items.respond_comment_item(self)
+                return
             if parsed.path == "/api/item-tag":
                 server_endpoints_items.respond_tag_item(self)
                 return

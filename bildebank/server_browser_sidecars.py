@@ -25,6 +25,7 @@ RAW_SIDECAR_STEM_FALLBACK_EXTENSIONS = {".psd"} | RAW_SIDECAR_IMAGE_EXTENSIONS
 FILE_COLUMNS = (
     "id, target_path, target_path_key, original_filename, stored_filename, taken_date, date_source, "
     "metadata_datetime, "
+    "comment, "
     "manual_date_from, manual_date_to, manual_date_note, "
     "camera_make, camera_model, "
     "size_bytes, view_rotation_degrees, gps_lat, gps_lon, gps_source, "

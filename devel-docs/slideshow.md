@@ -16,6 +16,9 @@ Brukerdokumentasjon og kommandoeksempler ligger i `docs/run-server.md`.
   rader for samme fil. Kildefilter må derfor ikke lage duplikate lysbilder.
 - Utvalget materialiseres i Filtersøk-rekkefølge ved oppstart. Databaseendringer
   blir først synlige etter omstart.
+- Den valgfrie kommentaren på hver `files`-rad materialiseres sammen med
+  utvalget og vises nederst på det aktuelle bildet. Kommentarendringer krever
+  derfor også omstart av slideshowserveren.
 - Slideshowet endrer aldri database, metadata eller bildefiler.
 
 ## Sikkerhetsgrense
@@ -37,4 +40,5 @@ gjøres tilgjengelige.
 Siden viser ett helt bilde mot svart bakgrunn med `object-fit: contain`, laster
 neste bilde på forhånd og starter delay først etter vellykket lasting. Feil på
 ett bilde hopper videre. Listen går i løkke, og hver klient har egen posisjon og
-klokke.
+klokke. Kommentaroverlayet er selv oppreist også når bildet har
+visningsrotasjon.

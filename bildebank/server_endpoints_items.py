@@ -31,6 +31,46 @@ def clear_browser_navigation_cache(server: Any) -> None:
         clear_cache()
 
 
+def respond_comment_item(handler: BildebankRequestHandler) -> None:
+    try:
+        payload = server_request.read_json_payload(handler.headers, handler.rfile)
+    except (UnicodeDecodeError, ValueError):
+        handler.respond_json(
+            {"ok": False, "error": "Ugyldig JSON."},
+            status=HTTPStatus.BAD_REQUEST,
+        )
+        return
+    try:
+        file_id = require_int(payload.get("file_id"), "file_id")
+    except ValueError:
+        handler.respond_json(
+            {"ok": False, "error": "Ugyldig file_id."},
+            status=HTTPStatus.BAD_REQUEST,
+        )
+        return
+    if "comment" not in payload or (
+        payload["comment"] is not None and not isinstance(payload["comment"], str)
+    ):
+        handler.respond_json(
+            {"ok": False, "error": "comment må være tekst eller null."},
+            status=HTTPStatus.BAD_REQUEST,
+        )
+        return
+    try:
+        comment = server_actions.set_comment_on_file(
+            handler.server.target,
+            file_id,
+            payload["comment"],  # type: ignore[arg-type]
+        )
+    except TargetLockError as exc:
+        handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
+        return
+    except ValueError as exc:
+        handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+        return
+    handler.respond_json({"ok": True, "file_id": file_id, "comment": comment})
+
+
 def filter_source_from_url(target: Path, source_url: object) -> BrowserSource | None:
     if not isinstance(source_url, str):
         return None

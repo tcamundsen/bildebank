@@ -69,6 +69,7 @@ Eier filrader og proveniens mellom filer og kilder:
 - unimport-planer som avgjør om en fil kan fjernes eller bare mister proveniens
 - browser-/listeoppslag for filer som ikke naturlig hører til geo, tags eller
   lifecycle
+- normalisering og lagring av den ene valgfrie kommentaren på `files`
 
 Viktig grense: `files` og `file_sources` skal behandles som ett domene her. Ikke
 splitt dem i separate moduler bare fordi de er separate tabeller. Import,

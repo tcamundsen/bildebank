@@ -15,6 +15,34 @@ from .db_schema import VIDEO_EXTENSIONS
 from .db_sources import Source
 
 
+MAX_FILE_COMMENT_LENGTH = 2000
+
+
+def normalize_file_comment(comment: str) -> str:
+    normalized = comment.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not normalized:
+        raise ValueError("Kommentaren kan ikke være tom. Bruk fjern kommentar i stedet.")
+    if len(normalized) > MAX_FILE_COMMENT_LENGTH:
+        raise ValueError(f"Kommentaren kan ikke være lengre enn {MAX_FILE_COMMENT_LENGTH} tegn.")
+    return normalized
+
+
+def set_file_comment(
+    conn: sqlite3.Connection,
+    *,
+    file_id: int,
+    comment: str | None,
+) -> str | None:
+    normalized = None if comment is None else normalize_file_comment(comment)
+    cursor = conn.execute(
+        "UPDATE files SET comment = ? WHERE id = ?",
+        (normalized, file_id),
+    )
+    if cursor.rowcount != 1:
+        raise ValueError("Filen finnes ikke i importdatabasen.")
+    return normalized
+
+
 @dataclass(frozen=True)
 class UnimportPlan:
     source: Source

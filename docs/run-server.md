@@ -78,6 +78,7 @@ bildebank run-server --host 0.0.0.0 --allow-remote --read-only
 
 Read-only-modus lar andre bla, søke, se personer og åpne bildeinfo. Den
 blokkerer innstillinger, administrasjon og endringer i database og bildefiler.
+Lagrede kommentarer vises fortsatt, men kan ikke redigeres.
 Dette er fortsatt bare ment for privat LAN. Det er ikke innlogging eller en
 sikkerhetsmodell for internett.
 
@@ -123,6 +124,9 @@ bildebank run-server --slideshow --filter "person:Ola tag:Favoritter year>=1990 
 
 Uten `--filter` vises alle aktive stillbilder. Videoer og filer som er markert
 som fjernet, tas ikke med. Bildene vises i samme rekkefølge som filtersøket gir.
+Hvis et bilde har en kommentar, vises hele kommentaren nederst på bildet.
+Slideshowet leser kommentarene ved oppstart, så serveren må startes på nytt
+etter at en kommentar er endret.
 
 Du kan velge en annen tid mellom bildene og en annen port:
 

@@ -114,6 +114,10 @@ class ServerSlideshowTests(unittest.TestCase):
                     "UPDATE files SET view_rotation_degrees = 90 WHERE id = ?",
                     (first_id,),
                 )
+                conn.execute(
+                    "UPDATE files SET comment = ? WHERE id = ?",
+                    ("Første\nandre", first_id),
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -130,6 +134,7 @@ class ServerSlideshowTests(unittest.TestCase):
             [first_id, second_id],
         )
         self.assertEqual(slideshow.items[0].view_rotation_degrees, 90)
+        self.assertEqual(slideshow.items[0].comment, "Første\nandre")
         self.assertNotIn(deleted_id, slideshow.item_ids)
         self.assertNotIn(video_id, slideshow.item_ids)
         self.assertNotIn(missing_id, slideshow.item_ids)
@@ -198,7 +203,7 @@ class ServerSlideshowTests(unittest.TestCase):
     def test_slideshow_html_is_minimal_starts_first_and_shows_whole_image(self) -> None:
         slideshow = Slideshow(
             items=(
-                SlideshowItem(4, 90),
+                SlideshowItem(4, 90, "hei\n</script>"),
                 SlideshowItem(8, 0),
             ),
             item_ids=frozenset({4, 8}),
@@ -215,6 +220,10 @@ class ServerSlideshowTests(unittest.TestCase):
         self.assertIn('loader.onload', body)
         self.assertIn('window.setTimeout', body)
         self.assertIn('"rotation":90', body)
+        self.assertIn('"comment":"hei\\n\\u003c/script\\u003e"', body)
+        self.assertIn("comment.textContent = slide.comment", body)
+        self.assertIn("white-space: pre-wrap", body)
+        self.assertNotIn("hei\n</script>", body)
         self.assertNotIn("<a ", body)
         self.assertNotIn("<button", body)
 
