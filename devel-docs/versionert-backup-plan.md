@@ -1522,7 +1522,13 @@ Implementeringsstatus 2026-07-16:
   enkeltfil-restore er manuelt sammenlignet byte-for-byte med originalfilen på
   Linux, og et nytt forsøk mot samme mål ble avvist uten overskriving.
 - Trinn 4 er fullført.
-- Trinn 5 er ikke påbegynt.
+- Trinn 5 er påbegynt. Brukerveiledningen `docs/snapshot.md` beskriver
+  oppretting, liste, problemliste, rask og full kontroll, hel restore,
+  enkeltfil-restore, avbrudd, diskrotasjon og restoreøvelse med Windows-stier.
+  Den eksisterende mirror-dokumentasjonen og kom-i-gang-teksten peker tydelig
+  til den versjonerte løsningen. En detaljert Windows 11-pilotsjekkliste finnes
+  i `devel-docs/versionert-backup-windows-pilot.md`. Selve piloten på Windows
+  og eksternt medium gjenstår før trinn 5 kan fullføres.
 
 ### Trinn 0 – Enighet om design
 

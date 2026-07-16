@@ -22,6 +22,8 @@ options:
 > `backup` lager en speiling av bildesamlingen.
 > Når backup oppdateres, kan filer også slettes fra backupen.
 > Ha derfor flere backup-disker som oppdateres på ulike tidspunkt.
+> Bruk [`snapshot`](snapshot.md) når du vil bevare historiske versjoner og
+> gjenopprette hele samlinger eller enkeltfiler med Bildebank.
 
 `backup` lager eller oppdaterer en kopi av hele bildesamlingen.
 
@@ -170,11 +172,13 @@ tregere Python-kopiering og skriver en tydelig advarsel.
 
 ## Gjenoppretting fra backup
 
-Bildebank har ikke funksjon for å gjenopprette en hel bildesamling eller enkeltbilder
-nå. Men for å gjenopprette en hel samling, så kopierer man backupen, for eksempel
-`F:\foto-samling` til `C:\Bruker\Tom\foto-samling`, sletter filen `.bildebank-backup.json`
-og så kan man ta i bruk bildesamlingen. **Ikke** kopier en backup over en eksisterende 
-bildesamling.
+Denne `backup`-kommandoen har ikke innebygd restore. Mirror-backupen er en vanlig
+kopi av bildesamlingen og kan kopieres til en ny mappe ved en krise. **Ikke**
+kopier en backup over en eksisterende bildesamling.
+
+Den versjonerte [`snapshot`](snapshot.md)-løsningen har kontrollert restore av
+hele samlinger og enkeltfiler. Velg `snapshot` når du trenger historiske
+versjoner eller vil at Bildebank skal kontrollere innholdet under restore.
 
 ## Viktig å forstå
 
@@ -183,8 +187,10 @@ filer i bildesamlingen, og senere oppdaterer backupen, så vil backupen også
 bli oppdatert til den nye tilstanden. Derfor bør du ha flere backup-disker
 som ikke oppdateres samtidig.
 
-Det beste er nok å bruke et dedikert backup-verktøy som tar backup av hele
-bilde-samlingen, eller hele PCen.
+Versjonert [`snapshot`](snapshot.md) beskytter eldre tilstander bedre enn én
+oppdatert speiling. Det erstatter likevel ikke flere medier, en frakoblet kopi
+og en kopi utenfor boligen. Et annet dedikert backupverktøy kan også brukes for
+å sikkerhetskopiere hele PC-en.
 
 ## Backup-medier
 

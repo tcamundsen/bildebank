@@ -192,9 +192,10 @@ kan du slette lockfilen fra bildesamlingsmappen og kjøre import på nytt.
 
 ## Viktig om sikkerhet og backup
 
-Programmet skal samle og organisere bilder og videoer, men det er ikke en
-backup-løsning. Når du har fått en ryddig bildesamling, bør den sikkerhetskopieres
-grundig til mer enn ett sted.
+Programmet skal samle og organisere bilder og videoer. Det har en
+[`snapshot`](docs/snapshot.md)-kommando for versjonerte sikkerhetskopier, men
+ingen enkelt backupfunksjon er tilstrekkelig alene. Når du har fått en ryddig
+bildesamling, bør den sikkerhetskopieres grundig til mer enn ett sted.
 
 Ikke slett gamle kilder før du er trygg på at importen ble riktig og at den nye
 samlingen er sikkerhetskopiert.
@@ -203,4 +204,3 @@ samlingen er sikkerhetskopiert.
 
 Bildebank er fri programvare lisensiert under GNU General Public License,
 versjon 3 eller senere. Se `LICENSE` for full lisens.
-

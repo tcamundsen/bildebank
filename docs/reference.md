@@ -48,6 +48,7 @@ er merket har jeg ikke sett over ennå.
 
 - [`where-is`](where-is.md) **`cli`**
 - [`doctor`](doctor.md) **`vindu`**
+- [`snapshot`](snapshot.md) **`vindu / cli`**
 - [`backup`](backup.md) **`vindu`**
 - [`migrate`](migrate.md) **`vindu`**
 - [`vacuum`](vacuum.md) **`vindu`**
