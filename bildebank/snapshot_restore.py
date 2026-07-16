@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import os
 import shutil
+import sqlite3
 import stat
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
+from . import db
 from .snapshot import (
     is_relative_to,
     portable_path_key,
+    repository_file_size_limit,
     snapshot_object_path,
     validate_canonical_uuid,
     validate_existing_path_components,
@@ -20,13 +26,26 @@ from .snapshot import (
 from .snapshot_check import (
     SnapshotSummary,
     expected_file,
+    hash_regular_file,
     object_reference,
     read_canonical_json,
     read_snapshot,
     resolve_repository_for_check,
     validate_locked_repository_for_check,
 )
-from .snapshot_repository import ObjectReference, RepositoryLock, SnapshotStorageError
+from .snapshot_repository import (
+    COPY_CHUNK_SIZE,
+    ObjectReference,
+    RepositoryLock,
+    SnapshotStorageError,
+    canonical_json_bytes,
+    fsync_directory,
+    open_source_without_following_links,
+    write_new_durable_file,
+)
+
+
+RECOVERY_REPORT_FILENAME = "BILDEBANK-RECOVERY-REPORT.txt"
 
 
 @dataclass(frozen=True)
@@ -91,6 +110,15 @@ class SingleFileRestorePlan:
 
 
 @dataclass(frozen=True)
+class FullRestoreResult:
+    plan: FullRestorePlan
+    published_target: Path
+    published_recovery: Path | None
+    exit_code: int
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class _LoadedSnapshot:
     repository: Path
     metadata: dict[str, object]
@@ -105,118 +133,436 @@ def plan_full_restore(
     target_arg: Path,
 ) -> FullRestorePlan:
     with locked_snapshot(repository_arg, snapshot_id, command="snapshot restore --dry-run") as loaded:
-        if loaded.summary.status == "recovery":
-            raise SnapshotStorageError(
-                "Et recovery-snapshot kan ikke gjenopprettes som en vanlig bildesamling. "
-                "Bruk restore-file for å hente ut redningsinnhold."
-            )
-        target, target_state = validate_full_restore_target(
-            loaded.repository,
-            loaded.metadata,
-            target_arg,
+        return build_full_restore_plan(loaded, target_arg)
+
+
+def build_full_restore_plan(loaded: _LoadedSnapshot, target_arg: Path) -> FullRestorePlan:
+    if loaded.summary.status == "recovery":
+        raise SnapshotStorageError(
+            "Et recovery-snapshot kan ikke gjenopprettes som en vanlig bildesamling. "
+            "Bruk restore-file for å hente ut redningsinnhold."
         )
-        collection_outputs: list[RestoreOutput] = []
-        recovery_outputs: list[RestoreOutput] = []
-        missing_expected: list[str] = []
+    target, target_state = validate_full_restore_target(
+        loaded.repository,
+        loaded.metadata,
+        target_arg,
+    )
+    collection_outputs: list[RestoreOutput] = []
+    recovery_outputs: list[RestoreOutput] = []
+    missing_expected: list[str] = []
 
-        for entry in loaded.entries:
-            if entry.restore_kind == "recovery_only":
-                if entry.object is not None:
-                    require_available_object(loaded.repository, entry.object, required=True)
-                    assert entry.recovery_name is not None
-                    recovery_outputs.append(
-                        RestoreOutput(
-                            relative_path=entry.recovery_name,
-                            object=entry.object,
-                            mtime_ns=entry.mtime_ns,
-                            entry_id=entry.entry_id,
-                            original_path_display=entry.original_path_display,
-                            variant="observed",
-                            reason=entry.integrity_status,
-                        )
-                    )
-                continue
-
-            assert entry.path is not None
-            if entry.integrity_status == "ok":
-                if entry.object is None:
-                    raise SnapshotStorageError(f"Gyldig filpost mangler objekt: {entry.entry_id}")
+    for entry in loaded.entries:
+        if entry.restore_kind == "recovery_only":
+            if entry.object is not None:
                 require_available_object(loaded.repository, entry.object, required=True)
-                collection_outputs.append(output_for_entry(entry, entry.path, entry.object, "normal"))
-                continue
-
-            expected_available = (
-                entry.expected is not None
-                and require_available_object(loaded.repository, entry.expected, required=False)
-            )
-            if expected_available:
-                assert entry.expected is not None
-                collection_outputs.append(output_for_entry(entry, entry.path, entry.expected, "expected"))
-            else:
-                missing_expected.append(entry.entry_id)
-
-            if entry.object is not None and entry.object != entry.expected:
-                require_available_object(loaded.repository, entry.object, required=True)
+                assert entry.recovery_name is not None
                 recovery_outputs.append(
-                    output_for_entry(
-                        entry,
-                        observed_recovery_path(entry.path, entry.object.sha256),
-                        entry.object,
-                        "observed",
+                    RestoreOutput(
+                        relative_path=entry.recovery_name,
+                        object=entry.object,
+                        mtime_ns=entry.mtime_ns,
+                        entry_id=entry.entry_id,
+                        original_path_display=entry.original_path_display,
+                        variant="observed",
+                        reason=entry.integrity_status,
                     )
                 )
+            continue
 
-        databases = loaded.manifest["databases"]
-        assert isinstance(databases, list)
-        for database in databases:
-            assert isinstance(database, dict)
-            if database["capture"] != "sqlite_backup":
-                continue
-            reference = object_reference(database["object"], allow_none=False)
-            assert reference is not None
-            require_available_object(loaded.repository, reference, required=True)
-            restore_path = database["restore_path"]
-            assert isinstance(restore_path, str)
-            collection_outputs.append(
-                RestoreOutput(
-                    relative_path=restore_path,
-                    object=reference,
-                    mtime_ns=None,
-                    entry_id=None,
-                    original_path_display=str(database["source_path_display"]),
-                    variant="database",
-                    reason=str(database["role"]),
+        assert entry.path is not None
+        if entry.integrity_status == "ok":
+            if entry.object is None:
+                raise SnapshotStorageError(f"Gyldig filpost mangler objekt: {entry.entry_id}")
+            require_available_object(loaded.repository, entry.object, required=True)
+            collection_outputs.append(output_for_entry(entry, entry.path, entry.object, "normal"))
+            continue
+
+        expected_available = (
+            entry.expected is not None
+            and require_available_object(loaded.repository, entry.expected, required=False)
+        )
+        if expected_available:
+            assert entry.expected is not None
+            collection_outputs.append(output_for_entry(entry, entry.path, entry.expected, "expected"))
+        else:
+            missing_expected.append(entry.entry_id)
+
+        if entry.object is not None and entry.object != entry.expected:
+            require_available_object(loaded.repository, entry.object, required=True)
+            recovery_outputs.append(
+                output_for_entry(
+                    entry,
+                    observed_recovery_path(entry.path, entry.object.sha256),
+                    entry.object,
+                    "observed",
                 )
             )
 
-        validate_output_paths(collection_outputs, label="samlingsmappen")
-        validate_output_paths(recovery_outputs, label="recovery-mappen")
-        recovery_target = recovery_path(target, loaded.summary) if recovery_outputs else None
-        if recovery_target is not None and (recovery_target.exists() or recovery_target.is_symlink()):
-            raise SnapshotStorageError(
-                f"Recovery-målet finnes allerede og blir ikke overskrevet: {recovery_target}"
+    databases = loaded.manifest["databases"]
+    assert isinstance(databases, list)
+    for database in databases:
+        assert isinstance(database, dict)
+        if database["capture"] != "sqlite_backup":
+            continue
+        reference = object_reference(database["object"], allow_none=False)
+        assert reference is not None
+        require_available_object(loaded.repository, reference, required=True)
+        restore_path = database["restore_path"]
+        assert isinstance(restore_path, str)
+        collection_outputs.append(
+            RestoreOutput(
+                relative_path=restore_path,
+                object=reference,
+                mtime_ns=None,
+                entry_id=None,
+                original_path_display=str(database["source_path_display"]),
+                variant="database",
+                reason=str(database["role"]),
             )
-        reject_restore_staging_remnants(target)
-        required_bytes = sum(output.object.size_bytes for output in (*collection_outputs, *recovery_outputs))
-        free_bytes = shutil.disk_usage(target.parent).free
-        last_source = loaded.metadata["last_confirmed_source"]
-        assert isinstance(last_source, dict)
-        original_collection = Path(str(last_source["collection_path"]))
-        return FullRestorePlan(
-            repository=loaded.repository,
-            snapshot=loaded.summary,
-            target=target,
-            target_state=target_state,
-            recovery_target=recovery_target,
-            collection_outputs=tuple(sorted(collection_outputs, key=lambda item: item.relative_path)),
-            recovery_outputs=tuple(sorted(recovery_outputs, key=lambda item: item.relative_path)),
-            missing_expected_entries=tuple(sorted(missing_expected)),
-            required_bytes=required_bytes,
-            free_bytes=free_bytes,
-            original_collection=original_collection,
-            original_collection_exists=original_collection.is_dir(),
-            note=loaded.summary.note,
         )
+
+    validate_output_paths(collection_outputs, label="samlingsmappen")
+    validate_output_paths(recovery_outputs, label="recovery-mappen")
+    recovery_report_key = portable_path_key(RECOVERY_REPORT_FILENAME)
+    if any(portable_path_key(output.relative_path) == recovery_report_key for output in recovery_outputs):
+        raise SnapshotStorageError(
+            f"En recovery-post kolliderer med den reserverte rapportfilen {RECOVERY_REPORT_FILENAME}."
+        )
+    recovery_target = recovery_path(target, loaded.summary) if recovery_outputs else None
+    if recovery_target is not None and (recovery_target.exists() or recovery_target.is_symlink()):
+        raise SnapshotStorageError(
+            f"Recovery-målet finnes allerede og blir ikke overskrevet: {recovery_target}"
+        )
+    reject_restore_staging_remnants(target)
+    required_bytes = sum(output.object.size_bytes for output in (*collection_outputs, *recovery_outputs))
+    validate_restore_file_sizes(target.parent, (*collection_outputs, *recovery_outputs))
+    free_bytes = shutil.disk_usage(target.parent).free
+    last_source = loaded.metadata["last_confirmed_source"]
+    assert isinstance(last_source, dict)
+    original_collection = Path(str(last_source["collection_path"]))
+    return FullRestorePlan(
+        repository=loaded.repository,
+        snapshot=loaded.summary,
+        target=target,
+        target_state=target_state,
+        recovery_target=recovery_target,
+        collection_outputs=tuple(sorted(collection_outputs, key=lambda item: item.relative_path)),
+        recovery_outputs=tuple(sorted(recovery_outputs, key=lambda item: item.relative_path)),
+        missing_expected_entries=tuple(sorted(missing_expected)),
+        required_bytes=required_bytes,
+        free_bytes=free_bytes,
+        original_collection=original_collection,
+        original_collection_exists=original_collection.is_dir(),
+        note=loaded.summary.note,
+    )
+
+
+def restore_full_snapshot(
+    repository_arg: Path,
+    snapshot_id: str,
+    target_arg: Path,
+) -> FullRestoreResult:
+    with locked_snapshot(repository_arg, snapshot_id, command="snapshot restore") as loaded:
+        plan = build_full_restore_plan(loaded, target_arg)
+        if not plan.has_estimated_capacity:
+            raise SnapshotStorageError(
+                "Målmediet har ikke nok ledig plass for det konservative restore-estimatet."
+            )
+        staging = create_restore_staging(plan)
+        collection_staging = staging / "collection"
+        recovery_staging = staging / "recovery"
+        try:
+            copy_restore_outputs(
+                plan.repository,
+                collection_staging,
+                plan.collection_outputs,
+            )
+            if plan.recovery_outputs:
+                copy_restore_outputs(
+                    plan.repository,
+                    recovery_staging,
+                    plan.recovery_outputs,
+                )
+                write_recovery_report(recovery_staging, plan)
+            validate_staged_restore(collection_staging, recovery_staging, plan, loaded.metadata)
+            published_recovery = publish_staged_restore(
+                staging,
+                collection_staging,
+                recovery_staging,
+                plan,
+            )
+        except Exception as exc:
+            raise SnapshotStorageError(
+                "Restore feilet før samlingen ble publisert. "
+                f"Staging er bevart for undersøkelse: {staging}: {exc}"
+            ) from exc
+
+        warnings = cleanup_published_restore_staging(staging)
+        return FullRestoreResult(
+            plan=plan,
+            published_target=plan.target,
+            published_recovery=published_recovery,
+            exit_code=3 if plan.incomplete else 0,
+            warnings=warnings,
+        )
+
+
+def validate_restore_file_sizes(parent: Path, outputs: tuple[RestoreOutput, ...]) -> None:
+    size_limit = repository_file_size_limit(parent)
+    if size_limit is None:
+        return
+    oversized = next((output for output in outputs if output.object.size_bytes > size_limit), None)
+    if oversized is not None:
+        raise SnapshotStorageError(
+            "En restorefil er større enn målfilsystemets per-fil-grense: "
+            f"{oversized.relative_path} ({oversized.object.size_bytes} byte)."
+        )
+
+
+def create_restore_staging(plan: FullRestorePlan, *, run_id: str | None = None) -> Path:
+    canonical_run_id = str(uuid.UUID(run_id)) if run_id is not None else str(uuid.uuid4())
+    if run_id is not None and canonical_run_id != run_id:
+        raise SnapshotStorageError(f"Ikke-kanonisk restore run-id: {run_id!r}")
+    staging = plan.target.parent / f".bildebank-restore-{plan.target.name}-{canonical_run_id}"
+    try:
+        staging.mkdir()
+    except OSError as exc:
+        raise SnapshotStorageError(f"Kunne ikke opprette restore-staging: {staging}: {exc}") from exc
+    try:
+        (staging / "collection").mkdir()
+        if plan.recovery_outputs:
+            (staging / "recovery").mkdir()
+        write_new_durable_file(
+            staging / "run.json",
+            canonical_json_bytes(
+                {
+                    "recovery_target": str(plan.recovery_target) if plan.recovery_target else None,
+                    "repository": str(plan.repository),
+                    "run_id": canonical_run_id,
+                    "snapshot_id": plan.snapshot.snapshot_id,
+                    "target": str(plan.target),
+                }
+            ),
+        )
+        fsync_directory(staging)
+        fsync_directory(staging.parent)
+    except Exception as exc:
+        raise SnapshotStorageError(
+            f"Restore-staging ble bare delvis opprettet og er bevart: {staging}: {exc}"
+        ) from exc
+    return staging
+
+
+def copy_restore_outputs(
+    repository: Path,
+    staging_root: Path,
+    outputs: tuple[RestoreOutput, ...],
+) -> None:
+    for output in outputs:
+        destination = staging_root.joinpath(*output.relative_path.split("/"))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        copy_verified_restore_object(repository, output, destination)
+
+
+def copy_verified_restore_object(
+    repository: Path,
+    output: RestoreOutput,
+    destination: Path,
+) -> None:
+    source = snapshot_object_path(
+        repository,
+        output.object.sha256,
+        output.object.size_bytes,
+    )
+    require_available_object(repository, output.object, required=True)
+    temporary = destination.with_name(f".{destination.name}.tmp-{uuid.uuid4()}")
+    source_fd = open_source_without_following_links(source)
+    digest = hashlib.sha256()
+    size_bytes = 0
+    try:
+        opened = os.fstat(source_fd)
+        if not stat.S_ISREG(opened.st_mode):
+            raise SnapshotStorageError(f"Snapshotobjektet er ikke en vanlig fil: {source}")
+        with os.fdopen(source_fd, "rb", closefd=True) as source_stream, temporary.open("xb") as target:
+            source_fd = -1
+            while chunk := source_stream.read(COPY_CHUNK_SIZE):
+                target.write(chunk)
+                digest.update(chunk)
+                size_bytes += len(chunk)
+            target.flush()
+            os.fsync(target.fileno())
+    finally:
+        if source_fd >= 0:
+            os.close(source_fd)
+    if size_bytes != output.object.size_bytes or digest.hexdigest() != output.object.sha256:
+        raise SnapshotStorageError(f"Snapshotobjektet besto ikke SHA-256-kontroll under kopiering: {source}")
+    os.rename(temporary, destination)
+    fsync_directory(destination.parent)
+    digest_after, size_after = hash_regular_file(destination)
+    if size_after != output.object.size_bytes or digest_after != output.object.sha256:
+        raise SnapshotStorageError(f"Restorekopien besto ikke SHA-256-kontroll: {destination}")
+    if output.mtime_ns is not None:
+        os.utime(destination, ns=(output.mtime_ns, output.mtime_ns), follow_symlinks=False)
+
+
+def write_recovery_report(recovery_staging: Path, plan: FullRestorePlan) -> None:
+    lines = [
+        "Bildebank recovery report",
+        "",
+        f"Snapshot-ID: {plan.snapshot.snapshot_id}",
+        f"Snapshot status: {plan.snapshot.status}",
+        "",
+    ]
+    for output in plan.recovery_outputs:
+        lines.extend(
+            (
+                f"Entry-ID: {output.entry_id}",
+                f"Recovery path: {output.relative_path}",
+                f"Original display path: {output.original_path_display}",
+                f"Reason: {output.reason}",
+                f"Variant: {output.variant}",
+                f"SHA-256: {output.object.sha256}",
+                "",
+            )
+        )
+    write_new_durable_file(
+        recovery_staging / RECOVERY_REPORT_FILENAME,
+        ("\n".join(lines) + "\n").encode("utf-8"),
+    )
+
+
+def validate_staged_restore(
+    collection_staging: Path,
+    recovery_staging: Path,
+    plan: FullRestorePlan,
+    metadata: dict[str, object],
+) -> None:
+    for output in plan.collection_outputs:
+        path = collection_staging.joinpath(*output.relative_path.split("/"))
+        validate_restored_file(path, output)
+    for output in plan.recovery_outputs:
+        path = recovery_staging.joinpath(*output.relative_path.split("/"))
+        validate_restored_file(path, output)
+    main_database = next(
+        (output for output in plan.collection_outputs if output.variant == "database" and output.reason == "main"),
+        None,
+    )
+    if main_database is None:
+        raise SnapshotStorageError("Restoreplanen mangler hoveddatabasen.")
+    database_path = collection_staging.joinpath(*main_database.relative_path.split("/"))
+    validate_restored_main_database(database_path, str(metadata["collection_id"]))
+    fsync_tree_directories(collection_staging)
+    if plan.recovery_outputs:
+        fsync_tree_directories(recovery_staging)
+
+
+def validate_restored_file(path: Path, output: RestoreOutput) -> None:
+    validate_regular_file_without_links(path, label="Gjenopprettet fil")
+    digest, size_bytes = hash_regular_file(path)
+    if size_bytes != output.object.size_bytes or digest != output.object.sha256:
+        raise SnapshotStorageError(f"Gjenopprettet fil besto ikke sluttkontrollen: {path}")
+
+
+def validate_restored_main_database(path: Path, expected_collection_id: str) -> None:
+    uri = f"{path.resolve().as_uri()}?mode=ro"
+    try:
+        connection = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as exc:
+        raise SnapshotStorageError(f"Kunne ikke åpne gjenopprettet hoveddatabase: {path}: {exc}") from exc
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute("PRAGMA query_only = ON")
+        connection.execute("PRAGMA foreign_keys = ON")
+        db.validate_database_health(connection)
+        collection_id = db.validate_collection_id(connection)
+    except (sqlite3.Error, ValueError) as exc:
+        raise SnapshotStorageError(f"Gjenopprettet hoveddatabase besto ikke kontrollen: {path}: {exc}") from exc
+    finally:
+        connection.close()
+    if collection_id != expected_collection_id:
+        raise SnapshotStorageError("Gjenopprettet hoveddatabase har feil collection_id.")
+
+
+def fsync_tree_directories(root: Path) -> None:
+    directories = sorted(
+        (path for path in root.rglob("*") if path.is_dir() and not path.is_symlink()),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+    for directory in directories:
+        fsync_directory(directory)
+    fsync_directory(root)
+
+
+def publish_staged_restore(
+    staging: Path,
+    collection_staging: Path,
+    recovery_staging: Path,
+    plan: FullRestorePlan,
+) -> Path | None:
+    if plan.recovery_target is not None and (
+        plan.recovery_target.exists() or plan.recovery_target.is_symlink()
+    ):
+        raise SnapshotStorageError(
+            f"Recovery-målet ble opprettet etter planlegging og blir ikke overskrevet: {plan.recovery_target}"
+        )
+    published_recovery: Path | None = None
+    if plan.recovery_target is not None:
+        try:
+            os.rename(recovery_staging, plan.recovery_target)
+        except OSError as exc:
+            raise SnapshotStorageError(
+                f"Kunne ikke publisere recovery-mappen atomisk: {plan.recovery_target}: {exc}"
+            ) from exc
+        fsync_directory(plan.target.parent)
+        published_recovery = plan.recovery_target
+
+    prepare_collection_target_for_publish(plan)
+    try:
+        os.rename(collection_staging, plan.target)
+    except OSError as exc:
+        recovery_detail = (
+            f" Recovery-mappen er allerede publisert: {published_recovery}."
+            if published_recovery is not None
+            else ""
+        )
+        raise SnapshotStorageError(
+            f"Kunne ikke publisere den gjenopprettede samlingen atomisk: {plan.target}: {exc}."
+            + recovery_detail
+        ) from exc
+    fsync_directory(plan.target.parent)
+    return published_recovery
+
+
+def prepare_collection_target_for_publish(plan: FullRestorePlan) -> None:
+    if plan.target_state == "missing":
+        if plan.target.exists() or plan.target.is_symlink():
+            raise SnapshotStorageError(
+                f"Målmappen ble opprettet etter planlegging og blir ikke overskrevet: {plan.target}"
+            )
+        return
+    if plan.target.is_symlink() or not plan.target.is_dir():
+        raise SnapshotStorageError(f"Den tomme målmappen ble erstattet under restore: {plan.target}")
+    if any(plan.target.iterdir()):
+        raise SnapshotStorageError(f"Målmappen er ikke lenger tom og blir ikke endret: {plan.target}")
+    try:
+        plan.target.rmdir()
+    except OSError as exc:
+        raise SnapshotStorageError(f"Kunne ikke klargjøre den fortsatt tomme målmappen: {plan.target}: {exc}") from exc
+    fsync_directory(plan.target.parent)
+
+
+def cleanup_published_restore_staging(staging: Path) -> tuple[str, ...]:
+    warnings: list[str] = []
+    try:
+        (staging / "run.json").unlink()
+        staging.rmdir()
+        fsync_directory(staging.parent)
+    except OSError as exc:
+        warnings.append(
+            f"Restore ble publisert, men tom staging kunne ikke ryddes: {staging}: {exc}"
+        )
+    return tuple(warnings)
 
 
 def plan_single_file_restore(

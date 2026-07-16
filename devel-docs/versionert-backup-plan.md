@@ -1,6 +1,6 @@
 # Plan for versjonert backup
 
-Status: **første diskusjonsutkast – ikke godkjent for implementering**
+Status: **godkjent implementeringsplan – under implementering**
 
 Dette dokumentet skisserer en ekte, versjonert backup for Bildebank. Hensikten
 er å bli enige om sikkerhetsmodell, lagringsformat, kommandoer og
@@ -1448,9 +1448,7 @@ backup.
 
 ## Foreslåtte implementasjonstrinn
 
-Ingen av trinnene skal startes før de åpne beslutningene nedenfor er behandlet.
-
-Implementeringsstatus 2026-07-15:
+Implementeringsstatus 2026-07-16:
 
 - Trinn 0 og 1 er ferdige. `snapshot create --dry-run` er implementert og
   skrivefri.
@@ -1489,7 +1487,26 @@ Implementeringsstatus 2026-07-15:
   eller korrupte objekter til alle berørte snapshot-ID-er og logiske stier.
 - Full kontroll er koblet til launcheren med samme resultatmodell, fremdrift i
   objekter og byte og kontrollert avbrudd. Ingen kontrollhistorikk lagres.
-- Trinn 3 er fullført. Trinn 4–5 er ikke påbegynt.
+- Trinn 3 er fullført.
+- Trinn 4 er påbegynt med en felles, skrivefri plan for hel restore og
+  enkeltfil-restore. Planen validerer valgt snapshot og nødvendige objekter,
+  mål- og eksportplasseringer, alle ordinære og recovery-baserte utstier,
+  variantvalg, plassbehov, recovery-navnekollisjon og rester etter tidligere
+  restoreforsøk. `restore --dry-run` og `restore-file --dry-run` er koblet til
+  CLI uten krav om aktiv bildesamling og uten bekreftelsesprompt eller skriving.
+- Reell hel restore er implementert med eksakt tekstbekreftelse eller `--yes`,
+  unik søsken-staging, SHA-256-verifisering under kopiering og i en avsluttende
+  kontroll, gjenoppretting av filenes `mtime_ns`, kontroll av hoveddatabasen og
+  opprinnelig `collection_id`, og flush før atomisk publisering. Eventuell
+  recovery-mappe publiseres først og samlingsmappen sist. Måltilstanden
+  kontrolleres på nytt før publisering, og rester etter feil eller avbrudd
+  bevares og stopper senere restoreforsøk til de er undersøkt. En bevisst
+  ufullstendig restore publiseres med exitkode 3.
+- Reell hel restore er manuelt verifisert på Linux med et faktisk snapshot,
+  etterfulgt av `doctor --deep` på den gjenopprettede samlingen. Alle 249
+  databaseførte mediefiler fantes, ingen orphan-filer ble funnet og SHA-256
+  stemte for alle filene. Reell enkeltfil-restore gjenstår i trinn 4.
+- Trinn 5 er ikke påbegynt.
 
 ### Trinn 0 – Enighet om design
 
@@ -1625,6 +1642,5 @@ Inntil punktene over er avgjort, er anbefalt retning:
 - read-only kontroll før restorefunksjonen regnes som ferdig
 - restore til ny mappe, aldri automatisk overskriving av aktiv samling
 
-Dette er et diskusjonsgrunnlag. Status skal ikke endres til godkjent før åpne
-beslutninger er gjennomgått og de valgte kompromissene er skrevet inn i
-dokumentet.
+Planen er godkjent som grunnlag for implementeringen. Implementeringsstatusen
+over skal holdes oppdatert til alle trinn er ferdige og verifisert.

@@ -67,9 +67,11 @@ from .snapshot_check import (
 from .snapshot_create import SnapshotCreationResult, create_snapshot
 from .snapshot_restore import (
     FullRestorePlan,
+    FullRestoreResult,
     SingleFileRestorePlan,
     plan_full_restore,
     plan_single_file_restore,
+    restore_full_snapshot,
 )
 from .target_lock import TargetLock
 from .thumbnails import ThumbnailStats, run_make_thumbnails
@@ -1950,13 +1952,26 @@ def run_snapshot_repository_command(args: argparse.Namespace) -> int:
         print_snapshot_list(result)
         return 0
     if args.snapshot_command == "restore":
-        if not args.dry_run:
-            raise ValueError(
-                "Reell hel restore er ikke implementert ennå. Bruk --dry-run for å kontrollere planen."
-            )
         full_restore_plan = plan_full_restore(args.repository, args.snapshot_id, args.destination)
-        print_full_restore_plan(full_restore_plan)
-        return 0
+        print_full_restore_plan(full_restore_plan, dry_run=args.dry_run)
+        if args.dry_run:
+            return 0
+        confirmation = f"GJENOPPRETT {full_restore_plan.snapshot.snapshot_id}"
+        if not args.yes:
+            answer = input(
+                "Skriv nøyaktig denne teksten for å starte restore:\n"
+                f"  {confirmation}\n> "
+            )
+            if answer != confirmation:
+                print("Restore avbrutt. Ingen samling ble publisert.", file=sys.stderr)
+                return 1
+        restore_result = restore_full_snapshot(
+            args.repository,
+            args.snapshot_id,
+            args.destination,
+        )
+        print_full_restore_result(restore_result)
+        return restore_result.exit_code
     if args.snapshot_command == "restore-file":
         if not args.dry_run:
             raise ValueError(
@@ -2068,9 +2083,9 @@ def format_duration_seconds(seconds: int) -> str:
     return f"{hours}t {remaining_minutes:02d}m"
 
 
-def print_full_restore_plan(plan: FullRestorePlan) -> None:
+def print_full_restore_plan(plan: FullRestorePlan, *, dry_run: bool = True) -> None:
     target_state = "mangler og ville blitt opprettet" if plan.target_state == "missing" else "er tom"
-    print("Hel restore dry-run")
+    print("Hel restore dry-run" if dry_run else "Plan for hel restore")
     print(f"  Repository: {plan.repository}")
     print(f"  Snapshot-ID: {plan.snapshot.snapshot_id}")
     print(f"  Snapshotdato: {plan.snapshot.completed_at}")
@@ -2094,7 +2109,8 @@ def print_full_restore_plan(plan: FullRestorePlan) -> None:
             f"collection_id og må ikke brukes som uavhengige samlinger: {plan.original_collection}",
             file=sys.stderr,
         )
-    print("Dry-run: Ingen mapper, filer eller restore-staging er opprettet eller endret.")
+    if dry_run:
+        print("Dry-run: Ingen mapper, filer eller restore-staging er opprettet eller endret.")
 
 
 def print_single_file_restore_plan(plan: SingleFileRestorePlan) -> None:
@@ -2112,6 +2128,24 @@ def print_single_file_restore_plan(plan: SingleFileRestorePlan) -> None:
     print(f"  Utdatafil: {plan.output_path}")
     print(f"  Størrelse: {format_bytes(plan.output.object.size_bytes)}")
     print("Dry-run: Ingen mapper eller filer er opprettet eller endret.")
+
+
+def print_full_restore_result(result: FullRestoreResult) -> None:
+    print("Hel restore publisert")
+    print(f"  Snapshot-ID: {result.plan.snapshot.snapshot_id}")
+    print(f"  Samlingsmappe: {result.published_target}")
+    print(f"  Ordinære utdatafiler: {len(result.plan.collection_outputs)}")
+    if result.published_recovery is not None:
+        print(f"  Recovery-mappe: {result.published_recovery}")
+        print(f"  Recovery-filer: {len(result.plan.recovery_outputs)}")
+    if result.plan.incomplete:
+        print(
+            "ADVARSEL: Samlingen ble publisert bevisst ufullstendig fordi forventede "
+            "varianter manglet.",
+            file=sys.stderr,
+        )
+    for warning in result.warnings:
+        print(f"ADVARSEL: {warning}", file=sys.stderr)
 
 
 def print_snapshot_creation_result(result: SnapshotCreationResult) -> None:
