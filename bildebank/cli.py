@@ -57,6 +57,7 @@ from .pending_deletes import cleanup_pending_deletes, list_pending_deletes
 from .progress import ProgressMeter
 from .program_state import known_targets, program_db_path, record_target_best_effort
 from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
+from .server_slideshow import DEFAULT_SLIDESHOW_DELAY_SECONDS
 from .snapshot import SnapshotPlan, plan_snapshot
 from .snapshot_check import (
     SnapshotCheckProgress,
@@ -122,8 +123,15 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def validate_parsed_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
-    if getattr(args, "command", None) == "run-server" and args.lan_share and args.host is not None:
-        parser.error("--lan-share kan ikke brukes sammen med --host. Bruk --port hvis du vil velge port.")
+    if getattr(args, "command", None) != "run-server":
+        return
+    if (args.lan_share or args.slideshow) and args.host is not None:
+        option = "--slideshow" if args.slideshow else "--lan-share"
+        parser.error(f"{option} kan ikke brukes sammen med --host. Bruk --port hvis du vil velge port.")
+    if not args.slideshow and args.slideshow_filter is not None:
+        parser.error("--filter kan bare brukes sammen med --slideshow.")
+    if not args.slideshow and args.delay is not None:
+        parser.error("--delay kan bare brukes sammen med --slideshow.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -810,6 +818,23 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Tillat bevisst binding til en adresse som kan nås fra andre maskiner.",
     )
+    run_server_parser.add_argument(
+        "--slideshow",
+        action="store_true",
+        help="Vis et automatisk slideshow read-only på privat LAN.",
+    )
+    run_server_parser.add_argument(
+        "--delay",
+        type=positive_int_arg,
+        metavar="SEKUNDER",
+        help=f"Sekunder per slideshow-bilde. Standard: {DEFAULT_SLIDESHOW_DELAY_SECONDS}",
+    )
+    run_server_parser.add_argument(
+        "--filter",
+        dest="slideshow_filter",
+        metavar="UTTRYKK",
+        help="Avgrens slideshowet med samme syntaks som Filtersøk.",
+    )
     face_scan = add_command(
         subparsers,
         "face-scan",
@@ -1230,7 +1255,7 @@ def run_no_target_command(args: argparse.Namespace) -> int:
 def should_recover_pending_file_moves(args: argparse.Namespace) -> bool:
     if args.command == "migrate":
         return False
-    if args.command == "run-server" and (args.read_only or args.lan_share):
+    if args.command == "run-server" and (args.read_only or args.lan_share or args.slideshow):
         return False
     if getattr(args, "dry_run", False):
         return False
@@ -1256,7 +1281,8 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
         return run_geo_command(args, target, repo_root=program_repo_root())
 
     if args.command == "run-server":
-        lan_share = args.lan_share
+        slideshow = args.slideshow
+        lan_share = args.lan_share or slideshow
         return run_server_command(
             target,
             host="0.0.0.0" if lan_share else (args.host or DEFAULT_HOST),
@@ -1267,6 +1293,11 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
             preview_images=args.preview_images or lan_share,
             read_only=args.read_only or lan_share,
             lan_share=lan_share,
+            slideshow_delay_seconds=(
+                (args.delay if args.delay is not None else DEFAULT_SLIDESHOW_DELAY_SECONDS)
+                if slideshow else None
+            ),
+            slideshow_filter=args.slideshow_filter if slideshow else None,
         )
 
     if args.command == "cleanup-pending-deletes":

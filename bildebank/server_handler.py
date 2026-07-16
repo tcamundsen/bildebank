@@ -41,6 +41,7 @@ from .server_faces import (
 )
 from . import server_markdown
 from . import server_files
+from . import server_slideshow
 from .server_search import (
     DEFAULT_SEARCH_LIMIT,
     search_server_images,
@@ -154,6 +155,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         self.server_timing_steps = {}
         parsed = urllib.parse.urlparse(self.path)
         try:
+            if getattr(self.server, "slideshow", None) is not None:
+                server_slideshow.respond_slideshow_get(self, parsed.path)
+                return
             if getattr(self.server, "read_only", False) and self.read_only_get_blocked(
                 parsed.path
             ):
@@ -403,6 +407,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             self.respond_file(parsed.path.lstrip("/"))
         except TargetLockError as exc:
+            if getattr(self.server, "slideshow", None) is not None:
+                self.respond_text(str(exc), status=HTTPStatus.CONFLICT)
+                return
             self.respond_html(
                 error_html(
                     exc,
@@ -412,6 +419,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 status=HTTPStatus.CONFLICT,
             )
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
+            if getattr(self.server, "slideshow", None) is not None:
+                self.respond_text(
+                    f"Kunne ikke vise slideshowet: {exc}",
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+                return
             self.respond_html(
                 error_html(
                     exc,
@@ -425,6 +438,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         self.request_started_at = time.perf_counter()
         self.server_timing_steps = {}
         parsed = urllib.parse.urlparse(self.path)
+        if getattr(self.server, "slideshow", None) is not None:
+            self.respond_text("Siden finnes ikke.", status=HTTPStatus.NOT_FOUND)
+            return
         if getattr(self.server, "read_only", False):
             self.respond_read_only_forbidden(parsed.path)
             return
@@ -630,18 +646,30 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         self.respond_preview_image(file_id)
 
-    def respond_preview_image(self, file_id: int) -> None:
-        item = item_by_id(self.server.target, file_id)
+    def respond_preview_image(self, file_id: int, *, require_active: bool = False) -> bool:
+        item = (
+            active_item_by_id_including_hidden(self.server.target, file_id)
+            if require_active
+            else item_by_id(self.server.target, file_id)
+        )
         if item is None:
             self.respond_text("Filen finnes ikke.", status=HTTPStatus.NOT_FOUND)
-            return
-        target_path = Path(str(item["target_path"]))
-        absolute_path = db.absolute_target_path(self.server.target, target_path)
+            return False
+        try:
+            absolute_path = server_files.server_file_path_by_id(
+                self.server.target, file_id
+            )
+        except PermissionError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            return False
+        except (FileNotFoundError, OSError) as exc:
+            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            return False
         if not absolute_path.is_file():
             self.respond_text(
                 "Bildefilen finnes ikke på disk.", status=HTTPStatus.NOT_FOUND
             )
-            return
+            return False
         try:
             from PIL import Image, ImageOps, UnidentifiedImageError
         except ImportError as exc:
@@ -649,7 +677,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 f"Pillow mangler, kan ikke lage preview-bilde: {exc}",
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
-            return
+            return False
         try:
             with Image.open(absolute_path) as image:
                 preview = ImageOps.exif_transpose(image)
@@ -660,11 +688,12 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 preview.save(output, format="JPEG", quality=85)
         except UnidentifiedImageError:
             self.respond_text("Filen er ikke et bilde.", status=HTTPStatus.BAD_REQUEST)
-            return
+            return False
         except OSError as exc:
             self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
-            return
+            return False
         self.respond_bytes(output.getvalue(), "image/jpeg")
+        return True
 
     def respond_file(self, encoded_relative_path: str) -> None:
         try:

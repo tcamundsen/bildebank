@@ -18,6 +18,9 @@ options:
                     --host, men kan brukes med --port.
   --allow-remote    Tillat bevisst binding til en adresse som kan nås fra
                     andre maskiner.
+  --slideshow       Vis et automatisk slideshow read-only på privat LAN.
+  --delay SEKUNDER  Sekunder per slideshow-bilde. Standard: 10
+  --filter UTTRYKK  Avgrens slideshowet med samme syntaks som Filtersøk.
 ```
 <!-- CLI-HELP-END -->
 
@@ -97,6 +100,44 @@ enheter, for eksempel `http://192.168.86.11:8765/`.
 Advarsel: Serveren kan nås av alle på samme LAN. Bildene kan dermed bli
 eksponert til alle på samme nettverk. Ikke bruk `--lan-share` på offentlige
 nettverk, gjestenett eller nettverk du ikke stoler på.
+
+## Automatisk slideshow på LAN
+
+Slideshowmodus viser ett stillbilde om gangen uten knapper, lenker eller annen
+navigasjon. Bildet dekker hele nettleservinduet. Det kan derfor bli beskåret
+langs kantene for å unngå tomme felt.
+
+Dette eksempelet viser bilder fra 1999 og bytter bilde hvert tiende sekund:
+
+```powershell
+bildebank run-server --slideshow --filter "year=1999"
+```
+
+Slideshowet bruker samme søkeuttrykk som [Filtersøk](web/filtersok.md). Du kan
+for eksempel kombinere år, person og tagg:
+
+```powershell
+bildebank run-server --slideshow --filter "person:Ola tag:Favoritter year>=1990 year<=1999"
+```
+
+Uten `--filter` vises alle aktive stillbilder. Videoer og filer som er markert
+som fjernet, tas ikke med. Bildene vises i samme rekkefølge som filtersøket gir.
+
+Du kan velge en annen tid mellom bildene og en annen port:
+
+```powershell
+bildebank run-server --slideshow --delay 20 --port 8766 --filter "year=1999"
+```
+
+Slideshowmodus deler automatisk read-only på privat LAN og skriver ut adressen
+som skal åpnes på TV-en, nettbrettet eller en annen enhet. Hver nettleser
+starter på det første bildet og kjører deretter uavhengig av andre skjermer.
+Hvis søket er ugyldig eller ikke gir noen stillbilder, starter ikke serveren.
+
+Slideshowserveren gir bare tilgang til preview-bildene som tilhører det valgte
+utvalget. Den vanlige bildebrowseren og originalfilene er ikke tilgjengelige i
+denne modusen. Serveren har likevel ingen innlogging. Ikke bruk slideshowmodus
+på offentlige nettverk, gjestenett eller nettverk du ikke stoler på.
 
 Hvis du vil velge port:
 

@@ -33,6 +33,8 @@ from .server_faces import (
 from .server_search import (
     OpenClipSearchCache,
 )
+from .server_slideshow import Slideshow, build_slideshow
+
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 BROWSER_NAVIGATION_CACHE_CHECK_INTERVAL_SECONDS = 1.0
@@ -102,12 +104,14 @@ class BildebankServer(ThreadingHTTPServer):
         config: AppConfig,
         preview_images: bool = False,
         read_only: bool = False,
+        slideshow: Slideshow | None = None,
     ) -> None:
         super().__init__(address, server_handler.BildebankRequestHandler)
         self.target = target
         self.config = config
         self.preview_images = preview_images
         self.read_only = read_only
+        self.slideshow = slideshow
         self.csrf_token = secrets.token_urlsafe(32)
         self.search_cache = OpenClipSearchCache(config)
         self._browser_navigation_cache_version = 0
@@ -360,6 +364,8 @@ def run_server(
     allow_remote: bool = False,
     preview_images: bool = False,
     read_only: bool = False,
+    slideshow_delay_seconds: int | None = None,
+    slideshow_filter: str | None = None,
     ready: Callable[[str], None] | None = None,
 ) -> None:
     validate_bind_host(host, allow_remote=allow_remote)
@@ -370,7 +376,24 @@ def run_server(
             file=sys.stderr,
         )
     db.prepare_database(target)
-    server = BildebankServer((host, port), target, config, preview_images=preview_images, read_only=read_only)
+    slideshow = (
+        build_slideshow(
+            target,
+            config,
+            filter_query=slideshow_filter,
+            delay_seconds=slideshow_delay_seconds,
+        )
+        if slideshow_delay_seconds is not None
+        else None
+    )
+    server = BildebankServer(
+        (host, port),
+        target,
+        config,
+        preview_images=preview_images,
+        read_only=read_only,
+        slideshow=slideshow,
+    )
     actual_host, actual_port = server.server_address
     url = f"http://{actual_host}:{actual_port}/"
     if ready is not None:

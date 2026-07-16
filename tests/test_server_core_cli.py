@@ -250,6 +250,7 @@ class ServerCoreCliTests(unittest.TestCase):
             AppConfig(),
             preview_images=False,
             read_only=False,
+            slideshow=None,
         )
         self.assertIn("ADVARSEL", stderr.getvalue())
         self.assertIn("andre maskiner på nettverket", stderr.getvalue())
@@ -272,6 +273,7 @@ class ServerCoreCliTests(unittest.TestCase):
             AppConfig(),
             preview_images=False,
             read_only=True,
+            slideshow=None,
         )
 
     def test_read_only_blocks_admin_gets_and_posts_before_csrf(self) -> None:
