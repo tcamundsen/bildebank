@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import sqlite3
 import tempfile
@@ -17,6 +18,7 @@ from bildebank.snapshot_restore import (
     plan_full_restore,
     plan_single_file_restore,
     restore_full_snapshot,
+    restore_single_file,
 )
 from tests.cli_helpers import capture_cli
 
@@ -171,6 +173,124 @@ class SnapshotRestorePlanTests(unittest.TestCase):
                 )
 
             self.assertEqual(output.read_text(encoding="utf-8"), "bevar\n")
+
+    def test_single_file_restore_exports_verified_file_to_existing_directory(self) -> None:
+        with normal_snapshot() as (root, target, repository, snapshot_id):
+            export = root / "export"
+            export.mkdir()
+            repository_before = tree_file_bytes(repository)
+            original_mtime_ns = (target / "notater.txt").stat().st_mtime_ns
+
+            result = restore_single_file(
+                repository,
+                snapshot_id,
+                export,
+                path="notater.txt",
+            )
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertEqual(result.output_path.read_text(encoding="utf-8"), "familienotat\n")
+            self.assertEqual(result.output_path.stat().st_mtime_ns, original_mtime_ns)
+            self.assertEqual(tree_file_bytes(repository), repository_before)
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
+
+    def test_single_file_restore_creates_missing_export_and_relative_directories(self) -> None:
+        with degraded_snapshot() as (root, _target, repository, snapshot_id, expected, _observed):
+            export = root / "export"
+
+            result = restore_single_file(
+                repository,
+                snapshot_id,
+                export,
+                path="2026/07/familie.jpg",
+                variant="expected",
+            )
+
+            self.assertEqual(result.output_path, export / "2026/07/familie.jpg")
+            self.assertEqual(result.output_path.read_bytes(), expected)
+
+    def test_single_file_restore_exports_observed_variant_with_hash_suffix(self) -> None:
+        with degraded_snapshot() as (root, _target, repository, snapshot_id, _expected, observed):
+            export = root / "export"
+
+            result = restore_single_file(
+                repository,
+                snapshot_id,
+                export,
+                path="2026/07/familie.jpg",
+                variant="observed",
+            )
+
+            self.assertIn(f".observed-{hashlib.sha256(observed).hexdigest()[:8]}", result.output_path.name)
+            self.assertEqual(result.output_path.read_bytes(), observed)
+
+    def test_single_file_restore_exports_recovery_only_entry_by_id(self) -> None:
+        with recovery_only_snapshot() as (root, repository, snapshot_id, entry_id, raw_bytes):
+            export = root / "export"
+
+            result = restore_single_file(
+                repository,
+                snapshot_id,
+                export,
+                entry_id=entry_id,
+            )
+
+            self.assertEqual(result.plan.output.variant, "observed")
+            self.assertEqual(result.output_path.read_bytes(), raw_bytes)
+            self.assertTrue(result.output_path.is_relative_to(export))
+
+    def test_single_file_restore_never_overwrites_file_created_after_planning(self) -> None:
+        with normal_snapshot() as (root, _target, repository, snapshot_id):
+            export = root / "export"
+            from bildebank.snapshot_restore import copy_verified_restore_object_exclusive
+
+            def create_competing_file(repository_path, output, destination) -> None:
+                destination.write_text("bevar\n", encoding="utf-8")
+                copy_verified_restore_object_exclusive(repository_path, output, destination)
+
+            with (
+                patch(
+                    "bildebank.snapshot_restore.copy_verified_restore_object_exclusive",
+                    side_effect=create_competing_file,
+                ),
+                self.assertRaisesRegex(SnapshotStorageError, "blir ikke overskrevet"),
+            ):
+                restore_single_file(
+                    repository,
+                    snapshot_id,
+                    export,
+                    path="notater.txt",
+                )
+
+            self.assertEqual((export / "notater.txt").read_text(encoding="utf-8"), "bevar\n")
+
+    def test_single_file_restore_preserves_unverified_output_when_object_is_corrupt(self) -> None:
+        with normal_snapshot() as (root, _target, repository, snapshot_id):
+            export = root / "export"
+            plan = plan_single_file_restore(
+                repository,
+                snapshot_id,
+                export,
+                path="notater.txt",
+            )
+            object_path = snapshot_object_path(
+                repository,
+                plan.output.object.sha256,
+                plan.output.object.size_bytes,
+            )
+            corrupt = b"x" * plan.output.object.size_bytes
+            object_path.write_bytes(corrupt)
+
+            with self.assertRaisesRegex(SnapshotStorageError, "utdatafil er bevart"):
+                restore_single_file(
+                    repository,
+                    snapshot_id,
+                    export,
+                    path="notater.txt",
+                )
+
+            self.assertEqual((export / "notater.txt").read_bytes(), corrupt)
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
 
     def test_full_restore_publishes_verified_collection_and_preserves_repository(self) -> None:
         with normal_snapshot() as (root, target, repository, snapshot_id):
@@ -418,6 +538,73 @@ class SnapshotRestorePlanTests(unittest.TestCase):
             self.assertIn("Hel restore publisert", stdout)
             self.assertTrue((destination / db.DB_FILENAME).is_file())
 
+    def test_cli_single_file_restore_requires_exact_confirmation(self) -> None:
+        with normal_snapshot() as (root, _target, repository, snapshot_id):
+            export = root / "export"
+
+            with patch("builtins.input", return_value="nei"):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "snapshot",
+                        "restore-file",
+                        str(repository),
+                        snapshot_id,
+                        str(export),
+                        "--path",
+                        "notater.txt",
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn("Plan for enkeltfil-restore", stdout)
+            self.assertIn("Enkeltfil-restore avbrutt", stderr)
+            self.assertFalse(export.exists())
+
+    def test_cli_single_file_restore_accepts_exact_confirmation(self) -> None:
+        with normal_snapshot() as (root, _target, repository, snapshot_id):
+            export = root / "export"
+            plan = plan_single_file_restore(repository, snapshot_id, export, path="notater.txt")
+            confirmation = f"EKSPORTER {snapshot_id} {plan.output.entry_id}"
+
+            with patch("builtins.input", return_value=confirmation):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "snapshot",
+                        "restore-file",
+                        str(repository),
+                        snapshot_id,
+                        str(export),
+                        "--path",
+                        "notater.txt",
+                    ]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Enkeltfil-restore fullført", stdout)
+            self.assertEqual((export / "notater.txt").read_text(encoding="utf-8"), "familienotat\n")
+
+    def test_cli_single_file_restore_yes_skips_prompt(self) -> None:
+        with normal_snapshot() as (root, _target, repository, snapshot_id):
+            export = root / "export"
+
+            with patch("builtins.input", side_effect=AssertionError("skal ikke spørre")):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "snapshot",
+                        "restore-file",
+                        str(repository),
+                        snapshot_id,
+                        str(export),
+                        "--path",
+                        "notater.txt",
+                        "--yes",
+                    ]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Enkeltfil-restore fullført", stdout)
+            self.assertTrue((export / "notater.txt").is_file())
+
 
 class normal_snapshot:
     def __init__(self) -> None:
@@ -457,6 +644,32 @@ class degraded_snapshot:
         result = create_snapshot(target, repository)
         assert result.status == "degraded"
         return root, target, repository, result.published.snapshot_id, expected, observed
+
+    def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
+        self._tempdir.cleanup()
+
+
+class recovery_only_snapshot:
+    def __init__(self) -> None:
+        self._tempdir = tempfile.TemporaryDirectory()
+
+    def __enter__(self) -> tuple[Path, Path, str, str, bytes]:
+        root = Path(self._tempdir.name)
+        target = root / "collection"
+        repository = root / "repository"
+        db.init_database(target)
+        raw_bytes = b"ikke en sqlite-database"
+        (target / ".bilder-openclip.sqlite3").write_bytes(raw_bytes)
+        result = create_snapshot(target, repository)
+        assert result.status == "degraded"
+        entries = [
+            json.loads(line)
+            for line in (result.published.snapshot_dir / "files.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        recovery_entry = next(entry for entry in entries if entry["restore_kind"] == "recovery_only")
+        return root, repository, result.published.snapshot_id, recovery_entry["entry_id"], raw_bytes
 
     def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
         self._tempdir.cleanup()

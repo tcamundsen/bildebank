@@ -1505,7 +1505,15 @@ Implementeringsstatus 2026-07-16:
 - Reell hel restore er manuelt verifisert på Linux med et faktisk snapshot,
   etterfulgt av `doctor --deep` på den gjenopprettede samlingen. Alle 249
   databaseførte mediefiler fantes, ingen orphan-filer ble funnet og SHA-256
-  stemte for alle filene. Reell enkeltfil-restore gjenstår i trinn 4.
+  stemte for alle filene.
+- Reell enkeltfil-restore er implementert med samme låste snapshotvalidering
+  som dry-run, eksakt tekstbekreftelse eller `--yes`, kontroll av ledig plass
+  og målfilsystemets filstørrelsesgrense, og eksklusiv oppretting som aldri
+  overskriver en eksisterende fil. Eksporten bevarer relativ sti og `mtime_ns`,
+  verifiserer SHA-256 under og etter kopiering og lar eventuelle mapper eller
+  ufullstendige utdata stå urørt etter feil. Forventet og observert variant,
+  hash-suffiks og `recovery_only` via `entry_id` er testet.
+- Trinn 4 er fullført.
 - Trinn 5 er ikke påbegynt.
 
 ### Trinn 0 – Enighet om design

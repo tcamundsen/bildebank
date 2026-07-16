@@ -7,7 +7,7 @@ import shutil
 import sqlite3
 import stat
 import uuid
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
@@ -107,6 +107,13 @@ class SingleFileRestorePlan:
     output: RestoreOutput
     output_path: Path
     note: str | None
+
+
+@dataclass(frozen=True)
+class SingleFileRestoreResult:
+    plan: SingleFileRestorePlan
+    output_path: Path
+    exit_code: int
 
 
 @dataclass(frozen=True)
@@ -579,28 +586,179 @@ def plan_single_file_restore(
     if variant not in {None, "expected", "observed"}:
         raise ValueError("Variant må være expected eller observed.")
     with locked_snapshot(repository_arg, snapshot_id, command="snapshot restore-file --dry-run") as loaded:
-        entry = select_entry(loaded.entries, path=path, entry_id=entry_id)
-        if entry.restore_kind == "recovery_only" and path is not None:
-            raise SnapshotStorageError("recovery_only-poster kan bare velges med entry_id.")
-        output = choose_single_file_output(loaded.repository, entry, variant=variant)
-        export_directory, export_state = validate_export_directory(
-            loaded.repository,
-            loaded.metadata,
+        return build_single_file_restore_plan(
+            loaded,
             export_directory_arg,
+            path=path,
+            entry_id=entry_id,
+            variant=variant,
         )
-        output_path = export_directory.joinpath(*output.relative_path.split("/"))
-        validate_existing_path_components(output_path)
-        if output_path.exists() or output_path.is_symlink():
-            raise SnapshotStorageError(f"Eksportmålet finnes allerede og blir ikke overskrevet: {output_path}")
-        return SingleFileRestorePlan(
-            repository=loaded.repository,
-            snapshot=loaded.summary,
-            export_directory=export_directory,
-            export_state=export_state,
-            output=output,
-            output_path=output_path,
-            note=loaded.summary.note,
+
+
+def build_single_file_restore_plan(
+    loaded: _LoadedSnapshot,
+    export_directory_arg: Path,
+    *,
+    path: str | None,
+    entry_id: str | None,
+    variant: str | None,
+) -> SingleFileRestorePlan:
+    entry = select_entry(loaded.entries, path=path, entry_id=entry_id)
+    if entry.restore_kind == "recovery_only" and path is not None:
+        raise SnapshotStorageError("recovery_only-poster kan bare velges med entry_id.")
+    output = choose_single_file_output(loaded.repository, entry, variant=variant)
+    export_directory, export_state = validate_export_directory(
+        loaded.repository,
+        loaded.metadata,
+        export_directory_arg,
+    )
+    output_path = export_directory.joinpath(*output.relative_path.split("/"))
+    validate_existing_path_components(output_path)
+    if output_path.exists() or output_path.is_symlink():
+        raise SnapshotStorageError(f"Eksportmålet finnes allerede og blir ikke overskrevet: {output_path}")
+    size_check_root = export_directory if export_state == "existing" else export_directory.parent
+    validate_restore_file_sizes(size_check_root, (output,))
+    return SingleFileRestorePlan(
+        repository=loaded.repository,
+        snapshot=loaded.summary,
+        export_directory=export_directory,
+        export_state=export_state,
+        output=output,
+        output_path=output_path,
+        note=loaded.summary.note,
+    )
+
+
+def restore_single_file(
+    repository_arg: Path,
+    snapshot_id: str,
+    export_directory_arg: Path,
+    *,
+    path: str | None = None,
+    entry_id: str | None = None,
+    variant: str | None = None,
+) -> SingleFileRestoreResult:
+    if (path is None) == (entry_id is None):
+        raise ValueError("Velg nøyaktig én av path og entry_id.")
+    if variant not in {None, "expected", "observed"}:
+        raise ValueError("Variant må være expected eller observed.")
+    with locked_snapshot(repository_arg, snapshot_id, command="snapshot restore-file") as loaded:
+        plan = build_single_file_restore_plan(
+            loaded,
+            export_directory_arg,
+            path=path,
+            entry_id=entry_id,
+            variant=variant,
         )
+        capacity_root = (
+            plan.export_directory
+            if plan.export_state == "existing"
+            else plan.export_directory.parent
+        )
+        if shutil.disk_usage(capacity_root).free < plan.output.object.size_bytes:
+            raise SnapshotStorageError("Eksportmediet har ikke nok ledig plass for den valgte filen.")
+        try:
+            prepare_single_file_destination(plan)
+            copy_verified_restore_object_exclusive(
+                plan.repository,
+                plan.output,
+                plan.output_path,
+            )
+        except Exception as exc:
+            raise SnapshotStorageError(
+                "Enkeltfil-restore feilet. Opprettede mapper og eventuell ufullstendig "
+                f"utdatafil er bevart for undersøkelse: {plan.output_path}: {exc}"
+            ) from exc
+        return SingleFileRestoreResult(plan=plan, output_path=plan.output_path, exit_code=0)
+
+
+def prepare_single_file_destination(plan: SingleFileRestorePlan) -> None:
+    if plan.export_state == "missing":
+        try:
+            plan.export_directory.mkdir()
+        except OSError as exc:
+            raise SnapshotStorageError(
+                f"Kunne ikke opprette eksportmappen uten overskriving: {plan.export_directory}: {exc}"
+            ) from exc
+        fsync_directory(plan.export_directory.parent)
+    elif plan.export_directory.is_symlink() or not plan.export_directory.is_dir():
+        raise SnapshotStorageError(
+            f"Eksportmappen ble erstattet etter planlegging: {plan.export_directory}"
+        )
+
+    current = plan.export_directory
+    relative_parent = Path(plan.output.relative_path).parent
+    for part in relative_parent.parts:
+        current /= part
+        if current.exists() or current.is_symlink():
+            if current.is_symlink() or not current.is_dir():
+                raise SnapshotStorageError(
+                    f"En del av eksportstien er ikke en vanlig mappe uten lenke: {current}"
+                )
+            continue
+        try:
+            current.mkdir()
+        except OSError as exc:
+            raise SnapshotStorageError(f"Kunne ikke opprette eksportmappe: {current}: {exc}") from exc
+        fsync_directory(current.parent)
+
+    validate_existing_path_components(plan.output_path)
+    if plan.output_path.exists() or plan.output_path.is_symlink():
+        raise SnapshotStorageError(
+            f"Eksportmålet ble opprettet etter planlegging og blir ikke overskrevet: {plan.output_path}"
+        )
+
+
+def copy_verified_restore_object_exclusive(
+    repository: Path,
+    output: RestoreOutput,
+    destination: Path,
+) -> None:
+    source = snapshot_object_path(repository, output.object.sha256, output.object.size_bytes)
+    require_available_object(repository, output.object, required=True)
+    source_fd = open_source_without_following_links(source)
+    destination_fd = -1
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_BINARY"):
+        flags |= os.O_BINARY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    digest = hashlib.sha256()
+    size_bytes = 0
+    try:
+        opened = os.fstat(source_fd)
+        if not stat.S_ISREG(opened.st_mode):
+            raise SnapshotStorageError(f"Snapshotobjektet er ikke en vanlig fil: {source}")
+        try:
+            destination_fd = os.open(destination, flags, 0o666)
+        except FileExistsError as exc:
+            raise SnapshotStorageError(
+                f"Eksportmålet finnes allerede og blir ikke overskrevet: {destination}"
+            ) from exc
+        with ExitStack() as stack:
+            source_stream = stack.enter_context(os.fdopen(source_fd, "rb", closefd=True))
+            source_fd = -1
+            target = stack.enter_context(os.fdopen(destination_fd, "wb", closefd=True))
+            destination_fd = -1
+            while chunk := source_stream.read(COPY_CHUNK_SIZE):
+                target.write(chunk)
+                digest.update(chunk)
+                size_bytes += len(chunk)
+            target.flush()
+            os.fsync(target.fileno())
+    finally:
+        if source_fd >= 0:
+            os.close(source_fd)
+        if destination_fd >= 0:
+            os.close(destination_fd)
+    if size_bytes != output.object.size_bytes or digest.hexdigest() != output.object.sha256:
+        raise SnapshotStorageError(
+            f"Snapshotobjektet besto ikke SHA-256-kontroll under eksport: {source}"
+        )
+    validate_restored_file(destination, output)
+    if output.mtime_ns is not None:
+        os.utime(destination, ns=(output.mtime_ns, output.mtime_ns), follow_symlinks=False)
+    fsync_directory(destination.parent)
 
 
 @contextmanager
