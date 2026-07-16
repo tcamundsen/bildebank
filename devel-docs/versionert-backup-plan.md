@@ -1512,7 +1512,9 @@ Implementeringsstatus 2026-07-16:
   overskriver en eksisterende fil. Eksporten bevarer relativ sti og `mtime_ns`,
   verifiserer SHA-256 under og etter kopiering og lar eventuelle mapper eller
   ufullstendige utdata stå urørt etter feil. Forventet og observert variant,
-  hash-suffiks og `recovery_only` via `entry_id` er testet.
+  hash-suffiks og `recovery_only` via `entry_id` er testet. En faktisk
+  enkeltfil-restore er manuelt sammenlignet byte-for-byte med originalfilen på
+  Linux, og et nytt forsøk mot samme mål ble avvist uten overskriving.
 - Trinn 4 er fullført.
 - Trinn 5 er ikke påbegynt.
 
