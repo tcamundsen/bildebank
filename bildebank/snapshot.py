@@ -24,6 +24,9 @@ FAT_MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024 - 1
 
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _UTC_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
+_MIGRATION_BACKUP_FILENAME_RE = re.compile(
+    rf"{re.escape(db.DB_FILENAME)}\.backup-before-schema-\d+-\d{{8}}-\d{{6}}"
+)
 _RESERVED_WINDOWS_NAMES = {
     "CON",
     "PRN",
@@ -98,6 +101,8 @@ class SnapshotInventoryStats:
     missing_database_files: int
     wrong_size_database_files: int
     invalid_database_paths: int
+    migration_backup_files: int
+    migration_backup_bytes: int
     unknown_files: int
     unknown_bytes: int
     recovery_only_files: int
@@ -584,7 +589,16 @@ def build_snapshot_statistics(
         else:
             new_known_keys.add(key)
 
-    unknown = [file for file in candidates if file.relative_path not in database_paths]
+    migration_backups = [
+        file
+        for file in candidates
+        if file.relative_path not in database_paths and is_migration_backup_file(file.relative_path)
+    ]
+    unknown = [
+        file
+        for file in candidates
+        if file.relative_path not in database_paths and not is_migration_backup_file(file.relative_path)
+    ]
     recovery_only_files, path_collisions = count_recovery_only_paths([*candidates, *database_storage])
     database_candidates = [*database_storage, *external_database_files]
     new_known_keys.difference_update(reusable_keys)
@@ -592,6 +606,7 @@ def build_snapshot_statistics(
     estimated_new_objects = (
         len(new_known_keys)
         + len(unknown)
+        + len(migration_backups)
         + wrong_size
         + len(invalid_path_candidates)
         + len(database_candidates)
@@ -599,6 +614,7 @@ def build_snapshot_statistics(
     estimated_new_bytes = (
         known_new_bytes
         + sum(file.size_bytes for file in unknown)
+        + sum(file.size_bytes for file in migration_backups)
         + wrong_size_bytes
         + sum(file.size_bytes for file in invalid_path_candidates.values())
         + sum(file.size_bytes for file in database_candidates)
@@ -639,6 +655,8 @@ def build_snapshot_statistics(
         missing_database_files=missing,
         wrong_size_database_files=wrong_size,
         invalid_database_paths=invalid_database_paths,
+        migration_backup_files=len(migration_backups),
+        migration_backup_bytes=sum(file.size_bytes for file in migration_backups),
         unknown_files=len(unknown),
         unknown_bytes=sum(file.size_bytes for file in unknown),
         recovery_only_files=recovery_only_files,
@@ -694,6 +712,11 @@ def snapshot_exclusion_reason(relative_path: str) -> str | None:
     ):
         return EXCLUSION_GENERATED_HTML
     return None
+
+
+def is_migration_backup_file(relative_path: str) -> bool:
+    """Return whether this is a Bildebank migration backup at the collection root."""
+    return "/" not in relative_path and _MIGRATION_BACKUP_FILENAME_RE.fullmatch(relative_path) is not None
 
 
 def is_snapshot_excluded(relative_path: str) -> bool:

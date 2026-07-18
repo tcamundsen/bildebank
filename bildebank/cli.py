@@ -2322,6 +2322,10 @@ def print_snapshot_plan(plan: SnapshotPlan) -> None:
     print(f"    mangler: {inventory.missing_database_files}")
     print(f"    feil størrelse: {inventory.wrong_size_database_files}")
     print(f"    ugyldig portabel sti: {inventory.invalid_database_paths}")
+    print(
+        "  Bildebank-migreringsbackuper: "
+        f"{inventory.migration_backup_files} ({format_bytes(inventory.migration_backup_bytes)})"
+    )
     print(f"  Ukjente filer: {inventory.unknown_files} ({format_bytes(inventory.unknown_bytes)})")
     print(f"  Planlagt recovery_only: {inventory.recovery_only_files}")
     print(f"  Windows-stikollisjoner: {inventory.path_collisions}")

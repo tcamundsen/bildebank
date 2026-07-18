@@ -81,6 +81,48 @@ class SnapshotBuilderTests(unittest.TestCase):
                 copied.close()
             self.assertEqual(provenance_count, (1,))
 
+    def test_build_complete_snapshot_includes_migration_backup_without_unknown_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            backup_path = f"{db.DB_FILENAME}.backup-before-schema-15-20260718-210818"
+            write_file(target, backup_path, b"databasekopi")
+
+            result, _published = build_and_publish(target, repository)
+
+            self.assertEqual(result.status, "complete")
+            record = next(record for record in result.files if record.original_path_display == backup_path)
+            self.assertEqual(record.integrity_status, "ok")
+            self.assertEqual(record.restore_kind, "normal")
+            self.assertIsNotNone(record.object)
+            self.assertFalse(any("Ukjent fil" in warning for warning in result.warnings))
+
+    def test_unreadable_migration_backup_is_not_reported_as_unknown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            backup_path = target / f"{db.DB_FILENAME}.backup-before-schema-15-20260718-210818"
+            backup_path.write_bytes(b"databasekopi")
+            original_store = snapshot_builder_module.store_verified_file
+
+            def unreadable_store(repository_path: Path, staging_path: Path, source_path: Path):  # noqa: ANN202
+                if source_path == backup_path:
+                    raise SourceFileUnreadableError("kan ikke leses")
+                return original_store(repository_path, staging_path, source_path)
+
+            with patch("bildebank.snapshot_builder.store_verified_file", side_effect=unreadable_store):
+                result, _published = build_and_publish(target, repository)
+
+            self.assertEqual(result.status, "degraded")
+            self.assertTrue(any("Bildebank-migreringsbackup" in warning for warning in result.warnings))
+            self.assertFalse(any("Ukjent fil" in warning for warning in result.warnings))
+
     def test_build_degraded_snapshot_preserves_observed_variants_and_missing_records(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

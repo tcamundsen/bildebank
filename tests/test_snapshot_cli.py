@@ -543,6 +543,80 @@ class SnapshotCliTests(unittest.TestCase):
             self.assertEqual(plan.inventory.unknown_files, 1)
             self.assertEqual(plan.inventory.unknown_bytes, len(b"bevar meg"))
 
+    def test_snapshot_dry_run_recognizes_bildebank_migration_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            backup = target / f"{DB_FILENAME}.backup-before-schema-15-20260718-210818"
+            backup.write_bytes(b"bevar meg")
+
+            plan = plan_snapshot(target, repository)
+
+            self.assertEqual(plan.inventory.migration_backup_files, 1)
+            self.assertEqual(plan.inventory.migration_backup_bytes, len(b"bevar meg"))
+            self.assertEqual(plan.inventory.unknown_files, 0)
+            self.assertEqual(plan.storage.estimated_new_objects, 2)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", "--dry-run", str(repository)]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Bildebank-migreringsbackuper: 1", stdout)
+
+    def test_snapshot_dry_run_keeps_similarly_named_file_as_unknown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / f"{DB_FILENAME}.backup-before-schema-not-a-version").write_bytes(b"bevar meg")
+
+            plan = plan_snapshot(target, repository)
+
+            self.assertEqual(plan.inventory.migration_backup_files, 0)
+            self.assertEqual(plan.inventory.unknown_files, 1)
+
+    def test_snapshot_dry_run_does_not_double_count_database_tracked_migration_like_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            relative_path = f"{DB_FILENAME}.backup-before-schema-15-20260718-210818"
+            content = b"databasefort innhold"
+            (target / relative_path).write_bytes(content)
+            connection = sqlite3.connect(target / DB_FILENAME)
+            try:
+                connection.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename, stored_filename,
+                        sha256, size_bytes, taken_date, date_source, name_conflict
+                    )
+                    VALUES(?, ?, ?, ?, ?, ?, '2026-07-18', 'filename', 0)
+                    """,
+                    (
+                        relative_path,
+                        relative_path.casefold(),
+                        relative_path,
+                        relative_path,
+                        hashlib.sha256(content).hexdigest(),
+                        len(content),
+                    ),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+
+            plan = plan_snapshot(target, repository)
+
+            self.assertEqual(plan.inventory.migration_backup_files, 0)
+            self.assertEqual(plan.inventory.matched_database_files, 1)
+            self.assertEqual(plan.storage.estimated_new_objects, 2)
+
     def test_snapshot_dry_run_classifies_side_file_for_existing_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

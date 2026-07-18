@@ -18,6 +18,9 @@ options:
 bevarer en ny tilstand. Et eldre snapshot blir ikke gjort likt dagens samling
 når du tar en ny sikkerhetskopi.
 
+En databasebackup som Bildebank selv har laget før en migrering, tas også med.
+Den vises som en egen type i dry-run, ikke som en ukjent fil.
+
 Dette er forskjellig fra [`backup`](backup.md), som lager en speiling. En
 speiling kan miste en gammel fil når speilingen oppdateres etter at filen har
 forsvunnet fra bildesamlingen. Et publisert snapshot og innholdet det trenger,

@@ -15,6 +15,7 @@ from .snapshot import (
     InventoryFile,
     MainDatabaseSourceError,
     is_relative_to,
+    is_migration_backup_file,
     is_sqlite_database_file,
     portable_path_key,
     read_main_database,
@@ -347,11 +348,12 @@ def build_file_records(
             )
         )
 
-    unknown = sorted(
+    untracked = sorted(
         (file for file in candidates if file.relative_path not in database_paths),
         key=lambda file: file.relative_path,
     )
-    for file in unknown:
+    for file in untracked:
+        migration_backup = is_migration_backup_file(file.relative_path)
         path_key = portable_path_key(file.relative_path)
         unsafe_path = path_key is None or (path_key is not None and path_key_counts[path_key] > 1)
         unknown_stored: StoredObject | None = None
@@ -366,14 +368,23 @@ def build_file_records(
             integrity_status = (
                 "changed_during_snapshot" if isinstance(last_error, SourceFileChangedError) else "unreadable"
             )
-            warnings.append(f"Ukjent fil kunne ikke sikres stabilt ({integrity_status}): {file.relative_path}")
+            if migration_backup:
+                warnings.append(
+                    "Bildebank-migreringsbackup kunne ikke sikres stabilt "
+                    f"({integrity_status}): {file.relative_path}"
+                )
+            else:
+                warnings.append(
+                    f"Ukjent fil kunne ikke sikres stabilt ({integrity_status}): {file.relative_path}"
+                )
             object_reference = None
             mtime_ns = file.mtime_ns
         else:
             integrity_status = "unsafe_path" if unsafe_path else "ok"
             object_reference = unknown_stored.reference
             mtime_ns = unknown_stored.source_mtime_ns
-            warnings.append(f"Ukjent fil ble tatt med i snapshotet: {file.relative_path}")
+            if not migration_backup:
+                warnings.append(f"Ukjent fil ble tatt med i snapshotet: {file.relative_path}")
         records.append(
             SnapshotFileRecord(
                 path=None if unsafe_path else file.relative_path,
