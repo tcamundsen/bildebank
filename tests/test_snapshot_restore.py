@@ -220,12 +220,13 @@ class SnapshotRestorePlanTests(unittest.TestCase):
             repository_before = tree_file_bytes(repository)
             original_mtime_ns = (target / "notater.txt").stat().st_mtime_ns
 
-            result = restore_single_file(
-                repository,
-                snapshot_id,
-                export,
-                path="notater.txt",
-            )
+            with patch("bildebank.snapshot_restore.os.supports_follow_symlinks", set()):
+                result = restore_single_file(
+                    repository,
+                    snapshot_id,
+                    export,
+                    path="notater.txt",
+                )
 
             self.assertEqual(result.exit_code, 0)
             self.assertEqual(result.output_path.read_text(encoding="utf-8"), "familienotat\n")

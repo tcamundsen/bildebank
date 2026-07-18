@@ -45,6 +45,13 @@ testen. Listen er bare testfasit og skal ligge utenfor repositoryet.
 9. Opprett et tredje snapshot uten kildeendringer og kontroller forventet
    objektgjenbruk.
 
+### Logg fra Tom Cato
+
+ADVARSEL: Ufullstendig kjøring 73acd157-a000-4150-9385-d74a1c7ee7a2: 69.2 KB, alder 10m 05s
+
+Vi fikk en ufullstendig kjøring første gang fordi vi hadde en bug med manglende O_BINARY. Det
+oppstår ikke ufullstendige kjøringer ved ny snapshot etter bugfix.
+
 ## Avbrudd og sikkerhetsgrenser
 
 Utfør bare disse testene på testdata:

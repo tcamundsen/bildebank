@@ -435,7 +435,7 @@ def copy_verified_restore_object(
     if size_after != output.object.size_bytes or digest_after != output.object.sha256:
         raise SnapshotStorageError(f"Restorekopien besto ikke SHA-256-kontroll: {destination}")
     if output.mtime_ns is not None:
-        os.utime(destination, ns=(output.mtime_ns, output.mtime_ns), follow_symlinks=False)
+        set_restored_file_mtime(destination, output.mtime_ns)
 
 
 def write_recovery_report(recovery_staging: Path, plan: FullRestorePlan) -> None:
@@ -783,8 +783,20 @@ def copy_verified_restore_object_exclusive(
         )
     validate_restored_file(destination, output)
     if output.mtime_ns is not None:
-        os.utime(destination, ns=(output.mtime_ns, output.mtime_ns), follow_symlinks=False)
+        set_restored_file_mtime(destination, output.mtime_ns)
     fsync_directory(destination.parent)
+
+
+def set_restored_file_mtime(path: Path, mtime_ns: int) -> None:
+    times = (mtime_ns, mtime_ns)
+    if os.utime in getattr(os, "supports_follow_symlinks", ()):
+        try:
+            os.utime(path, ns=times, follow_symlinks=False)
+            return
+        except NotImplementedError:
+            pass
+    validate_regular_file_without_links(path, label="Gjenopprettet fil")
+    os.utime(path, ns=times)
 
 
 def list_snapshot_problems(
