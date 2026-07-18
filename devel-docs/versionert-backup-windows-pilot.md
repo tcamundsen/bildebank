@@ -25,8 +25,19 @@ Testsamlingen skal inneholde:
 - minst to filer med identisk innhold
 - filnavn med mellomrom og norske tegn
 
-Beregn og lagre en uavhengig liste med SHA-256 og størrelse for mediefilene før
-testen. Listen er bare testfasit og skal ligge utenfor repositoryet.
+Lag en uavhengig liste med SHA-256 og størrelse rett før snapshotet som senere
+skal restore-testes. Kjør fra rotmappen til bildebank-koden:
+
+```powershell
+.\tools\snapshot-media-hashes.ps1 `
+  -Collection ..\testsamling2 `
+  -Output ..\testsamling2-media-fasit.csv
+```
+
+Listen er bare testfasit og skal ligge utenfor både bildesamlingen og
+repositoryet. Skriptet tar med støttede mediefiler under blant annet `deleted\`,
+men utelater `thumbs\`. Det nekter å overskrive en eksisterende liste uten
+`-Force`.
 
 ## Oppretting og inkrementell backup
 
@@ -59,7 +70,7 @@ simulert fullt medium, bevaring og rapportering av `incomplete\`, frigjøring og
 bevaring av låser, full kontroll av tidligere snapshots, ikke-tom
 repositorymappe, symbolske lenker, Windows-junction og simulert FAT32-grense.
 
-Utfør bare disse gjenværende manuelle kontrollene, og bare på testdata:
+Utfør bare disse gjenværende kontrollene, og bare på testdata:
 
 1. Avbryt én reell snapshotkjøring med Ctrl+C under kopiering på Windows.
    Legg først til en ny testfil med innhold som ikke allerede finnes i
@@ -67,13 +78,21 @@ Utfør bare disse gjenværende manuelle kontrollene, og bare på testdata:
    Kontroller at tidligere publiserte snapshots fortsatt består full kontroll,
    at ingen ny snapshotmappe ble publisert, og at eventuell `incomplete\` blir
    rapportert og bevart. En kontrollert Ctrl+C skal normalt frigjøre låsene.
-2. Kontroller resultatet for Windows-junction manuelt bare hvis pytest-testen
-   ble hoppet over fordi junction ikke kunne opprettes. Snapshot skal avvise før
-   repositorieskriving og ikke følge junctionen.
-3. Hvis FAT32 faktisk skal brukes som backupmedium, kjør dry-run mot det fysiske
-   mediet med en eksisterende testfil over FAT32-grensen. Filen skal avvises før
-   repositorieskriving. Ikke opprett en stor fil og ikke fyll et medium bare
-   for denne testen.
+2. Kjør den automatiske Windows-testen for junction fra rotmappen til
+   bildebank-koden:
+
+   ```powershell
+   .venv\Scripts\python.exe -m pytest tests/test_snapshot_cli.py::SnapshotCliTests::test_snapshot_dry_run_rejects_windows_junction_before_repository_write
+   ```
+
+   En junction er en Windows-mappe som peker videre til en annen mappe. Hvis
+   testen viser `PASSED`, er kontrollen ferdig og du skal ikke teste dette
+   manuelt. Hvis den viser `SKIPPED` med beskjed om at junction ikke kunne
+   opprettes, noter at denne kontrollen ikke kunne utføres på maskinen.
+3. Ingen manuell FAT32-kontroll utføres i denne piloten. Pytest dekker
+   størrelsesgrensen med en simulert test. En kontroll på et fysisk FAT32-medium
+   er bare aktuell senere dersom FAT32 faktisk skal støttes som backupmedium.
+   Ikke opprett en stor fil eller fyll en disk for å fremtvinge testen.
 
 Ikke fremprovoser et virkelig fullt vanlig medium. Pytest simulerer `ENOSPC` og
 kontrollerer at ingen ny snapshotmappe publiseres, at tidligere snapshots er
@@ -85,7 +104,16 @@ uskadet, at låser frigjøres og at `incomplete\` bevares.
 2. Kontroller at dry-run ikke oppretter mål eller staging.
 3. Kjør reell restore og bruk den eksakte tekstbekreftelsen.
 4. Kjør `doctor --deep` mot restorekopien.
-5. Sammenlign alle mediefiler mot den uavhengige SHA-256-listen.
+5. Sammenlign alle mediefiler mot den uavhengige SHA-256-listen:
+
+   ```powershell
+   .\tools\snapshot-media-hashes.ps1 `
+     -Collection ..\restored-dir `
+     -Output ..\restored-dir-media.csv `
+     -CompareWith ..\testsamling2-media-fasit.csv
+   ```
+
+   Forvent `Sammenligning bestått` og `Avvik: 0`.
 6. Kontroller hoveddatabase, OpenCLIP, face-database, ukjent fil og `deleted\`.
 7. Kontroller at thumbnails og generert HTML kan regenereres.
 8. Kjør samme restore på nytt mot den nå ikke-tomme målmappen. Den skal avvises
