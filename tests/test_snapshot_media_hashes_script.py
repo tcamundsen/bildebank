@@ -16,6 +16,35 @@ SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "snapshot-media-hashes.
 
 @unittest.skipUnless(os.name == "nt" and POWERSHELL, "Testen krever Windows og PowerShell")
 class SnapshotMediaHashesScriptTests(unittest.TestCase):
+    def test_resolves_relative_output_from_powershell_location(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            process_directory = root / "process-directory"
+            powershell_directory = root / "powershell-directory"
+            process_directory.mkdir()
+            powershell_directory.mkdir()
+            write_file(powershell_directory / "collection" / "bilde.jpg", b"image")
+
+            quoted_script = str(SCRIPT).replace("'", "''")
+            wrapper = powershell_directory / "run.ps1"
+            wrapper.write_text(
+                "$ErrorActionPreference = 'Stop'\n"
+                "Set-Location -LiteralPath $PSScriptRoot\n"
+                f"& '{quoted_script}' -Collection '.\\collection' -Output '.\\expected.csv'\n",
+                encoding="utf-8-sig",
+            )
+
+            result = subprocess.run(
+                powershell_command() + ["-File", str(wrapper)],
+                cwd=process_directory,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((powershell_directory / "expected.csv").is_file())
+            self.assertFalse((process_directory / "expected.csv").exists())
+
     def test_creates_media_list_and_compares_restore(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -72,12 +101,7 @@ def run_script(
     *,
     compare_with: Path | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
-    command = [
-        str(POWERSHELL),
-        "-NoProfile",
-        "-NonInteractive",
-        "-ExecutionPolicy",
-        "Bypass",
+    command = powershell_command() + [
         "-File",
         str(SCRIPT),
         "-Collection",
@@ -88,3 +112,13 @@ def run_script(
     if compare_with is not None:
         command.extend(["-CompareWith", str(compare_with)])
     return subprocess.run(command, capture_output=True, check=False)
+
+
+def powershell_command() -> list[str]:
+    return [
+        str(POWERSHELL),
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+    ]

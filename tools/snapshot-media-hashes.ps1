@@ -23,7 +23,7 @@ $mediaExtensions = @(
 function Get-FullPath {
     param([string]$Path)
 
-    return [System.IO.Path]::GetFullPath($Path)
+    return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path)
 }
 
 function Test-IsInsideDirectory {
