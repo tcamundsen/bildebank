@@ -5,6 +5,7 @@ import json
 import os
 import platform
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 import uuid
@@ -700,6 +701,37 @@ class SnapshotCliTests(unittest.TestCase):
             self.assertEqual(stdout, "")
             self.assertIn("Symbolske lenker", stderr)
             self.assertEqual(outside.read_text(encoding="utf-8"), "utenfor\n")
+            self.assertFalse(repository.exists())
+
+    @unittest.skipUnless(os.name == "nt", "Junction-test krever Windows")
+    def test_snapshot_dry_run_rejects_windows_junction_before_repository_write(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            outside = root / "outside"
+            outside.mkdir()
+            marker = outside / "bevar.txt"
+            marker.write_text("ikke følg junction\n", encoding="utf-8")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            junction = target / "junction"
+            created = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if created.returncode != 0:
+                self.skipTest(f"Kunne ikke opprette junction: {created.stderr or created.stdout}")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", "--dry-run", str(repository)]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("reparse", stderr.lower())
+            self.assertEqual(marker.read_text(encoding="utf-8"), "ikke følg junction\n")
             self.assertFalse(repository.exists())
 
     @unittest.skipIf(os.name == "nt", "Windows tillater normalt ikke to slike filnavn")

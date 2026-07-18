@@ -54,22 +54,30 @@ oppstår ikke ufullstendige kjøringer ved ny snapshot etter bugfix.
 
 ## Avbrudd og sikkerhetsgrenser
 
-Utfør bare disse testene på testdata:
+Den ordinære pytest-suiten dekker deterministisk avbrudd under objektkopiering,
+simulert fullt medium, bevaring og rapportering av `incomplete\`, frigjøring og
+bevaring av låser, full kontroll av tidligere snapshots, ikke-tom
+repositorymappe, symbolske lenker, Windows-junction og simulert FAT32-grense.
 
-1. Avbryt en snapshotkjøring under kopiering.
-2. Kontroller at tidligere publiserte snapshots fortsatt består full kontroll.
-3. Kontroller at `incomplete\` og eventuell repositorylås rapporteres og ikke
-   slettes automatisk.
-4. Etter at ingen Bildebank-prosess kjører, håndter låsen etter programmets
-   dokumenterte beskjed og bevar incomplete-innholdet for inspeksjon.
-5. Forsøk å bruke en ikke-tom vanlig mappe som nytt repository; innholdet skal
-   være uendret.
-6. Forsøk mål gjennom en symbolsk lenke eller junction; kommandoen skal avvise
-   før repositorieskriving.
-7. Fyll mediet eller bruk et kontrollert plassestimat som er for stort;
-   kommandoen skal avbryte uten publisert snapshot.
-8. På FAT32: kontroller at en konkret fil over filsystemets grense avvises før
-   skriving. Ikke lag en stor testfil hvis det medfører risiko for andre data.
+Utfør bare disse gjenværende manuelle kontrollene, og bare på testdata:
+
+1. Avbryt én reell snapshotkjøring med Ctrl+C under kopiering på Windows.
+   Legg først til en ny testfil med innhold som ikke allerede finnes i
+   repositoryet, slik at kjøringen faktisk må kopiere et nytt objekt.
+   Kontroller at tidligere publiserte snapshots fortsatt består full kontroll,
+   at ingen ny snapshotmappe ble publisert, og at eventuell `incomplete\` blir
+   rapportert og bevart. En kontrollert Ctrl+C skal normalt frigjøre låsene.
+2. Kontroller resultatet for Windows-junction manuelt bare hvis pytest-testen
+   ble hoppet over fordi junction ikke kunne opprettes. Snapshot skal avvise før
+   repositorieskriving og ikke følge junctionen.
+3. Hvis FAT32 faktisk skal brukes som backupmedium, kjør dry-run mot det fysiske
+   mediet med en eksisterende testfil over FAT32-grensen. Filen skal avvises før
+   repositorieskriving. Ikke opprett en stor fil og ikke fyll et medium bare
+   for denne testen.
+
+Ikke fremprovoser et virkelig fullt vanlig medium. Pytest simulerer `ENOSPC` og
+kontrollerer at ingen ny snapshotmappe publiseres, at tidligere snapshots er
+uskadet, at låser frigjøres og at `incomplete\` bevares.
 
 ## Hel restore
 
