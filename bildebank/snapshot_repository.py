@@ -163,7 +163,7 @@ class RepositoryLock:
         self.fd: int | None = None
 
     def __enter__(self) -> RepositoryLock:
-        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+        flags = _binary_write_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         try:
             self.fd = os.open(self.path, flags, 0o600)
         except FileExistsError as exc:
@@ -761,7 +761,7 @@ def reference_for_bytes(content: bytes) -> ObjectReference:
 
 
 def write_files_jsonl(path: Path, entries: tuple[dict[str, object], ...]) -> ObjectReference:
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    flags = _binary_write_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     fd: int | None = None
     digest = hashlib.sha256()
     size_bytes = 0
@@ -868,7 +868,7 @@ def validate_timestamp(value: str) -> None:
 
 
 def write_new_durable_file(path: Path, content: bytes) -> None:
-    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    flags = _binary_write_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     fd: int | None = None
     try:
         fd = os.open(path, flags, 0o600)
@@ -885,6 +885,10 @@ def write_new_durable_file(path: Path, content: bytes) -> None:
         except FileNotFoundError:
             pass
         raise
+
+
+def _binary_write_flags(flags: int) -> int:
+    return flags | getattr(os, "O_BINARY", 0)
 
 
 def write_all(fd: int, content: bytes) -> None:

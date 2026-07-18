@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
+from bildebank import snapshot_repository as snapshot_repository_module
 from bildebank.snapshot import REPOSITORY_LOCK_FILENAME, REPOSITORY_METADATA_FILENAME, plan_snapshot
 from bildebank.snapshot_repository import (
     RepositoryLock,
@@ -25,11 +26,43 @@ from bildebank.snapshot_repository import (
     initialize_repository,
     publish_snapshot,
     store_verified_file,
+    write_files_jsonl,
+    write_new_durable_file,
 )
 from tests.cli_helpers import run_cli
 
 
 class SnapshotRepositoryTests(unittest.TestCase):
+    def test_metadata_writers_request_binary_mode_on_windows(self) -> None:
+        binary_flag = 1 << 28
+        entry = {
+            "entry_id": "e-000000000001",
+            "expected": None,
+            "integrity_status": "ok",
+            "mtime_ns": None,
+            "object": None,
+            "original_path_display": "fil.txt",
+            "path": "fil.txt",
+            "record_type": "file",
+            "recovery_name": None,
+            "restore_kind": "normal",
+        }
+        with (
+            patch.object(snapshot_repository_module.os, "O_BINARY", binary_flag, create=True),
+            patch.object(snapshot_repository_module.os, "open", return_value=123) as open_mock,
+            patch.object(snapshot_repository_module, "write_all"),
+            patch.object(snapshot_repository_module.os, "fsync"),
+            patch.object(snapshot_repository_module.os, "close"),
+            patch.object(snapshot_repository_module, "fsync_directory"),
+        ):
+            write_files_jsonl(Path("files.jsonl"), (entry,))
+            files_flags = open_mock.call_args_list[0].args[1]
+            write_new_durable_file(Path("manifest.json"), b"{}\n")
+            manifest_flags = open_mock.call_args_list[1].args[1]
+
+        self.assertTrue(files_flags & binary_flag)
+        self.assertTrue(manifest_flags & binary_flag)
+
     def test_repository_lock_is_exclusive_and_removed_after_controlled_exit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repository = Path(tmp) / "repository"
