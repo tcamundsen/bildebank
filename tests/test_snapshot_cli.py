@@ -151,10 +151,53 @@ class SnapshotCliTests(unittest.TestCase):
             second_code, _stdout, second_stderr = capture_cli(
                 ["--target", str(target), "snapshot", "create", str(repository)]
             )
+            check_code, check_stdout, check_stderr = capture_cli(
+                ["snapshot", "check", str(repository)]
+            )
 
             self.assertEqual(second_code, 0, second_stderr)
             self.assertEqual(len(list((repository / "snapshots").iterdir())), 2)
             self.assertEqual(tree_file_bytes(first_snapshot), first_snapshot_before)
+            self.assertEqual(check_code, 0, check_stderr)
+            self.assertIn("Publiserte, lesbare snapshots: 2", check_stdout)
+            self.assertIn("Repositoryavvik: 0", check_stdout)
+
+    def test_third_snapshot_without_source_changes_reuses_all_objects(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / "første-notat.txt").write_text("første\n", encoding="utf-8")
+
+            first_code, _stdout, first_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+            self.assertEqual(first_code, 0, first_stderr)
+
+            (target / "nytt-notat.txt").write_text("nytt i snapshot nummer to\n", encoding="utf-8")
+            second_code, _stdout, second_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+            self.assertEqual(second_code, 0, second_stderr)
+            objects_before_third = tree_file_bytes(repository / "objects")
+
+            third_code, _stdout, third_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+
+            self.assertEqual(third_code, 0, third_stderr)
+            self.assertEqual(len(list((repository / "snapshots").iterdir())), 3)
+            self.assertGreater(len(objects_before_third), 0)
+            self.assertEqual(tree_file_bytes(repository / "objects"), objects_before_third)
+
+            check_code, check_stdout, check_stderr = capture_cli(
+                ["snapshot", "check", str(repository)]
+            )
+            self.assertEqual(check_code, 0, check_stderr)
+            self.assertIn("Publiserte, lesbare snapshots: 3", check_stdout)
+            self.assertIn("Urefererte objekter: 0", check_stdout)
+            self.assertIn("Repositoryavvik: 0", check_stdout)
 
     def test_snapshot_list_and_check_do_not_require_active_collection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
