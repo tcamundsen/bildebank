@@ -29,6 +29,7 @@ from bildebank.snapshot_repository import (
     write_files_jsonl,
     write_new_durable_file,
 )
+from bildebank.snapshot_progress import SnapshotCancelled
 from tests.cli_helpers import run_cli
 
 
@@ -445,6 +446,62 @@ class SnapshotRepositoryTests(unittest.TestCase):
             self.assertTrue((staging / "snapshot" / "manifest.json").is_file())
             self.assertTrue((staging / "snapshot" / "commit.json").is_file())
             self.assertEqual(list((repository / "snapshots").iterdir()), [])
+
+    def test_controlled_cancel_before_atomic_publish_keeps_complete_staging(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository = root / "repository"
+            repository.mkdir()
+            collection = root / "collection"
+            collection.mkdir()
+            collection_id = str(uuid.uuid4())
+            repository_id = str(uuid.uuid4())
+            source = root / "a.jpg"
+            source.write_bytes(b"a")
+            cancel_requested = False
+            original_verify = snapshot_repository_module.verify_snapshot_staging
+
+            def verify_then_cancel(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+                nonlocal cancel_requested
+                original_verify(*args, **kwargs)
+                cancel_requested = True
+
+            with RepositoryLock(repository, command="snapshot create"):
+                initialize_repository(
+                    repository,
+                    collection,
+                    collection_id,
+                    repository_id=repository_id,
+                )
+                staging = create_staging_run(repository)
+                stored = store_verified_file(repository, staging, source)
+                with (
+                    patch(
+                        "bildebank.snapshot_repository.verify_snapshot_staging",
+                        side_effect=verify_then_cancel,
+                    ),
+                    self.assertRaises(SnapshotCancelled),
+                ):
+                    publish_snapshot(
+                        repository,
+                        staging,
+                        collection_id=collection_id,
+                        repository_id=repository_id,
+                        status="complete",
+                        collection_identity_source="database",
+                        started_at="2026-07-15T12:00:00Z",
+                        completed_at="2026-07-15T12:01:00Z",
+                        files=(normal_file_record("2026/07/a.jpg", stored.reference),),
+                        databases=(main_database_record(stored.reference),),
+                        schema_versions={"main": 14},
+                        should_cancel=lambda: cancel_requested,
+                    )
+
+            self.assertTrue((staging / "snapshot" / "files.jsonl").is_file())
+            self.assertTrue((staging / "snapshot" / "manifest.json").is_file())
+            self.assertTrue((staging / "snapshot" / "commit.json").is_file())
+            self.assertEqual(list((repository / "snapshots").iterdir()), [])
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
 
     def test_publishing_new_snapshot_never_changes_or_overwrites_older_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

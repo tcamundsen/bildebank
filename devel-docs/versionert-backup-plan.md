@@ -219,6 +219,8 @@ Første versjon skal bruke et append-only, innholdsadressert repository:
    beskrevet i manifestet.
 5. Et publisert snapshot endres aldri.
 6. En avbrutt kjøring skal ikke kunne gjøre et tidligere snapshot ugyldig.
+7. Launcherens planlegging og snapshotoppretting skal kunne avbrytes
+   kooperativt mellom filer og databaseoperasjoner og under strømmet kopiering.
 
 SHA-256 beskytter mot tilfeldig korrupsjon og feilkopiering, men er ikke alene
 bevis på at en angriper ikke har endret både objekter og manifest. Beskyttelse

@@ -40,7 +40,12 @@ from .snapshot_repository import (
     publish_snapshot,
     utc_timestamp,
 )
-from .snapshot_progress import SnapshotCreateProgress, SnapshotCreateProgressCallback
+from .snapshot_progress import (
+    SnapshotCancelCallback,
+    SnapshotCreateProgress,
+    SnapshotCreateProgressCallback,
+    raise_if_snapshot_cancelled,
+)
 from .target_lock import TargetLock
 
 
@@ -73,7 +78,9 @@ def create_snapshot(
     face_config: FaceRecognitionConfig | None = None,
     note: str | None = None,
     progress: SnapshotCreateProgressCallback | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> SnapshotCreationResult:
+    raise_if_snapshot_cancelled(should_cancel)
     clean_note = validate_snapshot_note(note)
     source = source_dir.resolve()
     validate_source_collection(source)
@@ -85,7 +92,7 @@ def create_snapshot(
         with TargetLock(source, command="snapshot create"):
             if progress is not None:
                 progress(SnapshotCreateProgress(stage="inventory"))
-            inventory = inventory_tree(source)
+            inventory = inventory_tree(source, should_cancel=should_cancel)
             if progress is not None:
                 progress(
                     SnapshotCreateProgress(
@@ -102,11 +109,15 @@ def create_snapshot(
                 inventory,
                 face_config=face_config,
                 allow_missing_main=True,
+                should_cancel=should_cancel,
             )
 
             database_error: str | None
             try:
-                collection_id, _database_rows = read_main_database(source)
+                collection_id, _database_rows = read_main_database(
+                    source,
+                    should_cancel=should_cancel,
+                )
             except MainDatabaseSourceError as exc:
                 if not inspection.initialized or inspection.metadata is None:
                     raise SnapshotStorageError(
@@ -118,6 +129,7 @@ def create_snapshot(
                 database_error = str(exc)
                 repository_initialized = False
             else:
+                raise_if_snapshot_cancelled(should_cancel)
                 if inspection.initialized:
                     assert inspection.metadata is not None
                     validate_repository_metadata(inspection.metadata, source, collection_id)
@@ -128,6 +140,7 @@ def create_snapshot(
                 build_mode = "normal"
                 database_error = None
 
+            raise_if_snapshot_cancelled(should_cancel)
             staging = create_staging_run(repository)
             if build_mode == "recovery":
                 assert database_error is not None
@@ -138,6 +151,7 @@ def create_snapshot(
                     database_error=database_error,
                     face_config=face_config,
                     progress=progress,
+                    should_cancel=should_cancel,
                 )
             else:
                 try:
@@ -147,6 +161,7 @@ def create_snapshot(
                         staging,
                         face_config=face_config,
                         progress=progress,
+                        should_cancel=should_cancel,
                     )
                 except SnapshotRecoveryRequiredError as exc:
                     if repository_initialized:
@@ -161,8 +176,10 @@ def create_snapshot(
                         database_error=str(exc),
                         face_config=face_config,
                         progress=progress,
+                        should_cancel=should_cancel,
                     )
 
+            raise_if_snapshot_cancelled(should_cancel)
             if progress is not None:
                 progress(SnapshotCreateProgress(stage="publish"))
             published = publish_built_snapshot(
@@ -172,6 +189,7 @@ def create_snapshot(
                 started_at=started_at,
                 completed_at=utc_timestamp(),
                 note=clean_note,
+                should_cancel=should_cancel,
             )
             if progress is not None:
                 progress(
@@ -300,6 +318,7 @@ def publish_built_snapshot(
     started_at: str,
     completed_at: str,
     note: str | None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> PublishedSnapshot:
     return publish_snapshot(
         repository,
@@ -316,4 +335,5 @@ def publish_built_snapshot(
         exclusions=build.exclusions,
         warnings=build.warnings,
         note=note,
+        should_cancel=should_cancel,
     )

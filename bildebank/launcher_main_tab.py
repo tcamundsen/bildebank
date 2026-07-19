@@ -44,10 +44,13 @@ from .snapshot_create import (
     validate_existing_recovery_repository,
 )
 from .snapshot_progress import (
+    SnapshotCancelCallback,
+    SnapshotCancelled,
     SnapshotCreateProgress,
     SnapshotCreateProgressCallback,
     SnapshotPlanProgress,
     SnapshotPlanProgressCallback,
+    raise_if_snapshot_cancelled,
 )
 from .launcher_widgets import Tooltip
 
@@ -68,15 +71,24 @@ def plan_launcher_snapshot(
     repository: Path,
     *,
     progress: SnapshotPlanProgressCallback | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> SnapshotPlan | LauncherRecoveryPlan:
     config = load_config(program_repo_root(), migrate_legacy=False)
     try:
-        if progress is not None:
+        if progress is not None and should_cancel is None:
             return plan_snapshot(
                 collection,
                 repository,
                 configured_face_database_dir=config.face_recognition.database_dir,
                 progress=progress,
+            )
+        if progress is not None or should_cancel is not None:
+            return plan_snapshot(
+                collection,
+                repository,
+                configured_face_database_dir=config.face_recognition.database_dir,
+                progress=progress,
+                should_cancel=should_cancel,
             )
         return plan_snapshot(
             collection,
@@ -84,6 +96,7 @@ def plan_launcher_snapshot(
             configured_face_database_dir=config.face_recognition.database_dir,
         )
     except MainDatabaseSourceError as exc:
+        raise_if_snapshot_cancelled(should_cancel)
         validated_repository = validate_existing_recovery_repository(collection, repository)
         return LauncherRecoveryPlan(
             source_dir=collection.resolve(),
@@ -97,9 +110,10 @@ def create_launcher_snapshot(
     repository: Path,
     *,
     progress: SnapshotCreateProgressCallback | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> SnapshotCreationResult:
     config = load_config(program_repo_root(), migrate_legacy=False)
-    if progress is None:
+    if progress is None and should_cancel is None:
         return create_snapshot(
             collection,
             repository,
@@ -110,6 +124,7 @@ def create_launcher_snapshot(
         repository,
         face_config=config.face_recognition,
         progress=progress,
+        should_cancel=should_cancel,
     )
 
 
@@ -765,16 +780,34 @@ class MainTab:
 
             self._post_to_ui(log_progress)
 
+        def run_plan(should_cancel: Callable[[], bool]) -> SnapshotPlan | LauncherRecoveryPlan | None:
+            try:
+                return plan_launcher_snapshot(
+                    self.collection_path,
+                    repository,
+                    progress=report_progress,
+                    should_cancel=should_cancel,
+                )
+            except SnapshotCancelled:
+                return None
+
         self._run_background_task(
-            lambda _cancel_requested: plan_launcher_snapshot(
-                self.collection_path,
-                repository,
-                progress=report_progress,
-            ),
+            run_plan,
             running_message=f"Kontrollerer versjonert backup til {repository} ...",
             failure_message="Kontroll av versjonert backup feilet.",
-            on_success=lambda plan: self._snapshot_plan_finished(repository, plan),
+            on_success=lambda plan: self._snapshot_plan_task_finished(repository, plan),
+            cancellable=True,
         )
+
+    def _snapshot_plan_task_finished(
+        self,
+        repository: Path,
+        plan: SnapshotPlan | LauncherRecoveryPlan | None,
+    ) -> None:
+        if plan is None:
+            self._log("Kontroll av versjonert backup ble avbrutt. Ingen endringer ble gjort.")
+            return
+        self._snapshot_plan_finished(repository, plan)
 
     def _snapshot_plan_finished(
         self,
@@ -865,16 +898,47 @@ class MainTab:
 
             self._post_to_ui(log_progress)
 
+        def run_create(should_cancel: Callable[[], bool]) -> SnapshotCreationResult | None:
+            try:
+                return create_launcher_snapshot(
+                    self.collection_path,
+                    repository,
+                    progress=report_progress,
+                    should_cancel=should_cancel,
+                )
+            except SnapshotCancelled:
+                return None
+
         self._run_background_task(
-            lambda _cancel_requested: create_launcher_snapshot(
-                self.collection_path,
-                repository,
-                progress=report_progress,
-            ),
+            run_create,
             running_message=f"Oppretter versjonert backup i {repository} ...",
             failure_message="Versjonert backup feilet. Ingen snapshot ble publisert.",
-            on_success=self._snapshot_creation_finished,
+            on_success=lambda result: self._snapshot_creation_task_finished(repository, result),
+            cancellable=True,
         )
+
+    def _snapshot_creation_task_finished(
+        self,
+        repository: Path,
+        result: SnapshotCreationResult | None,
+    ) -> None:
+        if result is None:
+            from tkinter import messagebox
+
+            self._log(
+                "Snapshot ble avbrutt kontrollert. Ingen nytt snapshot ble publisert. "
+                "Tidligere snapshots er uendret, og eventuelle ufullstendige data er beholdt "
+                f"under {repository / 'incomplete'}."
+            )
+            messagebox.showinfo(
+                "Snapshot avbrutt",
+                "Snapshotet ble avbrutt kontrollert. Ingen nytt snapshot ble publisert.\n\n"
+                "Tidligere snapshots er uendret. Ufullstendige data er beholdt for kontroll.",
+                parent=self.root,
+            )
+            self._refresh_launcher()
+            return
+        self._snapshot_creation_finished(result)
 
     def _snapshot_creation_finished(self, result: SnapshotCreationResult) -> None:
         from tkinter import messagebox

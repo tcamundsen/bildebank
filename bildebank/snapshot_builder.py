@@ -43,7 +43,12 @@ from .snapshot_repository import (
     backup_sqlite_database,
     store_verified_file,
 )
-from .snapshot_progress import SnapshotCreateProgress, SnapshotCreateProgressCallback
+from .snapshot_progress import (
+    SnapshotCancelCallback,
+    SnapshotCreateProgress,
+    SnapshotCreateProgressCallback,
+    raise_if_snapshot_cancelled,
+)
 from .target_lock import LOCK_FILENAME
 
 
@@ -82,11 +87,16 @@ def build_normal_snapshot(
     *,
     face_config: FaceRecognitionConfig | None = None,
     progress: SnapshotCreateProgressCallback | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> SnapshotBuildResult:
+    raise_if_snapshot_cancelled(should_cancel)
     source = source.resolve()
     require_active_target_lock(source)
     try:
-        collection_id, database_rows = read_main_database(source)
+        collection_id, database_rows = read_main_database(
+            source,
+            should_cancel=should_cancel,
+        )
     except MainDatabaseSourceError as exc:
         raise SnapshotRecoveryRequiredError(str(exc)) from exc
     metadata = read_repository_metadata(repository / ".bildebank-backup-repository.json")
@@ -96,21 +106,32 @@ def build_normal_snapshot(
     if not isinstance(repository_id, str):
         raise SnapshotStorageError("Repositorymetadata mangler gyldig repository_id.")
 
-    inventory = inventory_tree(source)
-    database_sources = build_database_catalog(source, repository, inventory, face_config=face_config)
-    candidates, exclusions = classify_collection_files(inventory)
+    inventory = inventory_tree(source, should_cancel=should_cancel)
+    database_sources = build_database_catalog(
+        source,
+        repository,
+        inventory,
+        face_config=face_config,
+        should_cancel=should_cancel,
+    )
+    candidates, exclusions = classify_collection_files(
+        inventory,
+        should_cancel=should_cancel,
+    )
     file_records, file_warnings = build_file_records(
         repository,
         staging,
         database_rows=database_rows,
         candidates=candidates,
         progress=progress,
+        should_cancel=should_cancel,
     )
     database_records, raw_database_files, schema_versions, database_warnings = capture_databases(
         repository,
         staging,
         database_sources,
         progress=progress,
+        should_cancel=should_cancel,
     )
     all_file_records = (*file_records, *raw_database_files)
     has_deviations = any(record.integrity_status != "ok" for record in all_file_records) or any(
@@ -138,7 +159,9 @@ def build_recovery_snapshot(
     database_error: str,
     face_config: FaceRecognitionConfig | None = None,
     progress: SnapshotCreateProgressCallback | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> SnapshotBuildResult:
+    raise_if_snapshot_cancelled(should_cancel)
     source = source.resolve()
     require_active_target_lock(source)
     metadata = read_repository_metadata(repository / ".bildebank-backup-repository.json")
@@ -159,27 +182,34 @@ def build_recovery_snapshot(
             "Den skadede hoveddatabasen har en annen collection_id enn repositoryet."
         )
 
-    inventory = inventory_tree(source)
+    inventory = inventory_tree(source, should_cancel=should_cancel)
     database_sources = build_database_catalog(
         source,
         repository,
         inventory,
         face_config=face_config,
         allow_missing_main=True,
+        should_cancel=should_cancel,
     )
-    candidates, exclusions = classify_recovery_files(inventory, database_sources)
+    candidates, exclusions = classify_recovery_files(
+        inventory,
+        database_sources,
+        should_cancel=should_cancel,
+    )
     file_records, file_warnings = build_file_records(
         repository,
         staging,
         database_rows=(),
         candidates=candidates,
         progress=progress,
+        should_cancel=should_cancel,
     )
     database_records, raw_database_files, schema_versions, database_warnings = capture_raw_databases(
         repository,
         staging,
         database_sources,
         progress=progress,
+        should_cancel=should_cancel,
     )
     return SnapshotBuildResult(
         collection_id=stored_collection_id,
@@ -230,6 +260,8 @@ def require_active_target_lock(source: Path) -> None:
 
 def classify_collection_files(
     inventory: tuple[InventoryFile, ...],
+    *,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[tuple[InventoryFile, ...], tuple[str, ...]]:
     database_paths = {
         file.relative_path
@@ -239,6 +271,7 @@ def classify_collection_files(
     excluded_counts: Counter[str] = Counter()
     candidates: list[InventoryFile] = []
     for file in inventory:
+        raise_if_snapshot_cancelled(should_cancel)
         exclusion_reason = snapshot_exclusion_reason(file.relative_path)
         if exclusion_reason is not None:
             excluded_counts[exclusion_reason] += 1
@@ -255,6 +288,8 @@ def classify_collection_files(
 def classify_recovery_files(
     inventory: tuple[InventoryFile, ...],
     database_sources: tuple[DatabaseSource, ...],
+    *,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[tuple[InventoryFile, ...], tuple[str, ...]]:
     raw_database_paths = {
         candidate
@@ -264,6 +299,7 @@ def classify_recovery_files(
     excluded_counts: Counter[str] = Counter()
     candidates: list[InventoryFile] = []
     for file in inventory:
+        raise_if_snapshot_cancelled(should_cancel)
         exclusion_reason = snapshot_exclusion_reason(file.relative_path)
         if exclusion_reason is not None:
             excluded_counts[exclusion_reason] += 1
@@ -282,6 +318,7 @@ def build_file_records(
     database_rows: tuple[DatabaseFileRow, ...],
     candidates: tuple[InventoryFile, ...],
     progress: SnapshotCreateProgressCallback | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[tuple[SnapshotFileRecord, ...], tuple[str, ...]]:
     candidate_by_path = {file.relative_path: file for file in candidates}
     database_paths = {row.target_path for row in database_rows}
@@ -294,6 +331,7 @@ def build_file_records(
     file_progress.start()
 
     for row in database_rows:
+        raise_if_snapshot_cancelled(should_cancel)
         candidate = candidate_by_path.get(row.target_path)
         expected = ExpectedFile(row.sha256, row.size_bytes)
         path_key = portable_path_key(row.target_path)
@@ -318,7 +356,13 @@ def build_file_records(
 
         file_progress.begin(candidate)
         try:
-            stored = _store_candidate(repository, staging, candidate, file_progress)
+            stored = _store_candidate(
+                repository,
+                staging,
+                candidate,
+                file_progress,
+                should_cancel=should_cancel,
+            )
         except SourceFileChangedError:
             raise
         except SourceFileUnreadableError:
@@ -366,6 +410,7 @@ def build_file_records(
         key=lambda file: file.relative_path,
     )
     for file in untracked:
+        raise_if_snapshot_cancelled(should_cancel)
         migration_backup = is_migration_backup_file(file.relative_path)
         path_key = portable_path_key(file.relative_path)
         unsafe_path = path_key is None or (path_key is not None and path_key_counts[path_key] > 1)
@@ -374,7 +419,13 @@ def build_file_records(
         file_progress.begin(file)
         for _attempt in range(2):
             try:
-                unknown_stored = _store_candidate(repository, staging, file, file_progress)
+                unknown_stored = _store_candidate(
+                    repository,
+                    staging,
+                    file,
+                    file_progress,
+                    should_cancel=should_cancel,
+                )
                 break
             except SourceFileError as exc:
                 last_error = exc
@@ -469,14 +520,31 @@ def _store_candidate(
     staging: Path,
     file: InventoryFile,
     progress: _FileProgressReporter,
+    *,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> StoredObject:
-    if progress.progress is None:
+    if progress.progress is None and should_cancel is None:
         return store_verified_file(repository, staging, file.absolute_path)
+    if progress.progress is None:
+        return store_verified_file(
+            repository,
+            staging,
+            file.absolute_path,
+            should_cancel=should_cancel,
+        )
+    if should_cancel is None:
+        return store_verified_file(
+            repository,
+            staging,
+            file.absolute_path,
+            on_source_chunk=progress.on_chunk,
+        )
     return store_verified_file(
         repository,
         staging,
         file.absolute_path,
         on_source_chunk=progress.on_chunk,
+        should_cancel=should_cancel,
     )
 
 
@@ -501,10 +569,12 @@ def build_database_catalog(
     *,
     face_config: FaceRecognitionConfig | None,
     allow_missing_main: bool = False,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[DatabaseSource, ...]:
     face_dir = configured_face_database_dir(source, repository, face_config)
     sources: list[DatabaseSource] = []
     for file in inventory:
+        raise_if_snapshot_cancelled(should_cancel)
         if not is_sqlite_database_file(file.relative_path):
             continue
         relative_path = file.relative_path
@@ -552,7 +622,7 @@ def build_database_catalog(
         and face_config.database_dir.is_absolute()
         and not is_relative_to(face_dir, source)
     ):
-        for file in inventory_tree(face_dir):
+        for file in inventory_tree(face_dir, should_cancel=should_cancel):
             if not is_sqlite_database_file(file.relative_path):
                 continue
             model_name = Path(file.relative_path).stem
@@ -641,6 +711,7 @@ def capture_databases(
     sources: tuple[DatabaseSource, ...],
     *,
     progress: SnapshotCreateProgressCallback | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[
     tuple[SnapshotDatabaseRecord, ...],
     tuple[SnapshotFileRecord, ...],
@@ -654,16 +725,32 @@ def capture_databases(
     database_progress = _DatabaseProgressReporter(sources, progress)
     database_progress.start()
     for source in sources:
+        raise_if_snapshot_cancelled(should_cancel)
         database_progress.begin(source)
         try:
-            if progress is None:
+            if progress is None and should_cancel is None:
                 backup = backup_sqlite_database(repository, staging, source.source_path)
+            elif progress is None:
+                backup = backup_sqlite_database(
+                    repository,
+                    staging,
+                    source.source_path,
+                    should_cancel=should_cancel,
+                )
+            elif should_cancel is None:
+                backup = backup_sqlite_database(
+                    repository,
+                    staging,
+                    source.source_path,
+                    on_backup_progress=database_progress.on_backup_progress,
+                )
             else:
                 backup = backup_sqlite_database(
                     repository,
                     staging,
                     source.source_path,
                     on_backup_progress=database_progress.on_backup_progress,
+                    should_cancel=should_cancel,
                 )
         except SourceDatabaseError as exc:
             if source.role == "main":
@@ -672,6 +759,7 @@ def capture_databases(
                 repository,
                 staging,
                 source,
+                should_cancel=should_cancel,
             )
             records.append(database_record)
             raw_files.extend(database_raw_files)
@@ -709,6 +797,7 @@ def capture_raw_databases(
     sources: tuple[DatabaseSource, ...],
     *,
     progress: SnapshotCreateProgressCallback | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[
     tuple[SnapshotDatabaseRecord, ...],
     tuple[SnapshotFileRecord, ...],
@@ -722,8 +811,14 @@ def capture_raw_databases(
     database_progress = _DatabaseProgressReporter(sources, progress)
     database_progress.start()
     for source in sources:
+        raise_if_snapshot_cancelled(should_cancel)
         database_progress.begin(source)
-        database_record, database_raw_files = capture_raw_database(repository, staging, source)
+        database_record, database_raw_files = capture_raw_database(
+            repository,
+            staging,
+            source,
+            should_cancel=should_cancel,
+        )
         records.append(database_record)
         raw_files.extend(database_raw_files)
         schema_versions[source.role] = None
@@ -797,15 +892,23 @@ def capture_raw_database(
     repository: Path,
     staging: Path,
     source: DatabaseSource,
+    *,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[SnapshotDatabaseRecord, tuple[SnapshotFileRecord, ...]]:
     file_records: list[SnapshotFileRecord] = []
     primary_object = None
     for index, raw_path in enumerate(raw_database_source_paths(source.source_path)):
+        raise_if_snapshot_cancelled(should_cancel)
         if index > 0 and not raw_path.exists() and not raw_path.is_symlink():
             continue
         source_path_display = raw_database_path_display(source, raw_path)
         try:
-            stored = store_verified_file(repository, staging, raw_path)
+            stored = store_verified_file(
+                repository,
+                staging,
+                raw_path,
+                should_cancel=should_cancel,
+            )
         except SourceFileError:
             object_reference = None
             mtime_ns = None

@@ -14,6 +14,7 @@ from bildebank.snapshot_create import (
     validate_existing_recovery_repository,
 )
 from bildebank.snapshot_repository import COPY_CHUNK_SIZE, RepositoryLockError, SnapshotStorageError
+from bildebank.snapshot_progress import SnapshotCancelled, SnapshotCreateProgress
 from bildebank.target_lock import LOCK_FILENAME
 
 
@@ -88,6 +89,38 @@ class SnapshotCreateTests(unittest.TestCase):
             self.assertEqual(len(checked.snapshots), 1)
             self.assertEqual(len(checked.incomplete_runs), 1)
             self.assertEqual(tree_file_bytes(first.published.snapshot_dir), first_before)
+
+    def test_controlled_cancel_during_copy_publishes_nothing_and_releases_locks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            db.init_database(target)
+            first = create_snapshot(target, repository)
+            first_before = tree_file_bytes(first.published.snapshot_dir)
+            objects_before = tree_file_bytes(repository / "objects")
+            (target / "stor-fil.bin").write_bytes(b"x" * (COPY_CHUNK_SIZE * 2 + 17))
+            cancel_requested = False
+
+            def report_progress(progress: SnapshotCreateProgress) -> None:
+                nonlocal cancel_requested
+                if progress.stage == "files" and progress.completed_bytes >= COPY_CHUNK_SIZE:
+                    cancel_requested = True
+
+            with self.assertRaises(SnapshotCancelled):
+                create_snapshot(
+                    target,
+                    repository,
+                    progress=report_progress,
+                    should_cancel=lambda: cancel_requested,
+                )
+
+            self.assertEqual(len(list((repository / "snapshots").iterdir())), 1)
+            self.assertEqual(tree_file_bytes(first.published.snapshot_dir), first_before)
+            self.assertEqual(tree_file_bytes(repository / "objects"), objects_before)
+            self.assertEqual(len(list((repository / "incomplete").iterdir())), 1)
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
+            self.assertFalse((target / LOCK_FILENAME).exists())
 
     def test_no_space_during_object_copy_publishes_nothing_and_preserves_previous_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

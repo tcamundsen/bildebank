@@ -15,7 +15,12 @@ from datetime import datetime
 from pathlib import Path
 
 from . import db
-from .snapshot_progress import SnapshotPlanProgress, SnapshotPlanProgressCallback
+from .snapshot_progress import (
+    SnapshotCancelCallback,
+    SnapshotPlanProgress,
+    SnapshotPlanProgressCallback,
+    raise_if_snapshot_cancelled,
+)
 
 
 REPOSITORY_METADATA_FILENAME = ".bildebank-backup-repository.json"
@@ -146,6 +151,7 @@ def plan_snapshot(
     configured_face_database_dir: Path | None = None,
     note: str | None = None,
     progress: SnapshotPlanProgressCallback | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> SnapshotPlan:
     """Build a fully read-only snapshot plan.
 
@@ -153,6 +159,7 @@ def plan_snapshot(
     repository metadata, or make staging directories.
     """
 
+    raise_if_snapshot_cancelled(should_cancel)
     clean_note = validate_snapshot_note(note)
     source = source_dir.resolve()
     validate_source_collection(source)
@@ -165,7 +172,7 @@ def plan_snapshot(
 
     if progress is not None:
         progress(SnapshotPlanProgress(stage="database"))
-    collection_id, database_rows = read_main_database(source)
+    collection_id, database_rows = read_main_database(source, should_cancel=should_cancel)
     if progress is not None:
         progress(
             SnapshotPlanProgress(
@@ -191,6 +198,7 @@ def plan_snapshot(
                 )
             )
         ),
+        should_cancel=should_cancel,
     )
     if progress is not None:
         inventory_bytes = sum(file.size_bytes for file in inventory_files)
@@ -207,6 +215,7 @@ def plan_snapshot(
         source,
         repository,
         configured_face_database_dir,
+        should_cancel=should_cancel,
     )
     inventory, storage, warnings = build_snapshot_statistics(
         source,
@@ -216,6 +225,7 @@ def plan_snapshot(
         inventory_files,
         external_database_files,
         progress=progress,
+        should_cancel=should_cancel,
     )
     return SnapshotPlan(
         source_dir=source,
@@ -244,7 +254,12 @@ def validate_source_collection(source: Path) -> None:
         raise ValueError(f"Bildesamlingen er ikke initialisert: {source}")
 
 
-def read_main_database(source: Path) -> tuple[str, tuple[DatabaseFileRow, ...]]:
+def read_main_database(
+    source: Path,
+    *,
+    should_cancel: SnapshotCancelCallback | None = None,
+) -> tuple[str, tuple[DatabaseFileRow, ...]]:
+    raise_if_snapshot_cancelled(should_cancel)
     database_path = db.db_path_for_target(source).resolve()
     uri = f"{database_path.as_uri()}?mode=ro"
     try:
@@ -254,37 +269,46 @@ def read_main_database(source: Path) -> tuple[str, tuple[DatabaseFileRow, ...]]:
             f"Kunne ikke åpne hoveddatabasen skrivebeskyttet: {database_path}"
         ) from exc
     conn.row_factory = sqlite3.Row
+    if should_cancel is not None:
+        conn.set_progress_handler(lambda: int(should_cancel()), 10_000)
     try:
         try:
             conn.execute("PRAGMA query_only = ON")
             conn.execute("PRAGMA foreign_keys = ON")
         except sqlite3.Error as exc:
+            raise_if_snapshot_cancelled(should_cancel)
             raise MainDatabaseSourceError(f"Hoveddatabasen kunne ikke leses: {exc}") from exc
         try:
             db.validate_database_health(conn)
         except (sqlite3.Error, ValueError) as exc:
+            raise_if_snapshot_cancelled(should_cancel)
             raise MainDatabaseSourceError(f"Hoveddatabasen har integritetsfeil: {exc}") from exc
         try:
             db.require_current_schema(conn)
         except sqlite3.Error as exc:
+            raise_if_snapshot_cancelled(should_cancel)
             raise MainDatabaseSourceError(f"Hoveddatabasen kunne ikke leses: {exc}") from exc
         try:
             collection_id = db.validate_collection_id(conn)
-            rows = tuple(
-                validate_database_file_row(row)
-                for row in conn.execute(
-                    """
-                    SELECT target_path, sha256, size_bytes
-                    FROM files
-                    ORDER BY target_path_key, id
-                    """
-                )
-            )
+            rows_list: list[DatabaseFileRow] = []
+            for row in conn.execute(
+                """
+                SELECT target_path, sha256, size_bytes
+                FROM files
+                ORDER BY target_path_key, id
+                """
+            ):
+                raise_if_snapshot_cancelled(should_cancel)
+                rows_list.append(validate_database_file_row(row))
+            rows = tuple(rows_list)
         except sqlite3.Error as exc:
+            raise_if_snapshot_cancelled(should_cancel)
             raise MainDatabaseSourceError(f"Hoveddatabasen kunne ikke leses: {exc}") from exc
         except ValueError as exc:
             raise ValueError(f"Hoveddatabasen kunne ikke valideres: {exc}") from exc
     finally:
+        if should_cancel is not None:
+            conn.set_progress_handler(None, 0)
         conn.close()
     return collection_id, rows
 
@@ -493,17 +517,20 @@ def inventory_tree(
     root: Path,
     *,
     progress: Callable[[int, int], None] | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[InventoryFile, ...]:
     files: list[InventoryFile] = []
     total_bytes = 0
     pending: list[tuple[Path, Path]] = [(root, Path())]
     while pending:
+        raise_if_snapshot_cancelled(should_cancel)
         directory, relative_directory = pending.pop()
         try:
             entries = sorted(os.scandir(directory), key=lambda entry: entry.name.casefold(), reverse=True)
         except OSError as exc:
             raise ValueError(f"Kunne ikke lese katalog under inventar: {directory}: {exc}") from exc
         for entry in entries:
+            raise_if_snapshot_cancelled(should_cancel)
             relative_path = relative_directory / entry.name
             absolute_path = Path(entry.path)
             try:
@@ -540,7 +567,10 @@ def inventory_external_face_databases(
     source: Path,
     repository: Path,
     configured_database_dir: Path | None,
+    *,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[InventoryFile, ...]:
+    raise_if_snapshot_cancelled(should_cancel)
     if configured_database_dir is None or not configured_database_dir.is_absolute():
         return ()
     validate_non_network_path(configured_database_dir, label="Absolutt face-databasekatalog")
@@ -554,7 +584,7 @@ def inventory_external_face_databases(
         return ()
     if not database_dir.is_dir():
         raise ValueError(f"Absolutt face-databasekatalog er ikke en mappe: {database_dir}")
-    files = inventory_tree(database_dir)
+    files = inventory_tree(database_dir, should_cancel=should_cancel)
     return tuple(file for file in files if file.relative_path.lower().endswith(".sqlite3"))
 
 
@@ -567,7 +597,9 @@ def build_snapshot_statistics(
     external_database_files: tuple[InventoryFile, ...],
     *,
     progress: SnapshotPlanProgressCallback | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[SnapshotInventoryStats, SnapshotStorageEstimate, tuple[str, ...]]:
+    raise_if_snapshot_cancelled(should_cancel)
     excluded_by_reason: dict[str, list[InventoryFile]] = {
         EXCLUSION_THUMBNAILS: [],
         EXCLUSION_GENERATED_HTML: [],
@@ -582,6 +614,7 @@ def build_snapshot_statistics(
         if is_sqlite_database_file(file.relative_path)
     }
     for file in inventory_files:
+        raise_if_snapshot_cancelled(should_cancel)
         exclusion_reason = snapshot_exclusion_reason(file.relative_path)
         if exclusion_reason is not None:
             excluded_by_reason[exclusion_reason].append(file)
@@ -620,6 +653,7 @@ def build_snapshot_statistics(
             )
         )
     for completed, row in enumerate(database_rows, start=1):
+        raise_if_snapshot_cancelled(should_cancel)
         candidate = candidate_by_path.get(row.target_path)
         if candidate is None:
             missing += 1
@@ -655,6 +689,7 @@ def build_snapshot_statistics(
 
     if progress is not None:
         progress(SnapshotPlanProgress(stage="storage"))
+    raise_if_snapshot_cancelled(should_cancel)
 
     migration_backups = [
         file

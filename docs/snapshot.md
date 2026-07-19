@@ -107,6 +107,11 @@ bildebank snapshot create `
 
 Snapshot kan også opprettes fra Bildebank-vinduet. Vinduet viser først den
 samme skrivefrie planen og ber om bekreftelse før det skriver.
+«Avbryt»-knappen kan brukes både mens planen bygges og mens snapshotet
+opprettes. Avbrytelsen skjer kontrollert; tidligere snapshots endres ikke, og
+ufullstendige data beholdes for kontroll. Hvis det siste, korte
+publiseringstrinnet allerede har startet, fullføres det i stedet for å etterlate
+snapshotet i en uklar tilstand.
 
 Et resultat kan ha én av disse statusene:
 

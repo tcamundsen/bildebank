@@ -27,3 +27,14 @@ class SnapshotPlanProgress:
 
 
 SnapshotPlanProgressCallback = Callable[[SnapshotPlanProgress], None]
+
+SnapshotCancelCallback = Callable[[], bool]
+
+
+class SnapshotCancelled(RuntimeError):
+    pass
+
+
+def raise_if_snapshot_cancelled(should_cancel: SnapshotCancelCallback | None) -> None:
+    if should_cancel is not None and should_cancel():
+        raise SnapshotCancelled("Snapshot-operasjonen ble avbrutt kontrollert.")

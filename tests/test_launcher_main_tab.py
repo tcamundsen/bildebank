@@ -18,7 +18,7 @@ from bildebank.launcher_main_tab import (
 )
 from bildebank.launcher_status import LauncherUpdateStatus
 from bildebank.snapshot import MainDatabaseSourceError
-from bildebank.snapshot_progress import SnapshotPlanProgress
+from bildebank.snapshot_progress import SnapshotCancelled, SnapshotPlanProgress
 
 
 class FakeButton:
@@ -430,6 +430,9 @@ def test_launcher_snapshot_helpers_use_shared_plan_and_create_functions(tmp_path
     expected_result = object()
     progress_events: list[SnapshotPlanProgress] = []
 
+    def cancel_requested() -> bool:
+        return False
+
     with (
         patch("bildebank.launcher_main_tab.load_config", return_value=config) as load,
         patch("bildebank.launcher_main_tab.program_repo_root", return_value=tmp_path),
@@ -438,7 +441,12 @@ def test_launcher_snapshot_helpers_use_shared_plan_and_create_functions(tmp_path
     ):
         assert plan_launcher_snapshot(collection, repository) is expected_plan
         assert (
-            plan_launcher_snapshot(collection, repository, progress=progress_events.append)
+            plan_launcher_snapshot(
+                collection,
+                repository,
+                progress=progress_events.append,
+                should_cancel=cancel_requested,
+            )
             is expected_plan
         )
         assert create_launcher_snapshot(collection, repository) is expected_result
@@ -453,6 +461,7 @@ def test_launcher_snapshot_helpers_use_shared_plan_and_create_functions(tmp_path
         repository,
         configured_face_database_dir=face_config.database_dir,
         progress=progress_events.append,
+        should_cancel=cancel_requested,
     )
     creator.assert_called_once_with(collection, repository, face_config=face_config)
 
@@ -552,11 +561,17 @@ def test_main_tab_snapshot_uses_internal_plan_then_internal_create(tmp_path: Pat
     )
     plan_task = jobs[0][0]
     assert callable(plan_task)
+    assert jobs[0][1]["cancellable"] is True
+
+    def plan_cancel_requested() -> bool:
+        return False
+
     with patch("bildebank.launcher_main_tab.plan_launcher_snapshot", return_value=plan) as planner:
-        assert plan_task(lambda: False) is plan
+        assert plan_task(plan_cancel_requested) is plan
     assert planner.call_args.args == (collection, repository)
     plan_progress = planner.call_args.kwargs["progress"]
     assert callable(plan_progress)
+    assert planner.call_args.kwargs["should_cancel"] is plan_cancel_requested
     plan_progress(SnapshotPlanProgress(stage="database"))
     plan_progress(
         SnapshotPlanProgress(
@@ -589,14 +604,45 @@ def test_main_tab_snapshot_uses_internal_plan_then_internal_create(tmp_path: Pat
     on_yes()
     create_task = jobs[1][0]
     assert callable(create_task)
+    assert jobs[1][1]["cancellable"] is True
     expected_result = object()
+
+    def create_cancel_requested() -> bool:
+        return False
+
     with patch(
         "bildebank.launcher_main_tab.create_launcher_snapshot",
         return_value=expected_result,
     ) as creator:
-        assert create_task(lambda: False) is expected_result
+        assert create_task(create_cancel_requested) is expected_result
     assert creator.call_args.args == (collection, repository)
     assert callable(creator.call_args.kwargs["progress"])
+    assert creator.call_args.kwargs["should_cancel"] is create_cancel_requested
+
+    with patch(
+        "bildebank.launcher_main_tab.create_launcher_snapshot",
+        side_effect=SnapshotCancelled("avbrutt"),
+    ):
+        assert create_task(lambda: True) is None
+
+
+def test_launcher_reports_controlled_snapshot_cancellation(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    tab = bare_main_tab(tmp_path / "samling")
+    logged: list[str] = []
+    refreshed: list[bool] = []
+    tab._log = logged.append
+    tab._refresh_launcher = lambda: refreshed.append(True)
+
+    tab._snapshot_plan_task_finished(repository, None)
+    with patch("tkinter.messagebox.showinfo") as showinfo:
+        tab._snapshot_creation_task_finished(repository, None)
+
+    assert "Ingen endringer ble gjort" in logged[0]
+    assert "Ingen nytt snapshot ble publisert" in logged[1]
+    assert str(repository / "incomplete") in logged[1]
+    showinfo.assert_called_once()
+    assert refreshed == [True]
 
 
 def test_snapshot_result_distinguishes_complete_degraded_and_recovery(tmp_path: Path) -> None:

@@ -19,6 +19,7 @@ from bildebank.snapshot import (
     plan_snapshot,
     snapshot_object_path,
 )
+from bildebank.snapshot_progress import SnapshotCancelled, SnapshotPlanProgress
 from bildebank.target_lock import LOCK_FILENAME
 from tests.cli_helpers import capture_cli, run_cli
 
@@ -80,6 +81,34 @@ class SnapshotCliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIn("Finnes og er tom; ville blitt initialisert", stdout)
             self.assertEqual(list(repository.iterdir()), [])
+
+    def test_snapshot_dry_run_can_be_cancelled_without_writing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            (target / "a.txt").write_text("a", encoding="utf-8")
+            (target / "b.txt").write_text("b", encoding="utf-8")
+            source_before = tree_file_bytes(target)
+            cancel_requested = False
+
+            def report_progress(progress: SnapshotPlanProgress) -> None:
+                nonlocal cancel_requested
+                if progress.stage == "inventory" and progress.completed_objects > 0:
+                    cancel_requested = True
+
+            with self.assertRaises(SnapshotCancelled):
+                plan_snapshot(
+                    target,
+                    repository,
+                    progress=report_progress,
+                    should_cancel=lambda: cancel_requested,
+                )
+
+            self.assertFalse(repository.exists())
+            self.assertEqual(tree_file_bytes(target), source_before)
+            self.assertFalse((target / LOCK_FILENAME).exists())
 
     def test_snapshot_dry_run_rejects_nonempty_uninitialized_repository_untouched(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

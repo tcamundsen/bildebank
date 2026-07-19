@@ -26,6 +26,10 @@ from .snapshot import (
     validate_existing_path_components,
     validate_regular_file_without_links,
 )
+from .snapshot_progress import (
+    SnapshotCancelCallback,
+    raise_if_snapshot_cancelled,
+)
 from .target_lock import lock_details
 
 
@@ -308,7 +312,9 @@ def store_verified_file(
     source: Path,
     *,
     on_source_chunk: Callable[[int], None] | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> StoredObject:
+    raise_if_snapshot_cancelled(should_cancel)
     validate_staging_path(repository, staging)
     validate_existing_path_components(source)
     candidate_directory = staging / "object-candidates"
@@ -330,14 +336,29 @@ def store_verified_file(
             raise SourceFileChangedError(f"Objektkilden ble byttet før kopiering: {source}")
         with os.fdopen(source_fd, "rb", closefd=True) as source_file, candidate.open("xb") as target_file:
             source_fd = -1
-            if on_source_chunk is None:
+            if on_source_chunk is None and should_cancel is None:
                 size_bytes = copy_and_hash(source_file, target_file, digest)
+            elif on_source_chunk is None:
+                size_bytes = copy_and_hash(
+                    source_file,
+                    target_file,
+                    digest,
+                    should_cancel=should_cancel,
+                )
+            elif should_cancel is None:
+                size_bytes = copy_and_hash(
+                    source_file,
+                    target_file,
+                    digest,
+                    on_chunk=on_source_chunk,
+                )
             else:
                 size_bytes = copy_and_hash(
                     source_file,
                     target_file,
                     digest,
                     on_chunk=on_source_chunk,
+                    should_cancel=should_cancel,
                 )
             target_file.flush()
             os.fsync(target_file.fileno())
@@ -359,19 +380,39 @@ def store_verified_file(
         raise SourceFileChangedError(f"Filen endret seg under snapshotkopiering: {source}")
 
     reference = ObjectReference(sha256=digest.hexdigest(), size_bytes=size_bytes)
-    verify_file_hash(candidate, reference, label="Stagingobjekt")
-    destination = snapshot_object_path(repository, reference.sha256, reference.size_bytes)
-    validate_existing_path_components(destination.parent)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    if destination.exists() or destination.is_symlink():
-        validate_regular_file_without_links(destination, label="Backupobjekt")
-        if destination.stat().st_size != reference.size_bytes:
-            raise SnapshotStorageError(f"Eksisterende backupobjekt har feil størrelse: {destination}")
-        verify_file_hash(destination, reference, label="Eksisterende backupobjekt")
-        candidate.unlink()
-        return StoredObject(reference=reference, reused=True, source_mtime_ns=after.st_mtime_ns)
-
-    os.replace(candidate, destination)
+    try:
+        verify_file_hash(
+            candidate,
+            reference,
+            label="Stagingobjekt",
+            should_cancel=should_cancel,
+        )
+        destination = snapshot_object_path(repository, reference.sha256, reference.size_bytes)
+        validate_existing_path_components(destination.parent)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists() or destination.is_symlink():
+            validate_regular_file_without_links(destination, label="Backupobjekt")
+            if destination.stat().st_size != reference.size_bytes:
+                raise SnapshotStorageError(
+                    f"Eksisterende backupobjekt har feil størrelse: {destination}"
+                )
+            verify_file_hash(
+                destination,
+                reference,
+                label="Eksisterende backupobjekt",
+                should_cancel=should_cancel,
+            )
+            candidate.unlink()
+            return StoredObject(
+                reference=reference,
+                reused=True,
+                source_mtime_ns=after.st_mtime_ns,
+            )
+        raise_if_snapshot_cancelled(should_cancel)
+        os.replace(candidate, destination)
+    except Exception:
+        candidate.unlink(missing_ok=True)
+        raise
     fsync_directory(destination.parent)
     return StoredObject(reference=reference, reused=False, source_mtime_ns=after.st_mtime_ns)
 
@@ -382,7 +423,9 @@ def backup_sqlite_database(
     source: Path,
     *,
     on_backup_progress: Callable[[int, int], None] | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> SQLiteBackup:
+    raise_if_snapshot_cancelled(should_cancel)
     validate_staging_path(repository, staging)
     sqlite_directory = staging / "sqlite-copies"
     sqlite_directory.mkdir(exist_ok=True)
@@ -394,12 +437,17 @@ def backup_sqlite_database(
     except sqlite3.Error as exc:
         raise SourceDatabaseError(f"Kunne ikke åpne SQLite-databasen: {source}: {exc}") from exc
     try:
-        require_sqlite_integrity(source_connection, source, source_error=True)
+        require_sqlite_integrity(
+            source_connection,
+            source,
+            source_error=True,
+            should_cancel=should_cancel,
+        )
         schema_version = optional_schema_version(source_connection)
         try:
             destination_connection = sqlite3.connect(staging_path)
             try:
-                if on_backup_progress is None:
+                if on_backup_progress is None and should_cancel is None:
                     source_connection.backup(destination_connection)
                 else:
                     page_size = int(source_connection.execute("PRAGMA page_size").fetchone()[0])
@@ -409,10 +457,12 @@ def backup_sqlite_database(
                         remaining_pages: int,
                         total_pages: int,
                     ) -> None:
-                        on_backup_progress(
-                            max(total_pages - remaining_pages, 0) * page_size,
-                            total_pages * page_size,
-                        )
+                        raise_if_snapshot_cancelled(should_cancel)
+                        if on_backup_progress is not None:
+                            on_backup_progress(
+                                max(total_pages - remaining_pages, 0) * page_size,
+                                total_pages * page_size,
+                            )
 
                     source_connection.backup(
                         destination_connection,
@@ -430,13 +480,26 @@ def backup_sqlite_database(
     try:
         copied_connection = sqlite3.connect(f"{staging_path.resolve().as_uri()}?mode=ro", uri=True)
         try:
-            require_sqlite_integrity(copied_connection, staging_path, source_error=False)
+            require_sqlite_integrity(
+                copied_connection,
+                staging_path,
+                source_error=False,
+                should_cancel=should_cancel,
+            )
         finally:
             copied_connection.close()
     except sqlite3.Error as exc:
         raise SnapshotStorageError(f"Kunne ikke kontrollere SQLite-stagingkopien: {staging_path}: {exc}") from exc
 
-    stored = store_verified_file(repository, staging, staging_path)
+    if should_cancel is None:
+        stored = store_verified_file(repository, staging, staging_path)
+    else:
+        stored = store_verified_file(
+            repository,
+            staging,
+            staging_path,
+            should_cancel=should_cancel,
+        )
     staging_path.unlink()
     fsync_directory(sqlite_directory)
     return SQLiteBackup(object=stored, schema_version=schema_version)
@@ -459,7 +522,9 @@ def publish_snapshot(
     warnings: tuple[str, ...] = (),
     note: str | None = None,
     snapshot_id: str | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> PublishedSnapshot:
+    raise_if_snapshot_cancelled(should_cancel)
     validate_staging_path(repository, staging)
     canonical_collection_id = canonical_uuid(collection_id, label="collection_id")
     canonical_repository_id = canonical_uuid(repository_id, label="repository_id")
@@ -481,12 +546,17 @@ def publish_snapshot(
     )
     validate_snapshot_status_consistency(status, files, databases)
 
-    file_entries = build_file_entries(repository, files)
+    file_entries = build_file_entries(
+        repository,
+        files,
+        should_cancel=should_cancel,
+    )
     database_entries = tuple(
         record.as_json()
         for record in sorted(databases, key=lambda item: (item.role, item.source_path_display))
     )
     for record in databases:
+        raise_if_snapshot_cancelled(should_cancel)
         if record.object is not None:
             validate_published_object(repository, record.object)
         if record.role not in schema_versions or schema_versions[record.role] != record.schema_version:
@@ -501,7 +571,11 @@ def publish_snapshot(
         raise SnapshotStorageError(f"Snapshot-staging finnes allerede: {snapshot_staging}") from exc
 
     files_path = snapshot_staging / "files.jsonl"
-    files_reference = write_files_jsonl(files_path, file_entries)
+    files_reference = write_files_jsonl(
+        files_path,
+        file_entries,
+        should_cancel=should_cancel,
+    )
 
     manifest: dict[str, object] = {
         "collection_id": canonical_collection_id,
@@ -546,7 +620,11 @@ def publish_snapshot(
         "snapshot_id": canonical_snapshot_id,
     }
     write_new_durable_file(snapshot_staging / "commit.json", canonical_json_bytes(commit))
-    verify_snapshot_staging(snapshot_staging, commit)
+    verify_snapshot_staging(
+        snapshot_staging,
+        commit,
+        should_cancel=should_cancel,
+    )
     fsync_directory(snapshot_staging)
     fsync_directory(staging)
 
@@ -556,6 +634,7 @@ def publish_snapshot(
     destination = snapshots_directory / snapshot_directory_name(completed_at, canonical_snapshot_id)
     if destination.exists() or destination.is_symlink():
         raise SnapshotStorageError(f"Snapshotmålet finnes allerede og blir ikke overskrevet: {destination}")
+    raise_if_snapshot_cancelled(should_cancel)
     try:
         os.rename(snapshot_staging, destination)
     except OSError as exc:
@@ -573,11 +652,14 @@ def publish_snapshot(
 def build_file_entries(
     repository: Path,
     records: tuple[SnapshotFileRecord, ...],
+    *,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[dict[str, object], ...]:
     normal_keys: set[str] = set()
     sorted_records = sorted(records, key=file_record_sort_key)
     entries: list[dict[str, object]] = []
     for index, record in enumerate(sorted_records, start=1):
+        raise_if_snapshot_cancelled(should_cancel)
         validate_file_record(record)
         if record.object is not None:
             validate_published_object(repository, record.object)
@@ -606,12 +688,24 @@ def build_file_entries(
     return tuple(entries)
 
 
-def require_sqlite_integrity(connection: sqlite3.Connection, path: Path, *, source_error: bool) -> None:
+def require_sqlite_integrity(
+    connection: sqlite3.Connection,
+    path: Path,
+    *,
+    source_error: bool,
+    should_cancel: SnapshotCancelCallback | None = None,
+) -> None:
+    if should_cancel is not None:
+        connection.set_progress_handler(lambda: int(should_cancel()), 10_000)
     try:
         rows = connection.execute("PRAGMA integrity_check").fetchall()
     except sqlite3.Error as exc:
+        raise_if_snapshot_cancelled(should_cancel)
         error_type = SourceDatabaseError if source_error else SnapshotStorageError
         raise error_type(f"Kunne ikke integritetskontrollere SQLite-databasen {path}: {exc}") from exc
+    finally:
+        if should_cancel is not None:
+            connection.set_progress_handler(None, 0)
     messages = [str(row[0]) for row in rows]
     if messages != ["ok"]:
         error_type = SourceDatabaseError if source_error else SnapshotStorageError
@@ -799,7 +893,12 @@ def reference_for_bytes(content: bytes) -> ObjectReference:
     return ObjectReference(sha256=hashlib.sha256(content).hexdigest(), size_bytes=len(content))
 
 
-def write_files_jsonl(path: Path, entries: tuple[dict[str, object], ...]) -> ObjectReference:
+def write_files_jsonl(
+    path: Path,
+    entries: tuple[dict[str, object], ...],
+    *,
+    should_cancel: SnapshotCancelCallback | None = None,
+) -> ObjectReference:
     flags = _binary_write_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     fd: int | None = None
     digest = hashlib.sha256()
@@ -807,6 +906,7 @@ def write_files_jsonl(path: Path, entries: tuple[dict[str, object], ...]) -> Obj
     try:
         fd = os.open(path, flags, 0o600)
         for entry in entries:
+            raise_if_snapshot_cancelled(should_cancel)
             line = canonical_json_bytes(entry)
             write_all(fd, line)
             digest.update(line)
@@ -832,14 +932,19 @@ def snapshot_directory_name(completed_at: str, snapshot_id: str) -> str:
     return f"{compact_timestamp}-{snapshot_id}"
 
 
-def verify_snapshot_staging(snapshot_staging: Path, commit: dict[str, object]) -> None:
+def verify_snapshot_staging(
+    snapshot_staging: Path,
+    commit: dict[str, object],
+    *,
+    should_cancel: SnapshotCancelCallback | None = None,
+) -> None:
     files_path = snapshot_staging / "files.jsonl"
     manifest_path = snapshot_staging / "manifest.json"
     commit_path = snapshot_staging / "commit.json"
     for path in (files_path, manifest_path, commit_path):
         validate_regular_file_without_links(path, label="Snapshotmetadata")
-    files_reference = reference_for_bytes(files_path.read_bytes())
-    manifest_reference = reference_for_bytes(manifest_path.read_bytes())
+    files_reference = reference_for_file(files_path, should_cancel=should_cancel)
+    manifest_reference = reference_for_file(manifest_path, should_cancel=should_cancel)
     expected_files = commit["files_jsonl"]
     expected_manifest = commit["manifest"]
     if not isinstance(expected_files, dict) or not isinstance(expected_manifest, dict):
@@ -860,6 +965,24 @@ def verify_snapshot_staging(snapshot_staging: Path, commit: dict[str, object]) -
         raise SnapshotStorageError("commit.json kunne ikke leses tilbake etter skriving.") from exc
     if stored_commit != commit:
         raise SnapshotStorageError("commit.json endret seg etter skriving.")
+
+
+def reference_for_file(
+    path: Path,
+    *,
+    should_cancel: SnapshotCancelCallback | None = None,
+) -> ObjectReference:
+    digest = hashlib.sha256()
+    size_bytes = 0
+    with path.open("rb") as file:
+        while True:
+            raise_if_snapshot_cancelled(should_cancel)
+            chunk = file.read(COPY_CHUNK_SIZE)
+            if not chunk:
+                break
+            digest.update(chunk)
+            size_bytes += len(chunk)
+    return ObjectReference(sha256=digest.hexdigest(), size_bytes=size_bytes)
 
 
 def remove_empty_staging_directories(staging: Path) -> None:
@@ -953,9 +1076,11 @@ def copy_and_hash(
     digest: object,
     *,
     on_chunk: Callable[[int], None] | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
 ) -> int:
     size_bytes = 0
     while True:
+        raise_if_snapshot_cancelled(should_cancel)
         chunk = source.read(COPY_CHUNK_SIZE)
         if not chunk:
             return size_bytes
@@ -966,11 +1091,21 @@ def copy_and_hash(
             on_chunk(len(chunk))
 
 
-def verify_file_hash(path: Path, reference: ObjectReference, *, label: str) -> None:
+def verify_file_hash(
+    path: Path,
+    reference: ObjectReference,
+    *,
+    label: str,
+    should_cancel: SnapshotCancelCallback | None = None,
+) -> None:
     digest = hashlib.sha256()
     size_bytes = 0
     with path.open("rb") as file:
-        while chunk := file.read(COPY_CHUNK_SIZE):
+        while True:
+            raise_if_snapshot_cancelled(should_cancel)
+            chunk = file.read(COPY_CHUNK_SIZE)
+            if not chunk:
+                break
             digest.update(chunk)
             size_bytes += len(chunk)
     if size_bytes != reference.size_bytes or digest.hexdigest() != reference.sha256:
