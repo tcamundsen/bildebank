@@ -33,6 +33,7 @@ class FakeWidget(FakeButton):
         super().__init__()
         self.parent = parent
         self.options.update(options)
+        self.grid_options: dict[str, object] = {}
         self.children: list[FakeWidget] = []
         if parent is not None:
             parent.children.append(self)
@@ -41,8 +42,8 @@ class FakeWidget(FakeButton):
         if self.parent is not None:
             self.parent.children.remove(self)
 
-    def grid(self, *_args: object, **_kwargs: object) -> None:
-        pass
+    def grid(self, *_args: object, **kwargs: object) -> None:
+        self.grid_options.update(kwargs)
 
     def winfo_children(self) -> list[FakeWidget]:
         return list(self.children)
@@ -91,6 +92,12 @@ def test_main_tab_refresh_builds_normal_and_migration_actions(tmp_path: Path) ->
             "Ta versjonert backup",
             "Kontroller versjonert backup",
         ]
+        assert state.buttons[3].grid_options["row"] == 1
+        assert state.buttons[3].grid_options["column"] == 0
+        assert state.buttons[3].grid_options["columnspan"] == 2
+        assert state.buttons[4].grid_options["row"] == 1
+        assert state.buttons[4].grid_options["column"] == 2
+        assert state.buttons[4].grid_options["columnspan"] == 2
 
         tab.migration_required = True
         state = tab.refresh()

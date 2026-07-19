@@ -389,7 +389,7 @@ class MainTab:
         snapshot_button.grid(
             row=1,
             column=0,
-            columnspan=4,
+            columnspan=2,
             padx=self.padx,
             pady=self.pady,
             sticky="ew",
@@ -412,9 +412,9 @@ class MainTab:
         )
         self.snapshot_check_button = snapshot_check_button
         snapshot_check_button.grid(
-            row=2,
-            column=0,
-            columnspan=4,
+            row=1,
+            column=2,
+            columnspan=2,
             padx=self.padx,
             pady=self.pady,
             sticky="ew",
