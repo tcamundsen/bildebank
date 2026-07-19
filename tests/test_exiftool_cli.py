@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import subprocess
+import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -146,18 +147,24 @@ if "-ver" in sys.argv:
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
 
-            exiftool_result = subprocess.CompletedProcess(
-                args=[],
-                returncode=0,
-                stdout=(
-                    '[{"SourceFile": "a", "DateTimeOriginal": "2024:01:02 03:04:05"},'
-                    '{"SourceFile": "b", "DateTimeOriginal": "2024:01:02 03:04:05"},'
-                    '{"SourceFile": "c", "DateTimeOriginal": "2024:01:02 03:04:05"}]'
-                ),
-                stderr="",
-            )
+            def fake_exiftool(command: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
+                paths = [argument for argument in command[1:] if not argument.startswith("-")]
+                return subprocess.CompletedProcess(
+                    args=command,
+                    returncode=0,
+                    stdout=json.dumps(
+                        [
+                            {
+                                "SourceFile": path,
+                                "DateTimeOriginal": "2024:01:02 03:04:05",
+                            }
+                            for path in paths
+                        ]
+                    ),
+                    stderr="",
+                )
 
-            with patch("bildebank.exiftool_probe.subprocess.run", return_value=exiftool_result) as run:
+            with patch("bildebank.exiftool_probe.subprocess.run", side_effect=fake_exiftool) as run:
                 code, stdout, stderr = capture_cli(
                     [
                         "--target",
@@ -172,4 +179,18 @@ if "-ver" in sys.argv:
 
             self.assertEqual(code, 0, stderr)
             self.assertEqual(run.call_count, 1)
+            command = run.call_args.args[0]
+            command_paths = {
+                Path(argument)
+                for argument in command[1:]
+                if not argument.startswith("-")
+            }
+            self.assertEqual(
+                command_paths,
+                {
+                    target / "2024" / "01" / "IMG_20240102.jpg",
+                    target / "2024" / "01" / "IMG_20240103.jpg",
+                    target / "2024" / "01" / "IMG_20240104.jpg",
+                },
+            )
             self.assertIn("Oppsummering: exiftool_metadata_funnet=3", stdout)
