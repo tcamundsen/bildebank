@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import shutil
 import tempfile
 import unittest
@@ -37,8 +38,9 @@ class ExiftoolCliTests(unittest.TestCase):
             write_fake_exiftool(managed)
             (managed.parent / "exiftool_files").mkdir()
 
-            self.assertEqual(resolve_exiftool_path(repo, explicit), explicit)
-            self.assertEqual(resolve_exiftool_path(repo), managed)
+            with patch("bildebank.exiftool.exiftool_version", return_value="13.58"):
+                self.assertEqual(resolve_exiftool_path(repo, explicit), explicit)
+                self.assertEqual(resolve_exiftool_path(repo), managed)
 
     def test_exiftool_resolver_falls_back_to_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -46,7 +48,10 @@ class ExiftoolCliTests(unittest.TestCase):
             path_tool = root / "exiftool"
             write_fake_exiftool(path_tool)
 
-            with patch("bildebank.exiftool.shutil.which", return_value=str(path_tool)):
+            with (
+                patch("bildebank.exiftool.shutil.which", return_value=str(path_tool)),
+                patch("bildebank.exiftool.exiftool_version", return_value="13.58"),
+            ):
                 self.assertEqual(resolve_exiftool_path(root / "repo"), str(path_tool))
 
     def test_exiftool_resolver_requires_managed_support_folder(self) -> None:
@@ -79,6 +84,7 @@ if "-ver" in sys.argv:
                 patch("bildebank.cli.sys.platform", "win32"),
                 patch("bildebank.cli.program_repo_root", return_value=repo),
                 patch("bildebank.exiftool.urllib.request.urlretrieve", side_effect=fake_urlretrieve),
+                patch("bildebank.exiftool.validate_exiftool_install", return_value="13.58"),
             ):
                 code, stdout, stderr = capture_cli(["exiftool-install"])
 
@@ -108,17 +114,17 @@ if "-ver" in sys.argv:
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
 
-            exiftool = root / "exiftool.exe"
-            write_fake_exiftool(
-                exiftool,
-                """import json
-print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}]))
-""",
+            exiftool_result = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout='[{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}]',
+                stderr="",
             )
 
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "exiftool-metadata-gaps", "--exiftool", str(exiftool)]
-            )
+            with patch("bildebank.exiftool_probe.subprocess.run", return_value=exiftool_result):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "exiftool-metadata-gaps", "--exiftool", str(root / "exiftool.exe")]
+                )
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("2024-01-02\tDateTimeOriginal", stdout)
@@ -140,28 +146,30 @@ print(json.dumps([{"SourceFile": "x", "DateTimeOriginal": "2024:01:02 03:04:05"}
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
 
-            calls = target / "exiftool-calls.txt"
-            exiftool = root / "exiftool.exe"
-            write_fake_exiftool(
-                exiftool,
-                f"""import json
-import sys
-from pathlib import Path
-paths = [arg for arg in sys.argv[1:] if not arg.startswith("-")]
-with Path({str(calls)!r}).open("a", encoding="utf-8") as fh:
-    fh.write("call\\n")
-print(json.dumps([
-    {{"SourceFile": path, "DateTimeOriginal": "2024:01:02 03:04:05"}}
-    for path in paths
-]))
-""",
+            exiftool_result = subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout=(
+                    '[{"SourceFile": "a", "DateTimeOriginal": "2024:01:02 03:04:05"},'
+                    '{"SourceFile": "b", "DateTimeOriginal": "2024:01:02 03:04:05"},'
+                    '{"SourceFile": "c", "DateTimeOriginal": "2024:01:02 03:04:05"}]'
+                ),
+                stderr="",
             )
 
-            code, stdout, stderr = capture_cli(
-                ["--target", str(target), "exiftool-metadata-gaps", "--exiftool", str(exiftool), "--batch-size", "10"]
-            )
+            with patch("bildebank.exiftool_probe.subprocess.run", return_value=exiftool_result) as run:
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "exiftool-metadata-gaps",
+                        "--exiftool",
+                        str(root / "exiftool.exe"),
+                        "--batch-size",
+                        "10",
+                    ]
+                )
 
             self.assertEqual(code, 0, stderr)
-            self.assertEqual(calls.read_text(encoding="utf-8"), "call\n")
+            self.assertEqual(run.call_count, 1)
             self.assertIn("Oppsummering: exiftool_metadata_funnet=3", stdout)
-

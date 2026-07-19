@@ -11,6 +11,7 @@ from .html_paths import relative_to_target
 UNKNOWN_BROWSER_DATE = "9999-99-99"
 BROWSER_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
 MONTH_PATH_RE = re.compile(r"(?:^|[\\/])(?P<year>\d{4})[\\/](?P<month>\d{2})(?:[\\/]|$)")
+UNDATED_PATH_RE = re.compile(r"(?:^|[\\/])udatert(?:[\\/]|$)")
 
 
 def item_value(item: Any, key: str, default: object = None) -> object:
@@ -111,10 +112,12 @@ def month_key_from_path(path: Path) -> str:
 
 def month_key_from_stored_path(path: str) -> str | None:
     match = MONTH_PATH_RE.search(path.replace("\\\\", "\\"))
-    if match is None:
-        return None
-    month_key = f"{match.group('year')}-{match.group('month')}"
-    return month_key if valid_month_key(month_key) else None
+    if match is not None:
+        month_key = f"{match.group('year')}-{match.group('month')}"
+        return month_key if valid_month_key(month_key) else None
+    if UNDATED_PATH_RE.search(path.replace("\\\\", "\\")) is not None:
+        return "udatert"
+    return None
 
 
 def month_key_for_item(target: Path, item: Any) -> str:

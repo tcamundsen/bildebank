@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -54,7 +55,7 @@ def test_save_and_load_launcher_config_uses_bildebank_config_toml(tmp_path: Path
 
     config_text = (repo_root / "bildebank-config.toml").read_text(encoding="utf-8")
     assert "[launcher]" in config_text
-    assert f'collection_path = "{collection_path}"' in config_text
+    assert tomllib.loads(config_text)["launcher"]["collection_path"] == str(collection_path)
     with (
         patch("bildebank.launcher_status.program_repo_root", return_value=repo_root),
         patch("bildebank.launcher_status.db.find_target", return_value=None),
@@ -509,4 +510,3 @@ def test_rescan_source_candidates_returns_registered_sources(tmp_path: Path) -> 
     candidates = rescan_source_candidates(registered_sources(collection))
 
     assert [source.name for source in candidates] == ["Første", "Andre"]
-

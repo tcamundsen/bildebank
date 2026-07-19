@@ -202,11 +202,15 @@ def connect_face_db(target: Path, config: FaceRecognitionConfig | None = None) -
     model_name = config.model_name if config is not None else DEFAULT_FACE_MODEL_NAME
     conn = sqlite3.connect(face_db_path(target, config))
     conn.row_factory = sqlite3.Row
-    apply_face_schema(conn)
-    validate_face_database_model(conn, model_name)
-    set_meta(conn, "target_path", str(target.resolve()))
-    conn.commit()
-    return conn
+    try:
+        apply_face_schema(conn)
+        validate_face_database_model(conn, model_name)
+        set_meta(conn, "target_path", str(target.resolve()))
+        conn.commit()
+        return conn
+    except Exception:
+        conn.close()
+        raise
 
 
 def ensure_face_schema_path(path: Path) -> None:

@@ -69,6 +69,8 @@ class BrowserDatesTests(unittest.TestCase):
     def test_month_key_from_stored_path_handles_slashes_and_validates_month(self) -> None:
         self.assertEqual(month_key_from_stored_path("C:\\bilder\\2024\\12\\jul.jpg"), "2024-12")
         self.assertEqual(month_key_from_stored_path("/bilder/2024/12/jul.jpg"), "2024-12")
+        self.assertEqual(month_key_from_stored_path("C:\\bilder\\udatert\\gammelt.jpg"), "udatert")
+        self.assertEqual(month_key_from_stored_path("/bilder/udatert/gammelt.jpg"), "udatert")
         self.assertIsNone(month_key_from_stored_path("/bilder/2024/13/jul.jpg"))
 
     def test_month_key_for_item_falls_back_to_stored_path_and_relative_path(self) -> None:

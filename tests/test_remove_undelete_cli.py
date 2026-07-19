@@ -4,6 +4,7 @@ import shutil
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -89,7 +90,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
             imported = target / "2024" / "01" / "IMG_20240102.jpg"
             lock_path = target / LOCK_FILENAME
             lock_path.write_text("command=import\npid=123\n", encoding="utf-8")
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row_before = conn.execute(
                     "SELECT target_path, deleted_at FROM files WHERE id = 1"
                 ).fetchone()
@@ -103,7 +104,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
             self.assertEqual(stdout, "")
             self.assertIn("Bildesamlingen er låst", stderr)
             self.assertTrue(imported.exists())
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 self.assertEqual(
                     conn.execute(
                         "SELECT target_path, deleted_at FROM files WHERE id = 1"
@@ -188,7 +189,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
 
             self.assertFalse(lock_path.exists())
             self.assertTrue(imported.exists())
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
                     "SELECT target_path, deleted_at FROM files WHERE id = 1"
                 ).fetchone()
@@ -208,7 +209,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
 
             self.assertEqual(run_cli(["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]), 0)
 
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
                     "SELECT operation, state, completed_at FROM pending_file_moves"
                 ).fetchone()
@@ -239,7 +240,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
             self.assertIn("Fila på disk har feil SHA-256", stderr)
             self.assertTrue(imported.exists())
             self.assertFalse((target / "deleted" / "2024" / "01" / "IMG_20240102.jpg").exists())
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
                     "SELECT target_path, deleted_at FROM files WHERE id = 1"
                 ).fetchone()
@@ -273,7 +274,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
 
             self.assertFalse(imported.exists())
             self.assertTrue(deleted.exists())
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 file_row = conn.execute(
                     "SELECT target_path, deleted_at FROM files WHERE id = 1"
                 ).fetchone()
@@ -353,7 +354,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
             deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
             lock_path = target / LOCK_FILENAME
             lock_path.write_text("command=import\npid=123\n", encoding="utf-8")
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row_before = conn.execute(
                     "SELECT target_path, deleted_at FROM files WHERE id = 1"
                 ).fetchone()
@@ -372,7 +373,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
             self.assertEqual(stdout, "")
             self.assertIn("Bildesamlingen er låst", stderr)
             self.assertTrue(deleted.exists())
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 self.assertEqual(
                     conn.execute(
                         "SELECT target_path, deleted_at FROM files WHERE id = 1"
@@ -518,7 +519,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
             self.assertIn("Fila på disk har feil SHA-256", stderr)
             self.assertTrue(deleted.exists())
             self.assertFalse(restored.exists())
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
                     "SELECT target_path, deleted_at FROM files WHERE id = 1"
                 ).fetchone()

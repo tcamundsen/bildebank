@@ -7,6 +7,7 @@ import tempfile
 import time
 import unittest
 import uuid
+from contextlib import closing
 from http import HTTPStatus
 from io import BytesIO
 from pathlib import Path
@@ -1121,7 +1122,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             handler.respond_json = fake_respond_json  # type: ignore[method-assign]
             handler.respond_item_info("file_id=999")
 
-            with db.connect(target) as conn:
+            with closing(db.connect(target)) as conn, conn:
                 conn.execute(
                     "UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 1"
                 )
