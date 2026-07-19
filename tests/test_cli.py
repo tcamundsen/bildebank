@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 import os
+import signal
 import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
@@ -12,13 +13,14 @@ from unittest.mock import patch
 
 from bildebank.cli import (
     build_parser,
+    install_windows_interrupt_handler,
     main,
     wsl_path_from_windows_path,
 )
 from bildebank.db import DB_FILENAME
 from bildebank.media import ImageDimensions
 from bildebank.media_cache import cached_image_dimensions, cached_image_orientation
-from bildebank.target_lock import LOCK_FILENAME, TargetLockError
+from bildebank.target_lock import LOCK_FILENAME, TargetLock, TargetLockError
 from tests.cli_helpers import capture_cli, run_cli
 from tests.test_media import (
     minimal_png,
@@ -60,6 +62,40 @@ pretrained = "laion2b_s34b_b79k"
 """,
             encoding="utf-8",
         )
+
+    def test_main_installs_windows_interrupt_handler(self) -> None:
+        with (
+            patch("bildebank.cli.install_windows_interrupt_handler") as install_handler,
+            patch("bildebank.cli.run", return_value=0),
+        ):
+            self.assertEqual(main(["status"]), 0)
+
+        install_handler.assert_called_once_with()
+
+    def test_windows_ctrl_break_releases_target_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            installed_handler: list[tuple[object, object]] = []
+
+            with (
+                patch("bildebank.cli.os.name", "nt"),
+                patch.object(signal, "SIGBREAK", 21, create=True),
+                patch(
+                    "bildebank.cli.signal.signal",
+                    side_effect=lambda signum, handler: installed_handler.append((signum, handler)),
+                ),
+            ):
+                install_windows_interrupt_handler()
+
+            self.assertEqual(len(installed_handler), 1)
+            signum, handler = installed_handler[0]
+            self.assertEqual(signum, 21)
+            self.assertIs(handler, signal.default_int_handler)
+
+            with self.assertRaises(KeyboardInterrupt), TargetLock(target, command="test-command"):
+                handler(signum, None)  # type: ignore[operator]
+
+            self.assertFalse((target / LOCK_FILENAME).exists())
 
     def test_main_without_arguments_shows_help(self) -> None:
         code, stdout, stderr = capture_cli([])

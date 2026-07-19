@@ -6,6 +6,7 @@ import json
 import importlib.util
 import os
 import re
+import signal
 import sqlite3
 import sys
 import traceback
@@ -75,7 +76,17 @@ class BildebankHelpFormatter(argparse.RawDescriptionHelpFormatter):
         return super()._format_action(action)
 
 
+def install_windows_interrupt_handler() -> None:
+    """Let launcher Ctrl+Break unwind command cleanup like Ctrl+C."""
+    if os.name != "nt":
+        return
+    sigbreak = getattr(signal, "SIGBREAK", None)
+    if sigbreak is not None:
+        signal.signal(sigbreak, signal.default_int_handler)
+
+
 def main(argv: list[str] | None = None) -> int:
+    install_windows_interrupt_handler()
     parser = build_parser()
     if argv is None:
         argv = sys.argv[1:]

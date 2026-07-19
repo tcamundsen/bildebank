@@ -1482,6 +1482,25 @@ def test_interrupt_process_sends_sigint_outside_windows() -> None:
     assert process.signal_sent is signal.SIGINT
 
 
+def test_interrupt_process_sends_ctrl_break_on_windows() -> None:
+    class FakeProcess:
+        signal_sent: object | None = None
+
+        def send_signal(self, value: object) -> None:
+            self.signal_sent = value
+
+    process = FakeProcess()
+    ctrl_break_event = object()
+
+    with (
+        patch("bildebank.launcher.os.name", "nt"),
+        patch.object(signal, "CTRL_BREAK_EVENT", ctrl_break_event, create=True),
+    ):
+        interrupt_process(process)  # type: ignore[arg-type]
+
+    assert process.signal_sent is ctrl_break_event
+
+
 def test_face_scan_is_cancellable_from_launcher() -> None:
     source = inspect.getsource(BildebankLauncher._start_face_scan_command)
 
