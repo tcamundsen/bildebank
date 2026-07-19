@@ -54,6 +54,8 @@ def progress_log_key(message: str) -> str | None:
         return "tqdm-progress"
     if message.startswith("Snapshot: "):
         return "Snapshot"
+    if message.startswith("Snapshot dry-run: "):
+        return "Snapshot dry-run"
     if message.startswith("Snapshot check: "):
         return "Snapshot check"
     for label in PROGRESS_LOG_LABELS:

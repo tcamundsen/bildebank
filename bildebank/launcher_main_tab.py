@@ -43,7 +43,12 @@ from .snapshot_create import (
     create_snapshot,
     validate_existing_recovery_repository,
 )
-from .snapshot_progress import SnapshotCreateProgress, SnapshotCreateProgressCallback
+from .snapshot_progress import (
+    SnapshotCreateProgress,
+    SnapshotCreateProgressCallback,
+    SnapshotPlanProgress,
+    SnapshotPlanProgressCallback,
+)
 from .launcher_widgets import Tooltip
 
 
@@ -61,9 +66,18 @@ class LauncherRecoveryPlan:
 def plan_launcher_snapshot(
     collection: Path,
     repository: Path,
+    *,
+    progress: SnapshotPlanProgressCallback | None = None,
 ) -> SnapshotPlan | LauncherRecoveryPlan:
     config = load_config(program_repo_root(), migrate_legacy=False)
     try:
+        if progress is not None:
+            return plan_snapshot(
+                collection,
+                repository,
+                configured_face_database_dir=config.face_recognition.database_dir,
+                progress=progress,
+            )
         return plan_snapshot(
             collection,
             repository,
@@ -687,8 +701,76 @@ class MainTab:
         self._run_snapshot_plan(Path(selected))
 
     def _run_snapshot_plan(self, repository: Path) -> None:
+        last_progress_at = [0.0]
+        last_stage: list[str | None] = [None]
+        last_objects = [-1]
+
+        def report_progress(progress: SnapshotPlanProgress) -> None:
+            now = time.monotonic()
+            stage_changed = progress.stage != last_stage[0]
+            finished = (
+                progress.total_objects > 0
+                and progress.completed_objects >= progress.total_objects
+            )
+            if (
+                not stage_changed
+                and progress.completed_objects == last_objects[0]
+                and not finished
+                and now - last_progress_at[0] < 1.0
+            ):
+                return
+            if (
+                not stage_changed
+                and progress.completed_objects not in {0, progress.total_objects}
+                and progress.completed_objects % 1_000 != 0
+                and now - last_progress_at[0] < 1.0
+            ):
+                return
+            last_progress_at[0] = now
+            last_stage[0] = progress.stage
+            last_objects[0] = progress.completed_objects
+
+            if progress.stage == "database":
+                message = "Snapshot dry-run: leser og kontrollerer hoveddatabasen ..."
+            elif progress.stage == "database_complete":
+                message = (
+                    f"Snapshot dry-run: hoveddatabase={progress.completed_objects} filposter"
+                )
+            elif progress.stage == "inventory":
+                if progress.completed_objects == 0:
+                    message = "Snapshot dry-run: bygger filinventar ..."
+                elif progress.total_objects == 0:
+                    message = (
+                        f"Snapshot dry-run: filer funnet={progress.completed_objects}, "
+                        f"registrert={format_bytes(progress.completed_bytes)}"
+                    )
+                else:
+                    message = (
+                        f"Snapshot dry-run: filinventar={progress.completed_objects} filer "
+                        f"({format_bytes(progress.completed_bytes)})"
+                    )
+            elif progress.stage == "files":
+                if progress.total_objects == 0:
+                    message = "Snapshot dry-run: ingen databaseførte filer å sammenligne."
+                else:
+                    message = (
+                        "Snapshot dry-run: databaseførte filer kontrollert="
+                        f"{progress.completed_objects}/{progress.total_objects}"
+                    )
+            else:
+                message = "Snapshot dry-run: beregner plassbehov ..."
+
+            def log_progress() -> None:
+                self._log_progress(message)
+
+            self._post_to_ui(log_progress)
+
         self._run_background_task(
-            lambda _cancel_requested: plan_launcher_snapshot(self.collection_path, repository),
+            lambda _cancel_requested: plan_launcher_snapshot(
+                self.collection_path,
+                repository,
+                progress=report_progress,
+            ),
             running_message=f"Kontrollerer versjonert backup til {repository} ...",
             failure_message="Kontroll av versjonert backup feilet.",
             on_success=lambda plan: self._snapshot_plan_finished(repository, plan),

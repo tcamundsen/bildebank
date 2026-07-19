@@ -18,6 +18,7 @@ from bildebank.launcher_main_tab import (
 )
 from bildebank.launcher_status import LauncherUpdateStatus
 from bildebank.snapshot import MainDatabaseSourceError
+from bildebank.snapshot_progress import SnapshotPlanProgress
 
 
 class FakeButton:
@@ -427,6 +428,7 @@ def test_launcher_snapshot_helpers_use_shared_plan_and_create_functions(tmp_path
     config = SimpleNamespace(face_recognition=face_config)
     expected_plan = object()
     expected_result = object()
+    progress_events: list[SnapshotPlanProgress] = []
 
     with (
         patch("bildebank.launcher_main_tab.load_config", return_value=config) as load,
@@ -435,13 +437,22 @@ def test_launcher_snapshot_helpers_use_shared_plan_and_create_functions(tmp_path
         patch("bildebank.launcher_main_tab.create_snapshot", return_value=expected_result) as creator,
     ):
         assert plan_launcher_snapshot(collection, repository) is expected_plan
+        assert (
+            plan_launcher_snapshot(collection, repository, progress=progress_events.append)
+            is expected_plan
+        )
         assert create_launcher_snapshot(collection, repository) is expected_result
 
-    assert load.call_count == 2
-    planner.assert_called_once_with(
+    assert load.call_count == 3
+    assert planner.call_args_list[0].args == (collection, repository)
+    assert planner.call_args_list[0].kwargs == {
+        "configured_face_database_dir": face_config.database_dir,
+    }
+    planner.assert_called_with(
         collection,
         repository,
         configured_face_database_dir=face_config.database_dir,
+        progress=progress_events.append,
     )
     creator.assert_called_once_with(collection, repository, face_config=face_config)
 
@@ -504,11 +515,14 @@ def test_main_tab_snapshot_uses_internal_plan_then_internal_create(tmp_path: Pat
     jobs: list[tuple[object, dict[str, object]]] = []
     questions: list[dict[str, object]] = []
     logged: list[str] = []
+    progress_messages: list[str] = []
     tab._run_background_task = lambda task, **options: jobs.append((task, options))
     tab._show_log_review_question = (
         lambda _title, _message, **options: questions.append(options)
     )
     tab._log = logged.append
+    tab._log_progress = progress_messages.append
+    tab._post_to_ui = lambda callback: (callback(), True)[1]
     plan = SimpleNamespace(
         source_dir=collection,
         repository_dir=repository,
@@ -540,7 +554,29 @@ def test_main_tab_snapshot_uses_internal_plan_then_internal_create(tmp_path: Pat
     assert callable(plan_task)
     with patch("bildebank.launcher_main_tab.plan_launcher_snapshot", return_value=plan) as planner:
         assert plan_task(lambda: False) is plan
-    planner.assert_called_once_with(collection, repository)
+    assert planner.call_args.args == (collection, repository)
+    plan_progress = planner.call_args.kwargs["progress"]
+    assert callable(plan_progress)
+    plan_progress(SnapshotPlanProgress(stage="database"))
+    plan_progress(
+        SnapshotPlanProgress(
+            stage="inventory",
+            completed_objects=1_000,
+            completed_bytes=2_048,
+        )
+    )
+    plan_progress(
+        SnapshotPlanProgress(
+            stage="files",
+            completed_objects=25,
+            total_objects=100,
+        )
+    )
+    assert progress_messages == [
+        "Snapshot dry-run: leser og kontrollerer hoveddatabasen ...",
+        "Snapshot dry-run: filer funnet=1000, registrert=2.0 KB",
+        "Snapshot dry-run: databaseførte filer kontrollert=25/100",
+    ]
 
     plan_success = jobs[0][1]["on_success"]
     assert callable(plan_success)
