@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import codecs
 import hashlib
 import os
 import shutil
@@ -12,6 +13,11 @@ from pathlib import Path
 
 POWERSHELL = shutil.which("pwsh") or shutil.which("powershell") or shutil.which("powershell.exe")
 SCRIPT = Path(__file__).resolve().parents[1] / "tools" / "snapshot-media-hashes.ps1"
+
+
+class SnapshotMediaHashesSourceTests(unittest.TestCase):
+    def test_script_has_utf8_bom_for_windows_powershell(self) -> None:
+        self.assertTrue(SCRIPT.read_bytes().startswith(codecs.BOM_UTF8))
 
 
 @unittest.skipUnless(os.name == "nt" and POWERSHELL, "Testen krever Windows og PowerShell")

@@ -126,17 +126,28 @@ Ikke bruk originalen og restorekopien parallelt som uavhengige samlinger. De
 skal ha samme `collection_id`.
 
 ## Restore av enkeltfil
-
+FORTSETT HER
 1. Kjør dry-run og reell restore med `--path` til en ny eksportmappe.
 2. Sammenlign eksportfilens SHA-256 og størrelse med testfasiten.
 3. Kontroller filens endringstid innenfor målfilsystemets tidsoppløsning.
 4. Kjør samme kommando på nytt; den eksisterende filen skal ikke overskrives.
-5. Lag et kontrollert `degraded` snapshot og hent både `expected` og `observed`.
-6. Kontroller hash-suffikset på `observed`.
-7. Lag en kontrollert `recovery_only`-post, finn `entry_id` med
-   `snapshot problems` og eksporter posten med `--entry-id`.
-8. Avbryt under kopiering og kontroller at en eventuell ufullstendig fil
-   bevares og ikke overskrives ved nytt forsøk.
+5. Kjør restore-testsuiten fra rotmappen til bildebank-koden:
+
+   ```powershell
+   python -m pytest tests\test_snapshot_restore.py
+   ```
+
+   Testsuiten lager et isolert `degraded` snapshot, krever valg av variant og
+   eksporterer både `expected` og `observed` med kontroll av byteinnholdet. Dette
+   skal ikke fremprovoseres manuelt i testsamlingen.
+6. Testsuiten kontrollerer hash-suffikset på den eksporterte
+   `observed`-varianten.
+7. Testsuiten lager også en isolert `recovery_only`-post, finner `entry_id` via
+   problemlisten og eksporterer posten med `entry_id`.
+8. Testsuiten avbryter enkeltfil-restore deterministisk etter at de første
+   bytene er skrevet. Den kontrollerer at delfilen bevares, at repositorylåsen
+   frigjøres, og at neste forsøk nekter å overskrive delfilen. Ikke forsøk å
+   treffe kopieringen manuelt med Ctrl+C.
 
 ## Diskrotasjon
 

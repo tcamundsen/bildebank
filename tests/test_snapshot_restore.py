@@ -332,6 +332,81 @@ class SnapshotRestorePlanTests(unittest.TestCase):
             self.assertEqual((export / "notater.txt").read_bytes(), corrupt)
             self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
 
+    def test_single_file_restore_interrupt_preserves_partial_and_refuses_overwrite(self) -> None:
+        with normal_snapshot() as (root, _target, repository, snapshot_id):
+            export = root / "export"
+            output = export / "notater.txt"
+            repository_before = tree_file_bytes(repository)
+            real_fdopen = os.fdopen
+            from bildebank.snapshot_restore import copy_verified_restore_object_exclusive
+
+            class InterruptAfterFirstRead:
+                def __init__(self, stream) -> None:  # noqa: ANN001
+                    self.stream = stream
+                    self.reads = 0
+
+                def __enter__(self):  # noqa: ANN204
+                    self.stream.__enter__()
+                    return self
+
+                def __exit__(self, exc_type, exc, traceback):  # noqa: ANN001
+                    return self.stream.__exit__(exc_type, exc, traceback)
+
+                def read(self, size: int = -1) -> bytes:
+                    if self.reads:
+                        raise KeyboardInterrupt
+                    self.reads += 1
+                    return self.stream.read(size)
+
+            def interrupting_fdopen(fd: int, mode: str, closefd: bool = True):  # noqa: ANN202
+                stream = real_fdopen(fd, mode, closefd=closefd)
+                if mode == "rb":
+                    return InterruptAfterFirstRead(stream)
+                return stream
+
+            def interrupting_copy(repository_path, restore_output, destination) -> None:  # noqa: ANN001
+                with (
+                    patch("bildebank.snapshot_restore.COPY_CHUNK_SIZE", 4),
+                    patch(
+                        "bildebank.snapshot_restore.os.fdopen",
+                        side_effect=interrupting_fdopen,
+                    ),
+                ):
+                    copy_verified_restore_object_exclusive(
+                        repository_path,
+                        restore_output,
+                        destination,
+                    )
+
+            with (
+                patch(
+                    "bildebank.snapshot_restore.copy_verified_restore_object_exclusive",
+                    side_effect=interrupting_copy,
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                restore_single_file(
+                    repository,
+                    snapshot_id,
+                    export,
+                    path="notater.txt",
+                )
+
+            self.assertEqual(output.read_bytes(), b"fami")
+            self.assertEqual(tree_file_bytes(repository), repository_before)
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
+
+            with self.assertRaisesRegex(SnapshotStorageError, "finnes allerede"):
+                restore_single_file(
+                    repository,
+                    snapshot_id,
+                    export,
+                    path="notater.txt",
+                )
+
+            self.assertEqual(output.read_bytes(), b"fami")
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
+
     def test_full_restore_publishes_verified_collection_and_preserves_repository(self) -> None:
         with normal_snapshot() as (root, target, repository, snapshot_id):
             restored = root / "restored"
