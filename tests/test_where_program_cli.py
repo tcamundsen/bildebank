@@ -9,7 +9,15 @@ from unittest.mock import patch
 
 from bildebank import db
 from bildebank.db import DB_FILENAME
-from bildebank.program_state import PROGRAM_DB_FILENAME, ensure_schema, known_targets, record_target
+from bildebank.program_state import (
+    PROGRAM_DB_FILENAME,
+    ensure_schema,
+    known_snapshot_repositories,
+    latest_snapshot_repository_for_target,
+    known_targets,
+    record_published_snapshot,
+    record_target,
+)
 from tests.cli_helpers import capture_cli, run_cli
 
 
@@ -211,3 +219,65 @@ class WhereProgramCliTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertIn("Bildebank-program:", stdout)
         self.assertIn("Ingen registrert ennå.", stdout)
+
+    def test_snapshot_repositories_are_identified_by_repository_id_not_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "usb" / "Familiebilder"
+            repository.mkdir(parents=True)
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                collection_id = str(
+                    conn.execute(
+                        "SELECT value FROM meta WHERE key = 'collection_id'"
+                    ).fetchone()[0]
+                )
+            finally:
+                conn.close()
+
+            repository_ids = [str(uuid.uuid4()) for _index in range(3)]
+            snapshot_ids = [str(uuid.uuid4()) for _index in range(3)]
+            for index, (repository_id, snapshot_id) in enumerate(
+                zip(repository_ids, snapshot_ids, strict=True),
+                start=1,
+            ):
+                record_published_snapshot(
+                    self.program_root,
+                    collection_id=collection_id,
+                    repository_id=repository_id,
+                    repository_path=repository,
+                    snapshot_id=snapshot_id,
+                    status="complete",
+                    published_at=f"2026-07-{index:02d}T12:00:00Z",
+                )
+
+            repositories = known_snapshot_repositories(self.program_root, collection_id)
+
+            self.assertEqual(
+                [item.repository_id for item in repositories],
+                list(reversed(repository_ids)),
+            )
+            self.assertEqual({item.path for item in repositories}, {repository.resolve()})
+            self.assertEqual(
+                latest_snapshot_repository_for_target(self.program_root, target),
+                repositories[0],
+            )
+
+            newest_snapshot_id = str(uuid.uuid4())
+            record_published_snapshot(
+                self.program_root,
+                collection_id=collection_id,
+                repository_id=repository_ids[0],
+                repository_path=repository,
+                snapshot_id=newest_snapshot_id,
+                status="degraded",
+                published_at="2026-07-04T12:00:00Z",
+            )
+            updated = known_snapshot_repositories(self.program_root, collection_id)
+
+            self.assertEqual(len(updated), 3)
+            self.assertEqual(updated[0].repository_id, repository_ids[0])
+            self.assertEqual(updated[0].last_snapshot_id, newest_snapshot_id)
+            self.assertEqual(updated[0].last_snapshot_status, "degraded")

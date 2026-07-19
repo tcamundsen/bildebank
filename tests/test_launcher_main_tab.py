@@ -14,8 +14,10 @@ from bildebank.launcher_main_tab import (
     open_server_browser_window,
     plan_launcher_snapshot,
     server_browser_url,
+    snapshot_dialog_initial_directory,
     snapshot_plan_log_lines,
 )
+from bildebank.program_state import KnownSnapshotRepository
 from bildebank.launcher_status import LauncherUpdateStatus
 from bildebank.snapshot import MainDatabaseSourceError
 from bildebank.snapshot_progress import SnapshotCancelled, SnapshotPlanProgress
@@ -626,6 +628,74 @@ def test_main_tab_snapshot_uses_internal_plan_then_internal_create(tmp_path: Pat
         assert create_task(lambda: True) is None
 
 
+def test_snapshot_dialog_uses_latest_available_repository(tmp_path: Path) -> None:
+    collection = tmp_path / "samling"
+    repository = tmp_path / "usb" / "Familiebilder"
+    repository.mkdir(parents=True)
+    latest = KnownSnapshotRepository(
+        collection_id="collection-id",
+        repository_id="repository-id",
+        path=repository,
+        last_snapshot_id="snapshot-id",
+        last_snapshot_status="complete",
+        last_snapshot_at="2026-07-19T12:00:00Z",
+    )
+
+    with patch(
+        "bildebank.launcher_main_tab.known_snapshot_repositories_for_target",
+        return_value=[latest],
+    ):
+        assert snapshot_dialog_initial_directory(collection) == repository
+
+
+def test_snapshot_dialog_falls_back_when_latest_repository_is_unavailable(tmp_path: Path) -> None:
+    collection = tmp_path / "samling"
+    latest = KnownSnapshotRepository(
+        collection_id="collection-id",
+        repository_id="repository-id",
+        path=tmp_path / "frakoblet-disk" / "Familiebilder",
+        last_snapshot_id="snapshot-id",
+        last_snapshot_status="complete",
+        last_snapshot_at="2026-07-19T12:00:00Z",
+    )
+
+    with patch(
+        "bildebank.launcher_main_tab.known_snapshot_repositories_for_target",
+        return_value=[latest],
+    ):
+        assert snapshot_dialog_initial_directory(collection) == collection.parent
+
+
+def test_snapshot_dialog_uses_newest_repository_that_is_available(tmp_path: Path) -> None:
+    collection = tmp_path / "samling"
+    available = tmp_path / "tilkoblet-disk" / "Familiebilder"
+    available.mkdir(parents=True)
+    repositories = [
+        KnownSnapshotRepository(
+            collection_id="collection-id",
+            repository_id="nyeste-id",
+            path=tmp_path / "frakoblet-disk" / "Familiebilder",
+            last_snapshot_id="nyeste-snapshot",
+            last_snapshot_status="complete",
+            last_snapshot_at="2026-07-19T12:00:00Z",
+        ),
+        KnownSnapshotRepository(
+            collection_id="collection-id",
+            repository_id="eldre-id",
+            path=available,
+            last_snapshot_id="eldre-snapshot",
+            last_snapshot_status="complete",
+            last_snapshot_at="2026-07-18T12:00:00Z",
+        ),
+    ]
+
+    with patch(
+        "bildebank.launcher_main_tab.known_snapshot_repositories_for_target",
+        return_value=repositories,
+    ):
+        assert snapshot_dialog_initial_directory(collection) == available
+
+
 def test_launcher_reports_controlled_snapshot_cancellation(tmp_path: Path) -> None:
     repository = tmp_path / "repository"
     tab = bare_main_tab(tmp_path / "samling")
@@ -651,23 +721,56 @@ def test_snapshot_result_distinguishes_complete_degraded_and_recovery(tmp_path: 
     tab._log = lambda _message: None
     tab._refresh_launcher = lambda: None
     published = SimpleNamespace(snapshot_id="snapshot-id", snapshot_dir=tmp_path / "snapshot")
+    build = SimpleNamespace(
+        collection_id="collection-id",
+        repository_id="repository-id",
+        warnings=(),
+    )
 
     with (
         patch("tkinter.messagebox.showinfo") as showinfo,
         patch("tkinter.messagebox.showwarning") as showwarning,
+        patch(
+            "bildebank.launcher_main_tab.record_published_snapshot_best_effort",
+            return_value=None,
+        ) as remember,
     ):
         tab._snapshot_creation_finished(
-            SimpleNamespace(status="complete", published=published, build=SimpleNamespace(warnings=()))
+            SimpleNamespace(
+                status="complete",
+                repository=tmp_path / "repository",
+                published=published,
+                build=build,
+            )
         )
         tab._snapshot_creation_finished(
-            SimpleNamespace(status="degraded", published=published, build=SimpleNamespace(warnings=("avvik",)))
+            SimpleNamespace(
+                status="degraded",
+                repository=tmp_path / "repository",
+                published=published,
+                build=SimpleNamespace(
+                    collection_id="collection-id",
+                    repository_id="repository-id",
+                    warnings=("avvik",),
+                ),
+            )
         )
         tab._snapshot_creation_finished(
-            SimpleNamespace(status="recovery", published=published, build=SimpleNamespace(warnings=("db-feil",)))
+            SimpleNamespace(
+                status="recovery",
+                repository=tmp_path / "repository",
+                published=published,
+                build=SimpleNamespace(
+                    collection_id="collection-id",
+                    repository_id="repository-id",
+                    warnings=("db-feil",),
+                ),
+            )
         )
 
     showinfo.assert_called_once()
     assert showwarning.call_count == 2
+    assert remember.call_count == 3
     assert showwarning.call_args_list[0].args[0] == "Versjonert backup opprettet med problemer"
     assert showwarning.call_args_list[1].args[0] == "Recovery-snapshot opprettet"
 

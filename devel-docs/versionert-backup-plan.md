@@ -1086,6 +1086,24 @@ Launcheren skal ikke ha en egen implementasjon av repositoryformat,
 integritetsregler eller kopiering. CLI og launcher skal dele planobjekter og
 resultattyper.
 
+Etter at den felles snapshotfunksjonen har returnert et publisert resultat,
+registrerer CLI eller launcher repository-ID, collection-ID, repository-sti,
+snapshot-ID, status og tidspunkt i `.bildebank-program.sqlite3`. Denne lokale
+registreringen er ikke del av snapshottransaksjonen. Feil ved registrering skal
+varsles, men skal ikke endre resultatet for et allerede publisert snapshot.
+
+Programtilstanden har én rad per `repository_id`, ikke per sti. Flere roterende
+USB-disker kan derfor ha samme Windows-stasjonsbokstav og mappesti uten å
+overskrive hverandres status. Launcheren bruker stien til det sist publiserte,
+tilgjengelige repositoryet som startmappe. Dashboardet viser siste publiserte
+snapshot for hvert kjent repository. Verken repositoryformatet,
+snapshotmanifestene eller snapshotkjernen endres for å støtte dette.
+
+Et klonet repository beholder samme `repository_id`. Brukerdokumentasjonen
+forbyr derfor videre, uavhengig skriving til både originalen og klonen. Kloner
+kan bare behandles som kopier som ikke oppdateres videre. Det innføres ikke
+automatisk klonedeteksjon i snapshotkjernen.
+
 ### Launcherflyt for full kontroll
 
 Første versjon skal også tilby `snapshot check --full` i launcheren. Flyten

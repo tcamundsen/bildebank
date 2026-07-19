@@ -55,7 +55,12 @@ from .openclip import openclip_db_path
 from .platform_guard import validate_collection_platform
 from .pending_deletes import cleanup_pending_deletes, list_pending_deletes
 from .progress import ProgressMeter
-from .program_state import known_targets, program_db_path, record_target_best_effort
+from .program_state import (
+    known_targets,
+    program_db_path,
+    record_published_snapshot_best_effort,
+    record_target_best_effort,
+)
 from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
 from .server_slideshow import DEFAULT_SLIDESHOW_DELAY_SECONDS
 from .snapshot import SnapshotPlan, plan_snapshot
@@ -2036,6 +2041,20 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
         finally:
             meter.done()
         print_snapshot_creation_result(result)
+        state_error = record_published_snapshot_best_effort(
+            program_repo_root(),
+            collection_id=result.build.collection_id,
+            repository_id=result.build.repository_id,
+            repository_path=result.repository,
+            snapshot_id=result.published.snapshot_id,
+            status=result.status,
+        )
+        if state_error is not None:
+            print(
+                "ADVARSEL: Snapshotet er publisert, men Bildebank klarte ikke å huske "
+                f"repositoryet lokalt: {state_error}",
+                file=sys.stderr,
+            )
         return result.exit_code
 
     meter = ProgressMeter(

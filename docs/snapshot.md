@@ -124,6 +124,34 @@ Et resultat kan ha én av disse statusene:
 
 Ta vare på hele utskriften hvis statusen ikke er `complete`.
 
+## Flere backupdisker og lagret status
+
+Etter at et snapshot er publisert, husker denne Bildebank-installasjonen
+repositoryet, tidspunktet og statusen. Bildebank-vinduet åpner den sist brukte,
+tilgjengelige repositorymappen som standard. Dashboardet viser siste publiserte
+snapshot for hvert repository som installasjonen kjenner.
+
+Hvert repository har sin egen interne ID. Det betyr at flere USB-disker kan
+bruke samme stasjonsbokstav og samme mappesti, for eksempel:
+
+```text
+F:\Bildebank-snapshots\Familiebilder
+```
+
+Initialiser hver backupdisk som et eget, tomt repository. Da får diskene ulike
+repository-ID-er, selv om Windows kaller alle diskene `F:` når de kobles til.
+
+Ikke klon et repository og fortsett å bruke både originalen og klonen som to
+selvstendige, skrivbare repositories. En klone beholder samme repository-ID som
+originalen, og Bildebank kan derfor ikke alltid skille dem. En klone kan
+beholdes som en frakoblet kopi som ikke oppdateres videre. En disk som skal
+inngå selvstendig i vanlig rotasjon, skal initialiseres fra en tom mappe.
+
+Den lagrede statusen ligger i Bildebanks lokale programdata, ikke i
+repositoryet eller bildesamlingens database. Den er en praktisk oversikt, ikke
+en integritetskontroll. Bruk fortsatt `snapshot check` og periodisk
+`snapshot check --full`.
+
 ## Se snapshots og kildeavvik
 
 Vis publiserte snapshots:

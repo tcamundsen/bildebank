@@ -32,6 +32,10 @@ from .launcher_status import (
     is_collection_created,
     program_repo_root,
 )
+from .program_state import (
+    known_snapshot_repositories_for_target,
+    record_published_snapshot_best_effort,
+)
 from .snapshot import MainDatabaseSourceError, SnapshotPlan, plan_snapshot
 from .snapshot_check import (
     SnapshotCheckProgress,
@@ -64,6 +68,17 @@ class LauncherRecoveryPlan:
     source_dir: Path
     repository_dir: Path
     database_error: str
+
+
+def snapshot_dialog_initial_directory(collection: Path) -> Path:
+    try:
+        repositories = known_snapshot_repositories_for_target(program_repo_root(), collection)
+    except Exception:
+        repositories = []
+    for repository in repositories:
+        if repository.path.is_dir():
+            return repository.path
+    return collection.parent
 
 
 def plan_launcher_snapshot(
@@ -707,7 +722,7 @@ class MainTab:
 
         selected = filedialog.askdirectory(
             title="Velg mappe for versjonert backup",
-            initialdir=str(self.collection_path.parent),
+            initialdir=str(snapshot_dialog_initial_directory(self.collection_path)),
             mustexist=False,
         )
         if not selected:
@@ -949,9 +964,27 @@ class MainTab:
         for warning in result.build.warnings:
             self._log(f"ADVARSEL: {warning}")
 
+        state_error = record_published_snapshot_best_effort(
+            program_repo_root(),
+            collection_id=result.build.collection_id,
+            repository_id=result.build.repository_id,
+            repository_path=result.repository,
+            snapshot_id=result.published.snapshot_id,
+            status=result.status,
+        )
+        state_warning = ""
+        if state_error is not None:
+            warning = (
+                "Snapshotet er publisert, men Bildebank klarte ikke å huske "
+                f"repositoryet lokalt: {state_error}"
+            )
+            self._log(f"ADVARSEL: {warning}")
+            state_warning = f"\n\nADVARSEL: {warning}"
+
         details = (
             f"Snapshot-ID:\n{result.published.snapshot_id}\n\n"
             f"Snapshotmappe:\n{result.published.snapshot_dir}"
+            f"{state_warning}"
         )
         if result.status == "complete":
             messagebox.showinfo(
@@ -979,7 +1012,7 @@ class MainTab:
 
         selected = filedialog.askdirectory(
             title="Velg versjonert backup som skal kontrolleres",
-            initialdir=str(self.collection_path.parent),
+            initialdir=str(snapshot_dialog_initial_directory(self.collection_path)),
             mustexist=True,
         )
         if not selected:

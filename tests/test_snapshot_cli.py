@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bildebank.db import DB_FILENAME
+from bildebank.program_state import known_snapshot_repositories
 from bildebank.snapshot import (
     REPOSITORY_LOCK_FILENAME,
     REPOSITORY_METADATA_FILENAME,
@@ -168,7 +169,36 @@ class SnapshotCliTests(unittest.TestCase):
             self.assertEqual(list((repository / "incomplete").iterdir()), [])
             self.assertFalse((target / LOCK_FILENAME).exists())
             self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
-            self.assertEqual(program_database.read_bytes(), program_database_before)
+            self.assertNotEqual(program_database.read_bytes(), program_database_before)
+            repositories = known_snapshot_repositories(
+                self.program_root,
+                str(manifest["collection_id"]),
+            )
+            self.assertEqual(len(repositories), 1)
+            self.assertEqual(repositories[0].path, repository.resolve())
+            self.assertEqual(repositories[0].last_snapshot_id, manifest["snapshot_id"])
+            self.assertEqual(repositories[0].last_snapshot_status, "complete")
+
+    def test_snapshot_create_stays_successful_when_local_history_cannot_be_saved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with patch(
+                "bildebank.cli.record_published_snapshot_best_effort",
+                return_value="programdatabasen er skrivebeskyttet",
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "snapshot", "create", str(repository)]
+                )
+
+            self.assertEqual(code, 0)
+            self.assertIn("Snapshot opprettet", stdout)
+            self.assertIn("Snapshotet er publisert", stderr)
+            self.assertIn("programdatabasen er skrivebeskyttet", stderr)
+            self.assertEqual(len(list((repository / "snapshots").iterdir())), 1)
 
     def test_snapshot_create_appends_second_snapshot_without_changing_first(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

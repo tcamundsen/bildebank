@@ -260,6 +260,24 @@ bruke felles funksjoner for selve browseren, for eksempel
 utvalg får samme blaing, rotering, bildeinfo, sletting og lenkestruktur uten at
 det lages egne parallelle browsere for hvert tilfelle.
 
+## Lokal status for versjonert backup
+
+Et publisert snapshot kan registreres i programmets lokale programdatabase
+etter at snapshotoperasjonen er fullført. Registreringen inneholder bare
+opplysninger som launcher og dashboard trenger: collection-ID, repository-ID,
+sist brukte repository-sti, snapshot-ID, status og tidspunkt.
+
+Denne hjelpetilstanden er ikke en del av repositoryformatet eller
+bildesamlingens database. En feil i lokal registrering skal derfor aldri gjøre
+et allerede publisert snapshot til en feil. Snapshotkjernens publisering,
+låsing, manifest og objektlagring skal ikke endres for å vedlikeholde lokal
+status.
+
+Repository-ID, ikke Windows-sti eller stasjonsbokstav, identifiserer et
+repository. Flere USB-disker kan dermed bruke samme sti når de kobles til etter
+tur. Klonede repositories må ikke brukes videre som uavhengige, skrivbare
+repositories, fordi klonen beholder originalens repository-ID.
+
 ## Kommentarer på mediefiler
 
 En mediefil kan ha én kommentar på den kanoniske `files`-raden. Kommentaren
