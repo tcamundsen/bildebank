@@ -76,7 +76,8 @@ def test_main_tab_refresh_builds_normal_and_migration_actions(tmp_path: Path) ->
     tab = bare_main_tab(tmp_path / "samling")
     tab.button_frame = FakeWidget()
     tab._button = FakeWidget
-    tab._add_tooltip = lambda _widget, _text: None
+    tooltips: dict[FakeWidget, str] = {}
+    tab._add_tooltip = lambda widget, tooltip_text: tooltips.update({widget: tooltip_text})
     tab._on_close = lambda: None
     tab.create_collection_tooltip = SimpleNamespace(text="", hide=lambda: None)
     tab.padx = 4
@@ -98,6 +99,9 @@ def test_main_tab_refresh_builds_normal_and_migration_actions(tmp_path: Path) ->
         assert state.buttons[4].grid_options["row"] == 1
         assert state.buttons[4].grid_options["column"] == 2
         assert state.buttons[4].grid_options["columnspan"] == 2
+        assert tooltips[state.buttons[2]].startswith(
+            "Eldre backupfunksjon som skal fjernes. IKKE BRUK."
+        )
 
         tab.migration_required = True
         state = tab.refresh()

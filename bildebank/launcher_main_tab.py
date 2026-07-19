@@ -372,12 +372,14 @@ class MainTab:
         if collection_created:
             self._add_tooltip(
                 backup_button,
+                "Eldre backupfunksjon som skal fjernes. IKKE BRUK. "
                 "Kjører først backup dry-run og viser planen i loggen. "
                 "Faktisk backup speiler bildesamlingen og kan slette filer i backupmålet.",
             )
         else:
             self._add_tooltip(
                 backup_button,
+                "Eldre backupfunksjon som skal fjernes. IKKE BRUK. "
                 "Backup kan brukes etter at bildesamlingen er opprettet.",
             )
         snapshot_button = self._button(
