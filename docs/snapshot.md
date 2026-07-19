@@ -80,6 +80,8 @@ bildebank snapshot create --dry-run E:\Bildebank-snapshots\Familiebilder
 Dry-run skriver ingenting. Den viser blant annet antall filer, hva som er
 utelatt, estimert ny datamengde og ledig plass. Dry-run beregner ikke SHA-256;
 endelige avvik og den nøyaktige datamengden avgjøres under reell kjøring.
+Mens planen bygges, viser Bildebank hvilken fase som pågår og løpende antall
+filer på store bildesamlinger.
 
 ## Opprette et snapshot
 

@@ -9,11 +9,13 @@ import sqlite3
 import stat
 import unicodedata
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from . import db
+from .snapshot_progress import SnapshotPlanProgress, SnapshotPlanProgressCallback
 
 
 REPOSITORY_METADATA_FILENAME = ".bildebank-backup-repository.json"
@@ -143,6 +145,7 @@ def plan_snapshot(
     *,
     configured_face_database_dir: Path | None = None,
     note: str | None = None,
+    progress: SnapshotPlanProgressCallback | None = None,
 ) -> SnapshotPlan:
     """Build a fully read-only snapshot plan.
 
@@ -160,10 +163,46 @@ def plan_snapshot(
     repository = repository_input.resolve()
     validate_repository_location(source, repository)
 
+    if progress is not None:
+        progress(SnapshotPlanProgress(stage="database"))
     collection_id, database_rows = read_main_database(source)
+    if progress is not None:
+        progress(
+            SnapshotPlanProgress(
+                stage="database_complete",
+                completed_objects=len(database_rows),
+                total_objects=len(database_rows),
+            )
+        )
     repository_state = validate_repository(repository, source, collection_id)
 
-    inventory_files = inventory_tree(source)
+    if progress is not None:
+        progress(SnapshotPlanProgress(stage="inventory"))
+    inventory_files = inventory_tree(
+        source,
+        progress=(
+            None
+            if progress is None
+            else lambda completed, completed_bytes: progress(
+                SnapshotPlanProgress(
+                    stage="inventory",
+                    completed_objects=completed,
+                    completed_bytes=completed_bytes,
+                )
+            )
+        ),
+    )
+    if progress is not None:
+        inventory_bytes = sum(file.size_bytes for file in inventory_files)
+        progress(
+            SnapshotPlanProgress(
+                stage="inventory",
+                completed_objects=len(inventory_files),
+                total_objects=len(inventory_files),
+                completed_bytes=inventory_bytes,
+                total_bytes=inventory_bytes,
+            )
+        )
     external_database_files = inventory_external_face_databases(
         source,
         repository,
@@ -176,6 +215,7 @@ def plan_snapshot(
         database_rows,
         inventory_files,
         external_database_files,
+        progress=progress,
     )
     return SnapshotPlan(
         source_dir=source,
@@ -449,8 +489,13 @@ def validate_utc_timestamp(value: object, *, label: str) -> None:
         raise ValueError(f"Repositorymetadata har ugyldig {label}.") from exc
 
 
-def inventory_tree(root: Path) -> tuple[InventoryFile, ...]:
+def inventory_tree(
+    root: Path,
+    *,
+    progress: Callable[[int, int], None] | None = None,
+) -> tuple[InventoryFile, ...]:
     files: list[InventoryFile] = []
+    total_bytes = 0
     pending: list[tuple[Path, Path]] = [(root, Path())]
     while pending:
         directory, relative_directory = pending.pop()
@@ -485,6 +530,9 @@ def inventory_tree(root: Path) -> tuple[InventoryFile, ...]:
                     mtime_ns=entry_stat.st_mtime_ns,
                 )
             )
+            total_bytes += entry_stat.st_size
+            if progress is not None:
+                progress(len(files), total_bytes)
     return tuple(sorted(files, key=lambda item: item.relative_path.casefold()))
 
 
@@ -517,6 +565,8 @@ def build_snapshot_statistics(
     database_rows: tuple[DatabaseFileRow, ...],
     inventory_files: tuple[InventoryFile, ...],
     external_database_files: tuple[InventoryFile, ...],
+    *,
+    progress: SnapshotPlanProgressCallback | None = None,
 ) -> tuple[SnapshotInventoryStats, SnapshotStorageEstimate, tuple[str, ...]]:
     excluded_by_reason: dict[str, list[InventoryFile]] = {
         EXCLUSION_THUMBNAILS: [],
@@ -562,32 +612,49 @@ def build_snapshot_statistics(
     new_known_keys: set[tuple[str, int]] = set()
     wrong_size_bytes = 0
     invalid_path_candidates: dict[str, InventoryFile] = {}
-    for row in database_rows:
+    if progress is not None:
+        progress(
+            SnapshotPlanProgress(
+                stage="files",
+                total_objects=len(database_rows),
+            )
+        )
+    for completed, row in enumerate(database_rows, start=1):
         candidate = candidate_by_path.get(row.target_path)
         if candidate is None:
             missing += 1
-            continue
-        if portable_path_key(row.target_path) is None:
+        elif portable_path_key(row.target_path) is None:
             invalid_path_candidates[row.target_path] = candidate
-            continue
-        if candidate.size_bytes != row.size_bytes:
+        elif candidate.size_bytes != row.size_bytes:
             wrong_size += 1
             wrong_size_bytes += candidate.size_bytes
-            continue
-        matched += 1
-        key = (row.sha256, row.size_bytes)
-        object_path = snapshot_object_path(repository, row.sha256, row.size_bytes)
-        if object_path.exists() or object_path.is_symlink():
-            validate_regular_file_without_links(object_path, label="Backupobjekt")
-            actual_size = object_path.stat().st_size
-            if actual_size != row.size_bytes:
-                raise ValueError(
-                    "Et eksisterende backupobjekt har feil størrelse. Repositoryet må kontrolleres "
-                    f"før videre bruk: {object_path}"
-                )
-            reusable_keys.add(key)
         else:
-            new_known_keys.add(key)
+            matched += 1
+            key = (row.sha256, row.size_bytes)
+            object_path = snapshot_object_path(repository, row.sha256, row.size_bytes)
+            if object_path.exists() or object_path.is_symlink():
+                validate_regular_file_without_links(object_path, label="Backupobjekt")
+                actual_size = object_path.stat().st_size
+                if actual_size != row.size_bytes:
+                    raise ValueError(
+                        "Et eksisterende backupobjekt har feil størrelse. "
+                        "Repositoryet må kontrolleres før videre bruk: "
+                        f"{object_path}"
+                    )
+                reusable_keys.add(key)
+            else:
+                new_known_keys.add(key)
+        if progress is not None:
+            progress(
+                SnapshotPlanProgress(
+                    stage="files",
+                    completed_objects=completed,
+                    total_objects=len(database_rows),
+                )
+            )
+
+    if progress is not None:
+        progress(SnapshotPlanProgress(stage="storage"))
 
     migration_backups = [
         file

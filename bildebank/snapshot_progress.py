@@ -15,3 +15,15 @@ class SnapshotCreateProgress:
 
 
 SnapshotCreateProgressCallback = Callable[[SnapshotCreateProgress], None]
+
+
+@dataclass(frozen=True)
+class SnapshotPlanProgress:
+    stage: str
+    completed_objects: int = 0
+    total_objects: int = 0
+    completed_bytes: int = 0
+    total_bytes: int = 0
+
+
+SnapshotPlanProgressCallback = Callable[[SnapshotPlanProgress], None]

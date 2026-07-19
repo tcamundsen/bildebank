@@ -291,6 +291,8 @@ Initialisering skal følge disse reglene:
 
 `--dry-run` skal rapportere om en ny eller tom mappe ville blitt initialisert,
 men skal ikke opprette mappe eller metadata.
+På store samlinger skal dry-run vise løpende fremdrift mens databasen leses,
+filinventaret bygges og databaseførte filer sammenlignes.
 
 Dry-run skal være en rask plan, ikke en full integritetskontroll. Den skal:
 

@@ -50,6 +50,10 @@ class SnapshotCliTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 0, stderr)
+            self.assertIn("Snapshot dry-run: leser og kontrollerer hoveddatabasen", stdout)
+            self.assertIn("Snapshot dry-run: filer funnet=", stdout)
+            self.assertIn("Snapshot dry-run: filinventar=", stdout)
+            self.assertIn("Snapshot dry-run: beregner plassbehov", stdout)
             self.assertIn("Snapshot dry-run", stdout)
             self.assertIn(f"Repository: {repository}", stdout)
             self.assertIn("Mangler; ville blitt opprettet og initialisert", stdout)
@@ -92,7 +96,7 @@ class SnapshotCliTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
+            self.assertIn("Snapshot dry-run:", stdout)
             self.assertIn("ikke tom", stderr)
             self.assertEqual(unrelated.read_text(encoding="utf-8"), "ikke rør\n")
             self.assertFalse((repository / REPOSITORY_METADATA_FILENAME).exists())
@@ -482,7 +486,7 @@ class SnapshotCliTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
+            self.assertIn("Snapshot dry-run:", stdout)
             self.assertIn("backupobjekt har feil størrelse", stderr)
             self.assertEqual(object_path.read_bytes(), b"feil")
 
@@ -499,7 +503,7 @@ class SnapshotCliTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
+            self.assertIn("Snapshot dry-run:", stdout)
             self.assertIn("annen bildesamling", stderr)
 
     def test_snapshot_dry_run_rejects_unknown_repository_root_entry(self) -> None:
@@ -517,7 +521,7 @@ class SnapshotCliTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
+            self.assertIn("Snapshot dry-run:", stdout)
             self.assertIn("ukjent fil eller mappe", stderr)
             self.assertEqual(unrelated.read_text(encoding="utf-8"), "ikke rør\n")
 
@@ -700,7 +704,7 @@ class SnapshotCliTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
+            self.assertIn("Snapshot dry-run:", stdout)
             self.assertIn("Symbolske lenker", stderr)
             self.assertEqual(outside.read_text(encoding="utf-8"), "utenfor\n")
             self.assertFalse(repository.exists())
@@ -731,7 +735,7 @@ class SnapshotCliTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
+            self.assertIn("Snapshot dry-run:", stdout)
             self.assertIn("reparse", stderr.lower())
             self.assertEqual(marker.read_text(encoding="utf-8"), "ikke følg junction\n")
             self.assertFalse(repository.exists())
@@ -814,7 +818,7 @@ class SnapshotCliTests(unittest.TestCase):
                 )
 
             self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
+            self.assertIn("Snapshot dry-run:", stdout)
             self.assertIn("per-fil-grense", stderr)
             self.assertTrue(oversized.exists())
             self.assertFalse(repository.exists())

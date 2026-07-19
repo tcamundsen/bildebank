@@ -66,7 +66,7 @@ from .snapshot_check import (
     list_repository_snapshots,
 )
 from .snapshot_create import SnapshotCreationResult, create_snapshot
-from .snapshot_progress import SnapshotCreateProgress
+from .snapshot_progress import SnapshotCreateProgress, SnapshotPlanProgress
 from .snapshot_restore import (
     FullRestorePlan,
     FullRestoreResult,
@@ -2038,12 +2038,67 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
         print_snapshot_creation_result(result)
         return result.exit_code
 
-    plan = plan_snapshot(
-        target,
-        args.repository,
-        configured_face_database_dir=configured_face_dir,
-        note=args.note,
+    meter = ProgressMeter(
+        "Snapshot dry-run",
+        item_interval=1_000,
+        time_interval_seconds=1.0,
     )
+    plan_stage: list[str | None] = [None]
+
+    def show_plan_progress(progress: SnapshotPlanProgress) -> None:
+        stage_changed = progress.stage != plan_stage[0]
+        if stage_changed:
+            plan_stage[0] = progress.stage
+            meter.reset_eta()
+        if progress.stage == "database":
+            meter.message("Snapshot dry-run: leser og kontrollerer hoveddatabasen ...")
+            return
+        if progress.stage == "database_complete":
+            meter.message(
+                f"Snapshot dry-run: hoveddatabase={progress.completed_objects} filposter"
+            )
+            return
+        if progress.stage == "inventory":
+            if progress.completed_objects == 0:
+                meter.message("Snapshot dry-run: bygger filinventar ...")
+            elif progress.total_objects == 0:
+                meter.update_count(
+                    progress.completed_objects,
+                    action="filer funnet",
+                    details=f"registrert={format_bytes(progress.completed_bytes)}",
+                )
+            else:
+                meter.message(
+                    "Snapshot dry-run: filinventar="
+                    f"{progress.completed_objects} filer "
+                    f"({format_bytes(progress.completed_bytes)})"
+                )
+            return
+        if progress.stage == "files":
+            if progress.total_objects == 0:
+                meter.message("Snapshot dry-run: ingen databaseførte filer å sammenligne.")
+            else:
+                meter.update(
+                    progress.completed_objects,
+                    progress.total_objects,
+                    action="databaseførte filer kontrollert",
+                    eta=True,
+                    force=stage_changed or progress.completed_objects >= progress.total_objects,
+                )
+            return
+        if progress.stage == "storage":
+            meter.message("Snapshot dry-run: beregner plassbehov ...")
+
+    try:
+        plan = plan_snapshot(
+            target,
+            args.repository,
+            configured_face_database_dir=configured_face_dir,
+            note=args.note,
+            progress=show_plan_progress,
+        )
+    finally:
+        meter.done()
     print_snapshot_plan(plan)
     return 0
 
