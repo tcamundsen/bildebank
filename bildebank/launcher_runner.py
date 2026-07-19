@@ -52,6 +52,10 @@ def interrupt_process(process: subprocess.Popen[str]) -> None:
 def progress_log_key(message: str) -> str | None:
     if _is_tqdm_progress_line(message):
         return "tqdm-progress"
+    if message.startswith("Snapshot: "):
+        return "Snapshot"
+    if message.startswith("Snapshot check: "):
+        return "Snapshot check"
     for label in PROGRESS_LOG_LABELS:
         prefix = f"{label}:"
         rest = message[len(prefix):] if message.startswith(prefix) else ""

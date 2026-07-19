@@ -40,6 +40,7 @@ from .snapshot_repository import (
     publish_snapshot,
     utc_timestamp,
 )
+from .snapshot_progress import SnapshotCreateProgress, SnapshotCreateProgressCallback
 from .target_lock import TargetLock
 
 
@@ -71,6 +72,7 @@ def create_snapshot(
     *,
     face_config: FaceRecognitionConfig | None = None,
     note: str | None = None,
+    progress: SnapshotCreateProgressCallback | None = None,
 ) -> SnapshotCreationResult:
     clean_note = validate_snapshot_note(note)
     source = source_dir.resolve()
@@ -81,7 +83,19 @@ def create_snapshot(
     with RepositoryLock(repository, command="snapshot create"):
         inspection = inspect_repository(repository, source)
         with TargetLock(source, command="snapshot create"):
+            if progress is not None:
+                progress(SnapshotCreateProgress(stage="inventory"))
             inventory = inventory_tree(source)
+            if progress is not None:
+                progress(
+                    SnapshotCreateProgress(
+                        stage="inventory",
+                        completed_objects=len(inventory),
+                        total_objects=len(inventory),
+                        completed_bytes=sum(file.size_bytes for file in inventory),
+                        total_bytes=sum(file.size_bytes for file in inventory),
+                    )
+                )
             build_database_catalog(
                 source,
                 repository,
@@ -123,6 +137,7 @@ def create_snapshot(
                     staging,
                     database_error=database_error,
                     face_config=face_config,
+                    progress=progress,
                 )
             else:
                 try:
@@ -131,6 +146,7 @@ def create_snapshot(
                         repository,
                         staging,
                         face_config=face_config,
+                        progress=progress,
                     )
                 except SnapshotRecoveryRequiredError as exc:
                     if repository_initialized:
@@ -144,8 +160,11 @@ def create_snapshot(
                         staging,
                         database_error=str(exc),
                         face_config=face_config,
+                        progress=progress,
                     )
 
+            if progress is not None:
+                progress(SnapshotCreateProgress(stage="publish"))
             published = publish_built_snapshot(
                 repository,
                 staging,
@@ -154,6 +173,14 @@ def create_snapshot(
                 completed_at=utc_timestamp(),
                 note=clean_note,
             )
+            if progress is not None:
+                progress(
+                    SnapshotCreateProgress(
+                        stage="publish",
+                        completed_objects=1,
+                        total_objects=1,
+                    )
+                )
     return SnapshotCreationResult(
         repository=repository,
         repository_initialized=repository_initialized,

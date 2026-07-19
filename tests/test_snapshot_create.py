@@ -13,11 +13,45 @@ from bildebank.snapshot_create import (
     create_snapshot,
     validate_existing_recovery_repository,
 )
-from bildebank.snapshot_repository import RepositoryLockError, SnapshotStorageError
+from bildebank.snapshot_repository import COPY_CHUNK_SIZE, RepositoryLockError, SnapshotStorageError
 from bildebank.target_lock import LOCK_FILENAME
 
 
 class SnapshotCreateTests(unittest.TestCase):
+    def test_reports_inventory_file_bytes_databases_and_publishing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            db.init_database(target)
+            content = b"x" * (COPY_CHUNK_SIZE * 2 + 17)
+            (target / "stor-ukjent-fil.bin").write_bytes(content)
+            progress = []
+
+            result = create_snapshot(target, repository, progress=progress.append)
+
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(
+                {item.stage for item in progress},
+                {"inventory", "files", "databases", "publish"},
+            )
+            file_progress = [item for item in progress if item.stage == "files"]
+            self.assertEqual(file_progress[0].completed_objects, 0)
+            self.assertEqual(file_progress[0].total_objects, 1)
+            self.assertEqual(file_progress[0].total_bytes, len(content))
+            self.assertTrue(
+                any(0 < item.completed_bytes < len(content) for item in file_progress)
+            )
+            self.assertEqual(file_progress[-1].completed_objects, 1)
+            self.assertEqual(file_progress[-1].completed_bytes, len(content))
+            database_progress = [item for item in progress if item.stage == "databases"]
+            self.assertEqual(database_progress[0].completed_objects, 0)
+            self.assertEqual(database_progress[-1].completed_objects, 1)
+            self.assertEqual(
+                [item.completed_objects for item in progress if item.stage == "publish"],
+                [0, 1],
+            )
+
     def test_interrupted_object_copy_preserves_previous_snapshot_and_incomplete_run(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

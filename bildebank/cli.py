@@ -66,6 +66,7 @@ from .snapshot_check import (
     list_repository_snapshots,
 )
 from .snapshot_create import SnapshotCreationResult, create_snapshot
+from .snapshot_progress import SnapshotCreateProgress
 from .snapshot_restore import (
     FullRestorePlan,
     FullRestoreResult,
@@ -1980,12 +1981,60 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
     config = load_config(program_repo_root(), migrate_legacy=False)
     configured_face_dir = config.face_recognition.database_dir
     if not args.dry_run:
-        result = create_snapshot(
-            target,
-            args.repository,
-            face_config=config.face_recognition,
-            note=args.note,
-        )
+        meter = ProgressMeter("Snapshot")
+        current_stage: list[str | None] = [None]
+
+        def show_progress(progress: SnapshotCreateProgress) -> None:
+            stage_changed = progress.stage != current_stage[0]
+            if stage_changed:
+                current_stage[0] = progress.stage
+                meter.reset_eta()
+            if progress.stage == "inventory":
+                if progress.total_objects == 0:
+                    meter.message("Snapshot: lager filinventar ...")
+                elif stage_changed or progress.completed_objects >= progress.total_objects:
+                    meter.message(
+                        "Snapshot: filinventar="
+                        f"{progress.completed_objects} filer ({format_bytes(progress.completed_bytes)})"
+                    )
+                return
+            if progress.stage in {"files", "databases"}:
+                object_label = "filer" if progress.stage == "files" else "databaser"
+                details = (
+                    f"{object_label}={progress.completed_objects}/{progress.total_objects}"
+                )
+                if progress.total_bytes > 0:
+                    meter.update(
+                        progress.completed_bytes,
+                        progress.total_bytes,
+                        action="byte",
+                        details=details,
+                        eta=True,
+                        force=stage_changed
+                        or progress.completed_bytes >= progress.total_bytes,
+                    )
+                else:
+                    meter.update(
+                        progress.completed_objects,
+                        progress.total_objects,
+                        action=object_label,
+                        force=stage_changed
+                        or progress.completed_objects >= progress.total_objects,
+                    )
+                return
+            if progress.stage == "publish" and progress.completed_objects == 0:
+                meter.message("Snapshot: publiserer manifest ...")
+
+        try:
+            result = create_snapshot(
+                target,
+                args.repository,
+                face_config=config.face_recognition,
+                note=args.note,
+                progress=show_progress,
+            )
+        finally:
+            meter.done()
         print_snapshot_creation_result(result)
         return result.exit_code
 

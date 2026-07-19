@@ -119,6 +119,8 @@ class SnapshotCliTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 0, stderr)
+            self.assertIn("Snapshot: lager filinventar", stdout)
+            self.assertIn("Snapshot: publiserer manifest", stdout)
             self.assertIn("Snapshot opprettet", stdout)
             self.assertIn("Status: complete", stdout)
             self.assertIn("Repositoryet ble initialisert", stdout)
@@ -350,7 +352,7 @@ class SnapshotCliTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
+            self.assertIn("Snapshot: lager filinventar", stdout)
             self.assertIn("Recovery krever et allerede initialisert repository", stderr)
             self.assertTrue(repository.is_dir())
             self.assertEqual(list(repository.iterdir()), [])
@@ -402,7 +404,7 @@ class SnapshotCliTests(unittest.TestCase):
             )
 
             self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
+            self.assertIn("Snapshot: byte=", stdout)
             self.assertIn("Eksisterende backupobjekt besto ikke SHA-256-kontroll", stderr)
             self.assertEqual(object_path.read_bytes(), corrupt_content)
             self.assertEqual(len(list((repository / "snapshots").iterdir())), 1)
@@ -420,7 +422,7 @@ class SnapshotCliTests(unittest.TestCase):
                 )
 
             self.assertEqual(code, 1)
-            self.assertEqual(stdout, "")
+            self.assertIn("Snapshot: publiserer manifest", stdout)
             self.assertIn("Kunne ikke publisere snapshotet atomisk", stderr)
             self.assertEqual(list((repository / "snapshots").iterdir()), [])
             incomplete_runs = list((repository / "incomplete").iterdir())

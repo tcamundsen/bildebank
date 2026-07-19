@@ -89,6 +89,12 @@ Når planen ser riktig ut, kjører du:
 bildebank snapshot create E:\Bildebank-snapshots\Familiebilder
 ```
 
+Mens snapshotet opprettes, viser Bildebank først at filinventaret bygges og
+deretter løpende fremdrift for filer, byte og databaser. Store enkeltfiler
+oppdaterer byteverdien mens de leses. Til slutt vises det at manifestet
+publiseres. På store samlinger kan SHA-256-kontrollen fortsatt ta lang tid,
+selv når de fleste objektene allerede finnes i repositoryet.
+
 Du kan legge til en kommentar som ikke senere kan endres:
 
 ```powershell

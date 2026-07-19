@@ -42,6 +42,9 @@ def test_progress_log_key_recognizes_progress_updates_only() -> None:
     assert progress_log_key("geo-scan: scannet=12/40, gps=3, feil=0") == "geo-scan"
     assert progress_log_key("Import: importert=2/10, duplikater=1") == "Import"
     assert progress_log_key("Rescan-source: kontrollert=2/10, nye=1") == "Rescan-source"
+    assert progress_log_key("Snapshot: lager filinventar ...") == "Snapshot"
+    assert progress_log_key("Snapshot: filer=25/100, lest=1.0 GB/4.0 GB") == "Snapshot"
+    assert progress_log_key("Snapshot check: objekter=25/100, lest=1.0 GB/4.0 GB") == "Snapshot check"
     assert progress_log_key(" 59%|#####     | 206485/352210 [00:13<00:08, 16523.67KB/s]") == "tqdm-progress"
     assert progress_log_key("Thumbnails: 84 filer skal kontrolleres.") is None
     assert progress_log_key("Thumbnails: ferdig kontrollert 84/84 filer.") is None
@@ -101,4 +104,3 @@ def test_command_runner_reports_output_and_completion_on_ui_callback() -> None:
     ]
     assert runner.process is None
     assert not runner.cancellable
-

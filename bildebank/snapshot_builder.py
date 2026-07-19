@@ -43,6 +43,7 @@ from .snapshot_repository import (
     backup_sqlite_database,
     store_verified_file,
 )
+from .snapshot_progress import SnapshotCreateProgress, SnapshotCreateProgressCallback
 from .target_lock import LOCK_FILENAME
 
 
@@ -80,6 +81,7 @@ def build_normal_snapshot(
     staging: Path,
     *,
     face_config: FaceRecognitionConfig | None = None,
+    progress: SnapshotCreateProgressCallback | None = None,
 ) -> SnapshotBuildResult:
     source = source.resolve()
     require_active_target_lock(source)
@@ -102,11 +104,13 @@ def build_normal_snapshot(
         staging,
         database_rows=database_rows,
         candidates=candidates,
+        progress=progress,
     )
     database_records, raw_database_files, schema_versions, database_warnings = capture_databases(
         repository,
         staging,
         database_sources,
+        progress=progress,
     )
     all_file_records = (*file_records, *raw_database_files)
     has_deviations = any(record.integrity_status != "ok" for record in all_file_records) or any(
@@ -133,6 +137,7 @@ def build_recovery_snapshot(
     *,
     database_error: str,
     face_config: FaceRecognitionConfig | None = None,
+    progress: SnapshotCreateProgressCallback | None = None,
 ) -> SnapshotBuildResult:
     source = source.resolve()
     require_active_target_lock(source)
@@ -168,11 +173,13 @@ def build_recovery_snapshot(
         staging,
         database_rows=(),
         candidates=candidates,
+        progress=progress,
     )
     database_records, raw_database_files, schema_versions, database_warnings = capture_raw_databases(
         repository,
         staging,
         database_sources,
+        progress=progress,
     )
     return SnapshotBuildResult(
         collection_id=stored_collection_id,
@@ -274,6 +281,7 @@ def build_file_records(
     *,
     database_rows: tuple[DatabaseFileRow, ...],
     candidates: tuple[InventoryFile, ...],
+    progress: SnapshotCreateProgressCallback | None = None,
 ) -> tuple[tuple[SnapshotFileRecord, ...], tuple[str, ...]]:
     candidate_by_path = {file.relative_path: file for file in candidates}
     database_paths = {row.target_path for row in database_rows}
@@ -282,6 +290,8 @@ def build_file_records(
     )
     warnings: list[str] = []
     records: list[SnapshotFileRecord] = []
+    file_progress = _FileProgressReporter(candidates, progress)
+    file_progress.start()
 
     for row in database_rows:
         candidate = candidate_by_path.get(row.target_path)
@@ -306,11 +316,13 @@ def build_file_records(
             warnings.append(f"Databaseført fil mangler eller har utrygg sti: {row.target_path}")
             continue
 
+        file_progress.begin(candidate)
         try:
-            stored = store_verified_file(repository, staging, candidate.absolute_path)
+            stored = _store_candidate(repository, staging, candidate, file_progress)
         except SourceFileChangedError:
             raise
         except SourceFileUnreadableError:
+            file_progress.finish(candidate)
             records.append(
                 SnapshotFileRecord(
                     path=restore_path,
@@ -324,6 +336,7 @@ def build_file_records(
             )
             warnings.append(f"Databaseført fil kunne ikke leses: {row.target_path}")
             continue
+        file_progress.finish(candidate)
 
         if stored.reference.size_bytes != row.size_bytes:
             integrity_status = "size_mismatch"
@@ -358,12 +371,14 @@ def build_file_records(
         unsafe_path = path_key is None or (path_key is not None and path_key_counts[path_key] > 1)
         unknown_stored: StoredObject | None = None
         last_error: SourceFileError | None = None
+        file_progress.begin(file)
         for _attempt in range(2):
             try:
-                unknown_stored = store_verified_file(repository, staging, file.absolute_path)
+                unknown_stored = _store_candidate(repository, staging, file, file_progress)
                 break
             except SourceFileError as exc:
                 last_error = exc
+        file_progress.finish(file)
         if unknown_stored is None:
             integrity_status = (
                 "changed_during_snapshot" if isinstance(last_error, SourceFileChangedError) else "unreadable"
@@ -397,6 +412,72 @@ def build_file_records(
             )
         )
     return tuple(records), tuple(warnings)
+
+
+class _FileProgressReporter:
+    def __init__(
+        self,
+        candidates: tuple[InventoryFile, ...],
+        progress: SnapshotCreateProgressCallback | None,
+    ) -> None:
+        self.progress = progress
+        self.total_objects = len(candidates)
+        self.total_bytes = sum(file.size_bytes for file in candidates)
+        self.completed_objects = 0
+        self.completed_bytes = 0
+        self.current_bytes = 0
+        self.current_path: str | None = None
+
+    def start(self) -> None:
+        self._emit()
+
+    def begin(self, file: InventoryFile) -> None:
+        self.current_bytes = 0
+        self.current_path = file.relative_path
+
+    def on_chunk(self, chunk_size: int) -> None:
+        self.current_bytes += chunk_size
+        self._emit()
+
+    def finish(self, file: InventoryFile) -> None:
+        self.completed_objects += 1
+        self.completed_bytes += file.size_bytes
+        self.current_bytes = 0
+        self.current_path = None
+        self._emit()
+
+    def _emit(self) -> None:
+        if self.progress is None:
+            return
+        self.progress(
+            SnapshotCreateProgress(
+                stage="files",
+                completed_objects=self.completed_objects,
+                total_objects=self.total_objects,
+                completed_bytes=min(
+                    self.completed_bytes + self.current_bytes,
+                    self.total_bytes,
+                ),
+                total_bytes=self.total_bytes,
+                current_path=self.current_path,
+            )
+        )
+
+
+def _store_candidate(
+    repository: Path,
+    staging: Path,
+    file: InventoryFile,
+    progress: _FileProgressReporter,
+) -> StoredObject:
+    if progress.progress is None:
+        return store_verified_file(repository, staging, file.absolute_path)
+    return store_verified_file(
+        repository,
+        staging,
+        file.absolute_path,
+        on_source_chunk=progress.on_chunk,
+    )
 
 
 def warn_if_expected_object_missing(
@@ -558,6 +639,8 @@ def capture_databases(
     repository: Path,
     staging: Path,
     sources: tuple[DatabaseSource, ...],
+    *,
+    progress: SnapshotCreateProgressCallback | None = None,
 ) -> tuple[
     tuple[SnapshotDatabaseRecord, ...],
     tuple[SnapshotFileRecord, ...],
@@ -568,9 +651,20 @@ def capture_databases(
     raw_files: list[SnapshotFileRecord] = []
     schema_versions: dict[str, int | None] = {}
     warnings: list[str] = []
+    database_progress = _DatabaseProgressReporter(sources, progress)
+    database_progress.start()
     for source in sources:
+        database_progress.begin(source)
         try:
-            backup = backup_sqlite_database(repository, staging, source.source_path)
+            if progress is None:
+                backup = backup_sqlite_database(repository, staging, source.source_path)
+            else:
+                backup = backup_sqlite_database(
+                    repository,
+                    staging,
+                    source.source_path,
+                    on_backup_progress=database_progress.on_backup_progress,
+                )
         except SourceDatabaseError as exc:
             if source.role == "main":
                 raise SnapshotRecoveryRequiredError(str(exc)) from exc
@@ -586,6 +680,7 @@ def capture_databases(
                 f"Tilleggsdatabasen ble bare sikret som rå redningsdata: "
                 f"{source.source_path_display}: {exc}"
             )
+            database_progress.finish(source)
             continue
         records.append(
             SnapshotDatabaseRecord(
@@ -604,6 +699,7 @@ def capture_databases(
         schema_versions[source.role] = backup.schema_version
         if source.role.startswith("auxiliary:"):
             warnings.append(f"Ukjent SQLite-database ble tatt med: {source.source_path_display}")
+        database_progress.finish(source)
     return tuple(records), tuple(raw_files), schema_versions, tuple(warnings)
 
 
@@ -611,6 +707,8 @@ def capture_raw_databases(
     repository: Path,
     staging: Path,
     sources: tuple[DatabaseSource, ...],
+    *,
+    progress: SnapshotCreateProgressCallback | None = None,
 ) -> tuple[
     tuple[SnapshotDatabaseRecord, ...],
     tuple[SnapshotFileRecord, ...],
@@ -621,7 +719,10 @@ def capture_raw_databases(
     raw_files: list[SnapshotFileRecord] = []
     schema_versions: dict[str, int | None] = {}
     warnings: list[str] = []
+    database_progress = _DatabaseProgressReporter(sources, progress)
+    database_progress.start()
     for source in sources:
+        database_progress.begin(source)
         database_record, database_raw_files = capture_raw_database(repository, staging, source)
         records.append(database_record)
         raw_files.extend(database_raw_files)
@@ -630,7 +731,66 @@ def capture_raw_databases(
             warnings.append(f"Rå databasefil kunne ikke leses: {source.source_path_display}")
         else:
             warnings.append(f"Database ble sikret som rå redningsdata: {source.source_path_display}")
+        database_progress.finish(source)
     return tuple(records), tuple(raw_files), schema_versions, tuple(warnings)
+
+
+class _DatabaseProgressReporter:
+    def __init__(
+        self,
+        sources: tuple[DatabaseSource, ...],
+        progress: SnapshotCreateProgressCallback | None,
+    ) -> None:
+        self.progress = progress
+        self.total_objects = len(sources)
+        self.source_sizes = {source.role: _regular_file_size(source.source_path) for source in sources}
+        self.total_bytes = sum(self.source_sizes.values())
+        self.completed_objects = 0
+        self.completed_bytes = 0
+        self.current_bytes = 0
+        self.current_path: str | None = None
+
+    def start(self) -> None:
+        self._emit()
+
+    def begin(self, source: DatabaseSource) -> None:
+        self.current_bytes = 0
+        self.current_path = source.source_path_display
+
+    def on_backup_progress(self, completed_bytes: int, _total_bytes: int) -> None:
+        self.current_bytes = completed_bytes
+        self._emit()
+
+    def finish(self, source: DatabaseSource) -> None:
+        self.completed_objects += 1
+        self.completed_bytes += self.source_sizes[source.role]
+        self.current_bytes = 0
+        self.current_path = None
+        self._emit()
+
+    def _emit(self) -> None:
+        if self.progress is None:
+            return
+        self.progress(
+            SnapshotCreateProgress(
+                stage="databases",
+                completed_objects=self.completed_objects,
+                total_objects=self.total_objects,
+                completed_bytes=min(
+                    self.completed_bytes + self.current_bytes,
+                    self.total_bytes,
+                ),
+                total_bytes=self.total_bytes,
+                current_path=self.current_path,
+            )
+        )
+
+
+def _regular_file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size if path.is_file() else 0
+    except OSError:
+        return 0
 
 
 def capture_raw_database(

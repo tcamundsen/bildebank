@@ -177,6 +177,7 @@ class LauncherApp:
             is_busy=lambda: self.busy,
             post_to_ui=self._post_to_tk,
             log=self._log,
+            log_progress=self._log_process_output,
             refresh_launcher=self._refresh_state,
             set_launcher_buttons_enabled=self._set_buttons_enabled,
             add_tooltip=self._add_tooltip,

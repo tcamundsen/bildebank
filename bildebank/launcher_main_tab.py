@@ -43,6 +43,7 @@ from .snapshot_create import (
     create_snapshot,
     validate_existing_recovery_repository,
 )
+from .snapshot_progress import SnapshotCreateProgress, SnapshotCreateProgressCallback
 from .launcher_widgets import Tooltip
 
 
@@ -77,12 +78,24 @@ def plan_launcher_snapshot(
         )
 
 
-def create_launcher_snapshot(collection: Path, repository: Path) -> SnapshotCreationResult:
+def create_launcher_snapshot(
+    collection: Path,
+    repository: Path,
+    *,
+    progress: SnapshotCreateProgressCallback | None = None,
+) -> SnapshotCreationResult:
     config = load_config(program_repo_root(), migrate_legacy=False)
+    if progress is None:
+        return create_snapshot(
+            collection,
+            repository,
+            face_config=config.face_recognition,
+        )
     return create_snapshot(
         collection,
         repository,
         face_config=config.face_recognition,
+        progress=progress,
     )
 
 
@@ -217,6 +230,7 @@ class MainTab:
         is_busy: Callable[[], bool],
         post_to_ui: Callable[[Callable[[], None]], bool],
         log: Callable[[str], None],
+        log_progress: Callable[[str], None],
         refresh_launcher: Callable[[], None],
         set_launcher_buttons_enabled: Callable[[bool], None],
         add_tooltip: Callable[[Any, str], None],
@@ -239,6 +253,7 @@ class MainTab:
         self._is_busy = is_busy
         self._post_to_ui = post_to_ui
         self._log = log
+        self._log_progress = log_progress
         self._refresh_launcher = refresh_launcher
         self._set_launcher_buttons_enabled = set_launcher_buttons_enabled
         self._add_tooltip = add_tooltip
@@ -716,8 +731,58 @@ class MainTab:
         )
 
     def _run_snapshot_create(self, repository: Path) -> None:
+        last_progress_at = [0.0]
+        last_stage: list[str | None] = [None]
+        last_objects = [-1]
+
+        def report_progress(progress: SnapshotCreateProgress) -> None:
+            now = time.monotonic()
+            stage_changed = progress.stage != last_stage[0]
+            finished = progress.completed_objects >= progress.total_objects
+            if (
+                not stage_changed
+                and progress.completed_objects == last_objects[0]
+                and not finished
+                and now - last_progress_at[0] < 0.5
+            ):
+                return
+            if (
+                not stage_changed
+                and progress.completed_objects not in {0, progress.total_objects}
+                and progress.completed_objects % 25 != 0
+                and now - last_progress_at[0] < 0.5
+            ):
+                return
+            last_progress_at[0] = now
+            last_stage[0] = progress.stage
+            last_objects[0] = progress.completed_objects
+            if progress.stage == "inventory":
+                message = (
+                    "Snapshot: lager filinventar ..."
+                    if progress.total_objects == 0
+                    else "Snapshot: filinventar="
+                    f"{progress.completed_objects} filer "
+                    f"({format_bytes(progress.completed_bytes)})"
+                )
+            elif progress.stage in {"files", "databases"}:
+                label = "filer" if progress.stage == "files" else "databaser"
+                message = (
+                    f"Snapshot: {label}={progress.completed_objects}/{progress.total_objects}, "
+                    f"lest={format_bytes(progress.completed_bytes)}/"
+                    f"{format_bytes(progress.total_bytes)}"
+                )
+            else:
+                if progress.completed_objects > 0:
+                    return
+                message = "Snapshot: publiserer manifest ..."
+            self._post_to_ui(lambda message=message: self._log_progress(message))
+
         self._run_background_task(
-            lambda _cancel_requested: create_launcher_snapshot(self.collection_path, repository),
+            lambda _cancel_requested: create_launcher_snapshot(
+                self.collection_path,
+                repository,
+                progress=report_progress,
+            ),
             running_message=f"Oppretter versjonert backup i {repository} ...",
             failure_message="Versjonert backup feilet. Ingen snapshot ble publisert.",
             on_success=self._snapshot_creation_finished,
@@ -810,7 +875,7 @@ class MainTab:
                 f"objekter={progress.checked_objects}/{progress.total_objects}, "
                 f"lest={format_bytes(progress.checked_bytes)}/{format_bytes(progress.total_bytes)}"
             )
-            self._post_to_ui(lambda: self._log(message))
+            self._post_to_ui(lambda: self._log_progress(message))
 
         self._run_background_task(
             lambda cancel_requested: check_snapshot_repository(

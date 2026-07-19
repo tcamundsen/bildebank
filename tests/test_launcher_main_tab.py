@@ -67,6 +67,7 @@ def bare_main_tab(collection_path: Path) -> MainTab:
     tab.server_port = 8765
     tab.server_launch_options = None
     tab.root = object()
+    tab._log_progress = lambda _message: None
     return tab
 
 
@@ -547,7 +548,8 @@ def test_main_tab_snapshot_uses_internal_plan_then_internal_create(tmp_path: Pat
         return_value=expected_result,
     ) as creator:
         assert create_task(lambda: False) is expected_result
-    creator.assert_called_once_with(collection, repository)
+    assert creator.call_args.args == (collection, repository)
+    assert callable(creator.call_args.kwargs["progress"])
 
 
 def test_snapshot_result_distinguishes_complete_degraded_and_recovery(tmp_path: Path) -> None:

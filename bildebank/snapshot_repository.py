@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, Callable
 
 from . import __version__
 from .snapshot import (
@@ -302,7 +302,13 @@ def create_staging_run(repository: Path, *, run_id: str | None = None) -> Path:
     return staging
 
 
-def store_verified_file(repository: Path, staging: Path, source: Path) -> StoredObject:
+def store_verified_file(
+    repository: Path,
+    staging: Path,
+    source: Path,
+    *,
+    on_source_chunk: Callable[[int], None] | None = None,
+) -> StoredObject:
     validate_staging_path(repository, staging)
     validate_existing_path_components(source)
     candidate_directory = staging / "object-candidates"
@@ -324,7 +330,15 @@ def store_verified_file(repository: Path, staging: Path, source: Path) -> Stored
             raise SourceFileChangedError(f"Objektkilden ble byttet før kopiering: {source}")
         with os.fdopen(source_fd, "rb", closefd=True) as source_file, candidate.open("xb") as target_file:
             source_fd = -1
-            size_bytes = copy_and_hash(source_file, target_file, digest)
+            if on_source_chunk is None:
+                size_bytes = copy_and_hash(source_file, target_file, digest)
+            else:
+                size_bytes = copy_and_hash(
+                    source_file,
+                    target_file,
+                    digest,
+                    on_chunk=on_source_chunk,
+                )
             target_file.flush()
             os.fsync(target_file.fileno())
         try:
@@ -362,7 +376,13 @@ def store_verified_file(repository: Path, staging: Path, source: Path) -> Stored
     return StoredObject(reference=reference, reused=False, source_mtime_ns=after.st_mtime_ns)
 
 
-def backup_sqlite_database(repository: Path, staging: Path, source: Path) -> SQLiteBackup:
+def backup_sqlite_database(
+    repository: Path,
+    staging: Path,
+    source: Path,
+    *,
+    on_backup_progress: Callable[[int, int], None] | None = None,
+) -> SQLiteBackup:
     validate_staging_path(repository, staging)
     sqlite_directory = staging / "sqlite-copies"
     sqlite_directory.mkdir(exist_ok=True)
@@ -379,7 +399,26 @@ def backup_sqlite_database(repository: Path, staging: Path, source: Path) -> SQL
         try:
             destination_connection = sqlite3.connect(staging_path)
             try:
-                source_connection.backup(destination_connection)
+                if on_backup_progress is None:
+                    source_connection.backup(destination_connection)
+                else:
+                    page_size = int(source_connection.execute("PRAGMA page_size").fetchone()[0])
+
+                    def report_backup_progress(
+                        _status: int,
+                        remaining_pages: int,
+                        total_pages: int,
+                    ) -> None:
+                        on_backup_progress(
+                            max(total_pages - remaining_pages, 0) * page_size,
+                            total_pages * page_size,
+                        )
+
+                    source_connection.backup(
+                        destination_connection,
+                        pages=256,
+                        progress=report_backup_progress,
+                    )
                 destination_connection.commit()
             finally:
                 destination_connection.close()
@@ -908,7 +947,13 @@ def open_source_without_following_links(path: Path) -> int:
         raise SourceFileUnreadableError(f"Kunne ikke åpne objektkilden: {path}: {exc}") from exc
 
 
-def copy_and_hash(source: BinaryIO, destination: BinaryIO, digest: object) -> int:
+def copy_and_hash(
+    source: BinaryIO,
+    destination: BinaryIO,
+    digest: object,
+    *,
+    on_chunk: Callable[[int], None] | None = None,
+) -> int:
     size_bytes = 0
     while True:
         chunk = source.read(COPY_CHUNK_SIZE)
@@ -917,6 +962,8 @@ def copy_and_hash(source: BinaryIO, destination: BinaryIO, digest: object) -> in
         destination.write(chunk)
         digest.update(chunk)  # type: ignore[attr-defined]
         size_bytes += len(chunk)
+        if on_chunk is not None:
+            on_chunk(len(chunk))
 
 
 def verify_file_hash(path: Path, reference: ObjectReference, *, label: str) -> None:
