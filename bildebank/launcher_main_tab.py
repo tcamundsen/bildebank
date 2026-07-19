@@ -777,7 +777,11 @@ class MainTab:
                 if progress.completed_objects > 0:
                     return
                 message = "Snapshot: publiserer manifest ..."
-            self._post_to_ui(lambda message=message: self._log_progress(message))
+
+            def log_progress() -> None:
+                self._log_progress(message)
+
+            self._post_to_ui(log_progress)
 
         self._run_background_task(
             lambda _cancel_requested: create_launcher_snapshot(
