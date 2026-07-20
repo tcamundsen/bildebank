@@ -1,8 +1,9 @@
-# Windows-pilot for versjonert backup
+# Windows-pilot for snapshots
 
 Denne sjekklisten skal gjennomføres på Windows 11 før første versjon regnes som
-ferdig. Bruk en liten testsamling og et eksternt medium av samme type som skal
-brukes til virkelig backup. Ingen test skal kjøres mot eneste kopi av bilder.
+ferdig. Bruk en liten testsamling og en ekstern lagringsenhet av samme type som
+senere skal brukes til snapshots. Ingen test skal kjøres mot den eneste kopien
+av bilder.
 
 ## Testoppsett
 
@@ -39,7 +40,7 @@ repositoryet. Skriptet tar med støttede mediefiler under blant annet `deleted\`
 men utelater `thumbs\`. Det nekter å overskrive en eksisterende liste uten
 `-Force`.
 
-## Oppretting og inkrementell backup
+## Oppretting og inkrementelle snapshots
 
 1. Kjør `snapshot create --dry-run` mot en manglende repositorymappe.
 2. Kontroller at dry-run ikke oppretter mappe, lås eller metadata.

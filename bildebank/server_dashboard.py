@@ -336,12 +336,12 @@ def snapshot_repositories_section_html(summary: DashboardSummary) -> str:
             "Ingen publiserte snapshots er registrert på denne installasjonen.",
         )
     return dashboard_card_html(
-        "Versjonert backup",
+        "Snapshots",
         f"""
         <dl class="info-list">
           {rows}
         </dl>
-        <p><a href="/help/snapshot.md">Hjelp om versjonert backup</a></p>
+        <p><a href="/help/snapshot.md">Hjelp om snapshots</a></p>
         """,
     )
 

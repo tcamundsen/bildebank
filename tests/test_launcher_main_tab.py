@@ -59,7 +59,6 @@ def bare_main_tab(collection_path: Path) -> MainTab:
     tab.choose_collection_button = FakeButton()
     tab.create_collection_button = FakeButton()
     tab.start_server_button = FakeButton()
-    tab.backup_button = FakeButton()
     tab.snapshot_button = FakeButton()
     tab.snapshot_check_button = FakeButton()
     tab.update_button = FakeButton()
@@ -92,19 +91,16 @@ def test_main_tab_refresh_builds_normal_and_migration_actions(tmp_path: Path) ->
         assert [button.options["text"] for button in state.buttons] == [
             "Start Bildebank i nettleser",
             "Se etter oppdateringer",
-            "Ta backup",
-            "Ta versjonert backup",
-            "Kontroller versjonert backup",
+            "Opprett snapshot",
+            "Kontroller snapshots",
         ]
+        assert state.buttons[2].grid_options["row"] == 1
+        assert state.buttons[2].grid_options["column"] == 0
+        assert state.buttons[2].grid_options["columnspan"] == 2
         assert state.buttons[3].grid_options["row"] == 1
-        assert state.buttons[3].grid_options["column"] == 0
+        assert state.buttons[3].grid_options["column"] == 2
         assert state.buttons[3].grid_options["columnspan"] == 2
-        assert state.buttons[4].grid_options["row"] == 1
-        assert state.buttons[4].grid_options["column"] == 2
-        assert state.buttons[4].grid_options["columnspan"] == 2
-        assert tooltips[state.buttons[2]].startswith(
-            "Eldre backupfunksjon som skal fjernes. IKKE BRUK."
-        )
+        assert tooltips[state.buttons[2]].startswith("Lager et nytt, uforanderlig snapshot")
 
         tab.migration_required = True
         state = tab.refresh()
@@ -289,7 +285,6 @@ def test_main_action_buttons_without_collection_keep_update_available(tmp_path: 
     tab = bare_main_tab(tmp_path / "samling")
     for button in (
         tab.start_server_button,
-        tab.backup_button,
         tab.snapshot_button,
         tab.snapshot_check_button,
         tab.update_button,
@@ -302,7 +297,6 @@ def test_main_action_buttons_without_collection_keep_update_available(tmp_path: 
     assert tab.choose_collection_button.options["state"] == "normal"
     assert tab.create_collection_button.options["state"] == "normal"
     assert tab.start_server_button.options["state"] == "disabled"
-    assert tab.backup_button.options["state"] == "disabled"
     assert tab.snapshot_button.options["state"] == "disabled"
     assert tab.snapshot_check_button.options["state"] == "normal"
     assert tab.update_button.options["state"] == "normal"
@@ -312,7 +306,6 @@ def test_main_action_buttons_with_collection_disable_create(tmp_path: Path) -> N
     tab = bare_main_tab(tmp_path / "samling")
     for button in (
         tab.start_server_button,
-        tab.backup_button,
         tab.snapshot_button,
         tab.snapshot_check_button,
         tab.update_button,
@@ -325,7 +318,6 @@ def test_main_action_buttons_with_collection_disable_create(tmp_path: Path) -> N
     assert tab.choose_collection_button.options["state"] == "normal"
     assert tab.create_collection_button.options["state"] == "disabled"
     assert tab.start_server_button.options["state"] == "normal"
-    assert tab.backup_button.options["state"] == "normal"
     assert tab.snapshot_button.options["state"] == "normal"
     assert tab.snapshot_check_button.options["state"] == "normal"
     assert tab.update_button.options["state"] == "normal"
@@ -347,42 +339,6 @@ def test_create_collection_tooltip_explains_disabled_existing_collection(tmp_pat
 
     assert tab._create_collection_tooltip(True) == "Mappen er allerede en bildesamling."
     assert "Lag en bildesamling" in tab._create_collection_tooltip(False)
-
-
-def test_main_tab_backup_runs_dry_run_before_confirmed_backup(tmp_path: Path) -> None:
-    collection = tmp_path / "samling"
-    backup_parent = tmp_path / "backup"
-    tab = bare_main_tab(collection)
-    calls: list[tuple[list[str], dict[str, object]]] = []
-    questions: list[dict[str, object]] = []
-    tab._log = lambda _message: None
-    tab._refresh_launcher = lambda: None
-    tab._run_waiting_command = lambda command, **options: calls.append((command, options))
-    tab._show_log_review_question = (
-        lambda _title, _message, **options: questions.append(options)
-    )
-
-    with patch("tkinter.filedialog.askdirectory", return_value=str(backup_parent)) as chooser:
-        tab._start_backup_flow()
-
-    chooser.assert_called_once_with(
-        title="Velg backup-plassering",
-        initialdir=str(collection.parent),
-    )
-    assert calls[0][0][-3:] == ["backup", "--dry-run", str(backup_parent)]
-    assert calls[0][1]["cancellable"] is True
-
-    on_dry_run_success = calls[0][1]["on_success"]
-    assert callable(on_dry_run_success)
-    on_dry_run_success()
-    assert questions[0]["yes_text"] == "Kjør backup"
-
-    on_yes = questions[0]["on_yes"]
-    assert callable(on_yes)
-    on_yes()
-    assert "--dry-run" not in calls[1][0]
-    assert calls[1][0][-2:] == ["backup", str(backup_parent)]
-    assert calls[1][1]["cancellable"] is True
 
 
 def test_snapshot_plan_log_lines_show_capacity_and_warnings(tmp_path: Path) -> None:
@@ -407,7 +363,7 @@ def test_snapshot_plan_log_lines_show_capacity_and_warnings(tmp_path: Path) -> N
 
     lines = snapshot_plan_log_lines(plan)
 
-    assert lines[0] == "Plan for versjonert backup:"
+    assert lines[0] == "Plan for snapshot:"
     assert any("vil bli opprettet" in line for line in lines)
     assert any("Estimert plass er tilstrekkelig: ja" in line for line in lines)
     assert any("ADVARSEL: Dry-run beregner ikke SHA-256" in line for line in lines)
@@ -557,7 +513,7 @@ def test_main_tab_snapshot_uses_internal_plan_then_internal_create(tmp_path: Pat
         tab._start_snapshot_flow()
 
     chooser.assert_called_once_with(
-        title="Velg mappe for versjonert backup",
+        title="Velg snapshot-repository",
         initialdir=str(collection.parent),
         mustexist=False,
     )
@@ -598,7 +554,7 @@ def test_main_tab_snapshot_uses_internal_plan_then_internal_create(tmp_path: Pat
     plan_success = jobs[0][1]["on_success"]
     assert callable(plan_success)
     plan_success(plan)
-    assert logged[0] == "Plan for versjonert backup:"
+    assert logged[0] == "Plan for snapshot:"
     assert questions[0]["yes_text"] == "Opprett snapshot"
 
     on_yes = questions[0]["on_yes"]
@@ -771,7 +727,7 @@ def test_snapshot_result_distinguishes_complete_degraded_and_recovery(tmp_path: 
     showinfo.assert_called_once()
     assert showwarning.call_count == 2
     assert remember.call_count == 3
-    assert showwarning.call_args_list[0].args[0] == "Versjonert backup opprettet med problemer"
+    assert showwarning.call_args_list[0].args[0] == "Snapshot opprettet med problemer"
     assert showwarning.call_args_list[1].args[0] == "Recovery-snapshot opprettet"
 
 
@@ -792,7 +748,7 @@ def test_launcher_full_snapshot_check_uses_shared_cancellable_control(tmp_path: 
         tab._start_snapshot_check_flow()
 
     chooser.assert_called_once_with(
-        title="Velg versjonert backup som skal kontrolleres",
+        title="Velg snapshot-repository som skal kontrolleres",
         initialdir=str(collection.parent),
         mustexist=True,
     )
@@ -849,7 +805,7 @@ def test_launcher_snapshot_check_result_distinguishes_success_damage_and_cancel(
 
     showinfo.assert_called_once()
     assert [call.args[0] for call in showwarning.call_args_list] == [
-        "Backupen har integritetsavvik",
+        "Snapshot-repositoryet har integritetsavvik",
         "Kontroll avbrutt",
     ]
 

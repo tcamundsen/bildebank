@@ -17,7 +17,7 @@ Hvis bruker starter prompt med "Spørsmål:" så skal du ikke endre kode.
 - Ingen kommando skal permanent slette bildefiler.
 - "bildebank remove" skal bare flytte filer til deleted/ og markere metadata,
   ikke slette fysisk.
-- backup skal kopiere deleted/.
+- Snapshots skal alltid ta med `deleted/`.
 - Destruktive operasjoner skal ha dry-run når praktisk mulig.
 - Endre bare det oppgaven ber om.
 - Ikke refaktorer bredt uten eksplisitt beskjed.

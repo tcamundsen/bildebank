@@ -13,12 +13,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
 
 from . import __version__, db
-from .backup import (
-    BACKUP_ADOPTION_CONFIRMATION,
-    plan_backup_adoption,
-    run_backup,
-    run_backup_adoption,
-)
 from .cli_check_source import run_check_source
 from .cli_doctor import run_doctor
 from .cli_face import run_download_face_model, run_face_command
@@ -567,34 +561,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Vis hvor Bildebank og kjente bildesamlinger ligger",
         description="Vis hvor Bildebank og kjente bildesamlinger ligger",
     )
-    backup = add_command(
-        subparsers,
-        "backup",
-        usage="bildebank backup [valg] plassering",
-        help="Lag eller oppdater backup av bildesamlingen",
-        description=(
-            "Lag eller oppdater backup av bildesamlingen. "
-            "NB: les dokumentasjonen for denne kommandoen før du betror alle "
-            "bildene dine til bildebank."
-        ),
-    )
-    backup.add_argument("destination", metavar="plassering", type=Path, help="Eksisterende mappe der backupen skal ligge")
-    backup.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Vis hva som ville blitt gjort uten å kopiere eller endre filer",
-    )
-    backup.add_argument(
-        "--adopt",
-        action="store_true",
-        help="Registrer en eksisterende backupmappe som backup av denne bildesamlingen",
-    )
     snapshot = add_command(
         subparsers,
         "snapshot",
         usage="bildebank snapshot <kommando> [valg]",
         help="Lag og kontroller versjonerte snapshots",
-        description="Lag og kontroller versjonerte snapshots uten å endre dagens backup-mirror.",
+        description="Opprett, kontroller og gjenopprett snapshots.",
     )
     snapshot_subparsers = snapshot.add_subparsers(dest="snapshot_command", required=True)
     snapshot_create = snapshot_subparsers.add_parser(
@@ -648,7 +620,7 @@ def build_parser() -> argparse.ArgumentParser:
     snapshot_check = snapshot_subparsers.add_parser(
         "check",
         usage="bildebank snapshot check repository [--full]",
-        description="Kontroller snapshotmetadata og backupobjekter uten å endre dem.",
+        description="Kontroller snapshotmetadata og objekter uten å endre dem.",
     )
     snapshot_check.add_argument(
         "repository",
@@ -1084,7 +1056,7 @@ def main_help_epilog() -> str:
     lines.append(
         "Bildebank-vinduet kan opprette samling, importere bilder, starte nettleseren,"
     )
-    lines.append("ta backup og kjøre vanlig vedlikehold.")
+    lines.append("opprette snapshots og kjøre vanlig vedlikehold.")
     lines.append("")
     lines.append("Full kommandoliste:")
     lines.append("   docs\\reference.md")
@@ -1111,7 +1083,6 @@ NO_TARGET_COMMANDS = {
 
 TARGET_COMMANDS = {
     "migrate",
-    "backup",
     "snapshot",
     "vacuum",
     "geo-scan",
@@ -1273,9 +1244,6 @@ def should_recover_pending_file_moves(args: argparse.Namespace) -> bool:
 def run_target_command(args: argparse.Namespace, target: Path) -> int:
     if args.command == "migrate":
         return run_migrate(target, check=args.check)
-
-    if args.command == "backup":
-        return run_backup_command(target, args.destination, dry_run=args.dry_run, adopt=args.adopt)
 
     if args.command == "snapshot":
         return run_snapshot_command(args, target)
@@ -1939,46 +1907,6 @@ def run_where_is() -> int:
     return 0
 
 
-def run_backup_command(target: Path, destination: Path, *, dry_run: bool = False, adopt: bool = False) -> int:
-    if adopt:
-        return run_backup_adopt_command(target, destination, dry_run=dry_run)
-
-    stats = run_backup(target, destination, dry_run=dry_run)
-    plan = stats.plan
-    print("Source:")
-    print(f"  {plan.source_dir}")
-    print()
-    print("Backup parent:")
-    print(f"  {plan.backup_parent}")
-    print()
-    print("Backup directory:")
-    print(f"  {plan.backup_dir}")
-    print()
-    print("Mode:")
-    print("  Dry run" if dry_run else "  Backup")
-    print()
-    print("Result:")
-    if dry_run:
-        action = "Would update backup." if plan.existing_backup else "Would create new backup."
-        print(f"  {action}")
-        print(f"  motor={stats.engine}")
-        if stats.warning:
-            print(f"  ADVARSEL: {stats.warning}")
-        return 0
-    action = "Updated backup." if plan.existing_backup else "Created new backup."
-    print(f"  {action}")
-    print(f"  motor={stats.engine}")
-    if stats.warning:
-        print(f"  ADVARSEL: {stats.warning}")
-    if stats.stats_available:
-        print(
-            "  "
-            f"files_copied={stats.files_copied}, files_deleted={stats.files_deleted}, "
-            f"dirs_created={stats.dirs_created}, dirs_deleted={stats.dirs_deleted}"
-        )
-    return 0
-
-
 def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
     if args.snapshot_command != "create":
         raise ValueError(f"Ukjent snapshot-kommando: {args.snapshot_command}")
@@ -2456,77 +2384,6 @@ def print_snapshot_plan(plan: SnapshotPlan) -> None:
         print(f"ADVARSEL: {warning}", file=sys.stderr)
     print()
     print("Dry-run: Ingen filer, metadata, mapper eller låser er opprettet eller endret.")
-
-
-def run_backup_adopt_command(target: Path, destination: Path, *, dry_run: bool = False) -> int:
-    plan = plan_backup_adoption(target, destination)
-    print_backup_adoption_report(plan, dry_run=dry_run)
-    if dry_run:
-        print("Dry-run: ingen endringer er gjort.")
-        return 0
-
-    print()
-    print("For å registrere denne mappen som backup av bildesamlingen, skriv:")
-    print(f"  {BACKUP_ADOPTION_CONFIRMATION}")
-    answer = input("> ")
-    if answer != BACKUP_ADOPTION_CONFIRMATION:
-        print("Avbrutt. Ingen endringer er gjort.")
-        return 0
-
-    plan = run_backup_adoption(target, destination)
-    print()
-    print("Backupen er registrert for denne bildesamlingen.")
-    print(f"Metadata: {plan.metadata_path}")
-    print("Kjør vanlig backup-kommando for å oppdatere selve backupen.")
-    return 0
-
-
-def print_backup_adoption_report(plan, *, dry_run: bool) -> None:  # noqa: ANN001
-    comparison = plan.comparison
-    print("Source:")
-    print(f"  {plan.source_dir}")
-    print()
-    print("Backup parent:")
-    print(f"  {plan.backup_parent}")
-    print()
-    print("Backup directory:")
-    print(f"  {plan.backup_dir}")
-    print()
-    print("Mode:")
-    print("  Adopt dry run" if dry_run else "  Adopt backup")
-    print()
-    print("Metadata:")
-    print(f"  {backup_metadata_state_text(plan.metadata_state)}")
-    print(f"  file={plan.metadata_path}")
-    print(f"  collection_id={plan.collection_id}")
-    print()
-    print("Comparison:")
-    print(f"  database_files={comparison.total_files}")
-    print(
-        "  "
-        f"matched={comparison.matched_files} "
-        f"({backup_match_percent(comparison.matched_files, comparison.total_files)})"
-    )
-    print(f"  missing={comparison.missing_files}")
-    print(f"  wrong_size_or_type={comparison.wrong_size_or_type_files}")
-    print(f"  extra_media_files={comparison.extra_media_files}")
-    print()
-    print("Result:")
-    print("  Would register backup." if dry_run else "  Ready to register backup.")
-
-
-def backup_metadata_state_text(state: str) -> str:
-    if state == "missing_metadata":
-        return "Mangler .bildebank-backup.json"
-    if state == "missing_backup_of":
-        return "Metadata finnes, men backup_of mangler"
-    return state
-
-
-def backup_match_percent(matched_files: int, total_files: int) -> str:
-    if total_files == 0:
-        return "0.0%"
-    return f"{matched_files / total_files * 100:.1f}%"
 
 
 @dataclass(frozen=True)

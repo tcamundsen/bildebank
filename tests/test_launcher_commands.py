@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 
 from bildebank.launcher_commands import (
-    backup_command,
     check_source_command,
     cleanup_pending_deletes_apply_command,
     cleanup_pending_deletes_list_command,
@@ -218,19 +217,6 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         "--dest",
         str(tmp_path / "eksport"),
         "--dry-run",
-    ]
-    assert backup_command(collection, tmp_path / "backup")[-4:] == [
-        "--target",
-        str(collection),
-        "backup",
-        str(tmp_path / "backup"),
-    ]
-    assert backup_command(collection, tmp_path / "backup", dry_run=True)[-5:] == [
-        "--target",
-        str(collection),
-        "backup",
-        "--dry-run",
-        str(tmp_path / "backup"),
     ]
     assert download_face_model_command()[-1:] == ["download-face-model"]
 

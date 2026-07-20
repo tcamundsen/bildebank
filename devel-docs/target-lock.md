@@ -23,7 +23,6 @@ flytting.
   databaseoppdatering.
 - `remove` og `undelete` bruker den felles modulen `file_lifecycle.py` fra både
   CLI og web. Modulen tar låsen før oppslag og holder den til etter commit.
-- `backup` låser kildesamlingen mens backup-speilet oppdateres.
 - `migrate` holder låsen mens hoveddatabasen migreres.
 - `make-thumbnails` holder låsen mens thumbnail-settet oppdateres.
 - `make-browser`, `make-person-browser` og

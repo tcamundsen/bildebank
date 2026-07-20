@@ -173,14 +173,6 @@ def export_person_command(
     return command
 
 
-def backup_command(collection_path: Path, backup_parent: Path, dry_run: bool = False) -> list[str]:
-    command = bildebank_command("--target", collection_path, "backup")
-    if dry_run:
-        command.append("--dry-run")
-    command.append(str(backup_parent))
-    return command
-
-
 def _program_repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 

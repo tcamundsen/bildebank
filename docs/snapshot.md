@@ -1,10 +1,10 @@
-# Versjonert backup med `snapshot`
+# Versjonerte sikkerhetskopier med `snapshot`
 
 <!-- CLI-HELP-START -->
 ```text
 usage: bildebank snapshot <kommando> [valg]
 
-Lag og kontroller versjonerte snapshots uten å endre dagens backup-mirror.
+Opprett, kontroller og gjenopprett snapshots.
 
 positional arguments:
   {create,list,problems,check,restore,restore-file}
@@ -14,23 +14,22 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-`snapshot` lager versjonerte sikkerhetskopier av en bildesamling. Hver kjøring
-bevarer en ny tilstand. Et eldre snapshot blir ikke gjort likt dagens samling
-når du tar en ny sikkerhetskopi.
+`snapshot` lager en versjonert sikkerhetskopi av bildesamlingen. Hver gang du
+oppretter et snapshot, bevares den nye tilstanden uten at eldre snapshots blir
+endret. Du kan derfor gå tilbake til en tidligere tilstand selv om filer senere
+blir flyttet eller fjernet fra den aktive samlingen.
 
-En databasebackup som Bildebank selv har laget før en migrering, tas også med.
-Den vises som en egen type i dry-run, ikke som en ukjent fil.
+En sikkerhetskopi av databasen som Bildebank har laget før en migrering, tas
+også med. Den vises som en egen type i dry-run, ikke som en ukjent fil.
 
-Dette er forskjellig fra [`backup`](backup.md), som lager en speiling. En
-speiling kan miste en gammel fil når speilingen oppdateres etter at filen har
-forsvunnet fra bildesamlingen. Et publisert snapshot og innholdet det trenger,
-blir aldri slettet eller overskrevet av Bildebank.
+Et publisert snapshot og innholdet det trenger, blir aldri slettet eller
+overskrevet av Bildebank.
 
 > [!IMPORTANT]
-> Bruk flere backupdisker. Oppdater dem på forskjellige tidspunkter, og oppbevar
-> minst én disk frakoblet og gjerne utenfor boligen. En tilkoblet og skrivbar
-> backupdisk beskytter ikke alene mot tyveri, brann, ransomware eller alvorlige
-> brukerfeil.
+> Bruk minst to separate disker til snapshots. Oppdater bare én disk om gangen,
+> og oppbevar minst én disk frakoblet og gjerne utenfor boligen. En tilkoblet og
+> skrivbar disk beskytter ikke alene mot tyveri, brann, ransomware eller
+> alvorlige brukerfeil.
 
 ## Før du begynner
 
@@ -54,7 +53,7 @@ første kjøring. En ikke-tom, vanlig mappe blir aldri overtatt som repository.
 Ikke endre, flytt eller slett filer inne i repositoryet med Filutforsker.
 Repositoryet er laget for Bildebank og ser ikke ut som en vanlig bildekatalog.
 
-## Hva som blir sikkerhetskopiert
+## Hva snapshotet inneholder
 
 Snapshotet tar blant annet med:
 
@@ -124,7 +123,7 @@ Et resultat kan ha én av disse statusene:
 
 Ta vare på hele utskriften hvis statusen ikke er `complete`.
 
-## Flere backupdisker og lagret status
+## Flere disker og lagret status
 
 Etter at et snapshot er publisert, husker denne Bildebank-installasjonen
 repositoryet, tidspunktet og statusen. Bildebank-vinduet åpner den sist brukte,
@@ -138,7 +137,7 @@ bruke samme stasjonsbokstav og samme mappesti, for eksempel:
 F:\Bildebank-snapshots\Familiebilder
 ```
 
-Initialiser hver backupdisk som et eget, tomt repository. Da får diskene ulike
+Opprett et eget repository i en tom mappe på hver disk. Da får diskene ulike
 repository-ID-er, selv om Windows kaller alle diskene `F:` når de kobles til.
 
 Ikke klon et repository og fortsett å bruke både originalen og klonen som to
@@ -195,8 +194,9 @@ bildebank snapshot check E:\Bildebank-snapshots\Familiebilder --full
 Full kontroll kan også startes fra Bildebank-vinduet. Den kan ta lang tid.
 Bildebank endrer eller reparerer aldri repositoryet under kontrollen.
 
-Kjør rask kontroll etter vanlige backupkjøringer. Kjør full kontroll med jevne
-mellomrom, og før du legger bort en disk som skal være langtidskopi.
+Kjør rask kontroll etter at du har opprettet et nytt snapshot. Kjør full
+kontroll med jevne mellomrom, og før du legger bort en disk som skal være
+langtidskopi.
 
 ## Gjenopprette hele bildesamlingen
 
@@ -290,13 +290,13 @@ eventuelt en ny eksportmappe for et nytt forsøk.
 
 ## En trygg rutine
 
-1. Bruk minst to backupdisker og oppdater bare én om gangen.
+1. Bruk minst to separate disker og oppdater bare én om gangen.
 2. Kjør `snapshot create --dry-run`.
 3. Opprett snapshotet og kontroller at statusen er som forventet.
 4. Kjør `snapshot check`.
 5. Kjør `snapshot check --full` med jevne mellomrom.
-6. Koble backupdisken fra PC-en når den ikke brukes.
+6. Koble disken fra PC-en når den ikke brukes.
 7. Øv på hel restore til en ny testmappe før du trenger den i en krise.
 
 Bildebank komprimerer eller krypterer ikke repositoryet. Bruk kryptering på
-selve backupdisken hvis innholdet trenger beskyttelse.
+selve lagringsdisken hvis innholdet trenger beskyttelse.

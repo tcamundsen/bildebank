@@ -151,9 +151,9 @@ bildesamlingen, slik at ingen bilder mistes.
 
 ## Sikkerhet og sikkerhetskopier
 
-Bildebank organiserer og kopierer bilder og videoer inn i en ny samling, og
-har versjonert backup med `snapshot`. Én backupfunksjon eller én backupdisk
-erstatter likevel ikke flere uavhengige sikkerhetskopier.
+Bildebank kan lage versjonerte sikkerhetskopier med `snapshot`. Eldre snapshots
+blir bevart når et nytt snapshot opprettes. Bruk likevel flere separate disker,
+og oppbevar minst én kopi frakoblet og gjerne utenfor boligen.
 
 Ikke slett originalkilder etter import bare fordi Bildebank har kopiert filene.
 Kontroller først at importen ser riktig ut, at `index.html` viser det du
@@ -165,6 +165,6 @@ En enkel regel er 3-2-1-regelen: ha minst 3 kopier av viktige filer, på minst
 Behold gamle kilder til du er sikker på at den nye samlingen er kontrollert og
 sikkerhetskopiert.
 
-Bruk [`snapshot`](../snapshot.md) for versjonerte sikkerhetskopier som kan
-gjenopprette hele samlinger og enkeltfiler. Kommandoen
-[`backup`](../backup.md) lager i stedet en speiling av slik samlingen ser ut nå.
+Veiledningen for [`snapshot`](../snapshot.md) viser hvordan du oppretter og
+kontrollerer snapshots, og hvordan du gjenoppretter hele samlingen eller én
+enkelt fil.

@@ -15,7 +15,6 @@ from PIL import Image, ImageTk
 from .config import load_config
 from .formatting import format_bytes
 from .launcher_commands import (
-    backup_command,
     create_command,
     launcher_command,
     migrate_command,
@@ -160,7 +159,7 @@ def snapshot_plan_log_lines(plan: SnapshotPlan | LauncherRecoveryPlan) -> tuple[
         "existing": "er et eksisterende, gyldig repository",
     }.get(plan.repository_state, plan.repository_state)
     lines = [
-        "Plan for versjonert backup:",
+        "Plan for snapshot:",
         f"  Bildesamling: {plan.source_dir}",
         f"  Repository: {plan.repository_dir}",
         f"  Repositoryet {state_text}",
@@ -321,7 +320,6 @@ class MainTab:
         self.update_checking = False
         self.update_button_icons = self._load_update_button_icons()
         self.start_server_button: Any | None = None
-        self.backup_button: Any | None = None
         self.snapshot_button: Any | None = None
         self.snapshot_check_button: Any | None = None
         self.update_button: Any | None = None
@@ -361,7 +359,6 @@ class MainTab:
         for child in self.button_frame.winfo_children():
             child.destroy()
         self.start_server_button = None
-        self.backup_button = None
         self.snapshot_button = None
         self.snapshot_check_button = None
         self.update_button = None
@@ -399,36 +396,23 @@ class MainTab:
             text=self._update_button_text(),
             command=self._on_update_button_clicked,
         )
-        update_button.grid(row=0, column=2, padx=self.padx, pady=self.pady, sticky="ew")
+        update_button.grid(
+            row=0,
+            column=2,
+            columnspan=2,
+            padx=self.padx,
+            pady=self.pady,
+            sticky="ew",
+        )
         self.update_button = update_button
         self._add_tooltip(
             update_button,
             "Oppdaterer Bildebank til siste utgave. "
             "Dette tilsvarer kommandoen 'bildebank update' ",
         )
-        backup_button = self._button(
-            self.button_frame,
-            text="Ta backup",
-            command=self._start_backup_flow,
-        )
-        self.backup_button = backup_button
-        backup_button.grid(row=0, column=3, padx=self.padx, pady=self.pady, sticky="ew")
-        if collection_created:
-            self._add_tooltip(
-                backup_button,
-                "Eldre backupfunksjon som skal fjernes. IKKE BRUK. "
-                "Kjører først backup dry-run og viser planen i loggen. "
-                "Faktisk backup speiler bildesamlingen og kan slette filer i backupmålet.",
-            )
-        else:
-            self._add_tooltip(
-                backup_button,
-                "Eldre backupfunksjon som skal fjernes. IKKE BRUK. "
-                "Backup kan brukes etter at bildesamlingen er opprettet.",
-            )
         snapshot_button = self._button(
             self.button_frame,
-            text="Ta versjonert backup",
+            text="Opprett snapshot",
             command=self._start_snapshot_flow,
         )
         self.snapshot_button = snapshot_button
@@ -449,11 +433,11 @@ class MainTab:
         else:
             self._add_tooltip(
                 snapshot_button,
-                "Versjonert backup kan brukes etter at bildesamlingen er opprettet.",
+                "Snapshot kan opprettes etter at bildesamlingen er opprettet.",
             )
         snapshot_check_button = self._button(
             self.button_frame,
-            text="Kontroller versjonert backup",
+            text="Kontroller snapshots",
             command=self._start_snapshot_check_flow,
         )
         self.snapshot_check_button = snapshot_check_button
@@ -468,13 +452,12 @@ class MainTab:
         self._add_tooltip(
             snapshot_check_button,
             "Leser og SHA-256-kontrollerer alle objekter i et eksisterende repository. "
-            "Kontrollen endrer ikke snapshots eller backupobjekter.",
+            "Kontrollen endrer ikke snapshots eller objekter.",
         )
         return MainTabRefresh(
             [
                 start_button,
                 update_button,
-                backup_button,
                 snapshot_button,
                 snapshot_check_button,
             ],
@@ -499,8 +482,6 @@ class MainTab:
         self.create_collection_button.configure(state=create_state)
         if self.start_server_button is not None and not collection_created:
             self.start_server_button.configure(state="disabled")
-        if self.backup_button is not None and not collection_created:
-            self.backup_button.configure(state="disabled")
         if self.snapshot_button is not None and not collection_created:
             self.snapshot_button.configure(state="disabled")
         if self.update_button is not None and (
@@ -694,39 +675,16 @@ class MainTab:
             on_success=self._refresh_launcher,
         )
 
-    def _start_backup_flow(self) -> None:
-        from tkinter import filedialog
-
-        selected = filedialog.askdirectory(
-            title="Velg backup-plassering",
-            initialdir=str(self.collection_path.parent),
-        )
-        if not selected:
-            self._log("Backup avbrutt: ingen plassering valgt.")
-            return
-        self._run_backup_dry_run(Path(selected))
-
-    def _run_backup_dry_run(self, backup_parent: Path) -> None:
-        self._log(f"Kontrollerer backup til {backup_parent} ...")
-        self._run_waiting_command(
-            backup_command(self.collection_path, backup_parent, dry_run=True),
-            running_message="Kontrollerer backup ...",
-            success_message="Backup dry-run fullført. Se planen i loggen.",
-            failure_message="Backup dry-run feilet.",
-            on_success=lambda: self._confirm_backup(backup_parent),
-            cancellable=True,
-        )
-
     def _start_snapshot_flow(self) -> None:
         from tkinter import filedialog
 
         selected = filedialog.askdirectory(
-            title="Velg mappe for versjonert backup",
+            title="Velg snapshot-repository",
             initialdir=str(snapshot_dialog_initial_directory(self.collection_path)),
             mustexist=False,
         )
         if not selected:
-            self._log("Versjonert backup avbrutt: ingen mappe valgt.")
+            self._log("Snapshot avbrutt: ingen mappe valgt.")
             return
         self._run_snapshot_plan(Path(selected))
 
@@ -808,8 +766,8 @@ class MainTab:
 
         self._run_background_task(
             run_plan,
-            running_message=f"Kontrollerer versjonert backup til {repository} ...",
-            failure_message="Kontroll av versjonert backup feilet.",
+            running_message=f"Kontrollerer snapshot-plan for {repository} ...",
+            failure_message="Kontroll av snapshot-plan feilet.",
             on_success=lambda plan: self._snapshot_plan_task_finished(repository, plan),
             cancellable=True,
         )
@@ -820,7 +778,7 @@ class MainTab:
         plan: SnapshotPlan | LauncherRecoveryPlan | None,
     ) -> None:
         if plan is None:
-            self._log("Kontroll av versjonert backup ble avbrutt. Ingen endringer ble gjort.")
+            self._log("Kontroll av snapshot-plan ble avbrutt. Ingen endringer ble gjort.")
             return
         self._snapshot_plan_finished(repository, plan)
 
@@ -841,14 +799,14 @@ class MainTab:
             estimated_size = ""
         else:
             explanation = (
-                "Et nytt snapshot legges til. Eldre snapshots og backupobjekter "
+                "Et nytt snapshot legges til. Eldre snapshots og tilhørende objekter "
                 "blir ikke slettet eller overskrevet."
             )
             estimated_size = (
                 f"\n\nEstimert ny datamengde: {format_bytes(plan.storage.estimated_new_bytes)}"
             )
         self._show_log_review_question(
-            "Opprett versjonert backup?",
+            "Opprett snapshot?",
             (
                 "Den skrivefrie kontrollen er fullført og planen står i loggen.\n\n"
                 f"{explanation}\n\n"
@@ -859,7 +817,7 @@ class MainTab:
             yes_text="Opprett snapshot",
             no_text="Avbryt",
             on_yes=lambda: self._run_snapshot_create(repository),
-            on_no=lambda: self._log("Versjonert backup avbrutt etter kontrollen."),
+            on_no=lambda: self._log("Snapshot avbrutt etter kontrollen."),
         )
 
     def _run_snapshot_create(self, repository: Path) -> None:
@@ -926,8 +884,8 @@ class MainTab:
 
         self._run_background_task(
             run_create,
-            running_message=f"Oppretter versjonert backup i {repository} ...",
-            failure_message="Versjonert backup feilet. Ingen snapshot ble publisert.",
+            running_message=f"Oppretter snapshot i {repository} ...",
+            failure_message="Snapshot feilet. Ingen snapshot ble publisert.",
             on_success=lambda result: self._snapshot_creation_task_finished(repository, result),
             cancellable=True,
         )
@@ -988,13 +946,13 @@ class MainTab:
         )
         if result.status == "complete":
             messagebox.showinfo(
-                "Versjonert backup fullført",
+                "Snapshot fullført",
                 "Snapshotet ble opprettet uten kjente avvik.\n\n" + details,
                 parent=self.root,
             )
         elif result.status == "degraded":
             messagebox.showwarning(
-                "Versjonert backup opprettet med problemer",
+                "Snapshot opprettet med problemer",
                 "Snapshotet ble publisert, men har avvik som må kontrolleres.\n\n" + details,
                 parent=self.root,
             )
@@ -1011,18 +969,18 @@ class MainTab:
         from tkinter import filedialog
 
         selected = filedialog.askdirectory(
-            title="Velg versjonert backup som skal kontrolleres",
+            title="Velg snapshot-repository som skal kontrolleres",
             initialdir=str(snapshot_dialog_initial_directory(self.collection_path)),
             mustexist=True,
         )
         if not selected:
-            self._log("Full kontroll av versjonert backup avbrutt: ingen mappe valgt.")
+            self._log("Full snapshotkontroll avbrutt: ingen mappe valgt.")
             return
         repository = Path(selected)
         self._show_log_review_question(
-            "Kontroller hele den versjonerte backupen?",
+            "Kontroller hele snapshot-repositoryet?",
             (
-                "Bildebank vil lese og beregne SHA-256 for alle backupobjekter, "
+                "Bildebank vil lese og beregne SHA-256 for alle objekter, "
                 "også objekter som ikke lenger refereres av et snapshot.\n\n"
                 "Dette kan ta lang tid, men endrer ikke snapshots eller objekter. "
                 "Kontrollen kan avbrytes kontrollert.\n\n"
@@ -1031,7 +989,7 @@ class MainTab:
             yes_text="Start full kontroll",
             no_text="Avbryt",
             on_yes=lambda: self._run_snapshot_check(repository),
-            on_no=lambda: self._log("Full kontroll av versjonert backup avbrutt."),
+            on_no=lambda: self._log("Full snapshotkontroll avbrutt."),
         )
 
     def _run_snapshot_check(self, repository: Path) -> None:
@@ -1070,7 +1028,7 @@ class MainTab:
                 should_cancel=cancel_requested,
             ),
             running_message=f"Kontrollerer alle objekter i {repository} ...",
-            failure_message="Full kontroll av versjonert backup feilet.",
+            failure_message="Full snapshotkontroll feilet.",
             on_success=self._snapshot_check_finished,
             cancellable=True,
         )
@@ -1104,17 +1062,17 @@ class MainTab:
             )
         elif result.issues:
             messagebox.showwarning(
-                "Backupen har integritetsavvik",
+                "Snapshot-repositoryet har integritetsavvik",
                 (
                     f"Kontrollen fant {len(result.issues)} repositoryavvik. "
                     "Berørte snapshots og stier står i loggen.\n\n"
-                    "Ikke bruk denne backupen som eneste kopi."
+                    "Ikke bruk dette repositoryet som eneste kopi."
                 ),
                 parent=self.root,
             )
         elif result.incomplete_runs:
             messagebox.showwarning(
-                "Backupen er kontrollert med advarsler",
+                "Repositoryet er kontrollert med advarsler",
                 (
                     "Alle publiserte data besto kontrollen, men repositoryet inneholder "
                     "ufullstendige kjøringer. Se loggen."
@@ -1123,41 +1081,13 @@ class MainTab:
             )
         else:
             messagebox.showinfo(
-                "Versjonert backup kontrollert",
+                "Snapshot-repository kontrollert",
                 (
                     f"Alle {result.checked_objects} objekter besto full SHA-256-kontroll.\n\n"
                     f"Kontrollert datamengde: {format_bytes(result.checked_bytes)}"
                 ),
                 parent=self.root,
             )
-
-    def _confirm_backup(self, backup_parent: Path) -> None:
-        backup_dir = backup_parent / self.collection_path.name
-        self._show_log_review_question(
-            "Ta backup?",
-            (
-                "Dry-run er fullført og planen står i loggen.\n\n"
-                "Faktisk backup speiler bildesamlingen. Det kan slette filer fra "
-                "backupen som ikke finnes i bildesamlingen.\n\n"
-                f"Backupmappe:\n{backup_dir}\n\n"
-                "Vil du kjøre faktisk backup nå?"
-            ),
-            yes_text="Kjør backup",
-            no_text="Avbryt",
-            on_yes=lambda: self._run_backup(backup_parent),
-            on_no=lambda: self._log("Backup avbrutt etter dry-run."),
-        )
-
-    def _run_backup(self, backup_parent: Path) -> None:
-        self._log(f"Tar backup til {backup_parent} ...")
-        self._run_waiting_command(
-            backup_command(self.collection_path, backup_parent),
-            running_message="Tar backup ...",
-            success_message="Backup fullført.",
-            failure_message="Backup feilet.",
-            on_success=self._refresh_launcher,
-            cancellable=True,
-        )
 
     def _run_migrate(self) -> None:
         self._log("Migrerer database ...")

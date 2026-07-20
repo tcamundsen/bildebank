@@ -190,12 +190,12 @@ låst.
 Sjekk først at ingen annen import fortsatt kjører. Hvis du er sikker på det,
 kan du slette lockfilen fra bildesamlingsmappen og kjøre import på nytt.
 
-## Viktig om sikkerhet og backup
+## Viktig om sikkerhetskopiering
 
-Programmet skal samle og organisere bilder og videoer. Det har en
-[`snapshot`](docs/snapshot.md)-kommando for versjonerte sikkerhetskopier, men
-ingen enkelt backupfunksjon er tilstrekkelig alene. Når du har fått en ryddig
-bildesamling, bør den sikkerhetskopieres grundig til mer enn ett sted.
+Bildebank kan lage versjonerte sikkerhetskopier med
+[`snapshot`](docs/snapshot.md). Eldre snapshots blir bevart når et nytt
+snapshot opprettes. Bruk likevel flere separate disker, og oppbevar minst én
+kopi frakoblet og gjerne utenfor boligen.
 
 Ikke slett gamle kilder før du er trygg på at importen ble riktig og at den nye
 samlingen er sikkerhetskopiert.

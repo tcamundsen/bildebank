@@ -232,6 +232,7 @@ pretrained = "laion2b_s34b_b79k"
             "list-deleted",
             "make-face-groups-browser",
             "remove-source",
+            "backup",
         ):
             with self.subTest(command=command):
                 with redirect_stderr(StringIO()), self.assertRaises(SystemExit):

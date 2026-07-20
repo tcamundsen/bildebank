@@ -10,6 +10,5 @@ Web-støtte for:
 - import
 - unimport 
 - migrate
-- backup
 - tunge scan-jobber
 - destruktive eller omfattende operasjoner

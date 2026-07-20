@@ -10,7 +10,7 @@ del uten å måtte kjenne hele Tk-applikasjonen.
 |---|---|
 | `launcher.py` | Stabilt offentlig `main()`-inngangspunkt. |
 | `launcher_app.py` | Rotvindu, notebook, felles logg, busy-status og koordinering mellom fanene. |
-| `launcher_main_tab.py` | Valg og oppretting av samling, server, oppdatering, backup og migrering. |
+| `launcher_main_tab.py` | Valg og oppretting av samling, server, oppdatering, oppretting og kontroll av snapshots og migrering. |
 | `launcher_advanced_start_tab.py` | Normal, read-only, LAN-share og slideshow med port, filter og delay. Bruker serverprosessen som eies av hovedfanen. |
 | `launcher_import_tab.py` | Import, rescan, check-source og unimport. |
 | `launcher_tools_tab.py` | Scanner, statiske browsere, doctor, vacuum, filslettingsopprydding og eksport. |

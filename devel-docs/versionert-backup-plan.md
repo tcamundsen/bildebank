@@ -1,15 +1,13 @@
-# Plan for versjonert backup
+# Plan for snapshots
 
-Status: **godkjent implementeringsplan – under implementering**
+Status: **snapshot implementert – Windows-pilot gjenstår**
 
-Dette dokumentet skisserer en ekte, versjonert backup for Bildebank. Hensikten
-er å bli enige om sikkerhetsmodell, lagringsformat, kommandoer og
-gjenoppretting før det skrives produksjonskode.
-
-Eksisterende `bildebank backup` er en speiling. Den er fortsatt nyttig som en
-oppdatert reservekopi, men den sletter filer fra backupen når de ikke lenger
-finnes i samlingen. Den gir derfor ikke historiske versjoner og beskytter ikke
-alene mot at en feil eller utilsiktet sletting blir speilet videre.
+Dette dokumentet beskriver sikkerhetsmodellen, lagringsformatet og
+gjenopprettingsflyten for versjonerte snapshots. Under det tidlige designarbeidet
+fantes også kommandoen `bildebank backup`, som vedlikeholdt en speilkopi. Den
+kommandoen og mirrorformatet er senere fjernet. Omtale av SQLite backup-API og
+historiske migreringsfiler nedenfor gjelder fortsatt; det er interne mekanismer
+og ikke den fjernede kommandoen.
 
 ## Mål
 
@@ -20,25 +18,25 @@ Den nye løsningen skal:
 - bruke eksisterende SHA-256-data til å kontrollere databaseførte mediefiler
 - ta med aktive filer, `deleted/`, hoveddatabasen og andre nødvendige databaser
 - kunne fortsette trygt etter avbrudd, full disk eller strømbrudd
-- kunne oppdage manglende og korrupte backupobjekter
+- kunne oppdage manglende og korrupte repositoryobjekter
 - ha eksplisitt og konservativ gjenoppretting av hele samlinger og enkeltfiler
 - fungere på Windows 11 og vanlige eksterne filsystemer uten hardlinks
-- være forståelig nok til at backupen kan reddes manuelt hvis programmet en
+- være forståelig nok til at innholdet kan reddes manuelt hvis programmet en
   dag ikke lenger finnes
 
 Et snapshot skal beskrive hvordan samlingen så ut på ett bestemt tidspunkt.
-Ny backup skal legge til et nytt snapshot, ikke gjøre et gammelt snapshot likt
-dagens samling.
+Et nytt snapshot skal legges til uten å gjøre eldre snapshots lik dagens
+samling.
 
 ## Avklarte hovedvalg
 
 - Bildebank skal eie og implementere repositoryformatet. Første versjon skal
-  ikke bruke et eksternt versjonert backupverktøy som lagringsmotor.
+  ikke bruke et eksternt versjoneringsverktøy som lagringsmotor.
 - Alle vanlige filer i samlingsmappen skal tas med, også filer som ikke finnes
   i hoveddatabasen. Bare den eksplisitte eksklusjonslisten skal utelates.
 - Hver snapshotkjøring skal lese og beregne SHA-256 for alle databaseførte
   bilder og videoer, også når filstørrelse og endringstid er uendret.
-- Gjenbrukte backupobjekter skal ved vanlig snapshot kontrolleres som vanlige
+- Gjenbrukte repositoryobjekter skal ved vanlig snapshot kontrolleres som vanlige
   filer med forventet størrelse, men ikke hashes på nytt. Nye objekter skal
   alltid hashverifiseres etter kopiering. `snapshot check --full` skal brukes
   til periodisk SHA-256-kontroll av hele repositoryet.
@@ -54,7 +52,7 @@ dagens samling.
 - Alle objekter skal lagres ukomprimert i første formatversjon. Komprimering
   skal ikke være en valgfri kodevei i første versjon.
 - Bildebank skal ikke kryptere repositoryet i første formatversjon. Eventuell
-  kryptering av backupmediet håndteres utenfor Bildebank.
+  kryptering av lagringsmediet håndteres utenfor Bildebank.
 - Verifiserte objekter som ikke refereres av et publisert snapshot, skal
   beholdes permanent, kunne gjenbrukes og aldri slettes av en cleanup- eller
   prune-kommando.
@@ -69,9 +67,8 @@ dagens samling.
 - Repositoryet skal være teknisk manuelt gjenopprettbart, men trenger ikke
   kunne blaes som en vanlig bildemappe. Råobjekter og tekstmanifest skal være
   nok til å finne, kopiere og gi en fil tilbake riktig navn.
-- Første implementasjon skal bruke `bildebank snapshot` for den versjonerte
-  løsningen. Dagens `bildebank backup` skal fortsatt være mirror med uendret
-  betydning. Eventuell senere navneendring avgjøres etter brukertesting.
+- Den versjonerte løsningen skal bruke `bildebank snapshot`. Den eldre
+  mirror-kommandoen er fjernet uten kompatibilitetsalias.
 - `PLASSERING` i snapshotkommandoene skal være den eksakte repositorymappen,
   ikke en foreldremappe der Bildebank utleder navn fra samlingen.
 - En manglende eller helt tom repositorymappe kan initialiseres. En ikke-tom
@@ -102,7 +99,7 @@ dagens samling.
 - `files.jsonl` skal lagre opprinnelig filendringstid per sti, og restore skal
   gjenopprette den så langt målfilsystemet støtter. Windows-opprettelsestid,
   ACL-er, eierdata og katalogtider er ikke del av førstversjonskontrakten.
-- Første versjon skal bare oppdage og rapportere korrupte backupobjekter. Den
+- Første versjon skal bare oppdage og rapportere korrupte repositoryobjekter. Den
   skal ikke reparere, overskrive, flytte til karantene eller på annen måte
   endre dem.
 - Vanlig snapshot skal avbryte uten publisering hvis et gjenbrukt objekt
@@ -167,17 +164,17 @@ dagens samling.
 
 Første versjon skal ikke:
 
-- automatisk slette gamle snapshots eller backupobjekter
+- automatisk slette gamle snapshots eller repositoryobjekter
 - ha en `prune`- eller garbage collection-kommando som permanent sletter
   bildefiler
 - automatisk reparere den aktive bildesamlingen
-- reparere eller sette korrupte backupobjekter i karantene
+- reparere eller sette korrupte repositoryobjekter i karantene
 - skrive tilbake til eller endre opprinnelige kildemapper
 - støtte symbolske lenker, junctions eller andre reparse points i samlingen
 - støtte repository på UNC-stier, SMB-mapper, NAS eller andre nettverksmål
 - ha innebygd tidsplanlegging eller bakgrunnskjøring av snapshot
-- love beskyttelse mot ransomware når backupmediet står tilkoblet og skrivbart
-- erstatte behovet for flere backupmedier, frakoblet kopi og kopi utenfor
+- love beskyttelse mot ransomware når repositorydisken står tilkoblet og skrivbar
+- erstatte behovet for flere lagringsmedier, frakoblet kopi og kopi utenfor
   boligen
 - bevare Windows-opprettelsestid, NTFS-rettigheter og ACL-er, eierinformasjon
   eller katalogenes tidsstempler nøyaktig
@@ -640,18 +637,18 @@ tydelige om denne forskjellen.
 Hvis et gjenbrukt objekt mangler, ikke er en vanlig fil eller har feil
 størrelse, skal snapshotkjøringen avbryte uten å publisere eller skrive videre
 til repositoryet. Feilen skal ikke gi `degraded`, fordi avviket ligger i
-backupmålet og kan bety medie- eller filsystemskade. Meldingen skal anbefale
-`snapshot check --full`, advare mot å stole på repositoryet som eneste backup
-og anbefale snapshot til et annet medium når det er tilgjengelig.
+repositoryet og kan bety medie- eller filsystemskade. Meldingen skal anbefale
+`snapshot check --full`, advare mot å stole på repositoryet som eneste gyldige
+kopi og anbefale snapshot til et annet medium når det er tilgjengelig.
 
 Objektene skal lagres ukomprimert. Bilder og videoer er vanligvis allerede
 komprimert, og direkte lagring gjør enkeltfiler lettere å kontrollere og redde
 manuelt. Eventuell selektiv komprimering krever en senere formatversjon.
 
 Objektene og manifestene skal ikke krypteres av Bildebank. Det gjør manuell
-redning mulig uten Bildebank-nøkkel og unngår at nøkkeltap gjør hele backupen
-uleselig. Brukeren kan beskytte backupmediet med kryptering som håndteres av
-operativsystemet eller selve mediet.
+redning mulig uten Bildebank-nøkkel og unngår at nøkkeltap gjør hele
+repositoryet uleselig. Brukeren kan beskytte lagringsmediet med kryptering som
+håndteres av operativsystemet eller selve mediet.
 
 Kopiering skal gå til en unik midlertidig fil på samme filsystem. Etter
 verifisering får objektet endelig navn med en atomisk rename. Implementasjonen
@@ -758,8 +755,8 @@ Etter forhåndskontrollen skal selve filinventaret fortsatt bruke
 ikke-følgende filsystemoperasjoner. Hvis en lenke opprettes eller endres etter
 forhåndskontrollen, skal kjøringen avbryte i stedet for å følge den.
 
-Feilmeldingen skal forklare at lenker ikke støttes i versjonert backup og at
-brukeren må gjøre samlingen selvstendig før backup kan tas. Støtte for et
+Feilmeldingen skal forklare at lenker ikke støttes i snapshots, og at brukeren
+må gjøre samlingen selvstendig før et snapshot kan opprettes. Støtte for et
 konkret brukstilfelle, som en årsmappe flyttet til en annen disk, kan vurderes
 senere hvis behovet faktisk oppstår.
 
@@ -829,8 +826,9 @@ av samlingen fortsatt blir sikret.
 
 Reell snapshot-oppretting skal holde samlingens `TargetLock` fra før første
 databaseoppslag og filinventar til snapshotmappen er publisert eller
-kjøringen har feilet. Det viderefører sikkerhetsmodellen til dagens backup og
-hindrer andre Bildebank-kommandoer i å endre samlingen underveis.
+kjøringen har feilet. Det følger den samme sikkerhetsmodellen som andre
+operasjoner som endrer samlingen, og hindrer Bildebank-kommandoer i å endre
+samlingen underveis.
 
 Før kopiering skal Bildebank bygge én databasekatalog med disse rollene:
 
@@ -862,7 +860,7 @@ feiler, skal snapshotet avbryte før repositorydata skrives.
 
 SQLite-databaser skal ikke kopieres som vanlige åpne filer. Det skal opprettes
 en konsistent kopi gjennom SQLite backup-API til et stagingområde. Kopien skal
-integritetskontrolleres og deretter lagres som et vanlig backupobjekt med den
+integritetskontrolleres og deretter lagres som et vanlig repositoryobjekt med den
 logiske restore-stien fra databasekatalogen. Den aktive databasefilen og dens
 `-wal`, `-shm` eller journalfil skal tas ut av det vanlige filinventaret, slik
 at de ikke samtidig får en konkurrerende restorebetydning.
@@ -982,29 +980,14 @@ Ved feil skal ingen tidligere snapshots eller objekter endres. En ny kjøring
 skal kunne gjenbruke ferdig verifiserte objekter og ellers starte en ny,
 uavhengig stagingkjøring.
 
-## Kommandoer og overgang fra dagens mirror
+## Kommandoer
 
-Dagens `bildebank backup` har etablert betydning og eksisterende backupformat.
-Det er farlig å tolke en gammel mirror-mappe som et nytt repository eller å
-endre oppførselen lydløst.
+Det offentlige grensesnittet bruker `bildebank snapshot`. Den eldre
+`bildebank backup`-kommandoen er fjernet og finnes ikke som alias. Eksisterende
+mirror-mapper er vanlige mapper etter oppgraderingen; Bildebank skal verken
+tolke dem som snapshotrepositories eller endre innholdet i dem.
 
-Mulige senere alternativer etter brukertesting:
-
-1. Behold `bildebank backup` som mirror og innfør `bildebank snapshot` for ny
-   løsning.
-2. Innfør underkommandoer som `bildebank backup mirror` og
-   `bildebank backup create`, med en tydelig overgang for dagens syntaks.
-3. Gjør `bildebank backup` til versjonert backup i en senere hovedversjon og
-   flytt dagens funksjon til `bildebank mirror`.
-
-Første implementasjon skal bruke alternativ 1: dagens `bildebank backup`
-beholdes uendret som mirror, og den nye løsningen innføres som
-`bildebank snapshot`. Det gir minst risiko mens format og arbeidsflyt prøves
-ut. Navnet `snapshot` skal testes mot målgruppen. Hvis `backup` senere skal bli
-navnet på den versjonerte løsningen, må det skje gjennom en tydelig overgang
-der gammel syntaks aldri får ny betydning lydløst.
-
-Et mulig første kommandosett er:
+Kommandosettet er:
 
 ```text
 bildebank snapshot create PLASSERING [--dry-run] [--note KOMMENTAR]
@@ -1132,7 +1115,7 @@ brukerdokumentasjonen være gjennomtestet.
 
 ## Gjenoppretting
 
-En backup er ikke ferdig designet før restore er spesifisert og testet.
+Snapshotfunksjonen er ikke ferdig designet før restore er spesifisert og testet.
 
 Hel restore skal:
 
@@ -1274,9 +1257,9 @@ Første snapshot må lese og hashe hele samlingen. Senere snapshots kan unngå �
 kopiere objekter som allerede finnes, men hver kjøring skal fortsatt lese og
 beregne SHA-256 for alle databaseførte mediefiler før snapshotet publiseres.
 
-Eksisterende backupobjekter skal ikke fullhashes som del av vanlig
+Eksisterende repositoryobjekter skal ikke fullhashes som del av vanlig
 snapshotoppretting. De kontrolleres på type og størrelse. Dermed leser en
-ukentlig kjøring hele kildesamlingen, men ikke i tillegg hele backupmediet.
+ukentlig kjøring hele kildesamlingen, men ikke i tillegg hele repositoryet.
 Brukeren skal enkelt kunne starte `snapshot check --full` separat når det er
 tid til en full gjennomlesing av repositoryet. Kontrollen skal vise fremdrift
 og være trygg å avbryte uten å endre repositoryet.
@@ -1306,14 +1289,14 @@ Løsningen skal beskytte mot:
 - feil bruk av `remove`, `unimport` eller fremtidige samlingskommandoer
 - korrupsjon eller manglende filer i den aktive samlingen, når en eldre gyldig
   versjon finnes
-- avbrutt backup, programkrasj og full backupdisk
+- avbrutt snapshotoppretting, programkrasj og full repositorydisk
 - tilfeldig bitråte som oppdages av periodisk full kontroll
 
 Løsningen beskytter ikke alene mot:
 
-- tyveri eller brann når samling og eneste backup er på samme sted
+- tyveri eller brann når samlingen og eneste gyldige kopi er på samme sted
 - ransomware eller angriper med skrivetilgang til repositoryet
-- tap av både samling og alle backupmedier
+- tap av både samlingen og alle disker med snapshots
 - skade som allerede finnes i alle snapshots før den blir oppdaget
 - feil i Bildebank-kode som ikke fanges av formatkontroll og tester
 
@@ -1354,7 +1337,7 @@ Minstekrav til automatiserte tester:
   inngår i førstversjonsløftet
 - hel restore bevarer `collection_id`, advarer når originalstien fortsatt
   finnes og utløser flyttebekreftelse ved neste snapshot
-- eksisterende backupobjekt med feil innhold
+- eksisterende repositoryobjekt med feil innhold
 - vanlig snapshot skal oppdage manglende objekt og feil størrelse uten å
   fullhashe gjenbrukte objekter
 - manglende eller feil størrelse på gjenbrukt objekt skal avbryte uten nytt
@@ -1465,9 +1448,9 @@ Minstekrav til automatiserte tester:
   inkludert publisert ufullstendig restore
 
 Før bruk på den virkelige samlingen må det gjennomføres en Windows-test med et
-lite, representativt datasett på samme type backupmedium som skal brukes.
+lite, representativt datasett på samme type lagringsmedium som skal brukes.
 Testen skal omfatte avbrudd og faktisk gjenoppretting, ikke bare oppretting av
-backup.
+et snapshot.
 
 ## Foreslåtte implementasjonstrinn
 
@@ -1548,15 +1531,14 @@ Implementeringsstatus 2026-07-16:
 - Trinn 5 er påbegynt. Brukerveiledningen `docs/snapshot.md` beskriver
   oppretting, liste, problemliste, rask og full kontroll, hel restore,
   enkeltfil-restore, avbrudd, diskrotasjon og restoreøvelse med Windows-stier.
-  Den eksisterende mirror-dokumentasjonen og kom-i-gang-teksten peker tydelig
-  til den versjonerte løsningen. En detaljert Windows 11-pilotsjekkliste finnes
-  i `devel-docs/versionert-backup-windows-pilot.md`. Selve piloten på Windows
-  og eksternt medium gjenstår før trinn 5 kan fullføres.
+  Kom-i-gang-teksten peker tydelig til snapshotløsningen. En detaljert Windows
+  11-pilotsjekkliste finnes i
+  `devel-docs/versionert-backup-windows-pilot.md`. Selve piloten på Windows og
+  eksternt medium gjenstår før trinn 5 kan fullføres.
 
 ### Trinn 0 – Enighet om design
 
-- Beskriv førstversjonen med `snapshot` ved siden av uendret `backup`-mirror,
-  og planlegg brukertest av navnene.
+- Beskriv førstversjonen med `snapshot` og planlegg brukertest av navnet.
 - Frys første versjon av repository- og manifestformatet.
 - Frys kompatibilitetsreglene, den portable stikontrakten, databasekatalogen og
   CLI-resultatkontrakten.
@@ -1662,7 +1644,7 @@ Inntil punktene over er avgjort, er anbefalt retning:
 - alle vanlige filer i samlingsmappen, med bare den eksplisitte
   eksklusjonslisten
 - SHA-256-verifisering mot `files` for både aktive og slettede filer
-- størrelseskontroll, men ikke ny hashing, av gjenbrukte backupobjekter ved
+- størrelseskontroll, men ikke ny hashing, av gjenbrukte repositoryobjekter ved
   vanlig snapshot; periodisk full hashing med `snapshot check --full`
 - publisering av `degraded` snapshot med avvik per filpost og bevaring av
   observerte filvarianter

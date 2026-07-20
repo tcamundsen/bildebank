@@ -260,7 +260,7 @@ bruke felles funksjoner for selve browseren, for eksempel
 utvalg får samme blaing, rotering, bildeinfo, sletting og lenkestruktur uten at
 det lages egne parallelle browsere for hvert tilfelle.
 
-## Lokal status for versjonert backup
+## Lokal status for snapshots
 
 Et publisert snapshot kan registreres i programmets lokale programdatabase
 etter at snapshotoperasjonen er fullført. Registreringen inneholder bare
