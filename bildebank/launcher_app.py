@@ -15,6 +15,7 @@ from .launcher_runner import CommandRunner, progress_log_key
 from .launcher_import_tab import ImportTab
 from .launcher_advanced_start_tab import AdvancedStartTab
 from .launcher_main_tab import MainTab
+from .launcher_snapshot_tab import SnapshotTab
 from .launcher_setup_tab import SetupTab
 from .launcher_tools_tab import ToolsTab
 from .launcher_widgets import (
@@ -64,6 +65,7 @@ class LauncherApp:
         self.status_value: tk.StringVar = tk.StringVar(value="")
         self.notebook: ttk.Notebook | None = None
         self.main_tab: MainTab | None = None
+        self.snapshot_tab: SnapshotTab | None = None
         self.advanced_start_tab: AdvancedStartTab | None = None
         self.import_tab: ImportTab | None = None
         self.tools_tab: ToolsTab | None = None
@@ -171,17 +173,14 @@ class LauncherApp:
             root=self.root,
             button=self._button,
             run_waiting_command=self._run_waiting_command,
-            run_background_task=self._run_background_task,
             get_collection_path=lambda: self.collection_path,
             set_collection_path=self._set_collection_path,
             is_busy=lambda: self.busy,
             post_to_ui=self._post_to_tk,
             log=self._log,
-            log_progress=self._log_process_output,
             refresh_launcher=self._refresh_state,
             set_launcher_buttons_enabled=self._set_buttons_enabled,
             add_tooltip=self._add_tooltip,
-            show_log_review_question=self._show_log_review_question,
             show_error=self._show_error,
             on_close=self._on_close,
             destroy_root=self._destroy_root,
@@ -190,6 +189,25 @@ class LauncherApp:
             pady=PADY,
         )
         self.notebook.add(self.main_tab.frame, text="Bildebank")
+        self.snapshot_tab = SnapshotTab(
+            tk=tk,
+            ttk=ttk,
+            notebook=self.notebook,
+            root=self.root,
+            button=self._button,
+            run_background_task=self._run_background_task,
+            get_collection_path=lambda: self.collection_path,
+            post_to_ui=self._post_to_tk,
+            log=self._log,
+            log_progress=self._log_process_output,
+            refresh_launcher=self._refresh_state,
+            add_tooltip=self._add_tooltip,
+            show_log_review_question=self._show_log_review_question,
+            padding=PAD,
+            padx=PADX,
+            pady=PADY,
+        )
+        self.notebook.add(self.snapshot_tab.frame, text="Snapshots")
         self.advanced_start_tab = AdvancedStartTab(
             tk=tk,
             ttk=ttk,
@@ -291,12 +309,16 @@ class LauncherApp:
         assert self.import_tab is not None
         assert self.tools_tab is not None
         assert self.advanced_start_tab is not None
+        assert self.snapshot_tab is not None
 
         for tooltip in self.tooltips:
             tooltip.hide()
         self.tooltips = []
         self.buttons = []
         main_state = self.main_tab.refresh()
+        self.buttons.extend(
+            self.snapshot_tab.refresh(create_available=main_state.available)
+        )
         self.advanced_start_tab.set_available(main_state.available)
         self.buttons.extend(
             self.import_tab.refresh(available=main_state.available)
@@ -338,6 +360,13 @@ class LauncherApp:
             button.configure(state=state)
         if self.main_tab is not None:
             self.main_tab.set_buttons_enabled(enabled)
+        if self.snapshot_tab is not None and self.main_tab is not None:
+            self.snapshot_tab.create_available = (
+                is_collection_created(self.collection_path)
+                and not self.main_tab.migration_required
+                and self.main_tab.migration_status_error is None
+            )
+            self.snapshot_tab.set_buttons_enabled(enabled)
         if self.advanced_start_tab is not None and self.main_tab is not None:
             self.advanced_start_tab.set_available(
                 enabled

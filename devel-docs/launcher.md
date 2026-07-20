@@ -1,6 +1,6 @@
 # Launcher-arkitektur
 
-Launcheren er delt i et tynt offentlig inngangspunkt, et appskall, fem faner
+Launcheren er delt i et tynt offentlig inngangspunkt, et appskall, seks faner
 og fire fellesmoduler. Oppdelingen skal gjøre det mulig å endre og teste én
 del uten å måtte kjenne hele Tk-applikasjonen.
 
@@ -10,7 +10,8 @@ del uten å måtte kjenne hele Tk-applikasjonen.
 |---|---|
 | `launcher.py` | Stabilt offentlig `main()`-inngangspunkt. |
 | `launcher_app.py` | Rotvindu, notebook, felles logg, busy-status og koordinering mellom fanene. |
-| `launcher_main_tab.py` | Valg og oppretting av samling, server, oppdatering, oppretting og kontroll av snapshots og migrering. |
+| `launcher_main_tab.py` | Valg og oppretting av samling, server, oppdatering og migrering. |
+| `launcher_snapshot_tab.py` | Valg av snapshot-repository, oppretting, kontroll og GUI-eksport av enkeltfiler. |
 | `launcher_advanced_start_tab.py` | Normal, read-only, LAN-share og slideshow med port, filter og delay. Bruker serverprosessen som eies av hovedfanen. |
 | `launcher_import_tab.py` | Import, rescan, check-source og unimport. |
 | `launcher_tools_tab.py` | Scanner, statiske browsere, doctor, vacuum, filslettingsopprydding og eksport. |
@@ -33,6 +34,12 @@ serverprosessen eies av hovedfanen fordi den kan leve videre etter at knappen
 som startet den er ferdig. Både hovedfanen og **Nettleser og deling** bruker den
 samme startmekanismen.
 
+Snapshotfanen bruker den eksisterende snapshotkjernen direkte. Liste- og
+browseoperasjoner leser validerte, publiserte manifester under repositorylås.
+Enkeltfiler planlegges og eksporteres med de samme funksjonene som
+`snapshot restore-file`; fanen skal ikke ha et eget restoreformat eller skrive
+til repositoryet eller den aktive bildesamlingen.
+
 Hovedfanen lagrer normaliserte oppstartsvalg for prosessen den eier: modus,
 port og eventuelt slideshow-delay og filter. Samme valg åpner adressen til den
 eksisterende serveren. Endrede valg krever bekreftet omstart; avvisning lar
@@ -54,7 +61,7 @@ testdobbel som kan verifisere samme kontrakt.
 Ved endringer i launcheren kjøres:
 
 ```powershell
-python -m pytest -q
+python -m pytest -n auto
 python -m ruff check bildebank tests
 python -m pyflakes bildebank tests
 python -m mypy bildebank

@@ -148,9 +148,10 @@ samling.
 - Bildebank skal ikke ha innebygd tidsplanlegging i første versjon. Snapshot
   startes manuelt fra CLI eller launcher; eventuell automatisering håndteres
   utenfor Bildebank.
-- Første launcherutgave skal begrenses til snapshotoppretting og full kontroll.
-  Snapshotliste, problemliste og restore skal være CLI-funksjoner i første
-  versjon.
+- Launcheren tilbyr snapshotoppretting, full kontroll og konservativ eksport av
+  én vanlig mediefil. GUI-eksporten bruker samme plan- og restorefunksjoner som
+  `snapshot restore-file`. Problemliste, `recovery_only`-eksport og hel restore
+  forblir CLI-funksjoner.
 - En ukjent vanlig fil som ikke kan leses eller endres under kopiering, skal
   prøves én gang til. Hvis den fortsatt ikke kan sikres stabilt, skal filposten
   få konkret avviksstatus og snapshotet publiseres som `degraded` uten at en

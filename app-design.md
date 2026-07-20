@@ -278,6 +278,19 @@ repository. Flere USB-disker kan dermed bruke samme sti når de kobles til etter
 tur. Klonede repositories må ikke brukes videre som uavhengige, skrivbare
 repositories, fordi klonen beholder originalens repository-ID.
 
+## Snapshotfunksjoner i launcheren
+
+Oppretting, kontroll og gjenoppretting av enkeltfiler samles på en egen
+snapshotfane. Fanen viser sist kjente, tilgjengelige repository for den valgte
+samlingen, men brukeren kan velge et annet repository. Kontroll og
+enkeltfilgjenoppretting skal fungere selv om den aktive bildesamlingen mangler.
+
+Ved enkeltfilgjenoppretting velger brukeren først et publisert snapshot og
+blar deretter i år, måned og filnavn. `udatert/` og `deleted/` vises som egne
+grener. Filen eksporteres til en mappe utenfor bildesamlingen gjennom den
+eksisterende restoreplanen. Launcheren skal aldri overskrive en fil, endre
+repositoryet eller legge eksporten automatisk tilbake i bildesamlingen.
+
 ## Kommentarer på mediefiler
 
 En mediefil kan ha én kommentar på den kanoniske `files`-raden. Kommentaren

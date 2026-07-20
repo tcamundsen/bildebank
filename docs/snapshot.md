@@ -242,6 +242,33 @@ bildebank --target C:\Users\Tom\Familiebilder-gjenopprettet doctor --deep
 
 ## Gjenopprette én fil
 
+Du kan hente ut en vanlig bilde- eller videofil fra fanen **Snapshots** i
+Bildebank-vinduet:
+
+1. Velg snapshot-repositoryet øverst på fanen.
+2. Klikk **Gjenopprett fil** og velg et snapshot fra listen.
+3. Bla gjennom år, måned og filnavn. Filer som var fjernet fra samlingen, ligger
+   under `deleted`, og filer uten kjent dato ligger under **Udatert**.
+4. Kontroller eksportmappen og bekreft planen.
+
+Bildebank foreslår denne eksportmappen:
+
+```text
+C:\Users\Tom\Downloads\Bildebank-gjenopprettet
+```
+
+Du kan velge en annen mappe. Filen eksporteres under sin opprinnelige relative
+sti, for eksempel
+`C:\Users\Tom\Downloads\Bildebank-gjenopprettet\2010\01\IMAG0001.jpg`.
+Eksporten endrer ikke bildesamlingen eller snapshot-repositoryet, og en
+eksisterende fil blir aldri overskrevet.
+
+GUI-en viser vanlige filer under år/måned, **Udatert** og `deleted`. Bruk
+kommandoen nedenfor for tekniske `recovery_only`-poster og andre avanserte
+redningstilfeller.
+
+### Fra kommandolinjen
+
 Bruk først dry-run. En normal snapshotsti skrives med `/`, slik den vises av
 Bildebank, selv om resten av kommandoen bruker Windows-filnavn:
 

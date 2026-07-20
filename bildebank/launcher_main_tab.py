@@ -6,14 +6,11 @@ from importlib import resources
 from pathlib import Path
 import subprocess
 import threading
-import time
 from typing import Any, Protocol
 import webbrowser
 
 from PIL import Image, ImageTk
 
-from .config import load_config
-from .formatting import format_bytes
 from .launcher_commands import (
     create_command,
     launcher_command,
@@ -29,152 +26,12 @@ from .launcher_status import (
     check_launcher_update_status,
     collection_needs_migration,
     is_collection_created,
-    program_repo_root,
-)
-from .program_state import (
-    known_snapshot_repositories_for_target,
-    record_published_snapshot_best_effort,
-)
-from .snapshot import MainDatabaseSourceError, SnapshotPlan, plan_snapshot
-from .snapshot_check import (
-    SnapshotCheckProgress,
-    SnapshotCheckResult,
-    check_snapshot_repository,
-)
-from .snapshot_create import (
-    SnapshotCreationResult,
-    create_snapshot,
-    validate_existing_recovery_repository,
-)
-from .snapshot_progress import (
-    SnapshotCancelCallback,
-    SnapshotCancelled,
-    SnapshotCreateProgress,
-    SnapshotCreateProgressCallback,
-    SnapshotPlanProgress,
-    SnapshotPlanProgressCallback,
-    raise_if_snapshot_cancelled,
 )
 from .launcher_widgets import Tooltip
 
 
 def open_server_browser_window(port: int = DEFAULT_PORT) -> bool:
     return bool(webbrowser.open(server_browser_url(port), new=1))
-
-
-@dataclass(frozen=True)
-class LauncherRecoveryPlan:
-    source_dir: Path
-    repository_dir: Path
-    database_error: str
-
-
-def snapshot_dialog_initial_directory(collection: Path) -> Path:
-    try:
-        repositories = known_snapshot_repositories_for_target(program_repo_root(), collection)
-    except Exception:
-        repositories = []
-    for repository in repositories:
-        if repository.path.is_dir():
-            return repository.path
-    return collection.parent
-
-
-def plan_launcher_snapshot(
-    collection: Path,
-    repository: Path,
-    *,
-    progress: SnapshotPlanProgressCallback | None = None,
-    should_cancel: SnapshotCancelCallback | None = None,
-) -> SnapshotPlan | LauncherRecoveryPlan:
-    config = load_config(program_repo_root(), migrate_legacy=False)
-    try:
-        if progress is not None and should_cancel is None:
-            return plan_snapshot(
-                collection,
-                repository,
-                configured_face_database_dir=config.face_recognition.database_dir,
-                progress=progress,
-            )
-        if progress is not None or should_cancel is not None:
-            return plan_snapshot(
-                collection,
-                repository,
-                configured_face_database_dir=config.face_recognition.database_dir,
-                progress=progress,
-                should_cancel=should_cancel,
-            )
-        return plan_snapshot(
-            collection,
-            repository,
-            configured_face_database_dir=config.face_recognition.database_dir,
-        )
-    except MainDatabaseSourceError as exc:
-        raise_if_snapshot_cancelled(should_cancel)
-        validated_repository = validate_existing_recovery_repository(collection, repository)
-        return LauncherRecoveryPlan(
-            source_dir=collection.resolve(),
-            repository_dir=validated_repository,
-            database_error=str(exc),
-        )
-
-
-def create_launcher_snapshot(
-    collection: Path,
-    repository: Path,
-    *,
-    progress: SnapshotCreateProgressCallback | None = None,
-    should_cancel: SnapshotCancelCallback | None = None,
-) -> SnapshotCreationResult:
-    config = load_config(program_repo_root(), migrate_legacy=False)
-    if progress is None and should_cancel is None:
-        return create_snapshot(
-            collection,
-            repository,
-            face_config=config.face_recognition,
-        )
-    return create_snapshot(
-        collection,
-        repository,
-        face_config=config.face_recognition,
-        progress=progress,
-        should_cancel=should_cancel,
-    )
-
-
-def snapshot_plan_log_lines(plan: SnapshotPlan | LauncherRecoveryPlan) -> tuple[str, ...]:
-    if isinstance(plan, LauncherRecoveryPlan):
-        return (
-            "Plan for recovery-snapshot:",
-            f"  Bildesamling: {plan.source_dir}",
-            f"  Repository: {plan.repository_dir}",
-            "  Hoveddatabasen kunne ikke valideres normalt.",
-            f"  Databasefeil: {plan.database_error}",
-            "  Repositorybindingen er kontrollert skrivefritt.",
-            "  Reell kjøring vil sikre lesbare filer og rå databaser som recovery-data.",
-        )
-    state_text = {
-        "missing": "mangler og vil bli opprettet",
-        "empty": "er tomt og vil bli initialisert",
-        "existing": "er et eksisterende, gyldig repository",
-    }.get(plan.repository_state, plan.repository_state)
-    lines = [
-        "Plan for snapshot:",
-        f"  Bildesamling: {plan.source_dir}",
-        f"  Repository: {plan.repository_dir}",
-        f"  Repositoryet {state_text}",
-        f"  Filer i inventaret: {plan.inventory.total_files} "
-        f"({format_bytes(plan.inventory.total_bytes)})",
-        f"  Ekskludert: {plan.inventory.excluded_files} "
-        f"({format_bytes(plan.inventory.excluded_bytes)})",
-        f"  Estimerte nye objekter: {plan.storage.estimated_new_objects}",
-        f"  Estimert ny datamengde: {format_bytes(plan.storage.estimated_new_bytes)}",
-        f"  Ledig plass: {format_bytes(plan.storage.free_bytes)}",
-        "  Estimert plass er tilstrekkelig: "
-        + ("ja" if plan.storage.has_estimated_capacity else "nei"),
-    ]
-    lines.extend(f"  ADVARSEL: {warning}" for warning in plan.warnings)
-    return tuple(lines)
 
 
 class ButtonFactory(Protocol):
@@ -192,31 +49,6 @@ class WaitingCommandRunner(Protocol):
         on_success: Callable[[], None] | None = None,
         stdin_text: str | None = None,
         cancellable: bool = False,
-    ) -> None: ...
-
-
-class BackgroundTaskRunner(Protocol):
-    def __call__(
-        self,
-        task: Callable[[Callable[[], bool]], Any],
-        *,
-        running_message: str,
-        failure_message: str,
-        on_success: Callable[[Any], None],
-        cancellable: bool = False,
-    ) -> None: ...
-
-
-class LogReviewQuestion(Protocol):
-    def __call__(
-        self,
-        title: str,
-        message: str,
-        *,
-        yes_text: str,
-        no_text: str,
-        on_yes: Callable[[], None],
-        on_no: Callable[[], None],
     ) -> None: ...
 
 
@@ -267,17 +99,14 @@ class MainTab:
         root: Any,
         button: ButtonFactory,
         run_waiting_command: WaitingCommandRunner,
-        run_background_task: BackgroundTaskRunner,
         get_collection_path: Callable[[], Path],
         set_collection_path: Callable[[Path], None],
         is_busy: Callable[[], bool],
         post_to_ui: Callable[[Callable[[], None]], bool],
         log: Callable[[str], None],
-        log_progress: Callable[[str], None],
         refresh_launcher: Callable[[], None],
         set_launcher_buttons_enabled: Callable[[bool], None],
         add_tooltip: Callable[[Any, str], None],
-        show_log_review_question: LogReviewQuestion,
         show_error: Callable[[str, BaseException], None],
         on_close: Callable[[], None],
         destroy_root: Callable[[], None],
@@ -290,17 +119,14 @@ class MainTab:
         self.root = root
         self._button = button
         self._run_waiting_command = run_waiting_command
-        self._run_background_task = run_background_task
         self._get_collection_path = get_collection_path
         self._set_collection_path = set_collection_path
         self._is_busy = is_busy
         self._post_to_ui = post_to_ui
         self._log = log
-        self._log_progress = log_progress
         self._refresh_launcher = refresh_launcher
         self._set_launcher_buttons_enabled = set_launcher_buttons_enabled
         self._add_tooltip = add_tooltip
-        self._show_log_review_question = show_log_review_question
         self._show_error = show_error
         self._on_close = on_close
         self._destroy_root = destroy_root
@@ -320,8 +146,6 @@ class MainTab:
         self.update_checking = False
         self.update_button_icons = self._load_update_button_icons()
         self.start_server_button: Any | None = None
-        self.snapshot_button: Any | None = None
-        self.snapshot_check_button: Any | None = None
         self.update_button: Any | None = None
 
         collection_frame = ttk.Frame(self.frame)
@@ -359,8 +183,6 @@ class MainTab:
         for child in self.button_frame.winfo_children():
             child.destroy()
         self.start_server_button = None
-        self.snapshot_button = None
-        self.snapshot_check_button = None
         self.update_button = None
         collection_created = is_collection_created(self.collection_path)
         available = (
@@ -410,57 +232,8 @@ class MainTab:
             "Oppdaterer Bildebank til siste utgave. "
             "Dette tilsvarer kommandoen 'bildebank update' ",
         )
-        snapshot_button = self._button(
-            self.button_frame,
-            text="Opprett snapshot",
-            command=self._start_snapshot_flow,
-        )
-        self.snapshot_button = snapshot_button
-        snapshot_button.grid(
-            row=1,
-            column=0,
-            columnspan=2,
-            padx=self.padx,
-            pady=self.pady,
-            sticky="ew",
-        )
-        if collection_created:
-            self._add_tooltip(
-                snapshot_button,
-                "Lager et nytt, uforanderlig snapshot uten å slette eldre snapshots. "
-                "En skrivefri plan vises før du bekrefter.",
-            )
-        else:
-            self._add_tooltip(
-                snapshot_button,
-                "Snapshot kan opprettes etter at bildesamlingen er opprettet.",
-            )
-        snapshot_check_button = self._button(
-            self.button_frame,
-            text="Kontroller snapshots",
-            command=self._start_snapshot_check_flow,
-        )
-        self.snapshot_check_button = snapshot_check_button
-        snapshot_check_button.grid(
-            row=1,
-            column=2,
-            columnspan=2,
-            padx=self.padx,
-            pady=self.pady,
-            sticky="ew",
-        )
-        self._add_tooltip(
-            snapshot_check_button,
-            "Leser og SHA-256-kontrollerer alle objekter i et eksisterende repository. "
-            "Kontrollen endrer ikke snapshots eller objekter.",
-        )
         return MainTabRefresh(
-            [
-                start_button,
-                update_button,
-                snapshot_button,
-                snapshot_check_button,
-            ],
+            [start_button, update_button],
             collection_created,
             available,
         )
@@ -482,8 +255,6 @@ class MainTab:
         self.create_collection_button.configure(state=create_state)
         if self.start_server_button is not None and not collection_created:
             self.start_server_button.configure(state="disabled")
-        if self.snapshot_button is not None and not collection_created:
-            self.snapshot_button.configure(state="disabled")
         if self.update_button is not None and (
             self.update_status.status == "checking" or not enabled
         ):
@@ -674,420 +445,6 @@ class MainTab:
             failure_message="Kunne ikke opprette bildesamlingen.",
             on_success=self._refresh_launcher,
         )
-
-    def _start_snapshot_flow(self) -> None:
-        from tkinter import filedialog
-
-        selected = filedialog.askdirectory(
-            title="Velg snapshot-repository",
-            initialdir=str(snapshot_dialog_initial_directory(self.collection_path)),
-            mustexist=False,
-        )
-        if not selected:
-            self._log("Snapshot avbrutt: ingen mappe valgt.")
-            return
-        self._run_snapshot_plan(Path(selected))
-
-    def _run_snapshot_plan(self, repository: Path) -> None:
-        last_progress_at = [0.0]
-        last_stage: list[str | None] = [None]
-        last_objects = [-1]
-
-        def report_progress(progress: SnapshotPlanProgress) -> None:
-            now = time.monotonic()
-            stage_changed = progress.stage != last_stage[0]
-            finished = (
-                progress.total_objects > 0
-                and progress.completed_objects >= progress.total_objects
-            )
-            if (
-                not stage_changed
-                and progress.completed_objects == last_objects[0]
-                and not finished
-                and now - last_progress_at[0] < 1.0
-            ):
-                return
-            if (
-                not stage_changed
-                and progress.completed_objects not in {0, progress.total_objects}
-                and progress.completed_objects % 1_000 != 0
-                and now - last_progress_at[0] < 1.0
-            ):
-                return
-            last_progress_at[0] = now
-            last_stage[0] = progress.stage
-            last_objects[0] = progress.completed_objects
-
-            if progress.stage == "database":
-                message = "Snapshot dry-run: leser og kontrollerer hoveddatabasen ..."
-            elif progress.stage == "database_complete":
-                message = (
-                    f"Snapshot dry-run: hoveddatabase={progress.completed_objects} filposter"
-                )
-            elif progress.stage == "inventory":
-                if progress.completed_objects == 0:
-                    message = "Snapshot dry-run: bygger filinventar ..."
-                elif progress.total_objects == 0:
-                    message = (
-                        f"Snapshot dry-run: filer funnet={progress.completed_objects}, "
-                        f"registrert={format_bytes(progress.completed_bytes)}"
-                    )
-                else:
-                    message = (
-                        f"Snapshot dry-run: filinventar={progress.completed_objects} filer "
-                        f"({format_bytes(progress.completed_bytes)})"
-                    )
-            elif progress.stage == "files":
-                if progress.total_objects == 0:
-                    message = "Snapshot dry-run: ingen databaseførte filer å sammenligne."
-                else:
-                    message = (
-                        "Snapshot dry-run: databaseførte filer kontrollert="
-                        f"{progress.completed_objects}/{progress.total_objects}"
-                    )
-            else:
-                message = "Snapshot dry-run: beregner plassbehov ..."
-
-            def log_progress() -> None:
-                self._log_progress(message)
-
-            self._post_to_ui(log_progress)
-
-        def run_plan(should_cancel: Callable[[], bool]) -> SnapshotPlan | LauncherRecoveryPlan | None:
-            try:
-                return plan_launcher_snapshot(
-                    self.collection_path,
-                    repository,
-                    progress=report_progress,
-                    should_cancel=should_cancel,
-                )
-            except SnapshotCancelled:
-                return None
-
-        self._run_background_task(
-            run_plan,
-            running_message=f"Kontrollerer snapshot-plan for {repository} ...",
-            failure_message="Kontroll av snapshot-plan feilet.",
-            on_success=lambda plan: self._snapshot_plan_task_finished(repository, plan),
-            cancellable=True,
-        )
-
-    def _snapshot_plan_task_finished(
-        self,
-        repository: Path,
-        plan: SnapshotPlan | LauncherRecoveryPlan | None,
-    ) -> None:
-        if plan is None:
-            self._log("Kontroll av snapshot-plan ble avbrutt. Ingen endringer ble gjort.")
-            return
-        self._snapshot_plan_finished(repository, plan)
-
-    def _snapshot_plan_finished(
-        self,
-        repository: Path,
-        plan: SnapshotPlan | LauncherRecoveryPlan,
-    ) -> None:
-        for line in snapshot_plan_log_lines(plan):
-            self._log(line)
-        if isinstance(plan, LauncherRecoveryPlan):
-            explanation = (
-                "Hoveddatabasen kunne ikke valideres. Repositorybindingen er kontrollert, "
-                "men normal plassberegning er ikke mulig.\n\n"
-                "Hvis du fortsetter, vil Bildebank forsøke å publisere et recovery-snapshot "
-                "med alle lesbare filer og rå databasefiler."
-            )
-            estimated_size = ""
-        else:
-            explanation = (
-                "Et nytt snapshot legges til. Eldre snapshots og tilhørende objekter "
-                "blir ikke slettet eller overskrevet."
-            )
-            estimated_size = (
-                f"\n\nEstimert ny datamengde: {format_bytes(plan.storage.estimated_new_bytes)}"
-            )
-        self._show_log_review_question(
-            "Opprett snapshot?",
-            (
-                "Den skrivefrie kontrollen er fullført og planen står i loggen.\n\n"
-                f"{explanation}\n\n"
-                f"Repository:\n{repository}"
-                f"{estimated_size}\n\n"
-                "Vil du opprette snapshotet nå?"
-            ),
-            yes_text="Opprett snapshot",
-            no_text="Avbryt",
-            on_yes=lambda: self._run_snapshot_create(repository),
-            on_no=lambda: self._log("Snapshot avbrutt etter kontrollen."),
-        )
-
-    def _run_snapshot_create(self, repository: Path) -> None:
-        last_progress_at = [0.0]
-        last_stage: list[str | None] = [None]
-        last_objects = [-1]
-
-        def report_progress(progress: SnapshotCreateProgress) -> None:
-            now = time.monotonic()
-            stage_changed = progress.stage != last_stage[0]
-            finished = progress.completed_objects >= progress.total_objects
-            if (
-                not stage_changed
-                and progress.completed_objects == last_objects[0]
-                and not finished
-                and now - last_progress_at[0] < 0.5
-            ):
-                return
-            if (
-                not stage_changed
-                and progress.completed_objects not in {0, progress.total_objects}
-                and progress.completed_objects % 25 != 0
-                and now - last_progress_at[0] < 0.5
-            ):
-                return
-            last_progress_at[0] = now
-            last_stage[0] = progress.stage
-            last_objects[0] = progress.completed_objects
-            if progress.stage == "inventory":
-                message = (
-                    "Snapshot: lager filinventar ..."
-                    if progress.total_objects == 0
-                    else "Snapshot: filinventar="
-                    f"{progress.completed_objects} filer "
-                    f"({format_bytes(progress.completed_bytes)})"
-                )
-            elif progress.stage in {"files", "databases"}:
-                label = "filer" if progress.stage == "files" else "databaser"
-                message = (
-                    f"Snapshot: {label}={progress.completed_objects}/{progress.total_objects}, "
-                    f"lest={format_bytes(progress.completed_bytes)}/"
-                    f"{format_bytes(progress.total_bytes)}"
-                )
-            else:
-                if progress.completed_objects > 0:
-                    return
-                message = "Snapshot: publiserer manifest ..."
-
-            def log_progress() -> None:
-                self._log_progress(message)
-
-            self._post_to_ui(log_progress)
-
-        def run_create(should_cancel: Callable[[], bool]) -> SnapshotCreationResult | None:
-            try:
-                return create_launcher_snapshot(
-                    self.collection_path,
-                    repository,
-                    progress=report_progress,
-                    should_cancel=should_cancel,
-                )
-            except SnapshotCancelled:
-                return None
-
-        self._run_background_task(
-            run_create,
-            running_message=f"Oppretter snapshot i {repository} ...",
-            failure_message="Snapshot feilet. Ingen snapshot ble publisert.",
-            on_success=lambda result: self._snapshot_creation_task_finished(repository, result),
-            cancellable=True,
-        )
-
-    def _snapshot_creation_task_finished(
-        self,
-        repository: Path,
-        result: SnapshotCreationResult | None,
-    ) -> None:
-        if result is None:
-            from tkinter import messagebox
-
-            self._log(
-                "Snapshot ble avbrutt kontrollert. Ingen nytt snapshot ble publisert. "
-                "Tidligere snapshots er uendret, og eventuelle ufullstendige data er beholdt "
-                f"under {repository / 'incomplete'}."
-            )
-            messagebox.showinfo(
-                "Snapshot avbrutt",
-                "Snapshotet ble avbrutt kontrollert. Ingen nytt snapshot ble publisert.\n\n"
-                "Tidligere snapshots er uendret. Ufullstendige data er beholdt for kontroll.",
-                parent=self.root,
-            )
-            self._refresh_launcher()
-            return
-        self._snapshot_creation_finished(result)
-
-    def _snapshot_creation_finished(self, result: SnapshotCreationResult) -> None:
-        from tkinter import messagebox
-
-        self._log(f"Snapshot opprettet med status {result.status}.")
-        self._log(f"Snapshot-ID: {result.published.snapshot_id}")
-        self._log(f"Snapshotmappe: {result.published.snapshot_dir}")
-        for warning in result.build.warnings:
-            self._log(f"ADVARSEL: {warning}")
-
-        state_error = record_published_snapshot_best_effort(
-            program_repo_root(),
-            collection_id=result.build.collection_id,
-            repository_id=result.build.repository_id,
-            repository_path=result.repository,
-            snapshot_id=result.published.snapshot_id,
-            status=result.status,
-        )
-        state_warning = ""
-        if state_error is not None:
-            warning = (
-                "Snapshotet er publisert, men Bildebank klarte ikke å huske "
-                f"repositoryet lokalt: {state_error}"
-            )
-            self._log(f"ADVARSEL: {warning}")
-            state_warning = f"\n\nADVARSEL: {warning}"
-
-        details = (
-            f"Snapshot-ID:\n{result.published.snapshot_id}\n\n"
-            f"Snapshotmappe:\n{result.published.snapshot_dir}"
-            f"{state_warning}"
-        )
-        if result.status == "complete":
-            messagebox.showinfo(
-                "Snapshot fullført",
-                "Snapshotet ble opprettet uten kjente avvik.\n\n" + details,
-                parent=self.root,
-            )
-        elif result.status == "degraded":
-            messagebox.showwarning(
-                "Snapshot opprettet med problemer",
-                "Snapshotet ble publisert, men har avvik som må kontrolleres.\n\n" + details,
-                parent=self.root,
-            )
-        else:
-            messagebox.showwarning(
-                "Recovery-snapshot opprettet",
-                "Hoveddatabasen kunne ikke sikres normalt. Et recovery-snapshot ble publisert.\n\n"
-                + details,
-                parent=self.root,
-            )
-        self._refresh_launcher()
-
-    def _start_snapshot_check_flow(self) -> None:
-        from tkinter import filedialog
-
-        selected = filedialog.askdirectory(
-            title="Velg snapshot-repository som skal kontrolleres",
-            initialdir=str(snapshot_dialog_initial_directory(self.collection_path)),
-            mustexist=True,
-        )
-        if not selected:
-            self._log("Full snapshotkontroll avbrutt: ingen mappe valgt.")
-            return
-        repository = Path(selected)
-        self._show_log_review_question(
-            "Kontroller hele snapshot-repositoryet?",
-            (
-                "Bildebank vil lese og beregne SHA-256 for alle objekter, "
-                "også objekter som ikke lenger refereres av et snapshot.\n\n"
-                "Dette kan ta lang tid, men endrer ikke snapshots eller objekter. "
-                "Kontrollen kan avbrytes kontrollert.\n\n"
-                f"Repository:\n{repository}"
-            ),
-            yes_text="Start full kontroll",
-            no_text="Avbryt",
-            on_yes=lambda: self._run_snapshot_check(repository),
-            on_no=lambda: self._log("Full snapshotkontroll avbrutt."),
-        )
-
-    def _run_snapshot_check(self, repository: Path) -> None:
-        last_progress_at = [0.0]
-        last_objects = [-1]
-
-        def report_progress(progress: SnapshotCheckProgress) -> None:
-            now = time.monotonic()
-            finished = progress.checked_objects >= progress.total_objects
-            if (
-                progress.checked_objects == last_objects[0]
-                and not finished
-                and now - last_progress_at[0] < 0.5
-            ):
-                return
-            if (
-                progress.checked_objects not in {0, progress.total_objects}
-                and progress.checked_objects % 25 != 0
-                and now - last_progress_at[0] < 0.5
-            ):
-                return
-            last_progress_at[0] = now
-            last_objects[0] = progress.checked_objects
-            message = (
-                "Snapshot check: "
-                f"objekter={progress.checked_objects}/{progress.total_objects}, "
-                f"lest={format_bytes(progress.checked_bytes)}/{format_bytes(progress.total_bytes)}"
-            )
-            self._post_to_ui(lambda: self._log_progress(message))
-
-        self._run_background_task(
-            lambda cancel_requested: check_snapshot_repository(
-                repository,
-                full=True,
-                progress=report_progress,
-                should_cancel=cancel_requested,
-            ),
-            running_message=f"Kontrollerer alle objekter i {repository} ...",
-            failure_message="Full snapshotkontroll feilet.",
-            on_success=self._snapshot_check_finished,
-            cancellable=True,
-        )
-
-    def _snapshot_check_finished(self, result: SnapshotCheckResult) -> None:
-        from tkinter import messagebox
-
-        self._log("Full snapshotkontroll " + ("avbrutt." if result.cancelled else "fullført."))
-        self._log(f"Repository: {result.repository}")
-        self._log(f"Kontrollerte objekter: {result.checked_objects}/{result.total_objects}")
-        self._log(f"Kontrollerte byte: {format_bytes(result.checked_bytes)}")
-        self._log(f"Repositoryavvik: {len(result.issues)}")
-        for run in result.incomplete_runs:
-            self._log(
-                f"ADVARSEL: Ufullstendig kjøring {run.run_id}: {format_bytes(run.size_bytes)}"
-            )
-        for issue in result.issues:
-            self._log(f"FEIL: {issue.message}")
-            for affected in issue.affected:
-                entry = f", entry_id={affected.entry_id}" if affected.entry_id else ""
-                self._log(
-                    f"  Berørt: snapshot={affected.snapshot_id}{entry}, "
-                    f"sti={affected.logical_path}"
-                )
-
-        if result.cancelled:
-            messagebox.showwarning(
-                "Kontroll avbrutt",
-                "Kontrollen ble avbrutt før alle objekter var lest. Repositoryet ble ikke endret.",
-                parent=self.root,
-            )
-        elif result.issues:
-            messagebox.showwarning(
-                "Snapshot-repositoryet har integritetsavvik",
-                (
-                    f"Kontrollen fant {len(result.issues)} repositoryavvik. "
-                    "Berørte snapshots og stier står i loggen.\n\n"
-                    "Ikke bruk dette repositoryet som eneste kopi."
-                ),
-                parent=self.root,
-            )
-        elif result.incomplete_runs:
-            messagebox.showwarning(
-                "Repositoryet er kontrollert med advarsler",
-                (
-                    "Alle publiserte data besto kontrollen, men repositoryet inneholder "
-                    "ufullstendige kjøringer. Se loggen."
-                ),
-                parent=self.root,
-            )
-        else:
-            messagebox.showinfo(
-                "Snapshot-repository kontrollert",
-                (
-                    f"Alle {result.checked_objects} objekter besto full SHA-256-kontroll.\n\n"
-                    f"Kontrollert datamengde: {format_bytes(result.checked_bytes)}"
-                ),
-                parent=self.root,
-            )
 
     def _run_migrate(self) -> None:
         self._log("Migrerer database ...")
