@@ -28,6 +28,13 @@ Hvis bruker starter prompt med "Spørsmål:" så skal du ikke endre kode.
   plasseres brukerdokumentasjon i docs/ og dokumentasjon for utvikler og AI
   i devel-docs/.
 
+## Python
+
+- For full testsuite, prefer `python -m pytest -n auto`. Do not use `-q` for
+  the full suite; it produces noisy subtest progress output with xdist.
+- For focused tests while developing, use `python -m pytest <test-path>`
+  without `-n`.
+
 ## Omfang
 Gjør minimale, målrettede endringer. Ikke refaktorer kode som ikke er
 direkte relatert til oppgaven du har fått.

@@ -67,10 +67,10 @@ model_name = "buffalo_l"
 
         self.assertEqual(raised.exception.code, 0)
         stdout = stdout_buffer.getvalue()
+        normalized_stdout = " ".join(stdout.split())
         self.assertIn("--all", stdout)
         self.assertIn("--keep-scan", stdout)
-        self.assertIn("Standard hvis ingen", stdout)
-        self.assertIn("nivåvalg er brukt", stdout)
+        self.assertIn("Standard hvis ingen nivåvalg er brukt", normalized_stdout)
         self.assertIn("krever alltid", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
