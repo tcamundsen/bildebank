@@ -11,6 +11,7 @@ from .geo import H3_COLUMNS, h3_resolution
 from .server_browser_queries import (
     adjacent_items_from_id_order,
     adjacent_source_items,
+    browser_item_by_id,
     browser_date_for_item,
     imported_source_by_id,
     item_by_id,
@@ -428,6 +429,19 @@ def respond_browser_source(
                 )
                 handler.record_server_timing("item_by_id", start)
             if item is None:
+                # An edit may make the current item disappear from a filtered
+                # browser source.  Keep the image reachable in the common
+                # browser when it is still an active, visible browser item.
+                start = time.perf_counter()
+                fallback_item = browser_item_by_id(
+                    handler.server.target,
+                    file_id,
+                    hide_out_of_focus=hide_out_of_focus,
+                )
+                handler.record_server_timing("fallback_item_by_id", start)
+                if fallback_item is not None:
+                    handler.redirect(f"/item/{file_id}")
+                    return
                 handler.respond_text(item_not_found_message, status=HTTPStatus.NOT_FOUND)
                 return
             if source_has_sql_filter(source):

@@ -2711,6 +2711,56 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("Filtersøk: type:image (1 treff)", str(response["html"]))
         self.assertIn('href="/filter/type%3Aimage/year/2024"', str(response["html"]))
 
+    def test_run_server_filtered_item_falls_back_to_common_browser_after_edit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            filter_source = text_filter_browser_source("location:manual", target)
+            response: dict[str, object] = {}
+            handler = object.__new__(BildebankRequestHandler)
+            handler.server = SimpleNamespace(  # type: ignore[attr-defined]
+                target=target,
+                config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=False)),
+                face_enabled=False,
+                openclip_enabled=False,
+                hide_out_of_focus=False,
+                source_item_order=lambda source, *, hide_out_of_focus=False: ((), {}),
+            )
+            handler.record_server_timing = lambda name, start: None  # type: ignore[method-assign]
+            handler.respond_text = lambda content, *, status=HTTPStatus.OK: response.update(  # type: ignore[method-assign]
+                text=content, status=status
+            )
+            handler.redirect = lambda location: response.update(location=location)  # type: ignore[method-assign]
+
+            server_endpoints_browser.respond_browser_source(  # type: ignore[arg-type]
+                handler,
+                filter_source,
+                "item",
+                "1",
+                item_not_found_message="Filen finnes ikke for dette filtersøket.",
+                invalid_page_message="Ugyldig filtersøkside.",
+            )
+
+        self.assertEqual(response, {"location": "/item/1"})
+
     def test_run_server_filter_page_documents_search_criteria(self) -> None:
         server = SimpleNamespace(face_enabled=True, openclip_enabled=True)
         body = filter_start_html(server)
