@@ -9,6 +9,10 @@ from typing import Callable
 
 ShellPageRenderer = Callable[..., str]
 DOC_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+MARKDOWN_ALERTS = {
+    "WARNING": ("warning", "&#9888;", "Warning"),
+    "IMPORTANT": ("important", "&#10071;", "Important"),
+}
 
 
 def resolve_doc_path(raw_doc_path: str, docs_root: Path) -> Path | None:
@@ -195,9 +199,10 @@ def markdown_to_html(markdown: str) -> str:
 
 
 def markdown_alert_html(lines: list[str], start_index: int) -> tuple[str, int] | None:
-    marker = re.fullmatch(r">\s*\[!WARNING\]\s*", lines[start_index].strip())
+    marker = re.fullmatch(r">\s*\[!(WARNING|IMPORTANT)\]\s*", lines[start_index].strip())
     if marker is None:
         return None
+    alert_class, icon, title = MARKDOWN_ALERTS[marker.group(1)]
 
     content_lines: list[str] = []
     index = start_index + 1
@@ -212,8 +217,8 @@ def markdown_alert_html(lines: list[str], start_index: int) -> tuple[str, int] |
 
     body = "<br>".join(markdown_inline_html(line) for line in content_lines if line)
     return (
-        '<div class="markdown-alert markdown-alert-warning">'
-        '<div class="markdown-alert-title"><span aria-hidden="true">&#9888;</span> Warning</div>'
+        f'<div class="markdown-alert markdown-alert-{alert_class}">'
+        f'<div class="markdown-alert-title"><span aria-hidden="true">{icon}</span> {title}</div>'
         f"<p>{body}</p>"
         "</div>",
         index,

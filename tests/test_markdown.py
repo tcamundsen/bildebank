@@ -143,6 +143,20 @@ Neste avsnitt.
         )
         self.assertIn("<p>Neste avsnitt.</p>", html)
 
+    def test_markdown_help_renderer_supports_important_alerts(self) -> None:
+        html = markdown_to_html(
+            """> [!IMPORTANT]
+> Ta vare på hele utskriften hvis snapshotet har avvik.
+"""
+        )
+
+        self.assertIn('<div class="markdown-alert markdown-alert-important">', html)
+        self.assertIn(
+            '<div class="markdown-alert-title"><span aria-hidden="true">&#10071;</span> Important</div>',
+            html,
+        )
+        self.assertIn("<p>Ta vare på hele utskriften hvis snapshotet har avvik.</p>", html)
+
 
 if __name__ == "__main__":
     unittest.main()

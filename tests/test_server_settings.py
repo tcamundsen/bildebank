@@ -114,7 +114,7 @@ class ServerSettingsTests(unittest.TestCase):
             'window.addEventListener("load", scheduleMaintenanceStatusesLoad', SERVER_JS
         )
         self.assertIn("setTimeout(loadMaintenanceStatuses, 0)", SERVER_JS)
-        self.assertEqual(SERVER_ASSET_VERSION, "51")
+        self.assertEqual(SERVER_ASSET_VERSION, "52")
         self.assertIn("bildebank ${payload.name}", SERVER_JS)
         self.assertIn("bilder trenger ${payload.name}", SERVER_JS)
         self.assertIn("/api/maintenance/thumbnails", SERVER_JS)
