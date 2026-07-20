@@ -38,6 +38,7 @@ from .server_browser_queries import (
 )
 from .server_faces import (
     face_overlay_content_html,
+    item_face_matches_content_html,
 )
 from . import server_markdown
 from . import server_files
@@ -389,6 +390,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 return
             if parsed.path == "/api/item-faces":
                 self.respond_item_faces(parsed.query)
+                return
+            if parsed.path == "/api/item-face-matches":
+                self.respond_item_face_matches(parsed.query)
                 return
             if parsed.path == "/api/search-preload":
                 self.respond_search_preload()
@@ -838,6 +842,43 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 ),
             }
         )
+
+    def respond_item_face_matches(self, query: str) -> None:
+        if not self.server.face_enabled:
+            self.respond_json(
+                {"ok": False, "error": "Ansiktsgjenkjenning er av."},
+                status=HTTPStatus.FORBIDDEN,
+            )
+            return
+        params = urllib.parse.parse_qs(query)
+        try:
+            file_id = parse_file_id(first_param(params, "file_id"))
+        except ValueError as exc:
+            self.respond_json(
+                {"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST
+            )
+            return
+        item = browser_item_by_id(self.server.target, file_id)
+        if item is None:
+            self.respond_json(
+                {"ok": False, "error": "Filen finnes ikke."},
+                status=HTTPStatus.NOT_FOUND,
+            )
+            return
+        try:
+            content = item_face_matches_content_html(
+                self.server.target,
+                item,
+                self.server.config.face_recognition,
+                read_only=getattr(self.server, "read_only", False),
+            )
+        except Exception as exc:  # noqa: BLE001 - API should return JSON errors
+            self.respond_json(
+                {"ok": False, "error": f"Kunne ikke beregne ansiktstreff: {exc}"},
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
+            return
+        self.respond_json({"ok": True, "html": content})
 
     def respond_thumbnail_maintenance(self) -> None:
         try:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import math
 import sqlite3
 import urllib.parse
 from functools import lru_cache
@@ -10,7 +11,13 @@ from typing import Any, Callable, Iterable
 
 from . import db
 from .config import FaceRecognitionConfig
-from .face import ensure_face_schema_path, face_db_path, normalize_person_name
+from .face import (
+    embedding_array_from_blob,
+    ensure_face_schema_path,
+    face_db_path,
+    normalize_person_name,
+    normalized_vector_matrix,
+)
 from .html_export import face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
 from .server_browser_item_html import rotation_style_attr
@@ -1463,6 +1470,176 @@ def face_overlay_content_html(
     people = registered_people(target, face_config)
     image_url = f"/file/{int(item['id'])}"
     return "\n".join(face_overlay_item_html(item, image_url, face, people) for face in faces)
+
+
+def item_face_matches_content_html(
+    target: Path,
+    item: Any,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    read_only: bool = False,
+) -> str:
+    path = face_db_path(target, face_config)
+    if not path.exists():
+        return '<p class="empty">Bildet har ingen scannede ansikter.</p>'
+
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        target_faces = list(
+            conn.execute(
+                """
+                SELECT id, bbox_x, bbox_y, bbox_width, bbox_height,
+                       detection_score, embedding
+                FROM faces
+                WHERE file_id = ?
+                ORDER BY id
+                """,
+                (int(item["id"]),),
+            )
+        )
+        if not target_faces:
+            return '<p class="empty">Bildet har ingen scannede ansikter.</p>'
+        references = list(
+            conn.execute(
+                """
+                SELECT persons.id AS person_id, persons.name, faces.id AS face_id,
+                       faces.file_id, faces.embedding
+                FROM persons
+                JOIN person_faces ON person_faces.person_id = persons.id
+                JOIN faces ON faces.id = person_faces.face_id
+                ORDER BY persons.id, faces.id
+                """
+            )
+        )
+    finally:
+        conn.close()
+
+    import numpy as np
+
+    reference_matrix = normalized_vector_matrix(
+        [embedding_array_from_blob(reference["embedding"], np) for reference in references],
+        np,
+    )
+    rendered_faces: list[dict[str, object]] = []
+    for face in target_faces:
+        target_vector = normalized_vector_matrix(
+            [embedding_array_from_blob(face["embedding"], np)], np
+        )[0]
+        best_by_person: dict[int, dict[str, object]] = {}
+        for reference, reference_vector in zip(references, reference_matrix):
+            reference_face_id = int(reference["face_id"])
+            if reference_face_id == int(face["id"]):
+                continue
+            score = float(target_vector @ reference_vector)
+            if score <= 0.0:
+                continue
+            person_id = int(reference["person_id"])
+            current = best_by_person.get(person_id)
+            if current is None or score > float(current["score"]) or (
+                score == float(current["score"])
+                and reference_face_id < int(current["referenceFaceId"])
+            ):
+                best_by_person[person_id] = {
+                    "name": str(reference["name"]),
+                    "score": score,
+                    "referenceFaceId": reference_face_id,
+                    "referenceFileId": int(reference["file_id"]),
+                }
+        candidates = sorted(
+            best_by_person.values(),
+            key=lambda candidate: (-float(candidate["score"]), str(candidate["name"])),
+        )[:3]
+        rendered_faces.append(
+            {
+                "faceId": int(face["id"]),
+                "score": float(face["detection_score"]),
+                "x": float(face["bbox_x"]),
+                "y": float(face["bbox_y"]),
+                "width": float(face["bbox_width"]),
+                "height": float(face["bbox_height"]),
+                "candidates": candidates,
+            }
+        )
+
+    boxed_faces = cached_face_box_items_for_item(
+        target,
+        item,
+        rendered_faces,
+        write_metadata_cache=not read_only,
+    )
+    candidates_by_face_id = {
+        int(face["faceId"]): face["candidates"] for face in rendered_faces
+    }
+    intro = (
+        '<p class="face-matches-help">Hver person vurderes uavhengig. '
+        'Threshold er den høyeste grensen som kan brukes dersom ingen bedre kandidat fantes. '
+        'Ordinær face-suggest velger bare det beste treffet totalt.</p>'
+    )
+    image_url = f"/file/{int(item['id'])}"
+    details = "\n".join(
+        face_matches_item_html(
+            item,
+            image_url,
+            face,
+            candidates_by_face_id.get(int(face["faceId"]), []),
+        )
+        for face in boxed_faces
+    )
+    return intro + details
+
+
+def face_matches_item_html(
+    item: Any,
+    image_url: str,
+    face: dict[str, object],
+    candidates: object,
+) -> str:
+    face_id = require_int(face["faceId"], "faceId")
+    box = ""
+    if {"left", "top", "boxWidth", "boxHeight"} <= face.keys():
+        box = (
+            '<div class="face-box" style="'
+            f'left: {require_float(face["left"], "left"):.4f}%; '
+            f'top: {require_float(face["top"], "top"):.4f}%; '
+            f'width: {require_float(face["boxWidth"], "boxWidth"):.4f}%; '
+            f'height: {require_float(face["boxHeight"], "boxHeight"):.4f}%;'
+            '"></div>'
+        )
+    rows: list[str] = []
+    if isinstance(candidates, list):
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            name = str(candidate["name"])
+            reference_file_id = require_int(candidate["referenceFileId"], "referenceFileId")
+            score = require_float(candidate["score"], "score")
+            threshold = math.floor(score * 1000.0) / 1000.0
+            threshold_text = f"{threshold:.3f}".replace(".", ",")
+            reference_url = (
+                "/person/"
+                + urllib.parse.quote(name, safe="")
+                + f"/confirmed/item/{reference_file_id}"
+            )
+            rows.append(
+                f'<li><a href="{html.escape(reference_url)}">{html.escape(name)}</a> '
+                f'<span class="face-match-threshold">threshold ≤ {threshold_text}</span></li>'
+            )
+    matches_html = (
+        '<ol class="face-match-list">' + "".join(rows) + "</ol>"
+        if rows
+        else '<p class="empty">Ingen bekreftede ansikter gir et mulig treff.</p>'
+    )
+    return f"""
+    <section class="face-detail" data-face-match-detail="{face_id}">
+      <div class="face-detail-title">face-id {face_id}, deteksjon {require_float(face["score"], "score"):.3f}</div>
+      <div class="lightbox-media"{rotation_style_attr(item)}>
+        <img src="{html.escape(image_url)}" alt="">
+        {box}
+      </div>
+      {matches_html}
+    </section>
+    """
 
 
 def face_overlay_item_html(item: Any, image_url: str, face: dict[str, object], people: list[dict[str, str]]) -> str:

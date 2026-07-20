@@ -150,6 +150,11 @@ Etter at du har kjørt `face-suggest`, vises forslagene i bildebrowseren fra
 - Knappen "Bekreftede bilder" viser bare bildene der du selv har bekreftet
   personen.
 
+På en bildeside kan du også trykke **Ansiktstreff**. Da sammenligner Bildebank
+hvert scannet ansikt i bildet med de bekreftede ansiktene og viser inntil tre
+mulige personer. Beregningen skjer først når knappen trykkes, og endrer eller
+lagrer ikke forslag i ansiktsdatabasen.
+
 Hvis du bekrefter flere ansikter senere, må du kjøre `face-suggest` på nytt for
 å oppdatere forslagene.  Når grunnflyten er kjent, kan du lese mer i
 [face-suggest-strategier](face-suggest-strategier.md).

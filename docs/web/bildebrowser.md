@@ -43,6 +43,11 @@ ikke gjenkjennes av insightface. Visningen av denne kan slås av og på i
 
 Du får mer informasjon om bildet ved å klikke på filnavnet øverst på skjermen.
 
+Når ansiktsgjenkjenning er slått på, åpner **Ansiktstreff** en visning av de
+scannede ansiktene i bildet og inntil tre mulige personer for hvert ansikt.
+Treffene beregnes først når du trykker på knappen. Verdien ved hvert navn viser
+hvor høy threshold som kan brukes for akkurat det treffet.
+
 ## Kommentarer
 
 Knappen **Kommentar** i venstrepanelet åpner et felt der du kan skrive eller

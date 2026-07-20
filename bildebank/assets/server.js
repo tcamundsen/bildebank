@@ -8,6 +8,7 @@
   const faceOverlay = document.getElementById("faceOverlay");
   const infoOverlay = document.getElementById("infoOverlay");
   const openFacesButton = document.querySelector("[data-open-faces]");
+  const openFaceMatchesButton = document.querySelector("[data-open-face-matches]");
   const closeFacesButton = document.querySelector("[data-close-faces]");
   const openInfoButtons = document.querySelectorAll("[data-open-info]");
   const closeInfoButton = document.querySelector("[data-close-info]");
@@ -44,6 +45,9 @@
   const searchForm = document.querySelector("[data-search-form]");
   const searchLoading = document.querySelector("[data-search-loading]");
   let facesLoaded = false;
+  let faceMatchesLoaded = false;
+  let faceMatchesLoading = false;
+  let faceMatchesOverlay = null;
   let infoLoaded = false;
   let infoFileId = "";
   let manualDateFileId = "";
@@ -251,6 +255,52 @@
   function closeFacesOverlay() {
     if (!faceOverlay) return;
     faceOverlay.hidden = true;
+  }
+  function ensureFaceMatchesOverlay() {
+    if (faceMatchesOverlay) return faceMatchesOverlay;
+    faceMatchesOverlay = document.createElement("div");
+    faceMatchesOverlay.id = "faceMatchesOverlay";
+    faceMatchesOverlay.className = "face-overlay";
+    faceMatchesOverlay.innerHTML = `
+      <div class="lightbox-bar">
+        <div class="lightbox-title">Ansiktstreff</div>
+        <button class="lightbox-close" type="button" data-close-face-matches>Lukk</button>
+      </div>
+      <div class="lightbox-stage">
+        <div class="face-list" data-face-matches-list></div>
+      </div>`;
+    faceMatchesOverlay.querySelector("[data-close-face-matches]")?.addEventListener("click", closeFaceMatchesOverlay);
+    faceMatchesOverlay.addEventListener("click", event => {
+      if (event.target === faceMatchesOverlay || event.target.classList?.contains("lightbox-stage")) {
+        closeFaceMatchesOverlay();
+      }
+    });
+    document.body.appendChild(faceMatchesOverlay);
+    return faceMatchesOverlay;
+  }
+  async function openFaceMatchesOverlay() {
+    const overlay = ensureFaceMatchesOverlay();
+    overlay.hidden = false;
+    const list = overlay.querySelector("[data-face-matches-list]");
+    const fileId = openFaceMatchesButton?.dataset.faceMatchesItem || "";
+    if (!list || !fileId || faceMatchesLoaded || faceMatchesLoading) return;
+    faceMatchesLoading = true;
+    list.replaceChildren(faceStatusMessage("Beregner …"));
+    try {
+      const response = await csrfFetch(`/api/item-face-matches?file_id=${encodeURIComponent(fileId)}`);
+      const payload = await response.json();
+      if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke beregne ansiktstreff.");
+      list.innerHTML = payload.html || "";
+      faceMatchesLoaded = true;
+    } catch (error) {
+      list.replaceChildren(faceStatusMessage(error.message || "Kunne ikke beregne ansiktstreff."));
+    } finally {
+      faceMatchesLoading = false;
+    }
+    overlay.querySelector("[data-close-face-matches]")?.focus();
+  }
+  function closeFaceMatchesOverlay() {
+    if (faceMatchesOverlay) faceMatchesOverlay.hidden = true;
   }
   function infoStatusRow(message) {
     const row = document.createElement("div");
@@ -630,6 +680,7 @@
   scheduleQuarterTurnFit();
   openFacesButton?.addEventListener("click", openFacesOverlay);
   closeFacesButton?.addEventListener("click", closeFacesOverlay);
+  openFaceMatchesButton?.addEventListener("click", openFaceMatchesOverlay);
   openInfoButtons.forEach(button => {
     button.addEventListener("click", event => {
       event.preventDefault();
@@ -1199,6 +1250,13 @@
   });
   bindFaceAssignmentHandlers();
   document.addEventListener("keydown", event => {
+    if (faceMatchesOverlay && !faceMatchesOverlay.hidden) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeFaceMatchesOverlay();
+      }
+      return;
+    }
     if (faceOverlay && !faceOverlay.hidden) {
       if (event.key === "Escape") {
         event.preventDefault();

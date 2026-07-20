@@ -267,6 +267,7 @@ def _source_item_controls_html(
     read_only: bool = False,
 ) -> str:
     from .server_shell import (
+        face_matches_button_html,
         face_suggest_button_html,
         face_toggle_button_html,
         source_controls_html,
@@ -284,6 +285,7 @@ def _source_item_controls_html(
         associated_file_buttons=associated_file_buttons,
         face_toggle_button=face_toggle_button_html(source, item, face_enabled=face_enabled),
         face_suggest_button="" if read_only else face_suggest_button_html(face_enabled=face_enabled),
+        face_matches_button=face_matches_button_html(int(item["id"]), face_enabled=face_enabled),
         suggestion_toggle_button=suggestion_toggle_button_html(
             source,
             item,

@@ -249,6 +249,15 @@ def face_suggest_button_html(*, face_enabled: bool = True) -> str:
     )
 
 
+def face_matches_button_html(file_id: int, *, face_enabled: bool = True) -> str:
+    if not face_enabled:
+        return ""
+    return (
+        '<button class="nav-button" type="button" data-open-face-matches '
+        f'data-face-matches-item="{file_id}" title="Vis mulige ansiktstreff">Ansiktstreff</button>'
+    )
+
+
 def source_controls_html(
     source: BrowserSource,
     month_nav: dict[str, str | None],
@@ -264,6 +273,7 @@ def source_controls_html(
     manual_location_button: str = "",
     face_toggle_button: str = "",
     face_suggest_button: str = "",
+    face_matches_button: str = "",
     suggestion_toggle_button: str = "",
     unconfirm_buttons: str = "",
     delete_button: str = "",
@@ -309,6 +319,7 @@ def source_controls_html(
       {manual_location_button}
       {face_toggle_button}
       {face_suggest_button}
+      {face_matches_button}
       {suggestion_toggle_button}
       {info_button if include_info_button else ""}
       {unconfirm_buttons}
