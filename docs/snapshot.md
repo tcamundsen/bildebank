@@ -254,9 +254,9 @@ bildebank snapshot restore-file `
   --dry-run
 ```
 
-Kjør uten `--dry-run` når planen er riktig. Bildebank viser valgt fil og ber
-om en eksakt bekreftelse. Filen eksporteres under sin opprinnelige relative
-sti. En eksisterende fil blir aldri overskrevet.
+Kjør uten `--dry-run` når planen er riktig. Bildebank viser valgt fil og spør
+om du vil eksportere den. Svar `j` for å fortsette. Filen eksporteres under sin
+opprinnelige relative sti. En eksisterende fil blir aldri overskrevet.
 
 For en `recovery_only`-post bruker du `entry_id` fra `snapshot problems`:
 

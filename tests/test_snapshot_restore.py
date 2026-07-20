@@ -653,11 +653,11 @@ class SnapshotRestorePlanTests(unittest.TestCase):
             self.assertIn("Hel restore publisert", stdout)
             self.assertTrue((destination / db.DB_FILENAME).is_file())
 
-    def test_cli_single_file_restore_requires_exact_confirmation(self) -> None:
+    def test_cli_single_file_restore_defaults_to_no(self) -> None:
         with normal_snapshot() as (root, _target, repository, snapshot_id):
             export = root / "export"
 
-            with patch("builtins.input", return_value="nei"):
+            with patch("builtins.input", return_value="") as prompt:
                 code, stdout, stderr = capture_cli(
                     [
                         "snapshot",
@@ -674,14 +674,13 @@ class SnapshotRestorePlanTests(unittest.TestCase):
             self.assertIn("Plan for enkeltfil-restore", stdout)
             self.assertIn("Enkeltfil-restore avbrutt", stderr)
             self.assertFalse(export.exists())
+            prompt.assert_called_once_with("Eksportere filen som vist i planen? [j/N] ")
 
-    def test_cli_single_file_restore_accepts_exact_confirmation(self) -> None:
+    def test_cli_single_file_restore_accepts_simple_confirmation(self) -> None:
         with normal_snapshot() as (root, _target, repository, snapshot_id):
             export = root / "export"
-            plan = plan_single_file_restore(repository, snapshot_id, export, path="notater.txt")
-            confirmation = f"EKSPORTER {snapshot_id} {plan.output.entry_id}"
 
-            with patch("builtins.input", return_value=confirmation):
+            with patch("builtins.input", return_value=" J "):
                 code, stdout, stderr = capture_cli(
                     [
                         "snapshot",

@@ -2164,16 +2164,9 @@ def run_snapshot_repository_command(args: argparse.Namespace) -> int:
         print_single_file_restore_plan(file_restore_plan, dry_run=args.dry_run)
         if args.dry_run:
             return 0
-        confirmation = (
-            f"EKSPORTER {file_restore_plan.snapshot.snapshot_id} "
-            f"{file_restore_plan.output.entry_id}"
-        )
         if not args.yes:
-            answer = input(
-                "Skriv nøyaktig denne teksten for å eksportere filen:\n"
-                f"  {confirmation}\n> "
-            )
-            if answer != confirmation:
+            answer = input("Eksportere filen som vist i planen? [j/N] ").strip().casefold()
+            if answer not in {"j", "ja"}:
                 print("Enkeltfil-restore avbrutt. Ingen fil ble eksportert.", file=sys.stderr)
                 return 1
         file_restore_result = restore_single_file(

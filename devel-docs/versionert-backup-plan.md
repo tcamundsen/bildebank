@@ -133,9 +133,10 @@ dagens samling.
 - Full kontroll skal være helt read-only og skal ikke lagre tidspunkt eller
   resultat i repositoryet. Launcheren skal ikke gi tidsbaserte påminnelser om
   kontroll i første versjon.
-- Reell restore skal vise plan og kreve eksakt tekstbekreftelse før skriving.
-  `--yes` er et eksplisitt unntak for automatiserte eller avanserte
-  arbeidsflyter.
+- Reell hel restore skal vise plan og kreve eksakt tekstbekreftelse før
+  skriving. Enkeltfil-restore skal vise plan og kreve en enkel
+  `j/N`-bekreftelse. `--yes` er et eksplisitt unntak for automatiserte eller
+  avanserte arbeidsflyter.
 - Hel restore kan opprette manglende målmappe etter bekreftelse når
   foreldremappen finnes. Tom målmappe kan brukes; ikke-tom, innkapslet eller
   repositorybasert målmappe skal avvises urørt.
@@ -1024,9 +1025,9 @@ bildesamling.
 Før hel restore starter, skal CLI-en vise snapshot-ID, status, målmappe, antall
 filer, datamengde og eventuell recovery-søstermappe. Brukeren må skrive en
 eksakt bekreftelsestekst. Restore av enkeltfil skal tilsvarende vise valgt fil,
-variant og eksportmappe før den krever egen tekstbekreftelse. `--yes` er eneste
-unntak i første versjon. `--dry-run` skal aldri spørre om bekreftelse eller
-skrive filer.
+variant og eksportmappe før den krever en enkel `j/N`-bekreftelse. `--yes` er
+eneste unntak i første versjon. `--dry-run` skal aldri spørre om bekreftelse
+eller skrive filer.
 
 `--note` skal lagre en valgfri kommentar i `manifest.json`. Kommentaren skal
 vises av `snapshot list`, i detaljvisning og før restore. Den er en del av det
@@ -1341,8 +1342,8 @@ Minstekrav til automatiserte tester:
   opprettes
 - automatisk recovery-søstermappe, oppretting bare ved behov og avvisning ved
   navnekollisjon uten overskriving
-- hel restore og restore av enkeltfil med tekstbekreftelse, samt `--yes` og
-  `--dry-run` uten bekreftelsesprompt
+- hel restore med eksakt tekstbekreftelse og restore av enkeltfil med enkel
+  `j/N`-bekreftelse, samt `--yes` og `--dry-run` uten bekreftelsesprompt
 - enkeltfil-restore med relativ eksportsti, oppretting av manglende
   eksportmappe, kollisjonsavbrudd og hash-suffiks for observert variant
 - hel restore til manglende og tom målmappe, samt avvisning av ikke-tom,
@@ -1535,7 +1536,7 @@ Implementeringsstatus 2026-07-16:
   databaseførte mediefiler fantes, ingen orphan-filer ble funnet og SHA-256
   stemte for alle filene.
 - Reell enkeltfil-restore er implementert med samme låste snapshotvalidering
-  som dry-run, eksakt tekstbekreftelse eller `--yes`, kontroll av ledig plass
+  som dry-run, enkel `j/N`-bekreftelse eller `--yes`, kontroll av ledig plass
   og målfilsystemets filstørrelsesgrense, og eksklusiv oppretting som aldri
   overskriver en eksisterende fil. Eksporten bevarer relativ sti og `mtime_ns`,
   verifiserer SHA-256 under og etter kopiering og lar eventuelle mapper eller
@@ -1641,8 +1642,8 @@ Inntil punktene over er avgjort, er anbefalt retning:
 - `snapshot check --full` i både CLI og launcher med felles read-only kode
 - ingen lagret kontrollhistorikk eller tidsbaserte kontrollpåminnelser i første
   versjon
-- tekstbekreftelse før reell hel restore og restore av enkeltfil, med `--yes`
-  som eksplisitt unntak
+- eksakt tekstbekreftelse før reell hel restore og enkel `j/N`-bekreftelse før
+  restore av enkeltfil, med `--yes` som eksplisitt unntak
 - konservativ, stagingbasert oppretting og full stivalidering av målmappe ved
   hel restore, uten automatisk sletting av avbrutte mediefiler
 - enkeltfil-restore uten overskriving, med relativ eksportsti, eksplisitt
