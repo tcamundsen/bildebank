@@ -7,18 +7,28 @@ import tempfile
 import time
 import unittest
 import uuid
+from contextlib import closing
 from http import HTTPStatus
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from bildebank import db, server_browser_item_html, server_browser_queries, server_browser_sidecars
+from bildebank import (
+    db,
+    server_browser_item_html,
+    server_browser_queries,
+    server_browser_sidecars,
+    server_endpoints_admin,
+    server_endpoints_browser,
+    server_endpoints_faces,
+)
 from bildebank.config import AppConfig, BrowserConfig, FaceRecognitionConfig
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.face import connect_face_db
 from bildebank.geo import h3_cells_for_point
-from bildebank.server import BildebankRequestHandler, BildebankServer
+from bildebank.server_handler import BildebankRequestHandler
+from bildebank.server_runtime import BildebankServer
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_info_html import image_info_content_html
 from bildebank.server_browser_queries import (
@@ -31,13 +41,17 @@ from bildebank.server_browser_queries import (
     browser_year_month_cards,
     source_item_by_id,
     source_item_ids,
+    source_items,
     source_month_items,
     source_month_keys,
     source_month_navigation,
     source_summary_rows,
     valid_year_key,
 )
-from bildebank.server_browser_sidecars import motion_video_for_image, raw_sidecar_id_by_image_id
+from bildebank.server_browser_sidecars import (
+    motion_video_for_image,
+    raw_sidecar_id_by_image_id,
+)
 from bildebank.server_browser_sources import (
     all_browser_source,
     imported_source_browser_source,
@@ -72,7 +86,53 @@ from tests.test_media import (
 
 
 class ServerBrowserCliTests(unittest.TestCase):
-    def test_run_server_browser_month_keys_uses_existing_database_path_helper(self) -> None:
+    def test_browser_selections_delegate_to_common_source_responder(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        handler.server = SimpleNamespace(  # type: ignore[attr-defined]
+            target=Path("target"),
+            config=AppConfig(),
+            hide_out_of_focus=False,
+            face_enabled=False,
+            openclip_enabled=False,
+        )
+        handler.respond_text = Mock()  # type: ignore[method-assign]
+
+        with (
+            patch(
+                "bildebank.server_endpoints_faces.person_by_name",
+                return_value={"name": "Ada"},
+            ),
+            patch(
+                "bildebank.server_endpoints_browser.imported_source_by_id",
+                return_value=SimpleNamespace(id=9, name="Telefon"),
+            ),
+            patch("bildebank.server_endpoints_browser.respond_browser_source") as respond_browser_source,
+        ):
+            server_endpoints_faces.respond_person(handler, "Ada/item/1")
+            server_endpoints_browser.respond_imported_source(handler, "9/month/2024-01")
+            server_endpoints_browser.respond_tag(handler, "Ferie/year/2024")
+            server_endpoints_browser.respond_filter_source(handler, "type%3Aimage")
+            server_endpoints_browser.respond_geo_place(handler, "kreta/item/4")
+
+        roots = [
+            call.args[1].root_url
+            for call in respond_browser_source.call_args_list
+        ]
+        self.assertEqual(
+            roots,
+            [
+                "/person/Ada",
+                "/source/9",
+                "/tag/Ferie",
+                "/filter/type%3Aimage",
+                "/geo/place/kreta",
+            ],
+        )
+        handler.respond_text.assert_not_called()
+
+    def test_run_server_browser_month_keys_uses_existing_database_path_helper(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             target.mkdir()
@@ -98,8 +158,13 @@ class ServerBrowserCliTests(unittest.TestCase):
             server._browser_navigation_db_mtime_ns = None
             server._browser_navigation_checked_at = 0.0
 
-            with patch("bildebank.server.time.monotonic", side_effect=[10.0, 10.5]):
-                with patch("bildebank.server.db.db_path_for_target", wraps=db.db_path_for_target) as db_path_for_target:
+            with patch(
+                "bildebank.server_runtime.time.monotonic", side_effect=[10.0, 10.5]
+            ):
+                with patch(
+                    "bildebank.server_runtime.db.db_path_for_target",
+                    wraps=db.db_path_for_target,
+                ) as db_path_for_target:
                     self.assertEqual(server.browser_navigation_cache_version(), 0)
                     self.assertEqual(server.browser_navigation_cache_version(), 0)
 
@@ -117,13 +182,29 @@ class ServerBrowserCliTests(unittest.TestCase):
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
-                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
                 0,
             )
             item = browser_item_by_id(target, 2)
             self.assertIsNotNone(item)
             previous_item, next_item = adjacent_browser_items(target, item)
-            body = item_page_html(target, item, previous_item, next_item, browser_month_navigation(target, item))
+            body = item_page_html(
+                target,
+                item,
+                previous_item,
+                next_item,
+                browser_month_navigation(target, item),
+            )
 
         self.assertIn('<nav class="breadcrumb" aria-label="Plassering">', body)
         self.assertIn('href="/years">År</a>', body)
@@ -133,10 +214,21 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn('data-open-info data-info-item="2"', body)
         self.assertIn('aria-label="Åpne bildeinfo for IMG_20240102.jpg"', body)
         self.assertIn("/file/2", body)
-        self.assertIn('href="/years/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>', body)
-        self.assertIn('href="/years/2025" title="Neste år" data-key-nav="next-year">r ▶</a>', body)
-        self.assertIn('href="/month/2023-12" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>', body)
-        self.assertIn('href="/month/2024-02" title="Neste måned" data-key-nav="next-month">ed ▶</a>', body)
+        self.assertIn(
+            'href="/years/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>',
+            body,
+        )
+        self.assertIn(
+            'href="/years/2025" title="Neste år" data-key-nav="next-year">r ▶</a>', body
+        )
+        self.assertIn(
+            'href="/month/2023-12" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>',
+            body,
+        )
+        self.assertIn(
+            'href="/month/2024-02" title="Neste måned" data-key-nav="next-month">ed ▶</a>',
+            body,
+        )
         self.assertNotIn('href="/month/2023-12" title="Forrige år"', body)
         self.assertNotIn('href="/month/2025-01" title="Neste år"', body)
         self.assertIn("/search", body)
@@ -168,11 +260,18 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("absX <= absY * verticalDominanceRatio", SERVER_JS)
         self.assertIn("window.PointerEvent", SERVER_JS)
         self.assertIn("container.setPointerCapture(event.pointerId)", SERVER_JS)
-        self.assertIn('event.pointerType !== "touch" && event.pointerType !== "pen"', SERVER_JS)
+        self.assertIn(
+            'event.pointerType !== "touch" && event.pointerType !== "pen"', SERVER_JS
+        )
         self.assertIn('container.addEventListener("touchstart"', SERVER_JS)
-        self.assertIn('direction > 0 ? \'[data-key-nav="next"]\' : \'[data-key-nav="previous"]\'', SERVER_JS)
+        self.assertIn(
+            "direction > 0 ? '[data-key-nav=\"next\"]' : '[data-key-nav=\"previous\"]'",
+            SERVER_JS,
+        )
 
-    def test_run_server_item_breadcrumb_day_links_to_first_item_on_same_date(self) -> None:
+    def test_run_server_item_breadcrumb_day_links_to_first_item_on_same_date(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -182,7 +281,17 @@ class ServerBrowserCliTests(unittest.TestCase):
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
-                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
                 0,
             )
             conn = db.connect(target)
@@ -197,7 +306,12 @@ class ServerBrowserCliTests(unittest.TestCase):
             second_id = rows["B_20240102.jpg"]
             item = browser_item_by_id(target, second_id)
             self.assertIsNotNone(item)
-            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
 
         self.assertIn(
             f'href="/month/2024-01">Januar</a><span class="sep">/</span><a href="/item/{first_id}">2</a>',
@@ -217,8 +331,34 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source_b / "0_20240102.jpg").write_bytes(b"other-source")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-a", "--quiet", str(source_a)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-b", "--quiet", str(source_b)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "source-a",
+                        "--quiet",
+                        str(source_a),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "source-b",
+                        "--quiet",
+                        str(source_b),
+                    ]
+                ),
+                0,
+            )
             conn = db.connect(target)
             try:
                 imported = db.find_source_by_name(conn, "source-a")
@@ -247,26 +387,53 @@ class ServerBrowserCliTests(unittest.TestCase):
             body,
         )
 
-    def test_run_server_source_item_breadcrumb_day_avoids_global_raw_sidecar_scan(self) -> None:
+    def test_run_server_source_item_breadcrumb_day_avoids_global_raw_sidecar_scan(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
             source = root / "source"
             source.mkdir()
-            (source / "DSC_0170.JPG").write_bytes(jpeg_with_exif_datetime("2019:03:03 12:00:00"))
-            (source / "DSC_0170.NEF").write_bytes(minimal_tiff_with_datetime("2019:03:03 12:00:00"))
+            (source / "DSC_0170.JPG").write_bytes(
+                jpeg_with_exif_datetime("2019:03:03 12:00:00")
+            )
+            (source / "DSC_0170.NEF").write_bytes(
+                minimal_tiff_with_datetime("2019:03:03 12:00:00")
+            )
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
-                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
                 0,
             )
             source_filter = text_filter_browser_source("filename:DSC_0170")
-            image_item = next(item for item in source_month_items(target, source_filter, "2019-03") if item["stored_filename"] == "DSC_0170.JPG")
-            previous_item, next_item = adjacent_source_items(target, source_filter, image_item)
+            image_item = next(
+                item
+                for item in source_month_items(target, source_filter, "2019-03")
+                if item["stored_filename"] == "DSC_0170.JPG"
+            )
+            previous_item, next_item = adjacent_source_items(
+                target, source_filter, image_item
+            )
             month_nav = source_month_navigation(target, source_filter, image_item)
-            self.assertIsNotNone(raw_sidecar_id_by_image_id(target, int(image_item["id"])))
-            with patch("bildebank.server_browser_sidecars.raw_sidecar_groups", side_effect=AssertionError("global raw scan")):
+            self.assertIsNotNone(
+                raw_sidecar_id_by_image_id(target, int(image_item["id"]))
+            )
+            with patch(
+                "bildebank.server_browser_sidecars.raw_sidecar_groups",
+                side_effect=AssertionError("global raw scan"),
+            ):
                 body = source_item_page_html(
                     target,
                     source_filter,
@@ -285,17 +452,37 @@ class ServerBrowserCliTests(unittest.TestCase):
             target = root / "target"
             source = root / "source"
             source.mkdir()
-            (source / "DSC_0170.JPG").write_bytes(jpeg_with_exif_datetime("2019:03:03 12:00:00"))
-            (source / "DSC_0170.NEF").write_bytes(minimal_tiff_with_datetime("2019:03:03 12:00:00"))
+            (source / "DSC_0170.JPG").write_bytes(
+                jpeg_with_exif_datetime("2019:03:03 12:00:00")
+            )
+            (source / "DSC_0170.NEF").write_bytes(
+                minimal_tiff_with_datetime("2019:03:03 12:00:00")
+            )
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(
-                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
                 0,
             )
             source_filter = text_filter_browser_source("filename:NEF")
-            nef_item = next(item for item in source_month_items(target, source_filter, "2019-03") if item["stored_filename"] == "DSC_0170.NEF")
-            previous_item, next_item = adjacent_source_items(target, source_filter, nef_item)
+            nef_item = next(
+                item
+                for item in source_month_items(target, source_filter, "2019-03")
+                if item["stored_filename"] == "DSC_0170.NEF"
+            )
+            previous_item, next_item = adjacent_source_items(
+                target, source_filter, nef_item
+            )
             month_nav = source_month_navigation(target, source_filter, nef_item)
 
             with (
@@ -355,8 +542,23 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_20250104.jpg").write_bytes(b"image-four")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
-            body = month_page_html(target, "2024-01", browser_month_items(target, "2024-01"))
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            body = month_page_html(
+                target, "2024-01", browser_month_items(target, "2024-01")
+            )
 
         for label in (
             "◀ Å",
@@ -367,10 +569,21 @@ class ServerBrowserCliTests(unittest.TestCase):
             "de ▶",
         ):
             self.assertIn(label, body)
-        self.assertIn('href="/years/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>', body)
-        self.assertIn('href="/years/2025" title="Neste år" data-key-nav="next-year">r ▶</a>', body)
-        self.assertIn('href="/month/2023-12" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>', body)
-        self.assertIn('href="/month/2024-02" title="Neste måned" data-key-nav="next-month">ed ▶</a>', body)
+        self.assertIn(
+            'href="/years/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>',
+            body,
+        )
+        self.assertIn(
+            'href="/years/2025" title="Neste år" data-key-nav="next-year">r ▶</a>', body
+        )
+        self.assertIn(
+            'href="/month/2023-12" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>',
+            body,
+        )
+        self.assertIn(
+            'href="/month/2024-02" title="Neste måned" data-key-nav="next-month">ed ▶</a>',
+            body,
+        )
         self.assertNotIn('href="/month/2023-12" title="Forrige år"', body)
         self.assertNotIn('href="/month/2025-01" title="Neste år"', body)
         self.assertIn('href="/years">År</a>', body)
@@ -398,11 +611,26 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_19700203.jpg").write_bytes(b"image-two")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             items = browser_month_items(target, "1970-01")
             month_body = month_page_html(target, "1970-01", items)
             later_first_year_items = browser_month_items(target, "1970-02")
-            later_first_year_month_body = month_page_html(target, "1970-02", later_first_year_items)
+            later_first_year_month_body = month_page_html(
+                target, "1970-02", later_first_year_items
+            )
             item = items[0]
             item_body = item_page_html(
                 target,
@@ -440,7 +668,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             item_body,
         )
         self.assertIn('<span class="nav-button disabled">◀ Å</span>', empty_month_body)
-        self.assertIn('<span class="nav-button disabled">◀ Mån</span>', empty_month_body)
+        self.assertIn(
+            '<span class="nav-button disabled">◀ Mån</span>', empty_month_body
+        )
 
     def test_run_server_years_pages_link_to_years_and_months(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -458,10 +688,26 @@ class ServerBrowserCliTests(unittest.TestCase):
                 (source / name).write_bytes(content)
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             conn = db.connect(target)
             try:
-                conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE target_path LIKE ?", ("%2006/04/%",))
+                conn.execute(
+                    "UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE target_path LIKE ?",
+                    ("%2006/04/%",),
+                )
                 out_of_focus_file = conn.execute(
                     "SELECT id FROM files WHERE target_path LIKE ?",
                     ("%2007/04/%",),
@@ -483,7 +729,9 @@ class ServerBrowserCliTests(unittest.TestCase):
                 years_body = years_page_html(target)
             year_body = year_months_page_html(target, "2005")
             filtered_years_body = years_page_html(target, hide_out_of_focus=True)
-            filtered_year_body = year_months_page_html(target, "2007", hide_out_of_focus=True)
+            filtered_year_body = year_months_page_html(
+                target, "2007", hide_out_of_focus=True
+            )
             year_cards = browser_year_cards(target, hide_out_of_focus=True)
             month_cards = browser_year_month_cards(target, "2005")
             with patch(
@@ -499,7 +747,9 @@ class ServerBrowserCliTests(unittest.TestCase):
 
         self.assertIn('href="/years/2005"', years_body)
         self.assertIn('<main class="server-browser years-browser">', years_body)
-        self.assertIn('<section class="month-grid-server years-grid-server">', years_body)
+        self.assertIn(
+            '<section class="month-grid-server years-grid-server">', years_body
+        )
         self.assertIn('data-nav-button-pair="year"', years_body)
         self.assertIn('data-nav-button-pair="month"', years_body)
         self.assertIn('data-nav-button-pair="item"', years_body)
@@ -507,10 +757,18 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn('<span class="nav-button disabled">◀ Å</span>', years_body)
         self.assertIn('<span class="nav-button disabled">◀ Mån</span>', years_body)
         self.assertIn('<span class="nav-button disabled">◀ Bil</span>', years_body)
-        self.assertIn('href="/years/2005" title="Neste år" data-key-nav="next-year">r ▶</a>', years_body)
-        self.assertIn('href="/month/2005-03" title="Neste måned" data-key-nav="next-month">ed ▶</a>', years_body)
+        self.assertIn(
+            'href="/years/2005" title="Neste år" data-key-nav="next-year">r ▶</a>',
+            years_body,
+        )
+        self.assertIn(
+            'href="/month/2005-03" title="Neste måned" data-key-nav="next-month">ed ▶</a>',
+            years_body,
+        )
         self.assertIn('title="Neste bilde" data-key-nav="next">de ▶</a>', years_body)
-        self.assertIn('href="/years">År</a><span class="sep">/</span>2005</nav>', year_body)
+        self.assertIn(
+            'href="/years">År</a><span class="sep">/</span>2005</nav>', year_body
+        )
         self.assertNotIn("<h1>2005</h1>", year_body)
         self.assertIn(">2005</div>", years_body)
         self.assertIn(">3 måneder, 4 bilder</div>", years_body)
@@ -527,33 +785,76 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn('data-nav-button-pair="year"', year_body)
         self.assertIn('data-nav-button-pair="month"', year_body)
         self.assertIn('data-nav-button-pair="item"', year_body)
-        self.assertIn('href="/years" title="Forrige år" data-key-nav="previous-year">◀ Å</a>', year_body)
-        self.assertIn('href="/years/2007" title="Neste år" data-key-nav="next-year">r ▶</a>', year_body)
-        self.assertIn('href="/years" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>', year_body)
-        self.assertIn('href="/month/2005-03" title="Neste måned" data-key-nav="next-month">ed ▶</a>', year_body)
-        self.assertIn('title="Forrige bilde" data-key-nav="previous">◀ Bil</a>', year_body)
+        self.assertIn(
+            'href="/years" title="Forrige år" data-key-nav="previous-year">◀ Å</a>',
+            year_body,
+        )
+        self.assertIn(
+            'href="/years/2007" title="Neste år" data-key-nav="next-year">r ▶</a>',
+            year_body,
+        )
+        self.assertIn(
+            'href="/years" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>',
+            year_body,
+        )
+        self.assertIn(
+            'href="/month/2005-03" title="Neste måned" data-key-nav="next-month">ed ▶</a>',
+            year_body,
+        )
+        self.assertIn(
+            'title="Forrige bilde" data-key-nav="previous">◀ Bil</a>', year_body
+        )
         self.assertIn('title="Neste bilde" data-key-nav="next">de ▶</a>', year_body)
-        self.assertIn('<section class="month-grid-server year-month-grid-server">', year_body)
+        self.assertIn(
+            '<section class="month-grid-server year-month-grid-server">', year_body
+        )
         self.assertNotIn("years-grid-server", year_body)
         self.assertIn('src="/file/2005/03/IMG_20050302.jpg"', year_body)
         self.assertIn(">2005-04</div>", year_body)
         self.assertIn(">1 bilde</div>", year_body)
         self.assertNotIn('href="/years/2007"', filtered_years_body)
         self.assertIn(">3 måneder, 4 bilder</div>", filtered_years_body)
-        self.assertIn('href="/years/2005" title="Neste år" data-key-nav="next-year">r ▶</a>', filtered_years_body)
-        self.assertIn('href="/month/2005-03" title="Neste måned" data-key-nav="next-month">ed ▶</a>', filtered_years_body)
-        self.assertIn('<span class="nav-button disabled">◀ Å</span>', filtered_years_body)
-        self.assertIn('<span class="nav-button disabled">◀ Mån</span>', filtered_years_body)
-        self.assertIn('href="/years/2005" title="Forrige år" data-key-nav="previous-year">◀ Å</a>', filtered_year_body)
-        self.assertIn('<span class="nav-button disabled">r ▶</span>', filtered_year_body)
-        self.assertIn('href="/month/2005-05" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>', filtered_year_body)
-        self.assertIn('<span class="nav-button disabled">ed ▶</span>', filtered_year_body)
+        self.assertIn(
+            'href="/years/2005" title="Neste år" data-key-nav="next-year">r ▶</a>',
+            filtered_years_body,
+        )
+        self.assertIn(
+            'href="/month/2005-03" title="Neste måned" data-key-nav="next-month">ed ▶</a>',
+            filtered_years_body,
+        )
+        self.assertIn(
+            '<span class="nav-button disabled">◀ Å</span>', filtered_years_body
+        )
+        self.assertIn(
+            '<span class="nav-button disabled">◀ Mån</span>', filtered_years_body
+        )
+        self.assertIn(
+            'href="/years/2005" title="Forrige år" data-key-nav="previous-year">◀ Å</a>',
+            filtered_year_body,
+        )
+        self.assertIn(
+            '<span class="nav-button disabled">r ▶</span>', filtered_year_body
+        )
+        self.assertIn(
+            'href="/month/2005-05" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>',
+            filtered_year_body,
+        )
+        self.assertIn(
+            '<span class="nav-button disabled">ed ▶</span>', filtered_year_body
+        )
         self.assertNotIn('href="/month/2007-04"', filtered_year_body)
         self.assertEqual([card["year"] for card in year_cards], ["2005"])
-        self.assertEqual([card["year"] for card in optimized_year_cards], ["2005", "2007"])
+        self.assertEqual(
+            [card["year"] for card in optimized_year_cards], ["2005", "2007"]
+        )
         self.assertEqual(month_items.call_count, 0)
-        self.assertTrue(all(call.kwargs.get("conn") is None for call in all_where.call_args_list))
-        self.assertEqual([card["month_key"] for card in month_cards], ["2005-03", "2005-04", "2005-05"])
+        self.assertTrue(
+            all(call.kwargs.get("conn") is None for call in all_where.call_args_list)
+        )
+        self.assertEqual(
+            [card["month_key"] for card in month_cards],
+            ["2005-03", "2005-04", "2005-05"],
+        )
 
     def test_run_server_years_page_keeps_text_for_many_year_cards(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -602,11 +903,13 @@ class ServerBrowserCliTests(unittest.TestCase):
         handler.respond_text = fake_respond_text  # type: ignore[method-assign]
 
         self.assertFalse(valid_year_key("2005-04"))
-        BildebankRequestHandler.respond_year(handler, "2005-04")  # type: ignore[arg-type]
+        server_endpoints_browser.respond_year(handler, "2005-04")  # type: ignore[arg-type]
 
         self.assertEqual(response["content"], "Ugyldig år.")
         self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
-        self.assertEqual(parse_source_path("bjerkvik/year/2017"), ("bjerkvik", "year", "2017"))
+        self.assertEqual(
+            parse_source_path("bjerkvik/year/2017"), ("bjerkvik", "year", "2017")
+        )
 
     def test_run_server_month_items_use_taken_date_order(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -627,7 +930,15 @@ class ServerBrowserCliTests(unittest.TestCase):
                             sha256, size_bytes, taken_date, date_source, name_conflict
                         ) VALUES(?, ?, ?, ?, ?, ?, ?, 'filename', 0)
                         """,
-                        (relative_path, relative_path, name, name, uuid.uuid4().hex, 1, taken_date),
+                        (
+                            relative_path,
+                            relative_path,
+                            name,
+                            name,
+                            uuid.uuid4().hex,
+                            1,
+                            taken_date,
+                        ),
                     )
                 conn.commit()
             finally:
@@ -637,7 +948,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             middle = items[1]
             previous_item, next_item = adjacent_browser_items(target, middle)
 
-        self.assertEqual([item["stored_filename"] for item in items], ["z.jpg", "a.jpg", "m.jpg"])
+        self.assertEqual(
+            [item["stored_filename"] for item in items], ["z.jpg", "a.jpg", "m.jpg"]
+        )
         self.assertEqual(middle["stored_filename"], "a.jpg")
         self.assertIsNotNone(previous_item)
         self.assertIsNotNone(next_item)
@@ -652,7 +965,20 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             cells = h3_cells_for_point(59.91273, 10.74609)
             conn = db.connect(target)
             try:
@@ -671,19 +997,26 @@ class ServerBrowserCliTests(unittest.TestCase):
                 conn.close()
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
-            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
             info_body = image_info_content_html(target, item)
 
-        self.assertIn('data-open-info', body)
+        self.assertIn("data-open-info", body)
         self.assertIn('data-info-item="1"', body)
-        self.assertNotIn("<button class=\"nav-button\" type=\"button\" data-open-info", body)
+        self.assertNotIn(
+            '<button class="nav-button" type="button" data-open-info', body
+        )
         self.assertIn('href="/years">År</a>', body)
         self.assertIn('href="/years/2024">2024</a>', body)
         self.assertIn('href="/month/2024-01">Januar</a>', body)
         self.assertIn('aria-label="Åpne bildeinfo for IMG_20240102.png"', body)
         self.assertIn('id="infoOverlay"', body)
         self.assertIn("/api/item-info?file_id=", SERVER_JS)
-        self.assertIn("querySelectorAll(\"[data-open-info]\")", SERVER_JS)
+        self.assertIn('querySelectorAll("[data-open-info]")', SERVER_JS)
         self.assertNotIn("<dt>Filnavn</dt>", body)
         self.assertIn("Filnavn", info_body)
         self.assertIn("IMG_20240102.png", info_body)
@@ -695,7 +1028,10 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("Kamera", info_body)
         self.assertIn("Kilder", info_body)
         self.assertIn("<dt>Kart</dt>", info_body)
-        self.assertIn('href="https://www.google.com/maps/search/?api=1&amp;query=59.9127300,10.7460900"', info_body)
+        self.assertIn(
+            'href="https://www.google.com/maps/search/?api=1&amp;query=59.9127300,10.7460900"',
+            info_body,
+        )
         self.assertIn('target="_blank"', info_body)
         self.assertIn('rel="noopener"', info_body)
         self.assertIn("<dt>Steder</dt>", info_body)
@@ -714,12 +1050,30 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             response: dict[str, object] = {}
             handler = object.__new__(BildebankRequestHandler)
-            handler.server = SimpleNamespace(target=target, config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)))
+            handler.server = SimpleNamespace(
+                target=target,
+                config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)),
+            )
 
-            def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+            def fake_respond_json(
+                content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK
+            ) -> None:
                 response["content"] = content
                 response["status"] = status
 
@@ -741,20 +1095,37 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
 
             handler = object.__new__(BildebankRequestHandler)
             handler.server = SimpleNamespace(target=target)
             responses: list[tuple[dict[str, object], HTTPStatus]] = []
 
-            def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+            def fake_respond_json(
+                content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK
+            ) -> None:
                 responses.append((content, status))
 
             handler.respond_json = fake_respond_json  # type: ignore[method-assign]
             handler.respond_item_info("file_id=999")
 
-            with db.connect(target) as conn:
-                conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 1")
+            with closing(db.connect(target)) as conn, conn:
+                conn.execute(
+                    "UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 1"
+                )
             handler.respond_item_info("file_id=1")
 
         self.assertEqual(len(responses), 2)
@@ -771,10 +1142,28 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
-            normal_body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
+            normal_body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
             filter_source = text_filter_browser_source("missing:gps", target)
             filter_item = source_item_by_id(target, filter_source, 1)
             self.assertIsNotNone(filter_item)
@@ -791,8 +1180,141 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertNotIn("data-browser-source-url", normal_body)
         self.assertIn("browserSourceUrl", SERVER_JS)
         self.assertIn("payload.redirect_url", SERVER_JS)
-        self.assertIn("const itemRoot = button.closest(\"[data-browser-item-id]\");", SERVER_JS)
-        self.assertIn("requestBody.source_url = itemRoot.dataset.browserSourceUrl", SERVER_JS)
+        self.assertIn(
+            'const itemRoot = button.closest("[data-browser-item-id]");', SERVER_JS
+        )
+        self.assertIn(
+            "requestBody.source_url = itemRoot.dataset.browserSourceUrl", SERVER_JS
+        )
+
+    def test_run_server_filter_uses_unicode_casefold_for_text_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "ÅRETS_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "Øyblikk",
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            conn = db.connect(target)
+            try:
+                conn.execute("UPDATE files SET camera_make = 'Ægir' WHERE id = 1")
+                conn.commit()
+            finally:
+                conn.close()
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Åse')")
+                face_conn.execute(
+                    "INSERT INTO person_files(person_id, file_id) VALUES(1, 1)"
+                )
+                face_conn.commit()
+            finally:
+                face_conn.close()
+
+            for query in (
+                "filename:årets",
+                "path:årets",
+                "camera:ÆGIR",
+                "source:ØYBLIKK",
+                "person:ÅSE",
+            ):
+                with self.subTest(query=query):
+                    source_filter = text_filter_browser_source(query, target)
+                    self.assertIsNotNone(source_item_by_id(target, source_filter, 1))
+
+    def test_run_server_filter_supports_user_wildcards_and_literal_sql_wildcards(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            first_source = root / "first-source"
+            second_source = root / "second-source"
+            first_source.mkdir()
+            second_source.mkdir()
+            (first_source / "IMG_100%_20240102.png").write_bytes(minimal_png(100, 80))
+            (second_source / "IMGX1000_20240103.png").write_bytes(minimal_png(101, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "Kilde_100%",
+                        "--quiet",
+                        str(first_source),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "KildeX1000",
+                        "--quiet",
+                        str(second_source),
+                    ]
+                ),
+                0,
+            )
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET camera_make = CASE stored_filename
+                        WHEN 'IMG_100%_20240102.png' THEN 'Kamera_100%'
+                        ELSE 'KameraX1000'
+                    END
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            def matching_filenames(query: str) -> set[str]:
+                source_filter = text_filter_browser_source(query, target)
+                return {
+                    str(item["stored_filename"])
+                    for item in source_items(target, source_filter)
+                }
+
+            first_filename = "IMG_100%_20240102.png"
+            both_filenames = {first_filename, "IMGX1000_20240103.png"}
+            for query in (
+                "filename:IMG_100%",
+                "path:IMG_100%",
+                "camera:Kamera_100%",
+                "source:Kilde_100%",
+                "filename:IMG_*",
+            ):
+                with self.subTest(query=query):
+                    self.assertEqual(matching_filenames(query), {first_filename})
+
+            for query in ("filename:IMG?100*", "source:Kilde?100*"):
+                with self.subTest(query=query):
+                    self.assertEqual(matching_filenames(query), both_filenames)
 
     def test_run_server_archive_image_page_links_file_without_image_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -802,18 +1324,43 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_20240102.nef").write_bytes(b"raw-photo")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             item = browser_item_by_id(target, 1)
             self.assertIsNotNone(item)
-            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
-            month_body = month_page_html(target, "2024-01", browser_month_items(target, "2024-01"))
+            body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
+            month_body = month_page_html(
+                target, "2024-01", browser_month_items(target, "2024-01")
+            )
 
-        self.assertIn('<a class="file-card" href="/file/1" target="_blank">Fil<br>IMG_20240102.nef</a>', body)
+        self.assertIn(
+            '<a class="file-card" href="/file/1" target="_blank">Fil<br>IMG_20240102.nef</a>',
+            body,
+        )
         self.assertNotIn('<img src="/file/1"', body)
         self.assertNotIn("↺", body)
         self.assertIn("Fil<br>IMG_20240102.nef", month_body)
 
-    def test_run_server_filter_browser_uses_exclusive_dates_and_location_filters(self) -> None:
+    def test_run_server_filter_browser_uses_exclusive_dates_and_location_filters(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -828,19 +1375,37 @@ class ServerBrowserCliTests(unittest.TestCase):
                 (source / name).write_bytes(content)
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             conn = db.connect(target)
             try:
                 camera_row = conn.execute(
                     "SELECT camera_make, camera_model FROM files WHERE id = 2"
                 ).fetchone()
-                self.assertEqual((camera_row["camera_make"], camera_row["camera_model"]), ("Apple", "iPhone 17"))
+                self.assertEqual(
+                    (camera_row["camera_make"], camera_row["camera_model"]),
+                    ("Apple", "iPhone 17"),
+                )
                 conn.execute(
                     "UPDATE files SET gps_lat = 59.9, gps_lon = 10.7, gps_source = 'exiftool' WHERE id IN (2, 3)"
                 )
                 oslo_cell = h3_cells_for_point(59.91273, 10.74609)["h3_res7"]
                 conn.execute("UPDATE files SET h3_res7 = ? WHERE id = 2", (oslo_cell,))
-                db.set_custom_geo_place(conn, slug="oslo-test", name="Oslo test", h3_cells=[oslo_cell])
+                db.set_custom_geo_place(
+                    conn, slug="oslo-test", name="Oslo test", h3_cells=[oslo_cell]
+                )
                 db.tag_file(conn, file_id=2, tag_name="Ute av fokus")
                 conn.execute(
                     """
@@ -963,19 +1528,31 @@ class ServerBrowserCliTests(unittest.TestCase):
                     """,
                     (b"embedding-2",),
                 )
-                face_conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
-                face_conn.execute("INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)")
-                face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(2, 2)")
+                face_conn.execute(
+                    "INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)"
+                )
+                face_conn.execute(
+                    "INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(1, 2, 0.91)"
+                )
+                face_conn.execute(
+                    "INSERT INTO person_files(person_id, file_id) VALUES(2, 2)"
+                )
                 face_conn.commit()
             finally:
                 face_conn.close()
 
-            source_filter = text_filter_browser_source("after:2023-12-01 before:2024-12-12")
+            source_filter = text_filter_browser_source(
+                "after:2023-12-01 before:2024-12-12"
+            )
             gps_filter = text_filter_browser_source("location:gps")
-            manual_filter = text_filter_browser_source("after:2023-12-01 before:2024-12-12 location:manual")
+            manual_filter = text_filter_browser_source(
+                "after:2023-12-01 before:2024-12-12 location:manual"
+            )
             small_filter = text_filter_browser_source("size<300KB")
             large_filter = text_filter_browser_source("size>2MB")
-            combined_size_filter = text_filter_browser_source("after:2023-12-01 before:2024-12-12 size>300KB")
+            combined_size_filter = text_filter_browser_source(
+                "after:2023-12-01 before:2024-12-12 size>300KB"
+            )
             manual_date_filter = text_filter_browser_source("date:manual")
             metadata_date_filter = text_filter_browser_source("date:metadata")
             filename_date_filter = text_filter_browser_source("date:filename")
@@ -986,14 +1563,20 @@ class ServerBrowserCliTests(unittest.TestCase):
             deleted_filter = text_filter_browser_source("is:deleted")
             rotated_filter = text_filter_browser_source("is:rotated")
             deleted_rotated_filter = text_filter_browser_source("is:deleted is:rotated")
-            rotated_metadata_filter = text_filter_browser_source("is:rotated date:metadata")
+            rotated_metadata_filter = text_filter_browser_source(
+                "is:rotated date:metadata"
+            )
             extension_filter = text_filter_browser_source("extension:jpg")
             filename_filter = text_filter_browser_source("filename:20240102")
             missing_date_filter = text_filter_browser_source("missing:date")
             missing_gps_filter = text_filter_browser_source("missing:gps")
             missing_metadata_filter = text_filter_browser_source("missing:metadata")
-            orientation_landscape_filter = text_filter_browser_source("orientation:landscape")
-            orientation_portrait_filter = text_filter_browser_source("orientation:portrait")
+            orientation_landscape_filter = text_filter_browser_source(
+                "orientation:landscape"
+            )
+            orientation_portrait_filter = text_filter_browser_source(
+                "orientation:portrait"
+            )
             width_gt_filter = text_filter_browser_source("width>500")
             width_gte_filter = text_filter_browser_source("width>=400")
             width_lt_filter = text_filter_browser_source("width<500")
@@ -1005,7 +1588,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             height_lte_filter = text_filter_browser_source("height<=500")
             height_eq_filter = text_filter_browser_source("height=500")
             width_range_filter = text_filter_browser_source("width>500 width<1200")
-            width_inclusive_range_filter = text_filter_browser_source("width>=400 width<=400")
+            width_inclusive_range_filter = text_filter_browser_source(
+                "width>=400 width<=400"
+            )
             size_gte_filter = text_filter_browser_source("size>=300KB")
             size_lte_filter = text_filter_browser_source("size<=2MB")
             path_filter = text_filter_browser_source("path:2024/01")
@@ -1024,7 +1609,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             day_eq_filter = text_filter_browser_source("day=24")
             month_day_filter = text_filter_browser_source("month:12 day:24")
             month_range_filter = text_filter_browser_source("month>5 month<10")
-            month_inclusive_range_filter = text_filter_browser_source("month>=6 month<=10")
+            month_inclusive_range_filter = text_filter_browser_source(
+                "month>=6 month<=10"
+            )
             day_range_filter = text_filter_browser_source("day>10 day<20")
             day_inclusive_range_filter = text_filter_browser_source("day>=10 day<=20")
             h3res_exact_filter = text_filter_browser_source("location:manual h3res:7")
@@ -1040,15 +1627,25 @@ class ServerBrowserCliTests(unittest.TestCase):
             self.assertIsNotNone(manual_item)
             date_month = source_month_items(target, source_filter, "2024-01")
             date_month_nav = source_month_navigation(target, source_filter, first_item)
-            person_month_nav = source_month_navigation(target, person_filter, person_item)
+            person_month_nav = source_month_navigation(
+                target, person_filter, person_item
+            )
             gps_month = source_month_items(target, gps_filter, "2024-12")
             manual_month = source_month_items(target, manual_filter, "2024-06")
             small_month = source_month_items(target, small_filter, "2023-12")
             large_month = source_month_items(target, large_filter, "2024-12")
-            combined_size_month = source_month_items(target, combined_size_filter, "2024-06")
-            manual_date_month = source_month_items(target, manual_date_filter, "2024-06")
-            metadata_date_month = source_month_items(target, metadata_date_filter, "2024-01")
-            filename_date_month = source_month_items(target, filename_date_filter, "2023-12")
+            combined_size_month = source_month_items(
+                target, combined_size_filter, "2024-06"
+            )
+            manual_date_month = source_month_items(
+                target, manual_date_filter, "2024-06"
+            )
+            metadata_date_month = source_month_items(
+                target, metadata_date_filter, "2024-01"
+            )
+            filename_date_month = source_month_items(
+                target, filename_date_filter, "2023-12"
+            )
             mtime_date_month = source_month_items(target, mtime_date_filter, "2024-12")
             place_month = source_month_items(target, place_filter, "2024-01")
             camera_month = source_month_items(target, camera_filter, "2024-01")
@@ -1058,15 +1655,27 @@ class ServerBrowserCliTests(unittest.TestCase):
                 for item_id in range(1, 8)
                 if source_item_by_id(target, rotated_filter, item_id) is not None
             ]
-            deleted_rotated_month = source_month_items(target, deleted_rotated_filter, "2024-01")
-            rotated_metadata_month = source_month_items(target, rotated_metadata_filter, "2024-01")
+            deleted_rotated_month = source_month_items(
+                target, deleted_rotated_filter, "2024-01"
+            )
+            rotated_metadata_month = source_month_items(
+                target, rotated_metadata_filter, "2024-01"
+            )
             extension_month = source_month_items(target, extension_filter, "2024-01")
             filename_month = source_month_items(target, filename_filter, "2024-01")
             missing_date_item = source_item_by_id(target, missing_date_filter, 6)
-            missing_gps_month = source_month_items(target, missing_gps_filter, "2023-12")
-            missing_metadata_month = source_month_items(target, missing_metadata_filter, "2023-12")
-            orientation_landscape_month = source_month_items(target, orientation_landscape_filter, "2024-12")
-            orientation_portrait_month = source_month_items(target, orientation_portrait_filter, "2024-01")
+            missing_gps_month = source_month_items(
+                target, missing_gps_filter, "2023-12"
+            )
+            missing_metadata_month = source_month_items(
+                target, missing_metadata_filter, "2023-12"
+            )
+            orientation_landscape_month = source_month_items(
+                target, orientation_landscape_filter, "2024-12"
+            )
+            orientation_portrait_month = source_month_items(
+                target, orientation_portrait_filter, "2024-01"
+            )
             width_gt_month = source_month_items(target, width_gt_filter, "2024-12")
             width_gte_month = source_month_items(target, width_gte_filter, "2024-01")
             width_lt_month = source_month_items(target, width_lt_filter, "2024-01")
@@ -1077,40 +1686,76 @@ class ServerBrowserCliTests(unittest.TestCase):
             height_lt_month = source_month_items(target, height_lt_filter, "2024-12")
             height_lte_month = source_month_items(target, height_lte_filter, "2024-12")
             height_eq_month = source_month_items(target, height_eq_filter, "2024-12")
-            width_range_month = source_month_items(target, width_range_filter, "2024-12")
-            width_inclusive_range_month = source_month_items(target, width_inclusive_range_filter, "2024-01")
+            width_range_month = source_month_items(
+                target, width_range_filter, "2024-12"
+            )
+            width_inclusive_range_month = source_month_items(
+                target, width_inclusive_range_filter, "2024-01"
+            )
             size_gte_month = source_month_items(target, size_gte_filter, "2024-12")
             size_lte_month = source_month_items(target, size_lte_filter, "2023-12")
             path_month = source_month_items(target, path_filter, "2024-01")
             person_january_month = source_month_items(target, person_filter, "2024-01")
             person_december_month = source_month_items(target, person_filter, "2024-12")
-            person_both_january_month = source_month_items(target, person_both_filter, "2024-01")
-            person_both_december_month = source_month_items(target, person_both_filter, "2024-12")
-            source_name_month = source_month_items(target, source_name_filter, "2024-01")
+            person_both_january_month = source_month_items(
+                target, person_both_filter, "2024-01"
+            )
+            person_both_december_month = source_month_items(
+                target, person_both_filter, "2024-12"
+            )
+            source_name_month = source_month_items(
+                target, source_name_filter, "2024-01"
+            )
             tag_month = source_month_items(target, tag_filter, "2024-01")
             type_file_item = source_item_by_id(target, type_file_filter, 6)
             type_image_month = source_month_items(target, type_image_filter, "2024-01")
             year_january_2024 = source_month_items(target, year_filter, "2024-01")
-            year_eq_december_2024 = source_month_items(target, year_eq_filter, "2024-12")
+            year_eq_december_2024 = source_month_items(
+                target, year_eq_filter, "2024-12"
+            )
             year_december_2021 = source_month_items(target, year_filter, "2021-12")
-            year_range_december_2023 = source_month_items(target, year_range_filter, "2023-12")
-            year_range_december_2024 = source_month_items(target, year_range_filter, "2024-12")
+            year_range_december_2023 = source_month_items(
+                target, year_range_filter, "2023-12"
+            )
+            year_range_december_2024 = source_month_items(
+                target, year_range_filter, "2024-12"
+            )
             month_december_2021 = source_month_items(target, month_filter, "2021-12")
-            month_eq_december_2021 = source_month_items(target, month_eq_filter, "2021-12")
+            month_eq_december_2021 = source_month_items(
+                target, month_eq_filter, "2021-12"
+            )
             month_january_2022 = source_month_items(target, month_filter, "2022-01")
             month_december_2023 = source_month_items(target, month_filter, "2023-12")
             month_december_2024 = source_month_items(target, month_filter, "2024-12")
             day_december_2021 = source_month_items(target, day_filter, "2021-12")
             day_eq_december_2021 = source_month_items(target, day_eq_filter, "2021-12")
-            month_day_december_2021 = source_month_items(target, month_day_filter, "2021-12")
-            month_day_january_2024 = source_month_items(target, month_day_filter, "2024-01")
-            month_range_june_2024 = source_month_items(target, month_range_filter, "2024-06")
-            month_inclusive_range_june_2024 = source_month_items(target, month_inclusive_range_filter, "2024-06")
-            month_range_december_2024 = source_month_items(target, month_range_filter, "2024-12")
-            day_range_december_2024 = source_month_items(target, day_range_filter, "2024-12")
-            day_inclusive_range_december_2024 = source_month_items(target, day_inclusive_range_filter, "2024-12")
-            day_range_december_2021 = source_month_items(target, day_range_filter, "2021-12")
-            h3res_exact_month = source_month_items(target, h3res_exact_filter, "2024-06")
+            month_day_december_2021 = source_month_items(
+                target, month_day_filter, "2021-12"
+            )
+            month_day_january_2024 = source_month_items(
+                target, month_day_filter, "2024-01"
+            )
+            month_range_june_2024 = source_month_items(
+                target, month_range_filter, "2024-06"
+            )
+            month_inclusive_range_june_2024 = source_month_items(
+                target, month_inclusive_range_filter, "2024-06"
+            )
+            month_range_december_2024 = source_month_items(
+                target, month_range_filter, "2024-12"
+            )
+            day_range_december_2024 = source_month_items(
+                target, day_range_filter, "2024-12"
+            )
+            day_inclusive_range_december_2024 = source_month_items(
+                target, day_inclusive_range_filter, "2024-12"
+            )
+            day_range_december_2021 = source_month_items(
+                target, day_range_filter, "2021-12"
+            )
+            h3res_exact_month = source_month_items(
+                target, h3res_exact_filter, "2024-06"
+            )
             h3res_lt_month = source_month_items(target, h3res_lt_filter, "2024-06")
             h3res_gt_month = source_month_items(target, h3res_gt_filter, "2021-12")
             h3res_gte_month = source_month_items(target, h3res_gte_filter, "2021-12")
@@ -1124,7 +1769,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             )
             date_years_body = source_years_page_html(target, source_filter)
             date_year_body = source_year_months_page_html(target, source_filter, "2024")
-            date_month_body = source_month_page_html(target, source_filter, "2024-01", date_month)
+            date_month_body = source_month_page_html(
+                target, source_filter, "2024-01", date_month
+            )
             person_body = source_item_page_html(
                 target,
                 person_filter,
@@ -1132,13 +1779,25 @@ class ServerBrowserCliTests(unittest.TestCase):
                 *adjacent_source_items(target, person_filter, person_item),
                 person_month_nav,
             )
-            missing_date_years_body = source_years_page_html(target, missing_date_filter)
-            date_filter_excludes_after_boundary = source_item_by_id(target, source_filter, 1) is None
-            date_filter_excludes_before_boundary = source_item_by_id(target, source_filter, 3) is None
-            empty_body = empty_source_html(text_filter_browser_source("before:1900-01-01"))
+            missing_date_years_body = source_years_page_html(
+                target, missing_date_filter
+            )
+            date_filter_excludes_after_boundary = (
+                source_item_by_id(target, source_filter, 1) is None
+            )
+            date_filter_excludes_before_boundary = (
+                source_item_by_id(target, source_filter, 3) is None
+            )
+            empty_body = empty_source_html(
+                text_filter_browser_source("before:1900-01-01")
+            )
 
-        self.assertEqual(source_filter.root_url, "/filter/after%3A2023-12-01%20before%3A2024-12-12")
-        self.assertEqual(person_both_filter.root_url, "/filter/person%3Aviljar%20person%3Ajill")
+        self.assertEqual(
+            source_filter.root_url, "/filter/after%3A2023-12-01%20before%3A2024-12-12"
+        )
+        self.assertEqual(
+            person_both_filter.root_url, "/filter/person%3Aviljar%20person%3Ajill"
+        )
         self.assertTrue(date_filter_excludes_after_boundary)
         self.assertTrue(date_filter_excludes_before_boundary)
         self.assertEqual([item["id"] for item in date_month], [2])
@@ -1205,7 +1864,9 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in month_inclusive_range_june_2024], [4])
         self.assertEqual([item["id"] for item in month_range_december_2024], [])
         self.assertEqual([item["id"] for item in day_range_december_2024], [3])
-        self.assertEqual([item["id"] for item in day_inclusive_range_december_2024], [3])
+        self.assertEqual(
+            [item["id"] for item in day_inclusive_range_december_2024], [3]
+        )
         self.assertEqual([item["id"] for item in day_range_december_2021], [])
         self.assertEqual([item["id"] for item in h3res_exact_month], [4])
         self.assertEqual([item["id"] for item in h3res_lt_month], [4])
@@ -1213,34 +1874,72 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertEqual([item["id"] for item in h3res_gte_month], [5])
         self.assertEqual([item["id"] for item in h3res_lte_month], [4])
         self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12", date_body)
-        self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_body)
+        self.assertIn(
+            "Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_body
+        )
         self.assertIn('title="2 treff i filtersøket"', date_body)
-        self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_years_body)
-        self.assertIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2024"', date_years_body)
+        self.assertIn(
+            "Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_years_body
+        )
+        self.assertIn(
+            'href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2024"',
+            date_years_body,
+        )
         self.assertIn(">2024</div>", date_years_body)
-        self.assertNotIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2023"', date_years_body)
-        self.assertNotIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2025"', date_years_body)
+        self.assertNotIn(
+            'href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2023"',
+            date_years_body,
+        )
+        self.assertNotIn(
+            'href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2025"',
+            date_years_body,
+        )
         self.assertIn(">2 måneder, 2 bilder</div>", date_years_body)
-        self.assertIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2024" title="Neste år" data-key-nav="next-year">r ▶</a>', date_years_body)
-        self.assertIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/month/2024-01" title="Neste måned" data-key-nav="next-month">ed ▶</a>', date_years_body)
-        self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_year_body)
+        self.assertIn(
+            'href="/filter/after%3A2023-12-01%20before%3A2024-12-12/year/2024" title="Neste år" data-key-nav="next-year">r ▶</a>',
+            date_years_body,
+        )
+        self.assertIn(
+            'href="/filter/after%3A2023-12-01%20before%3A2024-12-12/month/2024-01" title="Neste måned" data-key-nav="next-month">ed ▶</a>',
+            date_years_body,
+        )
+        self.assertIn(
+            "Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_year_body
+        )
         self.assertIn('title="2 treff i filtersøket"', date_year_body)
-        self.assertIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12" title="2 treff i filtersøket">Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)</a><span class="sep">/</span>2024</nav>', date_year_body)
-        self.assertIn('href="/filter/after%3A2023-12-01%20before%3A2024-12-12/month/2024-01"', date_year_body)
-        self.assertIn("Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_month_body)
+        self.assertIn(
+            'href="/filter/after%3A2023-12-01%20before%3A2024-12-12" title="2 treff i filtersøket">Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)</a><span class="sep">/</span>2024</nav>',
+            date_year_body,
+        )
+        self.assertIn(
+            'href="/filter/after%3A2023-12-01%20before%3A2024-12-12/month/2024-01"',
+            date_year_body,
+        )
+        self.assertIn(
+            "Filtersøk: after:2023-12-01 before:2024-12-12 (2 treff)", date_month_body
+        )
         self.assertIn('title="2 treff i filtersøket"', date_month_body)
-        self.assertIn("/filter/after%3A2023-12-01%20before%3A2024-12-12/item/4", date_body)
+        self.assertIn(
+            "/filter/after%3A2023-12-01%20before%3A2024-12-12/item/4", date_body
+        )
         self.assertIn('href="/filter">Filtersøk</a>', date_body)
         self.assertIn("Filtersøk: person:viljar", person_body)
         self.assertIn("/filter/person%3Aviljar/item/3", person_body)
-        self.assertIn("Ingen daterte bilder matcher denne visningen.", missing_date_years_body)
+        self.assertIn(
+            "Ingen daterte bilder matcher denne visningen.", missing_date_years_body
+        )
         self.assertNotIn("/filter/missing%3Adate/year/", missing_date_years_body)
         self.assertNotIn("/filter/missing%3Adate/item/", missing_date_years_body)
         self.assertIn("Ingen aktive bilder matcher filtersøket.", empty_body)
 
     def test_run_server_filter_parser_rejects_invalid_queries(self) -> None:
-        text_filter = parse_text_filter('  after:2023-12-01 camera:"iPhone 17" date:metadata filename:IMG location:gps size>2MB size<2.5GB width>1024 height=2000 ')
-        self.assertEqual(text_filter.query, 'after:2023-12-01 camera:"iPhone 17" date:metadata filename:IMG location:gps size>2MB size<2.5GB width>1024 height=2000')
+        text_filter = parse_text_filter(
+            '  after:2023-12-01 camera:"iPhone 17" date:metadata filename:IMG location:gps size>2MB size<2.5GB width>1024 height=2000 '
+        )
+        self.assertEqual(
+            text_filter.query,
+            'after:2023-12-01 camera:"iPhone 17" date:metadata filename:IMG location:gps size>2MB size<2.5GB width>1024 height=2000',
+        )
         self.assertEqual(text_filter.camera, "iPhone 17")
         self.assertEqual(text_filter.date_source, "metadata")
         self.assertEqual(text_filter.filename, "IMG")
@@ -1258,7 +1957,9 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertEqual(mixed_filename.filename, "sommer 2024")
         self.assertEqual(mixed_filename.year, 2024)
         self.assertEqual(mixed_filename.media_type, "image")
-        self.assertEqual(mixed_filename.query, 'year:2024 filename:"sommer 2024" type:image')
+        self.assertEqual(
+            mixed_filename.query, 'year:2024 filename:"sommer 2024" type:image'
+        )
         self.assertEqual(parse_text_filter("width>=1024").width_gte, 1024)
         self.assertIsNone(parse_text_filter("width>=1024").width_gt)
         self.assertEqual(parse_text_filter("width<=2000").width_lte, 2000)
@@ -1279,7 +1980,9 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertEqual(parse_text_filter("year=2024").year, 2024)
         self.assertEqual(parse_text_filter("year=2024").year_eq, 2024)
         self.assertEqual(parse_text_filter("person:Viljar").persons, ("Viljar",))
-        self.assertEqual(parse_text_filter("person:Viljar person:Jill").persons, ("Viljar", "Jill"))
+        self.assertEqual(
+            parse_text_filter("person:Viljar person:Jill").persons, ("Viljar", "Jill")
+        )
         year_range = parse_text_filter("year>2020 year<2025")
         year_inclusive_range = parse_text_filter("year>=2020 year<=2025")
         month_range = parse_text_filter("month>6 month<10")
@@ -1288,16 +1991,26 @@ class ServerBrowserCliTests(unittest.TestCase):
         day_inclusive_range = parse_text_filter("day>=10 day<=20")
         self.assertEqual((year_range.year_gt, year_range.year_lt), (2020, 2025))
         self.assertEqual(year_range.year, None)
-        self.assertEqual((year_inclusive_range.year_gte, year_inclusive_range.year_lte), (2020, 2025))
+        self.assertEqual(
+            (year_inclusive_range.year_gte, year_inclusive_range.year_lte), (2020, 2025)
+        )
         self.assertEqual(year_inclusive_range.year, None)
         self.assertEqual((month_range.month_gt, month_range.month_lt), (6, 10))
         self.assertEqual((month_range.month, month_range.day), (None, None))
-        self.assertEqual((month_inclusive_range.month_gte, month_inclusive_range.month_lte), (6, 10))
-        self.assertEqual((month_inclusive_range.month, month_inclusive_range.day), (None, None))
+        self.assertEqual(
+            (month_inclusive_range.month_gte, month_inclusive_range.month_lte), (6, 10)
+        )
+        self.assertEqual(
+            (month_inclusive_range.month, month_inclusive_range.day), (None, None)
+        )
         self.assertEqual((day_range.day_gt, day_range.day_lt), (10, 20))
         self.assertEqual((day_range.month, day_range.day), (None, None))
-        self.assertEqual((day_inclusive_range.day_gte, day_inclusive_range.day_lte), (10, 20))
-        self.assertEqual((day_inclusive_range.month, day_inclusive_range.day), (None, None))
+        self.assertEqual(
+            (day_inclusive_range.day_gte, day_inclusive_range.day_lte), (10, 20)
+        )
+        self.assertEqual(
+            (day_inclusive_range.month, day_inclusive_range.day), (None, None)
+        )
         h3res_gt = parse_text_filter("location:manual h3res>10")
         h3res_lt = parse_text_filter("location:manual h3res<8")
         h3res_eq = parse_text_filter("location:manual h3res:11")
@@ -1383,7 +2096,10 @@ class ServerBrowserCliTests(unittest.TestCase):
             ("day=32", "day må være et heltall fra 1 til 31."),
             ("day<32", "day må være et heltall fra 1 til 31."),
             ("day:julaften", "day må være et heltall fra 1 til 31."),
-            ("is:other", "Ukjent is-filter: other. Gyldige verdier er deleted og rotated."),
+            (
+                "is:other",
+                "Ukjent is-filter: other. Gyldige verdier er deleted og rotated.",
+            ),
             ("deleted:true", "Ukjent filter: deleted"),
             ("deleted:false", "Ukjent filter: deleted"),
             ("extension:..jpg", "extension må være en filendelse"),
@@ -1392,7 +2108,10 @@ class ServerBrowserCliTests(unittest.TestCase):
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
             ("size>2MB size>3MB", "size> kan bare brukes én gang."),
             ("size>=2MB size>=3MB", "size>= kan bare brukes én gang."),
-            ("size>stor", "size må skrives som for eksempel size<300KB eller size>2MB."),
+            (
+                "size>stor",
+                "size må skrives som for eksempel size<300KB eller size>2MB.",
+            ),
             ("year:2024 year:2023", "year kan bare brukes én gang."),
             ("year:2024 year=2023", "year= kan bare brukes én gang."),
             ("year=2024 year>2020", "year> kan ikke kombineres med year=."),
@@ -1411,8 +2130,14 @@ class ServerBrowserCliTests(unittest.TestCase):
             ("location:manual h3res:elleve", "h3res må være et heltall fra 0 til 11."),
             ("location:manual h3res:7 h3res>10", "h3res kan bare brukes én gang."),
             ("h3res:11", "h3res kan bare brukes sammen med location:manual."),
-            ("location:gps h3res:11", "h3res kan bare brukes sammen med location:manual."),
-            ("location:oslo h3res:11", "h3res kan bare brukes sammen med location:manual."),
+            (
+                "location:gps h3res:11",
+                "h3res kan bare brukes sammen med location:manual.",
+            ),
+            (
+                "location:oslo h3res:11",
+                "h3res kan bare brukes sammen med location:manual.",
+            ),
             ("type:audio", "type må være image, video eller file."),
             ("filename:IMG sommer", "filename kan bare brukes én gang."),
             ('camera:"iPhone', "Ugyldige anførselstegn i filtersøk."),
@@ -1428,8 +2153,12 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertEqual(combined_is_filter.query, "is:deleted is:rotated")
         self.assertEqual(parse_text_filter("  is:deleted  ").query, "is:deleted")
         self.assertEqual(parse_text_filter("  is:rotated  ").query, "is:rotated")
-        self.assertEqual(text_filter_browser_source("is:deleted").root_url, "/filter/is%3Adeleted")
-        self.assertEqual(text_filter_browser_source("is:rotated").root_url, "/filter/is%3Arotated")
+        self.assertEqual(
+            text_filter_browser_source("is:deleted").root_url, "/filter/is%3Adeleted"
+        )
+        self.assertEqual(
+            text_filter_browser_source("is:rotated").root_url, "/filter/is%3Arotated"
+        )
         self.assertEqual(
             text_filter_browser_source("is:deleted is:rotated").root_url,
             "/filter/is%3Adeleted%20is%3Arotated",
@@ -1445,7 +2174,12 @@ class ServerBrowserCliTests(unittest.TestCase):
             ("width >= 1024", "width>=1024", "width_gte", 1024),
             ("height < 2000", "height<2000", "height_lt", 2000),
             ("size < 2MB", "size<2MB", "size_lt", 2 * 1024 * 1024),
-            ("location:manual h3res >= 8", "location:manual h3res>=8", "h3res_value", 8),
+            (
+                "location:manual h3res >= 8",
+                "location:manual h3res>=8",
+                "h3res_value",
+                8,
+            ),
         ):
             with self.subTest(query=query):
                 parsed = parse_text_filter(query)
@@ -1455,9 +2189,32 @@ class ServerBrowserCliTests(unittest.TestCase):
         combined = parse_text_filter("month > 6 day <= 25")
         self.assertEqual(combined.query, "month>6 day<=25")
 
-        for query in ('camera:"iPhone 12"', 'tag:"Ute av fokus"', 'source:"Mobil 2024"'):
+        for query in (
+            'camera:"iPhone 12"',
+            'tag:"Ute av fokus"',
+            'source:"Mobil 2024"',
+        ):
             with self.subTest(query=query):
                 self.assertEqual(parse_text_filter(query).query, query)
+
+        for query, expected_path, canonical_query in (
+            (r"path:2024\01", r"2024\01", r"path:2024\01"),
+            (r'path:"C:\Users\Tom"', r"C:\Users\Tom", r"path:C:\Users\Tom"),
+            (
+                r'path:"C:\Users\Tom\Mine bilder"',
+                r"C:\Users\Tom\Mine bilder",
+                r'path:"C:\\Users\\Tom\\Mine bilder"',
+            ),
+        ):
+            with self.subTest(query=query):
+                parsed = parse_text_filter(query)
+                self.assertEqual(parsed.path, expected_path)
+                self.assertEqual(parsed.query, canonical_query)
+
+        self.assertEqual(
+            text_filter_browser_source(r'path:"C:\Users\Tom"').root_url,
+            "/filter/path%3AC%3A%5CUsers%5CTom",
+        )
 
         for query, message in (
             ("month >", "Filteret mangler verdi: month>"),
@@ -1468,17 +2225,34 @@ class ServerBrowserCliTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     parse_text_filter(query)
 
-    def test_run_server_hides_motion_video_unless_filter_explicitly_requests_it(self) -> None:
+    def test_run_server_hides_motion_video_unless_filter_explicitly_requests_it(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
             source = root / "source"
             source.mkdir()
-            (source / "PXL_20250102_123.MP").write_bytes(minimal_mp4_with_creation_date(dt.date(2025, 1, 2)))
+            (source / "PXL_20250102_123.MP").write_bytes(
+                minimal_mp4_with_creation_date(dt.date(2025, 1, 2))
+            )
             (source / "PXL_20250102_123.MP.jpg").write_bytes(b"image")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
 
             month_items = browser_month_items(target, "2025-01")
             type_video_source = text_filter_browser_source("type:video")
@@ -1502,8 +2276,14 @@ class ServerBrowserCliTests(unittest.TestCase):
                 source_month_navigation(target, type_video_source, motion_item),
             )
 
-        self.assertEqual([item["stored_filename"] for item in month_items], ["PXL_20250102_123.MP.jpg"])
-        self.assertEqual([item["stored_filename"] for item in type_video_items], ["PXL_20250102_123.mp4"])
+        self.assertEqual(
+            [item["stored_filename"] for item in month_items],
+            ["PXL_20250102_123.MP.jpg"],
+        )
+        self.assertEqual(
+            [item["stored_filename"] for item in type_video_items],
+            ["PXL_20250102_123.mp4"],
+        )
         self.assertEqual(
             [item["stored_filename"] for item in filename_items],
             ["PXL_20250102_123.MP.jpg", "PXL_20250102_123.mp4"],
@@ -1515,31 +2295,59 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("/filter/filename%3APXL_20250102_123.mp4/item/", image_body)
         self.assertNotIn("Motion-video: PXL_20250102_123.mp4", image_body)
         self.assertNotIn('<footer class="browser-footer">', image_body)
-        self.assertIn(f'href="/item/{int(image_item["id"])}">Vis JPG-bildet</a>', motion_body)
+        self.assertIn(
+            f'href="/item/{int(image_item["id"])}">Vis JPG-bildet</a>', motion_body
+        )
         self.assertNotIn("Åpne i alle bilder", motion_body)
         self.assertEqual(motion_file.content_type, "video/mp4")
         self.assertEqual(motion_file.content[4:8], b"ftyp")
 
     def test_run_server_hides_raw_sidecar_and_links_it_from_jpg(self) -> None:
         for extension in ("NEF", "PSD"):
-            with self.subTest(extension=extension), tempfile.TemporaryDirectory() as tmp:
+            with (
+                self.subTest(extension=extension),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
                 root = Path(tmp)
                 target = root / "target"
                 source = root / "source"
                 source.mkdir()
                 sidecar_filename = f"DSC_0170.{extension}"
-                (source / "DSC_0170.JPG").write_bytes(jpeg_with_exif_datetime("2019:03:03 12:00:00"))
-                (source / sidecar_filename).write_bytes(minimal_tiff_with_datetime("2019:03:03 12:00:00"))
+                (source / "DSC_0170.JPG").write_bytes(
+                    jpeg_with_exif_datetime("2019:03:03 12:00:00")
+                )
+                (source / sidecar_filename).write_bytes(
+                    minimal_tiff_with_datetime("2019:03:03 12:00:00")
+                )
 
                 self.assertEqual(run_cli(["create", str(target)]), 0)
-                self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+                self.assertEqual(
+                    run_cli(
+                        [
+                            "--target",
+                            str(target),
+                            "import",
+                            "--name",
+                            source.name,
+                            "--quiet",
+                            str(source),
+                        ]
+                    ),
+                    0,
+                )
 
                 month_items = browser_month_items(target, "2019-03")
                 type_file_source = text_filter_browser_source("type:file")
-                extension_source = text_filter_browser_source(f"extension:{extension.lower()}")
+                extension_source = text_filter_browser_source(
+                    f"extension:{extension.lower()}"
+                )
                 filename_source = text_filter_browser_source("filename:DSC_0170")
-                type_file_items = source_month_items(target, type_file_source, "2019-03")
-                extension_items = source_month_items(target, extension_source, "2019-03")
+                type_file_items = source_month_items(
+                    target, type_file_source, "2019-03"
+                )
+                extension_items = source_month_items(
+                    target, extension_source, "2019-03"
+                )
                 filename_items = source_month_items(target, filename_source, "2019-03")
                 image_item = month_items[0]
                 sidecar_item = extension_items[0]
@@ -1554,7 +2362,9 @@ class ServerBrowserCliTests(unittest.TestCase):
                 handler = object.__new__(BildebankRequestHandler)
                 handler.server = SimpleNamespace(target=target)
 
-                def fake_respond_json(content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                def fake_respond_json(
+                    content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK
+                ) -> None:
                     response["content"] = content
                     response["status"] = status
 
@@ -1562,8 +2372,13 @@ class ServerBrowserCliTests(unittest.TestCase):
                 handler.respond_item_info(f"file_id={sidecar_item['id']}")
                 previous_item, next_item = adjacent_browser_items(target, image_item)
                 month_nav = browser_month_navigation(target, image_item)
-                self.assertIsNotNone(raw_sidecar_id_by_image_id(target, int(image_item["id"])))
-                with patch("bildebank.server_browser_sidecars.raw_sidecar_groups", side_effect=AssertionError("global raw scan")):
+                self.assertIsNotNone(
+                    raw_sidecar_id_by_image_id(target, int(image_item["id"]))
+                )
+                with patch(
+                    "bildebank.server_browser_sidecars.raw_sidecar_groups",
+                    side_effect=AssertionError("global raw scan"),
+                ):
                     image_body = item_page_html(
                         target,
                         image_item,
@@ -1572,9 +2387,17 @@ class ServerBrowserCliTests(unittest.TestCase):
                         month_nav,
                     )
 
-                self.assertEqual([item["stored_filename"] for item in month_items], ["DSC_0170.JPG"])
-                self.assertEqual([item["stored_filename"] for item in type_file_items], [sidecar_filename])
-                self.assertEqual([item["stored_filename"] for item in extension_items], [sidecar_filename])
+                self.assertEqual(
+                    [item["stored_filename"] for item in month_items], ["DSC_0170.JPG"]
+                )
+                self.assertEqual(
+                    [item["stored_filename"] for item in type_file_items],
+                    [sidecar_filename],
+                )
+                self.assertEqual(
+                    [item["stored_filename"] for item in extension_items],
+                    [sidecar_filename],
+                )
                 self.assertEqual(
                     [item["stored_filename"] for item in filename_items],
                     ["DSC_0170.JPG", sidecar_filename],
@@ -1583,10 +2406,15 @@ class ServerBrowserCliTests(unittest.TestCase):
                 controls_end = image_body.index("</nav>", controls_start)
                 controls_html = image_body[controls_start:controls_end]
                 self.assertIn(f".{extension}</a>", controls_html)
-                self.assertIn(f"/filter/filename%3ADSC_0170.{extension}/item/", image_body)
+                self.assertIn(
+                    f"/filter/filename%3ADSC_0170.{extension}/item/", image_body
+                )
                 self.assertNotIn(f"RAW-fil: {sidecar_filename}", image_body)
                 self.assertNotIn('<footer class="browser-footer">', image_body)
-                self.assertIn(f'href="/item/{int(image_item["id"])}">Vis JPG-bildet</a>', sidecar_body)
+                self.assertIn(
+                    f'href="/item/{int(image_item["id"])}">Vis JPG-bildet</a>',
+                    sidecar_body,
+                )
                 self.assertNotIn("Åpne i alle bilder", sidecar_body)
                 self.assertEqual(response["status"], HTTPStatus.OK)
                 content = response["content"]
@@ -1615,7 +2443,20 @@ class ServerBrowserCliTests(unittest.TestCase):
             os.utime(psd_path, (psd_mtime, psd_mtime))
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
 
             month_items = browser_month_items(target, "2024-01")
             image_item = month_items[0]
@@ -1630,7 +2471,9 @@ class ServerBrowserCliTests(unittest.TestCase):
                 month_nav,
             )
 
-        self.assertEqual([item["stored_filename"] for item in month_items], ["sample_640x426.jpg"])
+        self.assertEqual(
+            [item["stored_filename"] for item in month_items], ["sample_640x426.jpg"]
+        )
         self.assertIsNotNone(psd_id)
         self.assertIn(".PSD</a>", image_body)
         self.assertIn("/filter/filename%3Asample_640x426.psd/item/", image_body)
@@ -1642,14 +2485,35 @@ class ServerBrowserCliTests(unittest.TestCase):
             source = root / "source"
             (source / "jpg").mkdir(parents=True)
             (source / "raw").mkdir()
-            (source / "jpg" / "DSC_0170.JPG").write_bytes(jpeg_with_exif_datetime("2019:03:03 12:00:00"))
-            (source / "raw" / "DSC_0170.NEF").write_bytes(minimal_tiff_with_datetime("2019:03:03 12:00:00"))
+            (source / "jpg" / "DSC_0170.JPG").write_bytes(
+                jpeg_with_exif_datetime("2019:03:03 12:00:00")
+            )
+            (source / "raw" / "DSC_0170.NEF").write_bytes(
+                minimal_tiff_with_datetime("2019:03:03 12:00:00")
+            )
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
 
             month_items = browser_month_items(target, "2019-03")
-            image_item = next(item for item in month_items if item["stored_filename"] == "DSC_0170.JPG")
+            image_item = next(
+                item
+                for item in month_items
+                if item["stored_filename"] == "DSC_0170.JPG"
+            )
             image_body = item_page_html(
                 target,
                 image_item,
@@ -1663,10 +2527,14 @@ class ServerBrowserCliTests(unittest.TestCase):
         )
         self.assertNotIn("RAW-fil: DSC_0170.NEF", image_body)
 
-    def test_run_server_motion_video_lookup_skips_non_motion_partner_images(self) -> None:
+    def test_run_server_motion_video_lookup_skips_non_motion_partner_images(
+        self,
+    ) -> None:
         class ExplodingConnection:
             def execute(self, *_args, **_kwargs):
-                raise AssertionError("Non-motion image should not query for a motion video.")
+                raise AssertionError(
+                    "Non-motion image should not query for a motion video."
+                )
 
         item = {
             "id": 1,
@@ -1676,7 +2544,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             "stored_filename": "IMG_20240102.jpg",
         }
 
-        self.assertIsNone(motion_video_for_image(Path("/unused"), item, conn=ExplodingConnection()))  # type: ignore[arg-type]
+        self.assertIsNone(
+            motion_video_for_image(Path("/unused"), item, conn=ExplodingConnection())
+        )  # type: ignore[arg-type]
 
     def test_run_server_associated_files_skip_unrelated_image_names(self) -> None:
         item = {
@@ -1688,11 +2558,19 @@ class ServerBrowserCliTests(unittest.TestCase):
         }
 
         with (
-            patch("bildebank.server_browser_item_html.motion_video_for_image", side_effect=AssertionError("motion lookup")),
-            patch("bildebank.server_browser_item_html.raw_sidecar_for_image", return_value=None),
+            patch(
+                "bildebank.server_browser_item_html.motion_video_for_image",
+                side_effect=AssertionError("motion lookup"),
+            ),
+            patch(
+                "bildebank.server_browser_item_html.raw_sidecar_for_image",
+                return_value=None,
+            ),
         ):
             self.assertEqual(
-                server_browser_item_html.associated_files_for_item(Path("/unused"), item),
+                server_browser_item_html.associated_files_for_item(
+                    Path("/unused"), item
+                ),
                 (None, None),
             )
 
@@ -1707,24 +2585,36 @@ class ServerBrowserCliTests(unittest.TestCase):
         motion_item = {"id": 2, "stored_filename": "PXL_20240102.mp4"}
 
         with (
-            patch("bildebank.server_browser_item_html.motion_video_for_image", return_value=motion_item) as motion_lookup,
-            patch("bildebank.server_browser_item_html.raw_sidecar_for_image", return_value=None) as raw_lookup,
+            patch(
+                "bildebank.server_browser_item_html.motion_video_for_image",
+                return_value=motion_item,
+            ) as motion_lookup,
+            patch(
+                "bildebank.server_browser_item_html.raw_sidecar_for_image",
+                return_value=None,
+            ) as raw_lookup,
         ):
             self.assertEqual(
-                server_browser_item_html.associated_files_for_item(Path("/unused"), item),
+                server_browser_item_html.associated_files_for_item(
+                    Path("/unused"), item
+                ),
                 (motion_item, None),
             )
 
         motion_lookup.assert_called_once()
         raw_lookup.assert_called_once()
 
-    def test_run_server_filter_route_redirects_query_to_canonical_browser_source(self) -> None:
+    def test_run_server_filter_route_redirects_query_to_canonical_browser_source(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             self.assertEqual(run_cli(["create", str(target)]), 0)
             handler = object.__new__(BildebankRequestHandler)
             response: dict[str, object] = {}
-            handler.server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)  # type: ignore[attr-defined]
+            handler.server = SimpleNamespace(
+                target=target, face_enabled=True, openclip_enabled=True
+            )  # type: ignore[attr-defined]
 
             def fake_redirect(location: str) -> None:
                 response["location"] = location
@@ -1735,10 +2625,18 @@ class ServerBrowserCliTests(unittest.TestCase):
             handler.redirect = fake_redirect  # type: ignore[method-assign]
             handler.respond_html = fake_respond_html  # type: ignore[method-assign]
 
-            BildebankRequestHandler.respond_filter(handler, "q=after%3A2023-12-01+location%3Agps+size%3E2MB")  # type: ignore[arg-type]
-            self.assertEqual(response["location"], "/filter/after%3A2023-12-01%20location%3Agps%20size%3E2MB")
+            server_endpoints_browser.respond_filter(
+                handler, "q=after%3A2023-12-01+location%3Agps+size%3E2MB"
+            )  # type: ignore[arg-type]
+            self.assertEqual(
+                response["location"],
+                "/filter/after%3A2023-12-01%20location%3Agps%20size%3E2MB",
+            )
 
-            BildebankRequestHandler.respond_filter(handler, "q=location%3Aukjent-sted")  # type: ignore[arg-type]
+            server_endpoints_browser.respond_filter(handler, "q=path%3A2024%5C01")  # type: ignore[arg-type]
+            self.assertEqual(response["location"], "/filter/path%3A2024%5C01")
+
+            server_endpoints_browser.respond_filter(handler, "q=location%3Aukjent-sted")  # type: ignore[arg-type]
             self.assertIn("Ukjent sted: ukjent-sted", str(response["html"]))
 
     def test_run_server_filter_item_page_uses_prefetched_source_count(self) -> None:
@@ -1749,7 +2647,20 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             filter_source = text_filter_browser_source("type:image")
             filter_item = source_item_by_id(target, filter_source, 1)
             self.assertIsNotNone(filter_item)
@@ -1774,7 +2685,9 @@ class ServerBrowserCliTests(unittest.TestCase):
 
             with patch(
                 "bildebank.server_browser_queries.source_item_count",
-                side_effect=AssertionError("Filter item page should use prefetched source count."),
+                side_effect=AssertionError(
+                    "Filter item page should use prefetched source count."
+                ),
             ):
                 body = source_item_page_html(
                     target,
@@ -1784,7 +2697,7 @@ class ServerBrowserCliTests(unittest.TestCase):
                     source_month_navigation(target, filter_source, filter_item),
                     source_item_count_value=1,
                 )
-            BildebankRequestHandler.respond_browser_source(  # type: ignore[arg-type]
+            server_endpoints_browser.respond_browser_source(  # type: ignore[arg-type]
                 handler,
                 filter_source,
                 None,
@@ -1822,8 +2735,34 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source_b / "IMG_20240203.jpg").write_bytes(b"image-b")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-a", "--quiet", str(source_a)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-b", "--quiet", str(source_b)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "source-a",
+                        "--quiet",
+                        str(source_a),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "source-b",
+                        "--quiet",
+                        str(source_b),
+                    ]
+                ),
+                0,
+            )
             conn = db.connect(target)
             try:
                 source = db.find_source_by_name(conn, "source-a")
@@ -1836,16 +2775,28 @@ class ServerBrowserCliTests(unittest.TestCase):
                 side_effect=AssertionError("Imported source should use SQL filter"),
             ):
                 source_item = source_item_by_id(target, source_browser, 2)
-                source_excludes_other_item = source_item_by_id(target, source_browser, 4) is None
+                source_excludes_other_item = (
+                    source_item_by_id(target, source_browser, 4) is None
+                )
                 self.assertIsNotNone(source_item)
-                source_adjacent = adjacent_source_items(target, source_browser, source_item)
-                source_month_nav = source_month_navigation(target, source_browser, source_item)
+                source_adjacent = adjacent_source_items(
+                    target, source_browser, source_item
+                )
+                source_month_nav = source_month_navigation(
+                    target, source_browser, source_item
+                )
                 source_first_item = source_item_by_id(target, source_browser, 1)
                 self.assertIsNotNone(source_first_item)
-                source_first_adjacent = adjacent_source_items(target, source_browser, source_first_item)
-                source_first_month_nav = source_month_navigation(target, source_browser, source_first_item)
+                source_first_adjacent = adjacent_source_items(
+                    target, source_browser, source_first_item
+                )
+                source_first_month_nav = source_month_navigation(
+                    target, source_browser, source_first_item
+                )
                 source_month = source_month_items(target, source_browser, "2024-01")
-                source_first_month = source_month_items(target, source_browser, "2023-01")
+                source_first_month = source_month_items(
+                    target, source_browser, "2023-01"
+                )
             self.assertIsNotNone(source_item)
             self.assertTrue(source_has_sql_filter(source_browser))
             item_body = source_item_page_html(
@@ -1857,7 +2808,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             )
             with patch(
                 "bildebank.server_browser_queries.source_month_keys",
-                side_effect=AssertionError("Item-rendering skal bruke eksisterende månedsnavigasjon."),
+                side_effect=AssertionError(
+                    "Item-rendering skal bruke eksisterende månedsnavigasjon."
+                ),
             ):
                 first_item_body = source_item_page_html(
                     target,
@@ -1867,8 +2820,12 @@ class ServerBrowserCliTests(unittest.TestCase):
                     source_first_month_nav,
                 )
             year_body = source_year_months_page_html(target, source_browser, "2024")
-            first_year_body = source_year_months_page_html(target, source_browser, "2023")
-            month_body = source_month_page_html(target, source_browser, "2024-01", source_month)
+            first_year_body = source_year_months_page_html(
+                target, source_browser, "2023"
+            )
+            month_body = source_month_page_html(
+                target, source_browser, "2024-01", source_month
+            )
             first_month_body = source_month_page_html(
                 target,
                 source_browser,
@@ -1884,8 +2841,14 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("Kilde: source-a", item_body)
         self.assertIn('href="/item/2">Åpne i alle bilder</a>', item_body)
         self.assertIn('href="/source/1/year/2024">2024</a>', item_body)
-        self.assertIn('href="/source/1/year/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>', item_body)
-        self.assertIn('href="/source/1/year/2025" title="Neste år" data-key-nav="next-year">r ▶</a>', item_body)
+        self.assertIn(
+            'href="/source/1/year/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>',
+            item_body,
+        )
+        self.assertIn(
+            'href="/source/1/year/2025" title="Neste år" data-key-nav="next-year">r ▶</a>',
+            item_body,
+        )
         self.assertNotIn('href="/source/1/month/2023-01" title="Forrige år"', item_body)
         self.assertNotIn('href="/source/1/month/2025-01" title="Neste år"', item_body)
         self.assertIn(
@@ -1897,23 +2860,52 @@ class ServerBrowserCliTests(unittest.TestCase):
             first_item_body,
         )
         self.assertNotIn("IMG_20240203", item_body)
-        self.assertIn('href="/source/1">Kilde: source-a</a><span class="sep">/</span>2024</nav>', year_body)
+        self.assertIn(
+            'href="/source/1">Kilde: source-a</a><span class="sep">/</span>2024</nav>',
+            year_body,
+        )
         self.assertIn('href="/source/1/month/2024-01"', year_body)
         self.assertNotIn('href="/source/1/month/2024-02"', year_body)
-        self.assertIn('href="/source/1/year/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>', year_body)
-        self.assertIn('href="/source/1/year/2025" title="Neste år" data-key-nav="next-year">r ▶</a>', year_body)
-        self.assertIn('href="/source/1/month/2023-01" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>', year_body)
-        self.assertIn('href="/source/1/month/2024-01" title="Neste måned" data-key-nav="next-month">ed ▶</a>', year_body)
+        self.assertIn(
+            'href="/source/1/year/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>',
+            year_body,
+        )
+        self.assertIn(
+            'href="/source/1/year/2025" title="Neste år" data-key-nav="next-year">r ▶</a>',
+            year_body,
+        )
+        self.assertIn(
+            'href="/source/1/month/2023-01" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>',
+            year_body,
+        )
+        self.assertIn(
+            'href="/source/1/month/2024-01" title="Neste måned" data-key-nav="next-month">ed ▶</a>',
+            year_body,
+        )
         self.assertNotIn('href="/month/2023-01" title="Forrige måned"', year_body)
         self.assertNotIn('href="/month/2024-01" title="Neste måned"', year_body)
-        self.assertIn('href="/source/1" title="Forrige år" data-key-nav="previous-year">◀ Å</a>', first_year_body)
-        self.assertIn('href="/source/1" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>', first_year_body)
-        self.assertIn('<section class="month-grid-server year-month-grid-server">', year_body)
+        self.assertIn(
+            'href="/source/1" title="Forrige år" data-key-nav="previous-year">◀ Å</a>',
+            first_year_body,
+        )
+        self.assertIn(
+            'href="/source/1" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>',
+            first_year_body,
+        )
+        self.assertIn(
+            '<section class="month-grid-server year-month-grid-server">', year_body
+        )
         self.assertNotIn('<footer class="browser-footer">', year_body)
         self.assertIn('href="/source/1/item/2"', month_body)
         self.assertIn('href="/source/1/year/2024">2024</a>', month_body)
-        self.assertIn('href="/source/1/year/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>', month_body)
-        self.assertIn('href="/source/1/year/2025" title="Neste år" data-key-nav="next-year">r ▶</a>', month_body)
+        self.assertIn(
+            'href="/source/1/year/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>',
+            month_body,
+        )
+        self.assertIn(
+            'href="/source/1/year/2025" title="Neste år" data-key-nav="next-year">r ▶</a>',
+            month_body,
+        )
         self.assertIn(
             'href="/source/1" title="Forrige måned" data-key-nav="previous-month">◀ Mån</a>',
             first_month_body,
@@ -1922,7 +2914,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             'href="/source/1" title="Forrige år" data-key-nav="previous-year">◀ Å</a>',
             first_month_body,
         )
-        self.assertNotIn('href="/source/1/month/2023-01" title="Forrige år"', month_body)
+        self.assertNotIn(
+            'href="/source/1/month/2023-01" title="Forrige år"', month_body
+        )
         self.assertNotIn('href="/source/1/month/2025-01" title="Neste år"', month_body)
         self.assertIn('<span class="sep">/</span>Januar</nav>', month_body)
         self.assertNotIn('<footer class="browser-footer">', month_body)
@@ -1931,7 +2925,9 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("source-a", sources_body)
         self.assertIn("source-b", sources_body)
 
-    def test_imported_source_sql_filter_preserves_order_navigation_and_hidden_items(self) -> None:
+    def test_imported_source_sql_filter_preserves_order_navigation_and_hidden_items(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source_a = Path(tmp) / "source-a"
@@ -1944,8 +2940,34 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source_b / "D_20240101.jpg").write_bytes(b"other-source")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-a", "--quiet", str(source_a)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source-b", "--quiet", str(source_b)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "source-a",
+                        "--quiet",
+                        str(source_a),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "source-b",
+                        "--quiet",
+                        str(source_b),
+                    ]
+                ),
+                0,
+            )
             conn = db.connect(target)
             try:
                 imported = db.find_source_by_name(conn, "source-a")
@@ -1969,20 +2991,35 @@ class ServerBrowserCliTests(unittest.TestCase):
             march_id = rows["A_20240301.jpg"]
             with patch(
                 "bildebank.server_browser_queries.source_items",
-                side_effect=AssertionError("Imported source should not materialize source_items"),
+                side_effect=AssertionError(
+                    "Imported source should not materialize source_items"
+                ),
             ):
-                self.assertEqual(source_item_ids(target, source), [january_id, february_id, march_id])
+                self.assertEqual(
+                    source_item_ids(target, source), [january_id, february_id, march_id]
+                )
                 item = source_item_by_id(target, source, february_id)
                 self.assertIsNotNone(item)
                 previous_item, next_item = adjacent_source_items(target, source, item)
                 month_nav = source_month_navigation(target, source, item)
-                self.assertIsNone(source_item_by_id(target, source, rows["D_20240101.jpg"]))
-                self.assertEqual(source_month_keys(target, source), ["2024-01", "2024-02", "2024-03"])
+                self.assertIsNone(
+                    source_item_by_id(target, source, rows["D_20240101.jpg"])
+                )
                 self.assertEqual(
-                    [int(row["id"]) for row in source_month_items(target, source, "2024-02")],
+                    source_month_keys(target, source), ["2024-01", "2024-02", "2024-03"]
+                )
+                self.assertEqual(
+                    [
+                        int(row["id"])
+                        for row in source_month_items(target, source, "2024-02")
+                    ],
                     [february_id],
                 )
-                self.assertIsNone(source_item_by_id(target, source, february_id, hide_out_of_focus=True))
+                self.assertIsNone(
+                    source_item_by_id(
+                        target, source, february_id, hide_out_of_focus=True
+                    )
+                )
                 self.assertEqual(
                     source_item_ids(target, source, hide_out_of_focus=True),
                     [january_id, march_id],
@@ -2014,7 +3051,20 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source_dir / "C_20240301.jpg").write_bytes(b"three")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source_dir)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "source",
+                        "--quiet",
+                        str(source_dir),
+                    ]
+                ),
+                0,
+            )
             conn = db.connect(target)
             try:
                 imported = db.find_source_by_name(conn, "source")
@@ -2027,7 +3077,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             server.target = target
             server.config = AppConfig()
             server._browser_navigation_cache_version = 0
-            server._browser_navigation_db_mtime_ns = db.db_path_for_target(target).stat().st_mtime_ns
+            server._browser_navigation_db_mtime_ns = (
+                db.db_path_for_target(target).stat().st_mtime_ns
+            )
             server._browser_navigation_face_db_mtime_ns = None
             server._browser_navigation_checked_at = time.monotonic()
             server._browser_item_ids = {}
@@ -2055,13 +3107,24 @@ class ServerBrowserCliTests(unittest.TestCase):
 
             handler = FakeHandler()
             with (
-                patch("bildebank.server.source_item_ids", wraps=source_item_ids) as item_ids_mock,
-                patch("bildebank.server.source_month_keys", wraps=source_month_keys) as month_keys_mock,
-                patch("bildebank.server.source_item_by_id", wraps=source_item_by_id) as item_by_id_mock,
-                patch("bildebank.server.adjacent_source_items", wraps=adjacent_source_items) as adjacent_mock,
+                patch(
+                    "bildebank.server_runtime.source_item_ids", wraps=source_item_ids
+                ) as item_ids_mock,
+                patch(
+                    "bildebank.server_runtime.source_month_keys",
+                    wraps=source_month_keys,
+                ) as month_keys_mock,
+                patch(
+                    "bildebank.server_endpoints_browser.source_item_by_id",
+                    wraps=source_item_by_id,
+                ) as item_by_id_mock,
+                patch(
+                    "bildebank.server_endpoints_browser.adjacent_source_items",
+                    wraps=adjacent_source_items,
+                ) as adjacent_mock,
             ):
                 for file_id in (1, 2):
-                    BildebankRequestHandler.respond_browser_source(  # type: ignore[arg-type]
+                    server_endpoints_browser.respond_browser_source(  # type: ignore[arg-type]
                         handler,
                         source,
                         "item",
@@ -2085,13 +3148,28 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "B_20240201.jpg").write_bytes(b"two")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "source",
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
 
             server = object.__new__(BildebankServer)
             server.target = target
             server.config = AppConfig()
             server._browser_navigation_cache_version = 0
-            server._browser_navigation_db_mtime_ns = db.db_path_for_target(target).stat().st_mtime_ns
+            server._browser_navigation_db_mtime_ns = (
+                db.db_path_for_target(target).stat().st_mtime_ns
+            )
             server._browser_navigation_face_db_mtime_ns = None
             server._browser_navigation_checked_at = time.monotonic()
             server._browser_item_ids = {}
@@ -2127,7 +3205,9 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertNotIn((tag_filter_source, False), server._source_item_ids)
         self.assertIn((other_tag_source, False), server._source_item_ids)
 
-    def test_run_server_out_of_focus_tag_change_clears_global_navigation_cache(self) -> None:
+    def test_run_server_out_of_focus_tag_change_clears_global_navigation_cache(
+        self,
+    ) -> None:
         server = object.__new__(BildebankServer)
         server.target = Path("/tmp/nonexistent-bildebank-target")
         server.config = AppConfig(browser=BrowserConfig(hide_out_of_focus=True))
@@ -2158,7 +3238,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             class CreateHandler:
                 headers = {"Content-Length": str(len(create_data))}
                 rfile = BytesIO(create_data)
-                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                server = SimpleNamespace(
+                    target=target, face_enabled=True, openclip_enabled=True
+                )
                 redirect_url: str | None = None
 
                 def redirect(self, location: str) -> None:
@@ -2168,10 +3250,12 @@ class ServerBrowserCliTests(unittest.TestCase):
                     raise AssertionError(f"{status}: {content}")
 
             create_handler = CreateHandler()
-            BildebankRequestHandler.respond_create_tag(create_handler)  # type: ignore[arg-type]
+            server_endpoints_admin.respond_create_tag(create_handler)  # type: ignore[arg-type]
             conn = db.connect(target)
             try:
-                tag_row = conn.execute("SELECT id, name, kind FROM tags WHERE name_key = ?", ("familie",)).fetchone()
+                tag_row = conn.execute(
+                    "SELECT id, name, kind FROM tags WHERE name_key = ?", ("familie",)
+                ).fetchone()
             finally:
                 conn.close()
             self.assertIsNotNone(tag_row)
@@ -2182,7 +3266,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             class RenameHandler:
                 headers = {"Content-Length": str(len(rename_data))}
                 rfile = BytesIO(rename_data)
-                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                server = SimpleNamespace(
+                    target=target, face_enabled=True, openclip_enabled=True
+                )
                 redirect_url: str | None = None
 
                 def redirect(self, location: str) -> None:
@@ -2195,10 +3281,12 @@ class ServerBrowserCliTests(unittest.TestCase):
                     raise AssertionError(f"{status}: {content}")
 
             rename_handler = RenameHandler()
-            BildebankRequestHandler.respond_rename_tag(rename_handler)  # type: ignore[arg-type]
+            server_endpoints_admin.respond_rename_tag(rename_handler)  # type: ignore[arg-type]
             conn = db.connect(target)
             try:
-                renamed_row = conn.execute("SELECT name, name_key FROM tags WHERE id = ?", (tag_id,)).fetchone()
+                renamed_row = conn.execute(
+                    "SELECT name, name_key FROM tags WHERE id = ?", (tag_id,)
+                ).fetchone()
             finally:
                 conn.close()
 
@@ -2207,7 +3295,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             class DeleteHandler:
                 headers = {"Content-Length": str(len(delete_data))}
                 rfile = BytesIO(delete_data)
-                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                server = SimpleNamespace(
+                    target=target, face_enabled=True, openclip_enabled=True
+                )
                 redirect_url: str | None = None
 
                 def redirect(self, location: str) -> None:
@@ -2220,11 +3310,15 @@ class ServerBrowserCliTests(unittest.TestCase):
                     raise AssertionError(f"{status}: {content}")
 
             delete_handler = DeleteHandler()
-            BildebankRequestHandler.respond_delete_tag(delete_handler)  # type: ignore[arg-type]
+            server_endpoints_admin.respond_delete_tag(delete_handler)  # type: ignore[arg-type]
             conn = db.connect(target)
             try:
-                deleted_row = conn.execute("SELECT id FROM tags WHERE id = ?", (tag_id,)).fetchone()
-                system_row = conn.execute("SELECT id FROM tags WHERE name_key = ?", ("ute av fokus",)).fetchone()
+                deleted_row = conn.execute(
+                    "SELECT id FROM tags WHERE id = ?", (tag_id,)
+                ).fetchone()
+                system_row = conn.execute(
+                    "SELECT id FROM tags WHERE name_key = ?", ("ute av fokus",)
+                ).fetchone()
             finally:
                 conn.close()
 
@@ -2244,7 +3338,11 @@ class ServerBrowserCliTests(unittest.TestCase):
             init_database(target)
             conn = db.connect(target)
             try:
-                system_id = int(conn.execute("SELECT id FROM tags WHERE name_key = ?", ("ute av fokus",)).fetchone()["id"])
+                system_id = int(
+                    conn.execute(
+                        "SELECT id FROM tags WHERE name_key = ?", ("ute av fokus",)
+                    ).fetchone()["id"]
+                )
             finally:
                 conn.close()
             data = f"tag_id={system_id}".encode("utf-8")
@@ -2253,7 +3351,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             class FakeHandler:
                 headers = {"Content-Length": str(len(data))}
                 rfile = BytesIO(data)
-                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                server = SimpleNamespace(
+                    target=target, face_enabled=True, openclip_enabled=True
+                )
 
                 def respond_html(self, content: str, *, status: HTTPStatus) -> None:
                     response["content"] = content
@@ -2264,12 +3364,14 @@ class ServerBrowserCliTests(unittest.TestCase):
                     response["status"] = status
 
             handler = FakeHandler()
-            BildebankRequestHandler.respond_delete_tag(handler)  # type: ignore[arg-type]
+            server_endpoints_admin.respond_delete_tag(handler)  # type: ignore[arg-type]
 
         self.assertEqual(response["status"], HTTPStatus.BAD_REQUEST)
         self.assertIn("Systemtagger kan ikke slettes", str(response["content"]))
 
-    def test_run_server_tag_definition_changes_report_target_lock_conflict(self) -> None:
+    def test_run_server_tag_definition_changes_report_target_lock_conflict(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
@@ -2282,7 +3384,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             (target / LOCK_FILENAME).write_text("command=tag-add\n", encoding="utf-8")
 
             class FakeHandler:
-                server = SimpleNamespace(target=target, face_enabled=True, openclip_enabled=True)
+                server = SimpleNamespace(
+                    target=target, face_enabled=True, openclip_enabled=True
+                )
                 body = ""
                 status: HTTPStatus | None = None
 
@@ -2302,17 +3406,21 @@ class ServerBrowserCliTests(unittest.TestCase):
                     raise AssertionError(f"Uventet redirect: {location}")
 
             create_handler = FakeHandler(b"name=Ny")
-            BildebankRequestHandler.respond_create_tag(create_handler)  # type: ignore[arg-type]
-            rename_handler = FakeHandler(f"tag_id={tag_id}&name=Nytt+navn".encode("utf-8"))
-            BildebankRequestHandler.respond_rename_tag(rename_handler)  # type: ignore[arg-type]
+            server_endpoints_admin.respond_create_tag(create_handler)  # type: ignore[arg-type]
+            rename_handler = FakeHandler(
+                f"tag_id={tag_id}&name=Nytt+navn".encode("utf-8")
+            )
+            server_endpoints_admin.respond_rename_tag(rename_handler)  # type: ignore[arg-type]
             delete_handler = FakeHandler(f"tag_id={tag_id}".encode("utf-8"))
-            BildebankRequestHandler.respond_delete_tag(delete_handler)  # type: ignore[arg-type]
+            server_endpoints_admin.respond_delete_tag(delete_handler)  # type: ignore[arg-type]
 
         for handler in (create_handler, rename_handler, delete_handler):
             self.assertEqual(handler.status, HTTPStatus.CONFLICT)
             self.assertIn("Bildesamlingen er låst", handler.body)
 
-    def test_run_server_hide_out_of_focus_filters_browser_sources_but_not_tag_view(self) -> None:
+    def test_run_server_hide_out_of_focus_filters_browser_sources_but_not_tag_view(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -2321,7 +3429,20 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_20240103.jpg").write_bytes(b"image-b")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "source",
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             conn = db.connect(target)
             try:
                 db.tag_file(conn, file_id=1, tag_name=db.SYSTEM_TAG_OUT_OF_FOCUS)
@@ -2346,7 +3467,9 @@ class ServerBrowserCliTests(unittest.TestCase):
                 hide_out_of_focus=True,
             )
             unfiltered_month_items = browser_month_items(target, "2024-01")
-            filtered_month_items = browser_month_items(target, "2024-01", hide_out_of_focus=True)
+            filtered_month_items = browser_month_items(
+                target, "2024-01", hide_out_of_focus=True
+            )
             filtered_source_month_items = source_month_items(
                 target,
                 imported_source,
@@ -2360,14 +3483,20 @@ class ServerBrowserCliTests(unittest.TestCase):
                 hide_out_of_focus=True,
             )
             tag_item = source_item_by_id(target, tag_source, 1, hide_out_of_focus=True)
-            tag_month_items = source_month_items(target, tag_source, "2024-01", hide_out_of_focus=True)
+            tag_month_items = source_month_items(
+                target, tag_source, "2024-01", hide_out_of_focus=True
+            )
             self.assertIsNotNone(tag_item)
             tag_item_body = source_item_page_html(
                 target,
                 tag_source,
                 tag_item,
-                *adjacent_source_items(target, tag_source, tag_item, hide_out_of_focus=True),
-                source_month_navigation(target, tag_source, tag_item, hide_out_of_focus=True),
+                *adjacent_source_items(
+                    target, tag_source, tag_item, hide_out_of_focus=True
+                ),
+                source_month_navigation(
+                    target, tag_source, tag_item, hide_out_of_focus=True
+                ),
                 hide_out_of_focus=True,
             )
 
@@ -2391,7 +3520,20 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_20240103.jpg").write_bytes(b"image-b")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "source",
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             conn = db.connect(target)
             try:
                 imported = db.find_source_by_name(conn, "source")
@@ -2399,7 +3541,9 @@ class ServerBrowserCliTests(unittest.TestCase):
                 imported_source = imported_source_browser_source(imported)
                 item = source_item_by_id(target, imported_source, 1, conn=conn)
                 self.assertIsNotNone(item)
-                previous_item, next_item = adjacent_source_items(target, imported_source, item, conn=conn)
+                previous_item, next_item = adjacent_source_items(
+                    target, imported_source, item, conn=conn
+                )
                 month_nav = source_month_navigation(target, imported_source, item)
 
                 server_browser_sidecars.clear_sidecar_data_caches()
@@ -2440,7 +3584,9 @@ class ServerBrowserCliTests(unittest.TestCase):
                         hide_out_of_focus=True,
                         conn=conn,
                     )
-                    server_browser_queries.hidden_sidecar_id_filter_sql(target, "1 = 1", (), conn=conn)
+                    server_browser_queries.hidden_sidecar_id_filter_sql(
+                        target, "1 = 1", (), conn=conn
+                    )
                     with (
                         patch(
                             "bildebank.server_browser_sidecars.query_motion_video_file_ids",
@@ -2451,7 +3597,9 @@ class ServerBrowserCliTests(unittest.TestCase):
                             side_effect=AssertionError("rescanned raw sidecars"),
                         ),
                     ):
-                        server_browser_queries.hidden_sidecar_id_filter_sql(target, "1 = 1", (), conn=conn)
+                        server_browser_queries.hidden_sidecar_id_filter_sql(
+                            target, "1 = 1", (), conn=conn
+                        )
             finally:
                 conn.close()
 
@@ -2459,7 +3607,9 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn('href="/item/1">Åpne i alle bilder</a>', body)
         self.assertEqual(raw_sidecar_ids.call_count, 0)
 
-    def test_run_server_out_of_focus_button_redirects_to_adjacent_visible_item(self) -> None:
+    def test_run_server_out_of_focus_button_redirects_to_adjacent_visible_item(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -2468,7 +3618,20 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_20240103.jpg").write_bytes(b"image-b")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", "source", "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        "source",
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             first_item = browser_item_by_id(target, 1, hide_out_of_focus=True)
             second_item = browser_item_by_id(target, 2, hide_out_of_focus=True)
             self.assertIsNotNone(first_item)
@@ -2477,21 +3640,35 @@ class ServerBrowserCliTests(unittest.TestCase):
                 target,
                 all_browser_source(),
                 first_item,
-                *adjacent_source_items(target, all_browser_source(), first_item, hide_out_of_focus=True),
-                source_month_navigation(target, all_browser_source(), first_item, hide_out_of_focus=True),
+                *adjacent_source_items(
+                    target, all_browser_source(), first_item, hide_out_of_focus=True
+                ),
+                source_month_navigation(
+                    target, all_browser_source(), first_item, hide_out_of_focus=True
+                ),
                 hide_out_of_focus=True,
             )
             second_body = source_item_page_html(
                 target,
                 all_browser_source(),
                 second_item,
-                *adjacent_source_items(target, all_browser_source(), second_item, hide_out_of_focus=True),
-                source_month_navigation(target, all_browser_source(), second_item, hide_out_of_focus=True),
+                *adjacent_source_items(
+                    target, all_browser_source(), second_item, hide_out_of_focus=True
+                ),
+                source_month_navigation(
+                    target, all_browser_source(), second_item, hide_out_of_focus=True
+                ),
                 hide_out_of_focus=True,
             )
 
-        self.assertIn('data-tag-name="Ute av fokus" aria-pressed="false" data-tag-hide-redirect="/item/2"', first_body)
-        self.assertIn('data-tag-name="Ute av fokus" aria-pressed="false" data-tag-hide-redirect="/item/1"', second_body)
+        self.assertIn(
+            'data-tag-name="Ute av fokus" aria-pressed="false" data-tag-hide-redirect="/item/2"',
+            first_body,
+        )
+        self.assertIn(
+            'data-tag-name="Ute av fokus" aria-pressed="false" data-tag-hide-redirect="/item/1"',
+            second_body,
+        )
         self.assertIn("tagHideRedirect", SERVER_JS)
 
     def test_run_server_month_navigation_tolerates_foreign_path_keys(self) -> None:
@@ -2504,10 +3681,25 @@ class ServerBrowserCliTests(unittest.TestCase):
             (source / "IMG_20240203.jpg").write_bytes(b"image-three")
 
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
             conn = sqlite3.connect(target / DB_FILENAME)
             try:
-                rows = conn.execute("SELECT id, target_path FROM files ORDER BY id").fetchall()
+                rows = conn.execute(
+                    "SELECT id, target_path FROM files ORDER BY id"
+                ).fetchall()
                 for file_id, target_path in rows:
                     path = Path(str(target_path))
                     conn.execute(
@@ -2520,8 +3712,15 @@ class ServerBrowserCliTests(unittest.TestCase):
 
             item = browser_item_by_id(target, 2)
             self.assertIsNotNone(item)
-            body = item_page_html(target, item, *adjacent_browser_items(target, item), browser_month_navigation(target, item))
-            month_body = month_page_html(target, "2024-01", browser_month_items(target, "2024-01"))
+            body = item_page_html(
+                target,
+                item,
+                *adjacent_browser_items(target, item),
+                browser_month_navigation(target, item),
+            )
+            month_body = month_page_html(
+                target, "2024-01", browser_month_items(target, "2024-01")
+            )
 
         self.assertIn("/month/2023-12", body)
         self.assertIn("/month/2024-02", body)

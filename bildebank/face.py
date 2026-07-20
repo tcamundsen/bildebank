@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import sqlite3
+import uuid
 import warnings
 from collections.abc import Callable
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
@@ -20,7 +21,7 @@ from .html_paths import path_to_url, relative_to_target
 from .html_export import render_html
 from .media import IMAGE_EXTENSIONS
 from .static_browser import static_browser_item
-from .target_lock import TargetLock
+from .target_lock import TargetLock, TargetLockError
 
 
 LEGACY_FACE_DB_FILENAME = ".bilder-faces.sqlite3"
@@ -29,6 +30,7 @@ FACE_DB_DIRNAME = ".bildebank-faces"
 FACE_SCHEMA_VERSION = 5
 FACE_MODEL_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 FACE_SUGGEST_BATCH_SIZE = 5000
+FACE_SCAN_RUN_META_KEY = "face_scan_run_id"
 P = ParamSpec("P")
 R = TypeVar("R")
 
@@ -200,11 +202,15 @@ def connect_face_db(target: Path, config: FaceRecognitionConfig | None = None) -
     model_name = config.model_name if config is not None else DEFAULT_FACE_MODEL_NAME
     conn = sqlite3.connect(face_db_path(target, config))
     conn.row_factory = sqlite3.Row
-    apply_face_schema(conn)
-    validate_face_database_model(conn, model_name)
-    set_meta(conn, "target_path", str(target.resolve()))
-    conn.commit()
-    return conn
+    try:
+        apply_face_schema(conn)
+        validate_face_database_model(conn, model_name)
+        set_meta(conn, "target_path", str(target.resolve()))
+        conn.commit()
+        return conn
+    except Exception:
+        conn.close()
+        raise
 
 
 def ensure_face_schema_path(path: Path) -> None:
@@ -1475,7 +1481,6 @@ def count_rows_if_table_exists(conn: sqlite3.Connection, table: str) -> int:
     return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
 
 
-@target_locked_face_write("face-scan")
 def scan_faces(
     target: Path,
     config: FaceRecognitionConfig,
@@ -1486,86 +1491,164 @@ def scan_faces(
     force: bool = False,
 ) -> FaceScanStats:
     stats = FaceScanStats()
-    main_conn = db.connect(target)
-    face_conn = connect_face_db(target, config)
-    try:
-        rows = active_image_files(main_conn, limit=limit)
-        stats.total = len(rows)
-        if progress is not None:
-            progress("start", 0, stats.total, stats, None)
-
-        rows_to_scan = []
-        for row in rows:
-            stats.checked += 1
-            file_id = int(row["id"])
-            sha256 = str(row["sha256"])
-            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-            if not force and is_file_scanned(face_conn, file_id, sha256):
-                stats.skipped += 1
+    with TargetLock(target, command="face-scan"):
+        main_conn = db.connect(target)
+        face_conn = connect_face_db(target, config)
+        try:
+            scan_run_id = str(uuid.uuid4())
+            db.set_meta(face_conn, FACE_SCAN_RUN_META_KEY, scan_run_id)
+            face_conn.commit()
+            rows = active_image_files(main_conn, limit=limit)
+            stats.total = len(rows)
+            if progress is not None:
+                progress("start", 0, stats.total, stats, None)
+            rows_to_scan = []
+            for row in rows:
+                stats.checked += 1
+                file_id = int(row["id"])
+                sha256 = str(row["sha256"])
+                target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+                if not force and is_file_scanned(face_conn, file_id, sha256):
+                    stats.skipped += 1
+                    if progress is not None:
+                        progress("check", stats.checked, stats.total, stats, target_path)
+                    continue
+                rows_to_scan.append(row)
                 if progress is not None:
                     progress("check", stats.checked, stats.total, stats, target_path)
-                continue
-            rows_to_scan.append(row)
-            if progress is not None:
-                progress("check", stats.checked, stats.total, stats, target_path)
-        if not rows_to_scan:
-            if progress is not None:
-                progress("done", stats.checked, stats.total, stats, None)
-            return stats
+        finally:
+            main_conn.close()
+            face_conn.close()
 
+    if not rows_to_scan:
         if progress is not None:
-            progress("load_model", 0, len(rows_to_scan), stats, None)
-            if not insightface_model_files_exist(config):
-                progress("download_model", 0, len(rows_to_scan), stats, None)
-        with suppress_model_output(enabled=not show_model_output):
-            app = load_face_app(config)
-        for scan_index, row in enumerate(rows_to_scan, start=1):
-            file_id = int(row["id"])
-            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-            target_path_key = str(row["target_path_key"])
-            sha256 = str(row["sha256"])
+            progress("done", stats.checked, stats.total, stats, None)
+        return stats
+
+    if progress is not None:
+        progress("load_model", 0, len(rows_to_scan), stats, None)
+        if not insightface_model_files_exist(config):
+            progress("download_model", 0, len(rows_to_scan), stats, None)
+    with suppress_model_output(enabled=not show_model_output):
+        app = load_face_app(config)
+    for scan_index, row in enumerate(rows_to_scan, start=1):
+        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+        try:
+            image = read_image(target_path)
+            if image is None:
+                raise ValueError(f"Kunne ikke lese bildefil: {target_path}")
+            with suppress_model_output(enabled=not show_model_output):
+                faces = app.get(image)
             try:
-                image = read_image(target_path)
-                if image is None:
-                    raise ValueError(f"Kunne ikke lese bildefil: {target_path}")
-                with suppress_model_output(enabled=not show_model_output):
-                    faces = app.get(image)
-                replace_file_faces(
-                    face_conn,
-                    file_id=file_id,
-                    target_root=target,
-                    target_path=target_path,
-                    target_path_key=target_path_key,
-                    sha256=sha256,
-                    faces=faces,
-                    embedding_model=config.model_name,
-                )
+                stored = store_face_scan_result(target, config, row, faces, scan_run_id)
+            except TargetLockError:
+                stored = False
+            if stored:
                 stats.scanned += 1
                 stats.faces += len(faces)
-            except Exception as exc:  # noqa: BLE001 - scan should continue and record failures
+            else:
+                stats.skipped += 1
+        except Exception as exc:  # noqa: BLE001 - scan should continue and record failures
+            try:
+                stored_error = store_face_scan_error(target, config, row, str(exc), scan_run_id)
+            except TargetLockError:
+                stored_error = False
+            if stored_error:
                 stats.errors += 1
                 stats.last_error_path = target_path
                 stats.last_error_message = str(exc)
-                mark_file_scan_error(
-                    face_conn,
-                    file_id=file_id,
-                    target_root=target,
-                    target_path=target_path,
-                    target_path_key=target_path_key,
-                    sha256=sha256,
-                    message=str(exc),
-                )
                 if progress is not None:
                     progress("error", scan_index, len(rows_to_scan), stats, target_path)
-            face_conn.commit()
-            if progress is not None:
-                progress("scan", scan_index, len(rows_to_scan), stats, target_path)
+            else:
+                stats.skipped += 1
         if progress is not None:
-            progress("done", stats.checked, stats.total, stats, None)
-    finally:
-        main_conn.close()
-        face_conn.close()
+            progress("scan", scan_index, len(rows_to_scan), stats, target_path)
+    if progress is not None:
+        progress("done", stats.checked, stats.total, stats, None)
     return stats
+
+
+def store_face_scan_result(
+    target: Path,
+    config: FaceRecognitionConfig,
+    original_row: sqlite3.Row,
+    faces: list[Any],
+    scan_run_id: str,
+) -> bool:
+    """Store one result only if the scanned file is still the same active file."""
+    with TargetLock(target, command="face-scan"):
+        main_conn = db.connect(target)
+        try:
+            current_row = active_file_for_face_scan(main_conn, original_row)
+            if current_row is None:
+                return False
+            face_conn = connect_face_db(target, config)
+            try:
+                if db.get_meta(face_conn, FACE_SCAN_RUN_META_KEY) != scan_run_id:
+                    return False
+                replace_file_faces(
+                    face_conn,
+                    file_id=int(current_row["id"]),
+                    target_root=target,
+                    target_path=db.absolute_target_path(target, Path(str(current_row["target_path"]))),
+                    target_path_key=str(current_row["target_path_key"]),
+                    sha256=str(current_row["sha256"]),
+                    faces=faces,
+                    embedding_model=config.model_name,
+                )
+                face_conn.commit()
+            finally:
+                face_conn.close()
+        finally:
+            main_conn.close()
+    return True
+
+
+def store_face_scan_error(
+    target: Path,
+    config: FaceRecognitionConfig,
+    original_row: sqlite3.Row,
+    message: str,
+    scan_run_id: str,
+) -> bool:
+    with TargetLock(target, command="face-scan"):
+        main_conn = db.connect(target)
+        try:
+            current_row = active_file_for_face_scan(main_conn, original_row)
+            if current_row is None:
+                return False
+            face_conn = connect_face_db(target, config)
+            try:
+                if db.get_meta(face_conn, FACE_SCAN_RUN_META_KEY) != scan_run_id:
+                    return False
+                mark_file_scan_error(
+                    face_conn,
+                    file_id=int(current_row["id"]),
+                    target_root=target,
+                    target_path=db.absolute_target_path(target, Path(str(current_row["target_path"]))),
+                    target_path_key=str(current_row["target_path_key"]),
+                    sha256=str(current_row["sha256"]),
+                    message=message,
+                )
+                face_conn.commit()
+            finally:
+                face_conn.close()
+        finally:
+            main_conn.close()
+    return True
+
+
+def active_file_for_face_scan(conn: sqlite3.Connection, original_row: sqlite3.Row) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT id, target_path, target_path_key, sha256
+        FROM files
+        WHERE id = ?
+          AND sha256 = ?
+          AND deleted_at IS NULL
+        """,
+        (int(original_row["id"]), str(original_row["sha256"])),
+    ).fetchone()
 
 
 @contextmanager

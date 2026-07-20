@@ -51,6 +51,7 @@ def static_browser_item(
         "manualDateFrom": item_value(item, "manual_date_from", "") or "",
         "manualDateTo": item_value(item, "manual_date_to", "") or "",
         "manualDateNote": item_value(item, "manual_date_note", "") or "",
+        "comment": item_value(item, "comment", None),
         "name": name or str(item_value(item, "stored_filename", relative_path.name)),
         "sizeText": item_size_text(item),
     }

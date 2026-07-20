@@ -117,6 +117,7 @@ from .db_tags import (
     untag_file,
 )
 from .db_files import (
+    MAX_FILE_COMMENT_LENGTH,
     UnimportPlan,
     active_file_integrity_rows,
     apply_unimport,
@@ -137,6 +138,8 @@ from .db_files import (
     name_conflicts,
     non_metadata_files,
     source_file_sources,
+    normalize_file_comment,
+    set_file_comment,
     status_counts,
     unimport_total_sources_by_file_id,
 )
@@ -209,6 +212,9 @@ __all__ = (
     "table_exists",
     "target_relative_path",
     "target_relative_path_key",
+    "MAX_FILE_COMMENT_LENGTH",
+    "normalize_file_comment",
+    "set_file_comment",
     "SCHEMA_VERSION",
     "GPS_ERROR_EXIFTOOL",
     "GPS_ERROR_FILE_MISSING",

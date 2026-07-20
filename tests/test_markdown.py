@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from bildebank.server import resolve_doc_path
+from bildebank.server_handler import resolve_doc_path
 from bildebank.server_pages import markdown_doc_page_html
 from bildebank.server_markdown import markdown_to_html
 
@@ -17,9 +17,9 @@ class MarkdownTests(unittest.TestCase):
 
         self.assertIn("<h1>Bruk av GPS-lokasjon i bilder</h1>", html)
         self.assertIn("<code>/geo</code>", html)
-        self.assertIn("<strong>Egendefinerte steder</strong>", html)
-        self.assertIn("statistikk over bilder med og uten GPS-lokasjon", html)
-        self.assertNotIn("# Steder", html)
+        self.assertIn("<strong>Les GPS fra bilder</strong>", html)
+        self.assertIn("som mangler GPS-data", html)
+        self.assertNotIn("# Bruk", html)
 
     def test_markdown_help_renderer_omits_cli_help_markers(self) -> None:
         html = markdown_to_html(

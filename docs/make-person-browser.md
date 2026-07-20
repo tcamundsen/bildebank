@@ -40,6 +40,10 @@ Stien øverst, for eksempel `År / 2024 / Januar / IMG_1234.jpg`, kan brukes til
 Bildene vises med visningsrotasjonen som er lagret i Bildebank. Bildefilene
 endres ikke.
 
+Kommentarer vises nederst på bildet i full bildevisning, men ikke på
+oversiktsbildene. Kjør `make-person-browser` på nytt etter at en kommentar er
+endret.
+
 ## Valg
 
 ### `--month-preview-limit`

@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
+from bildebank.html_export import render_html
 from bildebank.static_browser import static_browser_item
 
 
@@ -18,6 +19,7 @@ class StaticBrowserItemTests(unittest.TestCase):
             "manual_date_to": "2004-08-31",
             "manual_date_note": "Kamera hadde feil dato",
             "view_rotation_degrees": 90,
+            "comment": "Første linje\nAndre linje",
             "size_bytes": 123,
         }
 
@@ -32,6 +34,25 @@ class StaticBrowserItemTests(unittest.TestCase):
         self.assertEqual(export_item["viewRotation"], 90)
         self.assertEqual(source_item["dateText"], "ca. 2004-07-16 (manuell dato)")
         self.assertEqual(export_item["manualDateNote"], "Kamera hadde feil dato")
+        self.assertEqual(source_item["comment"], "Første linje\nAndre linje")
+
+    def test_static_browser_uses_text_content_and_script_safe_embedded_comment(self) -> None:
+        item = static_browser_item(
+            {
+                "id": 1,
+                "stored_filename": "a.jpg",
+                "size_bytes": 1,
+                "comment": "hei\n</script><script>alert(1)</script>",
+            },
+            Path("2024/01/a.jpg"),
+        )
+
+        body = render_html([item])
+
+        self.assertIn('"comment": "hei\\n\\u003c/script\\u003e', body)
+        self.assertIn("overlay.textContent = item.comment", body)
+        self.assertIn("white-space: pre-wrap", body)
+        self.assertNotIn("</script><script>alert(1)</script>", body)
 
     def test_static_browser_item_sets_kind_and_thumbnail_by_media_type(self) -> None:
         image_item = {"id": 1, "stored_filename": "a.jpg", "size_bytes": 1}

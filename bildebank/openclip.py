@@ -4,6 +4,7 @@ import array
 import html
 import math
 import sqlite3
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -13,12 +14,13 @@ from .config import OpenClipConfig
 from .html_paths import display_relative_path, path_to_url, relative_to_target
 from .media import IMAGE_EXTENSIONS
 from .media_cache import cached_image_dimensions
-from .target_lock import TargetLock
+from .target_lock import TargetLock, TargetLockError
 from .value_parsing import optional_int
 
 
 OPENCLIP_DB_FILENAME = ".bilder-openclip.sqlite3"
 MAIN_DB_ALIAS = "main_db"
+IMAGE_SCAN_RUN_META_KEY = "image_scan_run_id"
 
 
 @dataclass(frozen=True)
@@ -236,89 +238,66 @@ def scan_images(
     progress: ImageScanProgress | None = None,
 ) -> ImageScanStats:
     with TargetLock(target, command="image-scan"):
-        return _scan_images_unlocked(target, config, limit=limit, progress=progress)
-
-
-def _scan_images_unlocked(
-    target: Path,
-    config: OpenClipConfig,
-    *,
-    limit: int | None = None,
-    progress: ImageScanProgress | None = None,
-) -> ImageScanStats:
-    image_rows = active_image_files(target, limit=limit)
-    total = len(image_rows)
-    stats = ImageScanStats(total=total)
-    if progress is not None:
-        progress("start", 0, total, stats, None)
-    if not image_rows:
-        return stats
-
-    conn = connect_openclip_db(target)
-    try:
-        rows_to_scan = []
-        skipped = 0
-        for index, row in enumerate(image_rows, start=1):
-            file_id = int(row["id"])
-            sha256 = str(row["sha256"])
-            if has_current_embedding(conn, file_id, sha256, config):
-                skipped += 1
-            else:
-                rows_to_scan.append(row)
-            stats = ImageScanStats(
-                total=total,
-                checked=index,
-                to_scan=len(rows_to_scan),
-                skipped=skipped,
-            )
-            if progress is not None:
-                progress("check", index, total, stats, db.absolute_target_path(target, Path(str(row["target_path"]))))
-        if not rows_to_scan:
-            if progress is not None:
-                progress("done", total, total, stats, None)
-            return stats
+        image_rows = active_image_files(target, limit=limit)
+        total = len(image_rows)
+        stats = ImageScanStats(total=total)
         if progress is not None:
-            progress("load_model", 0, len(rows_to_scan), stats, None)
-        model, preprocess = load_image_model(config)
-        scanned = 0
-        errors = 0
-        last_error_path = None
-        last_error_message = None
-        for index, row in enumerate(rows_to_scan, start=1):
-            file_id = int(row["id"])
-            sha256 = str(row["sha256"])
-            target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-            try:
-                vector = image_embedding(model, preprocess, target_path)
-                store_embedding(
-                    conn,
-                    file_id=file_id,
-                    target_root=target,
-                    target_path=target_path,
-                    target_path_key=str(row["target_path_key"]),
-                    sha256=sha256,
-                    config=config,
-                    vector=vector,
-                )
-                scanned += 1
-            except Exception as exc:
-                errors += 1
-                last_error_path = target_path
-                last_error_message = str(exc)
+            progress("start", 0, total, stats, None)
+        if not image_rows:
+            return stats
+
+        conn = connect_openclip_db(target)
+        try:
+            scan_run_id = str(uuid.uuid4())
+            set_meta(conn, IMAGE_SCAN_RUN_META_KEY, scan_run_id)
+            conn.commit()
+            rows_to_scan = []
+            skipped = 0
+            for index, row in enumerate(image_rows, start=1):
+                file_id = int(row["id"])
+                sha256 = str(row["sha256"])
+                if has_current_embedding(conn, file_id, sha256, config):
+                    skipped += 1
+                else:
+                    rows_to_scan.append(row)
                 stats = ImageScanStats(
                     total=total,
-                    checked=total,
+                    checked=index,
                     to_scan=len(rows_to_scan),
                     skipped=skipped,
-                    scanned=scanned,
-                    errors=errors,
-                    last_error_path=last_error_path,
-                    last_error_message=last_error_message,
                 )
                 if progress is not None:
-                    progress("error", index, len(rows_to_scan), stats, target_path)
-                conn.commit()
-                continue
+                    progress("check", index, total, stats, db.absolute_target_path(target, Path(str(row["target_path"]))))
+        finally:
+            conn.close()
+
+    if not rows_to_scan:
+        if progress is not None:
+            progress("done", total, total, stats, None)
+        return stats
+    if progress is not None:
+        progress("load_model", 0, len(rows_to_scan), stats, None)
+    model, preprocess = load_image_model(config)
+    scanned = 0
+    errors = 0
+    last_error_path = None
+    last_error_message = None
+    for index, row in enumerate(rows_to_scan, start=1):
+        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+        try:
+            vector = image_embedding(model, preprocess, target_path)
+            try:
+                stored = store_image_scan_embedding(target, config, row, vector, scan_run_id)
+            except TargetLockError:
+                stored = False
+            if stored:
+                scanned += 1
+            else:
+                skipped += 1
+        except Exception as exc:
+            errors += 1
+            last_error_path = target_path
+            last_error_message = str(exc)
             stats = ImageScanStats(
                 total=total,
                 checked=total,
@@ -330,13 +309,71 @@ def _scan_images_unlocked(
                 last_error_message=last_error_message,
             )
             if progress is not None:
-                progress("scan", index, len(rows_to_scan), stats, target_path)
-            conn.commit()
+                progress("error", index, len(rows_to_scan), stats, target_path)
+            continue
+        stats = ImageScanStats(
+            total=total,
+            checked=total,
+            to_scan=len(rows_to_scan),
+            skipped=skipped,
+            scanned=scanned,
+            errors=errors,
+            last_error_path=last_error_path,
+            last_error_message=last_error_message,
+        )
         if progress is not None:
-            progress("done", len(rows_to_scan), len(rows_to_scan), stats, None)
-        return stats
-    finally:
-        conn.close()
+            progress("scan", index, len(rows_to_scan), stats, target_path)
+    if progress is not None:
+        progress("done", len(rows_to_scan), len(rows_to_scan), stats, None)
+    return stats
+
+
+def store_image_scan_embedding(
+    target: Path,
+    config: OpenClipConfig,
+    original_row: sqlite3.Row,
+    vector: list[float],
+    scan_run_id: str,
+) -> bool:
+    with TargetLock(target, command="image-scan"):
+        main_conn = db.connect(target)
+        try:
+            current_row = active_file_for_image_scan(main_conn, original_row)
+            if current_row is None:
+                return False
+            conn = connect_openclip_db(target)
+            try:
+                if get_meta(conn, IMAGE_SCAN_RUN_META_KEY) != scan_run_id:
+                    return False
+                store_embedding(
+                    conn,
+                    file_id=int(current_row["id"]),
+                    target_root=target,
+                    target_path=db.absolute_target_path(target, Path(str(current_row["target_path"]))),
+                    target_path_key=str(current_row["target_path_key"]),
+                    sha256=str(current_row["sha256"]),
+                    config=config,
+                    vector=vector,
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        finally:
+            main_conn.close()
+    return True
+
+
+def active_file_for_image_scan(conn: sqlite3.Connection, original_row: sqlite3.Row) -> sqlite3.Row | None:
+    return conn.execute(
+        """
+        SELECT id, target_path, target_path_key, sha256
+        FROM files
+        WHERE id = ?
+          AND sha256 = ?
+          AND deleted_at IS NULL
+        """,
+        (int(original_row["id"]), str(original_row["sha256"])),
+    ).fetchone()
 
 
 def search_images(
@@ -848,4 +885,3 @@ def image_result_html(target: Path, result: ImageSearchResult) -> str:
         <div class="score">score={result.similarity:.3f} · {html.escape(size)}</div>
       </div>
     </div>"""
-

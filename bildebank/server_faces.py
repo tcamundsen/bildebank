@@ -460,6 +460,7 @@ def unconfirmed_faces_for_item(
     face_config: FaceRecognitionConfig | None = None,
     *,
     person_reference_links_enabled: bool = False,
+    read_only: bool = False,
 ) -> list[dict[str, object]]:
     db_path = current_face_db_path(target, face_config)
     if not db_path.exists():
@@ -560,7 +561,7 @@ def unconfirmed_faces_for_item(
         return []
     finally:
         conn.close()
-    return cached_face_box_items_for_item(target, item, faces)
+    return cached_face_box_items_for_item(target, item, faces, write_metadata_cache=not read_only)
 
 
 def person_by_name(
@@ -694,9 +695,15 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
             {"id": int(row["id"]), "name": str(row["name"])}
             for row in face_conn.execute("SELECT id, name FROM persons ORDER BY name")
         ]
-        confirmed_counts_by_person: dict[int, dict[int, int]] = {int(person["id"]): {} for person in people}
-        suggested_file_ids_by_person: dict[int, set[int]] = {int(person["id"]): set() for person in people}
-        manual_file_ids_by_person: dict[int, set[int]] = {int(person["id"]): set() for person in people}
+        confirmed_counts_by_person: dict[int, dict[int, int]] = {
+            require_int(person["id"], "person-id"): {} for person in people
+        }
+        suggested_file_ids_by_person: dict[int, set[int]] = {
+            require_int(person["id"], "person-id"): set() for person in people
+        }
+        manual_file_ids_by_person: dict[int, set[int]] = {
+            require_int(person["id"], "person-id"): set() for person in people
+        }
 
         for row in face_conn.execute(
             """
@@ -728,7 +735,7 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
 
         rows: list[dict[str, object]] = []
         for person in people:
-            person_id = int(person["id"])
+            person_id = require_int(person["id"], "person-id")
             confirmed_counts_by_file = confirmed_counts_by_person.get(person_id, {})
             duplicate_counts = [count for count in confirmed_counts_by_file.values() if count > 1]
             active_confirmed_file_id_set = set(confirmed_counts_by_file)
@@ -864,6 +871,7 @@ def person_faces_for_item(
     *,
     include_suggestions: bool = True,
     face_config: FaceRecognitionConfig | None = None,
+    read_only: bool = False,
 ) -> list[dict[str, object]]:
     person = person_by_name(target, person_name, face_config)
     if person is None:
@@ -930,7 +938,7 @@ def person_faces_for_item(
     finally:
         conn.close()
     face_meta = {require_int(face["faceId"], "faceId"): face for face in faces}
-    rendered = cached_face_box_items_for_item(target, item, faces)
+    rendered = cached_face_box_items_for_item(target, item, faces, write_metadata_cache=not read_only)
     for face in rendered:
         meta = face_meta.get(require_int(face["faceId"], "faceId"))
         if meta is not None:
@@ -1298,16 +1306,23 @@ def people_page_html(
         if rows
         else '<p class="meta">Ingen personer registrert.</p>'
     )
+    face_scan_guidance = (
+        ""
+        if read_only
+        else """
+        <p>Klikk knappen 'Finn ansikter' i Bildebank-vinduet (eller kjør
+        <a href="help/face-scan.md">face-scan</a>) når du har lagt til nye bilder
+        og <button class="nav-button" type="button" title="Kjør face-suggest for å finne ansikter" data-open-face-suggest>Foreslå personer</button> (eller kjør
+        <a href="help/face-suggest.md">face-suggest</a>) når du
+        har bekreftet at personer er et bestemt ansikt.</p>
+        """
+    )
     return shell_page_html(
         "Personer",
         f"""
         <h1>Personer</h1>
         {f'<p class="assign-status">{html.escape(message)}</p>' if message else ''}
-        Klikk knappen 'Finn ansikter' i Bildebank-vinduet (eller kjør
-        <a href="help/face-scan.md">face-scan</a>) når du har lagt til nye bilder
-        og  <button class="nav-button" type="button" title="Kjør face-suggest for å finne ansikter" data-open-face-suggest>Foreslå personer</button> (eller kjør
-        <a href="help/face-suggest.md">face-suggest</a>) når du
-        har bekreftet at personer er et bestemt ansikt.
+        {face_scan_guidance}
         {people_face_summary_html(summary)}
         {"" if read_only else '<button class="nav-button" type="button" title="Kjør face-suggest for å finne ansikter" data-open-face-suggest>Foreslå personer</button>'}
         {"" if read_only else '<a class="nav-button" href="/people/missing-suggestions" title="Se alle bildene som face-scan har funnet et ansikt som face-suggest ikke har forslag til">Ansikter uten forslag</a>'}
@@ -1434,12 +1449,14 @@ def face_overlay_content_html(
     face_config: FaceRecognitionConfig | None = None,
     *,
     person_reference_links_enabled: bool = False,
+    read_only: bool = False,
 ) -> str:
     faces = unconfirmed_faces_for_item(
         target,
         item,
         face_config,
         person_reference_links_enabled=person_reference_links_enabled,
+        read_only=read_only,
     )
     if not faces:
         return '<p class="empty">Ingen ubekreftede ansikter i bildet.</p>'
@@ -1599,8 +1616,14 @@ def orient_face_box(
     return x, y, width, height, image_width, image_height
 
 
-def cached_face_box_items_for_item(target: Path, item: Any, faces: list[dict[str, object]]) -> list[dict[str, object]]:
-    dimensions, orientation = cached_face_box_media_metadata(target, item)
+def cached_face_box_items_for_item(
+    target: Path,
+    item: Any,
+    faces: list[dict[str, object]],
+    *,
+    write_metadata_cache: bool = True,
+) -> list[dict[str, object]]:
+    dimensions, orientation = cached_face_box_media_metadata(target, item, write_metadata_cache=write_metadata_cache)
     items = _face_overlay_items_from_metadata(faces, dimensions, orientation)
     extra_by_face_id = {require_int(face["faceId"], "faceId"): face for face in faces}
     for item in items:
@@ -1610,12 +1633,19 @@ def cached_face_box_items_for_item(target: Path, item: Any, faces: list[dict[str
     return items
 
 
-def cached_face_box_media_metadata(target: Path, item: Any) -> tuple[ImageDimensions | None, int]:
+def cached_face_box_media_metadata(
+    target: Path,
+    item: Any,
+    *,
+    write_metadata_cache: bool = True,
+) -> tuple[ImageDimensions | None, int]:
     target_path = db.absolute_target_path(target, Path(str(item["target_path"])))
     mtime_ns = file_mtime_ns(target_path)
     cached_dimensions, cached_orientation = face_box_media_metadata_from_item(item, mtime_ns)
     if cached_orientation is not None:
         return cached_dimensions, cached_orientation
+    if not write_metadata_cache:
+        return None, 1
 
     with TargetLock(target, command="media-metadata-cache"):
         conn = db.connect(target)

@@ -9,7 +9,7 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from bildebank import db
+from bildebank import db, server_endpoints_admin, server_endpoints_browser
 from bildebank.cli import main
 from bildebank.db import init_database
 from bildebank.geo import (
@@ -25,7 +25,7 @@ from bildebank.geo import (
     scan_geo,
 )
 from bildebank.media import sha256_file
-from bildebank.server import (
+from bildebank.server_handler import (
     BildebankRequestHandler,
 )
 from bildebank.server_app import delete_h3_cell_name, save_h3_cell_name
@@ -483,7 +483,7 @@ class GeoTests(unittest.TestCase):
 
             handler.redirect = fake_redirect  # type: ignore[method-assign]
 
-            handler.respond_set_custom_geo_place()
+            server_endpoints_admin.respond_set_custom_geo_place(handler)
 
             conn = db.connect(target)
             try:
@@ -546,7 +546,7 @@ class GeoTests(unittest.TestCase):
 
         handler.respond_text = fake_respond_text  # type: ignore[method-assign]
 
-        handler.respond_geo_place("ukjent")
+        server_endpoints_browser.respond_geo_place(handler, "ukjent")
 
         self.assertEqual(getattr(response["status"], "value", None), 404)
         self.assertEqual(response["content"], "Ukjent sted.")

@@ -175,6 +175,7 @@ def tagged_files(conn: sqlite3.Connection, tag_name: str) -> list[sqlite3.Row]:
             f"""
             SELECT files.id, files.target_path, files.target_path_key, files.stored_filename,
                    files.taken_date, files.date_source, files.size_bytes, files.view_rotation_degrees,
+                   files.comment,
                    files.camera_make, files.camera_model,
                    files.gps_lat, files.gps_lon, files.gps_source, files.media_width, files.media_height,
                    files.media_orientation, files.media_metadata_mtime_ns, {H3_FILE_COLUMNS_SQL}

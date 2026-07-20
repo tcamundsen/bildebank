@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import html
 import sqlite3
 from dataclasses import dataclass
@@ -8,6 +9,7 @@ from typing import Callable, cast
 
 from . import db
 from .config import AppConfig
+from .program_state import KnownSnapshotRepository, known_snapshot_repositories
 
 
 ShellPageRenderer = Callable[..., str]
@@ -42,6 +44,7 @@ class DashboardSummary:
     pending_file_moves: int
     date_source_counts: dict[str, int]
     geo_stats: dict[str, int]
+    snapshot_repositories: tuple[KnownSnapshotRepository, ...]
 
 
 def dashboard_page_html(
@@ -51,8 +54,9 @@ def dashboard_page_html(
     shell_page_html: ShellPageRenderer,
     face_enabled: bool = True,
     openclip_enabled: bool = True,
+    program_root: Path | None = None,
 ) -> str:
-    summary = dashboard_summary(target)
+    summary = dashboard_summary(target, program_root=program_root)
     actions = dashboard_actions(summary)
     return shell_page_html(
         "Dashboard",
@@ -72,6 +76,7 @@ def dashboard_page_html(
         <section class="dashboard-grid" aria-label="Status">
           {overview_section_html(summary)}
           {control_section_html(summary)}
+          {snapshot_repositories_section_html(summary)}
           {coverage_section_html(summary)}
         </section>
         """,
@@ -80,13 +85,22 @@ def dashboard_page_html(
     )
 
 
-def dashboard_summary(target: Path) -> DashboardSummary:
+def dashboard_summary(
+    target: Path,
+    *,
+    program_root: Path | None = None,
+) -> DashboardSummary:
     conn = db.connect(target)
     try:
         status_counts = db.status_counts(conn)
         total_active = cast(int, status_counts["total"])
         media_counts = cast(dict[str, int], status_counts["media"])
         date_source_counts = cast(dict[str, int], status_counts["date_sources"])
+        collection_id = db.validate_collection_id(conn)
+        snapshot_repositories = dashboard_snapshot_repositories(
+            program_root or Path(__file__).resolve().parents[1],
+            collection_id,
+        )
         return DashboardSummary(
             total_active=int(total_active),
             active_images=int(media_counts.get("bilder", 0)),
@@ -101,6 +115,7 @@ def dashboard_summary(target: Path) -> DashboardSummary:
             pending_file_moves=len(db.prepared_pending_file_moves(conn)),
             date_source_counts={str(key): int(value) for key, value in date_source_counts.items()},
             geo_stats=db.geo_stats(conn),
+            snapshot_repositories=snapshot_repositories,
         )
     finally:
         conn.close()
@@ -207,15 +222,6 @@ def dashboard_actions(summary: DashboardSummary) -> tuple[DashboardAction, ...]:
             thumbnail_maintenance=True,
         )
     )
-    actions.append(
-        DashboardAction(
-            "Backup",
-            "bør gjøres",
-            "Ta backup av bildesamlingen og deleted/ før større opprydding.",
-            r"bildebank backup --dry-run D:\Backuper",
-            "/help/backup.md",
-        )
-    )
 
     if not any(action.severity != "oppdatert" for action in actions):
         actions.append(DashboardAction("Status", "oppdatert", "Ingen kjente mangler i dashboard-tallene."))
@@ -303,6 +309,68 @@ def coverage_section_html(summary: DashboardSummary) -> str:
         </dl>
         """,
     )
+
+
+def dashboard_snapshot_repositories(
+    program_root: Path,
+    collection_id: str,
+) -> tuple[KnownSnapshotRepository, ...]:
+    try:
+        return tuple(known_snapshot_repositories(program_root, collection_id))
+    except (OSError, sqlite3.Error):
+        return ()
+
+
+def snapshot_repositories_section_html(summary: DashboardSummary) -> str:
+    if summary.snapshot_repositories:
+        rows = "".join(
+            info_row_html(
+                snapshot_repository_label(repository),
+                snapshot_repository_status_text(repository),
+            )
+            for repository in summary.snapshot_repositories
+        )
+    else:
+        rows = info_row_html(
+            "Status",
+            "Ingen publiserte snapshots er registrert på denne installasjonen.",
+        )
+    return dashboard_card_html(
+        "Snapshots",
+        f"""
+        <dl class="info-list">
+          {rows}
+        </dl>
+        <p><a href="/help/snapshot.md">Hjelp om snapshots</a></p>
+        """,
+    )
+
+
+def snapshot_repository_label(repository: KnownSnapshotRepository) -> str:
+    folder_name = repository.path.name or str(repository.path)
+    return f"{folder_name} ({repository.repository_id[:8]})"
+
+
+def snapshot_repository_status_text(repository: KnownSnapshotRepository) -> str:
+    status = {
+        "complete": "complete – uten kjente avvik",
+        "degraded": "degraded – publisert med problemer",
+        "recovery": "recovery – kan ikke brukes som vanlig hel restore",
+    }.get(repository.last_snapshot_status, repository.last_snapshot_status)
+    return (
+        f"{status}; sist publisert {format_snapshot_time(repository.last_snapshot_at)}; "
+        f"{repository.path}"
+    )
+
+
+def format_snapshot_time(value: str) -> str:
+    try:
+        parsed = dt.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=dt.timezone.utc
+        )
+    except ValueError:
+        return value
+    return parsed.astimezone().strftime("%d.%m.%Y kl. %H:%M")
 
 
 def dashboard_card_html(title: str, content: str) -> str:

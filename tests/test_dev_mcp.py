@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -16,7 +17,7 @@ def test_schema_summary_uses_generated_schema_when_example_database_is_stale(
     stale_example_target = tmp_path / "stale-example"
     db.init_database(stale_example_target)
     stale_example = db.db_path_for_target(stale_example_target)
-    with sqlite3.connect(stale_example) as conn:
+    with closing(sqlite3.connect(stale_example)) as conn, conn:
         conn.execute("UPDATE meta SET value = ? WHERE key = 'schema_version'", ("10",))
 
     monkeypatch.setattr(dev_mcp, "EXAMPLE_DATABASE", stale_example)
@@ -61,11 +62,11 @@ def test_example_database_summaries_include_side_databases(tmp_path, monkeypatch
     db.init_database(main_target)
 
     openclip_database = tmp_path / ".bilder-openclip.sqlite3"
-    with sqlite3.connect(openclip_database) as conn:
+    with closing(sqlite3.connect(openclip_database)) as conn, conn:
         conn.execute("CREATE TABLE image_embeddings(file_id INTEGER PRIMARY KEY)")
 
     face_database = tmp_path / "antelopev2.sqlite3"
-    with sqlite3.connect(face_database) as conn:
+    with closing(sqlite3.connect(face_database)) as conn, conn:
         conn.execute("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
         conn.execute("INSERT INTO meta(key, value) VALUES('schema_version', '5')")
         conn.execute("CREATE TABLE faces(id INTEGER PRIMARY KEY)")

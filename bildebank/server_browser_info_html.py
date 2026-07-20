@@ -11,6 +11,7 @@ from . import db
 from .formatting import format_bytes
 from .geo import H3_COLUMNS, h3_area_label
 from .html_paths import display_relative_path
+from .media import ImageDimensions
 from .media_cache import cached_image_dimensions
 from .server_browser_queries import parse_iso_date
 
@@ -29,14 +30,14 @@ def manual_h3_cell_name(target: Path, h3_cell: str, *, conn: sqlite3.Connection 
     finally:
         if owned_conn:
             conn.close()
-def image_info_content_html(target: Path, item: Any) -> str:
-    return "\n".join(image_info_rows(target, item))
+def image_info_content_html(target: Path, item: Any, *, read_only: bool = False) -> str:
+    return "\n".join(image_info_rows(target, item, read_only=read_only))
 
 
-def image_info_rows(target: Path, item: Any) -> list[str]:
+def image_info_rows(target: Path, item: Any, *, read_only: bool = False) -> list[str]:
     target_path = Path(str(item["target_path"]))
     absolute_path = db.absolute_target_path(target, target_path)
-    dimensions = cached_image_dimensions(target, absolute_path)
+    dimensions = cached_image_dimensions(target, absolute_path) if not read_only else cached_item_dimensions(item)
     rows = [
         info_row_html("Filnavn", display_relative_path(target, target_path)),
         info_row_html("Dato", image_date_text(item)),
@@ -68,6 +69,17 @@ def image_info_rows(target: Path, item: Any) -> list[str]:
     if geo_links:
         rows.append(info_row_html("Steder", geo_links, raw_html=True))
     return rows
+
+
+def cached_item_dimensions(item: Any) -> ImageDimensions | None:
+    try:
+        width = int(item["media_width"])
+        height = int(item["media_height"])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    if width <= 0 or height <= 0:
+        return None
+    return ImageDimensions(width, height)
 
 
 def image_tag_links_html(target: Path, file_id: int) -> str:

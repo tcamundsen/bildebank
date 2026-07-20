@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -61,7 +61,7 @@ def _schema_version(conn: sqlite3.Connection, table_names: set[str]) -> int | No
 
 def _example_schema_version() -> int | None:
     try:
-        with _connect_readonly(EXAMPLE_DATABASE) as conn:
+        with closing(_connect_readonly(EXAMPLE_DATABASE)) as conn:
             return _schema_version(conn, set(_table_names(conn)))
     except (OSError, sqlite3.Error):
         return None
@@ -145,7 +145,7 @@ def _database_schema_summary(name: str, database_path: Path) -> dict[str, Any]:
     if not database_path.is_file():
         return summary
 
-    with _connect_readonly(database_path) as conn:
+    with closing(_connect_readonly(database_path)) as conn:
         table_names = _table_names(conn)
         table_name_set = set(table_names)
         summary.update(
@@ -180,7 +180,7 @@ def _example_database_summaries() -> list[dict[str, Any]]:
 def get_schema_summary() -> dict[str, Any]:
     """Returner gjeldende schema uten å lese bildedata."""
     with _schema_database() as (database_path, metadata):
-        with _connect_readonly(database_path) as conn:
+        with closing(_connect_readonly(database_path)) as conn:
             table_names = _table_names(conn)
             table_name_set = set(table_names)
             return {

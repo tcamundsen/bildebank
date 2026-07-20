@@ -126,16 +126,6 @@ Hvorfor:
 
 Den kan følge samme mønster som `face-scan` når jobbmanageren er moden.
 
-### backup dry-run
-
-Anbefaling: kan vurderes som read-only/planvisning.
-
-Hvorfor:
-
-- Dry-run kan hjelpe brukeren å forstå hva backup vil gjøre.
-- Faktisk backup kan være stor og treg, og bør trolig fortsatt kjøres fra CLI
-  først.
-
 Ikke anbefalt via web nå
 ------------------------
 

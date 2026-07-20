@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import uuid
 from http import HTTPStatus
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +12,8 @@ from bildebank import db
 from bildebank.config import AppConfig
 from bildebank.db import init_database
 from bildebank.geo import h3_cells_for_point
-from bildebank.server import BildebankRequestHandler
+from bildebank.program_state import record_published_snapshot
+from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_dashboard import dashboard_actions, dashboard_page_html, dashboard_summary
 from bildebank.server_pages import dashboard_page_html as routed_dashboard_page_html
@@ -79,6 +81,7 @@ class ServerDashboardTests(unittest.TestCase):
                     target,
                     AppConfig(),
                     shell_page_html=lambda title, content, **kwargs: content,
+                    program_root=Path(tmp) / "program",
                 )
 
         self.assertIn("Samlingsoversikt", body)
@@ -146,10 +149,57 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertIn("data-thumbnail-coverage-status", coverage_html)
         self.assertNotIn("data-count-thumbnails", coverage_html)
         self.assertNotIn("data-thumbnail-current", coverage_html)
-        self.assertIn(r"bildebank backup --dry-run D:\Backuper", body)
+        self.assertIn("Snapshots", body)
+        self.assertIn("Ingen publiserte snapshots er registrert", body)
+        self.assertNotIn('href="/help/backup.md"', body)
+        self.assertIn('href="/help/snapshot.md"', body)
         self.assertIn("/settings", body)
         self.assertIn("/sources", body)
         self.assertNotIn("/geo/stats", body)
+
+    def test_dashboard_distinguishes_repositories_with_the_same_last_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            program_root = root / "program"
+            repository = root / "usb-f" / "Familiebilder"
+            program_root.mkdir()
+            repository.mkdir(parents=True)
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                collection_id = db.validate_collection_id(conn)
+            finally:
+                conn.close()
+            repository_ids = [str(uuid.uuid4()) for _index in range(3)]
+            statuses = ("complete", "degraded", "recovery")
+            for index, (repository_id, status) in enumerate(
+                zip(repository_ids, statuses, strict=True),
+                start=1,
+            ):
+                record_published_snapshot(
+                    program_root,
+                    collection_id=collection_id,
+                    repository_id=repository_id,
+                    repository_path=repository,
+                    snapshot_id=str(uuid.uuid4()),
+                    status=status,
+                    published_at=f"2026-07-{index:02d}T12:00:00Z",
+                )
+
+            body = dashboard_page_html(
+                target,
+                AppConfig(),
+                shell_page_html=lambda title, content, **kwargs: content,
+                program_root=program_root,
+            )
+
+        for repository_id in repository_ids:
+            self.assertIn(repository_id[:8], body)
+        self.assertEqual(body.count(str(repository.resolve())), 3)
+        self.assertIn("complete – uten kjente avvik", body)
+        self.assertIn("degraded – publisert med problemer", body)
+        self.assertIn("recovery – kan ikke brukes som vanlig hel restore", body)
 
     def test_run_server_dashboard_actions_defer_scan_counts_to_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -204,7 +254,7 @@ class ServerDashboardTests(unittest.TestCase):
             handler, "text_response", (content, status)
         )
 
-        with patch("bildebank.server.dashboard_page_html", return_value="<h1>Dashboard</h1>"):
+        with patch("bildebank.server_handler.dashboard_page_html", return_value="<h1>Dashboard</h1>"):
             BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
 
         self.assertEqual(handler.html_response, ("<h1>Dashboard</h1>", HTTPStatus.OK))

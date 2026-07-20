@@ -14,12 +14,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
 
 from . import __version__, db
-from .backup import (
-    BACKUP_ADOPTION_CONFIRMATION,
-    plan_backup_adoption,
-    run_backup,
-    run_backup_adoption,
-)
 from .cli_check_source import run_check_source
 from .cli_doctor import run_doctor
 from .cli_face import run_download_face_model, run_face_command
@@ -56,8 +50,35 @@ from .openclip import openclip_db_path
 from .platform_guard import validate_collection_platform
 from .pending_deletes import cleanup_pending_deletes, list_pending_deletes
 from .progress import ProgressMeter
-from .program_state import known_targets, program_db_path, record_target_best_effort
-from .server import DEFAULT_HOST, DEFAULT_PORT
+from .program_state import (
+    known_targets,
+    program_db_path,
+    record_published_snapshot_best_effort,
+    record_target_best_effort,
+)
+from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
+from .server_slideshow import DEFAULT_SLIDESHOW_DELAY_SECONDS
+from .snapshot import SnapshotPlan, plan_snapshot
+from .snapshot_check import (
+    SnapshotCheckProgress,
+    SnapshotCheckResult,
+    check_snapshot_repository,
+    list_repository_snapshots,
+)
+from .snapshot_create import SnapshotCreationResult, create_snapshot
+from .snapshot_progress import SnapshotCreateProgress, SnapshotPlanProgress
+from .snapshot_restore import (
+    FullRestorePlan,
+    FullRestoreResult,
+    SingleFileRestorePlan,
+    SingleFileRestoreResult,
+    SnapshotProblemsResult,
+    list_snapshot_problems,
+    plan_full_restore,
+    plan_single_file_restore,
+    restore_full_snapshot,
+    restore_single_file,
+)
 from .target_lock import TargetLock
 from .thumbnails import ThumbnailStats, run_make_thumbnails
 from .unimport import TargetContentChange, run_unimport as execute_unimport
@@ -113,8 +134,15 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def validate_parsed_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
-    if getattr(args, "command", None) == "run-server" and args.lan_share and args.host is not None:
-        parser.error("--lan-share kan ikke brukes sammen med --host. Bruk --port hvis du vil velge port.")
+    if getattr(args, "command", None) != "run-server":
+        return
+    if (args.lan_share or args.slideshow) and args.host is not None:
+        option = "--slideshow" if args.slideshow else "--lan-share"
+        parser.error(f"{option} kan ikke brukes sammen med --host. Bruk --port hvis du vil velge port.")
+    if not args.slideshow and args.slideshow_filter is not None:
+        parser.error("--filter kan bare brukes sammen med --slideshow.")
+    if not args.slideshow and args.delay is not None:
+        parser.error("--delay kan bare brukes sammen med --slideshow.")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -544,28 +572,117 @@ def build_parser() -> argparse.ArgumentParser:
         help="Vis hvor Bildebank og kjente bildesamlinger ligger",
         description="Vis hvor Bildebank og kjente bildesamlinger ligger",
     )
-    backup = add_command(
+    snapshot = add_command(
         subparsers,
-        "backup",
-        usage="bildebank backup [valg] plassering",
-        help="Lag eller oppdater backup av bildesamlingen",
-        description=(
-            "Lag eller oppdater backup av bildesamlingen. "
-            "NB: les dokumentasjonen for denne kommandoen før du betror alle "
-            "bildene dine til bildebank."
-        ),
+        "snapshot",
+        usage="bildebank snapshot <kommando> [valg]",
+        help="Lag og kontroller versjonerte snapshots",
+        description="Opprett, kontroller og gjenopprett snapshots.",
     )
-    backup.add_argument("destination", metavar="plassering", type=Path, help="Eksisterende mappe der backupen skal ligge")
-    backup.add_argument(
+    snapshot_subparsers = snapshot.add_subparsers(dest="snapshot_command", required=True)
+    snapshot_create = snapshot_subparsers.add_parser(
+        "create",
+        usage="bildebank snapshot create [valg] repository",
+        description="Planlegg eller opprett et versjonert snapshot.",
+    )
+    snapshot_create.add_argument(
+        "repository",
+        metavar="repository",
+        type=Path,
+        help="Den eksakte repositorymappen",
+    )
+    snapshot_create.add_argument(
         "--dry-run",
         action="store_true",
-        help="Vis hva som ville blitt gjort uten å kopiere eller endre filer",
+        help="Valider og estimer uten å skrive filer eller ta låser",
     )
-    backup.add_argument(
-        "--adopt",
+    snapshot_create.add_argument(
+        "--note",
+        help="Valgfri, uforanderlig kommentar på høyst 1000 tegn",
+    )
+    snapshot_list = snapshot_subparsers.add_parser(
+        "list",
+        usage="bildebank snapshot list repository",
+        description="Vis publiserte snapshots i et repository.",
+    )
+    snapshot_list.add_argument(
+        "repository",
+        metavar="repository",
+        type=Path,
+        help="Den eksakte repositorymappen",
+    )
+    snapshot_problems = snapshot_subparsers.add_parser(
+        "problems",
+        usage="bildebank snapshot problems repository [snapshot-id]",
+        description="Vis kildeavvik og entry-ID-er fra publiserte snapshots.",
+    )
+    snapshot_problems.add_argument(
+        "repository",
+        metavar="repository",
+        type=Path,
+        help="Den eksakte repositorymappen",
+    )
+    snapshot_problems.add_argument(
+        "snapshot_id",
+        metavar="snapshot-id",
+        nargs="?",
+        help="Vis bare problemer fra dette snapshotet",
+    )
+    snapshot_check = snapshot_subparsers.add_parser(
+        "check",
+        usage="bildebank snapshot check repository [--full]",
+        description="Kontroller snapshotmetadata og objekter uten å endre dem.",
+    )
+    snapshot_check.add_argument(
+        "repository",
+        metavar="repository",
+        type=Path,
+        help="Den eksakte repositorymappen",
+    )
+    snapshot_check.add_argument(
+        "--full",
         action="store_true",
-        help="Registrer en eksisterende backupmappe som backup av denne bildesamlingen",
+        help="Les og beregn SHA-256 for alle objekter, også urefererte",
     )
+    snapshot_restore = snapshot_subparsers.add_parser(
+        "restore",
+        usage="bildebank snapshot restore repository snapshot-id ny-mappe [--dry-run]",
+        description="Gjenopprett en hel bildesamling fra et snapshot.",
+    )
+    snapshot_restore.add_argument("repository", type=Path, help="Den eksakte repositorymappen")
+    snapshot_restore.add_argument("snapshot_id", metavar="snapshot-id", help="Snapshot-ID som skal brukes")
+    snapshot_restore.add_argument("destination", metavar="ny-mappe", type=Path, help="Ny eller tom målmappe")
+    snapshot_restore.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Vis en fullstendig plan uten å opprette eller kopiere filer",
+    )
+    snapshot_restore.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)
+    snapshot_restore_file = snapshot_subparsers.add_parser(
+        "restore-file",
+        usage=(
+            "bildebank snapshot restore-file repository snapshot-id eksportmappe "
+            "(--path filsti | --entry-id id) [--variant expected|observed] [--dry-run]"
+        ),
+        description="Gjenopprett én fil fra et snapshot til en eksportmappe.",
+    )
+    snapshot_restore_file.add_argument("repository", type=Path, help="Den eksakte repositorymappen")
+    snapshot_restore_file.add_argument("snapshot_id", metavar="snapshot-id", help="Snapshot-ID som skal brukes")
+    snapshot_restore_file.add_argument("destination", metavar="eksportmappe", type=Path, help="Eksportmappe")
+    restore_selection = snapshot_restore_file.add_mutually_exclusive_group(required=True)
+    restore_selection.add_argument("--path", help="Normal relativ filsti i snapshotet")
+    restore_selection.add_argument("--entry-id", help="Stabil entry-ID, også for recovery_only")
+    snapshot_restore_file.add_argument(
+        "--variant",
+        choices=("expected", "observed"),
+        help="Velg variant eksplisitt når både forventet og observert innhold finnes",
+    )
+    snapshot_restore_file.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Vis eksportplanen uten å opprette eller kopiere filer",
+    )
+    snapshot_restore_file.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)
     doctor = add_command(
         subparsers,
         "doctor",
@@ -689,6 +806,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--allow-remote",
         action="store_true",
         help="Tillat bevisst binding til en adresse som kan nås fra andre maskiner.",
+    )
+    run_server_parser.add_argument(
+        "--slideshow",
+        action="store_true",
+        help="Vis et automatisk slideshow read-only på privat LAN.",
+    )
+    run_server_parser.add_argument(
+        "--delay",
+        type=positive_int_arg,
+        metavar="SEKUNDER",
+        help=f"Sekunder per slideshow-bilde. Standard: {DEFAULT_SLIDESHOW_DELAY_SECONDS}",
+    )
+    run_server_parser.add_argument(
+        "--filter",
+        dest="slideshow_filter",
+        metavar="UTTRYKK",
+        help="Avgrens slideshowet med samme syntaks som Filtersøk.",
     )
     face_scan = add_command(
         subparsers,
@@ -933,7 +1067,7 @@ def main_help_epilog() -> str:
     lines.append(
         "Bildebank-vinduet kan opprette samling, importere bilder, starte nettleseren,"
     )
-    lines.append("ta backup og kjøre vanlig vedlikehold.")
+    lines.append("opprette snapshots og kjøre vanlig vedlikehold.")
     lines.append("")
     lines.append("Full kommandoliste:")
     lines.append("   docs\\reference.md")
@@ -960,7 +1094,7 @@ NO_TARGET_COMMANDS = {
 
 TARGET_COMMANDS = {
     "migrate",
-    "backup",
+    "snapshot",
     "vacuum",
     "geo-scan",
     "geo-stats",
@@ -994,11 +1128,21 @@ def run(args: argparse.Namespace) -> int:
     if args.command in NO_TARGET_COMMANDS:
         return run_no_target_command(args)
 
+    if args.command == "snapshot" and args.snapshot_command in {
+        "list",
+        "problems",
+        "check",
+        "restore",
+        "restore-file",
+    }:
+        return run_snapshot_repository_command(args)
+
     target = resolve_target(args.target)
     validate_collection_platform(target)
     if should_recover_pending_file_moves(args):
         recover_pending_file_moves(target)
-    record_target_best_effort(program_repo_root(), target)
+    if args.command != "snapshot":
+        record_target_best_effort(program_repo_root(), target)
 
     if args.command in TARGET_COMMANDS or (
         args.command in {"import", "rescan-source"} and args.dry_run
@@ -1099,7 +1243,11 @@ def run_no_target_command(args: argparse.Namespace) -> int:
 def should_recover_pending_file_moves(args: argparse.Namespace) -> bool:
     if args.command == "migrate":
         return False
+    if args.command == "run-server" and (args.read_only or args.lan_share or args.slideshow):
+        return False
     if getattr(args, "dry_run", False):
+        return False
+    if args.command == "snapshot":
         return False
     return True
 
@@ -1108,8 +1256,8 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
     if args.command == "migrate":
         return run_migrate(target, check=args.check)
 
-    if args.command == "backup":
-        return run_backup_command(target, args.destination, dry_run=args.dry_run, adopt=args.adopt)
+    if args.command == "snapshot":
+        return run_snapshot_command(args, target)
 
     if args.command == "vacuum":
         return run_vacuum(target)
@@ -1118,7 +1266,8 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
         return run_geo_command(args, target, repo_root=program_repo_root())
 
     if args.command == "run-server":
-        lan_share = args.lan_share
+        slideshow = args.slideshow
+        lan_share = args.lan_share or slideshow
         return run_server_command(
             target,
             host="0.0.0.0" if lan_share else (args.host or DEFAULT_HOST),
@@ -1129,6 +1278,11 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
             preview_images=args.preview_images or lan_share,
             read_only=args.read_only or lan_share,
             lan_share=lan_share,
+            slideshow_delay_seconds=(
+                (args.delay if args.delay is not None else DEFAULT_SLIDESHOW_DELAY_SECONDS)
+                if slideshow else None
+            ),
+            slideshow_filter=args.slideshow_filter if slideshow else None,
         )
 
     if args.command == "cleanup-pending-deletes":
@@ -1764,115 +1918,483 @@ def run_where_is() -> int:
     return 0
 
 
-def run_backup_command(target: Path, destination: Path, *, dry_run: bool = False, adopt: bool = False) -> int:
-    if adopt:
-        return run_backup_adopt_command(target, destination, dry_run=dry_run)
+def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
+    if args.snapshot_command != "create":
+        raise ValueError(f"Ukjent snapshot-kommando: {args.snapshot_command}")
 
-    stats = run_backup(target, destination, dry_run=dry_run)
-    plan = stats.plan
-    print("Source:")
-    print(f"  {plan.source_dir}")
-    print()
-    print("Backup parent:")
-    print(f"  {plan.backup_parent}")
-    print()
-    print("Backup directory:")
-    print(f"  {plan.backup_dir}")
-    print()
-    print("Mode:")
-    print("  Dry run" if dry_run else "  Backup")
-    print()
-    print("Result:")
-    if dry_run:
-        action = "Would update backup." if plan.existing_backup else "Would create new backup."
-        print(f"  {action}")
-        print(f"  motor={stats.engine}")
-        if stats.warning:
-            print(f"  ADVARSEL: {stats.warning}")
-        return 0
-    action = "Updated backup." if plan.existing_backup else "Created new backup."
-    print(f"  {action}")
-    print(f"  motor={stats.engine}")
-    if stats.warning:
-        print(f"  ADVARSEL: {stats.warning}")
-    if stats.stats_available:
-        print(
-            "  "
-            f"files_copied={stats.files_copied}, files_deleted={stats.files_deleted}, "
-            f"dirs_created={stats.dirs_created}, dirs_deleted={stats.dirs_deleted}"
+    config = load_config(program_repo_root(), migrate_legacy=False)
+    configured_face_dir = config.face_recognition.database_dir
+    if not args.dry_run:
+        meter = ProgressMeter("Snapshot")
+        current_stage: list[str | None] = [None]
+
+        def show_progress(progress: SnapshotCreateProgress) -> None:
+            stage_changed = progress.stage != current_stage[0]
+            if stage_changed:
+                current_stage[0] = progress.stage
+                meter.reset_eta()
+            if progress.stage == "inventory":
+                if progress.total_objects == 0:
+                    meter.message("Snapshot: lager filinventar ...")
+                elif stage_changed or progress.completed_objects >= progress.total_objects:
+                    meter.message(
+                        "Snapshot: filinventar="
+                        f"{progress.completed_objects} filer ({format_bytes(progress.completed_bytes)})"
+                    )
+                return
+            if progress.stage in {"files", "databases"}:
+                object_label = "filer" if progress.stage == "files" else "databaser"
+                details = (
+                    f"{object_label}={progress.completed_objects}/{progress.total_objects}"
+                )
+                if progress.total_bytes > 0:
+                    meter.update(
+                        progress.completed_bytes,
+                        progress.total_bytes,
+                        action="byte",
+                        details=details,
+                        eta=True,
+                        force=stage_changed
+                        or progress.completed_bytes >= progress.total_bytes,
+                    )
+                else:
+                    meter.update(
+                        progress.completed_objects,
+                        progress.total_objects,
+                        action=object_label,
+                        force=stage_changed
+                        or progress.completed_objects >= progress.total_objects,
+                    )
+                return
+            if progress.stage == "publish" and progress.completed_objects == 0:
+                meter.message("Snapshot: publiserer manifest ...")
+
+        try:
+            result = create_snapshot(
+                target,
+                args.repository,
+                face_config=config.face_recognition,
+                note=args.note,
+                progress=show_progress,
+            )
+        finally:
+            meter.done()
+        print_snapshot_creation_result(result)
+        state_error = record_published_snapshot_best_effort(
+            program_repo_root(),
+            collection_id=result.build.collection_id,
+            repository_id=result.build.repository_id,
+            repository_path=result.repository,
+            snapshot_id=result.published.snapshot_id,
+            status=result.status,
         )
-    return 0
+        if state_error is not None:
+            print(
+                "ADVARSEL: Snapshotet er publisert, men Bildebank klarte ikke å huske "
+                f"repositoryet lokalt: {state_error}",
+                file=sys.stderr,
+            )
+        return result.exit_code
 
-
-def run_backup_adopt_command(target: Path, destination: Path, *, dry_run: bool = False) -> int:
-    plan = plan_backup_adoption(target, destination)
-    print_backup_adoption_report(plan, dry_run=dry_run)
-    if dry_run:
-        print("Dry-run: ingen endringer er gjort.")
-        return 0
-
-    print()
-    print("For å registrere denne mappen som backup av bildesamlingen, skriv:")
-    print(f"  {BACKUP_ADOPTION_CONFIRMATION}")
-    answer = input("> ")
-    if answer != BACKUP_ADOPTION_CONFIRMATION:
-        print("Avbrutt. Ingen endringer er gjort.")
-        return 0
-
-    plan = run_backup_adoption(target, destination)
-    print()
-    print("Backupen er registrert for denne bildesamlingen.")
-    print(f"Metadata: {plan.metadata_path}")
-    print("Kjør vanlig backup-kommando for å oppdatere selve backupen.")
-    return 0
-
-
-def print_backup_adoption_report(plan, *, dry_run: bool) -> None:  # noqa: ANN001
-    comparison = plan.comparison
-    print("Source:")
-    print(f"  {plan.source_dir}")
-    print()
-    print("Backup parent:")
-    print(f"  {plan.backup_parent}")
-    print()
-    print("Backup directory:")
-    print(f"  {plan.backup_dir}")
-    print()
-    print("Mode:")
-    print("  Adopt dry run" if dry_run else "  Adopt backup")
-    print()
-    print("Metadata:")
-    print(f"  {backup_metadata_state_text(plan.metadata_state)}")
-    print(f"  file={plan.metadata_path}")
-    print(f"  collection_id={plan.collection_id}")
-    print()
-    print("Comparison:")
-    print(f"  database_files={comparison.total_files}")
-    print(
-        "  "
-        f"matched={comparison.matched_files} "
-        f"({backup_match_percent(comparison.matched_files, comparison.total_files)})"
+    meter = ProgressMeter(
+        "Snapshot dry-run",
+        item_interval=1_000,
+        time_interval_seconds=1.0,
     )
-    print(f"  missing={comparison.missing_files}")
-    print(f"  wrong_size_or_type={comparison.wrong_size_or_type_files}")
-    print(f"  extra_media_files={comparison.extra_media_files}")
+    plan_stage: list[str | None] = [None]
+
+    def show_plan_progress(progress: SnapshotPlanProgress) -> None:
+        stage_changed = progress.stage != plan_stage[0]
+        if stage_changed:
+            plan_stage[0] = progress.stage
+            meter.reset_eta()
+        if progress.stage == "database":
+            meter.message("Snapshot dry-run: leser og kontrollerer hoveddatabasen ...")
+            return
+        if progress.stage == "database_complete":
+            meter.message(
+                f"Snapshot dry-run: hoveddatabase={progress.completed_objects} filposter"
+            )
+            return
+        if progress.stage == "inventory":
+            if progress.completed_objects == 0:
+                meter.message("Snapshot dry-run: bygger filinventar ...")
+            elif progress.total_objects == 0:
+                meter.update_count(
+                    progress.completed_objects,
+                    action="filer funnet",
+                    details=f"registrert={format_bytes(progress.completed_bytes)}",
+                )
+            else:
+                meter.message(
+                    "Snapshot dry-run: filinventar="
+                    f"{progress.completed_objects} filer "
+                    f"({format_bytes(progress.completed_bytes)})"
+                )
+            return
+        if progress.stage == "files":
+            if progress.total_objects == 0:
+                meter.message("Snapshot dry-run: ingen databaseførte filer å sammenligne.")
+            else:
+                meter.update(
+                    progress.completed_objects,
+                    progress.total_objects,
+                    action="databaseførte filer kontrollert",
+                    eta=True,
+                    force=stage_changed or progress.completed_objects >= progress.total_objects,
+                )
+            return
+        if progress.stage == "storage":
+            meter.message("Snapshot dry-run: beregner plassbehov ...")
+
+    try:
+        plan = plan_snapshot(
+            target,
+            args.repository,
+            configured_face_database_dir=configured_face_dir,
+            note=args.note,
+            progress=show_plan_progress,
+        )
+    finally:
+        meter.done()
+    print_snapshot_plan(plan)
+    return 0
+
+
+def run_snapshot_repository_command(args: argparse.Namespace) -> int:
+    if args.snapshot_command == "list":
+        list_result = list_repository_snapshots(args.repository)
+        print_snapshot_list(list_result)
+        return 0
+    if args.snapshot_command == "problems":
+        problems_result = list_snapshot_problems(args.repository, args.snapshot_id)
+        print_snapshot_problems(problems_result)
+        return 0
+    if args.snapshot_command == "restore":
+        full_restore_plan = plan_full_restore(args.repository, args.snapshot_id, args.destination)
+        print_full_restore_plan(full_restore_plan, dry_run=args.dry_run)
+        if args.dry_run:
+            return 0
+        confirmation = f"GJENOPPRETT {full_restore_plan.snapshot.snapshot_id}"
+        if not args.yes:
+            answer = input(
+                "Skriv nøyaktig denne teksten for å starte restore:\n"
+                f"  {confirmation}\n> "
+            )
+            if answer != confirmation:
+                print("Restore avbrutt. Ingen samling ble publisert.", file=sys.stderr)
+                return 1
+        restore_result = restore_full_snapshot(
+            args.repository,
+            args.snapshot_id,
+            args.destination,
+        )
+        print_full_restore_result(restore_result)
+        return restore_result.exit_code
+    if args.snapshot_command == "restore-file":
+        file_restore_plan = plan_single_file_restore(
+            args.repository,
+            args.snapshot_id,
+            args.destination,
+            path=args.path,
+            entry_id=args.entry_id,
+            variant=args.variant,
+        )
+        print_single_file_restore_plan(file_restore_plan, dry_run=args.dry_run)
+        if args.dry_run:
+            return 0
+        if not args.yes:
+            answer = input("Eksportere filen som vist i planen? [j/N] ").strip().casefold()
+            if answer not in {"j", "ja"}:
+                print("Enkeltfil-restore avbrutt. Ingen fil ble eksportert.", file=sys.stderr)
+                return 1
+        file_restore_result = restore_single_file(
+            args.repository,
+            args.snapshot_id,
+            args.destination,
+            path=args.path,
+            entry_id=args.entry_id,
+            variant=args.variant,
+        )
+        print_single_file_restore_result(file_restore_result)
+        return file_restore_result.exit_code
+    if args.snapshot_command != "check":
+        raise ValueError(f"Ukjent repositorykommando: {args.snapshot_command}")
+
+    meter = ProgressMeter("Snapshot check") if args.full else None
+
+    def show_progress(progress: SnapshotCheckProgress) -> None:
+        assert meter is not None
+        meter.update(
+            progress.checked_bytes,
+            progress.total_bytes,
+            action="byte",
+            details=f"objekter={progress.checked_objects}/{progress.total_objects}",
+            eta=True,
+            force=progress.checked_bytes == 0 or progress.checked_bytes >= progress.total_bytes,
+        )
+
+    result = check_snapshot_repository(
+        args.repository,
+        full=args.full,
+        progress=show_progress if meter is not None else None,
+    )
+    if meter is not None:
+        meter.done()
+    print_snapshot_check_result(result)
+    return result.exit_code
+
+
+def print_snapshot_list(result: SnapshotCheckResult) -> None:
+    print("Versjonerte snapshots")
+    print(f"  Repository: {result.repository}")
+    print(f"  Publiserte snapshots: {len(result.snapshots)}")
+    for snapshot in result.snapshots:
+        print()
+        print(f"  {snapshot.completed_at}  {snapshot.snapshot_id}")
+        print(f"    Status: {snapshot.status}")
+        print(f"    Filposter: {snapshot.entry_count}")
+        if snapshot.source_problem_count:
+            print(f"    Kildeavvik: {snapshot.source_problem_count}")
+        if snapshot.note is not None:
+            print(f"    Kommentar: {snapshot.note}")
+    for issue in result.issues:
+        print(f"ADVARSEL: {issue.message}", file=sys.stderr)
+
+
+def print_snapshot_problems(result: SnapshotProblemsResult) -> None:
+    print("Problemer i versjonerte snapshots")
+    print(f"  Repository: {result.repository}")
+    print(f"  Kontrollerte snapshots: {len(result.snapshots)}")
+    print(f"  Filavvik: {len(result.file_problems)}")
+    print(f"  Databaseavvik: {len(result.database_problems)}")
+    for problem in result.file_problems:
+        entry = problem.entry
+        print()
+        print(f"  Snapshot-ID: {problem.snapshot.snapshot_id}")
+        print(f"    Entry-ID: {entry.entry_id}")
+        print(f"    Opprinnelig sti: {entry.original_path_display}")
+        if entry.path is not None:
+            print(f"    Snapshotsti: {entry.path}")
+        if entry.recovery_name is not None:
+            print(f"    Recovery-navn: {entry.recovery_name}")
+        print(f"    Avvik: {entry.integrity_status}")
+        print(f"    Restoretype: {entry.restore_kind}")
+        variants = ", ".join(problem.recorded_variants) or "ingen lagrede byte"
+        print(f"    Registrerte varianter: {variants}")
+    for database_problem in result.database_problems:
+        print()
+        print(f"  Snapshot-ID: {database_problem.snapshot.snapshot_id}")
+        print(f"    Database: {database_problem.role}")
+        print(f"    Opprinnelig sti: {database_problem.source_path_display}")
+        print(f"    Avvik: {database_problem.status}")
+        print(f"    Sikring: {database_problem.capture}")
+
+
+def print_snapshot_check_result(result: SnapshotCheckResult) -> None:
+    title = "Full snapshotkontroll" if result.full else "Rask snapshotkontroll"
+    state = "avbrutt" if result.cancelled else "fullført"
+    print(f"{title} {state}")
+    print(f"  Repository: {result.repository}")
+    print(f"  Publiserte, lesbare snapshots: {len(result.snapshots)}")
+    status_counts = {
+        status: sum(snapshot.status == status for snapshot in result.snapshots)
+        for status in ("complete", "degraded", "recovery")
+    }
+    print(
+        "  Snapshotstatus: "
+        f"complete={status_counts['complete']}, "
+        f"degraded={status_counts['degraded']}, "
+        f"recovery={status_counts['recovery']}"
+    )
+    print(f"  Refererte objekter: {result.referenced_objects}")
+    print(f"  Urefererte objekter: {result.unreferenced_objects}")
+    if result.full:
+        print(f"  Fullhash-kontrollerte objekter: {result.checked_objects}/{result.total_objects}")
+        print(f"  Fullhash-kontrollerte byte: {format_bytes(result.checked_bytes)}")
+    print(f"  Ufullstendige kjøringer: {len(result.incomplete_runs)}")
+    for run in result.incomplete_runs:
+        print(
+            f"ADVARSEL: Ufullstendig kjøring {run.run_id}: "
+            f"{format_bytes(run.size_bytes)}, alder {format_duration_seconds(run.age_seconds)}",
+            file=sys.stderr,
+        )
+    print(f"  Repositoryavvik: {len(result.issues)}")
+    for issue in result.issues:
+        print(f"FEIL: {issue.message}", file=sys.stderr)
+        for affected in issue.affected:
+            entry = f", entry_id={affected.entry_id}" if affected.entry_id is not None else ""
+            print(
+                f"  Berørt: snapshot={affected.snapshot_id}{entry}, sti={affected.logical_path}",
+                file=sys.stderr,
+            )
+    if result.cancelled:
+        print("ADVARSEL: Kontrollen ble avbrutt før hele repositoryet var kontrollert.", file=sys.stderr)
+
+
+def format_duration_seconds(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, remaining_seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {remaining_seconds:02d}s"
+    hours, remaining_minutes = divmod(minutes, 60)
+    return f"{hours}t {remaining_minutes:02d}m"
+
+
+def print_full_restore_plan(plan: FullRestorePlan, *, dry_run: bool = True) -> None:
+    target_state = "mangler og ville blitt opprettet" if plan.target_state == "missing" else "er tom"
+    print("Hel restore dry-run" if dry_run else "Plan for hel restore")
+    print(f"  Repository: {plan.repository}")
+    print(f"  Snapshot-ID: {plan.snapshot.snapshot_id}")
+    print(f"  Snapshotdato: {plan.snapshot.completed_at}")
+    print(f"  Snapshotstatus: {plan.snapshot.status}")
+    if plan.note is not None:
+        print(f"  Kommentar: {plan.note}")
+    print(f"  Målmappe: {plan.target} ({target_state})")
+    print(f"  Ordinære utdatafiler: {len(plan.collection_outputs)}")
+    print(f"  Recovery-filer: {len(plan.recovery_outputs)}")
+    if plan.recovery_target is not None:
+        print(f"  Recovery-mappe: {plan.recovery_target}")
+    print(f"  Manglende forventede varianter: {len(plan.missing_expected_entries)}")
+    for entry_id in plan.missing_expected_entries:
+        print(f"ADVARSEL: Forventet variant mangler for {entry_id}.", file=sys.stderr)
+    print(f"  Estimert datamengde: {format_bytes(plan.required_bytes)}")
+    print(f"  Ledig plass: {format_bytes(plan.free_bytes)}")
+    print(f"  Estimert plass er tilstrekkelig: {'ja' if plan.has_estimated_capacity else 'nei'}")
+    if plan.original_collection_exists:
+        print(
+            "ADVARSEL: Den opprinnelige samlingen finnes fortsatt. Original og restore får samme "
+            f"collection_id og må ikke brukes som uavhengige samlinger: {plan.original_collection}",
+            file=sys.stderr,
+        )
+    if dry_run:
+        print("Dry-run: Ingen mapper, filer eller restore-staging er opprettet eller endret.")
+
+
+def print_single_file_restore_plan(
+    plan: SingleFileRestorePlan,
+    *,
+    dry_run: bool = True,
+) -> None:
+    export_state = "mangler og ville blitt opprettet" if plan.export_state == "missing" else "finnes"
+    print("Enkeltfil-restore dry-run" if dry_run else "Plan for enkeltfil-restore")
+    print(f"  Repository: {plan.repository}")
+    print(f"  Snapshot-ID: {plan.snapshot.snapshot_id}")
+    print(f"  Snapshotstatus: {plan.snapshot.status}")
+    if plan.note is not None:
+        print(f"  Kommentar: {plan.note}")
+    print(f"  Entry-ID: {plan.output.entry_id}")
+    print(f"  Opprinnelig sti: {plan.output.original_path_display}")
+    print(f"  Variant: {plan.output.variant}")
+    print(f"  Eksportmappe: {plan.export_directory} ({export_state})")
+    print(f"  Utdatafil: {plan.output_path}")
+    print(f"  Størrelse: {format_bytes(plan.output.object.size_bytes)}")
+    if dry_run:
+        print("Dry-run: Ingen mapper eller filer er opprettet eller endret.")
+
+
+def print_single_file_restore_result(result: SingleFileRestoreResult) -> None:
+    print("Enkeltfil-restore fullført")
+    print(f"  Snapshot-ID: {result.plan.snapshot.snapshot_id}")
+    print(f"  Entry-ID: {result.plan.output.entry_id}")
+    print(f"  Variant: {result.plan.output.variant}")
+    print(f"  Utdatafil: {result.output_path}")
+    print(f"  Størrelse: {format_bytes(result.plan.output.object.size_bytes)}")
+
+
+def print_full_restore_result(result: FullRestoreResult) -> None:
+    print("Hel restore publisert")
+    print(f"  Snapshot-ID: {result.plan.snapshot.snapshot_id}")
+    print(f"  Samlingsmappe: {result.published_target}")
+    print(f"  Ordinære utdatafiler: {len(result.plan.collection_outputs)}")
+    if result.published_recovery is not None:
+        print(f"  Recovery-mappe: {result.published_recovery}")
+        print(f"  Recovery-filer: {len(result.plan.recovery_outputs)}")
+    if result.plan.incomplete:
+        print(
+            "ADVARSEL: Samlingen ble publisert bevisst ufullstendig fordi forventede "
+            "varianter manglet.",
+            file=sys.stderr,
+        )
+    for warning in result.warnings:
+        print(f"ADVARSEL: {warning}", file=sys.stderr)
+
+
+def print_snapshot_creation_result(result: SnapshotCreationResult) -> None:
+    status_text = {
+        "complete": "fullført uten kjente avvik",
+        "degraded": "opprettet med problemer",
+        "recovery": "recovery-snapshot opprettet",
+    }[result.status]
+    print("Snapshot opprettet")
+    print(f"  Status: {result.status} ({status_text})")
+    print(f"  Snapshot-ID: {result.published.snapshot_id}")
+    print(f"  Snapshotmappe: {result.published.snapshot_dir}")
+    print(f"  Filposter: {result.published.entry_count}")
+    print(f"  Repository: {result.repository}")
+    if result.repository_initialized:
+        print("  Repositoryet ble initialisert")
+    for warning in result.build.warnings:
+        print(f"ADVARSEL: {warning}", file=sys.stderr)
+
+
+def print_snapshot_plan(plan: SnapshotPlan) -> None:
+    inventory = plan.inventory
+    storage = plan.storage
+    state_text = {
+        "missing": "Mangler; ville blitt opprettet og initialisert",
+        "empty": "Finnes og er tom; ville blitt initialisert",
+        "existing": "Eksisterende repository med gyldig metadata",
+    }.get(plan.repository_state, plan.repository_state)
+
+    print("Snapshot dry-run")
+    print(f"  Bildesamling: {plan.source_dir}")
+    print(f"  Repository: {plan.repository_dir}")
+    print(f"  Repositorytilstand: {state_text}")
+    print(f"  collection_id: {plan.collection_id}")
+    if plan.note is not None:
+        print(f"  Kommentar: {plan.note}")
     print()
-    print("Result:")
-    print("  Would register backup." if dry_run else "  Ready to register backup.")
-
-
-def backup_metadata_state_text(state: str) -> str:
-    if state == "missing_metadata":
-        return "Mangler .bildebank-backup.json"
-    if state == "missing_backup_of":
-        return "Metadata finnes, men backup_of mangler"
-    return state
-
-
-def backup_match_percent(matched_files: int, total_files: int) -> str:
-    if total_files == 0:
-        return "0.0%"
-    return f"{matched_files / total_files * 100:.1f}%"
+    print("Inventar")
+    print(f"  Alle filer: {inventory.total_files} ({format_bytes(inventory.total_bytes)})")
+    print(f"  Ekskludert: {inventory.excluded_files} ({format_bytes(inventory.excluded_bytes)})")
+    exclusion_labels = {
+        "thumbnails": "thumbnails",
+        "generated_html": "generert HTML",
+        "runtime": "runtime-filer",
+    }
+    for exclusion in inventory.exclusions:
+        label = exclusion_labels.get(exclusion.reason, exclusion.reason)
+        print(f"    {label}: {exclusion.files} ({format_bytes(exclusion.bytes)})")
+    print(
+        "  Databaselagring: "
+        f"{inventory.database_storage_files} ({format_bytes(inventory.database_storage_bytes)})"
+    )
+    print(f"  SQLite-sidefiler: {inventory.database_side_files}")
+    print(f"  Databaseførte mediefiler: {inventory.database_files}")
+    print(f"    størrelse stemmer: {inventory.matched_database_files}")
+    print(f"    mangler: {inventory.missing_database_files}")
+    print(f"    feil størrelse: {inventory.wrong_size_database_files}")
+    print(f"    ugyldig portabel sti: {inventory.invalid_database_paths}")
+    print(
+        "  Bildebank-migreringsbackuper: "
+        f"{inventory.migration_backup_files} ({format_bytes(inventory.migration_backup_bytes)})"
+    )
+    print(f"  Ukjente filer: {inventory.unknown_files} ({format_bytes(inventory.unknown_bytes)})")
+    print(f"  Planlagt recovery_only: {inventory.recovery_only_files}")
+    print(f"  Windows-stikollisjoner: {inventory.path_collisions}")
+    print()
+    print("Konservativt plassestimat")
+    print(f"  Gjenbrukbare objekter: {storage.reusable_objects}")
+    print(f"  Estimerte nye objekter: {storage.estimated_new_objects}")
+    print(f"  Estimerte nye byte: {format_bytes(storage.estimated_new_bytes)}")
+    print(f"  Ledig plass: {format_bytes(storage.free_bytes)}")
+    print(f"  Estimert plass er tilstrekkelig: {'ja' if storage.has_estimated_capacity else 'nei'}")
+    for warning in plan.warnings:
+        print(f"ADVARSEL: {warning}", file=sys.stderr)
+    print()
+    print("Dry-run: Ingen filer, metadata, mapper eller låser er opprettet eller endret.")
 
 
 @dataclass(frozen=True)
@@ -2066,6 +2588,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  opprette pending_file_moves")
     if plan.adds_metadata_datetime_column:
         print("  legge til metadata_datetime i files")
+    if plan.adds_comment_column:
+        print("  legge til comment i files")
     if plan.removes_superseded_sources:
         print("  fjerne gammel superseded-kildemodell")
     if plan.refreshes_performance_indexes:
@@ -2121,6 +2645,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
     if result.adds_metadata_datetime_column:
         print("Legger til metadata_datetime i files.")
         print("Kjør bildebank refresh-metadata --rescan for å fylle tidspunkt for eksisterende filer.")
+    if result.adds_comment_column:
+        print("Legger til comment i files.")
     if result.removes_superseded_sources:
         print("Fjerner gammel superseded-kildemodell.")
     if result.refreshes_performance_indexes:

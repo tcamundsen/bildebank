@@ -103,7 +103,7 @@ def set_launcher_collection_path(repo_root: Path, collection_path: Path) -> Path
     return config_path
 
 
-def load_config(repo_root: Path) -> AppConfig:
+def load_config(repo_root: Path, *, migrate_legacy: bool = True) -> AppConfig:
     config_path = repo_root / CONFIG_FILENAME
     if not config_path.exists():
         return AppConfig(
@@ -113,7 +113,8 @@ def load_config(repo_root: Path) -> AppConfig:
             ),
             openclip=OpenClipConfig(model_root=repo_root / ".bildebank-openclip"),
         )
-    migrate_legacy_openclip_section(config_path)
+    if migrate_legacy:
+        migrate_legacy_openclip_section(config_path)
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     face_data = _section(data, "face_recognition")
     suggest_threshold = validate_face_suggest_threshold(face_data.get("suggest_threshold", 0.6))

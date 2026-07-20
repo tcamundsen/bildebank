@@ -93,7 +93,7 @@ lagring uten å kreve en separat databaseserver.
 
 ## Databaseversjoner
 
-- gjeldende schema er v14
+- gjeldende schema er v15
 - historiske migreringer ligger i devel-docs/database-v4-migration.md og
   devel-docs/database-v5-migration.md, devel-docs/database-v6-migration.md og
   devel-docs/database-v7-migration.md, devel-docs/database-v8-migration.md,
@@ -101,8 +101,9 @@ lagring uten å kreve en separat databaseserver.
   devel-docs/database-v11-migration.md,
   devel-docs/database-v12-migration.md og
   devel-docs/database-v13-migration.md og
-  devel-docs/database-v14-migration.md
-- ny runtime-kode skal anta v14, med mindre oppgaven eksplisitt gjelder
+  devel-docs/database-v14-migration.md og
+  devel-docs/database-v15-migration.md
+- ny runtime-kode skal anta v15, med mindre oppgaven eksplisitt gjelder
   migrering
 
 ## Plattform
@@ -258,3 +259,31 @@ bruke felles funksjoner for selve browseren, for eksempel
 `source_items`, navigasjon mellom bilder og månedsnavigasjon. Det gjør at nye
 utvalg får samme blaing, rotering, bildeinfo, sletting og lenkestruktur uten at
 det lages egne parallelle browsere for hvert tilfelle.
+
+## Lokal status for snapshots
+
+Et publisert snapshot kan registreres i programmets lokale programdatabase
+etter at snapshotoperasjonen er fullført. Registreringen inneholder bare
+opplysninger som launcher og dashboard trenger: collection-ID, repository-ID,
+sist brukte repository-sti, snapshot-ID, status og tidspunkt.
+
+Denne hjelpetilstanden er ikke en del av repositoryformatet eller
+bildesamlingens database. En feil i lokal registrering skal derfor aldri gjøre
+et allerede publisert snapshot til en feil. Snapshotkjernens publisering,
+låsing, manifest og objektlagring skal ikke endres for å vedlikeholde lokal
+status.
+
+Repository-ID, ikke Windows-sti eller stasjonsbokstav, identifiserer et
+repository. Flere USB-disker kan dermed bruke samme sti når de kobles til etter
+tur. Klonede repositories må ikke brukes videre som uavhengige, skrivbare
+repositories, fordi klonen beholder originalens repository-ID.
+
+## Kommentarer på mediefiler
+
+En mediefil kan ha én kommentar på den kanoniske `files`-raden. Kommentaren
+tilhører ikke en bestemt importkilde og lagres aldri i metadata i selve
+bildefilen. Den bevares når filen flyttes til `deleted/` og tilbake.
+
+Kommentarer vises bare i full item-visning, slideshow og statiske browsere,
+ikke på oversiktsbilder eller søkeresultat-miniatyrer. Redigering skjer bare i
+skrivbar servermodus og holder target-låsen gjennom databaseoppdateringen.

@@ -43,6 +43,18 @@ ikke gjenkjennes av insightface. Visningen av denne kan slås av og på i
 
 Du får mer informasjon om bildet ved å klikke på filnavnet øverst på skjermen.
 
+## Kommentarer
+
+Knappen **Kommentar** i venstrepanelet åpner et felt der du kan skrive eller
+endre én kommentar til bildet, videoen eller filen. Linjeskift bevares. Bruk
+**Fjern kommentar** hvis kommentaren skal tas bort; Bildebank ber om
+bekreftelse først.
+
+Kommentaren vises nederst på mediet i full bildevisning. Den vises også i
+personbrowser, kilde-, tagg-, sted- og filtersøkvisninger, men ikke på
+oversiktsbilder eller miniatyrer i søkeresultater. I read-only/LAN-modus kan
+kommentaren leses, men knappen for å redigere den er skjult.
+
 `.NEF`, `.RAW` og `.PSD` vises som lenker til filer, ikke som vanlige bilder.
 Når en `.NEF`- eller `.PSD`-fil hører trygt sammen med en `.JPG`-fil fra samme
 mappe og samme import, skjules filen fra vanlig bildevisning. Da vises den i

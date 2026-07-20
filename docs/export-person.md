@@ -28,6 +28,9 @@ D:\Eksport\Tom\index.html
 Den statiske browseren følger visningsrotasjonen som er lagret i Bildebank.
 De eksporterte bildefilene er uendrede kopier.
 
+Kommentarene som finnes når eksporten lages, vises nederst på bildene i full
+bildevisning i den statiske browseren. De skrives ikke inn i bildefilene.
+
 Stien øverst i browseren kan brukes til å gå mellom oversikter for år, måneder
 og filer.
 

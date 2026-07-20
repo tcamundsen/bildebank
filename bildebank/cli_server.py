@@ -6,7 +6,7 @@ import webbrowser
 from pathlib import Path
 
 from .config import load_config
-from .server import run_server as run_local_server
+from .server_runtime import run_server as run_local_server
 
 
 def run_server_command(
@@ -20,6 +20,8 @@ def run_server_command(
     preview_images: bool = False,
     read_only: bool = False,
     lan_share: bool = False,
+    slideshow_delay_seconds: int | None = None,
+    slideshow_filter: str | None = None,
 ) -> int:
     config = load_config(repo_root)
     print("Starter Bildebank-server. Dette kan ta noen sekunder.")
@@ -43,6 +45,8 @@ def run_server_command(
         allow_remote=allow_remote,
         preview_images=preview_images,
         read_only=read_only,
+        slideshow_delay_seconds=slideshow_delay_seconds,
+        slideshow_filter=slideshow_filter,
         ready=on_ready,
     )
     return 0

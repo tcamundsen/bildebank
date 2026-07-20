@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from bildebank import db
+from bildebank import db, server_endpoints_faces
 from bildebank.config import (
     AppConfig,
     FaceRecognitionConfig,
@@ -16,7 +16,7 @@ from bildebank.config import (
     set_face_suggest_threshold,
 )
 from bildebank.face import FaceSuggestStats, connect_face_db
-from bildebank.server import BildebankRequestHandler
+from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_queries import source_item_ids
 from bildebank.server_browser_sources import missing_face_suggestions_browser_source
@@ -66,10 +66,13 @@ class FaceSuggestServerTests(unittest.TestCase):
         self.assertIn("Face-suggest fullført", body)
         self.assertIn("data-face-suggest-success", body)
         self.assertIn("data-face-suggest-status", body)
+        self.assertIn("Klikk knappen 'Finn ansikter'", body)
+        self.assertEqual(body.count("data-open-face-suggest"), 2)
 
         self.assertNotIn('action="/people/face-suggest"', read_only_body)
         self.assertNotIn('href="/people/missing-suggestions"', read_only_body)
         self.assertNotIn("data-open-face-suggest", read_only_body)
+        self.assertNotIn("Klikk knappen 'Finn ansikter'", read_only_body)
         self.assertNotIn("personRenameDialog", read_only_body)
 
     def make_handler(self, *, enabled: bool, threshold: str = "0.65", return_url: str = ""):
@@ -169,24 +172,24 @@ class FaceSuggestServerTests(unittest.TestCase):
         self.assertIn('faceSuggestStatus.textContent = ""', SERVER_JS)
         self.assertIn('closeFaceSuggestButton.textContent = "Avbryt"', SERVER_JS)
 
-    @patch("bildebank.server.set_face_suggest_threshold")
-    @patch("bildebank.server.suggest_faces")
+    @patch("bildebank.server_endpoints_faces.set_face_suggest_threshold")
+    @patch("bildebank.server_endpoints_faces.suggest_faces")
     def test_disabled_and_invalid_threshold_do_not_run(self, suggest: Mock, save: Mock) -> None:
         disabled = self.make_handler(enabled=False)
-        disabled.respond_face_suggest()
+        server_endpoints_faces.respond_face_suggest(disabled)
         self.assertEqual(disabled.response[1], HTTPStatus.FORBIDDEN)
 
         invalid = self.make_handler(enabled=True, threshold="nan")
-        invalid.respond_face_suggest()
+        server_endpoints_faces.respond_face_suggest(invalid)
         self.assertEqual(invalid.response[1], HTTPStatus.BAD_REQUEST)
         self.assertIn("endelig tall", invalid.response[0])
         suggest.assert_not_called()
         save.assert_not_called()
 
-    @patch("bildebank.server.people_page_html", return_value="people-result")
-    @patch("bildebank.server.clear_face_caches")
-    @patch("bildebank.server.suggest_faces")
-    @patch("bildebank.server.set_face_suggest_threshold")
+    @patch("bildebank.server_endpoints_faces.people_page_html", return_value="people-result")
+    @patch("bildebank.server_endpoints_faces.clear_face_caches")
+    @patch("bildebank.server_endpoints_faces.suggest_faces")
+    @patch("bildebank.server_endpoints_faces.set_face_suggest_threshold")
     def test_success_updates_config_caches_and_status(
         self,
         save: Mock,
@@ -197,7 +200,7 @@ class FaceSuggestServerTests(unittest.TestCase):
         suggest.return_value = FaceSuggestStats(2, 8, 5, 0.65)
         handler = self.make_handler(enabled=True)
 
-        handler.respond_face_suggest()
+        server_endpoints_faces.respond_face_suggest(handler)
 
         self.assertEqual(handler.response, ("people-result", HTTPStatus.OK))
         save.assert_called_once()
@@ -212,10 +215,10 @@ class FaceSuggestServerTests(unittest.TestCase):
             render.call_args.kwargs["message"],
         )
 
-    @patch("bildebank.server.people_page_html")
-    @patch("bildebank.server.clear_face_caches")
-    @patch("bildebank.server.suggest_faces", return_value=FaceSuggestStats(2, 8, 5, 0.65))
-    @patch("bildebank.server.set_face_suggest_threshold")
+    @patch("bildebank.server_endpoints_faces.people_page_html")
+    @patch("bildebank.server_endpoints_faces.clear_face_caches")
+    @patch("bildebank.server_endpoints_faces.suggest_faces", return_value=FaceSuggestStats(2, 8, 5, 0.65))
+    @patch("bildebank.server_endpoints_faces.set_face_suggest_threshold")
     def test_success_redirects_only_to_local_return_url(
         self,
         _save: Mock,
@@ -224,7 +227,7 @@ class FaceSuggestServerTests(unittest.TestCase):
         render: Mock,
     ) -> None:
         handler = self.make_handler(enabled=True, return_url="%2Fperson%2FKari%2Fitem%2F7")
-        handler.respond_face_suggest()
+        server_endpoints_faces.respond_face_suggest(handler)
         self.assertEqual(
             handler.redirect_location,
             "/person/Kari/item/7#face-suggest-status=Ansiktsforslag%3A+personer%3D2%2C+"
@@ -234,21 +237,24 @@ class FaceSuggestServerTests(unittest.TestCase):
         render.assert_not_called()
 
         handler = self.make_handler(enabled=True, return_url="%2Fpeople")
-        handler.respond_face_suggest()
+        server_endpoints_faces.respond_face_suggest(handler)
         self.assertTrue(handler.redirect_location.startswith("/people#face-suggest-status="))
         render.assert_not_called()
 
         for return_url in ("https%3A%2F%2Fevil.example%2F", "%2F%2Fevil.example%2F", "item%2F7"):
             handler = self.make_handler(enabled=True, return_url=return_url)
-            handler.respond_face_suggest()
+            server_endpoints_faces.respond_face_suggest(handler)
             self.assertIsNone(handler.redirect_location)
             self.assertEqual(handler.response, (render.return_value, HTTPStatus.OK))
 
-    @patch("bildebank.server.set_face_suggest_threshold")
-    @patch("bildebank.server.suggest_faces", side_effect=ValueError("Face-database finnes ikke. Kjør bildebank face-scan først."))
+    @patch("bildebank.server_endpoints_faces.set_face_suggest_threshold")
+    @patch(
+        "bildebank.server_endpoints_faces.suggest_faces",
+        side_effect=ValueError("Face-database finnes ikke. Kjør bildebank face-scan først."),
+    )
     def test_missing_face_database_is_readable_html_error(self, _suggest: Mock, save: Mock) -> None:
         handler = self.make_handler(enabled=True)
-        handler.respond_face_suggest()
+        server_endpoints_faces.respond_face_suggest(handler)
         self.assertEqual(handler.response[1], HTTPStatus.BAD_REQUEST)
         self.assertIn("Kjør bildebank face-scan først.", handler.response[0])
         save.assert_called_once()
@@ -311,11 +317,10 @@ class FaceSuggestServerTests(unittest.TestCase):
         handler = object.__new__(BildebankRequestHandler)
         handler.path = "/people/missing-suggestions/item/7"
         handler.server = SimpleNamespace(face_enabled=True)
-        handler.respond_missing_face_suggestions = Mock()
+        with patch("bildebank.server_endpoints_faces.respond_missing_face_suggestions") as respond_missing:
+            handler.do_GET()
 
-        handler.do_GET()
-
-        handler.respond_missing_face_suggestions.assert_called_once_with("/item/7")
+        respond_missing.assert_called_once_with(handler, "/item/7")
 
     def test_missing_face_suggestions_handler_accepts_item_path(self) -> None:
         handler = object.__new__(BildebankRequestHandler)
@@ -325,12 +330,11 @@ class FaceSuggestServerTests(unittest.TestCase):
             hide_out_of_focus=False,
         )
         handler.respond_text = Mock()
-        handler.respond_browser_source = Mock()
-
-        handler.respond_missing_face_suggestions("/item/7")
+        with patch("bildebank.server_endpoints_browser.respond_browser_source") as respond_browser_source:
+            server_endpoints_faces.respond_missing_face_suggestions(handler, "/item/7")
 
         handler.respond_text.assert_not_called()
-        source, page_mode, raw_value = handler.respond_browser_source.call_args.args[:3]
+        source, page_mode, raw_value = respond_browser_source.call_args.args[1:4]
         self.assertEqual(source.root_url, "/people/missing-suggestions")
         self.assertEqual(page_mode, "item")
         self.assertEqual(raw_value, "7")

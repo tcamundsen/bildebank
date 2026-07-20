@@ -18,17 +18,19 @@ from bildebank.db import DB_FILENAME
 from bildebank.face import (
     apply_face_schema,
     connect_face_db,
+    delete_face_database,
     face_box_percent,
     face_db_path,
     insightface_import_error_message,
     normalize_insightface_model_layout,
     read_image,
     remove_insightface_model_zip,
+    scan_faces,
 )
 from bildebank.media import ImageDimensions
 from bildebank.openclip import embedding_blob
 from bildebank.server_faces import cached_face_box_media_metadata, update_face_box_media_metadata
-from bildebank.target_lock import LOCK_FILENAME, TargetLockError
+from bildebank.target_lock import LOCK_FILENAME, TargetLock, TargetLockError
 from tests.cli_helpers import capture_cli, run_cli
 from tests.test_media import minimal_png
 
@@ -170,6 +172,38 @@ model_name = "buffalo_l"
             ):
                 cached_face_box_media_metadata(target, item)
 
+    def test_face_box_media_metadata_read_only_does_not_fill_cache(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.png").write_bytes(minimal_png(100, 80))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]),
+                0,
+            )
+            conn = db.connect(target)
+            try:
+                item = dict(conn.execute("SELECT * FROM files").fetchone())
+            finally:
+                conn.close()
+            (target / LOCK_FILENAME).write_text("command=face-scan\n", encoding="utf-8")
+
+            with patch(
+                "bildebank.server_faces.image_dimensions",
+                side_effect=AssertionError("read-only skal ikke fylle metadata-cache"),
+            ):
+                dimensions, orientation = cached_face_box_media_metadata(
+                    target,
+                    item,
+                    write_metadata_cache=False,
+                )
+
+        self.assertIsNone(dimensions)
+        self.assertEqual(orientation, 1)
+
     def test_face_scan_requires_enabled_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -263,6 +297,117 @@ model_name = "buffalo_l"
         self.assertIn("Bildesamlingen er låst", scan_stderr)
         self.assertEqual(suggest_code, 1)
         self.assertIn("Bildesamlingen er låst", suggest_stderr)
+
+    def test_face_scan_releases_target_lock_while_insightface_processes_image(self) -> None:
+        class FakeFace:
+            bbox = [1.0, 2.0, 11.0, 22.0]
+            det_score = 0.9
+            embedding = [0.1, 0.2, 0.3]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.enable_face_recognition_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            class FakeApp:
+                def get(self, _image):
+                    with TargetLock(target, command="concurrent-operation"):
+                        pass
+                    return [FakeFace()]
+
+            with (
+                patch("bildebank.face.load_face_app", return_value=FakeApp()),
+                patch("bildebank.face.read_image", return_value=object()),
+            ):
+                stats = scan_faces(target, load_config(self.program_root).face_recognition)
+
+        self.assertEqual(stats.scanned, 1)
+        self.assertEqual(stats.errors, 0)
+
+    def test_face_scan_discards_result_when_file_is_removed_during_processing(self) -> None:
+        class FakeFace:
+            bbox = [1.0, 2.0, 11.0, 22.0]
+            det_score = 0.9
+            embedding = [0.1, 0.2, 0.3]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.enable_face_recognition_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+
+            class FakeApp:
+                def get(self, _image):
+                    with TargetLock(target, command="concurrent-remove"):
+                        conn = db.connect(target)
+                        try:
+                            conn.execute("UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = 1")
+                            conn.commit()
+                        finally:
+                            conn.close()
+                    return [FakeFace()]
+
+            config = load_config(self.program_root).face_recognition
+            with (
+                patch("bildebank.face.load_face_app", return_value=FakeApp()),
+                patch("bildebank.face.read_image", return_value=object()),
+            ):
+                stats = scan_faces(target, config)
+            conn = connect_face_db(target, config)
+            try:
+                scanned_rows = conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0]
+            finally:
+                conn.close()
+
+        self.assertEqual(stats.scanned, 0)
+        self.assertEqual(stats.skipped, 1)
+        self.assertEqual(scanned_rows, 0)
+
+    def test_face_scan_does_not_restore_results_after_face_reset_all(self) -> None:
+        class FakeFace:
+            bbox = [1.0, 2.0, 11.0, 22.0]
+            det_score = 0.9
+            embedding = [0.1, 0.2, 0.3]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.enable_face_recognition_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
+            config = load_config(self.program_root).face_recognition
+
+            class FakeApp:
+                def get(self, _image):
+                    delete_face_database(target, config)
+                    return [FakeFace()]
+
+            with (
+                patch("bildebank.face.load_face_app", return_value=FakeApp()),
+                patch("bildebank.face.read_image", return_value=object()),
+            ):
+                stats = scan_faces(target, config)
+            conn = connect_face_db(target, config)
+            try:
+                scanned_rows = conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0]
+            finally:
+                conn.close()
+
+        self.assertEqual(stats.scanned, 0)
+        self.assertEqual(stats.skipped, 1)
+        self.assertEqual(scanned_rows, 0)
 
     def test_face_scan_writes_faces_to_separate_database(self) -> None:
         class FakeFace:

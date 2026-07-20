@@ -73,7 +73,7 @@ def test_insert_imported_file_records_file_and_source_link(tmp_path: Path) -> No
         by_target_path = db.file_sources_by_target_path(conn, target, target_path)
 
         assert file_row["target_path"] == "2024/01/IMG_20240102.jpg"
-        assert file_row["target_path_key"] == "2024/01/IMG_20240102.jpg"
+        assert file_row["target_path_key"] == db.relative_path_key(Path("2024/01/IMG_20240102.jpg"))
         assert file_row["sha256"] == "hash-a"
         assert source_row["source_id"] == source_id
         assert source_row["source_path"] == str(source_path.resolve())

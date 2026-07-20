@@ -524,6 +524,19 @@
       text-align: left;
       white-space: nowrap;
     }
+    .comment-button {
+      min-height: 34px;
+      padding: 6px 9px;
+      border-color: rgb(255 255 255 / 20%);
+      background: #242424;
+      color: var(--muted);
+      text-align: left;
+    }
+    .comment-button.active {
+      border-color: #7db7ff;
+      background: #1d344d;
+      color: #d8ecff;
+    }
     .tag-toggle::before {
       content: "";
       width: 14px;
@@ -615,6 +628,24 @@
       user-select: none;
       -webkit-user-drag: none;
     }
+    .item-comment-overlay {
+      position: absolute;
+      z-index: 3;
+      left: 0;
+      bottom: 0;
+      width: 100%;
+      box-sizing: border-box;
+      padding: 9px 12px;
+      background: rgb(0 0 0 / 68%);
+      color: #fff;
+      font-size: clamp(13px, 1.6vw, 20px);
+      line-height: 1.35;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      pointer-events: none;
+      text-align: left;
+    }
+    .item-comment-overlay[hidden] { display: none; }
     .stage img[data-view-rotation="90"],
     .stage img[data-view-rotation="270"] {
       max-width: min(calc(100vh - 10rem), var(--quarter-turn-width, 100%));
@@ -857,6 +888,19 @@
       color: var(--text);
       font: inherit;
     }
+    .modal-panel textarea {
+      width: 100%;
+      box-sizing: border-box;
+      resize: vertical;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px;
+      background: #181818;
+      color: var(--text);
+      font: inherit;
+      line-height: 1.4;
+    }
+    .item-comment-panel { width: min(620px, 100%); }
     .manual-date-panel { align-self: start; justify-self: center; margin-top: 36px; }
     .manual-h3-panel {
       align-self: start;

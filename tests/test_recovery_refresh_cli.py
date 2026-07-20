@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -48,7 +49,7 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(["--target", str(target), "status"])
 
             self.assertEqual(code, 0, stderr)
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
                     """
                     SELECT files.target_path, files.deleted_at, pending_file_moves.state
@@ -83,7 +84,7 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(["--target", str(target), "status"])
 
             self.assertEqual(code, 0, stderr)
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
                     """
                     SELECT files.target_path, files.deleted_at, pending_file_moves.state
@@ -110,7 +111,7 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
             deleted.parent.mkdir(parents=True)
             deleted.write_bytes(b"image-one")
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 db.create_pending_file_move(
                     conn,
                     file_id=1,
@@ -143,7 +144,7 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             deleted.parent.mkdir(parents=True)
             shutil.move(str(imported), str(deleted))
             deleted.write_bytes(b"changed")
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 db.create_pending_file_move(
                     conn,
                     file_id=1,
@@ -194,7 +195,7 @@ class RecoveryRefreshCliTests(unittest.TestCase):
                 row = conn.execute(
                     "SELECT target_path, taken_date, date_source FROM files"
                 ).fetchone()
-                self.assertEqual(row[0], str(new_target.relative_to(target)))
+                self.assertEqual(row[0], new_target.relative_to(target).as_posix())
                 self.assertEqual(row[1], "2007-03-12")
                 self.assertEqual(row[2], "metadata")
             finally:
@@ -220,7 +221,7 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             old_target = target / "2008" / "02" / "video.avi"
             new_target = target / "2007" / "03" / "video.avi"
             old_target.write_bytes(minimal_avi_with_idit_outside_info())
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 conn.execute("UPDATE files SET sha256 = ?", (sha256_file(old_target),))
                 conn.commit()
             real_move = shutil.move
@@ -238,7 +239,7 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(["--target", str(target), "status"])
 
             self.assertEqual(code, 0, stderr)
-            with sqlite3.connect(target / DB_FILENAME) as conn:
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
                     """
                     SELECT files.target_path, files.taken_date, files.date_source,
@@ -528,7 +529,7 @@ class RecoveryRefreshCliTests(unittest.TestCase):
                 row = conn.execute(
                     "select target_path, taken_date, date_source from files"
                 ).fetchone()
-                self.assertEqual(row[0], str(old_target.relative_to(target)))
+                self.assertEqual(row[0], old_target.relative_to(target).as_posix())
                 self.assertEqual(row[1], "2008-02-29")
                 self.assertEqual(row[2], "mtime")
                 unresolved = conn.execute(

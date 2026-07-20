@@ -364,9 +364,9 @@ Du kan kontrollere hva migreringen vil gjøre uten å endre databasen:
 bildebank migrate --check
 ```
 
-Når `bildebank migrate` kjøres, lager programmet en backup av `.bilder.sqlite3`
-før databasen endres. Hvis migreringen feiler, skal databasen ikke oppgraderes,
-og backupen beholdes.
+Når `bildebank migrate` kjøres, lager programmet en sikkerhetskopi av
+`.bilder.sqlite3` før databasen endres. Hvis migreringen feiler, skal databasen
+ikke oppgraderes, og sikkerhetskopien beholdes.
 
 ## Angre import av en kilde
 
@@ -385,10 +385,11 @@ Hvis du vil fjerne en importert fil bruker du [`remove`](remove.md). Kommandoen
 sletter ikke filen helt. Den flytter filen til `deleted`-mappen i
 bildesamlingsmappen og markerer den som slettet i databasen.
 
-## Sikkerhet og backup
+## Sikkerhet og sikkerhetskopier
 
-Bildebank er ikke en backup-løsning. Programmet organiserer og kopierer bilder
-og videoer inn i en ny samling, men det erstatter ikke sikkerhetskopier.
+Bildebank kan lage versjonerte sikkerhetskopier med `snapshot`. Eldre snapshots
+blir bevart når et nytt snapshot opprettes. Ett repository eller én disk er
+likevel ikke en fullgod strategi for sikkerhetskopiering.
 
 Ikke slett originalkilder etter import bare fordi Bildebank har kopiert filene.
 Kontroller først at importen ser riktig ut, at `index.html` viser det du
@@ -400,5 +401,6 @@ En enkel regel er 3-2-1-regelen: ha minst 3 kopier av viktige filer, på minst
 Behold gamle kilder til du er sikker på at den nye samlingen er kontrollert og
 sikkerhetskopiert.
 
-Kommandoen [`backup`](backup.md) kan brukes for å lage en backup-kopi av hele
-bildesamlingen.
+Veiledningen for [`snapshot`](../snapshot.md) viser hvordan du oppretter og
+kontrollerer snapshots, og hvordan du gjenoppretter hele bildesamlingen eller
+én enkelt fil.

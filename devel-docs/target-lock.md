@@ -23,7 +23,6 @@ flytting.
   databaseoppdatering.
 - `remove` og `undelete` bruker den felles modulen `file_lifecycle.py` fra både
   CLI og web. Modulen tar låsen før oppslag og holder den til etter commit.
-- `backup` låser kildesamlingen mens backup-speilet oppdateres.
 - `migrate` holder låsen mens hoveddatabasen migreres.
 - `make-thumbnails` holder låsen mens thumbnail-settet oppdateres.
 - `make-browser`, `make-person-browser` og
@@ -35,16 +34,28 @@ flytting.
   committed.
 - setting og fjerning av manuell H3-lokasjon holder låsen fra før filoppslag
   og validering til etter commit.
-- `face-scan`, `face-suggest`, `face-reset` og alle endringer av personer,
-  ansiktskoblinger og manuelle person-i-bilde-koblinger holder låsen gjennom
-  hele operasjonen. Den sammensatte weboperasjonen som oppretter en person og
-  kobler et ansikt bruker én lås og én transaksjon.
+- `face-scan` holder låsen mens den velger hvilke aktive filer som skal
+  scannes, og kort for hver lagring i ansiktsdatabasen. InsightFace-kjøringen
+  mellom disse periodene skjer uten target-lås. Før resultatet lagres,
+  kontrolleres det at filen fortsatt er aktiv og har samme SHA-256. Resultatet
+  forkastes hvis filen er endret eller fjernet i mellomtiden. En intern
+  skanneidentitet gjør også at en eldre scan ikke kan skrive resultater etter
+  `face-reset --all` eller etter at en ny scan er startet.
+- `face-suggest`, `face-reset` og alle endringer av personer, ansiktskoblinger
+  og manuelle person-i-bilde-koblinger holder låsen gjennom hele operasjonen.
+  Den sammensatte weboperasjonen som oppretter en person og kobler et ansikt
+  bruker én lås og én transaksjon.
 - `date-set`, `date-clear` og tilsvarende weboperasjoner for manuell dato
   holder låsen fra før filoppslag og validering til etter commit.
 - visningsrotasjon fra web holder låsen gjennom oppslag, beregning av ny
   rotasjon og commit.
-- `image-scan` holder låsen mens aktive bilder velges, bildefilene leses og
-  embeddings lagres.
+- lagring og fjerning av kommentarer fra web holder låsen gjennom filoppslag
+  og commit.
+- `image-scan` holder låsen mens aktive bilder velges, og kort for hver
+  embedding som lagres. OpenCLIP-kjøringen mellom disse periodene skjer uten
+  target-lås. Før lagring kontrolleres det at filen fortsatt er aktiv og har
+  samme SHA-256. En intern skanneidentitet hindrer at en eldre scan skriver
+  etter at en ny scan er startet.
 - `image-search` fra CLI og web holder låsen mens embeddings leses og
   søkeresultater lagres. CLI holder den også til `image-search.html` er skrevet.
 - oppretting, endring og sletting av brukertaggdefinisjoner holder låsen fra

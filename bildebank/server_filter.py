@@ -413,11 +413,44 @@ def parse_height_pixels(value: str) -> int:
 
 def tokenize_filter_query(query: str) -> tuple[list[str], str]:
     try:
-        raw_tokens = shlex.split(query.strip())
+        raw_tokens = shlex.split(preserve_unquoted_backslashes(query.strip()))
     except ValueError as exc:
         raise ValueError("Ugyldige anførselstegn i filtersøk.") from exc
     tokens = normalize_filter_tokens(raw_tokens)
     return tokens, " ".join(canonical_filter_token(token) for token in tokens)
+
+
+def preserve_unquoted_backslashes(query: str) -> str:
+    """Keep Windows path separators that POSIX shlex would treat as escapes."""
+    result: list[str] = []
+    quote: str | None = None
+    escaped = False
+    for index, char in enumerate(query):
+        if escaped:
+            result.append(char)
+            escaped = False
+            continue
+        if char == "\\":
+            next_char = query[index + 1] if index + 1 < len(query) else ""
+            if quote is None:
+                if not next_char or (
+                    not next_char.isspace() and next_char not in {"\\", '"', "'"}
+                ):
+                    result.append("\\")
+                result.append(char)
+                escaped = True
+                continue
+            result.append(char)
+            if quote == '"' and next_char in {"\\", '"'}:
+                escaped = True
+            continue
+        if char in {'"', "'"}:
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+        result.append(char)
+    return "".join(result)
 
 
 def normalize_filter_tokens(tokens: list[str]) -> list[str]:
@@ -762,13 +795,16 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         where.append("date_source = ?")
         params.append(text_filter.date_source)
     if text_filter.camera is not None:
-        where.append("lower(coalesce(camera_make, '') || ' ' || coalesce(camera_model, '')) LIKE ?")
+        where.append(
+            "bildebank_casefold(coalesce(camera_make, '') || ' ' || coalesce(camera_model, '')) "
+            "LIKE ? ESCAPE '!'"
+        )
         params.append(like_contains_param(text_filter.camera))
     if text_filter.extension is not None:
         where.append("lower(stored_filename) LIKE ?")
         params.append(f"%.{text_filter.extension}")
     if text_filter.filename is not None:
-        where.append("lower(stored_filename) LIKE ?")
+        where.append("bildebank_casefold(stored_filename) LIKE ? ESCAPE '!'")
         params.append(like_contains_param(text_filter.filename))
     if text_filter.media_type in {"image", "video"}:
         where.append(extension_condition_for_type(text_filter.media_type))
@@ -791,10 +827,10 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
     elif text_filter.orientation == "landscape":
         where.append("media_width IS NOT NULL AND media_height IS NOT NULL AND media_width > media_height")
     if text_filter.path is not None:
-        where.append("lower(target_path) LIKE ?")
+        where.append("bildebank_casefold(target_path) LIKE ? ESCAPE '!'")
         params.append(like_contains_param(text_filter.path.replace("\\", "/")))
     for person in text_filter.persons:
-        person_name = person.strip().lower()
+        person_name = person.strip().casefold()
         where.append(person_where_clause())
         params.extend((person_name, person_name))
     if text_filter.source is not None:
@@ -901,7 +937,7 @@ def source_where_clause(value: str) -> tuple[str, tuple[object, ...]]:
             FROM file_sources
             JOIN sources ON sources.id = file_sources.source_id
             WHERE file_sources.file_id = files.id
-              AND lower(sources.name) LIKE ?
+              AND bildebank_casefold(sources.name) LIKE ? ESCAPE '!'
         )
         """,
         (like_contains_param(clean_value),),
@@ -937,19 +973,27 @@ def person_where_clause() -> str:
         ) person_matches ON person_matches.person_id = face_db.persons.id
         JOIN face_db.faces ON face_db.faces.id = person_matches.face_id
         WHERE face_db.faces.file_id = files.id
-          AND lower(face_db.persons.name) = ?
+          AND bildebank_casefold(face_db.persons.name) = ?
         UNION ALL
         SELECT 1
         FROM face_db.persons
         JOIN face_db.person_files ON face_db.person_files.person_id = face_db.persons.id
         WHERE face_db.person_files.file_id = files.id
-          AND lower(face_db.persons.name) = ?
+          AND bildebank_casefold(face_db.persons.name) = ?
     )
     """
 
 
 def like_contains_param(value: str) -> str:
-    return f"%{value.strip().lower()}%"
+    replacements = {
+        "!": "!!",
+        "%": "!%",
+        "_": "!_",
+        "*": "%",
+        "?": "_",
+    }
+    pattern = "".join(replacements.get(char, char) for char in value.strip().casefold())
+    return f"%{pattern}%"
 
 
 def text_filter_has_runtime_filter(text_filter: BrowserTextFilter) -> bool:
@@ -974,6 +1018,7 @@ def text_filter_shows_sidecar_files(text_filter: BrowserTextFilter) -> bool:
 
 
 def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTextFilter) -> None:
+    conn.create_function("bildebank_casefold", 1, unicode_casefold, deterministic=True)
     if not text_filter.persons:
         return
     from .face import connect_face_db, face_db_path
@@ -983,6 +1028,10 @@ def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTe
     face_conn = connect_face_db(target)
     face_conn.close()
     conn.execute("ATTACH DATABASE ? AS face_db", (str(face_db_path(target)),))
+
+
+def unicode_casefold(value: str | None) -> str:
+    return "" if value is None else value.casefold()
 
 
 def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_of_focus: bool = False) -> list[Any]:
@@ -1067,7 +1116,7 @@ def filter_help_html() -> str:
         </div>
         <div class="info-row">
           <dt>Alle bilder med Per og Kari</dt>
-          <dd><a href="/filter/month:12 day:24"><code>person:Per person:Kari</code></a></dd>
+          <dd><a href="/filter/person%3APer%20person%3AKari"><code>person:Per person:Kari</code></a></dd>
         </div>
         <div class="info-row">
           <dt>Alle julaftener</dt>

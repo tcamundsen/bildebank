@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import tempfile
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,6 +18,16 @@ class KnownTarget:
     created_at: str | None
     last_seen_at: str | None
     exists: bool
+
+
+@dataclass(frozen=True)
+class KnownSnapshotRepository:
+    collection_id: str
+    repository_id: str
+    path: Path
+    last_snapshot_id: str
+    last_snapshot_status: str
+    last_snapshot_at: str
 
 
 def program_db_path(program_root: Path) -> Path:
@@ -95,6 +106,87 @@ def record_target(program_root: Path, target: Path, *, created: bool = False) ->
         conn.close()
 
 
+def record_published_snapshot_best_effort(
+    program_root: Path,
+    *,
+    collection_id: str,
+    repository_id: str,
+    repository_path: Path,
+    snapshot_id: str,
+    status: str,
+    published_at: str | None = None,
+) -> str | None:
+    try:
+        record_published_snapshot(
+            program_root,
+            collection_id=collection_id,
+            repository_id=repository_id,
+            repository_path=repository_path,
+            snapshot_id=snapshot_id,
+            status=status,
+            published_at=published_at,
+        )
+    except Exception as exc:
+        return str(exc)
+    return None
+
+
+def record_published_snapshot(
+    program_root: Path,
+    *,
+    collection_id: str,
+    repository_id: str,
+    repository_path: Path,
+    snapshot_id: str,
+    status: str,
+    published_at: str | None = None,
+) -> None:
+    if status not in {"complete", "degraded", "recovery"}:
+        raise ValueError(f"Ugyldig publisert snapshotstatus: {status!r}")
+    timestamp = published_at or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    db_path = program_db_path(program_root)
+    conn = sqlite3.connect(db_path)
+    try:
+        ensure_schema(conn)
+        existing = conn.execute(
+            "SELECT collection_id FROM snapshot_repositories WHERE repository_id = ?",
+            (repository_id,),
+        ).fetchone()
+        if existing is not None and str(existing[0]) != collection_id:
+            raise ValueError(
+                "Samme repository_id er allerede registrert for en annen bildesamling."
+            )
+        conn.execute(
+            """
+            INSERT INTO snapshot_repositories(
+                repository_id,
+                collection_id,
+                path,
+                last_snapshot_id,
+                last_snapshot_status,
+                last_snapshot_at
+            )
+            VALUES(?, ?, ?, ?, ?, ?)
+            ON CONFLICT(repository_id) DO UPDATE SET
+                path = excluded.path,
+                last_snapshot_id = excluded.last_snapshot_id,
+                last_snapshot_status = excluded.last_snapshot_status,
+                last_snapshot_at = excluded.last_snapshot_at
+            """,
+            (
+                repository_id,
+                collection_id,
+                str(repository_path.resolve()),
+                snapshot_id,
+                status,
+                timestamp,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def known_targets(program_root: Path) -> list[KnownTarget]:
     db_path = program_db_path(program_root)
     if not db_path.exists():
@@ -126,6 +218,68 @@ def known_targets(program_root: Path) -> list[KnownTarget]:
         conn.close()
 
 
+def known_snapshot_repositories(
+    program_root: Path,
+    collection_id: str,
+) -> list[KnownSnapshotRepository]:
+    db_path = program_db_path(program_root)
+    if not db_path.exists():
+        return []
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        ensure_schema(conn)
+        conn.commit()
+        rows = conn.execute(
+            """
+            SELECT
+                collection_id,
+                repository_id,
+                path,
+                last_snapshot_id,
+                last_snapshot_status,
+                last_snapshot_at
+            FROM snapshot_repositories
+            WHERE collection_id = ?
+            ORDER BY last_snapshot_at DESC, repository_id
+            """,
+            (collection_id,),
+        ).fetchall()
+        return [
+            KnownSnapshotRepository(
+                collection_id=str(row["collection_id"]),
+                repository_id=str(row["repository_id"]),
+                path=Path(str(row["path"])),
+                last_snapshot_id=str(row["last_snapshot_id"]),
+                last_snapshot_status=str(row["last_snapshot_status"]),
+                last_snapshot_at=str(row["last_snapshot_at"]),
+            )
+            for row in rows
+        ]
+    finally:
+        conn.close()
+
+
+def known_snapshot_repositories_for_target(
+    program_root: Path,
+    target: Path,
+) -> list[KnownSnapshotRepository]:
+    collection_id = target_collection_id(target)
+    if collection_id is None:
+        collection_id = registered_target_collection_id(program_root, target)
+    if collection_id is None:
+        return []
+    return known_snapshot_repositories(program_root, collection_id)
+
+
+def latest_snapshot_repository_for_target(
+    program_root: Path,
+    target: Path,
+) -> KnownSnapshotRepository | None:
+    repositories = known_snapshot_repositories_for_target(program_root, target)
+    return repositories[0] if repositories else None
+
+
 def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -149,7 +303,44 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         WHERE collection_id IS NOT NULL
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS snapshot_repositories (
+            repository_id TEXT PRIMARY KEY,
+            collection_id TEXT NOT NULL,
+            path TEXT NOT NULL,
+            last_snapshot_id TEXT NOT NULL,
+            last_snapshot_status TEXT NOT NULL,
+            last_snapshot_at TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_snapshot_repositories_collection_last
+        ON snapshot_repositories(collection_id, last_snapshot_at DESC, repository_id)
+        """
+    )
     backfill_collection_ids(conn)
+
+
+def registered_target_collection_id(program_root: Path, target: Path) -> str | None:
+    db_path = program_db_path(program_root)
+    if not db_path.exists():
+        return None
+    conn = sqlite3.connect(db_path)
+    try:
+        ensure_schema(conn)
+        conn.commit()
+        row = conn.execute(
+            "SELECT collection_id FROM targets WHERE path_key = ?",
+            (path_key(target),),
+        ).fetchone()
+        if row is None or row[0] is None:
+            return None
+        return str(row[0])
+    finally:
+        conn.close()
 
 
 def backfill_collection_ids(conn: sqlite3.Connection) -> None:
