@@ -1453,6 +1453,7 @@ class ServerBrowserCliTests(unittest.TestCase):
                 conn.execute("UPDATE files SET comment = 'Blåbær på fjellet' WHERE id = 1")
                 conn.execute("UPDATE files SET comment = 'Sommer ved sjøen' WHERE id = 2")
                 conn.execute("UPDATE files SET gps_lat = 59.9, gps_lon = 10.7 WHERE id = 3")
+                conn.execute("DELETE FROM file_sources WHERE file_id = 4")
                 conn.commit()
             finally:
                 conn.close()
@@ -1466,6 +1467,8 @@ class ServerBrowserCliTests(unittest.TestCase):
             self.assertEqual(matching_ids("has:comment"), [1, 2])
             self.assertEqual(matching_ids("missing:comment"), [3, 4])
             self.assertEqual(matching_ids("missing:comment missing:gps"), [4])
+            self.assertEqual(matching_ids("missing:source"), [4])
+            self.assertEqual(matching_ids("missing:source missing:comment"), [4])
             self.assertEqual(
                 matching_ids("comment:sommer filename:20240102"),
                 [2],
@@ -2194,6 +2197,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             ("filename:IMG", {"filename": "IMG"}),
             ("missing:metadata", {"missing": ("metadata",)}),
             ("missing:comment", {"missing": ("comment",)}),
+            ("missing:source", {"missing": ("source",)}),
             ("orientation:portrait", {"orientation": "portrait"}),
             ("path:2024/01", {"path": "2024/01"}),
             ("person:Viljar", {"persons": ("Viljar",)}),
@@ -2270,7 +2274,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             ("extension:..jpg", "extension må være en filendelse"),
             (
                 "missing:camera",
-                "missing må være gps, date, metadata eller comment.",
+                "missing må være gps, date, metadata, comment eller source.",
             ),
             ("orientation:square", "orientation må være portrait eller landscape."),
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),

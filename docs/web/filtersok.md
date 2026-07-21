@@ -609,6 +609,18 @@ Viser filer som ikke har noen kommentar.
 missing:comment
 ```
 
+### `missing:source`
+
+Viser filer som ikke er knyttet til noen importkilde.
+
+```text
+missing:source
+```
+
+Dette filteret finnes bare for å finne bilder som mangler kildekobling på grunn
+av en tidligere feil i `unimport`. Det er ikke en normal tilstand for et bilde
+i Bildebank.
+
 `missing` kan brukes flere ganger. Kriteriene kombineres med OG, slik at dette
 viser filer som mangler både kommentar og GPS-plassering:
 
@@ -747,4 +759,4 @@ is:deleted source:"Mobil 2024"
 | `tag`         | `tag:"Ute av fokus"`              | taggnavn                                     |
 | `person`      | `person:Viljar`                   | personnavn i ansiktsdatabasen                |
 | `is`          | `is:deleted`, `is:rotated`        | slettet eller rotert i Bildebank             |
-| `missing`     | `missing:gps`                     | `gps`, `date`, `metadata`, `comment`; kan gjentas |
+| `missing`     | `missing:gps`                     | `gps`, `date`, `metadata`, `comment`, `source`; kan gjentas |

@@ -356,8 +356,8 @@ def parse_extension_filter(state: FilterParseState, key: str, value: str) -> Non
 
 
 def parse_missing_filter(state: FilterParseState, key: str, value: str) -> None:
-    if value not in {"gps", "date", "metadata", "comment"}:
-        raise ValueError("missing må være gps, date, metadata eller comment.")
+    if value not in {"gps", "date", "metadata", "comment", "source"}:
+        raise ValueError("missing må være gps, date, metadata, comment eller source.")
     state.missing.append(value)
 
 
@@ -848,6 +848,10 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
             where.append("date_source != 'metadata'")
         elif missing == "comment":
             where.append("comment IS NULL")
+        elif missing == "source":
+            where.append(
+                "NOT EXISTS (SELECT 1 FROM file_sources WHERE file_sources.file_id = files.id)"
+            )
     if text_filter.orientation == "portrait":
         where.append("media_width IS NOT NULL AND media_height IS NOT NULL AND media_height > media_width")
     elif text_filter.orientation == "landscape":
