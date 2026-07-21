@@ -93,8 +93,11 @@ class ServerResponseMixin:
         self.wfile.write(content)
 
     def redirect(self, location: str) -> None:
+        safe_location = location.replace("\r", "").replace("\n", "")
+        if safe_location != location:
+            raise ValueError("Redirectadressen kan ikke inneholde linjeskift.")
         self.send_response(HTTPStatus.FOUND)
-        self.send_header("Location", location)
+        self.send_header("Location", safe_location)
         self.send_header("Content-Length", "0")
         self.respond_timing_headers()
         self.end_headers()

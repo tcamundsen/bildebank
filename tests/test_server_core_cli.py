@@ -35,7 +35,7 @@ from bildebank.server_pages import (
     search_html,
     sources_page_html,
 )
-from bildebank.server_response import add_csrf_to_html, read_only_html
+from bildebank.server_response import ServerResponseMixin, add_csrf_to_html, read_only_html
 from bildebank.server_search import DEFAULT_SEARCH_LIMIT, ServerSearchStats
 from tests.cli_helpers import write_test_image
 from tests.db_test_helpers import register_target_file
@@ -83,6 +83,56 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertNotIn('href="/settings">Innstillinger</a>', result)
         self.assertIn("Se innstillinger for mer informasjon.", result)
         self.assertIn('href="/settings/removed">Slettede bilder</a>', result)
+
+    def test_redirect_sends_safe_location(self) -> None:
+        class Handler(ServerResponseMixin):
+            def __init__(self) -> None:
+                self.events: list[tuple[str, object]] = []
+
+            def send_response(self, status: int, message: str | None = None) -> None:
+                self.events.append(("status", status))
+
+            def send_header(self, name: str, value: str) -> None:
+                self.events.append((name, value))
+
+            def end_headers(self) -> None:
+                self.events.append(("end_headers", None))
+
+        handler = Handler()
+        handler.redirect("/item/1?from=people#face-2")
+
+        self.assertEqual(
+            handler.events,
+            [
+                ("status", HTTPStatus.FOUND),
+                ("Location", "/item/1?from=people#face-2"),
+                ("Content-Length", "0"),
+                ("end_headers", None),
+            ],
+        )
+
+    def test_redirect_rejects_response_header_line_breaks(self) -> None:
+        class Handler(ServerResponseMixin):
+            def __init__(self) -> None:
+                self.events: list[tuple[str, object]] = []
+
+            def send_response(self, status: int, message: str | None = None) -> None:
+                self.events.append(("status", status))
+
+            def send_header(self, name: str, value: str) -> None:
+                self.events.append((name, value))
+
+            def end_headers(self) -> None:
+                self.events.append(("end_headers", None))
+
+        for line_break in ("\r", "\n", "\r\n"):
+            with self.subTest(line_break=repr(line_break)):
+                handler = Handler()
+
+                with self.assertRaisesRegex(ValueError, "linjeskift"):
+                    handler.redirect(f"/item/1{line_break}X-Injected: true")
+
+                self.assertEqual(handler.events, [])
 
     def test_run_server_preview_images_is_explicit_and_defaults_to_false(self) -> None:
         default_args = build_parser().parse_args(["run-server"])
