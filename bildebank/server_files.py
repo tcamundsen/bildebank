@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import mimetypes
+import os
 import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
@@ -104,13 +105,12 @@ def server_file_path(target: Path, encoded_relative_path: str) -> Path:
     if raw_path.isdigit():
         return server_file_path_by_id(target, int(raw_path))
 
-    relative = Path(raw_path)
-    path = (target / relative).resolve()
-    try:
-        path.relative_to(target.resolve())
-    except ValueError as exc:
-        raise PermissionError("Ugyldig filsti.") from exc
-    return path
+    target_root = os.path.realpath(target)
+    target_prefix = target_root if target_root.endswith(os.sep) else target_root + os.sep
+    path = os.path.realpath(os.path.join(target_root, raw_path))
+    if path != target_root and not path.startswith(target_prefix):
+        raise PermissionError("Ugyldig filsti.")
+    return Path(path)
 
 
 def server_file_path_by_id(target: Path, file_id: int) -> Path:

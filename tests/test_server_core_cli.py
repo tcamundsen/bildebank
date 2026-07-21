@@ -27,7 +27,7 @@ from bildebank.server_runtime import (
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_item_html import item_media_html
 from bildebank.target_lock import LOCK_FILENAME
-from bildebank.server_files import server_file_path_by_id
+from bildebank.server_files import server_file_path, server_file_path_by_id
 from bildebank.server_pages import (
     app_status_page_html,
     index_html,
@@ -715,6 +715,46 @@ class ServerCoreCliTests(unittest.TestCase):
             file_id = register_target_file(target, relative_path)
 
             self.assertEqual(server_file_path_by_id(target, file_id), image_path.resolve())
+
+    def test_server_file_path_stays_inside_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            image_path = target / "2024" / "Januar bilder" / "bilde.jpg"
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"image")
+
+            self.assertEqual(
+                server_file_path(target, "2024/Januar%20bilder/bilde.jpg"),
+                image_path.resolve(),
+            )
+
+    def test_server_file_path_rejects_path_outside_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+            outside = root / "target-secret.jpg"
+            outside.write_bytes(b"secret")
+
+            with self.assertRaisesRegex(PermissionError, "Ugyldig filsti"):
+                server_file_path(target, "%2e%2e/target-secret.jpg")
+
+    def test_server_file_path_rejects_symlink_outside_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            target.mkdir()
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "secret.jpg").write_bytes(b"secret")
+            link = target / "link"
+            try:
+                link.symlink_to(outside, target_is_directory=True)
+            except OSError:
+                self.skipTest("Symlinker er ikke tilgjengelige på dette systemet.")
+
+            with self.assertRaisesRegex(PermissionError, "Ugyldig filsti"):
+                server_file_path(target, "link/secret.jpg")
 
     def test_server_file_path_by_id_rejects_missing_file_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
