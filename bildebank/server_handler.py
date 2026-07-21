@@ -406,6 +406,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path.startswith("/display/"):
                 self.respond_display(parsed.path.removeprefix("/display/"))
                 return
+            if parsed.path.startswith("/preview/"):
+                self.respond_preview(parsed.path.removeprefix("/preview/"))
+                return
             if parsed.path.startswith("/file/"):
                 self.respond_file(parsed.path.removeprefix("/file/"))
                 return
@@ -648,12 +651,31 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         except ValueError as exc:
             self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
             return
+        self.respond_preview_image(
+            file_id,
+            apply_view_rotation=True,
+            resize=self.server.preview_images,
+        )
+
+    def respond_preview(self, raw_file_id: str) -> None:
+        try:
+            file_id = parse_file_id(raw_file_id)
+        except ValueError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.BAD_REQUEST)
+            return
         if not self.server.preview_images:
             self.respond_file(str(file_id))
             return
         self.respond_preview_image(file_id)
 
-    def respond_preview_image(self, file_id: int, *, require_active: bool = False) -> bool:
+    def respond_preview_image(
+        self,
+        file_id: int,
+        *,
+        require_active: bool = False,
+        apply_view_rotation: bool = False,
+        resize: bool = True,
+    ) -> bool:
         item = (
             active_item_by_id_including_hidden(self.server.target, file_id)
             if require_active
@@ -688,7 +710,14 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             with Image.open(absolute_path) as image:
                 preview = ImageOps.exif_transpose(image)
-                preview.thumbnail((PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE))
+                if apply_view_rotation:
+                    rotation = db.normalize_view_rotation(
+                        item["view_rotation_degrees"]
+                    )
+                    if rotation:
+                        preview = preview.rotate(-rotation, expand=True)
+                if resize:
+                    preview.thumbnail((PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE))
                 if preview.mode != "RGB":
                     preview = preview.convert("RGB")
                 output = BytesIO()

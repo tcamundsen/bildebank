@@ -118,7 +118,7 @@ class ServerCoreCliTests(unittest.TestCase):
         ):
             body = item_media_html(Path("target"), item, read_only=True)
 
-        self.assertIn('src="/display/1"', body)
+        self.assertIn('src="/preview/1"', body)
 
     def test_run_server_lan_share_is_explicit_and_rejects_host(self) -> None:
         args = build_parser().parse_args(["run-server", "--lan-share", "--port", "8766"])
@@ -302,7 +302,58 @@ class ServerCoreCliTests(unittest.TestCase):
         BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
         self.assertEqual(handler.text_response[1], HTTPStatus.FORBIDDEN)
 
-    def test_run_server_display_returns_original_when_preview_images_is_false(self) -> None:
+    def test_run_server_display_returns_full_size_rotated_jpeg_when_preview_images_is_false(self) -> None:
+        from PIL import Image
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            image_path = target / "2024" / "01" / "image.png"
+            write_test_image(image_path, size=(3000, 1000))
+            file_id = register_target_file(target, Path("2024/01/image.png"))
+            with db.connect(target) as conn:
+                conn.execute(
+                    "UPDATE files SET view_rotation_degrees = 90 WHERE id = ?",
+                    (file_id,),
+                )
+
+            class FakeHandler:
+                server = SimpleNamespace(target=target, preview_images=False)
+                content = b""
+                content_type = ""
+                status = HTTPStatus.OK
+
+                def respond_bytes(
+                    self,
+                    content: bytes,
+                    content_type: str,
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.content = content
+                    self.content_type = content_type
+                    self.status = status
+
+                def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                    raise AssertionError(f"{status}: {content}")
+
+                def respond_preview_image(self, requested_file_id: int, **kwargs: object) -> None:
+                    BildebankRequestHandler.respond_preview_image(  # type: ignore[arg-type]
+                        self, requested_file_id, **kwargs
+                    )
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_display(handler, str(file_id))  # type: ignore[arg-type]
+            with Image.open(BytesIO(handler.content)) as display:
+                display_format = display.format
+                display_size = display.size
+
+        self.assertEqual(handler.content_type, "image/jpeg")
+        self.assertEqual(handler.status, HTTPStatus.OK)
+        self.assertEqual(display_format, "JPEG")
+        self.assertEqual(display_size, (1000, 3000))
+
+    def test_run_server_preview_returns_original_when_preview_images_is_false(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
@@ -335,7 +386,7 @@ class ServerCoreCliTests(unittest.TestCase):
                     BildebankRequestHandler.respond_file(self, encoded_relative_path)  # type: ignore[arg-type]
 
             handler = FakeHandler()
-            BildebankRequestHandler.respond_display(handler, str(file_id))  # type: ignore[arg-type]
+            BildebankRequestHandler.respond_preview(handler, str(file_id))  # type: ignore[arg-type]
 
         self.assertEqual(handler.content, original)
         self.assertEqual(handler.content_type, "image/png")
@@ -371,8 +422,10 @@ class ServerCoreCliTests(unittest.TestCase):
                 def respond_text(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
                     raise AssertionError(f"{status}: {content}")
 
-                def respond_preview_image(self, requested_file_id: int) -> None:
-                    BildebankRequestHandler.respond_preview_image(self, requested_file_id)  # type: ignore[arg-type]
+                def respond_preview_image(self, requested_file_id: int, **kwargs: object) -> None:
+                    BildebankRequestHandler.respond_preview_image(  # type: ignore[arg-type]
+                        self, requested_file_id, **kwargs
+                    )
 
             handler = FakeHandler()
             BildebankRequestHandler.respond_display(handler, str(file_id))  # type: ignore[arg-type]
@@ -406,8 +459,10 @@ class ServerCoreCliTests(unittest.TestCase):
                     self.body = content
                     self.status = status
 
-                def respond_preview_image(self, requested_file_id: int) -> None:
-                    BildebankRequestHandler.respond_preview_image(self, requested_file_id)  # type: ignore[arg-type]
+                def respond_preview_image(self, requested_file_id: int, **kwargs: object) -> None:
+                    BildebankRequestHandler.respond_preview_image(  # type: ignore[arg-type]
+                        self, requested_file_id, **kwargs
+                    )
 
             handler = FakeHandler()
             BildebankRequestHandler.respond_display(handler, str(file_id))  # type: ignore[arg-type]
@@ -548,7 +603,7 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertIn("<h1>Bildebank</h1>", handler.body)
         self.assertIn("<code>kommando</code>", handler.body)
 
-    def test_run_server_image_html_uses_display_source_and_original_link(self) -> None:
+    def test_run_server_image_html_uses_preview_source_and_display_link(self) -> None:
         body = item_media_html(
             Path("."),
             {
@@ -559,8 +614,8 @@ class ServerCoreCliTests(unittest.TestCase):
             },
         )
 
-        self.assertIn('href="/file/7"', body)
-        self.assertIn('src="/display/7"', body)
+        self.assertIn('href="/display/7"', body)
+        self.assertIn('src="/preview/7"', body)
         self.assertNotIn('src="/file/7"', body)
 
     def test_run_server_renders_index_page(self) -> None:

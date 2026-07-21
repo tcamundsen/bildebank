@@ -92,7 +92,8 @@ sortering og månedsvisning. Bildefilen flyttes ikke og endres ikke.
 
 På bildesider kan du bruke knappene **↺** og **↻** for å rotere
 visningen av bildet. Bildebank lagrer bare rotasjonen i databasen. Selve
-bildefilen i samlingen endres ikke.
+bildefilen i samlingen endres ikke. Når du klikker på bildet, åpnes en
+visningskopi med den lagrede rotasjonen.
 
 ## Personbrowser
 

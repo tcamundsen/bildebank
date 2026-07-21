@@ -1546,7 +1546,7 @@ class ServerPeopleCliTests(unittest.TestCase):
             '<div class="person-media" style="transform: rotate(90deg); --quarter-turn-width:',
             body,
         )
-        self.assertIn('<a href="/file/1" target="_blank"><img src="/file/1"', body)
+        self.assertIn('<a href="/display/1" target="_blank"><img src="/preview/1"', body)
         self.assertIn(".person-face-layer", SERVER_CSS)
         self.assertIn("function fitPersonFaceLayer", SERVER_JS)
         self.assertIn("function observePersonFaceLayers", SERVER_JS)
@@ -1607,7 +1607,7 @@ class ServerPeopleCliTests(unittest.TestCase):
         self.assertNotIn("Med ansiktsmarkering", plain_body)
         self.assertNotIn('<div class="person-face-box"', plain_body)
         self.assertNotIn('<span class="person-face-label">face-id 1</span>', plain_body)
-        self.assertIn('<img src="/display/1"', plain_body)
+        self.assertIn('<img src="/preview/1"', plain_body)
         suggested_controls_start = suggested_body.index('<nav class="controls"')
         suggested_controls_end = suggested_body.index(
             "</nav>", suggested_controls_start

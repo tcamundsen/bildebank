@@ -213,7 +213,8 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn('href="/item/2">2</a>', body)
         self.assertIn('data-open-info data-info-item="2"', body)
         self.assertIn('aria-label="Åpne bildeinfo for IMG_20240102.jpg"', body)
-        self.assertIn("/file/2", body)
+        self.assertIn('href="/display/2"', body)
+        self.assertIn('src="/preview/2"', body)
         self.assertIn(
             'href="/years/2023" title="Forrige år" data-key-nav="previous-year">◀ Å</a>',
             body,

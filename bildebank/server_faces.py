@@ -1393,6 +1393,8 @@ def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
     file_id = int(item["id"])
     target_path = Path(str(item["target_path"]))
     url = f"/file/{file_id}"
+    preview_url = f"/preview/{file_id}"
+    display_url = f"/display/{file_id}"
     name = html.escape(str(item["stored_filename"]))
     kind = media_kind(target_path)
     if kind == "video":
@@ -1402,7 +1404,7 @@ def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
     boxes = "\n".join(person_face_box_html(face) for face in faces)
     return f"""
     <div class="person-media"{rotation_style_attr(item)}>
-      <a href="{url}" target="_blank"><img src="{url}" alt="{name}"></a>
+      <a href="{display_url}" target="_blank"><img src="{preview_url}" alt="{name}"></a>
       <div class="person-face-layer">{boxes}</div>
     </div>
     """
