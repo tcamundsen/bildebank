@@ -1303,7 +1303,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             )
             conn = db.connect(target)
             try:
-                conn.execute("UPDATE files SET camera_make = 'Ægir' WHERE id = 1")
+                conn.execute(
+                    "UPDATE files SET camera_make = 'Ægir', comment = 'Blåbær' WHERE id = 1"
+                )
                 conn.commit()
             finally:
                 conn.close()
@@ -1321,6 +1323,7 @@ class ServerBrowserCliTests(unittest.TestCase):
                 "filename:årets",
                 "path:årets",
                 "camera:ÆGIR",
+                "comment:BLÅBÆR",
                 "source:ØYBLIKK",
                 "person:ÅSE",
             ):
@@ -1378,6 +1381,10 @@ class ServerBrowserCliTests(unittest.TestCase):
                     SET camera_make = CASE stored_filename
                         WHEN 'IMG_100%_20240102.png' THEN 'Kamera_100%'
                         ELSE 'KameraX1000'
+                    END,
+                        comment = CASE stored_filename
+                        WHEN 'IMG_100%_20240102.png' THEN 'Notat_100%'
+                        ELSE 'NotatX1000'
                     END
                     """
                 )
@@ -1398,15 +1405,68 @@ class ServerBrowserCliTests(unittest.TestCase):
                 "filename:IMG_100%",
                 "path:IMG_100%",
                 "camera:Kamera_100%",
+                "comment:Notat_100%",
                 "source:Kilde_100%",
                 "filename:IMG_*",
             ):
                 with self.subTest(query=query):
                     self.assertEqual(matching_filenames(query), {first_filename})
 
-            for query in ("filename:IMG?100*", "source:Kilde?100*"):
+            for query in (
+                "filename:IMG?100*",
+                "comment:Notat?100*",
+                "source:Kilde?100*",
+            ):
                 with self.subTest(query=query):
                     self.assertEqual(matching_filenames(query), both_filenames)
+
+    def test_run_server_filter_supports_comment_presence_and_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            for name in (
+                "IMG_20240101.jpg",
+                "IMG_20240102.jpg",
+                "IMG_20240103.jpg",
+            ):
+                (source / name).write_bytes(name.encode("ascii"))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            conn = db.connect(target)
+            try:
+                conn.execute("UPDATE files SET comment = 'Blåbær på fjellet' WHERE id = 1")
+                conn.execute("UPDATE files SET comment = 'Sommer ved sjøen' WHERE id = 2")
+                conn.commit()
+            finally:
+                conn.close()
+
+            def matching_ids(query: str) -> list[int]:
+                source_filter = text_filter_browser_source(query, target)
+                return [int(item["id"]) for item in source_items(target, source_filter)]
+
+            self.assertEqual(matching_ids("comment:blåbær"), [1])
+            self.assertEqual(matching_ids('comment:"ved sjøen"'), [2])
+            self.assertEqual(matching_ids("has:comment"), [1, 2])
+            self.assertEqual(matching_ids("missing:comment"), [3])
+            self.assertEqual(
+                matching_ids("comment:sommer filename:20240102"),
+                [2],
+            )
 
     def test_run_server_archive_image_page_links_file_without_image_tag(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -2117,13 +2177,16 @@ class ServerBrowserCliTests(unittest.TestCase):
             ("after:2023-12-01", {"after": dt.date(2023, 12, 1)}),
             ("before:2024-12-12", {"before": dt.date(2024, 12, 12)}),
             ("camera:Canon", {"camera": "Canon"}),
+            ("comment:Sommer", {"comment": "Sommer"}),
             ("location:gps", {"location": "gps"}),
             ("date:manual", {"date_source": "manual"}),
             ("is:deleted", {"deleted": True}),
             ("is:rotated", {"rotated": True}),
+            ("has:comment", {"has_comment": True}),
             ("extension:.JPG", {"extension": "jpg"}),
             ("filename:IMG", {"filename": "IMG"}),
             ("missing:metadata", {"missing": "metadata"}),
+            ("missing:comment", {"missing": "comment"}),
             ("orientation:portrait", {"orientation": "portrait"}),
             ("path:2024/01", {"path": "2024/01"}),
             ("person:Viljar", {"persons": ("Viljar",)}),
@@ -2166,6 +2229,9 @@ class ServerBrowserCliTests(unittest.TestCase):
             ("before:", "Filteret mangler verdi: before:"),
             ("date:gps", "date må være manual, metadata, filename eller mtime."),
             ("date:manual date:metadata", "date kan bare brukes én gang."),
+            ("comment:først comment:andre", "comment kan bare brukes én gang."),
+            ("has:camera", "has må være comment."),
+            ("has:comment has:comment", "has:comment kan bare brukes én gang."),
             ("month:12 month:11", "month kan bare brukes én gang."),
             ("month:12 month=11", "month= kan bare brukes én gang."),
             ("month=12 month>6", "month> kan ikke kombineres med month=."),
@@ -2195,7 +2261,10 @@ class ServerBrowserCliTests(unittest.TestCase):
             ("deleted:true", "Ukjent filter: deleted"),
             ("deleted:false", "Ukjent filter: deleted"),
             ("extension:..jpg", "extension må være en filendelse"),
-            ("missing:camera", "missing må være gps, date eller metadata."),
+            (
+                "missing:camera",
+                "missing må være gps, date, metadata eller comment.",
+            ),
             ("orientation:square", "orientation må være portrait eller landscape."),
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
             ("size>2MB size>3MB", "size> kan bare brukes én gang."),

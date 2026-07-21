@@ -54,7 +54,8 @@ size<2MB
 
 ## Jokertegn i tekstsøk
 
-Tekstsøkene `filename`, `path`, `camera` og `source` støtter to jokertegn:
+Tekstsøkene `filename`, `path`, `camera`, `comment` og `source` støtter to
+jokertegn:
 
 | Jokertegn | Betydning                       |
 | --------- | ------------------------------- |
@@ -473,6 +474,30 @@ camera:"Canon EOS"
 
 Søket er et delstrengsøk mot kameramerke og kameramodell samlet.
 
+### `comment`
+
+Søk i kommentarer som er lagt til i Bildebank.
+
+```text
+comment:blåbær
+comment:"sommer på Kreta"
+```
+
+Søket er et delstrengsøk. `comment:blåbær` finner derfor kommentarer som
+inneholder `blåbær`. Bruk anførselstegn når søket inneholder mellomrom.
+
+`comment` støtter de samme jokertegnene som de andre tekstsøkene:
+
+```text
+comment:"sommer * Kreta"
+```
+
+Bruk `has:comment` for å vise alle filer som har en kommentar:
+
+```text
+has:comment
+```
+
 ## Organisering
 
 ### `source`
@@ -574,6 +599,14 @@ Viser filer der datoen ikke kommer fra metadata.
 
 ```text
 missing:metadata
+```
+
+### `missing:comment`
+
+Viser filer som ikke har noen kommentar.
+
+```text
+missing:comment
 ```
 
 ## Motion-videoer
@@ -701,8 +734,10 @@ is:deleted source:"Mobil 2024"
 | `height`      | `height>=2000`                    | høyde i piksler                              |
 | `orientation` | `orientation:portrait`            | `portrait`, `landscape`                      |
 | `camera`      | `camera:iPhone`                   | søk i kameramerke og modell                  |
+| `comment`     | `comment:blåbær`                  | søk i kommentarer                            |
+| `has`         | `has:comment`                     | filer som har kommentar                       |
 | `source`      | `source:1`, `source:"Mobil 2024"` | kilde-ID eller kildenavn                     |
 | `tag`         | `tag:"Ute av fokus"`              | taggnavn                                     |
 | `person`      | `person:Viljar`                   | personnavn i ansiktsdatabasen                |
 | `is`          | `is:deleted`, `is:rotated`        | slettet eller rotert i Bildebank             |
-| `missing`     | `missing:gps`                     | `gps`, `date`, `metadata`                    |
+| `missing`     | `missing:gps`                     | `gps`, `date`, `metadata`, `comment`         |

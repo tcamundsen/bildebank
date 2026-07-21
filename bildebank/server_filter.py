@@ -23,7 +23,9 @@ class BrowserTextFilter:
     after: dt.date | None = None
     before: dt.date | None = None
     camera: str | None = None
+    comment: str | None = None
     date_source: str | None = None
+    has_comment: bool = False
     deleted: bool = False
     rotated: bool = False
     extension: str | None = None
@@ -104,7 +106,9 @@ class FilterParseState:
     after: dt.date | None = None
     before: dt.date | None = None
     camera: str | None = None
+    comment: str | None = None
     date_source: str | None = None
+    has_comment: bool = False
     deleted: bool = False
     rotated: bool = False
     extension: str | None = None
@@ -148,7 +152,9 @@ class FilterParseState:
             after=self.after,
             before=self.before,
             camera=self.camera,
+            comment=self.comment,
             date_source=self.date_source,
+            has_comment=self.has_comment,
             deleted=self.deleted,
             rotated=self.rotated,
             extension=self.extension,
@@ -337,13 +343,21 @@ def parse_is_filter(state: FilterParseState, _key: str, value: str) -> None:
     raise ValueError(f"Ukjent is-filter: {value}. Gyldige verdier er deleted og rotated.")
 
 
+def parse_has_filter(state: FilterParseState, _key: str, value: str) -> None:
+    if value != "comment":
+        raise ValueError("has må være comment.")
+    if state.has_comment:
+        raise ValueError("has:comment kan bare brukes én gang.")
+    state.has_comment = True
+
+
 def parse_extension_filter(state: FilterParseState, key: str, value: str) -> None:
     state.set_once(key, parse_extension(value))
 
 
 def parse_missing_filter(state: FilterParseState, key: str, value: str) -> None:
-    if value not in {"gps", "date", "metadata"}:
-        raise ValueError("missing må være gps, date eller metadata.")
+    if value not in {"gps", "date", "metadata", "comment"}:
+        raise ValueError("missing må være gps, date, metadata eller comment.")
     state.set_once(key, value)
 
 
@@ -564,6 +578,7 @@ KEY_VALUE_FILTERS: dict[str, Callable[[FilterParseState, str, str], None]] = {
     "after": parse_date_filter,
     "before": parse_date_filter,
     "camera": parse_simple_text_filter,
+    "comment": parse_simple_text_filter,
     "location": parse_location_filter,
     "h3res": parse_h3res_key_value_filter,
     "date": parse_date_source_filter,
@@ -571,6 +586,7 @@ KEY_VALUE_FILTERS: dict[str, Callable[[FilterParseState, str, str], None]] = {
     "month": parse_month_filter,
     "day": parse_day_filter,
     "is": parse_is_filter,
+    "has": parse_has_filter,
     "extension": parse_extension_filter,
     "filename": parse_simple_text_filter,
     "missing": parse_missing_filter,
@@ -624,7 +640,9 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         after=text_filter.after,
         before=text_filter.before,
         camera=text_filter.camera,
+        comment=text_filter.comment,
         date_source=text_filter.date_source,
+        has_comment=text_filter.has_comment,
         deleted=text_filter.deleted,
         rotated=text_filter.rotated,
         extension=text_filter.extension,
@@ -800,6 +818,11 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
             "LIKE ? ESCAPE '!'"
         )
         params.append(like_contains_param(text_filter.camera))
+    if text_filter.comment is not None:
+        where.append("bildebank_casefold(coalesce(comment, '')) LIKE ? ESCAPE '!'")
+        params.append(like_contains_param(text_filter.comment))
+    if text_filter.has_comment:
+        where.append("comment IS NOT NULL")
     if text_filter.extension is not None:
         where.append("lower(stored_filename) LIKE ?")
         params.append(f"%.{text_filter.extension}")
@@ -822,6 +845,8 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         where.append(f"NOT {browser_has_date_sql}")
     elif text_filter.missing == "metadata":
         where.append("date_source != 'metadata'")
+    elif text_filter.missing == "comment":
+        where.append("comment IS NULL")
     if text_filter.orientation == "portrait":
         where.append("media_width IS NOT NULL AND media_height IS NOT NULL AND media_height > media_width")
     elif text_filter.orientation == "landscape":
