@@ -359,7 +359,7 @@ def update_face_model_config(config: AppConfig, repo_root: Path, model_name: str
 def removed_file_row_html(target: Path, row: Any) -> str:
     deleted_path = Path(str(row["target_path"]))
     original_path = row["deleted_original_target_path"] or row["target_path"]
-    link = "/file/" + urllib.parse.quote(deleted_path.as_posix())
+    link = f"/file/{int(row['id'])}"
     exists = "finnes" if db.absolute_target_path(target, deleted_path).is_file() else "mangler"
     taken_date = str(row["taken_date"] or "ukjent dato")
     size = format_bytes(int(row["size_bytes"])) if row["size_bytes"] is not None else "ukjent størrelse"

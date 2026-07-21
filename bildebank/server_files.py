@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import mimetypes
-import os
-import urllib.parse
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
+from .thumbnails import thumbnail_absolute_path, thumbnail_is_current
 from .video_previews import video_preview_absolute_path
 
 
@@ -40,6 +39,22 @@ def read_server_file(target: Path, encoded_relative_path: str) -> ServerFile:
 
 def resolve_server_file(target: Path, encoded_relative_path: str) -> ServerFilePath:
     path = server_file_path(target, encoded_relative_path)
+    return describe_server_file(path)
+
+
+def resolve_server_thumbnail_file(target: Path, raw_file_id: str) -> ServerFilePath:
+    original_path = server_file_path(target, raw_file_id)
+    relative_path = original_path.relative_to(target.resolve())
+    thumbnail_path = thumbnail_absolute_path(target, relative_path).resolve()
+    try:
+        thumbnail_path.relative_to(target.resolve())
+    except ValueError as exc:
+        raise PermissionError("Ugyldig sti til thumbnail.") from exc
+    path = (
+        thumbnail_path
+        if thumbnail_is_current(original_path, thumbnail_path)
+        else original_path
+    )
     return describe_server_file(path)
 
 
@@ -101,16 +116,10 @@ def parse_byte_range(value: str | None, size: int) -> ByteRange | None:
 
 
 def server_file_path(target: Path, encoded_relative_path: str) -> Path:
-    raw_path = urllib.parse.unquote(encoded_relative_path).strip("/")
-    if raw_path.isdigit():
-        return server_file_path_by_id(target, int(raw_path))
-
-    target_root = os.path.realpath(target)
-    target_prefix = target_root if target_root.endswith(os.sep) else target_root + os.sep
-    path = os.path.realpath(os.path.join(target_root, raw_path))
-    if path != target_root and not path.startswith(target_prefix):
-        raise PermissionError("Ugyldig filsti.")
-    return Path(path)
+    raw_file_id = encoded_relative_path.strip("/")
+    if not raw_file_id.isascii() or not raw_file_id.isdecimal():
+        raise FileNotFoundError("Filen finnes ikke.")
+    return server_file_path_by_id(target, int(raw_file_id))
 
 
 def server_file_path_by_id(target: Path, file_id: int) -> Path:

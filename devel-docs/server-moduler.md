@@ -21,7 +21,9 @@ server
   eksplisitt GET/POST-ruting samt generelle ressurser som filer, preview og
   dokumentasjon. Originalfiler og MP4-avspillingskopier strømmes her med
   støtte for én HTTP `Range` og `206 Partial Content`; stioppslag og
-  range-parsing eies av `server_files.py`.
+  range-parsing eies av `server_files.py`. Originalfiler og thumbnails slås
+  bare opp via numerisk `file_id`; vilkårlige relative stier i samlingsmappen
+  er ikke en del av serverens fil-API.
 - `server_slideshow.py` bygger det faste slideshowutvalget og eier den minimale
   slideshow-siden. Når modusen er aktiv, bruker handleren en egen allowlist og
   slipper ikke forespørsler videre til de vanlige browserrutene.

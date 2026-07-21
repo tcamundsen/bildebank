@@ -2214,7 +2214,7 @@ class ServerItemActionsCliTests(unittest.TestCase):
 
         self.assertIn('href="/settings/removed"', app_body)
         self.assertIn("Slettede bilder", removed_body)
-        self.assertIn('href="/file/deleted/2024/01/IMG_20240102.png"', removed_body)
+        self.assertIn('href="/file/1"', removed_body)
         self.assertIn("2024/01/IMG_20240102.png", removed_body)
         self.assertIn('data-undelete-item="1"', removed_body)
         self.assertIn("/api/item-undelete", SERVER_JS)

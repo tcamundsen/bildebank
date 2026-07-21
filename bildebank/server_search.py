@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 
 from .config import OpenClipConfig
-from .html_paths import path_to_url, relative_to_target
+from .html_paths import relative_to_target
 from .openclip import (
     ImageSearchResult,
     active_embedding_table,
@@ -343,7 +343,7 @@ def search_result_items_by_id(target: Path, results: tuple[ImageSearchResult, ..
 
 def result_html(target: Path, result: ImageSearchResult, item: Any | None = None) -> str:
     relative = relative_to_target(target, result.target_path)
-    url = "/file/" + path_to_url(relative)
+    url = f"/file/{result.file_id}"
     item_url = source_item_url(all_browser_source(), result.file_id)
     path_text = str(relative).replace("\\", "/")
     link_class = ""

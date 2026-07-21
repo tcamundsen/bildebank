@@ -777,7 +777,7 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn('<div class="score">3 måneder, 4 bilder</div>', years_body)
         self.assertNotIn('href="/years/2006"', years_body)
         self.assertIn('href="/years/2007"', years_body)
-        self.assertIn('src="/file/2005/03/IMG_20050302.jpg"', years_body)
+        self.assertIn('src="/thumbnail/', years_body)
         self.assertNotIn("Video<br>IMG_20050301.mp4", years_body)
         self.assertEqual(month_keys.call_count, 0)
         self.assertIn('href="/month/2005-03"', year_body)
@@ -810,7 +810,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             '<section class="month-grid-server year-month-grid-server">', year_body
         )
         self.assertNotIn("years-grid-server", year_body)
-        self.assertIn('src="/file/2005/03/IMG_20050302.jpg"', year_body)
+        self.assertIn('src="/thumbnail/', year_body)
         self.assertIn(">2005-04</div>", year_body)
         self.assertIn(">1 bilde</div>", year_body)
         self.assertNotIn('href="/years/2007"', filtered_years_body)

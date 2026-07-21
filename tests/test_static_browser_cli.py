@@ -20,6 +20,7 @@ from bildebank.server_assets import SERVER_CSS
 from bildebank.server_browser_queries import browser_month_items, source_item_ids
 from bildebank.server_browser_sources import all_browser_source
 from bildebank.server_pages import month_page_html
+from bildebank.server_files import resolve_server_thumbnail_file
 from bildebank.target_lock import LOCK_FILENAME
 from bildebank.thumbnails import (
     existing_thumbnail_url,
@@ -572,15 +573,17 @@ class StaticBrowserCliTests(unittest.TestCase):
             init_database(target)
             original = target / "2024" / "01" / "image.jpg"
             write_test_image(original)
-            register_target_file(target, Path("2024/01/image.jpg"))
+            file_id = register_target_file(target, Path("2024/01/image.jpg"))
             thumb_path = thumbnail_absolute_path(target, Path("2024/01/image.jpg"))
             write_test_image(thumb_path)
             os.utime(thumb_path, ns=(original.stat().st_mtime_ns + 1_000_000, original.stat().st_mtime_ns + 1_000_000))
 
             items = browser_month_items(target, "2024-01")
             html = month_page_html(target, "2024-01", items)
+            served_thumbnail = resolve_server_thumbnail_file(target, str(file_id))
 
-            self.assertIn('src="/file/thumbs/2024/01/image.jpg"', html)
+            self.assertIn(f'src="/thumbnail/{file_id}"', html)
+            self.assertEqual(served_thumbnail.path, thumb_path.resolve())
 
     def test_docs_reference_includes_make_thumbnails(self) -> None:
         reference = Path("docs/reference.md").read_text(encoding="utf-8")

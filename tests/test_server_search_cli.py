@@ -420,7 +420,7 @@ class ServerSearchCliTests(unittest.TestCase):
         self.assertEqual([result.file_id for result in stats.results], [active_id])
         self.assertEqual(stats.results[0].target_path, Path("2024/01/active.png"))
 
-    def test_run_server_image_search_links_item_but_uses_target_path_for_image_url(self) -> None:
+    def test_run_server_image_search_uses_file_id_for_image_url(self) -> None:
         target = Path("/tmp/target")
         server = SimpleNamespace(
             target=target,
@@ -438,10 +438,8 @@ class ServerSearchCliTests(unittest.TestCase):
 
         body = search_html(server, ServerSearchStats("red wine", (result,)), DEFAULT_SEARCH_LIMIT)
 
-        self.assertIn('src="/file/2025/07/PXL%2020250709_193516074.jpg"', body)
+        self.assertIn('src="/file/999"', body)
         self.assertIn('href="/item/999"', body)
-        self.assertNotIn('href="/file/2025/07/PXL%2020250709_193516074.jpg"', body)
-        self.assertNotIn('src="/file/999"', body)
 
     def test_run_server_image_search_rotates_rotated_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

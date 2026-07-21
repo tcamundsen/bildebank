@@ -5,7 +5,6 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Callable
 
-from . import db
 from .config import FaceRecognitionConfig
 from .formatting import format_bytes
 from .html_paths import display_relative_path
@@ -39,9 +38,6 @@ from .server_browser_sources import (
     source_month_url,
     source_year_url,
 )
-from .thumbnails import existing_thumbnail_url
-
-
 ShellPageRenderer = Callable[..., str]
 PageRenderer = Callable[[str, str], str]
 Breadcrumb = tuple[str, str | None] | tuple[str, str | None, str | None]
@@ -693,6 +689,5 @@ def thumbnail_media_html(target: Path, item: Any) -> str:
         return f'<div class="video-thumb">Video<br>{name}</div>'
     if kind != "image":
         return f'<div class="video-thumb">Fil<br>{name}</div>'
-    relative_path = db.relative_path(target_path)
-    thumbnail_src = "/file/" + existing_thumbnail_url(target, relative_path)
+    thumbnail_src = f"/thumbnail/{int(item['id'])}"
     return f'<img src="{html.escape(thumbnail_src)}" alt="{name}" loading="lazy"{rotation_style_attr(item)}>'

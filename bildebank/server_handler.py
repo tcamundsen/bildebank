@@ -412,6 +412,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path.startswith("/video-preview/"):
                 self.respond_video_preview(parsed.path.removeprefix("/video-preview/"))
                 return
+            if parsed.path.startswith("/thumbnail/"):
+                self.respond_thumbnail(parsed.path.removeprefix("/thumbnail/"))
+                return
             if parsed.path.startswith("/file/"):
                 self.respond_file(parsed.path.removeprefix("/file/"))
                 return
@@ -758,6 +761,22 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_video_preview(self, raw_file_id: str) -> None:
         try:
             served_file = server_files.resolve_video_preview_file(self.server.target, raw_file_id)
+        except PermissionError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            return
+        except FileNotFoundError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            return
+        except OSError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        self.respond_server_file(served_file)
+
+    def respond_thumbnail(self, raw_file_id: str) -> None:
+        try:
+            served_file = server_files.resolve_server_thumbnail_file(
+                self.server.target, raw_file_id
+            )
         except PermissionError as exc:
             self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
             return
