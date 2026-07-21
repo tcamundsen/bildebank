@@ -609,6 +609,13 @@ Viser filer som ikke har noen kommentar.
 missing:comment
 ```
 
+`missing` kan brukes flere ganger. Kriteriene kombineres med OG, slik at dette
+viser filer som mangler både kommentar og GPS-plassering:
+
+```text
+missing:comment missing:gps
+```
+
 ## Motion-videoer
 
 Bildebank skjuler normalt motion-videoer når de hører sammen med et stillbilde.
@@ -740,4 +747,4 @@ is:deleted source:"Mobil 2024"
 | `tag`         | `tag:"Ute av fokus"`              | taggnavn                                     |
 | `person`      | `person:Viljar`                   | personnavn i ansiktsdatabasen                |
 | `is`          | `is:deleted`, `is:rotated`        | slettet eller rotert i Bildebank             |
-| `missing`     | `missing:gps`                     | `gps`, `date`, `metadata`, `comment`         |
+| `missing`     | `missing:gps`                     | `gps`, `date`, `metadata`, `comment`; kan gjentas |

@@ -35,7 +35,7 @@ class BrowserTextFilter:
     h3res_operator: str | None = None
     h3res_value: int | None = None
     media_type: str | None = None
-    missing: str | None = None
+    missing: tuple[str, ...] = ()
     orientation: str | None = None
     path: str | None = None
     persons: tuple[str, ...] = ()
@@ -117,7 +117,7 @@ class FilterParseState:
     h3res_operator: str | None = None
     h3res_value: int | None = None
     media_type: str | None = None
-    missing: str | None = None
+    missing: list[str] = field(default_factory=list)
     orientation: str | None = None
     path: str | None = None
     persons: list[str] = field(default_factory=list)
@@ -163,7 +163,7 @@ class FilterParseState:
             h3res_operator=self.h3res_operator,
             h3res_value=self.h3res_value,
             media_type=self.media_type,
-            missing=self.missing,
+            missing=tuple(self.missing),
             orientation=self.orientation,
             path=self.path,
             persons=tuple(self.persons),
@@ -358,7 +358,7 @@ def parse_extension_filter(state: FilterParseState, key: str, value: str) -> Non
 def parse_missing_filter(state: FilterParseState, key: str, value: str) -> None:
     if value not in {"gps", "date", "metadata", "comment"}:
         raise ValueError("missing må være gps, date, metadata eller comment.")
-    state.set_once(key, value)
+    state.missing.append(value)
 
 
 def parse_orientation_filter(state: FilterParseState, key: str, value: str) -> None:
@@ -837,16 +837,17 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         params.extend(extension_params_for_type("image"))
         where.append(f"NOT {extension_condition_for_type('video')}")
         params.extend(extension_params_for_type("video"))
-    if text_filter.missing == "gps":
-        where.append("gps_lat IS NULL")
-        where.append("gps_lon IS NULL")
-        where.append("(gps_source IS NULL OR gps_source != 'manual-h3')")
-    elif text_filter.missing == "date":
-        where.append(f"NOT {browser_has_date_sql}")
-    elif text_filter.missing == "metadata":
-        where.append("date_source != 'metadata'")
-    elif text_filter.missing == "comment":
-        where.append("comment IS NULL")
+    for missing in text_filter.missing:
+        if missing == "gps":
+            where.append("gps_lat IS NULL")
+            where.append("gps_lon IS NULL")
+            where.append("(gps_source IS NULL OR gps_source != 'manual-h3')")
+        elif missing == "date":
+            where.append(f"NOT {browser_has_date_sql}")
+        elif missing == "metadata":
+            where.append("date_source != 'metadata'")
+        elif missing == "comment":
+            where.append("comment IS NULL")
     if text_filter.orientation == "portrait":
         where.append("media_width IS NOT NULL AND media_height IS NOT NULL AND media_height > media_width")
     elif text_filter.orientation == "landscape":

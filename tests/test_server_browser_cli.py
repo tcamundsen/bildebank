@@ -1429,6 +1429,7 @@ class ServerBrowserCliTests(unittest.TestCase):
                 "IMG_20240101.jpg",
                 "IMG_20240102.jpg",
                 "IMG_20240103.jpg",
+                "IMG_20240104.jpg",
             ):
                 (source / name).write_bytes(name.encode("ascii"))
 
@@ -1451,6 +1452,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             try:
                 conn.execute("UPDATE files SET comment = 'Blåbær på fjellet' WHERE id = 1")
                 conn.execute("UPDATE files SET comment = 'Sommer ved sjøen' WHERE id = 2")
+                conn.execute("UPDATE files SET gps_lat = 59.9, gps_lon = 10.7 WHERE id = 3")
                 conn.commit()
             finally:
                 conn.close()
@@ -1462,7 +1464,8 @@ class ServerBrowserCliTests(unittest.TestCase):
             self.assertEqual(matching_ids("comment:blåbær"), [1])
             self.assertEqual(matching_ids('comment:"ved sjøen"'), [2])
             self.assertEqual(matching_ids("has:comment"), [1, 2])
-            self.assertEqual(matching_ids("missing:comment"), [3])
+            self.assertEqual(matching_ids("missing:comment"), [3, 4])
+            self.assertEqual(matching_ids("missing:comment missing:gps"), [4])
             self.assertEqual(
                 matching_ids("comment:sommer filename:20240102"),
                 [2],
@@ -2135,6 +2138,10 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertEqual(
             parse_text_filter("person:Viljar person:Jill").persons, ("Viljar", "Jill")
         )
+        self.assertEqual(
+            parse_text_filter("missing:comment missing:gps").missing,
+            ("comment", "gps"),
+        )
         year_range = parse_text_filter("year>2020 year<2025")
         year_inclusive_range = parse_text_filter("year>=2020 year<=2025")
         month_range = parse_text_filter("month>6 month<10")
@@ -2185,8 +2192,8 @@ class ServerBrowserCliTests(unittest.TestCase):
             ("has:comment", {"has_comment": True}),
             ("extension:.JPG", {"extension": "jpg"}),
             ("filename:IMG", {"filename": "IMG"}),
-            ("missing:metadata", {"missing": "metadata"}),
-            ("missing:comment", {"missing": "comment"}),
+            ("missing:metadata", {"missing": ("metadata",)}),
+            ("missing:comment", {"missing": ("comment",)}),
             ("orientation:portrait", {"orientation": "portrait"}),
             ("path:2024/01", {"path": "2024/01"}),
             ("person:Viljar", {"persons": ("Viljar",)}),
