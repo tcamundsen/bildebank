@@ -67,6 +67,14 @@ før filendelsen, for eksempel `IMG1324-2.jpg`. Samtidig må det markeres
 i databasen at dette bildet har fått lagt til "-1" på grunn av navnekollisjon.
 Kommando for å liste bilder med navnekollisjon
 
+AVI-originaler skal forbli uendrede canonical-filer i `files`. Nettleseravspilling
+kan bruke regenererbare MP4-kopier under `video-previews/v1`, adressert med
+originalens SHA-256. Kopiene lages eksplisitt, aldri under import eller en
+HTTP-forespørsel, og registreres ikke som nye canonical-filer eller
+`file_sources`. En kopi får endelig navn først etter vellykket konvertering og
+validering. Regenererbare videokopier utelates fra snapshots; AVI-originaler,
+også under `deleted/`, følger de vanlige snapshotreglene.
+
 unimport må være konservativ, verifiser filene i kilden før endring, aldri føre til
 tap, og fjerne bare proveniens når andre kilder fortsatt peker på samme fil.
 Hvis en fil som skal fjernes ved `unimport` ikke lenger matcher databaseført

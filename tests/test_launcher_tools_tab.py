@@ -96,7 +96,10 @@ def test_tools_tab_builds_all_buttons_only_when_collection_is_available(tmp_path
         pady=4,
     )
 
-    with patch("bildebank.launcher_tools_tab.list_pending_deletes", return_value=[]):
+    with (
+        patch("bildebank.launcher_tools_tab.list_pending_deletes", return_value=[]),
+        patch("bildebank.launcher_tools_tab.active_avi_candidates", return_value=[]),
+    ):
         buttons = tab.refresh(available=True)
 
     assert [button.options["text"] for button in buttons] == [
@@ -113,6 +116,7 @@ def test_tools_tab_builds_all_buttons_only_when_collection_is_available(tmp_path
         "Rydd databaser",
         "Ventende filsletting: OK",
         "Eksporter person",
+        "Videoavspilling: OK",
     ]
 
     assert tab.refresh(available=False) == []

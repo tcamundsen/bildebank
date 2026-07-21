@@ -51,10 +51,10 @@ _ROOT_GENERATED_HTML_FILENAMES = frozenset(
     }
 )
 _ROOT_RUNTIME_FILENAMES = frozenset({".bildebank.log", ".bildebank.lock"})
-_EXCLUDED_DIRECTORY_NAMES = frozenset({"thumbs"})
 EXCLUSION_GENERATED_HTML = "generated_html"
 EXCLUSION_RUNTIME = "runtime"
 EXCLUSION_THUMBNAILS = "thumbnails"
+EXCLUSION_VIDEO_PREVIEWS = "video_previews"
 _ALLOWED_REPOSITORY_ROOT_ENTRIES = frozenset(
     {
         REPOSITORY_METADATA_FILENAME,
@@ -602,6 +602,7 @@ def build_snapshot_statistics(
     raise_if_snapshot_cancelled(should_cancel)
     excluded_by_reason: dict[str, list[InventoryFile]] = {
         EXCLUSION_THUMBNAILS: [],
+        EXCLUSION_VIDEO_PREVIEWS: [],
         EXCLUSION_GENERATED_HTML: [],
         EXCLUSION_RUNTIME: [],
     }
@@ -802,8 +803,11 @@ def snapshot_plan_warnings(
 
 def snapshot_exclusion_reason(relative_path: str) -> str | None:
     parts = relative_path.split("/")
-    if parts[0].casefold() in _EXCLUDED_DIRECTORY_NAMES:
+    root_name = parts[0].casefold()
+    if root_name == "thumbs":
         return EXCLUSION_THUMBNAILS
+    if root_name == "video-previews":
+        return EXCLUSION_VIDEO_PREVIEWS
     if len(parts) != 1:
         return None
     filename = parts[0].casefold()

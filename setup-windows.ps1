@@ -297,6 +297,23 @@ function Ensure-ExifTool {
     }
 }
 
+function Ensure-FFmpeg {
+    param([string]$RepoDir)
+
+    Write-Step "Installerer FFmpeg"
+    $venvPython = Join-Path $RepoDir ".venv\Scripts\python.exe"
+    Push-Location $RepoDir
+    try {
+        Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "bildebank", "ffmpeg-install")
+    } catch {
+        Write-Host "Kunne ikke installere FFmpeg automatisk: $($_.Exception.Message)"
+        Write-Host "Bildebank er fortsatt installert. Du kan prøve igjen etter setup med:"
+        Write-Host "  $CommandName ffmpeg-install"
+    } finally {
+        Pop-Location
+    }
+}
+
 function Ensure-CommandShim {
     param(
         [string]$BinDir,
@@ -380,6 +397,7 @@ $repoDir = $InstallDir
 Ensure-Repo -RepoDir $repoDir -Branch $Branch
 Ensure-Venv -RepoDir $repoDir
 Ensure-ExifTool -RepoDir $repoDir
+Ensure-FFmpeg -RepoDir $repoDir
 
 $binDir = Join-Path $repoDir "bin"
 Ensure-CommandShim -BinDir $binDir -CommandName $CommandName

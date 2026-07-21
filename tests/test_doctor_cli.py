@@ -10,6 +10,7 @@ from bildebank import db
 from bildebank.cli import build_parser
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.media import sha256_file
+from bildebank.ffmpeg_tools import FFmpegTools
 from bildebank.openclip import OpenClipConfig, connect_openclip_db, embedding_blob, openclip_db_path
 from tests.cli_helpers import capture_cli, run_cli
 from tests.db_test_helpers import insert_test_file, register_target_file
@@ -70,6 +71,21 @@ class DoctorCliTests(unittest.TestCase):
         self.assertIn("  FEIL: ExifTool mangler eller virker ikke: mangler", stdout)
         self.assertIn("  Råd:", stdout)
         self.assertEqual(stderr, "")
+
+    def test_doctor_reports_ffmpeg_status_without_failing(self) -> None:
+        ffmpeg = self.program_root / "bildebank-tools" / "ffmpeg" / "8.1.2" / "bin" / "ffmpeg.exe"
+        tools = FFmpegTools(ffmpeg, ffmpeg.with_name("ffprobe.exe"), "ffmpeg version 8.1.2", True)
+        with patch("bildebank.cli_doctor.resolve_ffmpeg_tools", return_value=tools):
+            code, stdout, stderr = capture_cli(["doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(f"  OK: FFmpeg funnet: {ffmpeg} (ffmpeg version 8.1.2)", stdout)
+
+        with patch("bildebank.cli_doctor.resolve_ffmpeg_tools", side_effect=FileNotFoundError("mangler")):
+            code, stdout, stderr = capture_cli(["doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("  FEIL: FFmpeg mangler eller virker ikke: mangler", stdout)
 
     def test_doctor_reports_enabled_face_recognition_missing_dependencies(self) -> None:
         (self.program_root / "bildebank-config.toml").write_text(

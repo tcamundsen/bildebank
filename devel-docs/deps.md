@@ -144,6 +144,24 @@ være nødvendige for noen funksjoner.
 bildebank geo-scan --exiftool "C:\Tools\exiftool.exe"
 ```
 
+### FFmpeg og FFprobe
+
+- Brukes av `make-video-previews` til å lese AVI-strømmer og lage
+  nettleserkompatible MP4-filer med H.264 (`libx264`) og AAC.
+- Windows-installasjonen bruker den fastlåste GyanD essentials-byggingen
+  `8.1.2` fra GitHub. Arkivet verifiseres mot SHA-256
+  `db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec`.
+- Installeres versjonert under `bildebank-tools\ffmpeg\8.1.2` av både
+  `setup-windows.ps1` og `update.ps1`. Launcheren prøver også installasjon når
+  programmet mangler, slik at en eldre installasjon får avhengigheten etter en
+  vanlig oppdatering.
+- Installasjonsfeil skal ikke rulle tilbake eller blokkere en ellers vellykket
+  Bildebank-oppdatering. Launcheren prøver igjen ved neste oppstart.
+- Bildebank foretrekker den administrerte installasjonen og faller tilbake til
+  et komplett `ffmpeg`/`ffprobe`-par i `PATH`.
+- `ffmpeg-install --force` reparerer eller erstatter den administrerte
+  installasjonen atomisk etter validering.
+
 ## Nåværende statusvisning
 
 `run-server` sin `/app`-side viser per nå:

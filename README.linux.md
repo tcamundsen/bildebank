@@ -63,6 +63,10 @@ bildebank config face_recognition enable
 bildebank doctor
 ```
 
+## Konvertering av .avi-filer
+
+Bruke må installere `ffmpeg` med pakkemanager. Programmet bruker `ffmpeg` og `ffprobe`.
+
 ## Kjør Bildebank
 
 Du kan alltid kjøre programmet med Python fra `.venv`:

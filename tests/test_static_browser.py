@@ -65,6 +65,8 @@ class StaticBrowserItemTests(unittest.TestCase):
         self.assertEqual(image["thumbnailSrc"], "2024/01/a.jpg")
         self.assertEqual(video["kind"], "video")
         self.assertEqual(video["thumbnailSrc"], "")
+        self.assertEqual(video["playbackUrl"], "2024/01/a.mp4")
+        self.assertEqual(video["originalUrl"], "2024/01/a.mp4")
 
     def test_static_browser_item_supports_minimal_person_browser_items(self) -> None:
         item = {

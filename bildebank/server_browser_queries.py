@@ -36,7 +36,7 @@ from .server_browser_sources import (
 
 
 FILE_COLUMNS = (
-    "id, target_path, target_path_key, original_filename, stored_filename, taken_date, date_source, "
+    "id, target_path, target_path_key, original_filename, stored_filename, sha256, taken_date, date_source, "
     "metadata_datetime, "
     "comment, "
     "manual_date_from, manual_date_to, manual_date_note, "

@@ -22,6 +22,7 @@ from bildebank.media import sha256_file
 from bildebank.server_browser_queries import source_item_ids
 from bildebank.server_browser_sources import person_browser_source
 from bildebank.target_lock import LOCK_FILENAME
+from bildebank.video_previews import video_preview_absolute_path, video_preview_relative_path
 from tests.cli_helpers import capture_cli
 from tests.db_test_helpers import register_target_file
 
@@ -398,6 +399,47 @@ class ExportPersonTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIn(f"Statisk browser: {destination_root / 'Kari' / 'index.html'}", stdout)
             self.assertTrue((destination_root / "Kari" / "index.html").is_file())
+
+    def test_export_person_includes_avi_original_and_existing_mp4_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, config, _ids = self.make_collection(root)
+            avi_relative = Path("2024/06/familiefilm.avi")
+            avi_path = target / avi_relative
+            avi_path.parent.mkdir(parents=True, exist_ok=True)
+            avi_path.write_bytes(b"AVI original")
+            avi_id = register_target_file(target, avi_relative)
+            conn = db.connect(target)
+            try:
+                row = conn.execute("SELECT sha256 FROM files WHERE id = ?", (avi_id,)).fetchone()
+                assert row is not None
+                avi_hash = str(row["sha256"])
+            finally:
+                conn.close()
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(1, ?)", (avi_id,))
+                face_conn.commit()
+            finally:
+                face_conn.close()
+            preview = video_preview_absolute_path(target, avi_hash)
+            preview.parent.mkdir(parents=True, exist_ok=True)
+            preview.write_bytes(b"browser-compatible MP4")
+            destination_root = root / "exports"
+            destination_root.mkdir()
+
+            plan = export_person(target, "Kari", destination_root, config=config)
+
+            exported = destination_root / "Kari"
+            exported_preview = exported / video_preview_relative_path(avi_hash)
+            avi_entry = next(entry for entry in plan.entries if entry.source == avi_path)
+            exported_avi_relative = avi_entry.destination.relative_to(exported)
+            self.assertEqual(avi_entry.destination.read_bytes(), b"AVI original")
+            self.assertEqual(exported_preview.read_bytes(), b"browser-compatible MP4")
+            self.assertEqual(len(plan.entries), 5)
+            html = (exported / "index.html").read_text(encoding="utf-8")
+            self.assertIn(f'"originalUrl": "{exported_avi_relative.as_posix()}"', html)
+            self.assertIn(f'"playbackUrl": "{video_preview_relative_path(avi_hash).as_posix()}"', html)
 
     def test_export_person_rejects_invalid_inputs_and_keeps_failed_export(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

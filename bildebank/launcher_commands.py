@@ -81,6 +81,14 @@ def make_thumbnails_command(collection_path: Path) -> list[str]:
     return bildebank_command("--target", collection_path, "make-thumbnails")
 
 
+def make_video_previews_command(collection_path: Path) -> list[str]:
+    return bildebank_command("--target", collection_path, "make-video-previews")
+
+
+def ffmpeg_install_command() -> list[str]:
+    return bildebank_command("ffmpeg-install")
+
+
 def make_browser_command(collection_path: Path, *, hide_out_of_focus: bool = False) -> list[str]:
     command = bildebank_command("--target", collection_path, "make-browser")
     if hide_out_of_focus:

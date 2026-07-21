@@ -22,6 +22,7 @@ from .launcher_commands import (
     make_people_browser_command,
     make_person_browser_command,
     make_thumbnails_command,
+    make_video_previews_command,
     vacuum_command,
 )
 from .launcher_status import (
@@ -36,6 +37,7 @@ from .launcher_status import (
 )
 from .launcher_widgets import Tooltip, select_person_dialog
 from .pending_deletes import list_pending_deletes
+from .video_previews import active_avi_candidates, existing_video_preview_path
 
 FACE_SCAN_TOOLTIP = (
     "Kjører 'bildebank face-scan'. Denne kommandoen scanner bildene etter ansikter. "
@@ -153,6 +155,7 @@ class ToolsTab:
         self.image_scan_tooltip: Tooltip | None = None
         self.pending_deletes_status = "Ukjent"
         self.pending_deletes_count: int | None = None
+        self.video_preview_missing_count: int | None = None
 
     @property
     def collection_path(self) -> Path:
@@ -179,6 +182,7 @@ class ToolsTab:
             return []
 
         self._refresh_pending_deletes_status()
+        self._refresh_video_preview_status()
         geo_button = self._button(
             self.button_frame,
             text="Les GPS fra bilder",
@@ -318,6 +322,16 @@ class ToolsTab:
             pady=self.pady,
             sticky="w",
         )
+        video_preview_button = self._button(
+            self.button_frame,
+            text=self._video_preview_button_text(),
+            command=self._run_make_video_previews,
+        )
+        video_preview_button.grid(row=3, column=0, padx=self.padx, pady=self.pady, sticky="ew")
+        self._add_tooltip(
+            video_preview_button,
+            "Lag MP4-avspillingskopier av AVI-videoer. AVI-originalene endres ikke.",
+        )
         self._add_tooltip(
             static_browser_hide_checkbox,
             "Når dette er valgt, får de statiske HTML-browserkommandoene "
@@ -338,6 +352,7 @@ class ToolsTab:
             vacuum_button,
             pending_button,
             export_person_button,
+            video_preview_button,
         ]
 
     def update_dependency_tooltips(self) -> None:
@@ -374,6 +389,24 @@ class ToolsTab:
             assert self.pending_deletes_count is not None
             return f"Ventende filsletting: ! {self.pending_deletes_count}"
         return "Ventende filsletting: ukjent"
+
+    def _refresh_video_preview_status(self) -> None:
+        try:
+            candidates = active_avi_candidates(self.collection_path)
+            self.video_preview_missing_count = sum(
+                existing_video_preview_path(self.collection_path, item) is None
+                for item in candidates
+            )
+        except Exception as exc:  # noqa: BLE001 - launcher should remain usable
+            self.video_preview_missing_count = None
+            self._log(f"Kunne ikke lese status for videoavspillingskopier: {exc}")
+
+    def _video_preview_button_text(self) -> str:
+        if self.video_preview_missing_count is None:
+            return "Videoavspilling: ukjent"
+        if self.video_preview_missing_count == 0:
+            return "Videoavspilling: OK"
+        return f"Lag videoavspilling: {self.video_preview_missing_count} mangler"
 
     def _run_geo_scan(self) -> None:
         self._log("Scanner GPS-metadata ...")
@@ -541,6 +574,17 @@ class ToolsTab:
             running_message="Lager thumbnails ...",
             success_message="Thumbnails fullført.",
             failure_message="Thumbnail-jobb feilet.",
+            on_success=self._refresh_launcher,
+            cancellable=True,
+        )
+
+    def _run_make_video_previews(self) -> None:
+        self._log("Lager videoavspillingskopier ...")
+        self._run_waiting_command(
+            make_video_previews_command(self.collection_path),
+            running_message="Lager videoavspillingskopier ...",
+            success_message="Videoavspillingskopier fullført.",
+            failure_message="Videoavspillingskopier feilet.",
             on_success=self._refresh_launcher,
             cancellable=True,
         )

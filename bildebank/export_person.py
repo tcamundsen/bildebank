@@ -10,13 +10,15 @@ from . import db
 from .config import AppConfig
 from .face import face_database_dir, face_model_db_filename
 from .html_export import render_html
+from .html_paths import path_to_url
 from .importer import safe_copy
-from .media import media_kind
+from .media import media_kind, sha256_file
 from .server_browser_queries import browser_date_for_item, source_items
 from .server_browser_sources import person_browser_source
 from .server_faces import person_by_name
 from .static_browser import static_browser_item
 from .target_lock import TargetLock
+from .video_previews import existing_video_preview_path, video_preview_relative_path
 
 
 WINDOWS_INVALID_NAME_CHARS = frozenset('<>:"/\\|?*')
@@ -151,11 +153,37 @@ def build_export_plan(
                 expected_hash=hashes[file_id],
             )
         )
-        browser_items.append(export_browser_item(item, relative_destination, browser_date))
+        playback_url: str | None = None
+        if relative_destination.suffix.casefold() == ".avi":
+            preview_source = existing_video_preview_path(target, item)
+            if preview_source is not None:
+                preview_relative = video_preview_relative_path(hashes[file_id])
+                entries.append(
+                    PersonExportEntry(
+                        source=preview_source,
+                        destination=destination / preview_relative,
+                        expected_hash=sha256_file(preview_source),
+                    )
+                )
+                playback_url = path_to_url(preview_relative)
+        browser_items.append(
+            export_browser_item(
+                item,
+                relative_destination,
+                browser_date,
+                playback_url=playback_url,
+            )
+        )
     return PersonExportPlan(person_name, destination, tuple(entries), tuple(browser_items))
 
 
-def export_browser_item(item, relative_destination: Path, browser_date: str) -> dict[str, object]:
+def export_browser_item(
+    item,
+    relative_destination: Path,
+    browser_date: str,
+    *,
+    playback_url: str | None = None,
+) -> dict[str, object]:
     kind = media_kind(relative_destination)
     return static_browser_item(
         item,
@@ -164,6 +192,7 @@ def export_browser_item(item, relative_destination: Path, browser_date: str) -> 
         thumbnail_src=None if kind == "image" else "",
         name=relative_destination.name,
         browser_date=browser_date,
+        playback_url=playback_url,
     )
 
 

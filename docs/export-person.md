@@ -28,6 +28,12 @@ D:\Eksport\Tom\index.html
 Den statiske browseren følger visningsrotasjonen som er lagret i Bildebank.
 De eksporterte bildefilene er uendrede kopier.
 
+Hvis eksporten inneholder en AVI-video med en ferdig MP4-avspillingskopi, tas
+både original AVI og MP4-kopien med. Den statiske browseren spiller MP4-filen
+og har en egen lenke til originalen. Eksporten lager ikke manglende
+avspillingskopier; bruk først
+[`make-video-previews`](make-video-previews.md).
+
 Kommentarene som finnes når eksporten lages, vises nederst på bildene i full
 bildevisning i den statiske browseren. De skrives ikke inn i bildefilene.
 

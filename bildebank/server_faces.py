@@ -20,7 +20,7 @@ from .face import (
 )
 from .html_export import face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
-from .server_browser_item_html import rotation_style_attr
+from .server_browser_item_html import rotation_style_attr, video_item_html
 from .server_browser_overview_html import thumbnail_media_html
 from .server_browser_queries import image_extension_sql, items_by_file_ids
 from .server_browser_sources import (
@@ -1389,7 +1389,7 @@ def person_rename_dialog_html() -> str:
     """
 
 
-def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
+def person_item_media_html(target: Path, item: Any, faces: list[dict[str, object]]) -> str:
     file_id = int(item["id"])
     target_path = Path(str(item["target_path"]))
     url = f"/file/{file_id}"
@@ -1398,7 +1398,7 @@ def person_item_media_html(item: Any, faces: list[dict[str, object]]) -> str:
     name = html.escape(str(item["stored_filename"]))
     kind = media_kind(target_path)
     if kind == "video":
-        return f'<video src="{url}" controls></video>'
+        return video_item_html(target, item)
     if kind != "image":
         return f'<a class="file-card" href="{url}" target="_blank">Fil<br>{name}</a>'
     boxes = "\n".join(person_face_box_html(face) for face in faces)

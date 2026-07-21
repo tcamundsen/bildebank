@@ -65,6 +65,19 @@ try {
     Pop-Location
 }
 
+Write-Step "Kontrollerer FFmpeg"
+Push-Location $RepoDir
+try {
+    try {
+        Invoke-Native -FilePath $venvPython -ArgumentList @("-m", "bildebank", "ffmpeg-install")
+    } catch {
+        Write-Host "Kunne ikke installere FFmpeg automatisk: $($_.Exception.Message)"
+        Write-Host "Bildebank er oppdatert og vil prøve igjen ved neste oppstart."
+    }
+} finally {
+    Pop-Location
+}
+
 Write-Step "Ferdig"
 Write-Host "Test gjerne:"
 Write-Host "  bildebank --help"

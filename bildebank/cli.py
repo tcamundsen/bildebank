@@ -10,6 +10,7 @@ import signal
 import sqlite3
 import sys
 import traceback
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path, PureWindowsPath
 
@@ -32,6 +33,7 @@ from .face import (
 from .file_lifecycle import remove_file, undelete_file
 from .file_moves import recover_pending_file_moves
 from .file_tags import set_file_tag
+from .ffmpeg_tools import FFmpegTools, install_managed_ffmpeg, resolve_ffmpeg_tools
 from .formatting import format_bytes
 from .geo import DEFAULT_EXIFTOOL_BATCH_SIZE
 from .importer import (
@@ -82,9 +84,11 @@ from .snapshot_restore import (
 from .target_lock import TargetLock
 from .thumbnails import ThumbnailStats, run_make_thumbnails
 from .unimport import TargetContentChange, run_unimport as execute_unimport
+from .video_previews import VideoPreviewStats, run_make_video_previews
 
 
 THUMBNAIL_PROGRESS: ProgressMeter | None = None
+VIDEO_PREVIEW_PROGRESS: ProgressMeter | None = None
 REFRESH_METADATA_PROGRESS: ProgressMeter | None = None
 UNIMPORT_SOURCE_PROGRESS: ProgressMeter | None = None
 UNIMPORT_TARGET_PROGRESS: ProgressMeter | None = None
@@ -565,6 +569,30 @@ def build_parser() -> argparse.ArgumentParser:
     make_thumbnails.add_argument("--limit", type=positive_int_arg, help="Maks antall bildefiler som skal sjekkes")
     make_thumbnails.add_argument("--verbose", action="store_true", help="Vis filer som feiler")
 
+    make_video_previews = add_command(
+        subparsers,
+        "make-video-previews",
+        usage="bildebank make-video-previews [valg]",
+        help="Lag MP4-avspillingskopier av AVI-videoer",
+        description="Lag regenererbare MP4-kopier av aktive AVI-videoer for nettleseren.",
+    )
+    make_video_previews.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Vis hva som mangler uten å installere programmer eller skrive filer.",
+    )
+    make_video_previews.add_argument(
+        "--limit",
+        type=positive_int_arg,
+        help="Maks antall AVI-filer som skal kontrolleres.",
+    )
+    make_video_previews.add_argument("--verbose", action="store_true", help="Vis filer som feiler.")
+    make_video_previews.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="Lag alle AVI-avspillingskopier på nytt.",
+    )
+
     add_command(
         subparsers,
         "where-is",
@@ -1028,6 +1056,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Installer ExifTool på nytt selv om den allerede finnes.",
     )
+    ffmpeg_install = add_command(
+        subparsers,
+        "ffmpeg-install",
+        usage="bildebank ffmpeg-install [valg]",
+        help="Installer FFmpeg for videoavspilling",
+        description="Last ned og installer FFmpeg og FFprobe i programmappen.",
+    )
+    ffmpeg_install.add_argument(
+        "--force",
+        action="store_true",
+        help="Installer FFmpeg på nytt selv om riktig versjon allerede finnes.",
+    )
 
     return parser
 
@@ -1086,6 +1126,7 @@ NO_TARGET_COMMANDS = {
     "inspect-metadata",
     "update",
     "exiftool-install",
+    "ffmpeg-install",
     "where-is",
     "doctor",
     "config",
@@ -1220,6 +1261,9 @@ def run_no_target_command(args: argparse.Namespace) -> int:
 
     if args.command == "exiftool-install":
         return run_exiftool_install(force=args.force)
+
+    if args.command == "ffmpeg-install":
+        return run_ffmpeg_install(force=args.force)
 
     if args.command == "where-is":
         return run_where_is()
@@ -1407,6 +1451,8 @@ def run_db_command(args: argparse.Namespace, target: Path) -> int:
         return run_make_browser_command(args, target)
     if args.command == "make-thumbnails":
         return run_make_thumbnails_command(args, target)
+    if args.command == "make-video-previews":
+        return run_make_video_previews_command(args, target)
 
     conn = db.connect(target)
     try:
@@ -1729,6 +1775,91 @@ def print_thumbnail_progress(
         return
 
 
+def run_make_video_previews_command(args: argparse.Namespace, target: Path) -> int:
+    tools: FFmpegTools | None = None
+    if not args.dry_run:
+        tools = resolve_or_install_ffmpeg_tools()
+    lock = nullcontext() if args.dry_run else TargetLock(target, command="make-video-previews")
+    with lock:
+        if not args.dry_run:
+            conn = db.connect(target)
+            try:
+                db.log_command(conn, args.command, vars_for_log(args))
+                conn.commit()
+            finally:
+                conn.close()
+        stats = run_make_video_previews(
+            target,
+            tools,
+            dry_run=args.dry_run,
+            limit=args.limit,
+            verbose=args.verbose,
+            rebuild=args.rebuild,
+            progress=print_video_preview_progress,
+            target_locked=not args.dry_run,
+        )
+    print_video_preview_summary(stats, dry_run=args.dry_run)
+    return 0 if stats.errors == 0 else 2
+
+
+def resolve_or_install_ffmpeg_tools() -> FFmpegTools:
+    repo_root = program_repo_root()
+    try:
+        return resolve_ffmpeg_tools(repo_root)
+    except (FileNotFoundError, OSError, RuntimeError):
+        if sys.platform != "win32":
+            raise
+    return install_managed_ffmpeg(repo_root).tools
+
+
+def print_video_preview_summary(stats: VideoPreviewStats, *, dry_run: bool) -> None:
+    missing = max(stats.checked - stats.skipped_current - stats.created, 0)
+    prefix = "Videoavspillingskopier dry-run" if dry_run else "Videoavspillingskopier"
+    print(
+        f"{prefix}: totalt={stats.total}, sjekket={stats.checked}, "
+        f"laget={stats.created}, ferske={stats.skipped_current}, mangler={missing}, feil={stats.errors}"
+    )
+    if stats.last_error_path is not None and stats.last_error_message:
+        print(f"Siste feil: {stats.last_error_path}: {stats.last_error_message}")
+
+
+def print_video_preview_progress(
+    stage: str,
+    current: int,
+    total: int,
+    stats: VideoPreviewStats,
+    path: Path | None,
+) -> None:
+    global VIDEO_PREVIEW_PROGRESS
+    if stage == "start":
+        VIDEO_PREVIEW_PROGRESS = ProgressMeter("Videoavspillingskopier")
+        VIDEO_PREVIEW_PROGRESS.message(f"Videoavspillingskopier: {total} AVI-filer skal kontrolleres.")
+        return
+    if VIDEO_PREVIEW_PROGRESS is None:
+        VIDEO_PREVIEW_PROGRESS = ProgressMeter("Videoavspillingskopier")
+    if stage == "error":
+        message = stats.last_error_message or "ukjent feil"
+        VIDEO_PREVIEW_PROGRESS.error(f"Videoavspillingskopi-feil: {path}\t{message}")
+        return
+    if stage == "check":
+        VIDEO_PREVIEW_PROGRESS.update(
+            current,
+            total,
+            action="kontrollert",
+            details=(
+                f"sjekket={stats.checked}, laget={stats.created}, "
+                f"ferske={stats.skipped_current}, feil={stats.errors}"
+            ),
+            eta=True,
+        )
+        return
+    if stage == "done":
+        VIDEO_PREVIEW_PROGRESS.done(
+            f"Videoavspillingskopier: ferdig kontrollert {min(current, total)}/{total} filer."
+        )
+        VIDEO_PREVIEW_PROGRESS = None
+
+
 def resolve_target(target_arg: Path | None) -> Path:
     if target_arg is not None:
         target = target_arg.resolve()
@@ -1877,6 +2008,20 @@ def run_exiftool_install(*, force: bool = False) -> int:
         print(f"Installerte ExifTool {result.version}: {result.path}")
     else:
         print(f"ExifTool er allerede installert ({result.version}): {result.path}")
+    return 0
+
+
+def run_ffmpeg_install(*, force: bool = False) -> int:
+    if sys.platform != "win32":
+        raise ValueError(
+            "ffmpeg-install støttes bare på Windows. Installer FFmpeg med "
+            "pakkesystemet slik at både ffmpeg og ffprobe finnes i PATH."
+        )
+    result = install_managed_ffmpeg(program_repo_root(), force=force)
+    if result.installed:
+        print(f"Installerte {result.tools.version}: {result.tools.ffmpeg.parent}")
+    else:
+        print(f"FFmpeg er allerede installert ({result.tools.version}): {result.tools.ffmpeg.parent}")
     return 0
 
 

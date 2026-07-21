@@ -3,10 +3,12 @@ from __future__ import annotations
 import subprocess
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from bildebank import db
 from bildebank.launcher_status import (
+    FFmpegDependencyStatus,
     InsightFaceDependencyStatus,
     LauncherConfig,
     LauncherUpdateStatus,
@@ -16,6 +18,7 @@ from bildebank.launcher_status import (
     default_collection_path,
     dependency_setup_button_state,
     face_model_download_button_state,
+    ffmpeg_dependency_status,
     insightface_dependency_status,
     insightface_model_status,
     is_collection_created,
@@ -28,6 +31,18 @@ from bildebank.launcher_status import (
     rescan_source_candidates,
     save_launcher_config,
 )
+
+
+def test_ffmpeg_dependency_status_reports_ready_and_missing(tmp_path: Path) -> None:
+    tools = SimpleNamespace(version="ffmpeg version 8.1.2")
+    with (
+        patch("bildebank.launcher_status.program_repo_root", return_value=tmp_path),
+        patch("bildebank.launcher_status.resolve_ffmpeg_tools", return_value=tools),
+    ):
+        assert ffmpeg_dependency_status() == FFmpegDependencyStatus("Klar", "ffmpeg version 8.1.2")
+
+    with patch("bildebank.launcher_status.resolve_ffmpeg_tools", side_effect=FileNotFoundError("mangler")):
+        assert ffmpeg_dependency_status() == FFmpegDependencyStatus("Mangler", "mangler")
 
 def test_default_collection_path_uses_home_kode_bilde_samling() -> None:
     with patch("pathlib.Path.home", return_value=Path(r"C:\Users\tom")):

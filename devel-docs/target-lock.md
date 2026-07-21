@@ -25,6 +25,8 @@ flytting.
   CLI og web. Modulen tar låsen før oppslag og holder den til etter commit.
 - `migrate` holder låsen mens hoveddatabasen migreres.
 - `make-thumbnails` holder låsen mens thumbnail-settet oppdateres.
+- `make-video-previews` holder låsen mens MP4-cachefiler kontrolleres og
+  erstattes. `--dry-run` skriver ikke og tar derfor ikke låsen.
 - `make-browser`, `make-person-browser` og
   `make-people-browser` holder låsen mens de leser
   databasegrunnlaget og skriver HTML-filer.

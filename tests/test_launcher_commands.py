@@ -12,6 +12,7 @@ from bildebank.launcher_commands import (
     doctor_command,
     download_face_model_command,
     export_person_command,
+    ffmpeg_install_command,
     face_scan_command,
     geo_scan_command,
     image_scan_command,
@@ -22,6 +23,7 @@ from bildebank.launcher_commands import (
     make_people_browser_command,
     make_person_browser_command,
     make_thumbnails_command,
+    make_video_previews_command,
     migrate_command,
     openclip_install_command,
     read_unimport_target_change_report,
@@ -112,6 +114,12 @@ def test_launcher_commands_use_existing_cli_semantics(tmp_path: Path) -> None:
         str(collection),
         "make-thumbnails",
     ]
+    assert make_video_previews_command(collection)[-3:] == [
+        "--target",
+        str(collection),
+        "make-video-previews",
+    ]
+    assert ffmpeg_install_command()[-1] == "ffmpeg-install"
     assert make_browser_command(collection)[-3:] == ["--target", str(collection), "make-browser"]
     assert make_browser_command(collection, hide_out_of_focus=True)[-4:] == [
         "--target",

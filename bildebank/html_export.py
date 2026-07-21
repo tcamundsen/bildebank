@@ -230,6 +230,11 @@ STATIC_BROWSER_CSS = f"""
       object-position: center center;
       display: block;
     }}
+    .original-video-link {{
+      color: var(--text);
+      font-size: 14px;
+    }}
+    .original-video-link[hidden] {{ display: none; }}
     .item-comment-overlay {{
       position: absolute;
       z-index: 3;
@@ -454,6 +459,7 @@ def render_html(
           <nav class="breadcrumb" aria-label="Plassering"><span>År</span></nav>
         </div>
         <span id="status" class="status"></span>
+        <a id="originalVideoLink" class="original-video-link" href="#" target="_blank" hidden>Åpne original AVI</a>
       </div>
       <nav class="controls" aria-label="Navigering">
         <span class="nav-button-pair" data-nav-button-pair="year">
@@ -484,6 +490,7 @@ def render_html(
     const titleEl = document.getElementById("title");
     const statusEl = document.getElementById("status");
     const viewer = document.getElementById("viewer");
+    const originalVideoLink = document.getElementById("originalVideoLink");
     let commentResizeObserver = null;
     const buttons = {{
       prevYear: document.getElementById("prevYear"),
@@ -714,11 +721,18 @@ def render_html(
     function renderItem() {{
       const item = currentItem();
       if (!item) return;
-      if (item.kind === "video") {{
+      if (item.kind === "video" && item.playbackUrl) {{
         const video = document.createElement("video");
-        video.src = item.url;
+        video.src = item.playbackUrl;
         video.controls = true;
         showItemMedia(video, video, item);
+      }} else if (item.kind === "video") {{
+        const link = document.createElement("a");
+        link.className = "media-link file-card";
+        link.href = item.originalUrl || item.url;
+        link.target = "_blank";
+        link.textContent = `AVI-videoen mangler MP4-avspillingskopi\n${{item.name}}`;
+        showItemMedia(link, link, item);
       }} else if (item.kind === "image") {{
         const link = document.createElement("a");
         link.className = "media-link";
@@ -738,7 +752,14 @@ def render_html(
         link.textContent = `Fil\\n${{item.name}}`;
         showItemMedia(link, link, item);
       }}
+      updateOriginalVideoLink(item);
       updateButtons();
+    }}
+    function updateOriginalVideoLink(item) {{
+      const show = item && item.kind === "video" && item.originalUrl && item.playbackUrl
+        && item.playbackUrl !== item.originalUrl;
+      originalVideoLink.hidden = !show;
+      if (show) originalVideoLink.href = item.originalUrl;
     }}
     function showItemMedia(primary, media, item) {{
       if (commentResizeObserver) {{
@@ -770,6 +791,7 @@ def render_html(
       requestAnimationFrame(() => requestAnimationFrame(position));
     }}
     function renderYears() {{
+      updateOriginalVideoLink(null);
       const grid = document.createElement("div");
       grid.className = "month-grid";
       for (const year of state.years) {{
@@ -790,6 +812,7 @@ def render_html(
       updateButtons();
     }}
     function renderYear() {{
+      updateOriginalVideoLink(null);
       const year = currentYear();
       if (!year) return;
       const grid = document.createElement("div");
@@ -811,6 +834,7 @@ def render_html(
       updateButtons();
     }}
     function renderMonth() {{
+      updateOriginalVideoLink(null);
       const month = currentMonth();
       if (!month) return;
       const grid = document.createElement("div");

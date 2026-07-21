@@ -32,6 +32,7 @@ from .server_browser_sidecars import (
     motion_video_for_image,
     raw_sidecar_for_image,
 )
+from .video_previews import existing_video_preview_path
 from .server_browser_info_html import (
     display_short_date,
     gps_location_badge_html,
@@ -992,7 +993,7 @@ def source_item_media_html(
             face_config=face_config,
             read_only=read_only,
         )
-        return person_item_media_html(item, faces)
+        return person_item_media_html(target, item, faces)
     return item_media_html(target, item, read_only=read_only)
 
 
@@ -1005,10 +1006,31 @@ def item_media_html(target: Path, item: Any, *, read_only: bool = False) -> str:
     name = html.escape(str(item["stored_filename"]))
     kind = media_kind(target_path)
     if kind == "video":
-        return f'<video src="{url}" controls></video>'
+        return video_item_html(target, item)
     if kind != "image":
         return f'<a class="file-card" href="{url}" target="_blank">Fil<br>{name}</a>'
     return f'<a href="{display_url}" target="_blank"{media_link_class_attr(item)}><img src="{preview_url}" alt="{name}"{rotation_style_attr(item, target, write_metadata_cache=not read_only)}></a>'
+
+
+def video_item_html(target: Path, item: Any) -> str:
+    file_id = int(item["id"])
+    target_path = Path(str(item["target_path"]))
+    original_url = f"/file/{file_id}"
+    name = html.escape(str(item["stored_filename"]))
+    if target_path.suffix.casefold() != ".avi":
+        return f'<video src="{original_url}" controls></video>'
+    if existing_video_preview_path(target, item) is None:
+        return (
+            f'<a class="file-card" href="{original_url}" target="_blank" download>'
+            f'AVI-videoen mangler MP4-avspillingskopi<br>{name}<br>'
+            '<span>Kjør «Lag videoavspillingskopier» i Bildebank.</span></a>'
+        )
+    return (
+        '<div class="video-with-original">'
+        f'<video src="/video-preview/{file_id}" controls></video>'
+        f'<a class="video-original-link" href="{original_url}" download>Åpne original AVI</a>'
+        '</div>'
+    )
 
 
 def comment_overlay_html(item: Any) -> str:

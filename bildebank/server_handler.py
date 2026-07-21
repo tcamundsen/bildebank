@@ -409,6 +409,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             if parsed.path.startswith("/preview/"):
                 self.respond_preview(parsed.path.removeprefix("/preview/"))
                 return
+            if parsed.path.startswith("/video-preview/"):
+                self.respond_video_preview(parsed.path.removeprefix("/video-preview/"))
+                return
             if parsed.path.startswith("/file/"):
                 self.respond_file(parsed.path.removeprefix("/file/"))
                 return
@@ -733,7 +736,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
 
     def respond_file(self, encoded_relative_path: str) -> None:
         try:
-            served_file = server_files.read_server_file(
+            served_file = server_files.resolve_server_file(
                 self.server.target, encoded_relative_path
             )
         except PermissionError as exc:
@@ -745,7 +748,66 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         except OSError as exc:
             self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
             return
-        self.respond_bytes(served_file.content, served_file.content_type)
+        # Keep the small handler doubles used by callers/tests working while the
+        # real HTTP handler streams files and supports Range requests.
+        if not hasattr(self, "respond_server_file"):
+            self.respond_bytes(served_file.path.read_bytes(), served_file.content_type)
+            return
+        self.respond_server_file(served_file)
+
+    def respond_video_preview(self, raw_file_id: str) -> None:
+        try:
+            served_file = server_files.resolve_video_preview_file(self.server.target, raw_file_id)
+        except PermissionError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            return
+        except FileNotFoundError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            return
+        except OSError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            return
+        self.respond_server_file(served_file)
+
+    def respond_server_file(self, served_file: server_files.ServerFilePath) -> None:
+        try:
+            byte_range = server_files.parse_byte_range(
+                self.headers.get("Range"),
+                served_file.size,
+            )
+        except ValueError:
+            self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+            self.send_header("Content-Range", f"bytes */{served_file.size}")
+            self.send_header("Content-Length", "0")
+            self.send_header("Accept-Ranges", "bytes")
+            self.respond_timing_headers()
+            self.end_headers()
+            return
+
+        start = byte_range.start if byte_range is not None else 0
+        end = byte_range.end if byte_range is not None else served_file.size - 1
+        length = byte_range.length if byte_range is not None else served_file.size
+        self.send_response(HTTPStatus.PARTIAL_CONTENT if byte_range is not None else HTTPStatus.OK)
+        self.send_header("Content-Type", served_file.content_type)
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        if byte_range is not None:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{served_file.size}")
+        self.respond_timing_headers()
+        self.end_headers()
+        remaining = length
+        try:
+            with served_file.path.open("rb") as stream:
+                stream.seek(start)
+                while remaining > 0:
+                    chunk = stream.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except OSError as exc:
+            if not client_disconnected_error(exc):
+                raise
 
     def respond_help(self, raw_help_path: str) -> None:
         doc_asset_path = resolve_doc_asset_path(raw_help_path)

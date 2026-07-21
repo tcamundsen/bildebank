@@ -14,6 +14,12 @@ options:
 `update` oppdaterer Bildebank-programmet til siste versjon fra GitHub
 og laster ned eventuelle nye biblioteker som brukes.
 
+Oppdateringen kontrollerer også den lokale FFmpeg-installasjonen. Dermed får
+eksisterende brukere støtten som trengs for AVI-avspillingskopier, ikke bare
+nye installasjoner. Hvis FFmpeg-nedlastingen feiler, beholdes den fullførte
+Bildebank-oppdateringen. Programmet viser en advarsel og prøver igjen ved neste
+oppstart.
+
 Eksempel:
 
 ```powershell

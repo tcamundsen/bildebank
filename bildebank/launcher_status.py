@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import db
 from .config import load_config, load_launcher_collection_path, set_launcher_collection_path
+from .ffmpeg_tools import resolve_ffmpeg_tools
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,12 @@ class InsightFaceModelStatus:
 class OpenClipModelStatus:
     model_name: str
     pretrained: str
+    status: str
+    detail: str = ""
+
+
+@dataclass(frozen=True)
+class FFmpegDependencyStatus:
     status: str
     detail: str = ""
 
@@ -142,6 +149,20 @@ def insightface_install_supported() -> bool:
 
 def openclip_install_supported() -> bool:
     return os.name == "nt"
+
+
+def ffmpeg_install_supported() -> bool:
+    return os.name == "nt"
+
+
+def ffmpeg_dependency_status() -> FFmpegDependencyStatus:
+    try:
+        tools = resolve_ffmpeg_tools(program_repo_root())
+    except FileNotFoundError as exc:
+        return FFmpegDependencyStatus("Mangler", str(exc))
+    except (OSError, RuntimeError) as exc:
+        return FFmpegDependencyStatus("Feil", str(exc))
+    return FFmpegDependencyStatus("Klar", tools.version)
 
 
 def dependency_setup_button_state(

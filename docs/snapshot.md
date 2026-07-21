@@ -62,8 +62,10 @@ Snapshotet tar blant annet med:
 - hoveddatabasen og andre Bildebank-databaser
 - vanlige filer i bildesamlingen som ikke finnes i databasen
 
-Regenererbare thumbnails, genererte HTML-filer, aktive låsefiler og den aktive
-loggfilen blir utelatt. De kan lages på nytt etter en gjenoppretting.
+Regenererbare thumbnails og MP4-avspillingskopier under `video-previews`,
+genererte HTML-filer, aktive låsefiler og den aktive loggfilen blir utelatt. De
+kan lages på nytt etter en gjenoppretting. AVI-originalene tas med som andre
+databaseførte videoer, og `deleted\` er fortsatt alltid med.
 
 Alle databaseførte mediefiler blir lest og SHA-256-kontrollert ved hver reelle
 snapshotkjøring. Dette kan ta tid selv når få nye filer må kopieres.

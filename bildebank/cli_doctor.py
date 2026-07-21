@@ -10,6 +10,7 @@ from . import db
 from .config import CONFIG_FILENAME, load_config
 from .exiftool import resolve_exiftool_path, validate_exiftool_install
 from .face import face_db_path, face_db_summary, insightface_runtime_error
+from .ffmpeg_tools import resolve_ffmpeg_tools
 from .media import is_supported_media, sha256_file
 from .openclip import openclip_db_path, openclip_db_summary, torch_gpu_status
 from .platform_guard import validate_collection_platform
@@ -50,6 +51,17 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
             doctor_advice("Installer ExifTool med pakkesystemet, for eksempel `sudo apt install libimage-exiftool-perl`.")
     else:
         doctor_ok(f"ExifTool funnet: {exiftool_path} ({exiftool_version})")
+
+    try:
+        ffmpeg_tools = resolve_ffmpeg_tools(repo_root)
+    except (FileNotFoundError, OSError, RuntimeError) as exc:
+        doctor_error(f"FFmpeg mangler eller virker ikke: {exc}")
+        if sys.platform == "win32":
+            doctor_advice("Kjør `bildebank ffmpeg-install` fra programmappen.")
+        else:
+            doctor_advice("Installer både FFmpeg og FFprobe med pakkesystemet.")
+    else:
+        doctor_ok(f"FFmpeg funnet: {ffmpeg_tools.ffmpeg} ({ffmpeg_tools.version})")
 
     print()
     print("Ansiktsgjenkjenning:")

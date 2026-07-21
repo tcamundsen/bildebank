@@ -13,6 +13,7 @@ PROGRESS_LOG_LABELS = (
     "Rescan-source",
     "Rescan-source dry-run",
     "Thumbnails",
+    "Videoavspillingskopier",
     "Unimport",
     "Check-source",
     "geo-scan",

@@ -28,6 +28,7 @@ er merket har jeg ikke sett over ennå.
 
 - [`run-server`](run-server.md) **`vindu`**
 - [`make-thumbnails`](make-thumbnails.md) **`vindu`**
+- [`make-video-previews`](make-video-previews.md) **`vindu`**
 - [`status`](status.md) **`cli`**
 - [`list-sources`](list-sources.md) **`web`**
 - [`show-source`](show-source.md) **`web`**
@@ -52,6 +53,7 @@ er merket har jeg ikke sett over ennå.
 - [`migrate`](migrate.md) **`vindu`**
 - [`vacuum`](vacuum.md) **`vindu`**
 - [`update`](update.md) **`vindu`**
+- [`ffmpeg-install`](ffmpeg-install.md) **`cli`**
 
 ## Generering av statiske HTML-filer:
 

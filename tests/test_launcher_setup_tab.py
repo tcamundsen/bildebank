@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from bildebank.launcher_setup_tab import SetupTab
 from bildebank.launcher_status import (
+    FFmpegDependencyStatus,
     InsightFaceDependencyStatus,
     InsightFaceModelStatus,
     OpenClipModelStatus,
@@ -33,14 +34,18 @@ def bare_setup_tab() -> SetupTab:
     setup.face_model_status = InsightFaceModelStatus("buffalo_l", "Lastet ned")
     setup.openclip_status = "Installert"
     setup.openclip_model_status = OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig")
+    setup.ffmpeg_status = FFmpegDependencyStatus("Klar")
+    setup.ffmpeg_auto_install_attempted = True
     setup.status_refreshing = False
     setup.insightface_status_value = FakeValue()
     setup.insightface_model_status_value = FakeValue()
     setup.openclip_status_value = FakeValue()
     setup.openclip_model_status_value = FakeValue()
+    setup.ffmpeg_status_value = FakeValue()
     setup.install_insightface_button = None
     setup.install_openclip_button = None
     setup.download_face_model_button = None
+    setup.install_ffmpeg_button = None
     setup._log = lambda _message: None
     setup._on_status_changed = lambda: None
     return setup
@@ -81,16 +86,38 @@ def test_status_finished_updates_values_and_logs_error_details() -> None:
         InsightFaceModelStatus("buffalo_l", "Mangler", "forventet mangler"),
         "Feil: open_clip-feil",
         OpenClipModelStatus("ViT-B-32", "laion", "Feil", "modell-feil"),
+        FFmpegDependencyStatus("Feil", "ffmpeg-feil"),
     )
 
     assert not setup.status_refreshing
     assert setup.insightface_status_value.value == "InsightFace: Feil"
     assert setup.openclip_model_status_value.value == "AI-modell: Feil"
+    assert setup.ffmpeg_status_value.value == "FFmpeg: Feil"
     assert logged == [
         "InsightFace-status feilet: runtime-feil",
         "OpenCLIP-modell-status feilet: modell-feil",
+        "FFmpeg-status feilet: ffmpeg-feil",
     ]
     assert changes == ["changed"]
+
+
+def test_missing_ffmpeg_triggers_one_automatic_install_attempt_for_existing_users() -> None:
+    setup = bare_setup_tab()
+    setup.ffmpeg_auto_install_attempted = False
+    installs: list[object] = []
+    setup.run_ffmpeg_install = lambda *, on_success: installs.append(on_success)  # type: ignore[method-assign]
+
+    with patch("bildebank.launcher_setup_tab.ffmpeg_install_supported", return_value=True):
+        setup._status_finished(
+            InsightFaceDependencyStatus("Klar"),
+            InsightFaceModelStatus("buffalo_l", "Lastet ned"),
+            "Installert",
+            OpenClipModelStatus("ViT-B-32", "laion", "Tilgjengelig"),
+            FFmpegDependencyStatus("Mangler", "mangler"),
+        )
+
+    assert setup.ffmpeg_auto_install_attempted
+    assert installs == [setup.start_status_refresh]
 
 
 def test_load_status_calls_all_dependency_status_functions() -> None:
@@ -111,6 +138,10 @@ def test_load_status_calls_all_dependency_status_functions() -> None:
             "bildebank.launcher_setup_tab.openclip_model_status",
             return_value=expected_openclip_model_status,
         ),
+        patch(
+            "bildebank.launcher_setup_tab.ffmpeg_dependency_status",
+            return_value=FFmpegDependencyStatus("Klar", "ffmpeg version 8.1.2"),
+        ),
     ):
         status = setup._load_status()
 
@@ -119,6 +150,7 @@ def test_load_status_calls_all_dependency_status_functions() -> None:
         InsightFaceModelStatus("buffalo_l", "Lastet ned"),
         "Installert",
         expected_openclip_model_status,
+        FFmpegDependencyStatus("Klar", "ffmpeg version 8.1.2"),
     )
 
 
@@ -148,10 +180,12 @@ def test_setup_buttons_are_disabled_while_status_refreshes() -> None:
     setup.install_insightface_button = FakeButton()
     setup.install_openclip_button = FakeButton()
     setup.download_face_model_button = FakeButton()
+    setup.install_ffmpeg_button = FakeButton()
 
     with (
         patch("bildebank.launcher_setup_tab.insightface_install_supported", return_value=True),
         patch("bildebank.launcher_setup_tab.openclip_install_supported", return_value=True),
+        patch("bildebank.launcher_setup_tab.ffmpeg_install_supported", return_value=True),
     ):
         setup.set_buttons_enabled(
             True,
@@ -162,3 +196,4 @@ def test_setup_buttons_are_disabled_while_status_refreshes() -> None:
     assert setup.install_insightface_button.options["state"] == "disabled"
     assert setup.install_openclip_button.options["state"] == "disabled"
     assert setup.download_face_model_button.options["state"] == "disabled"
+    assert setup.install_ffmpeg_button.options["state"] == "disabled"

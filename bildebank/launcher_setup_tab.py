@@ -7,6 +7,7 @@ from typing import Any, Protocol
 
 from .launcher_commands import (
     download_face_model_command,
+    ffmpeg_install_command,
     insightface_install_command,
     openclip_install_command,
 )
@@ -14,8 +15,11 @@ from .launcher_status import (
     InsightFaceDependencyStatus,
     InsightFaceModelStatus,
     OpenClipModelStatus,
+    FFmpegDependencyStatus,
     dependency_setup_button_state,
     face_model_download_button_state,
+    ffmpeg_dependency_status,
+    ffmpeg_install_supported,
     insightface_dependency_status,
     insightface_install_supported,
     insightface_model_status,
@@ -71,16 +75,20 @@ class SetupTab:
         self.face_model_status = InsightFaceModelStatus("", "Sjekker")
         self.openclip_status = "Sjekker"
         self.openclip_model_status = OpenClipModelStatus("", "", "Sjekker")
+        self.ffmpeg_status = FFmpegDependencyStatus("Sjekker")
+        self.ffmpeg_auto_install_attempted = False
         self.status_refreshing = False
 
         self.insightface_status_value = tk.StringVar(value="")
         self.insightface_model_status_value = tk.StringVar(value="")
         self.openclip_status_value = tk.StringVar(value="")
         self.openclip_model_status_value = tk.StringVar(value="")
+        self.ffmpeg_status_value = tk.StringVar(value="")
         self.frame = ttk.Frame(notebook, padding=padding)
         self.install_insightface_button: Any | None = None
         self.install_openclip_button: Any | None = None
         self.download_face_model_button: Any | None = None
+        self.install_ffmpeg_button: Any | None = None
 
         self._set_status_placeholder()
         self._build(ttk=ttk, button=button, padding=padding, pady=pady)
@@ -88,8 +96,26 @@ class SetupTab:
     def _build(self, *, ttk: Any, button: ButtonFactory, padding: int, pady: int) -> None:
         self.frame.columnconfigure(0, weight=1)
 
+        ffmpeg_frame = ttk.Frame(self.frame)
+        ffmpeg_frame.grid(row=0, column=0, sticky="w")
+        self.install_ffmpeg_button = button(
+            ffmpeg_frame,
+            text="Installer FFmpeg",
+            command=self.install_ffmpeg,
+        )
+        self.install_ffmpeg_button.grid(row=0, column=0, sticky="w")
+        ttk.Label(ffmpeg_frame, textvariable=self.ffmpeg_status_value).grid(
+            row=0,
+            column=1,
+            sticky="w",
+            padx=padding,
+        )
+
+        ffmpeg_separator = ttk.Separator(self.frame, orient="horizontal")
+        ffmpeg_separator.grid(row=1, column=0, sticky="ew", pady=padding)
+
         insightface_frame = ttk.Frame(self.frame)
-        insightface_frame.grid(row=0, column=0, sticky="w")
+        insightface_frame.grid(row=2, column=0, sticky="w")
         ttk.Label(insightface_frame, textvariable=self.insightface_status_value).grid(
             row=0,
             column=0,
@@ -116,10 +142,10 @@ class SetupTab:
         self.download_face_model_button.grid(row=1, column=1, sticky="w", pady=pady)
 
         separator = ttk.Separator(self.frame, orient="horizontal")
-        separator.grid(row=1, column=0, sticky="ew", pady=padding)
+        separator.grid(row=3, column=0, sticky="ew", pady=padding)
 
         openclip_frame = ttk.Frame(self.frame)
-        openclip_frame.grid(row=2, column=0, sticky="w")
+        openclip_frame.grid(row=4, column=0, sticky="w")
         self.install_openclip_button = button(
             openclip_frame,
             text="Installer OpenCLIP",
@@ -149,12 +175,15 @@ class SetupTab:
                 "Installer OpenCLIP-knappen er deaktivert: "
                 "install-openclip.ps1 er Windows-installasjonsflyt."
             )
+        if not ffmpeg_install_supported():
+            self._log("Installer FFmpeg-knappen er deaktivert: automatisk installasjon støttes bare på Windows.")
 
     def _set_status_placeholder(self) -> None:
         self.insightface_status_value.set("InsightFace: sjekker ...")
         self.insightface_model_status_value.set("Valgt modell: sjekker ...")
         self.openclip_status_value.set("open_clip: sjekker ...")
         self.openclip_model_status_value.set("AI-modell: sjekker ...")
+        self.ffmpeg_status_value.set("FFmpeg: sjekker ...")
 
     def _apply_status_values(self) -> None:
         self.insightface_status_value.set(f"InsightFace: {self.insightface_status.status}")
@@ -163,6 +192,7 @@ class SetupTab:
         )
         self.openclip_status_value.set(f"open_clip: {self.openclip_status}")
         self.openclip_model_status_value.set(f"AI-modell: {self.openclip_model_status.status}")
+        self.ffmpeg_status_value.set(f"FFmpeg: {self.ffmpeg_status.status}")
 
     def _log_status_detail(self, label: str, status: str, detail: str) -> None:
         if status == "Feil" and detail:
@@ -183,7 +213,7 @@ class SetupTab:
 
     def _load_status(
         self,
-    ) -> tuple[InsightFaceDependencyStatus, InsightFaceModelStatus, str, OpenClipModelStatus]:
+    ) -> tuple[InsightFaceDependencyStatus, InsightFaceModelStatus, str, OpenClipModelStatus, FFmpegDependencyStatus]:
         try:
             insightface_status = insightface_dependency_status()
         except Exception as exc:  # noqa: BLE001 - setup status must not block launcher startup
@@ -200,7 +230,11 @@ class SetupTab:
             openclip_model_state = openclip_model_status()
         except Exception as exc:  # noqa: BLE001 - setup status must not block launcher startup
             openclip_model_state = OpenClipModelStatus("", "", "Feil", str(exc))
-        return insightface_status, face_model_status, openclip_status, openclip_model_state
+        try:
+            ffmpeg_status = ffmpeg_dependency_status()
+        except Exception as exc:  # noqa: BLE001 - setup status must not block launcher startup
+            ffmpeg_status = FFmpegDependencyStatus("Feil", str(exc))
+        return insightface_status, face_model_status, openclip_status, openclip_model_state, ffmpeg_status
 
     def _status_finished(
         self,
@@ -208,17 +242,28 @@ class SetupTab:
         face_model_status: InsightFaceModelStatus,
         openclip_status: str,
         openclip_model_status: OpenClipModelStatus,
+        ffmpeg_status: FFmpegDependencyStatus,
     ) -> None:
         self.status_refreshing = False
         self.insightface_status = insightface_status
         self.face_model_status = face_model_status
         self.openclip_status = openclip_status
         self.openclip_model_status = openclip_model_status
+        self.ffmpeg_status = ffmpeg_status
         self._log_status_detail("InsightFace", insightface_status.status, insightface_status.detail)
         self._log_status_detail("Ansiktsmodell", face_model_status.status, face_model_status.detail)
         self._log_status_detail("OpenCLIP-modell", openclip_model_status.status, openclip_model_status.detail)
+        self._log_status_detail("FFmpeg", ffmpeg_status.status, ffmpeg_status.detail)
         self._apply_status_values()
         self._on_status_changed()
+        if (
+            ffmpeg_status.status != "Klar"
+            and ffmpeg_install_supported()
+            and not self.ffmpeg_auto_install_attempted
+        ):
+            self.ffmpeg_auto_install_attempted = True
+            self._log("FFmpeg mangler. Prøver automatisk installasjon ...")
+            self.run_ffmpeg_install(on_success=self.start_status_refresh)
 
     def set_buttons_enabled(
         self,
@@ -255,6 +300,37 @@ class SetupTab:
                     insightface_status=self.insightface_status,
                 )
             )
+        if self.install_ffmpeg_button is not None:
+            self.install_ffmpeg_button.configure(
+                state=dependency_setup_button_state(
+                    enabled=setup_enabled,
+                    migration_required=migration_required,
+                    migration_status_error=migration_status_error,
+                    install_supported=ffmpeg_install_supported(),
+                )
+            )
+
+    def install_ffmpeg(self) -> None:
+        if not ffmpeg_install_supported():
+            self._log("Kan ikke installere FFmpeg automatisk her.")
+            return
+        if self.ffmpeg_status.status == "Klar" and not self._confirm_rerun(
+            "Installer FFmpeg på nytt?",
+            "FFmpeg er allerede klart. Vil du kjøre installasjonen på nytt?",
+        ):
+            self._log("FFmpeg-installasjon avbrutt.")
+            return
+        self._log("Installerer FFmpeg ...")
+        self.run_ffmpeg_install(on_success=self.start_status_refresh)
+
+    def run_ffmpeg_install(self, *, on_success: Callable[[], None]) -> None:
+        self._run_waiting_command(
+            ffmpeg_install_command(),
+            running_message="Installerer FFmpeg ...",
+            success_message="FFmpeg-installasjon fullført.",
+            failure_message="FFmpeg-installasjon feilet. Bildebank prøver igjen ved neste oppstart.",
+            on_success=on_success,
+        )
 
     def install_insightface(self) -> None:
         if not insightface_install_supported():

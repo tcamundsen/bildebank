@@ -50,6 +50,7 @@ class SnapshotBuilderTests(unittest.TestCase):
             insert_file_source(target, active_id)
             write_file(target, "notes/family.txt", b"bevar notatet")
             write_file(target, "thumbs/2026/07/active.jpg", b"thumbnail")
+            write_file(target, "video-previews/v1/aa/preview.mp4", b"generated preview")
 
             result, published = build_and_publish(target, repository)
 
@@ -67,6 +68,7 @@ class SnapshotBuilderTests(unittest.TestCase):
             self.assertEqual(media_objects, {sha256})
             self.assertTrue(any("Ukjent fil" in warning for warning in result.warnings))
             self.assertTrue(any("thumbnails" in exclusion for exclusion in result.exclusions))
+            self.assertTrue(any("video_previews" in exclusion for exclusion in result.exclusions))
             manifest = json.loads(published.snapshot_dir.joinpath("manifest.json").read_bytes())
             self.assertEqual(manifest["status"], "complete")
             self.assertEqual([database["role"] for database in manifest["databases"]], ["main"])

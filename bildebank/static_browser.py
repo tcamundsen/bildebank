@@ -15,6 +15,7 @@ from .formatting import format_bytes
 from .html_paths import path_to_url
 from .media import media_kind
 from .thumbnails import existing_thumbnail_url
+from .video_previews import existing_video_preview_path
 
 
 def static_browser_item(
@@ -24,6 +25,7 @@ def static_browser_item(
     target: Path | None = None,
     url: str | None = None,
     thumbnail_src: str | None = None,
+    playback_url: str | None = None,
     kind: str | None = None,
     name: str | None = None,
     month_key: str | None = None,
@@ -35,11 +37,14 @@ def static_browser_item(
     browser_date = browser_date if browser_date is not None else browser_date_from_item(item)
     month_key = month_key or month_key_from_browser_date_value(browser_date) or month_key_from_path(relative_path)
     thumbnail_src = browser_thumbnail_src(target, relative_path, kind, url, thumbnail_src)
+    playback_url = browser_playback_url(target, item, relative_path, kind, url, playback_url)
     view_rotation = view_rotation if view_rotation is not None else item_view_rotation(item)
     return {
         "fileId": item_int(item, "id", item_int(item, "fileId", 0)),
         "path": relative_path.as_posix(),
         "url": url,
+        "playbackUrl": playback_url or "",
+        "originalUrl": url if kind == "video" else "",
         "thumbnailSrc": thumbnail_src,
         "kind": kind,
         "viewRotation": db.normalize_view_rotation(view_rotation),
@@ -55,6 +60,28 @@ def static_browser_item(
         "name": name or str(item_value(item, "stored_filename", relative_path.name)),
         "sizeText": item_size_text(item),
     }
+
+
+def browser_playback_url(
+    target: Path | None,
+    item: Any,
+    relative_path: Path,
+    kind: str,
+    original_url: str,
+    playback_url: str | None,
+) -> str | None:
+    if playback_url is not None:
+        return playback_url
+    if kind != "video":
+        return None
+    if relative_path.suffix.casefold() != ".avi":
+        return original_url
+    if target is None:
+        return None
+    preview_path = existing_video_preview_path(target, item)
+    if preview_path is None:
+        return None
+    return path_to_url(preview_path.relative_to(target))
 
 
 def browser_thumbnail_src(
