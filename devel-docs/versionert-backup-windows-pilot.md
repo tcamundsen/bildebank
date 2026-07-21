@@ -127,7 +127,6 @@ Ikke bruk originalen og restorekopien parallelt som uavhengige samlinger. De
 skal ha samme `collection_id`.
 
 ## Restore av enkeltfil
-FORTSETT HER
 1. Kjør dry-run og reell restore med `--path` til en ny eksportmappe.
 2. Sammenlign eksportfilens SHA-256 og størrelse med testfasiten.
 3. Kontroller filens endringstid innenfor målfilsystemets tidsoppløsning.
@@ -149,6 +148,8 @@ FORTSETT HER
    bytene er skrevet. Den kontrollerer at delfilen bevares, at repositorylåsen
    frigjøres, og at neste forsøk nekter å overskrive delfilen. Ikke forsøk å
    treffe kopieringen manuelt med Ctrl+C.
+
+Hele dette avsnittet er testet og godkjent.
 
 ## Diskrotasjon
 
