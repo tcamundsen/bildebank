@@ -65,6 +65,10 @@ Når en `.NEF`- eller `.PSD`-fil hører trygt sammen med en `.JPG`-fil fra samme
 mappe og samme import, skjules filen fra vanlig bildevisning. Da vises den i
 stedet som en lenke på JPG-bildets side.
 
+AVI- og 3GP-videoer spilles av med en MP4-avspillingskopi når den finnes.
+Originalfilen kan da lastes ned med **AVI**- eller **3GP**-knappen i
+verktøylinjen over videoen.
+
 ## Hurtigtaster
 
 Tastene `1`, `2`, `3`, `4` og `5` kan settes opp i **Innstillinger**. Hver

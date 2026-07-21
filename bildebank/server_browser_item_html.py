@@ -502,7 +502,14 @@ def source_item_page_html(
         timing_callback("html_hotkey_hints", start)
     start = time.perf_counter()
     motion_video, raw_sidecar = associated_files_for_item(target, item, conn=conn)
-    associated_file_buttons = associated_file_buttons_html(motion_video, raw_sidecar)
+    associated_file_buttons = "\n".join(
+        button
+        for button in (
+            associated_file_buttons_html(motion_video, raw_sidecar),
+            video_original_button_html(target, item),
+        )
+        if button
+    )
     if timing_callback is not None:
         timing_callback("html_associated_files", start)
     named_h3_cells = named_manual_h3_cells(target, conn=conn) if not read_only else []
@@ -676,6 +683,20 @@ def associated_file_button_html(associated_file: Any) -> str:
     return (
         f'<a class="nav-button associated-file-button" href="{html.escape(url)}" '
         f'title="Åpne tilknyttet fil {html.escape(filename)}">{html.escape(extension)}</a>'
+    )
+
+
+def video_original_button_html(target: Path, item: Any) -> str:
+    target_path = Path(str(item["target_path"]))
+    suffix = target_path.suffix.casefold()
+    if suffix not in VIDEO_PREVIEW_SOURCE_EXTENSIONS or existing_video_preview_path(target, item) is None:
+        return ""
+    file_id = int(item["id"])
+    filename = str(item["stored_filename"])
+    format_name = suffix.removeprefix(".").upper()
+    return (
+        f'<a class="nav-button associated-file-button" href="/file/{file_id}" download '
+        f'title="Last ned originalfilen {html.escape(filename)}">{format_name}</a>'
     )
 
 
@@ -1027,12 +1048,7 @@ def video_item_html(target: Path, item: Any) -> str:
             f'{format_name}-videoen mangler MP4-avspillingskopi<br>{name}<br>'
             '<span>Kjør «Lag videoavspillingskopier» i Bildebank.</span></a>'
         )
-    return (
-        '<div class="video-with-original">'
-        f'<video src="/video-preview/{file_id}" controls></video>'
-        f'<a class="video-original-link" href="{original_url}" download>Åpne original {format_name}</a>'
-        '</div>'
-    )
+    return f'<video src="/video-preview/{file_id}" controls></video>'
 
 
 def comment_overlay_html(item: Any) -> str:

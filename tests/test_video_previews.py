@@ -11,9 +11,9 @@ import pytest
 from bildebank import db
 from bildebank.db import init_database
 from bildebank.ffmpeg_tools import FFmpegTools
-from bildebank.server_browser_item_html import video_item_html
 from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_files import ByteRange, describe_server_file, parse_byte_range, resolve_video_preview_file
+from bildebank.server_pages import item_page_html
 from bildebank.static_browser import static_browser_item
 from bildebank.video_previews import (
     VideoProbe,
@@ -173,7 +173,7 @@ def test_range_parsing_supports_normal_open_and_suffix_ranges() -> None:
     ("filename", "format_name"),
     [("film.AVI", "AVI"), ("phone.3GP", "3GP")],
 )
-def test_server_and_html_use_preview_but_keep_original_link(
+def test_server_uses_preview_and_toolbar_downloads_original(
     tmp_path: Path,
     filename: str,
     format_name: str,
@@ -186,16 +186,96 @@ def test_server_and_html_use_preview_but_keep_original_link(
     preview.write_bytes(b"mp4 preview")
 
     served = resolve_video_preview_file(target, str(item["id"]))
-    server_html = video_item_html(target, item)
+    month_nav = {key: None for key in ("previous_year", "next_year", "previous_month", "next_month")}
+    server_html = item_page_html(
+        target,
+        item,
+        None,
+        None,
+        month_nav,
+        face_enabled=False,
+        openclip_enabled=False,
+        manual_person_controls_enabled=False,
+    )
+    read_only_html = item_page_html(
+        target,
+        item,
+        None,
+        None,
+        month_nav,
+        face_enabled=False,
+        openclip_enabled=False,
+        manual_person_controls_enabled=False,
+        read_only=True,
+    )
     static_item = static_browser_item(item, Path(str(item["target_path"])), target=target)
+    controls_start = server_html.index('<nav class="controls"')
+    controls_html = server_html[controls_start : server_html.index("</nav>", controls_start)]
+    read_only_controls_start = read_only_html.index('<nav class="controls"')
+    read_only_controls_html = read_only_html[
+        read_only_controls_start : read_only_html.index("</nav>", read_only_controls_start)
+    ]
 
     assert served.path == preview
     assert served.content_type == "video/mp4"
     assert f'/video-preview/{item["id"]}' in server_html
-    assert f'href="/file/{item["id"]}"' in server_html
-    assert f"Åpne original {format_name}" in server_html
+    download_link = f'href="/file/{item["id"]}" download'
+    assert download_link in controls_html
+    assert f'>{format_name}</a>' in controls_html
+    assert f'title="Last ned originalfilen {filename}"' in controls_html
+    assert download_link in read_only_controls_html
+    assert "Åpne original" not in server_html
+    assert "video-original-link" not in server_html
     assert static_item["playbackUrl"] == preview.relative_to(target).as_posix()
     assert static_item["originalUrl"] == str(item["target_path"])
+
+
+def test_server_keeps_file_card_when_video_preview_is_missing(tmp_path: Path) -> None:
+    target = tmp_path / "collection"
+    init_database(target)
+    item, _original = make_avi(target)
+    month_nav = {key: None for key in ("previous_year", "next_year", "previous_month", "next_month")}
+
+    server_html = item_page_html(
+        target,
+        item,
+        None,
+        None,
+        month_nav,
+        face_enabled=False,
+        openclip_enabled=False,
+        manual_person_controls_enabled=False,
+    )
+    controls_start = server_html.index('<nav class="controls"')
+    controls_html = server_html[controls_start : server_html.index("</nav>", controls_start)]
+
+    assert "AVI-videoen mangler MP4-avspillingskopi" in server_html
+    assert "Kjør «Lag videoavspillingskopier» i Bildebank." in server_html
+    assert 'class="file-card"' in server_html
+    assert f'href="/file/{item["id"]}"' in server_html
+    assert f'href="/file/{item["id"]}"' not in controls_html
+
+
+def test_other_video_formats_do_not_get_original_format_button(tmp_path: Path) -> None:
+    target = tmp_path / "collection"
+    init_database(target)
+    item, _original = make_video(target, "film.mp4", b"mp4 video")
+    month_nav = {key: None for key in ("previous_year", "next_year", "previous_month", "next_month")}
+
+    server_html = item_page_html(
+        target,
+        item,
+        None,
+        None,
+        month_nav,
+        face_enabled=False,
+        openclip_enabled=False,
+        manual_person_controls_enabled=False,
+    )
+
+    assert f'<video src="/file/{item["id"]}" controls></video>' in server_html
+    assert "Last ned originalfilen" not in server_html
+    assert ">MP4</a>" not in server_html
 
 
 def test_server_file_response_honors_range_without_loading_whole_file(tmp_path: Path) -> None:
