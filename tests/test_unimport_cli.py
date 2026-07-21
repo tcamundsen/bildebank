@@ -88,6 +88,63 @@ class UnimportCliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_unimport_only_source_with_duplicate_content_removes_target_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"same image")
+            (source / "COPY_20240103.jpg").write_bytes(b"same image")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0],
+                    2,
+                )
+                imported_path = Path(
+                    conn.execute("SELECT target_path FROM files").fetchone()[0]
+                )
+            finally:
+                conn.close()
+
+            with patch("builtins.input", return_value="ja, det vil jeg"):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--name", source.name]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Registrerte originalfiler kontrollert: 2", stdout)
+            self.assertIn("Filer som fjernes fra aktiv samling: 1", stdout)
+            self.assertFalse((target / imported_path).exists())
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0],
+                    0,
+                )
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 0)
+            finally:
+                conn.close()
+
     def test_unimport_dry_run_reports_directory_plan_without_changes_or_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -321,11 +321,14 @@ def unimport_total_sources_by_file_id(conn: sqlite3.Connection, source_id: int) 
         int(row["file_id"]): int(row["total_sources"])
         for row in conn.execute(
             """
-            SELECT file_sources.file_id, COUNT(all_sources.id) AS total_sources
+            SELECT file_id, COUNT(*) AS total_sources
             FROM file_sources
-            JOIN file_sources all_sources ON all_sources.file_id = file_sources.file_id
-            WHERE file_sources.source_id = ?
-            GROUP BY file_sources.file_id
+            WHERE file_id IN (
+                SELECT file_id
+                FROM file_sources
+                WHERE source_id = ?
+            )
+            GROUP BY file_id
             """,
             (source_id,),
         )
