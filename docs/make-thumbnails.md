@@ -15,6 +15,8 @@ options:
 `make-thumbnails` lager små bildefiler som brukes i månedsvisningen. Dette
 gjør at månedsvisningen laster mye lettere.
 
+Jobben som `make-thumbnails` gjør kan også gjøres direkte fra Bildebank-vinduet.
+
 Kommandoen går gjennom de importerte bildene i bildesamlingen og lager
 thumbnail-filer i mappen `thumbs`.
 

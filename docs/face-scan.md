@@ -18,6 +18,8 @@ options:
 `face-scan` scanner importerte bilder og lagrer matematiske beskrivelser av
 ansikter `.bilder-faces.sqlite3`.
 
+Jobben som `face-scan` gjør kan også gjøres direkte fra Bildebank-vinduet.
+
 Den hopper over bilder som allerede er scannet med samme innhold. Det er trygt
 å avbryte med `Ctrl-C`; neste kjøring fortsetter ved å hoppe over det som er
 ferdig.

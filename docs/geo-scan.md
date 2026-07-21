@@ -26,7 +26,10 @@ options:
 `geo-scan` leser GPS-koordinater fra metadata i importerte bilder og lagrer
 resultatet i Bildebank-databasen.
 
+Jobben som `geo-scan` gjør kan også gjøres direkte fra Bildebank-vinduet.
+
 Kommandoen endrer ikke bildefilene.
+
 
 ```powershell
 bildebank geo-scan

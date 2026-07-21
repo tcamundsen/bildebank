@@ -15,6 +15,8 @@ options:
 `image-scan` scanner importerte bilder slik at vi kan kjøre
 tekstsøk på innhold i bildene.
 
+Jobben som `image-scan` gjør kan også gjøres direkte fra Bildebank-vinduet.
+
 Denne må kjøres på nytt hvis du legger til nye bilder. Kommandoen kan avbrytes
 med **Ctrl-C**. Den fortsetter da der den slapp neste gang kommandoen kjøres.
 Hvis den kjøres fra Bildebank-vinduet, bruker du **Avbryt jobb** i
