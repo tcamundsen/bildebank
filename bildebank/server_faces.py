@@ -1538,9 +1538,10 @@ def item_face_matches_content_html(
                 continue
             person_id = int(reference["person_id"])
             current = best_by_person.get(person_id)
-            if current is None or score > float(current["score"]) or (
-                score == float(current["score"])
-                and reference_face_id < int(current["referenceFaceId"])
+            if current is None or score > require_float(current["score"], "score") or (
+                score == require_float(current["score"], "score")
+                and reference_face_id
+                < require_int(current["referenceFaceId"], "referenceFaceId")
             ):
                 best_by_person[person_id] = {
                     "name": str(reference["name"]),
@@ -1550,7 +1551,10 @@ def item_face_matches_content_html(
                 }
         candidates = sorted(
             best_by_person.values(),
-            key=lambda candidate: (-float(candidate["score"]), str(candidate["name"])),
+            key=lambda candidate: (
+                -require_float(candidate["score"], "score"),
+                str(candidate["name"]),
+            ),
         )[:3]
         rendered_faces.append(
             {
@@ -1571,7 +1575,8 @@ def item_face_matches_content_html(
         write_metadata_cache=not read_only,
     )
     candidates_by_face_id = {
-        int(face["faceId"]): face["candidates"] for face in rendered_faces
+        require_int(face["faceId"], "faceId"): face["candidates"]
+        for face in rendered_faces
     }
     intro = (
         '<p class="face-matches-help">Hver person vurderes uavhengig. '
@@ -1584,7 +1589,7 @@ def item_face_matches_content_html(
             item,
             image_url,
             face,
-            candidates_by_face_id.get(int(face["faceId"]), []),
+            candidates_by_face_id.get(require_int(face["faceId"], "faceId"), []),
         )
         for face in boxed_faces
     )
