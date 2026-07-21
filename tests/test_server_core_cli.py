@@ -35,7 +35,7 @@ from bildebank.server_pages import (
     search_html,
     sources_page_html,
 )
-from bildebank.server_response import add_csrf_to_html
+from bildebank.server_response import add_csrf_to_html, read_only_html
 from bildebank.server_search import DEFAULT_SEARCH_LIMIT, ServerSearchStats
 from tests.cli_helpers import write_test_image
 from tests.db_test_helpers import register_target_file
@@ -69,6 +69,20 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertIn("--lan-share", stdout)
         self.assertIn("--allow-remote", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_read_only_html_removes_only_generated_settings_navigation_links(self) -> None:
+        body = """
+        <a class="server-search-link" href="/settings">Innstillinger</a>
+        <a href="/settings">Innstillinger</a>
+        <p>Se innstillinger for mer informasjon.</p>
+        <a href="/settings/removed">Slettede bilder</a>
+        """
+
+        result = read_only_html(body)
+
+        self.assertNotIn('href="/settings">Innstillinger</a>', result)
+        self.assertIn("Se innstillinger for mer informasjon.", result)
+        self.assertIn('href="/settings/removed">Slettede bilder</a>', result)
 
     def test_run_server_preview_images_is_explicit_and_defaults_to_false(self) -> None:
         default_args = build_parser().parse_args(["run-server"])

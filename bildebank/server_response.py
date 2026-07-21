@@ -13,9 +13,9 @@ POST_FORM_RE = re.compile(
     r"(<form\b(?=[^>]*\bmethod\s*=\s*([\"'])post\2)[^>]*>)",
     re.IGNORECASE,
 )
-SETTINGS_LINK_RE = re.compile(
-    r"\s*<a\b[^>]*\bhref\s*=\s*([\"'])/settings\1[^>]*>Innstillinger</a>",
-    re.IGNORECASE,
+SETTINGS_LINK_HTML = (
+    '<a class="server-search-link" href="/settings">Innstillinger</a>',
+    '<a href="/settings">Innstillinger</a>',
 )
 
 
@@ -29,7 +29,10 @@ def add_csrf_to_html(content: str, token: str) -> str:
 
 
 def read_only_html(content: str) -> str:
-    return SETTINGS_LINK_RE.sub("", content)
+    for settings_link in SETTINGS_LINK_HTML:
+        content = content.replace(settings_link, "")
+    return content
+
 
 class ServerResponseMixin:
     if TYPE_CHECKING:
