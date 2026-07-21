@@ -66,7 +66,7 @@ def test_ensure_preview_uses_browser_profile_and_keeps_original(tmp_path: Path) 
     item, original = make_avi(target)
     original_content = original.read_bytes()
     tools = FFmpegTools(Path("ffmpeg.exe"), Path("ffprobe.exe"), "8.1.2", True)
-    input_probe = VideoProbe(10.0, 641, 481, "mpeg4", "yuv420p", "tt", "mp3")
+    input_probe = VideoProbe(10.0, 641, 481, "mjpeg", "yuvj420p", "tt", "mp3")
     output_probe = VideoProbe(10.0, 640, 480, "h264", "yuv420p", "progressive", "aac")
     commands: list[list[str]] = []
 
@@ -91,7 +91,11 @@ def test_ensure_preview_uses_browser_profile_and_keeps_original(tmp_path: Path) 
     assert command[command.index("-pix_fmt") + 1] == "yuv420p"
     assert command[command.index("-c:a") + 1] == "aac"
     assert command[command.index("-b:a") + 1] == "160k"
-    assert "bwdif=" in command[command.index("-vf") + 1]
+    video_filter = command[command.index("-vf") + 1]
+    assert "bwdif=" in video_filter
+    assert "out_range=tv" in video_filter
+    assert "format=pix_fmts=yuv420p" in video_filter
+    assert command[command.index("-color_range") + 1] == "tv"
     assert command[command.index("-movflags") + 1] == "+faststart"
 
 

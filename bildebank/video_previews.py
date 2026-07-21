@@ -144,7 +144,10 @@ def ensure_video_preview(target: Path, item: Any, tools: FFmpegTools, *, rebuild
     input_probe = probe_video(tools.ffprobe, original_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = output_path.with_name(f".{output_path.name}.{uuid.uuid4().hex}.partial")
-    filters = ["scale=trunc(iw/2)*2:trunc(ih/2)*2"]
+    filters = [
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2:out_range=tv",
+        "format=pix_fmts=yuv420p",
+    ]
     if input_probe.field_order not in {"", "unknown", "progressive"}:
         filters.insert(0, "bwdif=mode=send_frame:parity=auto:deint=interlaced")
     command = [
@@ -171,6 +174,8 @@ def ensure_video_preview(target: Path, item: Any, tools: FFmpegTools, *, rebuild
         "20",
         "-pix_fmt",
         "yuv420p",
+        "-color_range",
+        "tv",
         "-vf",
         ",".join(filters),
         "-c:a",
