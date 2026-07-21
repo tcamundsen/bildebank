@@ -28,7 +28,13 @@ from bildebank.server_app import (
     maintenance_statuses,
     thumbnail_maintenance_status,
 )
-from bildebank.server_assets import SERVER_ASSET_VERSION, SERVER_CSS, SERVER_JS
+from bildebank.server_assets import (
+    SERVER_ASSET_VERSION,
+    SERVER_CSS,
+    SERVER_JS,
+    _asset_version,
+    page_html,
+)
 from bildebank.server_pages import app_status_page_html
 from bildebank.server_search import OpenClipSearchCache
 from bildebank.thumbnails import thumbnail_absolute_path
@@ -114,7 +120,6 @@ class ServerSettingsTests(unittest.TestCase):
             'window.addEventListener("load", scheduleMaintenanceStatusesLoad', SERVER_JS
         )
         self.assertIn("setTimeout(loadMaintenanceStatuses, 0)", SERVER_JS)
-        self.assertEqual(SERVER_ASSET_VERSION, "53")
         self.assertIn("bildebank ${payload.name}", SERVER_JS)
         self.assertIn("bilder trenger ${payload.name}", SERVER_JS)
         self.assertIn("/api/maintenance/thumbnails", SERVER_JS)
@@ -207,6 +212,20 @@ class ServerSettingsTests(unittest.TestCase):
         self.assertIn("Test-Model", body)
         self.assertIn("test-weights", body)
         self.assertIn("cpu", body)
+
+    def test_server_asset_version_tracks_css_and_javascript_contents(self) -> None:
+        self.assertEqual(SERVER_ASSET_VERSION, _asset_version(SERVER_CSS, SERVER_JS))
+        body = page_html("Test", "")
+        self.assertIn(f'href="/static/server.css?v={SERVER_ASSET_VERSION}"', body)
+        self.assertIn(f'src="/static/server.js?v={SERVER_ASSET_VERSION}"', body)
+        self.assertNotEqual(
+            SERVER_ASSET_VERSION,
+            _asset_version(f"{SERVER_CSS}\n/* endret */", SERVER_JS),
+        )
+        self.assertNotEqual(
+            SERVER_ASSET_VERSION,
+            _asset_version(SERVER_CSS, f"{SERVER_JS}\n// endret"),
+        )
 
     def test_run_server_settings_maintenance_status_counts_scan_needs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
