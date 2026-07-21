@@ -1075,13 +1075,16 @@
     }
     .dashboard-action {
       display: grid;
-      grid-template-columns: minmax(220px, 1fr) minmax(90px, auto) minmax(220px, auto) minmax(70px, auto);
+      grid-template-columns: minmax(220px, 1fr) minmax(90px, auto) minmax(70px, auto);
       gap: 12px;
       align-items: center;
       padding: 10px 12px;
       border: 1px solid var(--border);
       border-radius: 6px;
       background: var(--panel);
+    }
+    .dashboard-action-has-command {
+      grid-template-columns: minmax(220px, 1fr) minmax(90px, auto) minmax(220px, auto) minmax(70px, auto);
     }
     .dashboard-action h3 { margin: 0; font-size: 16px; }
     .dashboard-action p { margin: 3px 0 0; color: var(--muted); }

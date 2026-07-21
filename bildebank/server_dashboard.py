@@ -217,7 +217,7 @@ def dashboard_actions(summary: DashboardSummary) -> tuple[DashboardAction, ...]:
             "Thumbnails",
             "valgfritt",
             'I Bildebank-vinduet kan du trykke "Lag miniatyrbilder".',
-            "bildebank make-thumbnails",
+            None,
             "/help/make-thumbnails.md",
             thumbnail_maintenance=True,
         )
@@ -238,7 +238,7 @@ def scan_action(name: str, *, fact_rows: tuple[tuple[str, str], ...] = ()) -> Da
         name,
         "bør gjøres",
         "Oppdaterer tall...",
-        f"bildebank {name}",
+        None,
         f"/help/{name}.md",
         maintenance_name=name,
         gui_label=button_labels.get(name),
@@ -423,6 +423,7 @@ def thumbnail_coverage_info_row_html() -> str:
 
 def dashboard_action_html(action: DashboardAction) -> str:
     command_html = f'<code>{html.escape(action.command)}</code>' if action.command else ""
+    command_class = " dashboard-action-has-command" if action.command else ""
     help_html = f'<a href="{html.escape(action.help_path)}">Hjelp</a>' if action.help_path else ""
     link_html = f'<a href="{html.escape(action.link_path)}">Åpne</a>' if action.link_path else ""
     links = " ".join(part for part in (help_html, link_html) if part)
@@ -475,7 +476,7 @@ def dashboard_action_html(action: DashboardAction) -> str:
         else ""
     )
     return f"""
-    <article class="dashboard-action dashboard-action-{severity_class}"{maintenance_attr}{thumbnail_attr}>
+    <article class="dashboard-action dashboard-action-{severity_class}{command_class}"{maintenance_attr}{thumbnail_attr}>
       <div>
         <h3>{html.escape(action.title)}</h3>
         <p{detail_attr}>{html.escape(action.detail)}</p>
