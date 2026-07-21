@@ -409,7 +409,7 @@ def source_years_page_html(
     return page_html(
         source_label,
         f"""
-        <main class="server-browser">
+        <main class="server-browser years-browser">
           {app_header_html(
               source_label,
               source=source,
@@ -418,7 +418,7 @@ def source_years_page_html(
               face_enabled=face_enabled,
               openclip_enabled=openclip_enabled,
           )}
-          <section class="month-grid-server">{content}</section>
+          <section class="month-grid-server years-grid-server">{content}</section>
         </main>
         """,
     )

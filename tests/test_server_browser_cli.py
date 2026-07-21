@@ -978,11 +978,20 @@ class ServerBrowserCliTests(unittest.TestCase):
                 conn.close()
 
             body = years_page_html(target)
+            filtered_body = source_years_page_html(
+                target, text_filter_browser_source("missing:gps", target)
+            )
 
         self.assertIn('<section class="month-grid-server years-grid-server">', body)
+        self.assertIn('<main class="server-browser years-browser">', filtered_body)
+        self.assertIn(
+            '<section class="month-grid-server years-grid-server">', filtered_body
+        )
         for year in range(1970, 1996):
             self.assertIn(f'<div class="path">{year}</div>', body)
             self.assertIn('<div class="score">1 måned, 1 bilde</div>', body)
+            self.assertIn(f'<div class="path">{year}</div>', filtered_body)
+            self.assertIn('<div class="score">1 måned, 1 bilde</div>', filtered_body)
 
     def test_run_server_year_route_rejects_invalid_year(self) -> None:
         handler = object.__new__(BildebankRequestHandler)
