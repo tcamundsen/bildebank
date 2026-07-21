@@ -37,6 +37,8 @@ else:
 
 PAD_OUTER = 16
 BUTTON_STYLE = "Launcher.TButton"
+NOTEBOOK_TAB_STYLE = "TNotebook.Tab"
+NOTEBOOK_TAB_PADDING = (12, 6)
 
 
 def close_blocked_by_running_command(busy: bool) -> bool:
@@ -148,7 +150,9 @@ class LauncherApp:
         tk = self.tk
         ttk = self.ttk
 
-        ttk.Style(self.root).configure(BUTTON_STYLE, padding=BUTTON_PADDING)
+        style = ttk.Style(self.root)
+        style.configure(BUTTON_STYLE, padding=BUTTON_PADDING)
+        style.configure(NOTEBOOK_TAB_STYLE, padding=NOTEBOOK_TAB_PADDING)
 
         # Ytterste padding i vinduet.
         outer = ttk.Frame(self.root, padding=PAD_OUTER)

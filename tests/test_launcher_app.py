@@ -6,7 +6,13 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
-from bildebank.launcher_app import BUTTON_STYLE, LauncherApp, close_blocked_by_running_command
+from bildebank.launcher_app import (
+    BUTTON_STYLE,
+    NOTEBOOK_TAB_PADDING,
+    NOTEBOOK_TAB_STYLE,
+    LauncherApp,
+    close_blocked_by_running_command,
+)
 from bildebank.launcher_status import LauncherConfig
 
 
@@ -118,6 +124,7 @@ def test_launcher_app_builds_tabs_log_and_footer_outside_notebook(tmp_path: Path
     assert app.cancel_command_button.options["text"] == "Avbryt jobb"
     assert app.exit_button.options["text"] == "Avslutt Bildebank"
     assert app.cancel_command_button.options["style"] == BUTTON_STYLE
+    assert (NOTEBOOK_TAB_STYLE, {"padding": NOTEBOOK_TAB_PADDING}) in FakeStyle.configured
 
 
 def test_launcher_app_starts_tab_status_refreshes(tmp_path: Path) -> None:
