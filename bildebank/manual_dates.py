@@ -1,17 +1,28 @@
 from __future__ import annotations
 
 import datetime as dt
-import re
+
+
+_UNIT_CHARACTERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzæøåÆØÅ")
 
 
 def date_range_from_uncertainty(center: dt.date, value: str) -> tuple[dt.date, dt.date]:
-    match = re.fullmatch(r"\s*(\d+)\s*([A-Za-zæøåÆØÅ]+)\s*", value)
-    if match is None:
+    stripped_value = value.strip()
+    amount_end = 0
+    while amount_end < len(stripped_value) and stripped_value[amount_end].isdecimal():
+        amount_end += 1
+
+    unit = stripped_value[amount_end:].lstrip()
+    if (
+        amount_end == 0
+        or not unit
+        or any(character not in _UNIT_CHARACTERS for character in unit)
+    ):
         raise ValueError("Ugyldig usikkerhet. Bruk for eksempel 3d, 2w, 1m eller 1y.")
-    amount = int(match.group(1))
+    amount = int(stripped_value[:amount_end])
     if amount < 1:
         raise ValueError("Usikkerhet må være minst 1.")
-    unit = match.group(2).lower()
+    unit = unit.lower()
     if unit in {"d", "day", "days", "dag", "dager"}:
         delta = dt.timedelta(days=amount)
         return center - delta, center + delta

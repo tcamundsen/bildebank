@@ -46,6 +46,13 @@ class ManualDatesTests(unittest.TestCase):
         ):
             date_range_from_uncertainty(dt.date(2024, 6, 15), "about one month")
 
+    def test_long_invalid_uncertainty_is_rejected(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            r"Ugyldig usikkerhet\. Bruk for eksempel 3d, 2w, 1m eller 1y\.",
+        ):
+            date_range_from_uncertainty(dt.date(2024, 6, 15), "9" * 100_000 + "!")
+
     def test_zero_uncertainty_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, r"Usikkerhet må være minst 1\."):
             date_range_from_uncertainty(dt.date(2024, 6, 15), "0m")
