@@ -1314,7 +1314,17 @@ def source_summary_rows(target: Path) -> list[sqlite3.Row]:
                     sources.imported_at,
                     sources.status,
                     COUNT(file_sources.id) AS source_file_count,
-                    COUNT(CASE WHEN files.deleted_at IS NULL THEN 1 END) AS active_file_count
+                    COUNT(CASE WHEN files.deleted_at IS NULL THEN 1 END) AS active_file_count,
+                    COUNT(DISTINCT CASE
+                        WHEN files.deleted_at IS NULL
+                         AND NOT EXISTS (
+                            SELECT 1
+                            FROM file_sources AS other_sources
+                            WHERE other_sources.file_id = file_sources.file_id
+                              AND other_sources.source_id != sources.id
+                         )
+                        THEN file_sources.file_id
+                    END) AS exclusive_active_file_count
                 FROM sources
                 LEFT JOIN file_sources ON file_sources.source_id = sources.id
                 LEFT JOIN files ON files.id = file_sources.file_id

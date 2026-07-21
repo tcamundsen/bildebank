@@ -3037,6 +3037,53 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertIn("<code>location:manual h3res>=9</code>", body)
         self.assertIn("h3res>=9</code>", body)
 
+    def test_sources_page_counts_unique_active_files_exclusive_to_each_source(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source_a = root / "source-a"
+            source_b = root / "source-b"
+            source_a.mkdir()
+            source_b.mkdir()
+            for name, content in (
+                ("ONLY_A_20240101.jpg", b"only-a"),
+                ("SHARED_A_20240102.jpg", b"shared"),
+                ("DUP_A_20240103.jpg", b"duplicate-a"),
+                ("DUP_A_COPY_20240104.jpg", b"duplicate-a"),
+            ):
+                (source_a / name).write_bytes(content)
+            (source_b / "SHARED_B_20240105.jpg").write_bytes(b"shared")
+            (source_b / "ONLY_B_20240106.jpg").write_bytes(b"only-b")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            for source in (source_a, source_b):
+                self.assertEqual(
+                    run_cli(
+                        [
+                            "--target",
+                            str(target),
+                            "import",
+                            "--name",
+                            source.name,
+                            "--quiet",
+                            str(source),
+                        ]
+                    ),
+                    0,
+                )
+
+            summaries = source_summary_rows(target)
+            body = sources_page_html(target)
+
+        self.assertEqual(
+            [int(source["exclusive_active_file_count"]) for source in summaries],
+            [2, 1],
+        )
+        self.assertIn("aktive filer bare i denne kilden: 2", body)
+        self.assertIn("aktive filer bare i denne kilden: 1", body)
+
     def test_run_server_source_browser_reuses_source_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

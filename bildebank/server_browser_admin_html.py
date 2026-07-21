@@ -111,6 +111,7 @@ def source_row_html(source: sqlite3.Row) -> str:
     name = str(source["name"])
     status = str(source["status"])
     active_file_count = int(source["active_file_count"])
+    exclusive_active_file_count = int(source["exclusive_active_file_count"])
     source_file_count = int(source["source_file_count"])
     imported_at = str(source["imported_at"] or "-")
     source_browser = imported_source_browser_source(source)
@@ -119,6 +120,7 @@ def source_row_html(source: sqlite3.Row) -> str:
       <div class="people-name">{html.escape(name)}</div>
       <a class="person-link" href="{html.escape(source_browser.root_url)}">Vis bilder ({active_file_count})</a>
       <span class="status">filer fra kilde: {source_file_count}</span>
+      <span class="status">aktive filer bare i denne kilden: {exclusive_active_file_count}</span>
       <span class="status">status: {html.escape(status)}</span>
       <span class="status">importert: {html.escape(imported_at)}</span>
       <div class="detail">{html.escape(str(source["path"]))}</div>
