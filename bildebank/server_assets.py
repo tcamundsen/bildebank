@@ -5,7 +5,7 @@ import importlib.resources
 import urllib.parse
 
 
-SERVER_ASSET_VERSION = "52"
+SERVER_ASSET_VERSION = "53"
 
 
 def _asset_text(filename: str) -> str:
