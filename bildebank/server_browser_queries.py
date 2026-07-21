@@ -1011,6 +1011,14 @@ def source_year_cards(
     *,
     hide_out_of_focus: bool = False,
 ) -> list[dict[str, Any]]:
+    if source_has_sql_filter(source):
+        return sql_filtered_source_year_cards(
+            target,
+            source,
+            face_config,
+            hide_out_of_focus=hide_out_of_focus,
+        )
+
     summaries_by_year: dict[str, dict[str, Any]] = {}
     for month_key in source_month_keys(target, source, face_config, hide_out_of_focus=hide_out_of_focus):
         year = month_key[:4]
@@ -1039,6 +1047,106 @@ def source_year_cards(
         summary["item_count"] = int(summary["item_count"]) + len(items)
 
     return [summaries_by_year[year] for year in sorted(summaries_by_year)]
+
+
+def sql_filtered_source_year_cards(
+    target: Path,
+    source: BrowserSource,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    hide_out_of_focus: bool = False,
+) -> list[dict[str, Any]]:
+    where_sql, params = source_sql_filter(source)
+    conn = db.connect(target)
+    try:
+        where_sql, params = with_motion_video_filter(
+            target,
+            where_sql,
+            params,
+            include_motion=source_shows_motion_videos(source),
+            conn=conn,
+        )
+        where_sql, params = with_out_of_focus_filter(
+            source,
+            where_sql,
+            params,
+            hide_out_of_focus,
+        )
+        deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
+        attach_source_sql_filter_databases(conn, target, source, face_config)
+        rows = conn.execute(
+            f"""
+            SELECT
+                id,
+                target_path,
+                {db.BROWSER_DATE_ORDER_SQL} AS browser_date
+            FROM files
+            WHERE {deleted_sql}
+              AND ({where_sql})
+              AND {db.BROWSER_DATE_ORDER_SQL} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+            ORDER BY {ITEM_ORDER_SQL}
+            """,
+            params,
+        )
+
+        summaries_by_year: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            month_key = str(row["browser_date"])[:7]
+            if not valid_month_key(month_key):
+                continue
+            year = month_key[:4]
+            if not valid_year_key(year):
+                continue
+            summary = summaries_by_year.get(year)
+            if summary is None:
+                summaries_by_year[year] = {
+                    "year": year,
+                    "month_count": 1,
+                    "item_count": 1,
+                    "first_month": month_key,
+                    "item_id": int(row["id"]),
+                    "item_is_image": is_image_item(row),
+                    "last_month": month_key,
+                }
+                continue
+
+            summary["item_count"] = int(summary["item_count"]) + 1
+            if month_key != summary["last_month"]:
+                summary["month_count"] = int(summary["month_count"]) + 1
+                summary["last_month"] = month_key
+            if (
+                month_key == summary["first_month"]
+                and not bool(summary["item_is_image"])
+                and is_image_item(row)
+            ):
+                summary["item_id"] = int(row["id"])
+                summary["item_is_image"] = True
+
+        summaries = [summaries_by_year[year] for year in sorted(summaries_by_year)]
+        item_ids = [int(summary["item_id"]) for summary in summaries]
+        if not item_ids:
+            return []
+        placeholders = ",".join("?" for _ in item_ids)
+        items = {
+            int(item["id"]): item
+            for item in conn.execute(
+                f"SELECT {FILE_COLUMNS} FROM files WHERE id IN ({placeholders})",
+                item_ids,
+            )
+        }
+        return [
+            {
+                "year": str(summary["year"]),
+                "month_count": int(summary["month_count"]),
+                "item_count": int(summary["item_count"]),
+                "first_month": str(summary["first_month"]),
+                "item": items[int(summary["item_id"])],
+            }
+            for summary in summaries
+            if int(summary["item_id"]) in items
+        ]
+    finally:
+        conn.close()
 
 
 def browser_year_month_cards(target: Path, year: str, *, hide_out_of_focus: bool = False) -> list[dict[str, Any]]:

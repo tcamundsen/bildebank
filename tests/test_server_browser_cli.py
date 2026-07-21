@@ -857,6 +857,97 @@ class ServerBrowserCliTests(unittest.TestCase):
             ["2005-03", "2005-04", "2005-05"],
         )
 
+    def test_run_server_sql_filtered_year_cards_do_not_query_each_month(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            target.mkdir()
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                rows = (
+                    ("2023/01/match-first.mp4", "2023-01-01", None),
+                    ("2023/01/match-cover.jpg", "2023-01-02", None),
+                    ("2023/02/match-feb.jpg", "2023-02-01", None),
+                    ("2024/03/match-mar.jpg", "2024-03-01", None),
+                    ("2024/03/ignore.png", "2024-03-02", None),
+                    ("deleted/2022/04/deleted-match.jpg", "2022-04-01", "2025-01-01 00:00:00"),
+                )
+                for index, (relative_path, taken_date, deleted_at) in enumerate(rows, 1):
+                    filename = Path(relative_path).name
+                    conn.execute(
+                        """
+                        INSERT INTO files(
+                            target_path, target_path_key, original_filename, stored_filename,
+                            sha256, size_bytes, taken_date, date_source, name_conflict,
+                            deleted_at
+                        ) VALUES(?, ?, ?, ?, ?, ?, ?, 'filename', 0, ?)
+                        """,
+                        (
+                            relative_path,
+                            relative_path.casefold(),
+                            filename,
+                            filename,
+                            f"sha-{index}",
+                            index,
+                            taken_date,
+                            deleted_at,
+                        ),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.server_browser_queries.source_month_keys",
+                    side_effect=AssertionError("SQL-filter should not query month keys separately"),
+                ),
+                patch(
+                    "bildebank.server_browser_queries.source_month_items",
+                    side_effect=AssertionError("SQL-filter should not query each month"),
+                ),
+            ):
+                filename_cards = server_browser_queries.source_year_cards(
+                    target,
+                    text_filter_browser_source("filename:match"),
+                )
+                type_cards = server_browser_queries.source_year_cards(
+                    target,
+                    text_filter_browser_source("type:image"),
+                )
+                deleted_cards = server_browser_queries.source_year_cards(
+                    target,
+                    text_filter_browser_source("is:deleted"),
+                )
+
+        self.assertEqual(
+            [
+                (
+                    card["year"],
+                    card["month_count"],
+                    card["item_count"],
+                    card["first_month"],
+                    card["item"]["stored_filename"],
+                )
+                for card in filename_cards
+            ],
+            [
+                ("2023", 2, 3, "2023-01", "match-cover.jpg"),
+                ("2024", 1, 1, "2024-03", "match-mar.jpg"),
+            ],
+        )
+        self.assertEqual(
+            [(card["year"], card["month_count"], card["item_count"]) for card in type_cards],
+            [("2023", 2, 2), ("2024", 1, 2)],
+        )
+        self.assertEqual(
+            [
+                (card["year"], card["month_count"], card["item_count"], card["item"]["stored_filename"])
+                for card in deleted_cards
+            ],
+            [("2022", 1, 1, "deleted-match.jpg")],
+        )
+
     def test_run_server_years_page_keeps_text_for_many_year_cards(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
