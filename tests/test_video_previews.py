@@ -17,7 +17,7 @@ from bildebank.server_files import ByteRange, describe_server_file, parse_byte_r
 from bildebank.static_browser import static_browser_item
 from bildebank.video_previews import (
     VideoProbe,
-    active_avi_candidates,
+    active_video_preview_candidates,
     ensure_video_preview,
     run_make_video_previews,
     video_preview_absolute_path,
@@ -28,10 +28,14 @@ from tests.cli_helpers import capture_cli
 
 
 def make_avi(target: Path, name: str = "film.AVI") -> tuple[dict[str, object], Path]:
+    return make_video(target, name, b"unchanged AVI original")
+
+
+def make_video(target: Path, name: str, content: bytes) -> tuple[dict[str, object], Path]:
     relative = Path("2024/01") / name
     original = target / relative
     original.parent.mkdir(parents=True, exist_ok=True)
-    original.write_bytes(b"unchanged AVI original")
+    original.write_bytes(content)
     file_id = register_target_file(target, relative)
     conn = db.connect(target)
     try:
@@ -49,21 +53,26 @@ def test_preview_path_is_content_addressed() -> None:
         video_preview_relative_path("not-a-hash")
 
 
-def test_active_candidates_only_include_active_avi_files(tmp_path: Path) -> None:
+def test_active_candidates_include_avi_and_3gp_but_not_other_videos(tmp_path: Path) -> None:
     target = tmp_path / "collection"
     init_database(target)
     avi, _original = make_avi(target)
+    three_gp, _original = make_video(target, "phone.3GP", b"3gp")
     mp4_path = target / "2024/01/other.mp4"
     mp4_path.write_bytes(b"mp4")
     register_target_file(target, Path("2024/01/other.mp4"))
 
-    assert [int(row["id"]) for row in active_avi_candidates(target)] == [int(avi["id"])]
+    assert [int(row["id"]) for row in active_video_preview_candidates(target)] == [
+        int(avi["id"]),
+        int(three_gp["id"]),
+    ]
 
 
-def test_ensure_preview_uses_browser_profile_and_keeps_original(tmp_path: Path) -> None:
+@pytest.mark.parametrize("filename", ["film.AVI", "phone.3GP"])
+def test_ensure_preview_uses_browser_profile_and_keeps_original(tmp_path: Path, filename: str) -> None:
     target = tmp_path / "collection"
     init_database(target)
-    item, original = make_avi(target)
+    item, original = make_video(target, filename, b"unchanged video original")
     original_content = original.read_bytes()
     tools = FFmpegTools(Path("ffmpeg.exe"), Path("ffprobe.exe"), "8.1.2", True)
     input_probe = VideoProbe(10.0, 641, 481, "mjpeg", "yuvj420p", "tt", "mp3")
@@ -160,10 +169,18 @@ def test_range_parsing_supports_normal_open_and_suffix_ranges() -> None:
         parse_byte_range("bytes=0-1,4-5", 10)
 
 
-def test_server_and_html_use_preview_but_keep_original_link(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("filename", "format_name"),
+    [("film.AVI", "AVI"), ("phone.3GP", "3GP")],
+)
+def test_server_and_html_use_preview_but_keep_original_link(
+    tmp_path: Path,
+    filename: str,
+    format_name: str,
+) -> None:
     target = tmp_path / "collection"
     init_database(target)
-    item, _original = make_avi(target)
+    item, _original = make_video(target, filename, b"video original")
     preview = video_preview_absolute_path(target, str(item["sha256"]))
     preview.parent.mkdir(parents=True)
     preview.write_bytes(b"mp4 preview")
@@ -176,6 +193,7 @@ def test_server_and_html_use_preview_but_keep_original_link(tmp_path: Path) -> N
     assert served.content_type == "video/mp4"
     assert f'/video-preview/{item["id"]}' in server_html
     assert f'href="/file/{item["id"]}"' in server_html
+    assert f"Åpne original {format_name}" in server_html
     assert static_item["playbackUrl"] == preview.relative_to(target).as_posix()
     assert static_item["originalUrl"] == str(item["target_path"])
 

@@ -13,7 +13,7 @@ options:
 <!-- CLI-HELP-END -->
 
 Denne Windows-kommandoen laster ned FFmpeg og FFprobe som Bildebank trenger for
-å lage MP4-avspillingskopier av AVI-videoer. Programmene legges i
+å lage MP4-avspillingskopier av AVI- og 3GP-videoer. Programmene legges i
 `bildebank-tools\ffmpeg` under Bildebank-programmappen. Du trenger ikke legge
 dem i Windows PATH.
 
@@ -30,4 +30,3 @@ bildebank ffmpeg-install --force
 
 Bildebank kontrollerer SHA-256 for nedlastingen før den pakkes ut, og tester
 både FFmpeg, FFprobe og H.264-støtten før den nye installasjonen tas i bruk.
-

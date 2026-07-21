@@ -459,7 +459,7 @@ def render_html(
           <nav class="breadcrumb" aria-label="Plassering"><span>År</span></nav>
         </div>
         <span id="status" class="status"></span>
-        <a id="originalVideoLink" class="original-video-link" href="#" target="_blank" hidden>Åpne original AVI</a>
+        <a id="originalVideoLink" class="original-video-link" href="#" target="_blank" hidden>Åpne originalvideo</a>
       </div>
       <nav class="controls" aria-label="Navigering">
         <span class="nav-button-pair" data-nav-button-pair="year">
@@ -731,7 +731,7 @@ def render_html(
         link.className = "media-link file-card";
         link.href = item.originalUrl || item.url;
         link.target = "_blank";
-        link.textContent = `AVI-videoen mangler MP4-avspillingskopi\n${{item.name}}`;
+        link.textContent = `Videoen mangler MP4-avspillingskopi\n${{item.name}}`;
         showItemMedia(link, link, item);
       }} else if (item.kind === "image") {{
         const link = document.createElement("a");

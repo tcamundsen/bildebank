@@ -29,8 +29,8 @@ for år, måneder og filer. Stien øverst, for eksempel
 `År / 2024 / Januar / IMG_1234.jpg`, kan brukes til å gå tilbake til en
 oversikt. RAW/NEF og PSD vises som fil-lenker, ikke som bildevisning.
 
-AVI-videoer bruker en eksisterende MP4-avspillingskopi når den finnes. Den
-statiske browseren beholder samtidig en lenke til den originale AVI-filen. Kjør
+AVI- og 3GP-videoer bruker en eksisterende MP4-avspillingskopi når den finnes.
+Den statiske browseren beholder samtidig en lenke til originalvideoen. Kjør
 [`make-video-previews`](make-video-previews.md) før `make-browser` hvis slike
 kopier mangler.
 

@@ -573,8 +573,8 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "make-video-previews",
         usage="bildebank make-video-previews [valg]",
-        help="Lag MP4-avspillingskopier av AVI-videoer",
-        description="Lag regenererbare MP4-kopier av aktive AVI-videoer for nettleseren.",
+        help="Lag MP4-avspillingskopier av AVI- og 3GP-videoer",
+        description="Lag regenererbare MP4-kopier av aktive AVI- og 3GP-videoer for nettleseren.",
     )
     make_video_previews.add_argument(
         "--dry-run",
@@ -584,13 +584,13 @@ def build_parser() -> argparse.ArgumentParser:
     make_video_previews.add_argument(
         "--limit",
         type=positive_int_arg,
-        help="Maks antall AVI-filer som skal kontrolleres.",
+        help="Maks antall AVI- og 3GP-filer som skal kontrolleres.",
     )
     make_video_previews.add_argument("--verbose", action="store_true", help="Vis filer som feiler.")
     make_video_previews.add_argument(
         "--rebuild",
         action="store_true",
-        help="Lag alle AVI-avspillingskopier på nytt.",
+        help="Lag alle AVI- og 3GP-avspillingskopier på nytt.",
     )
 
     add_command(
@@ -1833,7 +1833,9 @@ def print_video_preview_progress(
     global VIDEO_PREVIEW_PROGRESS
     if stage == "start":
         VIDEO_PREVIEW_PROGRESS = ProgressMeter("Videoavspillingskopier")
-        VIDEO_PREVIEW_PROGRESS.message(f"Videoavspillingskopier: {total} AVI-filer skal kontrolleres.")
+        VIDEO_PREVIEW_PROGRESS.message(
+            f"Videoavspillingskopier: {total} AVI- og 3GP-filer skal kontrolleres."
+        )
         return
     if VIDEO_PREVIEW_PROGRESS is None:
         VIDEO_PREVIEW_PROGRESS = ProgressMeter("Videoavspillingskopier")

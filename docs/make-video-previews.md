@@ -4,21 +4,21 @@
 ```text
 usage: bildebank make-video-previews [valg]
 
-Lag regenererbare MP4-kopier av aktive AVI-videoer for nettleseren.
+Lag regenererbare MP4-kopier av aktive AVI- og 3GP-videoer for nettleseren.
 
 options:
   -h, --help     show this help message and exit
   --dry-run      Vis hva som mangler uten å installere programmer eller skrive
                  filer.
-  --limit LIMIT  Maks antall AVI-filer som skal kontrolleres.
+  --limit LIMIT  Maks antall AVI- og 3GP-filer som skal kontrolleres.
   --verbose      Vis filer som feiler.
-  --rebuild      Lag alle AVI-avspillingskopier på nytt.
+  --rebuild      Lag alle AVI- og 3GP-avspillingskopier på nytt.
 ```
 <!-- CLI-HELP-END -->
 
-Nettlesere kan vanligvis ikke spille av AVI-filer direkte. Kommandoen lager
-derfor MP4-avspillingskopier som Bildebank kan bruke i nettleseren. AVI-filene
-blir ikke endret, flyttet eller slettet.
+Nettlesere kan ha problemer med å spille av AVI- og 3GP-filer direkte. Kommandoen
+lager derfor MP4-avspillingskopier som Bildebank kan bruke i nettleseren.
+Originalfilene blir ikke endret, flyttet eller slettet.
 
 Du kan gjøre dette fra Bildebank-vinduet med knappen
 **Lag videoavspilling**, eller fra PowerShell:
@@ -45,12 +45,11 @@ ned programmer eller skrive filer:
 bildebank make-video-previews --dry-run
 ```
 
-Bruk `--limit 10` for å kontrollere eller konvertere opptil ti AVI-filer.
+Bruk `--limit 10` for å kontrollere eller konvertere opptil ti AVI- og 3GP-filer.
 `--verbose` viser navnene på filer som ikke kunne konverteres. Én feil stopper
 ikke de øvrige filene. Kommandoen avslutter med exit-code `2` hvis minst én fil
 feilet.
 
-`--rebuild` lager alle AVI-avspillingskopiene på nytt. Den ferdige kopien får
+`--rebuild` lager alle AVI- og 3GP-avspillingskopiene på nytt. Den ferdige kopien får
 ikke sitt endelige navn før FFmpeg-jobben er fullført og resultatet er
 kontrollert.
-

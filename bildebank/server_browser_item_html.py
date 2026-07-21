@@ -32,7 +32,7 @@ from .server_browser_sidecars import (
     motion_video_for_image,
     raw_sidecar_for_image,
 )
-from .video_previews import existing_video_preview_path
+from .video_previews import VIDEO_PREVIEW_SOURCE_EXTENSIONS, existing_video_preview_path
 from .server_browser_info_html import (
     display_short_date,
     gps_location_badge_html,
@@ -1017,18 +1017,20 @@ def video_item_html(target: Path, item: Any) -> str:
     target_path = Path(str(item["target_path"]))
     original_url = f"/file/{file_id}"
     name = html.escape(str(item["stored_filename"]))
-    if target_path.suffix.casefold() != ".avi":
+    suffix = target_path.suffix.casefold()
+    if suffix not in VIDEO_PREVIEW_SOURCE_EXTENSIONS:
         return f'<video src="{original_url}" controls></video>'
+    format_name = suffix.removeprefix(".").upper()
     if existing_video_preview_path(target, item) is None:
         return (
             f'<a class="file-card" href="{original_url}" target="_blank" download>'
-            f'AVI-videoen mangler MP4-avspillingskopi<br>{name}<br>'
+            f'{format_name}-videoen mangler MP4-avspillingskopi<br>{name}<br>'
             '<span>Kjør «Lag videoavspillingskopier» i Bildebank.</span></a>'
         )
     return (
         '<div class="video-with-original">'
         f'<video src="/video-preview/{file_id}" controls></video>'
-        f'<a class="video-original-link" href="{original_url}" download>Åpne original AVI</a>'
+        f'<a class="video-original-link" href="{original_url}" download>Åpne original {format_name}</a>'
         '</div>'
     )
 

@@ -37,7 +37,7 @@ from .launcher_status import (
 )
 from .launcher_widgets import Tooltip, select_person_dialog
 from .pending_deletes import list_pending_deletes
-from .video_previews import active_avi_candidates, existing_video_preview_path
+from .video_previews import active_video_preview_candidates, existing_video_preview_path
 
 FACE_SCAN_TOOLTIP = (
     "Kjører 'bildebank face-scan'. Denne kommandoen scanner bildene etter ansikter. "
@@ -330,7 +330,7 @@ class ToolsTab:
         video_preview_button.grid(row=3, column=0, padx=self.padx, pady=self.pady, sticky="ew")
         self._add_tooltip(
             video_preview_button,
-            "Lag MP4-avspillingskopier av AVI-videoer. AVI-originalene endres ikke.",
+            "Lag MP4-avspillingskopier av AVI- og 3GP-videoer. Originalene endres ikke.",
         )
         self._add_tooltip(
             static_browser_hide_checkbox,
@@ -392,7 +392,7 @@ class ToolsTab:
 
     def _refresh_video_preview_status(self) -> None:
         try:
-            candidates = active_avi_candidates(self.collection_path)
+            candidates = active_video_preview_candidates(self.collection_path)
             self.video_preview_missing_count = sum(
                 existing_video_preview_path(self.collection_path, item) is None
                 for item in candidates

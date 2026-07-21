@@ -82,15 +82,17 @@
       return;
     }
     status.replaceChildren(
-      document.createTextNode(`${payload.missing} bilder trenger ${payload.name}, kjør `),
+      document.createTextNode(`${payload.missing} bilder trenger ${payload.name}. Kjør `),
       Object.assign(document.createElement("code"), {textContent: `bildebank ${payload.name}`}),
-      document.createTextNode(" fra PowerShell.")
+      document.createTextNode(" fra PowerShell")
     );
     const guiLabel = status.closest("[data-maintenance-name]")?.dataset.maintenanceGuiLabel || "";
     if (guiLabel) {
       status.append(
-        document.createTextNode(` I Bildebank-vinduet kan du trykke "${guiLabel}".`)
+        document.createTextNode(` eller klikk "${guiLabel}" på Verktøy-siden i Bildebank-vinduet.`)
       );
+    } else {
+      status.append(document.createTextNode("."));
     }
   }
   function updateMaintenanceRow(row, payload) {

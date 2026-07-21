@@ -6,7 +6,7 @@ from pathlib import Path
 
 from . import db
 from .thumbnails import thumbnail_absolute_path, thumbnail_is_current
-from .video_previews import video_preview_absolute_path
+from .video_previews import VIDEO_PREVIEW_SOURCE_EXTENSIONS, video_preview_absolute_path
 
 
 @dataclass(frozen=True)
@@ -71,8 +71,8 @@ def resolve_video_preview_file(target: Path, raw_file_id: str) -> ServerFilePath
         ).fetchone()
     finally:
         conn.close()
-    if row is None or Path(str(row["target_path"])).suffix.casefold() != ".avi":
-        raise FileNotFoundError("Fant ikke AVI-filen.")
+    if row is None or Path(str(row["target_path"])).suffix.casefold() not in VIDEO_PREVIEW_SOURCE_EXTENSIONS:
+        raise FileNotFoundError("Fant ikke en video med avspillingskopi.")
     path = video_preview_absolute_path(target, str(row["sha256"])).resolve()
     try:
         path.relative_to(target.resolve())

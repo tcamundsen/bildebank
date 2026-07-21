@@ -15,7 +15,7 @@ from .formatting import format_bytes
 from .html_paths import path_to_url
 from .media import media_kind
 from .thumbnails import existing_thumbnail_url
-from .video_previews import existing_video_preview_path
+from .video_previews import VIDEO_PREVIEW_SOURCE_EXTENSIONS, existing_video_preview_path
 
 
 def static_browser_item(
@@ -74,7 +74,7 @@ def browser_playback_url(
         return playback_url
     if kind != "video":
         return None
-    if relative_path.suffix.casefold() != ".avi":
+    if relative_path.suffix.casefold() not in VIDEO_PREVIEW_SOURCE_EXTENSIONS:
         return original_url
     if target is None:
         return None

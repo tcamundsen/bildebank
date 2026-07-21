@@ -18,6 +18,7 @@ from .target_lock import TargetLock
 
 VIDEO_PREVIEW_ROOT_NAME = "video-previews"
 VIDEO_PREVIEW_PROFILE = "v1"
+VIDEO_PREVIEW_SOURCE_EXTENSIONS = frozenset({".avi", ".3gp"})
 
 
 @dataclass(frozen=True)
@@ -58,7 +59,7 @@ def video_preview_absolute_path(target: Path, sha256: str) -> Path:
 
 def existing_video_preview_path(target: Path, item: Any) -> Path | None:
     target_path = Path(str(item["target_path"]))
-    if target_path.suffix.casefold() != ".avi":
+    if target_path.suffix.casefold() not in VIDEO_PREVIEW_SOURCE_EXTENSIONS:
         return None
     preview_path = video_preview_absolute_path(target, str(item["sha256"]))
     try:
@@ -67,7 +68,7 @@ def existing_video_preview_path(target: Path, item: Any) -> Path | None:
         return None
 
 
-def active_avi_candidates(target: Path) -> list[Any]:
+def active_video_preview_candidates(target: Path) -> list[Any]:
     conn = db.connect(target)
     try:
         return list(
@@ -76,7 +77,10 @@ def active_avi_candidates(target: Path) -> list[Any]:
                 SELECT id, target_path, target_path_key, stored_filename, sha256, size_bytes
                 FROM files
                 WHERE deleted_at IS NULL
-                  AND lower(stored_filename) LIKE '%.avi'
+                  AND (
+                    lower(stored_filename) LIKE '%.avi'
+                    OR lower(stored_filename) LIKE '%.3gp'
+                  )
                 ORDER BY target_path_key
                 """
             )
@@ -132,10 +136,10 @@ def probe_video(ffprobe: Path | str, path: Path) -> VideoProbe:
 
 def ensure_video_preview(target: Path, item: Any, tools: FFmpegTools, *, rebuild: bool = False) -> Path:
     original_path = db.absolute_target_path(target, Path(str(item["target_path"])))
-    if original_path.suffix.casefold() != ".avi":
-        raise ValueError(f"Videoavspillingskopi støttes bare for AVI: {original_path}")
+    if original_path.suffix.casefold() not in VIDEO_PREVIEW_SOURCE_EXTENSIONS:
+        raise ValueError(f"Videoavspillingskopi støttes bare for AVI og 3GP: {original_path}")
     if not original_path.is_file():
-        raise FileNotFoundError(f"AVI-originalen finnes ikke: {original_path}")
+        raise FileNotFoundError(f"Videooriginalen finnes ikke: {original_path}")
 
     output_path = video_preview_absolute_path(target, str(item["sha256"]))
     if not rebuild and output_path.is_file() and output_path.stat().st_size > 0:
@@ -226,7 +230,7 @@ def run_make_video_previews(
     stats = VideoPreviewStats()
     lock = nullcontext() if dry_run or target_locked else TargetLock(target, command="make-video-previews")
     with lock:
-        candidates = active_avi_candidates(target)
+        candidates = active_video_preview_candidates(target)
         stats.total = len(candidates)
         if progress is not None:
             progress("start", 0, len(candidates), stats, None)
@@ -251,7 +255,7 @@ def run_make_video_previews(
                 ensure_video_preview(target, item, tools, rebuild=rebuild)
             except KeyboardInterrupt:
                 raise
-            except Exception as exc:  # noqa: BLE001 - continue with remaining AVI files
+            except Exception as exc:  # noqa: BLE001 - continue with remaining video files
                 stats.errors += 1
                 stats.last_error_path = relative_path
                 stats.last_error_message = str(exc)

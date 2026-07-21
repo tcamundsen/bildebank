@@ -28,8 +28,8 @@ options:
 en lokal web-server som kjører på din PC, og som du ser i nettleseren.
 Dette er vanligvis den beste måten å se på bildene på egen PC.
 
-AVI-videoer spilles av gjennom en regenererbar MP4-kopi. Originalfilen er
-fortsatt tilgjengelig fra videosiden og blir aldri endret. Hvis en AVI-video
+AVI- og 3GP-videoer spilles av gjennom en regenererbar MP4-kopi. Originalfilen
+er fortsatt tilgjengelig fra videosiden og blir aldri endret. Hvis en slik video
 mangler avspillingskopi, viser siden hva som mangler. Bruk knappen
 **Lag videoavspilling** i Bildebank-vinduet eller kjør
 [`make-video-previews`](make-video-previews.md).
