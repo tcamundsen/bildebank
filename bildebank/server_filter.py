@@ -44,6 +44,7 @@ class BrowserTextFilter:
     size_lt: int | None = None
     size_lte: int | None = None
     source: str | None = None
+    source_path: str | None = None
     tag: str | None = None
     width_gt: int | None = None
     width_gte: int | None = None
@@ -123,6 +124,7 @@ class FilterParseState:
     persons: list[str] = field(default_factory=list)
     size: NumericComparison = field(default_factory=NumericComparison)
     source: str | None = None
+    source_path: str | None = None
     tag: str | None = None
     width: NumericComparison = field(default_factory=NumericComparison)
     height: NumericComparison = field(default_factory=NumericComparison)
@@ -172,6 +174,7 @@ class FilterParseState:
             size_lt=self.size.lt,
             size_lte=self.size.lte,
             source=self.source,
+            source_path=self.source_path,
             tag=self.tag,
             width_gt=self.width.gt,
             width_gte=self.width.gte,
@@ -359,6 +362,10 @@ def parse_missing_filter(state: FilterParseState, key: str, value: str) -> None:
     if value not in {"gps", "date", "metadata", "comment", "source"}:
         raise ValueError("missing må være gps, date, metadata, comment eller source.")
     state.missing.append(value)
+
+
+def parse_source_path_filter(state: FilterParseState, key: str, value: str) -> None:
+    state.set_once("source_path", value, key)
 
 
 def parse_orientation_filter(state: FilterParseState, key: str, value: str) -> None:
@@ -594,6 +601,7 @@ KEY_VALUE_FILTERS: dict[str, Callable[[FilterParseState, str, str], None]] = {
     "path": parse_simple_text_filter,
     "person": parse_person_filter,
     "source": parse_simple_text_filter,
+    "sourcepath": parse_source_path_filter,
     "tag": parse_simple_text_filter,
     "type": parse_type_filter,
 }
@@ -661,6 +669,7 @@ def resolve_location_place(text_filter: BrowserTextFilter, target: Path | None) 
         size_lt=text_filter.size_lt,
         size_lte=text_filter.size_lte,
         source=text_filter.source,
+        source_path=text_filter.source_path,
         tag=text_filter.tag,
         width_gt=text_filter.width_gt,
         width_gte=text_filter.width_gte,
@@ -863,8 +872,11 @@ def text_filter_where_clause(text_filter: BrowserTextFilter) -> tuple[str, tuple
         person_name = person.strip().casefold()
         where.append(person_where_clause())
         params.extend((person_name, person_name))
-    if text_filter.source is not None:
-        source_filter, source_params = source_where_clause(text_filter.source)
+    if text_filter.source is not None or text_filter.source_path is not None:
+        source_filter, source_params = source_where_clause(
+            text_filter.source,
+            text_filter.source_path,
+        )
         where.append(source_filter)
         params.extend(source_params)
     if text_filter.tag is not None:
@@ -953,24 +965,41 @@ def extension_params_for_type(media_type: str) -> tuple[str, ...]:
     return tuple(f"%{extension}" for extension in sorted(extensions))
 
 
-def source_where_clause(value: str) -> tuple[str, tuple[object, ...]]:
-    clean_value = value.strip()
-    if clean_value.isdigit():
-        return (
-            "EXISTS (SELECT 1 FROM file_sources WHERE file_sources.file_id = files.id AND file_sources.source_id = ?)",
-            (int(clean_value),),
+def source_where_clause(
+    value: str | None,
+    source_path: str | None = None,
+) -> tuple[str, tuple[object, ...]]:
+    join_sql = ""
+    conditions = ["file_sources.file_id = files.id"]
+    params: list[object] = []
+
+    if value is not None:
+        clean_value = value.strip()
+        if clean_value.isdigit():
+            conditions.append("file_sources.source_id = ?")
+            params.append(int(clean_value))
+        else:
+            join_sql = "JOIN sources ON sources.id = file_sources.source_id"
+            conditions.append("bildebank_casefold(sources.name) LIKE ? ESCAPE '!'")
+            params.append(like_contains_param(clean_value))
+
+    if source_path is not None:
+        conditions.append(
+            "bildebank_casefold(replace(file_sources.source_path, char(92), '/')) "
+            "LIKE ? ESCAPE '!'"
         )
+        params.append(like_contains_param(source_path.replace("\\", "/")))
+
     return (
-        """
+        f"""
         EXISTS (
             SELECT 1
             FROM file_sources
-            JOIN sources ON sources.id = file_sources.source_id
-            WHERE file_sources.file_id = files.id
-              AND bildebank_casefold(sources.name) LIKE ? ESCAPE '!'
+            {join_sql}
+            WHERE {" AND ".join(conditions)}
         )
         """,
-        (like_contains_param(clean_value),),
+        tuple(params),
     )
 
 
@@ -1167,6 +1196,10 @@ def filter_help_html() -> str:
         <div class="info-row">
           <dt>Bilder uten GPS</dt>
           <dd><a href="/filter/missing:gps"><code>missing:gps</code></a></dd>
+        </div>
+        <div class="info-row">
+          <dt>Bilder fra en mappe i importkilden</dt>
+          <dd><a href="/filter/sourcepath%3ADCIM%2FCamera"><code>sourcepath:DCIM/Camera</code></a></dd>
         </div>
         <div class="info-row">
           <dt> Manuelt plasserte bilder</dt>

@@ -1331,14 +1331,88 @@ class ServerBrowserCliTests(unittest.TestCase):
                     source_filter = text_filter_browser_source(query, target)
                     self.assertIsNotNone(source_item_by_id(target, source_filter, 1))
 
+    def test_run_server_filter_supports_source_path_and_source_pairing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            mobile = root / "mobile"
+            backup = root / "backup"
+            mobile_camera = mobile / "DCIM" / "Camera"
+            mobile_other = mobile / "Andre"
+            backup_camera = backup / "DCIM" / "Camera"
+            backup_other = backup / "Arkiv"
+            for folder in (mobile_camera, mobile_other, backup_camera, backup_other):
+                folder.mkdir(parents=True)
+
+            (mobile_camera / "MOBIL_20240101.jpg").write_bytes(b"first-photo")
+            (mobile_other / "MOBIL_20240102.jpg").write_bytes(b"second-photo")
+            (backup_other / "kopi-1.jpg").write_bytes(b"first-photo")
+            (backup_camera / "kopi-2.jpg").write_bytes(b"second-photo")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            for source, name in ((mobile, "Mobil"), (backup, "Backup")):
+                self.assertEqual(
+                    run_cli(
+                        [
+                            "--target",
+                            str(target),
+                            "import",
+                            "--name",
+                            name,
+                            "--quiet",
+                            str(source),
+                        ]
+                    ),
+                    0,
+                )
+
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    UPDATE file_sources
+                    SET source_path = replace(source_path, '/', char(92))
+                    WHERE source_id = (SELECT id FROM sources WHERE name = 'Backup')
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            def matching_filenames(query: str) -> set[str]:
+                source_filter = text_filter_browser_source(query, target)
+                return {
+                    str(item["stored_filename"])
+                    for item in source_items(target, source_filter)
+                }
+
+            both_filenames = {"MOBIL_20240101.jpg", "MOBIL_20240102.jpg"}
+            self.assertEqual(
+                matching_filenames(r"sourcepath:DCIM\Camera"),
+                both_filenames,
+            )
+            self.assertEqual(
+                matching_filenames("sourcepath:dcim/cam?ra"),
+                both_filenames,
+            )
+            self.assertEqual(matching_filenames("sourcepath:finnes-ikke"), set())
+            self.assertEqual(
+                matching_filenames("source:Mobil sourcepath:DCIM/Camera"),
+                {"MOBIL_20240101.jpg"},
+            )
+            self.assertEqual(
+                matching_filenames("source:Backup sourcepath:DCIM/Camera"),
+                {"MOBIL_20240102.jpg"},
+            )
+
     def test_run_server_filter_supports_user_wildcards_and_literal_sql_wildcards(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
-            first_source = root / "first-source"
-            second_source = root / "second-source"
+            first_source = root / "source_100%"
+            second_source = root / "sourceX1000"
             first_source.mkdir()
             second_source.mkdir()
             (first_source / "IMG_100%_20240102.png").write_bytes(minimal_png(100, 80))
@@ -1407,6 +1481,7 @@ class ServerBrowserCliTests(unittest.TestCase):
                 "camera:Kamera_100%",
                 "comment:Notat_100%",
                 "source:Kilde_100%",
+                "sourcepath:source_100%",
                 "filename:IMG_*",
             ):
                 with self.subTest(query=query):
@@ -1416,6 +1491,7 @@ class ServerBrowserCliTests(unittest.TestCase):
                 "filename:IMG?100*",
                 "comment:Notat?100*",
                 "source:Kilde?100*",
+                "sourcepath:source?100*",
             ):
                 with self.subTest(query=query):
                     self.assertEqual(matching_filenames(query), both_filenames)
@@ -2202,6 +2278,7 @@ class ServerBrowserCliTests(unittest.TestCase):
             ("path:2024/01", {"path": "2024/01"}),
             ("person:Viljar", {"persons": ("Viljar",)}),
             ("source:phone", {"source": "phone"}),
+            ("sourcepath:DCIM/Camera", {"source_path": "DCIM/Camera"}),
             ("tag:ute-av-fokus", {"tag": "ute-av-fokus"}),
             ("type:video", {"media_type": "video"}),
             ("size<300KB", {"size_lt": 300 * 1024}),
@@ -2278,6 +2355,10 @@ class ServerBrowserCliTests(unittest.TestCase):
             ),
             ("orientation:square", "orientation må være portrait eller landscape."),
             ("after:2023-01-01 after:2024-01-01", "after kan bare brukes én gang."),
+            (
+                "sourcepath:DCIM sourcepath:Camera",
+                "sourcepath kan bare brukes én gang.",
+            ),
             ("size>2MB size>3MB", "size> kan bare brukes én gang."),
             ("size>=2MB size>=3MB", "size>= kan bare brukes én gang."),
             (
@@ -2386,6 +2467,18 @@ class ServerBrowserCliTests(unittest.TestCase):
         self.assertEqual(
             text_filter_browser_source(r'path:"C:\Users\Tom"').root_url,
             "/filter/path%3AC%3A%5CUsers%5CTom",
+        )
+
+        source_path_filter = parse_text_filter(
+            r'sourcepath:"C:\Users\Tom\Mine bilder\DCIM\Camera"'
+        )
+        self.assertEqual(
+            source_path_filter.source_path,
+            r"C:\Users\Tom\Mine bilder\DCIM\Camera",
+        )
+        self.assertEqual(
+            source_path_filter.query,
+            r'sourcepath:"C:\\Users\\Tom\\Mine bilder\\DCIM\\Camera"',
         )
 
         for query, message in (

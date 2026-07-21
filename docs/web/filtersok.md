@@ -54,8 +54,8 @@ size<2MB
 
 ## Jokertegn i tekstsøk
 
-Tekstsøkene `filename`, `path`, `camera`, `comment` og `source` støtter to
-jokertegn:
+Tekstsøkene `filename`, `path`, `camera`, `comment`, `source` og `sourcepath`
+støtter to jokertegn:
 
 | Jokertegn | Betydning                       |
 | --------- | ------------------------------- |
@@ -68,6 +68,7 @@ Eksempel:
 filename:IMG_*.jpg
 filename:IMG_????.jpg
 source:"Mobil *"
+sourcepath:"DCIM\Camera\IMG_*.jpg"
 ```
 
 Prosenttegn (`%`) og understrek (`_`) behandles som vanlige, bokstavelige tegn.
@@ -521,6 +522,44 @@ Hvis verdien ikke er et tall, søkes det i kildenavnet.
 source:"Mobil 2024"
 ```
 
+### `sourcepath`
+
+Søk i stien filen hadde i en importkilde:
+
+```text
+sourcepath:"DCIM\Camera"
+sourcepath:"C:\Users\Tom\Pictures\2024\Ferie"
+```
+
+`sourcepath` er et delstrengsøk i den fullstendige kildestien som ble registrert
+da filen ble importert. Søket skiller ikke mellom store og små bokstaver.
+Skråstrek og omvendt skråstrek behandles likt, så både `DCIM/Camera` og
+`DCIM\Camera` finner den samme mappen. Det er vanligvis best å søke etter den
+delen av stien man kjenner, i stedet for å ta med stasjonsbokstav og hele
+kildestien.
+
+Stien omfatter også det opprinnelige filnavnet. Jokertegnene `*` og `?` kan
+derfor brukes, for eksempel:
+
+```text
+sourcepath:"DCIM\Camera\IMG_*.jpg"
+```
+
+Filteret søker bare i kildeopplysningene som allerede er lagret i Bildebank.
+Det leser ikke kildemappen, og kilden trenger ikke å være tilkoblet.
+
+Samme bilde kan ha blitt funnet i flere importkilder. Da matcher bildet dersom
+minst én av de registrerte kildestiene passer. Når `source:` og `sourcepath:`
+kombineres, må begge kriteriene passe den samme importkilden:
+
+```text
+source:"Mobil 2024" sourcepath:"DCIM\Camera"
+```
+
+`path:` og `sourcepath:` søker i forskjellige stier. `path:` søker i filens
+nåværende plassering i bildesamlingen, mens `sourcepath:` søker i plasseringen
+filen hadde i en importkilde.
+
 ### `tag`
 
 Filtrer etter tagg.
@@ -756,6 +795,7 @@ is:deleted source:"Mobil 2024"
 | `comment`     | `comment:blåbær`                  | søk i kommentarer                            |
 | `has`         | `has:comment`                     | filer som har kommentar                       |
 | `source`      | `source:1`, `source:"Mobil 2024"` | kilde-ID eller kildenavn                     |
+| `sourcepath`  | `sourcepath:"DCIM\Camera"`        | opprinnelig sti i en importkilde             |
 | `tag`         | `tag:"Ute av fokus"`              | taggnavn                                     |
 | `person`      | `person:Viljar`                   | personnavn i ansiktsdatabasen                |
 | `is`          | `is:deleted`, `is:rotated`        | slettet eller rotert i Bildebank             |
