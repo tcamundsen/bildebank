@@ -32,6 +32,17 @@ class ServerDashboardTests(unittest.TestCase):
 
             conn = db.connect(target)
             try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET size_bytes = CASE stored_filename
+                        WHEN 'image.jpg' THEN 1024
+                        WHEN 'video.mp4' THEN 2048
+                        WHEN 'manual.jpg' THEN 3072
+                        WHEN 'deleted.jpg' THEN 4096
+                    END
+                    """
+                )
                 imported_source = db.add_named_source(conn, Path(tmp) / "source-a", "source-a")
                 db.mark_source_imported(conn, imported_source)
                 error_source = db.add_named_source(conn, Path(tmp) / "source-b", "source-b")
@@ -85,11 +96,10 @@ class ServerDashboardTests(unittest.TestCase):
                 )
 
         self.assertIn("Samlingsoversikt", body)
-        self.assertIn("<dt>Aktive filer</dt>", body)
-        self.assertIn("<dd>3</dd>", body)
-        self.assertIn("<dt>Bilder</dt>", body)
-        self.assertIn("<dt>Videoer</dt>", body)
-        self.assertIn("<dt>Slettede bilder</dt>", body)
+        self.assertRegex(body, r"<dt>Aktive filer</dt>\s*<dd>3 \(6\.0 KB\)</dd>")
+        self.assertRegex(body, r"<dt>Bilder</dt>\s*<dd>2 \(4\.0 KB\)</dd>")
+        self.assertRegex(body, r"<dt>Videoer</dt>\s*<dd>1 \(2\.0 KB\)</dd>")
+        self.assertRegex(body, r"<dt>Slettede bilder</dt>\s*<dd>1 \(4\.0 KB\)</dd>")
         self.assertIn("<dt>Kilder: error</dt>", body)
         self.assertIn("<dt>Kilder: imported</dt>", body)
         self.assertIn("<dt>Registrerte kildefiler</dt>", body)

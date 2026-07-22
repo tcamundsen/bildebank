@@ -9,6 +9,8 @@ from typing import Callable, cast
 
 from . import db
 from .config import AppConfig
+from .formatting import format_bytes
+from .media import VIDEO_EXTENSIONS
 from .program_state import KnownSnapshotRepository, known_snapshot_repositories
 
 
@@ -32,9 +34,13 @@ class DashboardAction:
 @dataclass(frozen=True)
 class DashboardSummary:
     total_active: int
+    total_active_size_bytes: int
     active_images: int
+    active_image_size_bytes: int
     active_videos: int
+    active_video_size_bytes: int
     deleted_files: int
+    deleted_file_size_bytes: int
     source_status_counts: dict[str, int]
     source_file_count: int
     duplicate_source_count: int
@@ -101,11 +107,16 @@ def dashboard_summary(
             program_root or Path(__file__).resolve().parents[1],
             collection_id,
         )
+        size_totals = collection_size_totals(conn)
         return DashboardSummary(
             total_active=int(total_active),
+            total_active_size_bytes=size_totals["active"],
             active_images=int(media_counts.get("bilder", 0)),
+            active_image_size_bytes=size_totals["images"],
             active_videos=int(media_counts.get("videoer", 0)),
-            deleted_files=len(list(db.deleted_files(conn))),
+            active_video_size_bytes=size_totals["videos"],
+            deleted_files=count_deleted_files(conn),
+            deleted_file_size_bytes=size_totals["deleted"],
             source_status_counts=source_status_counts(conn),
             source_file_count=count_table_rows(conn, "file_sources"),
             duplicate_source_count=db.duplicate_source_count(conn),
@@ -123,6 +134,25 @@ def dashboard_summary(
 
 def count_table_rows(conn: sqlite3.Connection, table: str) -> int:
     return int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+
+
+def count_deleted_files(conn: sqlite3.Connection) -> int:
+    return int(
+        conn.execute("SELECT COUNT(*) FROM files WHERE deleted_at IS NOT NULL").fetchone()[0]
+    )
+
+
+def collection_size_totals(conn: sqlite3.Connection) -> dict[str, int]:
+    totals = {"active": 0, "images": 0, "videos": 0, "deleted": 0}
+    for row in conn.execute("SELECT stored_filename, size_bytes, deleted_at FROM files"):
+        size_bytes = int(row["size_bytes"])
+        if row["deleted_at"] is not None:
+            totals["deleted"] += size_bytes
+            continue
+        totals["active"] += size_bytes
+        suffix = Path(str(row["stored_filename"])).suffix.lower()
+        totals["videos" if suffix in VIDEO_EXTENSIONS else "images"] += size_bytes
+    return totals
 
 
 def source_status_counts(conn: sqlite3.Connection) -> dict[str, int]:
@@ -256,16 +286,20 @@ def overview_section_html(summary: DashboardSummary) -> str:
         "Samlingsoversikt",
         f"""
         <dl class="info-list">
-          {info_row_html("Aktive filer", str(summary.total_active))}
-          {info_row_html("Bilder", str(summary.active_images))}
-          {info_row_html("Videoer", str(summary.active_videos))}
-          {info_row_html("Slettede bilder", str(summary.deleted_files))}
+          {info_row_html("Aktive filer", count_and_size(summary.total_active, summary.total_active_size_bytes))}
+          {info_row_html("Bilder", count_and_size(summary.active_images, summary.active_image_size_bytes))}
+          {info_row_html("Videoer", count_and_size(summary.active_videos, summary.active_video_size_bytes))}
+          {info_row_html("Slettede bilder", count_and_size(summary.deleted_files, summary.deleted_file_size_bytes))}
           {source_rows}
           {info_row_html("Registrerte kildefiler", str(summary.source_file_count))}
           {info_row_html("Duplikatkilder", str(summary.duplicate_source_count))}
         </dl>
         """,
     )
+
+
+def count_and_size(count: int, size_bytes: int) -> str:
+    return f"{count} ({format_bytes(size_bytes)})"
 
 
 def control_section_html(summary: DashboardSummary) -> str:
