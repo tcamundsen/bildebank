@@ -2,14 +2,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from bildebank import db
 from bildebank.snapshot import REPOSITORY_LOCK_FILENAME, snapshot_object_path
 from bildebank.snapshot_check import check_snapshot_repository, list_repository_snapshots
 from bildebank.snapshot_create import create_snapshot
+from bildebank.snapshot_repository import SnapshotStorageError, canonical_json_bytes
+from bildebank.snapshot_restore import (
+    plan_full_restore,
+    restore_full_snapshot,
+)
 
 
 class SnapshotCheckTests(unittest.TestCase):
@@ -83,6 +91,122 @@ class SnapshotCheckTests(unittest.TestCase):
             self.assertEqual(len(issue.affected), 2)
             self.assertIn(entry_snapshot_id(snapshot), {item.snapshot_id for item in issue.affected})
             self.assertEqual({item.logical_path for item in issue.affected}, {entry["path"]})
+
+    def test_check_finds_database_file_missing_from_files_jsonl(self) -> None:
+        with database_media_snapshot_repository() as (
+            _root,
+            _target,
+            repository,
+            snapshot,
+            relative_path,
+        ):
+            remove_all_file_entries(snapshot)
+            before = tree_file_bytes(repository)
+
+            quick = check_snapshot_repository(repository)
+            full = check_snapshot_repository(repository, full=True)
+
+            for result in (quick, full):
+                self.assertEqual(result.exit_code, 3)
+                issue = next(
+                    issue
+                    for issue in result.issues
+                    if issue.code == "database_file_mismatch"
+                )
+                self.assertIn(relative_path, issue.message)
+                self.assertIn(entry_snapshot_id(snapshot), issue.message)
+                self.assertEqual(len(result.snapshots), 1)
+            self.assertEqual(tree_file_bytes(repository), before)
+
+    def test_check_finds_expected_value_that_disagrees_with_database(self) -> None:
+        with database_media_snapshot_repository() as (
+            _root,
+            _target,
+            repository,
+            snapshot,
+            relative_path,
+        ):
+            entry = json.loads(
+                (snapshot / "files.jsonl").read_text(encoding="utf-8")
+            )
+            entry["expected"]["sha256"] = "0" * 64
+            entry["object"]["sha256"] = "0" * 64
+            rewrite_file_entries(snapshot, (entry,))
+
+            result = check_snapshot_repository(repository)
+
+            self.assertEqual(result.exit_code, 3)
+            issue = next(
+                issue
+                for issue in result.issues
+                if issue.code == "database_file_mismatch"
+            )
+            self.assertIn("Expected-verdien", issue.message)
+            self.assertIn(relative_path, issue.message)
+
+    def test_full_restore_rejects_database_file_missing_from_files_jsonl(self) -> None:
+        with database_media_snapshot_repository() as (
+            root,
+            _target,
+            repository,
+            snapshot,
+            relative_path,
+        ):
+            remove_all_file_entries(snapshot)
+            snapshot_id = entry_snapshot_id(snapshot)
+            restored = root / "restored"
+            before = tree_file_bytes(repository)
+
+            with self.assertRaisesRegex(
+                SnapshotStorageError,
+                f"files-rad.*{relative_path}.*mangler filpost",
+            ):
+                plan_full_restore(repository, snapshot_id, restored)
+            with self.assertRaisesRegex(
+                SnapshotStorageError,
+                f"files-rad.*{relative_path}.*mangler filpost",
+            ):
+                restore_full_snapshot(repository, snapshot_id, restored)
+
+            self.assertFalse(restored.exists())
+            self.assertEqual(list(root.glob(".bildebank-restore-restored-*")), [])
+            self.assertEqual(tree_file_bytes(repository), before)
+
+    def test_final_restore_validation_rejects_omitted_database_media_output(self) -> None:
+        with database_media_snapshot_repository() as (
+            root,
+            _target,
+            repository,
+            snapshot,
+            relative_path,
+        ):
+            restored = root / "restored"
+            snapshot_id = entry_snapshot_id(snapshot)
+            plan = plan_full_restore(repository, snapshot_id, restored)
+            broken_plan = replace(
+                plan,
+                collection_outputs=tuple(
+                    output
+                    for output in plan.collection_outputs
+                    if output.relative_path != relative_path
+                ),
+            )
+
+            with (
+                patch(
+                    "bildebank.snapshot_restore.build_full_restore_plan",
+                    return_value=broken_plan,
+                ),
+                self.assertRaisesRegex(
+                    SnapshotStorageError,
+                    f"Restoreutfallet mangler.*{relative_path}",
+                ),
+            ):
+                restore_full_snapshot(repository, snapshot_id, restored)
+
+            self.assertFalse(restored.exists())
+            staging = next(root.glob(".bildebank-restore-restored-*"))
+            self.assertTrue((staging / "collection" / db.DB_FILENAME).is_file())
 
     def test_full_check_finds_same_size_hash_corruption_and_affected_path(self) -> None:
         with snapshot_repository() as (_root, _target, repository):
@@ -164,6 +288,79 @@ class snapshot_repository:
 
     def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
         self._tempdir.cleanup()
+
+
+class database_media_snapshot_repository:
+    def __init__(self) -> None:
+        self._tempdir = tempfile.TemporaryDirectory()
+
+    def __enter__(self) -> tuple[Path, Path, Path, Path, str]:
+        root = Path(self._tempdir.name)
+        target = root / "collection"
+        repository = root / "repository"
+        relative_path = "2026/07/familie.jpg"
+        media_bytes = b"databasefort mediefil"
+        db.init_database(target)
+        media = target / relative_path
+        media.parent.mkdir(parents=True)
+        media.write_bytes(media_bytes)
+        connection = sqlite3.connect(target / db.DB_FILENAME)
+        try:
+            connection.execute(
+                """
+                INSERT INTO files(
+                    target_path, target_path_key, original_filename, stored_filename,
+                    sha256, size_bytes, taken_date, date_source, name_conflict
+                )
+                VALUES(?, ?, 'familie.jpg', 'familie.jpg', ?, ?, '2026-07-15', 'filename', 0)
+                """,
+                (
+                    relative_path,
+                    relative_path.casefold(),
+                    hashlib.sha256(media_bytes).hexdigest(),
+                    len(media_bytes),
+                ),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        result = create_snapshot(target, repository)
+        return root, target, repository, result.published.snapshot_dir, relative_path
+
+    def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
+        self._tempdir.cleanup()
+
+
+def remove_all_file_entries(snapshot: Path) -> None:
+    rewrite_file_entries(snapshot, ())
+
+
+def rewrite_file_entries(
+    snapshot: Path,
+    entries: tuple[dict[str, object], ...],
+) -> None:
+    files_content = b"".join(canonical_json_bytes(entry) for entry in entries)
+    files_reference = {
+        "sha256": hashlib.sha256(files_content).hexdigest(),
+        "size_bytes": str(len(files_content)),
+    }
+    (snapshot / "files.jsonl").write_bytes(files_content)
+
+    manifest = json.loads((snapshot / "manifest.json").read_bytes())
+    manifest["files_jsonl"] = {
+        "entry_count": str(len(entries)),
+        **files_reference,
+    }
+    manifest_content = canonical_json_bytes(manifest)
+    (snapshot / "manifest.json").write_bytes(manifest_content)
+
+    commit = json.loads((snapshot / "commit.json").read_bytes())
+    commit["files_jsonl"] = files_reference
+    commit["manifest"] = {
+        "sha256": hashlib.sha256(manifest_content).hexdigest(),
+        "size_bytes": str(len(manifest_content)),
+    }
+    (snapshot / "commit.json").write_bytes(canonical_json_bytes(commit))
 
 
 def entry_snapshot_id(snapshot: Path) -> str:

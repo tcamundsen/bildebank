@@ -25,6 +25,7 @@ from .snapshot import (
 )
 from .snapshot_check import (
     SnapshotCheckIssue,
+    SnapshotExpectedEntry,
     SnapshotSummary,
     expected_file,
     hash_regular_file,
@@ -33,6 +34,7 @@ from .snapshot_check import (
     read_snapshot,
     resolve_repository_for_check,
     snapshot_directories,
+    validate_snapshot_database_files,
     validate_locked_repository_for_check,
 )
 from .snapshot_repository import (
@@ -158,6 +160,7 @@ class _LoadedSnapshot:
     summary: SnapshotSummary
     manifest: dict[str, object]
     entries: tuple[RestoreEntry, ...]
+    main_database: ObjectReference | None
 
 
 def plan_full_restore(
@@ -175,6 +178,7 @@ def build_full_restore_plan(loaded: _LoadedSnapshot, target_arg: Path) -> FullRe
             "Et recovery-snapshot kan ikke gjenopprettes som en vanlig bildesamling. "
             "Bruk restore-file for å hente ut redningsinnhold."
         )
+    validate_loaded_snapshot_database_files(loaded)
     target, target_state = validate_full_restore_target(
         loaded.repository,
         loaded.metadata,
@@ -292,6 +296,40 @@ def build_full_restore_plan(loaded: _LoadedSnapshot, target_arg: Path) -> FullRe
     )
 
 
+def validate_loaded_snapshot_database_files(loaded: _LoadedSnapshot) -> None:
+    reference = loaded.main_database
+    if reference is None:
+        raise SnapshotStorageError("Snapshotet mangler en konsistent hoveddatabase.")
+    require_available_object(loaded.repository, reference, required=True)
+    validate_snapshot_database_files(
+        snapshot_object_path(
+            loaded.repository,
+            reference.sha256,
+            reference.size_bytes,
+        ),
+        expected_collection_id=str(loaded.metadata["collection_id"]),
+        expected_entries=expected_entries_for_restore(loaded.entries),
+    )
+
+
+def expected_entries_for_restore(
+    entries: tuple[RestoreEntry, ...],
+) -> tuple[SnapshotExpectedEntry, ...]:
+    return tuple(
+        SnapshotExpectedEntry(
+            entry_id=entry.entry_id,
+            path=entry.path,
+            original_path_display=entry.original_path_display,
+            restore_kind=entry.restore_kind,
+            integrity_status=entry.integrity_status,
+            object=entry.object,
+            expected=entry.expected,
+        )
+        for entry in entries
+        if entry.expected is not None
+    )
+
+
 def restore_full_snapshot(
     repository_arg: Path,
     snapshot_id: str,
@@ -319,7 +357,13 @@ def restore_full_snapshot(
                     plan.recovery_outputs,
                 )
                 write_recovery_report(recovery_staging, plan)
-            validate_staged_restore(collection_staging, recovery_staging, plan, loaded.metadata)
+            validate_staged_restore(
+                collection_staging,
+                recovery_staging,
+                plan,
+                loaded.metadata,
+                loaded.entries,
+            )
             published_recovery = publish_staged_restore(
                 staging,
                 collection_staging,
@@ -471,6 +515,7 @@ def validate_staged_restore(
     recovery_staging: Path,
     plan: FullRestorePlan,
     metadata: dict[str, object],
+    entries: tuple[RestoreEntry, ...],
 ) -> None:
     for output in plan.collection_outputs:
         path = collection_staging.joinpath(*output.relative_path.split("/"))
@@ -486,9 +531,65 @@ def validate_staged_restore(
         raise SnapshotStorageError("Restoreplanen mangler hoveddatabasen.")
     database_path = collection_staging.joinpath(*main_database.relative_path.split("/"))
     validate_restored_main_database(database_path, str(metadata["collection_id"]))
+    validate_snapshot_database_files(
+        database_path,
+        expected_collection_id=str(metadata["collection_id"]),
+        expected_entries=expected_entries_for_restore(entries),
+    )
+    validate_database_restore_outputs(plan, entries)
     fsync_tree_directories(collection_staging)
     if plan.recovery_outputs:
         fsync_tree_directories(recovery_staging)
+
+
+def validate_database_restore_outputs(
+    plan: FullRestorePlan,
+    entries: tuple[RestoreEntry, ...],
+) -> None:
+    expected_entries = {
+        entry.entry_id: entry
+        for entry in entries
+        if entry.expected is not None
+    }
+    missing_entries = set(plan.missing_expected_entries)
+    unknown_missing = sorted(missing_entries.difference(expected_entries))
+    if unknown_missing:
+        raise SnapshotStorageError(
+            f"Restoreplanen markerer ukjent databasefil som manglende: {unknown_missing[0]}."
+        )
+
+    outputs_by_entry: dict[str, RestoreOutput] = {}
+    for output in plan.collection_outputs:
+        if output.entry_id is None or output.entry_id not in expected_entries:
+            continue
+        if output.entry_id in outputs_by_entry:
+            raise SnapshotStorageError(
+                f"Restoreutfallet har flere ordinære filer for {output.entry_id}."
+            )
+        outputs_by_entry[output.entry_id] = output
+
+    for entry_id, entry in expected_entries.items():
+        selected_output = outputs_by_entry.get(entry_id)
+        if entry_id in missing_entries:
+            if selected_output is not None:
+                raise SnapshotStorageError(
+                    f"Restoreutfallet har både ordinær og manglende fil for {entry_id}."
+                )
+            continue
+        if selected_output is None:
+            raise SnapshotStorageError(
+                "Restoreutfallet mangler en databaseført fil uten å markere den "
+                f"som ufullstendig: {entry.original_path_display!r} ({entry_id})."
+            )
+        if (
+            entry.path is None
+            or selected_output.relative_path != entry.path
+            or selected_output.object != entry.expected
+        ):
+            raise SnapshotStorageError(
+                "Restoreutfallet stemmer ikke med hoveddatabasen for "
+                f"{entry.original_path_display!r} ({entry_id})."
+            )
 
 
 def validate_restored_file(path: Path, output: RestoreOutput) -> None:
@@ -894,7 +995,14 @@ def locked_snapshot(
         )
         manifest, _content = read_canonical_json(snapshot_path / "manifest.json", label="manifest.json")
         entries = load_restore_entries(snapshot_path / "files.jsonl")
-        yield _LoadedSnapshot(repository, metadata, read.summary, manifest, entries)
+        yield _LoadedSnapshot(
+            repository,
+            metadata,
+            read.summary,
+            manifest,
+            entries,
+            read.main_database,
+        )
 
 
 def find_snapshot_path(repository: Path, snapshot_id: str) -> Path:

@@ -1138,7 +1138,8 @@ Hel restore skal:
 - gjenopprette databasekopiene som vanlige SQLite-filer
 - bevare opprinnelig `collection_id` i hoveddatabasen
 - ikke kopiere repositorymetadata inn i den gjenopprettede samlingen
-- kjøre database- og filintegritetskontroll før samlingen tas i bruk
+- kontrollere at hver `files`-rad har riktig databaseført snapshotpost og
+  enten forventet restorefil eller eksplisitt manglende restoreutfall
 - skrive en tydelig rapport, men ikke automatisk reparere avvik
 
 Stagingroten skal ha unik `run-id`, en liten kjørepost og separate undermapper
@@ -1224,7 +1225,9 @@ Det skal finnes to kontrollnivåer:
 
 - En rask kontroll validerer repositorystruktur, formatversjoner,
   `commit.json`, kontrollsummene for manifest og `files.jsonl`, objektnavn,
-  størrelser og at alle refererte objekter finnes.
+  størrelser og at alle refererte objekter finnes. Den åpner konsistente
+  hoveddatabasekopier skrivebeskyttet og kontrollerer `files` mot de
+  databaseførte postene i `files.jsonl`.
 - En full kontroll leser alle objekter i repositoryet, også urefererte
   verifiserte objekter, og beregner SHA-256 på nytt.
 

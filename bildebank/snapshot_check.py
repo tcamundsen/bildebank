@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+import sqlite3
 import stat
 import unicodedata
 from collections.abc import Callable
@@ -12,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO
 
+from . import db
 from .snapshot import (
     REPOSITORY_FORMAT_VERSION,
     REPOSITORY_METADATA_FILENAME,
@@ -26,6 +28,7 @@ from .snapshot import (
     validate_repository_metadata_for_read,
     validate_repository_root_entries,
     validate_utc_timestamp,
+    validate_database_file_row,
 )
 from .snapshot_repository import (
     COPY_CHUNK_SIZE,
@@ -129,9 +132,22 @@ class _RepositoryObject:
 
 
 @dataclass(frozen=True)
+class SnapshotExpectedEntry:
+    entry_id: str
+    path: str | None
+    original_path_display: str
+    restore_kind: str
+    integrity_status: str
+    object: ObjectReference | None
+    expected: ObjectReference
+
+
+@dataclass(frozen=True)
 class SnapshotRead:
     summary: SnapshotSummary
     usages: dict[ObjectKey, tuple[ObjectUsage, ...]]
+    expected_entries: tuple[SnapshotExpectedEntry, ...]
+    main_database: ObjectReference | None
 
 
 def list_repository_snapshots(repository_arg: Path) -> SnapshotCheckResult:
@@ -190,6 +206,7 @@ def _inspect_repository(
                     repository_id=repository_id,
                     collection_id=collection_id,
                     should_cancel=cancel if full else None,
+                    collect_expected_entries=check_objects,
                 )
             except _HashCancelled:
                 cancelled = True
@@ -205,6 +222,18 @@ def _inspect_repository(
             snapshots.append(read.summary)
             for key, snapshot_usages in read.usages.items():
                 usages.setdefault(key, []).extend(snapshot_usages)
+            if check_objects:
+                try:
+                    check_snapshot_database_files(
+                        repository,
+                        read,
+                        issues,
+                        expected_collection_id=collection_id,
+                        should_cancel=cancel if full else None,
+                    )
+                except _HashCancelled:
+                    cancelled = True
+                    break
 
         incomplete_runs = () if cancelled else scan_incomplete_runs(repository, issues)
         objects: dict[ObjectKey, _RepositoryObject] = {}
@@ -381,6 +410,7 @@ def read_snapshot(
     repository_id: str,
     collection_id: str,
     should_cancel: CancelCallback | None = None,
+    collect_expected_entries: bool = False,
 ) -> SnapshotRead:
     if _SNAPSHOT_DIRECTORY_RE.fullmatch(snapshot_path.name) is None:
         raise SnapshotStorageError("snapshotmappen har ugyldig navn")
@@ -410,10 +440,11 @@ def read_snapshot(
     if snapshot_path.name != snapshot_directory_name(completed_at, snapshot_id):
         raise SnapshotStorageError("snapshotmappen stemmer ikke med completed_at og snapshot_id")
 
-    usages, entry_count, source_problem_count, file_state = read_file_entries(
+    usages, entry_count, source_problem_count, file_state, expected_entries = read_file_entries(
         files_path,
         snapshot_id,
         should_cancel=should_cancel,
+        collect_expected_entries=collect_expected_entries,
     )
     if entry_count != expected_entry_count:
         raise SnapshotStorageError("antall filposter stemmer ikke med manifestet")
@@ -437,6 +468,8 @@ def read_snapshot(
             source_problem_count=source_problem_count,
         ),
         usages={key: tuple(values) for key, values in usages.items()},
+        expected_entries=expected_entries,
+        main_database=consistent_main_database_reference(status, manifest["databases"]),
     )
 
 
@@ -595,8 +628,16 @@ def read_file_entries(
     snapshot_id: str,
     *,
     should_cancel: CancelCallback | None = None,
-) -> tuple[dict[ObjectKey, list[ObjectUsage]], int, int, tuple[bool, bool]]:
+    collect_expected_entries: bool = False,
+) -> tuple[
+    dict[ObjectKey, list[ObjectUsage]],
+    int,
+    int,
+    tuple[bool, bool],
+    tuple[SnapshotExpectedEntry, ...],
+]:
     usages: dict[ObjectKey, list[ObjectUsage]] = {}
+    expected_entries: list[SnapshotExpectedEntry] = []
     path_keys: set[str] = set()
     seen_entry_ids: set[str] = set()
     previous_sort_key: tuple[int, str, str] | None = None
@@ -650,6 +691,18 @@ def read_file_entries(
                 record_type=raw["record_type"],
             )
             validate_file_record(record)
+            if collect_expected_entries and expected is not None:
+                expected_entries.append(
+                    SnapshotExpectedEntry(
+                        entry_id=entry_id,
+                        path=record.path,
+                        original_path_display=record.original_path_display,
+                        restore_kind=record.restore_kind,
+                        integrity_status=record.integrity_status,
+                        object=record.object,
+                        expected=ObjectReference(expected.sha256, expected.size_bytes),
+                    )
+                )
             recovery_name = raw["recovery_name"]
             if record.restore_kind == "normal":
                 if recovery_name is not None:
@@ -678,7 +731,13 @@ def read_file_entries(
             if reference is not None:
                 key = (reference.sha256, reference.size_bytes)
                 usages.setdefault(key, []).append(ObjectUsage(snapshot_id, entry_id, logical_path))
-    return usages, entry_count, source_problem_count, (has_file_problem, has_recovery_only)
+    return (
+        usages,
+        entry_count,
+        source_problem_count,
+        (has_file_problem, has_recovery_only),
+        tuple(expected_entries),
+    )
 
 
 def validate_snapshot_state(status: str, databases: object, file_state: tuple[bool, bool]) -> None:
@@ -697,6 +756,23 @@ def validate_snapshot_state(status: str, databases: object, file_state: tuple[bo
         raise SnapshotStorageError("recovery-snapshotet mangler rå hoveddatabase")
 
 
+def consistent_main_database_reference(
+    status: str,
+    databases: object,
+) -> ObjectReference | None:
+    if status == "recovery":
+        return None
+    assert isinstance(databases, list)
+    main = next(
+        raw
+        for raw in databases
+        if isinstance(raw, dict) and raw.get("role") == "main"
+    )
+    reference = object_reference(main["object"], allow_none=False)
+    assert reference is not None
+    return reference
+
+
 def database_object_usages(databases: object, snapshot_id: str) -> dict[ObjectKey, list[ObjectUsage]]:
     assert isinstance(databases, list)
     usages: dict[ObjectKey, list[ObjectUsage]] = {}
@@ -712,6 +788,165 @@ def database_object_usages(databases: object, snapshot_id: str) -> dict[ObjectKe
             ObjectUsage(snapshot_id, None, logical_path)
         )
     return usages
+
+
+def check_snapshot_database_files(
+    repository: Path,
+    snapshot: SnapshotRead,
+    issues: list[SnapshotCheckIssue],
+    *,
+    expected_collection_id: str,
+    should_cancel: CancelCallback | None,
+) -> None:
+    if should_cancel is not None and should_cancel():
+        raise _HashCancelled
+    reference = snapshot.main_database
+    if reference is None:
+        return
+    database_path = snapshot_object_path(
+        repository,
+        reference.sha256,
+        reference.size_bytes,
+    )
+    try:
+        path_stat = database_path.stat(follow_symlinks=False)
+    except OSError:
+        return
+    if (
+        database_path.is_symlink()
+        or not stat.S_ISREG(path_stat.st_mode)
+        or path_stat.st_size != reference.size_bytes
+    ):
+        return
+    try:
+        validate_snapshot_database_files(
+            database_path,
+            expected_collection_id=expected_collection_id,
+            expected_entries=snapshot.expected_entries,
+            should_cancel=should_cancel,
+        )
+    except _HashCancelled:
+        raise
+    except SnapshotStorageError as exc:
+        issues.append(
+            SnapshotCheckIssue(
+                code="database_file_mismatch",
+                message=(
+                    f"Snapshot {snapshot.summary.snapshot_id} har avvik mellom "
+                    f"hoveddatabasen og files.jsonl: {exc}"
+                ),
+                snapshot_id=snapshot.summary.snapshot_id,
+            )
+        )
+
+
+def validate_snapshot_database_files(
+    database_path: Path,
+    *,
+    expected_collection_id: str,
+    expected_entries: tuple[SnapshotExpectedEntry, ...],
+    should_cancel: CancelCallback | None = None,
+) -> None:
+    entries_by_path: dict[str, SnapshotExpectedEntry] = {}
+    for entry in expected_entries:
+        path = entry.original_path_display
+        if path in entries_by_path:
+            raise SnapshotStorageError(
+                f"Flere databaseførte filposter gjelder {path!r}."
+            )
+        if entry.integrity_status == "ok" and entry.object != entry.expected:
+            raise SnapshotStorageError(
+                f"Filpost {entry.entry_id} har status ok, men objektet stemmer "
+                f"ikke med expected for {path!r}."
+            )
+        entries_by_path[path] = entry
+
+    try:
+        validate_regular_file_without_links(
+            database_path,
+            label="Snapshotets hoveddatabaseobjekt",
+        )
+    except (OSError, ValueError) as exc:
+        raise SnapshotStorageError(
+            f"Kunne ikke kontrollere snapshotets hoveddatabaseobjekt: {database_path}: {exc}"
+        ) from exc
+    uri = f"{database_path.resolve().as_uri()}?mode=ro&immutable=1"
+    try:
+        connection = sqlite3.connect(uri, uri=True)
+    except sqlite3.Error as exc:
+        raise SnapshotStorageError(
+            f"Kunne ikke åpne snapshotets hoveddatabase skrivebeskyttet: {database_path}: {exc}"
+        ) from exc
+    connection.row_factory = sqlite3.Row
+    if should_cancel is not None:
+        connection.set_progress_handler(lambda: int(should_cancel()), 10_000)
+    try:
+        connection.execute("PRAGMA query_only = ON")
+        collection_id = db.validate_collection_id(connection)
+        seen_database_paths: set[str] = set()
+        for row in connection.execute(
+            """
+            SELECT target_path, sha256, size_bytes
+            FROM files
+            ORDER BY target_path_key, id
+            """
+        ):
+            if should_cancel is not None and should_cancel():
+                raise _HashCancelled
+            database_row = validate_database_file_row(row)
+            path = database_row.target_path
+            if path in seen_database_paths:
+                raise SnapshotStorageError(
+                    f"Hoveddatabasen har flere files-rader for {path!r}."
+                )
+            seen_database_paths.add(path)
+            selected_entry = entries_by_path.get(path)
+            if selected_entry is None:
+                raise SnapshotStorageError(
+                    f"Hoveddatabasens files-rad for {path!r} "
+                    "mangler filpost i snapshotet."
+                )
+            del entries_by_path[path]
+            expected = ObjectReference(
+                database_row.sha256,
+                database_row.size_bytes,
+            )
+            if selected_entry.expected != expected:
+                raise SnapshotStorageError(
+                    f"Expected-verdien for {selected_entry.entry_id} stemmer ikke med "
+                    f"hoveddatabasens files-rad for {path!r}."
+                )
+            if (
+                selected_entry.restore_kind == "normal"
+                and selected_entry.path != path
+            ):
+                raise SnapshotStorageError(
+                    f"Restore-stien for {selected_entry.entry_id} stemmer ikke med "
+                    f"hoveddatabasens files-rad for {path!r}."
+                )
+    except _HashCancelled:
+        raise
+    except (sqlite3.Error, ValueError) as exc:
+        if should_cancel is not None and should_cancel():
+            raise _HashCancelled from exc
+        raise SnapshotStorageError(
+            f"Snapshotets hoveddatabase kunne ikke leses semantisk: {database_path}: {exc}"
+        ) from exc
+    finally:
+        if should_cancel is not None:
+            connection.set_progress_handler(None, 0)
+        connection.close()
+    if collection_id != expected_collection_id:
+        raise SnapshotStorageError(
+            "Snapshotets hoveddatabase har feil collection_id."
+        )
+    if entries_by_path:
+        path = sorted(entries_by_path)[0]
+        entry = entries_by_path[path]
+        raise SnapshotStorageError(
+            f"Databaseført filpost {entry.entry_id} for {path!r} "
+            "finnes ikke i hoveddatabasens files-tabell."
+        )
 
 
 def scan_object_store(

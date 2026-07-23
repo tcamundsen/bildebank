@@ -181,7 +181,9 @@ opplysningene du trenger for å hente ut en problemfil med `restore-file`.
 ## Kontrollere repositoryet
 
 En rask kontroll leser metadata, kontrollerer filstørrelser og ser etter
-manglende objekter:
+manglende objekter. Den åpner også den lagrede hoveddatabasekopien
+skrivebeskyttet og kontrollerer at hver databaseført mediefil har en
+tilsvarende snapshotpost med riktig sti, SHA-256 og størrelse:
 
 ```powershell
 bildebank snapshot check E:\Bildebank-snapshots\Familiebilder
@@ -228,9 +230,10 @@ mappe blir aldri overskrevet.
 
 Restore bygger og kontrollerer samlingen i en egen midlertidig mappe. Den
 ferdige samlingen blir først synlig på endelig plass når alle filene,
-databasen og `collection_id` er kontrollert. Ved et `degraded` snapshot blir
-eventuelt observert avviksinnhold lagt i en separat recovery-mappe ved siden av
-den gjenopprettede samlingen.
+databasen og `collection_id` er kontrollert. Sluttkontrollen sammenligner også
+databaseførte mediefiler med de faktiske restorefilene før samlingen
+publiseres. Ved et `degraded` snapshot blir eventuelt observert avviksinnhold
+lagt i en separat recovery-mappe ved siden av den gjenopprettede samlingen.
 
 Hvis en databaseført fil bare kan bevares i recovery-mappen, mangler den
 bevisst på ordinær plass. Restore publiserer da samlingen med en tydelig
