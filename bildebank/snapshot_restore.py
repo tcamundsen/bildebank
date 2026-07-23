@@ -42,6 +42,7 @@ from .snapshot_repository import (
     ObjectReference,
     RepositoryLock,
     SnapshotStorageError,
+    atomic_directory_move_completed,
     canonical_json_bytes,
     fsync_directory,
     open_source_without_following_links,
@@ -344,46 +345,65 @@ def restore_full_snapshot(
         staging = create_restore_staging(plan)
         collection_staging = staging / "collection"
         recovery_staging = staging / "recovery"
-        try:
-            copy_restore_outputs(
-                plan.repository,
-                collection_staging,
-                plan.collection_outputs,
-            )
-            if plan.recovery_outputs:
-                copy_restore_outputs(
-                    plan.repository,
-                    recovery_staging,
-                    plan.recovery_outputs,
+        published_recovery: Path | None = None
+        published = False
+        while True:
+            try:
+                if not published:
+                    copy_restore_outputs(
+                        plan.repository,
+                        collection_staging,
+                        plan.collection_outputs,
+                    )
+                    if plan.recovery_outputs:
+                        copy_restore_outputs(
+                            plan.repository,
+                            recovery_staging,
+                            plan.recovery_outputs,
+                        )
+                        write_recovery_report(recovery_staging, plan)
+                    validate_staged_restore(
+                        collection_staging,
+                        recovery_staging,
+                        plan,
+                        loaded.metadata,
+                        loaded.entries,
+                    )
+                    published_recovery = publish_staged_restore(
+                        staging,
+                        collection_staging,
+                        recovery_staging,
+                        plan,
+                    )
+                    published = True
+                fsync_directory(plan.target.parent)
+                warnings = cleanup_published_restore_staging(staging)
+                return FullRestoreResult(
+                    plan=plan,
+                    published_target=plan.target,
+                    published_recovery=published_recovery,
+                    exit_code=3 if plan.incomplete else 0,
+                    warnings=warnings,
                 )
-                write_recovery_report(recovery_staging, plan)
-            validate_staged_restore(
-                collection_staging,
-                recovery_staging,
-                plan,
-                loaded.metadata,
-                loaded.entries,
-            )
-            published_recovery = publish_staged_restore(
-                staging,
-                collection_staging,
-                recovery_staging,
-                plan,
-            )
-        except Exception as exc:
-            raise SnapshotStorageError(
-                "Restore feilet før samlingen ble publisert. "
-                f"Staging er bevart for undersøkelse: {staging}: {exc}"
-            ) from exc
-
-        warnings = cleanup_published_restore_staging(staging)
-        return FullRestoreResult(
-            plan=plan,
-            published_target=plan.target,
-            published_recovery=published_recovery,
-            exit_code=3 if plan.incomplete else 0,
-            warnings=warnings,
-        )
+            except KeyboardInterrupt:
+                while not published:
+                    try:
+                        published = atomic_directory_move_completed(
+                            collection_staging,
+                            plan.target,
+                        )
+                    except KeyboardInterrupt:
+                        continue
+                    if not published:
+                        raise
+                    published_recovery = plan.recovery_target
+            except Exception as exc:
+                if published:
+                    raise
+                raise SnapshotStorageError(
+                    "Restore feilet før samlingen ble publisert. "
+                    f"Staging er bevart for undersøkelse: {staging}: {exc}"
+                ) from exc
 
 
 def validate_restore_file_sizes(parent: Path, outputs: tuple[RestoreOutput, ...]) -> None:
@@ -689,9 +709,11 @@ def prepare_collection_target_for_publish(plan: FullRestorePlan) -> None:
 
 
 def cleanup_published_restore_staging(staging: Path) -> tuple[str, ...]:
+    if not staging.exists() and not staging.is_symlink():
+        return ()
     warnings: list[str] = []
     try:
-        (staging / "run.json").unlink()
+        (staging / "run.json").unlink(missing_ok=True)
         staging.rmdir()
         fsync_directory(staging.parent)
     except OSError as exc:

@@ -503,6 +503,115 @@ class SnapshotRepositoryTests(unittest.TestCase):
             self.assertEqual(list((repository / "snapshots").iterdir()), [])
             self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
 
+    def test_keyboard_interrupt_after_snapshot_rename_returns_published_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository, collection_id, repository_id, staging = initialized_staging(root)
+            source = root / "a.jpg"
+            source.write_bytes(b"a")
+            real_rename = snapshot_repository_module.os.rename
+
+            def rename_then_interrupt(source_path, destination_path) -> None:  # noqa: ANN001
+                real_rename(source_path, destination_path)
+                raise KeyboardInterrupt
+
+            with RepositoryLock(repository, command="snapshot create"):
+                stored = store_verified_file(repository, staging, source)
+                with patch(
+                    "bildebank.snapshot_repository.os.rename",
+                    side_effect=rename_then_interrupt,
+                ):
+                    published = publish_snapshot(
+                        repository,
+                        staging,
+                        collection_id=collection_id,
+                        repository_id=repository_id,
+                        status="complete",
+                        collection_identity_source="database",
+                        started_at="2026-07-15T12:00:00Z",
+                        completed_at="2026-07-15T12:01:00Z",
+                        files=(normal_file_record("2026/07/a.jpg", stored.reference),),
+                        databases=(main_database_record(stored.reference),),
+                        schema_versions={"main": 14},
+                    )
+
+            self.assertTrue(published.snapshot_dir.is_dir())
+            self.assertTrue((published.snapshot_dir / "commit.json").is_file())
+            self.assertFalse(staging.exists())
+
+    def test_keyboard_interrupt_before_snapshot_rename_keeps_staging(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository, collection_id, repository_id, staging = initialized_staging(root)
+            source = root / "a.jpg"
+            source.write_bytes(b"a")
+
+            with RepositoryLock(repository, command="snapshot create"):
+                stored = store_verified_file(repository, staging, source)
+                with (
+                    patch(
+                        "bildebank.snapshot_repository.os.rename",
+                        side_effect=KeyboardInterrupt,
+                    ),
+                    self.assertRaises(KeyboardInterrupt),
+                ):
+                    publish_snapshot(
+                        repository,
+                        staging,
+                        collection_id=collection_id,
+                        repository_id=repository_id,
+                        status="complete",
+                        collection_identity_source="database",
+                        started_at="2026-07-15T12:00:00Z",
+                        completed_at="2026-07-15T12:01:00Z",
+                        files=(normal_file_record("2026/07/a.jpg", stored.reference),),
+                        databases=(main_database_record(stored.reference),),
+                        schema_versions={"main": 14},
+                    )
+
+            self.assertTrue((staging / "snapshot" / "commit.json").is_file())
+            self.assertEqual(list((repository / "snapshots").iterdir()), [])
+
+    def test_keyboard_interrupt_during_post_publish_cleanup_returns_snapshot(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository, collection_id, repository_id, staging = initialized_staging(root)
+            source = root / "a.jpg"
+            source.write_bytes(b"a")
+            real_cleanup = snapshot_repository_module.remove_empty_staging_directories
+            cleanup_calls = 0
+
+            def interrupt_cleanup_once(staging_path) -> None:  # noqa: ANN001
+                nonlocal cleanup_calls
+                cleanup_calls += 1
+                if cleanup_calls == 1:
+                    raise KeyboardInterrupt
+                real_cleanup(staging_path)
+
+            with RepositoryLock(repository, command="snapshot create"):
+                stored = store_verified_file(repository, staging, source)
+                with patch(
+                    "bildebank.snapshot_repository.remove_empty_staging_directories",
+                    side_effect=interrupt_cleanup_once,
+                ):
+                    published = publish_snapshot(
+                        repository,
+                        staging,
+                        collection_id=collection_id,
+                        repository_id=repository_id,
+                        status="complete",
+                        collection_identity_source="database",
+                        started_at="2026-07-15T12:00:00Z",
+                        completed_at="2026-07-15T12:01:00Z",
+                        files=(normal_file_record("2026/07/a.jpg", stored.reference),),
+                        databases=(main_database_record(stored.reference),),
+                        schema_versions={"main": 14},
+                    )
+
+            self.assertEqual(cleanup_calls, 2)
+            self.assertTrue(published.snapshot_dir.is_dir())
+            self.assertFalse(staging.exists())
+
     def test_publishing_new_snapshot_never_changes_or_overwrites_older_snapshot(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

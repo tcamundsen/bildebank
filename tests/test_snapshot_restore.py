@@ -651,6 +651,79 @@ class SnapshotRestorePlanTests(unittest.TestCase):
             staging = next(root.glob(".bildebank-restore-restored-*"))
             self.assertTrue((staging / "collection").is_dir())
 
+    def test_keyboard_interrupt_after_collection_rename_returns_published_restore(self) -> None:
+        with degraded_snapshot() as (root, _target, repository, snapshot_id, expected, observed):
+            restored = root / "restored"
+            real_rename = os.rename
+
+            def rename_then_interrupt(source, destination) -> None:  # noqa: ANN001
+                real_rename(source, destination)
+                if Path(source).name == "collection":
+                    raise KeyboardInterrupt
+
+            with patch(
+                "bildebank.snapshot_restore.os.rename",
+                side_effect=rename_then_interrupt,
+            ):
+                result = restore_full_snapshot(repository, snapshot_id, restored)
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertEqual((restored / "2026/07/familie.jpg").read_bytes(), expected)
+            assert result.published_recovery is not None
+            observed_file = next(result.published_recovery.rglob("familie.observed-*.jpg"))
+            self.assertEqual(observed_file.read_bytes(), observed)
+            self.assertEqual(list(root.glob(".bildebank-restore-restored-*")), [])
+
+    def test_keyboard_interrupt_after_only_recovery_rename_still_interrupts_restore(self) -> None:
+        with degraded_snapshot() as (root, _target, repository, snapshot_id, _expected, _observed):
+            restored = root / "restored"
+            real_rename = os.rename
+
+            def rename_then_interrupt(source, destination) -> None:  # noqa: ANN001
+                real_rename(source, destination)
+                if Path(source).name == "recovery":
+                    raise KeyboardInterrupt
+
+            with (
+                patch(
+                    "bildebank.snapshot_restore.os.rename",
+                    side_effect=rename_then_interrupt,
+                ),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                restore_full_snapshot(repository, snapshot_id, restored)
+
+            self.assertFalse(restored.exists())
+            recovery = next(root.glob("restored-recovery-*"))
+            self.assertTrue((recovery / RECOVERY_REPORT_FILENAME).is_file())
+            staging = next(root.glob(".bildebank-restore-restored-*"))
+            self.assertTrue((staging / "collection").is_dir())
+
+    def test_keyboard_interrupt_during_post_publish_cleanup_returns_restore(self) -> None:
+        with normal_snapshot() as (root, _target, repository, snapshot_id):
+            restored = root / "restored"
+            from bildebank.snapshot_restore import cleanup_published_restore_staging
+
+            cleanup_calls = 0
+
+            def interrupt_cleanup_once(staging) -> tuple[str, ...]:  # noqa: ANN001
+                nonlocal cleanup_calls
+                cleanup_calls += 1
+                if cleanup_calls == 1:
+                    raise KeyboardInterrupt
+                return cleanup_published_restore_staging(staging)
+
+            with patch(
+                "bildebank.snapshot_restore.cleanup_published_restore_staging",
+                side_effect=interrupt_cleanup_once,
+            ):
+                result = restore_full_snapshot(repository, snapshot_id, restored)
+
+            self.assertEqual(cleanup_calls, 2)
+            self.assertEqual(result.exit_code, 0)
+            self.assertTrue((restored / db.DB_FILENAME).is_file())
+            self.assertEqual(list(root.glob(".bildebank-restore-restored-*")), [])
+
     def test_cli_full_and_single_file_dry_run_do_not_require_active_collection(self) -> None:
         with normal_snapshot() as (root, target, repository, snapshot_id):
             target.rename(root / "collection-moved")

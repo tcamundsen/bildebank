@@ -635,17 +635,45 @@ def publish_snapshot(
     if destination.exists() or destination.is_symlink():
         raise SnapshotStorageError(f"Snapshotmålet finnes allerede og blir ikke overskrevet: {destination}")
     raise_if_snapshot_cancelled(should_cancel)
-    try:
-        os.rename(snapshot_staging, destination)
-    except OSError as exc:
-        raise SnapshotStorageError(f"Kunne ikke publisere snapshotet atomisk: {destination}: {exc}") from exc
-    fsync_directory(snapshots_directory)
-    remove_empty_staging_directories(staging)
-    return PublishedSnapshot(
+    published_snapshot = PublishedSnapshot(
         snapshot_id=canonical_snapshot_id,
         snapshot_dir=destination,
         status=status,
         entry_count=len(file_entries),
+    )
+    published = False
+    while True:
+        try:
+            if not published:
+                try:
+                    os.rename(snapshot_staging, destination)
+                except OSError as exc:
+                    raise SnapshotStorageError(
+                        f"Kunne ikke publisere snapshotet atomisk: {destination}: {exc}"
+                    ) from exc
+                published = True
+            fsync_directory(snapshots_directory)
+            remove_empty_staging_directories(staging)
+            return published_snapshot
+        except KeyboardInterrupt:
+            while not published:
+                try:
+                    published = atomic_directory_move_completed(
+                        snapshot_staging,
+                        destination,
+                    )
+                except KeyboardInterrupt:
+                    continue
+                if not published:
+                    raise
+
+
+def atomic_directory_move_completed(source: Path, destination: Path) -> bool:
+    return (
+        not source.exists()
+        and not source.is_symlink()
+        and destination.is_dir()
+        and not destination.is_symlink()
     )
 
 
