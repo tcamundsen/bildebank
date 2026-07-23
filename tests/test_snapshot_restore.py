@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bildebank import db
+from bildebank.config import FaceRecognitionConfig
 from bildebank.snapshot import (
     REPOSITORY_LOCK_FILENAME,
     portable_path_key,
@@ -86,6 +87,73 @@ class SnapshotRestorePlanTests(unittest.TestCase):
             self.assertFalse(restore_target.exists())
             self.assertEqual(tree_file_bytes(repository), repository_before)
             self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
+
+    def test_absolute_face_database_restore_warns_without_changing_old_location(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            face_dir = root / "external-faces"
+            face_database = face_dir / "antelopev2.sqlite3"
+            db.init_database(target)
+            create_sqlite_database(face_database, schema_version=5)
+            face_database_before = face_database.read_bytes()
+
+            created = create_snapshot(
+                target,
+                repository,
+                face_config=FaceRecognitionConfig(database_dir=face_dir),
+            )
+            warning_fragment = "absolutt database_dir"
+            config_fragment = "face_recognition.database_dir"
+            self.assertTrue(
+                any(warning_fragment in warning for warning in created.build.warnings)
+            )
+            manifest = json.loads(
+                (created.published.snapshot_dir / "manifest.json").read_bytes()
+            )
+            self.assertTrue(
+                any(warning_fragment in warning for warning in manifest["warnings"])
+            )
+
+            dry_target = root / "dry-restored"
+            plan = plan_full_restore(
+                repository,
+                created.published.snapshot_id,
+                dry_target,
+            )
+            self.assertTrue(any(config_fragment in warning for warning in plan.warnings))
+
+            dry_code, _dry_stdout, dry_stderr = capture_cli(
+                [
+                    "snapshot",
+                    "restore",
+                    str(repository),
+                    created.published.snapshot_id,
+                    str(dry_target),
+                    "--dry-run",
+                ]
+            )
+            restored = root / "restored"
+            restore_code, _restore_stdout, restore_stderr = capture_cli(
+                [
+                    "snapshot",
+                    "restore",
+                    str(repository),
+                    created.published.snapshot_id,
+                    str(restored),
+                    "--yes",
+                ]
+            )
+
+            self.assertEqual(dry_code, 0, dry_stderr)
+            self.assertIn(config_fragment, dry_stderr)
+            self.assertEqual(restore_code, 0, restore_stderr)
+            self.assertIn(config_fragment, restore_stderr)
+            self.assertTrue(
+                (restored / ".bildebank-faces" / "antelopev2.sqlite3").is_file()
+            )
+            self.assertEqual(face_database.read_bytes(), face_database_before)
 
     def test_full_restore_accepts_empty_target_but_rejects_nonempty_and_overlapping_targets(self) -> None:
         with normal_snapshot() as (root, target, repository, snapshot_id):
@@ -1025,6 +1093,19 @@ def insert_database_file(target: Path, relative_path: str, sha256: str, size_byt
                 size_bytes,
             ),
         )
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def create_sqlite_database(path: Path, *, schema_version: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(path)
+    try:
+        connection.execute("CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+        connection.execute("INSERT INTO meta VALUES('schema_version', ?)", (str(schema_version),))
+        connection.execute("CREATE TABLE content(value TEXT NOT NULL)")
+        connection.execute("INSERT INTO content VALUES('bevar')")
         connection.commit()
     finally:
         connection.close()

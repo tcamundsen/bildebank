@@ -29,6 +29,12 @@ REPOSITORY_LOCK_FILENAME = ".bildebank-repository.lock"
 REPOSITORY_FORMAT_VERSION = 1
 SUPPORTED_REQUIRED_FEATURES: frozenset[str] = frozenset()
 FAT_MAX_FILE_SIZE = 4 * 1024 * 1024 * 1024 - 1
+ABSOLUTE_FACE_DATABASE_RESTORE_WARNING = (
+    "Snapshotet inneholder face-databaser fra en absolutt database_dir. "
+    "Databasene legges under .bildebank-faces/ i den gjenopprettede samlingen, "
+    "men konfigurasjonen endres ikke automatisk. Kontroller og eventuelt endre "
+    "face_recognition.database_dir før face-funksjonene tas i bruk."
+)
 
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _UTC_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")

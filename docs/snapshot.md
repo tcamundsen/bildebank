@@ -270,6 +270,12 @@ Hvis en databaseført fil bare kan bevares i recovery-mappen, mangler den
 bevisst på ordinær plass. Restore publiserer da samlingen med en tydelig
 advarsel og returnerer exitkode `3` for å vise at samlingen er ufullstendig.
 
+Hvis snapshotet inneholder ansiktsdatabaser fra en absolutt
+`face_recognition.database_dir`, legges databasene under
+`.bildebank-faces\` i den gjenopprettede samlingen. Bildebank endrer ikke
+konfigurasjonen automatisk. Restore viser derfor en advarsel om at innstillingen
+må kontrolleres og eventuelt endres før face-funksjonene tas i bruk.
+
 Originalen og restorekopien har samme `collection_id`. De representerer samme
 logiske bildesamling. Ikke importer eller gjør andre endringer i begge som om de
 var to uavhengige samlinger.

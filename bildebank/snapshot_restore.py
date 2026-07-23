@@ -9,11 +9,12 @@ import stat
 import uuid
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Iterator
 
 from . import db
 from .snapshot import (
+    ABSOLUTE_FACE_DATABASE_RESTORE_WARNING,
     is_relative_to,
     portable_path_key,
     repository_file_size_limit,
@@ -93,6 +94,7 @@ class FullRestorePlan:
     original_collection: Path
     original_collection_exists: bool
     note: str | None
+    warnings: tuple[str, ...]
 
     @property
     def incomplete(self) -> bool:
@@ -280,6 +282,14 @@ def build_full_restore_plan(loaded: _LoadedSnapshot, target_arg: Path) -> FullRe
     last_source = loaded.metadata["last_confirmed_source"]
     assert isinstance(last_source, dict)
     original_collection = Path(str(last_source["collection_path"]))
+    manifest_warnings = loaded.manifest["warnings"]
+    assert isinstance(manifest_warnings, list)
+    restore_warnings = []
+    if (
+        ABSOLUTE_FACE_DATABASE_RESTORE_WARNING in manifest_warnings
+        or has_absolute_face_database(databases)
+    ):
+        restore_warnings.append(ABSOLUTE_FACE_DATABASE_RESTORE_WARNING)
     return FullRestorePlan(
         repository=loaded.repository,
         snapshot=loaded.summary,
@@ -294,7 +304,28 @@ def build_full_restore_plan(loaded: _LoadedSnapshot, target_arg: Path) -> FullRe
         original_collection=original_collection,
         original_collection_exists=original_collection.is_dir(),
         note=loaded.summary.note,
+        warnings=tuple(restore_warnings),
     )
+
+
+def has_absolute_face_database(databases: list[object]) -> bool:
+    for database in databases:
+        assert isinstance(database, dict)
+        role = database["role"]
+        capture = database["capture"]
+        source_path_display = database["source_path_display"]
+        if (
+            isinstance(role, str)
+            and role.startswith("face:")
+            and capture == "sqlite_backup"
+            and isinstance(source_path_display, str)
+            and (
+                PurePosixPath(source_path_display).is_absolute()
+                or PureWindowsPath(source_path_display).is_absolute()
+            )
+        ):
+            return True
+    return False
 
 
 def validate_loaded_snapshot_database_files(loaded: _LoadedSnapshot) -> None:
@@ -383,7 +414,7 @@ def restore_full_snapshot(
                     published_target=plan.target,
                     published_recovery=published_recovery,
                     exit_code=3 if plan.incomplete else 0,
-                    warnings=warnings,
+                    warnings=(*plan.warnings, *warnings),
                 )
             except KeyboardInterrupt:
                 while not published:

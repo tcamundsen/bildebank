@@ -11,6 +11,7 @@ from .config import FaceRecognitionConfig
 from .face import LEGACY_FACE_DB_FILENAME, LEGACY_FACE_DB_MODEL_NAME
 from .openclip import OPENCLIP_DB_FILENAME
 from .snapshot import (
+    ABSOLUTE_FACE_DATABASE_RESTORE_WARNING,
     DatabaseFileRow,
     InventoryFile,
     MainDatabaseSourceError,
@@ -66,6 +67,7 @@ class DatabaseSource:
     required: bool
     regenerable: bool
     model_name: str | None
+    configured_absolute: bool = False
 
 
 @dataclass(frozen=True)
@@ -638,6 +640,10 @@ def build_database_catalog(
                     required=False,
                     regenerable=False,
                     model_name=model_name,
+                    configured_absolute=(
+                        face_config is not None
+                        and face_config.database_dir.is_absolute()
+                    ),
                 )
             )
         else:
@@ -671,6 +677,7 @@ def build_database_catalog(
                     regenerable=False,
                     model_name=model_name,
                     source_path_display=str(file.absolute_path),
+                    configured_absolute=True,
                 )
             )
     roles = [item.role for item in sources]
@@ -726,6 +733,7 @@ def database_source(
     regenerable: bool,
     model_name: str | None = None,
     source_path_display: str | None = None,
+    configured_absolute: bool = False,
 ) -> DatabaseSource:
     if portable_path_key(restore_path) is None:
         raise SnapshotStorageError(f"Databasen har utrygg restore-sti: {restore_path}")
@@ -737,6 +745,7 @@ def database_source(
         required=required,
         regenerable=regenerable,
         model_name=model_name,
+        configured_absolute=configured_absolute,
     )
 
 
@@ -757,6 +766,7 @@ def capture_databases(
     raw_files: list[SnapshotFileRecord] = []
     schema_versions: dict[str, int | None] = {}
     warnings: list[str] = []
+    absolute_face_database_captured = False
     database_progress = _DatabaseProgressReporter(sources, progress)
     database_progress.start()
     for source in sources:
@@ -820,9 +830,13 @@ def capture_databases(
             )
         )
         schema_versions[source.role] = backup.schema_version
+        if source.configured_absolute:
+            absolute_face_database_captured = True
         if source.role.startswith("auxiliary:"):
             warnings.append(f"Ukjent SQLite-database ble tatt med: {source.source_path_display}")
         database_progress.finish(source)
+    if absolute_face_database_captured:
+        warnings.append(ABSOLUTE_FACE_DATABASE_RESTORE_WARNING)
     return tuple(records), tuple(raw_files), schema_versions, tuple(warnings)
 
 

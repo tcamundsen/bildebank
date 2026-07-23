@@ -2477,6 +2477,8 @@ def print_full_restore_plan(plan: FullRestorePlan, *, dry_run: bool = True) -> N
             f"collection_id og må ikke brukes som uavhengige samlinger: {plan.original_collection}",
             file=sys.stderr,
         )
+    for warning in plan.warnings:
+        print(f"ADVARSEL: {warning}", file=sys.stderr)
     if dry_run:
         print("Dry-run: Ingen mapper, filer eller restore-staging er opprettet eller endret.")
 
