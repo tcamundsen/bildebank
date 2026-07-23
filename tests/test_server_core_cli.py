@@ -375,11 +375,15 @@ class ServerCoreCliTests(unittest.TestCase):
             image_path = target / "2024" / "01" / "image.png"
             write_test_image(image_path, size=(3000, 1000))
             file_id = register_target_file(target, Path("2024/01/image.png"))
-            with db.connect(target) as conn:
+            conn = db.connect(target)
+            try:
                 conn.execute(
                     "UPDATE files SET view_rotation_degrees = 90 WHERE id = ?",
                     (file_id,),
                 )
+                conn.commit()
+            finally:
+                conn.close()
 
             class FakeHandler:
                 server = SimpleNamespace(target=target, preview_images=False)
