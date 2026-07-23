@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -9,6 +11,7 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from typing import Protocol
 from unittest.mock import patch
 
 from bildebank import db
@@ -25,6 +28,99 @@ from bildebank.snapshot_restore import (
     plan_full_restore,
     restore_full_snapshot,
 )
+
+
+class _ScandirIterator(Protocol):
+    def __next__(self) -> os.DirEntry[str]: ...
+
+    def close(self) -> None: ...
+
+
+class _TrackedDirEntry:
+    def __init__(
+        self,
+        entry: os.DirEntry[str],
+        record_path: Callable[[Path], None],
+    ) -> None:
+        self._entry = entry
+        self._record_path = record_path
+
+    @property
+    def name(self) -> str:
+        return self._entry.name
+
+    @property
+    def path(self) -> str:
+        return self._entry.path
+
+    def stat(self, *, follow_symlinks: bool = True) -> os.stat_result:
+        self._record_path(Path(self.path))
+        return self._entry.stat(follow_symlinks=follow_symlinks)
+
+    def is_symlink(self) -> bool:
+        return self._entry.is_symlink()
+
+
+class _TrackedScandir(Iterator[_TrackedDirEntry]):
+    def __init__(
+        self,
+        iterator: _ScandirIterator,
+        record_path: Callable[[Path], None],
+    ) -> None:
+        self._iterator = iterator
+        self._record_path = record_path
+
+    def __next__(self) -> _TrackedDirEntry:
+        return _TrackedDirEntry(next(self._iterator), self._record_path)
+
+    def __enter__(self) -> _TrackedScandir:
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: object,
+        _exc_value: object,
+        _traceback: object,
+    ) -> None:
+        self._iterator.close()
+
+
+@contextmanager
+def mock_reparse_point_at(path: Path) -> Iterator[None]:
+    intended_path = path.absolute()
+    current_stat_path: Path | None = None
+    real_path_stat = Path.stat
+    real_scandir = os.scandir
+
+    def record_path(stat_path: Path) -> None:
+        nonlocal current_stat_path
+        current_stat_path = stat_path.absolute()
+
+    def tracked_path_stat(
+        stat_path: Path,
+        *,
+        follow_symlinks: bool = True,
+    ) -> os.stat_result:
+        record_path(stat_path)
+        return real_path_stat(stat_path, follow_symlinks=follow_symlinks)
+
+    def tracked_scandir(
+        directory: str | os.PathLike[str],
+    ) -> _TrackedScandir:
+        return _TrackedScandir(real_scandir(directory), record_path)
+
+    def is_intended_reparse_point(_path_stat: os.stat_result) -> bool:
+        return current_stat_path == intended_path
+
+    with (
+        patch.object(Path, "stat", tracked_path_stat),
+        patch("bildebank.snapshot_check.os.scandir", tracked_scandir),
+        patch(
+            "bildebank.snapshot_check.is_reparse_stat",
+            is_intended_reparse_point,
+        ),
+    ):
+        yield
 
 
 class SnapshotCheckTests(unittest.TestCase):
@@ -363,13 +459,9 @@ class SnapshotCheckTests(unittest.TestCase):
     def test_check_rejects_snapshot_directory_marked_as_reparse_point(self) -> None:
         with snapshot_repository() as (_root, _target, repository):
             snapshot = next((repository / "snapshots").iterdir())
-            snapshot_inode = snapshot.stat(follow_symlinks=False).st_ino
             before = tree_file_bytes(repository)
 
-            with patch(
-                "bildebank.snapshot_check.is_reparse_stat",
-                side_effect=lambda path_stat: path_stat.st_ino == snapshot_inode,
-            ):
+            with mock_reparse_point_at(snapshot):
                 result = check_snapshot_repository(repository)
 
             self.assertEqual(result.exit_code, 3)
@@ -392,13 +484,9 @@ class SnapshotCheckTests(unittest.TestCase):
                     if location == "sha256-root"
                     else next(path for path in object_root.iterdir() if path.is_dir())
                 )
-                tagged_inode = tagged.stat(follow_symlinks=False).st_ino
                 issues: list[SnapshotCheckIssue] = []
 
-                with patch(
-                    "bildebank.snapshot_check.is_reparse_stat",
-                    side_effect=lambda path_stat: path_stat.st_ino == tagged_inode,
-                ):
+                with mock_reparse_point_at(tagged):
                     objects = scan_object_store(repository, issues)
 
                 expected_code = (
@@ -423,12 +511,8 @@ class SnapshotCheckTests(unittest.TestCase):
                 nested.mkdir(parents=True)
                 (nested / "utenfor.bin").write_bytes(b"skal ikke telles")
                 tagged = run if location == "run" else nested
-                tagged_inode = tagged.stat(follow_symlinks=False).st_ino
 
-                with patch(
-                    "bildebank.snapshot_check.is_reparse_stat",
-                    side_effect=lambda path_stat: path_stat.st_ino == tagged_inode,
-                ):
+                with mock_reparse_point_at(tagged):
                     result = check_snapshot_repository(repository)
 
                 expected_code = (
