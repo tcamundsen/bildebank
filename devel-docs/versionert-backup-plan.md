@@ -1037,8 +1037,8 @@ Den observerbare CLI-kontrakten i første versjon skal være:
   snapshot
 - hel restore: `0` når en kontrollert samling er publisert, også når
   observerte ekstravarianter er lagt i recovery-mappen; `3` når en bevisst
-  ufullstendig samling er publisert fordi en forventet variant mangler; og `1`
-  når ingen samlingsmappe er publisert
+  ufullstendig samling er publisert fordi en forventet fil mangler på ordinær
+  plass; og `1` når ingen samlingsmappe er publisert
 - `snapshot check`: `0` når kontrollen fullføres uten ny repositoryskade, `3`
   når kontrollen fullføres og finner manglende eller korrupte repositorydata,
   og `1` når kontrollen selv feiler eller avbrytes før resultatet er komplett

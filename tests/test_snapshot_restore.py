@@ -10,7 +10,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bildebank import db
-from bildebank.snapshot import REPOSITORY_LOCK_FILENAME, snapshot_object_path
+from bildebank.snapshot import (
+    REPOSITORY_LOCK_FILENAME,
+    portable_path_key,
+    snapshot_object_path,
+)
 from bildebank.snapshot_create import create_snapshot
 from bildebank.snapshot_repository import SnapshotStorageError
 from bildebank.snapshot_restore import (
@@ -135,6 +139,39 @@ class SnapshotRestorePlanTests(unittest.TestCase):
                 {output.relative_path for output in plan.collection_outputs},
             )
             self.assertEqual(len(plan.recovery_outputs), 1)
+
+    def test_database_file_with_recovery_only_path_makes_restore_incomplete(self) -> None:
+        with database_file_recovery_only_snapshot() as (
+            root,
+            _target,
+            repository,
+            snapshot_id,
+            entry_id,
+            _media_bytes,
+        ):
+            plan = plan_full_restore(repository, snapshot_id, root / "restored")
+
+            self.assertTrue(plan.incomplete)
+            self.assertEqual(plan.missing_expected_entries, (entry_id,))
+            self.assertNotIn(
+                "2026/07/familie.jpg",
+                {output.relative_path for output in plan.collection_outputs},
+            )
+            self.assertEqual(
+                [output.entry_id for output in plan.recovery_outputs],
+                [entry_id],
+            )
+
+    def test_raw_database_recovery_only_does_not_make_restore_incomplete(self) -> None:
+        with recovery_only_snapshot() as (root, repository, snapshot_id, entry_id, _raw_bytes):
+            plan = plan_full_restore(repository, snapshot_id, root / "restored")
+
+            self.assertFalse(plan.incomplete)
+            self.assertEqual(plan.missing_expected_entries, ())
+            self.assertIn(
+                entry_id,
+                {output.entry_id for output in plan.recovery_outputs},
+            )
 
     def test_restore_plan_rejects_recovery_snapshot_and_existing_recovery_target(self) -> None:
         with normal_snapshot() as (root, target, repository, _snapshot_id):
@@ -471,6 +508,53 @@ class SnapshotRestorePlanTests(unittest.TestCase):
             observed_file = next(result.published_recovery.rglob("familie.observed-*.jpg"))
             self.assertEqual(observed_file.read_bytes(), observed)
 
+    def test_cli_database_file_with_recovery_only_path_returns_three_after_restore(self) -> None:
+        with database_file_recovery_only_snapshot() as (
+            root,
+            _target,
+            repository,
+            snapshot_id,
+            entry_id,
+            media_bytes,
+        ):
+            restored = root / "restored"
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "snapshot",
+                    "restore",
+                    str(repository),
+                    snapshot_id,
+                    str(restored),
+                    "--yes",
+                ]
+            )
+
+            self.assertEqual(code, 3)
+            self.assertIn("Hel restore publisert", stdout)
+            self.assertIn(
+                f"Forventet fil mangler på ordinær plass for {entry_id}",
+                stderr,
+            )
+            self.assertIn("Samlingen ble publisert bevisst ufullstendig", stderr)
+            self.assertFalse((restored / "2026/07/familie.jpg").exists())
+            recovery = next(root.glob("restored-recovery-*"))
+            recovery_files = [
+                path
+                for path in recovery.rglob("*")
+                if path.is_file() and path.name != RECOVERY_REPORT_FILENAME
+            ]
+            self.assertEqual(len(recovery_files), 1)
+            self.assertEqual(recovery_files[0].read_bytes(), media_bytes)
+            connection = sqlite3.connect(restored / db.DB_FILENAME)
+            try:
+                stored_path = connection.execute(
+                    "SELECT target_path FROM files"
+                ).fetchone()
+            finally:
+                connection.close()
+            self.assertEqual(stored_path, ("2026/07/familie.jpg",))
+
     def test_copy_failure_keeps_staging_and_does_not_publish_collection(self) -> None:
         with normal_snapshot() as (root, _target, repository, snapshot_id):
             restored = root / "restored"
@@ -758,6 +842,65 @@ class degraded_snapshot:
         result = create_snapshot(target, repository)
         assert result.status == "degraded"
         return root, target, repository, result.published.snapshot_id, expected, observed
+
+    def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
+        self._tempdir.cleanup()
+
+
+class database_file_recovery_only_snapshot:
+    def __init__(self) -> None:
+        self._tempdir = tempfile.TemporaryDirectory()
+
+    def __enter__(self) -> tuple[Path, Path, Path, str, str, bytes]:
+        root = Path(self._tempdir.name)
+        target = root / "collection"
+        repository = root / "repository"
+        db.init_database(target)
+        media_bytes = b"original"
+        relative_path = "2026/07/familie.jpg"
+        media = target / relative_path
+        media.parent.mkdir(parents=True)
+        media.write_bytes(media_bytes)
+        insert_database_file(
+            target,
+            relative_path,
+            hashlib.sha256(media_bytes).hexdigest(),
+            len(media_bytes),
+        )
+
+        def mark_media_path_unsafe(path: str) -> str | None:
+            if path == relative_path:
+                return None
+            return portable_path_key(path)
+
+        with patch(
+            "bildebank.snapshot_builder.portable_path_key",
+            side_effect=mark_media_path_unsafe,
+        ):
+            result = create_snapshot(target, repository)
+
+        assert result.status == "degraded"
+        entries = [
+            json.loads(line)
+            for line in (result.published.snapshot_dir / "files.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        recovery_entry = next(
+            entry
+            for entry in entries
+            if entry["original_path_display"] == relative_path
+        )
+        assert recovery_entry["restore_kind"] == "recovery_only"
+        assert recovery_entry["expected"] is not None
+        return (
+            root,
+            target,
+            repository,
+            result.published.snapshot_id,
+            recovery_entry["entry_id"],
+            media_bytes,
+        )
 
     def __exit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
         self._tempdir.cleanup()

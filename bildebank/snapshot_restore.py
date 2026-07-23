@@ -186,6 +186,8 @@ def build_full_restore_plan(loaded: _LoadedSnapshot, target_arg: Path) -> FullRe
 
     for entry in loaded.entries:
         if entry.restore_kind == "recovery_only":
+            if entry.expected is not None:
+                missing_expected.append(entry.entry_id)
             if entry.object is not None:
                 require_available_object(loaded.repository, entry.object, required=True)
                 assert entry.recovery_name is not None

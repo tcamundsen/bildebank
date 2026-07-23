@@ -232,6 +232,10 @@ databasen og `collection_id` er kontrollert. Ved et `degraded` snapshot blir
 eventuelt observert avviksinnhold lagt i en separat recovery-mappe ved siden av
 den gjenopprettede samlingen.
 
+Hvis en databaseført fil bare kan bevares i recovery-mappen, mangler den
+bevisst på ordinær plass. Restore publiserer da samlingen med en tydelig
+advarsel og returnerer exitkode `3` for å vise at samlingen er ufullstendig.
+
 Originalen og restorekopien har samme `collection_id`. De representerer samme
 logiske bildesamling. Ikke importer eller gjør andre endringer i begge som om de
 var to uavhengige samlinger.

@@ -2430,9 +2430,15 @@ def print_full_restore_plan(plan: FullRestorePlan, *, dry_run: bool = True) -> N
     print(f"  Recovery-filer: {len(plan.recovery_outputs)}")
     if plan.recovery_target is not None:
         print(f"  Recovery-mappe: {plan.recovery_target}")
-    print(f"  Manglende forventede varianter: {len(plan.missing_expected_entries)}")
+    print(
+        "  Forventede filer som mangler på ordinær plass: "
+        f"{len(plan.missing_expected_entries)}"
+    )
     for entry_id in plan.missing_expected_entries:
-        print(f"ADVARSEL: Forventet variant mangler for {entry_id}.", file=sys.stderr)
+        print(
+            f"ADVARSEL: Forventet fil mangler på ordinær plass for {entry_id}.",
+            file=sys.stderr,
+        )
     print(f"  Estimert datamengde: {format_bytes(plan.required_bytes)}")
     print(f"  Ledig plass: {format_bytes(plan.free_bytes)}")
     print(f"  Estimert plass er tilstrekkelig: {'ja' if plan.has_estimated_capacity else 'nei'}")
@@ -2488,7 +2494,7 @@ def print_full_restore_result(result: FullRestoreResult) -> None:
     if result.plan.incomplete:
         print(
             "ADVARSEL: Samlingen ble publisert bevisst ufullstendig fordi forventede "
-            "varianter manglet.",
+            "filer manglet på ordinær plass.",
             file=sys.stderr,
         )
     for warning in result.warnings:
