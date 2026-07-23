@@ -32,7 +32,7 @@ from .db_tags import (
     tag_name_key,
 )
 
-SCHEMA_VERSION = 15
+SCHEMA_VERSION = 16
 GPS_ERROR_EXIFTOOL = "exiftool_error"
 GPS_ERROR_FILE_MISSING = "file_missing"
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
@@ -103,6 +103,7 @@ class MigrationPlan:
     adds_metadata_datetime_column: bool = False
     removes_superseded_sources: bool = False
     adds_comment_column: bool = False
+    adds_pending_file_delete_identity: bool = False
     internal_repairs: tuple[str, ...] = ()
 
 
@@ -174,6 +175,8 @@ def ensure_compatible_columns(conn: sqlite3.Connection) -> None:
     create_geo_places_schema(conn)
     create_tags_schema(conn)
     create_pending_file_deletes_schema(conn)
+    ensure_column(conn, "pending_file_deletes", "expected_sha256", "TEXT")
+    ensure_column(conn, "pending_file_deletes", "expected_size_bytes", "INTEGER")
     create_pending_file_moves_schema(conn)
     if table_exists(conn, "errors"):
         ensure_column(conn, "errors", "resolved_at", "TEXT")
@@ -414,6 +417,8 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             path TEXT NOT NULL UNIQUE,
             reason TEXT NOT NULL,
             source_id INTEGER,
+            expected_sha256 TEXT,
+            expected_size_bytes INTEGER,
             attempts INTEGER NOT NULL DEFAULT 0,
             last_error TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -551,6 +556,8 @@ def create_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
             path TEXT NOT NULL UNIQUE,
             reason TEXT NOT NULL,
             source_id INTEGER,
+            expected_sha256 TEXT,
+            expected_size_bytes INTEGER,
             attempts INTEGER NOT NULL DEFAULT 0,
             last_error TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -607,7 +614,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 refreshes_performance_indexes=bool(missing_performance_indexes(conn)),
                 internal_repairs=internal_repairs,
             )
-        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14}:
+        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}:
             if validate:
                 validate_current_schema(
                     conn,
@@ -615,6 +622,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                     require_manual_date_columns=version >= 9,
                     require_camera_columns=version >= 10,
                     require_pending_file_deletes=version >= 11,
+                    require_pending_file_delete_identity=version >= 16,
                     require_pending_file_moves=version >= 12,
                     require_metadata_datetime_column=version >= 13,
                     require_comment_column=version >= 15,
@@ -640,6 +648,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                     or has_superseded_source_status(conn)
                 ),
                 adds_comment_column=version < 15,
+                adds_pending_file_delete_identity=version < 16,
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -672,6 +681,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 or has_superseded_source_status(conn)
             ),
             adds_comment_column=True,
+            adds_pending_file_delete_identity=True,
         )
     finally:
         conn.close()
@@ -719,7 +729,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 refreshes_performance_indexes=refreshes_performance_indexes,
                 internal_repairs=internal_repairs,
             )
-        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14}:
+        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}:
             imported_files = count_rows(conn, "files")
             duplicate_findings = count_rows(conn, "duplicate_findings")
             cleans_gps_errors = has_legacy_gps_errors(conn)
@@ -765,6 +775,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 adds_metadata_datetime_column=version < 13,
                 removes_superseded_sources=removes_superseded_sources,
                 adds_comment_column=version < 15,
+                adds_pending_file_delete_identity=version < 16,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -841,6 +852,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             adds_metadata_datetime_column=True,
             removes_superseded_sources=removes_superseded_sources,
             adds_comment_column=True,
+            adds_pending_file_delete_identity=True,
         )
     finally:
         conn.close()
@@ -944,6 +956,7 @@ def validate_current_schema(
     require_metadata_datetime_column: bool = True,
     require_comment_column: bool = True,
     require_pending_file_deletes: bool = True,
+    require_pending_file_delete_identity: bool = True,
     require_pending_file_moves: bool = True,
     require_internal_structure: bool = True,
     require_no_superseded_sources: bool = True,
@@ -989,7 +1002,10 @@ def validate_current_schema(
     if require_comment_column and "comment" not in file_columns:
         raise ValueError("files mangler comment. Kjør bildebank migrate.")
     if require_pending_file_deletes:
-        validate_pending_file_deletes_schema(conn)
+        validate_pending_file_deletes_schema(
+            conn,
+            require_identity=require_pending_file_delete_identity,
+        )
     if require_pending_file_moves:
         validate_pending_file_moves_schema(conn)
     if table_exists(conn, "errors") and conn.execute("PRAGMA foreign_key_list(errors)").fetchall():
@@ -1004,7 +1020,11 @@ def validate_current_schema(
         validate_performance_indexes(conn)
 
 
-def validate_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
+def validate_pending_file_deletes_schema(
+    conn: sqlite3.Connection,
+    *,
+    require_identity: bool = True,
+) -> None:
     if not table_exists(conn, "pending_file_deletes"):
         raise ValueError("Databasen mangler tabellen pending_file_deletes.")
     expected_columns = {
@@ -1017,6 +1037,8 @@ def validate_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
         "created_at",
         "updated_at",
     }
+    if require_identity:
+        expected_columns.update({"expected_sha256", "expected_size_bytes"})
     missing = sorted(expected_columns - table_columns(conn, "pending_file_deletes"))
     if missing:
         raise ValueError(
@@ -1199,6 +1221,8 @@ def repair_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
     if not table_exists(conn, "pending_file_deletes"):
         create_pending_file_deletes_schema(conn)
         return
+    ensure_column(conn, "pending_file_deletes", "expected_sha256", "TEXT")
+    ensure_column(conn, "pending_file_deletes", "expected_size_bytes", "INTEGER")
     try:
         validate_pending_file_deletes_schema(conn)
         return
@@ -1213,6 +1237,8 @@ def repair_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
         "last_error",
         "created_at",
         "updated_at",
+        "expected_sha256",
+        "expected_size_bytes",
     }
     missing = sorted(required - table_columns(conn, "pending_file_deletes"))
     if missing:
@@ -1228,6 +1254,8 @@ def repair_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
             path TEXT NOT NULL UNIQUE,
             reason TEXT NOT NULL,
             source_id INTEGER,
+            expected_sha256 TEXT,
+            expected_size_bytes INTEGER,
             attempts INTEGER NOT NULL DEFAULT 0,
             last_error TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1238,9 +1266,11 @@ def repair_pending_file_deletes_schema(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
         INSERT INTO pending_file_deletes_v11_repair(
-            id, path, reason, source_id, attempts, last_error, created_at, updated_at
+            id, path, reason, source_id, expected_sha256, expected_size_bytes,
+            attempts, last_error, created_at, updated_at
         )
-        SELECT id, path, reason, source_id, attempts, last_error, created_at, updated_at
+        SELECT id, path, reason, source_id, expected_sha256, expected_size_bytes,
+               attempts, last_error, created_at, updated_at
         FROM pending_file_deletes
         ORDER BY id
         """

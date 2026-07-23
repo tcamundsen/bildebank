@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import sys
 import uuid
 from dataclasses import dataclass
@@ -234,6 +235,12 @@ def rescan_source(conn, target: Path, source: db.Source, *, verbose: bool = True
             stats.scanned += 1
             try:
                 process_file(conn, target, source, item, stats)
+                resolve_successful_import_errors(conn, item)
+                db.resolve_errors_for_path(
+                    conn,
+                    stage="rescan-source",
+                    source_path=item,
+                )
             except Exception as exc:  # noqa: BLE001 - errors must be logged, not abort rescan
                 stats.errors += 1
                 db.insert_error(
@@ -340,6 +347,7 @@ def iter_media_files(root: Path):
 
 
 def process_file(conn, target: Path, source: db.Source, path: Path, stats: ImportStats) -> None:
+    validate_import_file(path, target)
     source_key = db.path_key(path)
     if db.get_file_source_for_source_path(conn, source.id, source_key) is not None:
         stats.skipped_existing += 1
@@ -419,6 +427,7 @@ def process_file(conn, target: Path, source: db.Source, path: Path, stats: Impor
 def process_file_dry_run(
     conn, target: Path, source: db.Source, path: Path, stats: ImportStats, *, output: TextIO
 ) -> None:
+    validate_import_file(path, target)
     source_key = db.path_key(path)
     if db.get_file_source_for_source_path(conn, source.id, source_key) is not None:
         stats.skipped_existing += 1
@@ -454,6 +463,23 @@ def verified_duplicate_file(conn, target: Path, file_hash: str):
     row = rows[0]
     verify_duplicate_target_file(target, row, file_hash)
     return row
+
+
+def validate_import_file(path: Path, target: Path) -> None:
+    path_stat = path.lstat()
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    file_attributes = getattr(path_stat, "st_file_attributes", 0)
+    if stat.S_ISLNK(path_stat.st_mode) or bool(file_attributes & reparse_flag):
+        raise ValueError(
+            f"Import støtter ikke symbolske lenker, junctions eller andre reparse points: {path}"
+        )
+    if not stat.S_ISREG(path_stat.st_mode):
+        raise ValueError(f"Importkilden er ikke en vanlig fil: {path}")
+    resolved_path = path.resolve(strict=True)
+    if _is_relative_to(resolved_path, target.resolve()):
+        raise ValueError(
+            f"En fil i kilden peker inn i bildesamlingen og kan ikke importeres: {path}"
+        )
 
 
 def verify_duplicate_target_file(target: Path, row, source_hash: str) -> None:

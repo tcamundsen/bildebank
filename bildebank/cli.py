@@ -1597,7 +1597,7 @@ def run_import_command(args: argparse.Namespace, target: Path) -> int:
         finally:
             conn.close()
     print_summary(import_stats)
-    return 0 if import_stats.errors == 0 else 2
+    return 0 if import_stats.errors == 0 and not import_stats.stopped else 2
 
 
 def run_rescan_source_command(args: argparse.Namespace, target: Path) -> int:
@@ -1620,7 +1620,7 @@ def run_rescan_source_command(args: argparse.Namespace, target: Path) -> int:
         finally:
             conn.close()
     print_summary(rescan_stats)
-    return 0 if rescan_stats.errors == 0 else 2
+    return 0 if rescan_stats.errors == 0 and not rescan_stats.stopped else 2
 
 
 def run_manual_date_command(args: argparse.Namespace, target: Path) -> int:
@@ -1898,7 +1898,7 @@ def run_rescan_source_dry_run(target: Path, args: argparse.Namespace) -> int:
             conn, target, source, output=sys.stdout, verbose=not args.quiet
         )
         print_summary(stats)
-        return 0 if stats.errors == 0 else 2
+        return 0 if stats.errors == 0 and not stats.stopped else 2
     finally:
         conn.close()
 
@@ -2687,7 +2687,7 @@ def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
             conn, target, source_row, output=sys.stdout, verbose=not args.quiet
         )
         print_summary(stats)
-        return 0 if stats.errors == 0 else 2
+        return 0 if stats.errors == 0 and not stats.stopped else 2
     finally:
         conn.close()
 
@@ -2731,6 +2731,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  legge til kamerakolonner i files")
     if plan.creates_pending_file_deletes:
         print("  opprette pending_file_deletes")
+    if plan.adds_pending_file_delete_identity:
+        print("  legge til innholdsidentitet for pending_file_deletes")
     if plan.creates_pending_file_moves:
         print("  opprette pending_file_moves")
     if plan.adds_metadata_datetime_column:
@@ -2787,6 +2789,8 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Kjør bildebank refresh-metadata --rescan for å fylle kameradata for eksisterende filer.")
     if result.creates_pending_file_deletes:
         print("Oppretter pending_file_deletes.")
+    if result.adds_pending_file_delete_identity:
+        print("Legger til innholdsidentitet for pending_file_deletes.")
     if result.creates_pending_file_moves:
         print("Oppretter pending_file_moves.")
     if result.adds_metadata_datetime_column:
@@ -3047,11 +3051,12 @@ def print_summary(stats) -> None:
 
 
 def summary_line(stats) -> str:
+    stopped = ", avbrutt=ja" if stats.stopped else ""
     return (
         "Oppsummering: "
         f"scannet={stats.scanned}, importert={stats.imported}, "
         f"duplikater={stats.duplicates}, eksisterende={stats.skipped_existing}, "
-        f"navnekollisjoner={stats.name_conflicts}, feil={stats.errors}"
+        f"navnekollisjoner={stats.name_conflicts}, feil={stats.errors}{stopped}"
     )
 
 

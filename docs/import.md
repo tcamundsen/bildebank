@@ -69,6 +69,11 @@ bildebank import --name "GamleBilder-PC" "C:\Users\deg\Pictures\GamleBilder"
 Du kan ikke gjenbruke samme navn for en ny import. Hvis du importerer flere
 deler av samme USB-brikke hver for seg, må hver del få sitt eget navn.
 
+Hvis en import stopper med feil etter at noen filer er registrert, kan du prøve
+samme navn på nytt fra den samme plasseringen. Ikke flytt mappen eller bytt
+stasjonsbokstav før den delvise importen er fullført. Bildebank avviser en slik
+flyttet delimport for å unngå at gamle og nye filstier blandes.
+
 ### `--dry-run`
 
 Vis en oppsummering av hva programmet ville gjort med kommandoen din, men uten å
@@ -108,6 +113,10 @@ Hvis du vil ha bildet tilbake i den aktive samlingen, bruk `undelete`:
 ```powershell
 bildebank undelete "deleted\2024\01\IMG_0001.jpg"
 ```
+
+Symbolske lenker, junctions og andre Windows reparse points importeres ikke som
+mediefiler. Dette hindrer at en registrert «original» egentlig peker på en fil
+inne i bildesamlingen.
 
 ## Overlappende mapper
 

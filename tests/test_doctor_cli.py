@@ -227,6 +227,66 @@ enabled = true
         )
         self.assertIn("Undersøk filene og sikkerhetskopien", stdout)
 
+    def test_doctor_reports_active_file_without_source_provenance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            active_path = target / "2024" / "01" / "active.jpg"
+            deleted_path = target / "deleted" / "2024" / "01" / "deleted.jpg"
+            active_path.parent.mkdir(parents=True)
+            deleted_path.parent.mkdir(parents=True)
+            active_path.write_bytes(b"active")
+            deleted_path.write_bytes(b"deleted")
+            conn = db.connect(target)
+            try:
+                for path, content, deleted in (
+                    (active_path, b"active", False),
+                    (deleted_path, b"deleted", True),
+                ):
+                    relative = path.relative_to(target)
+                    conn.execute(
+                        """
+                        INSERT INTO files(
+                            target_path, target_path_key, original_filename,
+                            stored_filename, sha256, size_bytes, date_source,
+                            deleted_at
+                        )
+                        VALUES(?, ?, ?, ?, ?, ?, 'filename',
+                               CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END)
+                        """,
+                        (
+                            relative.as_posix(),
+                            db.relative_path_key(relative),
+                            path.name,
+                            path.name,
+                            sha256_file(path),
+                            len(content),
+                            deleted,
+                        ),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch("bildebank.cli_doctor.python_module_available", return_value=False),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn(
+                "FEIL: 1 aktiv(e) files-rad(er) mangler file_sources-proveniens.",
+                stdout,
+            )
+            self.assertIn("INFO: file #1: 2024/01/active.jpg", stdout)
+            self.assertNotIn("INFO: file #2: deleted/2024/01/deleted.jpg", stdout)
+
     def test_doctor_reports_database_files_present_on_disk(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

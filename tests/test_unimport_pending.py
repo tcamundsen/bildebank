@@ -10,6 +10,7 @@ from bildebank.cli import main
 from bildebank.config import AppConfig
 from bildebank.face import connect_face_db, face_db_path
 from bildebank.file_lifecycle import remove_file
+from bildebank.media import sha256_file
 from bildebank.openclip import connect_openclip_db
 from bildebank.pending_deletes import cleanup_pending_deletes, list_pending_deletes
 from bildebank.unimport import run_unimport
@@ -75,6 +76,8 @@ def test_unimport_delete_failure_commits_database_and_keeps_pending_row(
     assert len(rows) == 1
     assert rows[0].reason == "unimport"
     assert rows[0].source_id == 1
+    assert rows[0].expected_sha256 == sha256_file(imported)
+    assert rows[0].expected_size_bytes == imported.stat().st_size
     assert rows[0].attempts == 1
     assert rows[0].last_error == "simulert låst fil"
 

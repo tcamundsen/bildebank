@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -24,6 +25,7 @@ TargetContentConfirmation = Callable[[tuple["TargetContentChange", ...]], bool]
 
 @dataclass(frozen=True)
 class TargetContentChange:
+    file_id: int
     path: Path
     expected_size_bytes: int
     actual_size_bytes: int
@@ -60,23 +62,20 @@ def run_unimport(
             plan = db.build_unimport_plan(conn, target, source)
             validate_source_files(
                 conn,
+                target,
                 source,
                 progress=source_progress,
             )
             validate_target_paths(target, plan, progress=target_progress)
             target_content_changes = find_target_content_changes(conn, target, plan)
-            if dry_run or not confirm(plan):
+            if dry_run:
                 conn.rollback()
                 return UnimportResult(
                     plan=plan,
                     applied=False,
                     target_content_changes=target_content_changes,
                 )
-            if (
-                target_content_changes
-                and confirm_target_content_changes is not None
-                and not confirm_target_content_changes(target_content_changes)
-            ):
+            if not confirm(plan):
                 conn.rollback()
                 return UnimportResult(
                     plan=plan,
@@ -84,10 +83,57 @@ def run_unimport(
                     target_content_changes=target_content_changes,
                 )
 
+            validate_source_files(conn, target, source)
+            validate_target_paths(target, plan)
+            target_content_changes = find_target_content_changes(conn, target, plan)
+            if target_content_changes:
+                if confirm_target_content_changes is None:
+                    raise ValueError(
+                        "Unimport krever eksplisitt bekreftelse for endrede filer "
+                        "i bildesamlingen."
+                    )
+                if not confirm_target_content_changes(target_content_changes):
+                    conn.rollback()
+                    return UnimportResult(
+                        plan=plan,
+                        applied=False,
+                        target_content_changes=target_content_changes,
+                    )
+                validate_source_files(conn, target, source)
+                validate_target_paths(target, plan)
+                changes_after_confirmation = find_target_content_changes(
+                    conn,
+                    target,
+                    plan,
+                )
+                if changes_after_confirmation != target_content_changes:
+                    raise ValueError(
+                        "En fil i bildesamlingen ble endret mens bekreftelsen ventet. "
+                        "Unimport er avbrutt; kjør kommandoen på nytt."
+                    )
+
             attach_item_databases(conn, target, config)
+            validate_source_files(conn, target, source)
+            validate_target_paths(target, plan)
+            final_target_content_changes = find_target_content_changes(
+                conn,
+                target,
+                plan,
+            )
+            if final_target_content_changes != target_content_changes:
+                raise ValueError(
+                    "En fil i bildesamlingen ble endret etter kontrollen. "
+                    "Unimport er avbrutt; kjør kommandoen på nytt."
+                )
+            validate_source_files(conn, target, source)
             conn.execute("BEGIN IMMEDIATE")
             try:
-                pending_ids = apply_unimport_transaction(conn, target, plan)
+                pending_ids = apply_unimport_transaction(
+                    conn,
+                    target,
+                    plan,
+                    target_content_changes=target_content_changes,
+                )
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -108,11 +154,13 @@ def run_unimport(
 
 def validate_source_files(
     conn: sqlite3.Connection,
+    target: Path,
     source: db.Source,
     *,
     progress: Any | None = None,
 ) -> None:
     rows = db.source_file_sources(conn, source.id)
+    target_root = target.resolve()
     total = len(rows)
     if progress is not None:
         progress.message(f"Unimport: kontrollerer {total} filer i kilden.")
@@ -129,6 +177,19 @@ def validate_source_files(
                 )
             if not source_path.is_file():
                 raise ValueError(f"Originalfilen er ikke en vanlig fil: {source_path}")
+            validate_path_is_not_link_or_reparse(
+                source_path,
+                label="Originalfilen",
+            )
+            try:
+                source_path.resolve(strict=True).relative_to(target_root)
+            except ValueError:
+                pass
+            else:
+                raise ValueError(
+                    "En registrert originalfil ligger inne i bildesamlingen og "
+                    f"kan ikke brukes som grunnlag for unimport: {source_path}"
+                )
             size_bytes = source_path.stat().st_size
             if size_bytes != int(row["size_bytes"]):
                 raise ValueError(
@@ -160,6 +221,11 @@ def validate_target_paths(
             db.target_relative_path(target, target_path)
             if target_path.exists() and not target_path.is_file():
                 raise ValueError(f"Filen som skulle fjernes er ikke en vanlig fil: {target_path}")
+            if target_path.exists():
+                validate_path_is_not_link_or_reparse(
+                    target_path,
+                    label="Filen som skulle fjernes",
+                )
             if progress is not None:
                 progress.update(index, total, action="filer", eta=True)
     finally:
@@ -204,6 +270,7 @@ def find_target_content_changes(
         if actual_size != expected_size or actual_sha256 != expected_sha256:
             changes.append(
                 TargetContentChange(
+                    file_id=file_id,
                     path=relative_path,
                     expected_size_bytes=expected_size,
                     actual_size_bytes=actual_size,
@@ -214,29 +281,68 @@ def find_target_content_changes(
     return tuple(changes)
 
 
+def validate_path_is_not_link_or_reparse(path: Path, *, label: str) -> None:
+    path_stat = path.lstat()
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    file_attributes = getattr(path_stat, "st_file_attributes", 0)
+    if stat.S_ISLNK(path_stat.st_mode) or bool(file_attributes & reparse_flag):
+        raise ValueError(
+            f"{label} kan ikke være en symbolsk lenke, junction eller annet "
+            f"reparse point: {path}"
+        )
+
+
 def apply_unimport_transaction(
     conn: sqlite3.Connection,
     target: Path,
     plan: db.UnimportPlan,
+    *,
+    target_content_changes: tuple[TargetContentChange, ...],
 ) -> tuple[int, ...]:
     db.log_command(
         conn,
         "unimport",
         {"name": plan.source.name, "source_id": plan.source.id},
     )
-    pending_ids = tuple(
-        enqueue_pending_delete_in_transaction(
-            conn,
-            target,
-            path,
-            reason="unimport",
-            source_id=plan.source.id,
-        ).id
-        for path in plan.target_paths_to_delete
-    )
+    changed_by_id = {change.file_id: change for change in target_content_changes}
+    rows: dict[int, sqlite3.Row] = {}
+    if plan.file_ids_to_delete:
+        placeholders = ",".join("?" for _ in plan.file_ids_to_delete)
+        rows = {
+            int(row["id"]): row
+            for row in conn.execute(
+                f"""
+                SELECT id, target_path, sha256, size_bytes
+                FROM files
+                WHERE id IN ({placeholders})
+                """,
+                plan.file_ids_to_delete,
+            )
+        }
+    pending_ids: list[int] = []
+    for file_id in plan.file_ids_to_delete:
+        row = rows[file_id]
+        change = changed_by_id.get(file_id)
+        expected_sha256 = (
+            change.actual_sha256 if change is not None else str(row["sha256"])
+        )
+        expected_size_bytes = (
+            change.actual_size_bytes if change is not None else int(row["size_bytes"])
+        )
+        pending_ids.append(
+            enqueue_pending_delete_in_transaction(
+                conn,
+                target,
+                db.absolute_target_path(target, Path(str(row["target_path"]))),
+                reason="unimport",
+                source_id=plan.source.id,
+                expected_sha256=expected_sha256,
+                expected_size_bytes=expected_size_bytes,
+            ).id
+        )
     delete_attached_item_data(conn, plan.file_ids_to_delete)
     db.apply_unimport(conn, plan)
-    return pending_ids
+    return tuple(pending_ids)
 
 
 def attach_item_databases(

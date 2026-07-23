@@ -45,6 +45,10 @@ ja, det vil jeg
 
 Hvis du skriver noe annet, avbryter Bildebank uten å endre noe.
 
+Etter bekreftelsen kontrollerer Bildebank alle registrerte originalfiler på
+nytt. Hvis en fil er blitt endret, fjernet eller byttet ut mens spørsmålet stod
+åpent, stopper kommandoen uten databaseendringer.
+
 Hvis Bildebank oppdager at en fil som skal fjernes er endret siden import,
 viser kommandoen en ekstra advarsel etter denne bekreftelsen:
 
@@ -73,6 +77,10 @@ Filer som mister den siste importkoblingen legges først i Bildebanks
 `pending_file_deletes`-kø i samme databasetransaksjon som importkoblingene
 fjernes. Databasen lagres før Bildebank prøver fysisk sletting.
 
+Køposten lagrer forventet størrelse og SHA-256 for akkurat den samlingskopien
+som skal fjernes. Hvis noe annet senere ligger på samme sti, nekter oppryddingen
+å slette filen.
+
 Hvis Windows eller et annet program midlertidig låser en fil, er unimporten
 fortsatt registrert. Filen blir stående i køen med feilmelding og kan prøves
 igjen senere:
@@ -99,6 +107,11 @@ importert.
 
 Hvis en originalfil mangler eller er endret, stopper kommandoen uten å gjøre
 endringer.
+
+`unimport` er den eneste Bildebank-kommandoen som kan fjerne mediefiler
+permanent. Dette skjer bare når alle registrerte originalfiler er kontrollert.
+Hvis en fil også tilhører en annen import, beholdes både samlingsfilen og
+databaseposten.
 
 Hvis filene i kilden er i orden, men en fil i bildesamlingen er endret siden
 import, stopper ikke Bildebank automatisk. I stedet viser programmet en tydelig
