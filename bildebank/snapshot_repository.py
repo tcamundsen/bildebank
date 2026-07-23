@@ -311,12 +311,26 @@ def store_verified_file(
     staging: Path,
     source: Path,
     *,
+    known_reference: ObjectReference | None = None,
     on_source_chunk: Callable[[int], None] | None = None,
     should_cancel: SnapshotCancelCallback | None = None,
 ) -> StoredObject:
     raise_if_snapshot_cancelled(should_cancel)
     validate_staging_path(repository, staging)
     validate_existing_path_components(source)
+    if known_reference is not None and _reusable_object_exists(repository, known_reference):
+        observed_reference, source_mtime_ns = _hash_stable_source(
+            source,
+            on_source_chunk=on_source_chunk,
+            should_cancel=should_cancel,
+        )
+        if _reusable_object_exists(repository, observed_reference):
+            return StoredObject(
+                reference=observed_reference,
+                reused=True,
+                source_mtime_ns=source_mtime_ns,
+            )
+
     candidate_directory = staging / "object-candidates"
     candidate_directory.mkdir(exist_ok=True)
     candidate = candidate_directory / f"{uuid.uuid4()}.tmp"
@@ -381,33 +395,21 @@ def store_verified_file(
 
     reference = ObjectReference(sha256=digest.hexdigest(), size_bytes=size_bytes)
     try:
-        verify_file_hash(
-            candidate,
-            reference,
-            label="Stagingobjekt",
-            should_cancel=should_cancel,
-        )
         destination = snapshot_object_path(repository, reference.sha256, reference.size_bytes)
-        validate_existing_path_components(destination.parent)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        if destination.exists() or destination.is_symlink():
-            validate_regular_file_without_links(destination, label="Backupobjekt")
-            if destination.stat().st_size != reference.size_bytes:
-                raise SnapshotStorageError(
-                    f"Eksisterende backupobjekt har feil størrelse: {destination}"
-                )
-            verify_file_hash(
-                destination,
-                reference,
-                label="Eksisterende backupobjekt",
-                should_cancel=should_cancel,
-            )
+        if _reusable_object_exists(repository, reference):
             candidate.unlink()
             return StoredObject(
                 reference=reference,
                 reused=True,
                 source_mtime_ns=after.st_mtime_ns,
             )
+        verify_file_hash(
+            candidate,
+            reference,
+            label="Stagingobjekt",
+            should_cancel=should_cancel,
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
         raise_if_snapshot_cancelled(should_cancel)
         os.replace(candidate, destination)
     except Exception:
@@ -415,6 +417,66 @@ def store_verified_file(
         raise
     fsync_directory(destination.parent)
     return StoredObject(reference=reference, reused=False, source_mtime_ns=after.st_mtime_ns)
+
+
+def _reusable_object_exists(repository: Path, reference: ObjectReference) -> bool:
+    validate_object_reference(reference)
+    destination = snapshot_object_path(repository, reference.sha256, reference.size_bytes)
+    validate_existing_path_components(destination.parent)
+    if not destination.exists() and not destination.is_symlink():
+        return False
+    validate_regular_file_without_links(destination, label="Backupobjekt")
+    if destination.stat().st_size != reference.size_bytes:
+        raise SnapshotStorageError(f"Eksisterende backupobjekt har feil størrelse: {destination}")
+    return True
+
+
+def _hash_stable_source(
+    source: Path,
+    *,
+    on_source_chunk: Callable[[int], None] | None = None,
+    should_cancel: SnapshotCancelCallback | None = None,
+) -> tuple[ObjectReference, int]:
+    try:
+        before = source.lstat()
+    except OSError as exc:
+        raise SourceFileUnreadableError(f"Kunne ikke lese objektkilden: {source}: {exc}") from exc
+    if not stat.S_ISREG(before.st_mode) or source.is_symlink():
+        raise SourceFileUnreadableError(f"Objektkilden er ikke en vanlig fil uten lenke: {source}")
+
+    source_fd = open_source_without_following_links(source)
+    digest = hashlib.sha256()
+    size_bytes = 0
+    try:
+        opened = os.fstat(source_fd)
+        if not stat.S_ISREG(opened.st_mode) or not same_file_identity(before, opened):
+            raise SourceFileChangedError(f"Objektkilden ble byttet før hashing: {source}")
+        with os.fdopen(source_fd, "rb", closefd=True) as source_file:
+            source_fd = -1
+            while True:
+                raise_if_snapshot_cancelled(should_cancel)
+                chunk = source_file.read(COPY_CHUNK_SIZE)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                size_bytes += len(chunk)
+                if on_source_chunk is not None:
+                    on_source_chunk(len(chunk))
+        try:
+            after = source.lstat()
+        except OSError as exc:
+            raise SourceFileChangedError(f"Objektkilden forsvant under hashing: {source}: {exc}") from exc
+    except Exception:
+        if source_fd >= 0:
+            os.close(source_fd)
+        raise
+
+    if not stable_source(before, after, size_bytes):
+        raise SourceFileChangedError(f"Filen endret seg under snapshothashing: {source}")
+    return (
+        ObjectReference(sha256=digest.hexdigest(), size_bytes=size_bytes),
+        after.st_mtime_ns,
+    )
 
 
 def backup_sqlite_database(

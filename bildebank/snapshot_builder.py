@@ -31,6 +31,7 @@ from .snapshot import (
 )
 from .snapshot_repository import (
     ExpectedFile,
+    ObjectReference,
     RepositoryLockError,
     SnapshotDatabaseRecord,
     SnapshotFileRecord,
@@ -361,6 +362,7 @@ def build_file_records(
                 staging,
                 candidate,
                 file_progress,
+                known_reference=ObjectReference(row.sha256, row.size_bytes),
                 should_cancel=should_cancel,
             )
         except SourceFileChangedError:
@@ -521,15 +523,46 @@ def _store_candidate(
     file: InventoryFile,
     progress: _FileProgressReporter,
     *,
+    known_reference: ObjectReference | None = None,
     should_cancel: SnapshotCancelCallback | None = None,
 ) -> StoredObject:
+    if known_reference is None:
+        if progress.progress is None and should_cancel is None:
+            return store_verified_file(repository, staging, file.absolute_path)
+        if progress.progress is None:
+            return store_verified_file(
+                repository,
+                staging,
+                file.absolute_path,
+                should_cancel=should_cancel,
+            )
+        if should_cancel is None:
+            return store_verified_file(
+                repository,
+                staging,
+                file.absolute_path,
+                on_source_chunk=progress.on_chunk,
+            )
+        return store_verified_file(
+            repository,
+            staging,
+            file.absolute_path,
+            on_source_chunk=progress.on_chunk,
+            should_cancel=should_cancel,
+        )
     if progress.progress is None and should_cancel is None:
-        return store_verified_file(repository, staging, file.absolute_path)
+        return store_verified_file(
+            repository,
+            staging,
+            file.absolute_path,
+            known_reference=known_reference,
+        )
     if progress.progress is None:
         return store_verified_file(
             repository,
             staging,
             file.absolute_path,
+            known_reference=known_reference,
             should_cancel=should_cancel,
         )
     if should_cancel is None:
@@ -537,12 +570,14 @@ def _store_candidate(
             repository,
             staging,
             file.absolute_path,
+            known_reference=known_reference,
             on_source_chunk=progress.on_chunk,
         )
     return store_verified_file(
         repository,
         staging,
         file.absolute_path,
+        known_reference=known_reference,
         on_source_chunk=progress.on_chunk,
         should_cancel=should_cancel,
     )

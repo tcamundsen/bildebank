@@ -194,6 +194,83 @@ class SnapshotRepositoryTests(unittest.TestCase):
             self.assertEqual(object_path.read_bytes(), content)
             self.assertEqual(first.reference.as_json()["size_bytes"], str(len(content)))
 
+    def test_known_reusable_object_hashes_source_without_candidate_or_object_read(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository = root / "repository"
+            repository.mkdir()
+            collection = root / "collection"
+            collection.mkdir()
+            source = root / "familie.jpg"
+            content = b"unikt familiebilde"
+            source.write_bytes(content)
+
+            with RepositoryLock(repository, command="snapshot create"):
+                initialize_repository(repository, collection, str(uuid.uuid4()))
+                first_staging = create_staging_run(repository)
+                first = store_verified_file(repository, first_staging, source)
+                reuse_staging = create_staging_run(repository)
+                chunks: list[int] = []
+                with (
+                    patch(
+                        "bildebank.snapshot_repository.copy_and_hash",
+                        side_effect=AssertionError("gjenbruk skal ikke skrive en kandidatkopi"),
+                    ),
+                    patch(
+                        "bildebank.snapshot_repository.verify_file_hash",
+                        side_effect=AssertionError("gjenbruk skal ikke fullhashe repositoryobjektet"),
+                    ),
+                ):
+                    second = store_verified_file(
+                        repository,
+                        reuse_staging,
+                        source,
+                        known_reference=first.reference,
+                        on_source_chunk=chunks.append,
+                    )
+
+            self.assertTrue(second.reused)
+            self.assertEqual(second.reference, first.reference)
+            self.assertEqual(sum(chunks), len(content))
+            self.assertFalse((reuse_staging / "object-candidates").exists())
+
+    def test_changed_known_source_stores_observed_bytes_as_new_object(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository = root / "repository"
+            repository.mkdir()
+            collection = root / "collection"
+            collection.mkdir()
+            source = root / "familie.jpg"
+            expected_content = b"original"
+            observed_content = b"changed!"
+            self.assertEqual(len(expected_content), len(observed_content))
+            source.write_bytes(expected_content)
+
+            with RepositoryLock(repository, command="snapshot create"):
+                initialize_repository(repository, collection, str(uuid.uuid4()))
+                staging = create_staging_run(repository)
+                expected = store_verified_file(repository, staging, source)
+                source.write_bytes(observed_content)
+                observed = store_verified_file(
+                    repository,
+                    staging,
+                    source,
+                    known_reference=expected.reference,
+                )
+
+            self.assertFalse(observed.reused)
+            self.assertNotEqual(observed.reference, expected.reference)
+            object_path = (
+                repository
+                / "objects"
+                / "sha256"
+                / observed.reference.sha256[:2]
+                / observed.reference.sha256[2:4]
+                / f"{observed.reference.sha256}-{observed.reference.size_bytes}"
+            )
+            self.assertEqual(object_path.read_bytes(), observed_content)
+
     def test_store_verified_file_never_overwrites_wrong_size_existing_object(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

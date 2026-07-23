@@ -83,6 +83,51 @@ class SnapshotBuilderTests(unittest.TestCase):
                 copied.close()
             self.assertEqual(provenance_count, (1,))
 
+    def test_build_passes_database_reference_for_reusable_media(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            relative_path = "2026/07/familie.jpg"
+            content = b"familiebilde"
+            write_file(target, relative_path, content)
+            media_path = target / relative_path
+            sha256 = hashlib.sha256(content).hexdigest()
+            insert_database_file(target, relative_path, sha256, len(content))
+            initialize_bound_repository(target, repository, read_collection_id(target))
+            existing_object = object_path(repository, sha256, len(content))
+            existing_object.parent.mkdir(parents=True, exist_ok=True)
+            existing_object.write_bytes(content)
+            original_store = snapshot_builder_module.store_verified_file
+            media_store_kwargs: list[dict[str, object]] = []
+
+            def recording_store(  # noqa: ANN202
+                repository_path: Path,
+                staging_path: Path,
+                source_path: Path,
+                **kwargs: object,
+            ):
+                if source_path == media_path:
+                    media_store_kwargs.append(kwargs)
+                return original_store(repository_path, staging_path, source_path, **kwargs)
+
+            with RepositoryLock(repository, command="snapshot create"):
+                with TargetLock(target, command="snapshot create"):
+                    staging = create_staging_run(repository)
+                    with patch(
+                        "bildebank.snapshot_builder.store_verified_file",
+                        side_effect=recording_store,
+                    ):
+                        result = build_normal_snapshot(target, repository, staging)
+
+            self.assertEqual(result.status, "complete")
+            self.assertEqual(len(media_store_kwargs), 1)
+            known_reference = media_store_kwargs[0]["known_reference"]
+            self.assertEqual(known_reference.sha256, sha256)
+            self.assertEqual(known_reference.size_bytes, len(content))
+
     def test_build_complete_snapshot_includes_migration_backup_without_unknown_warning(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

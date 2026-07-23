@@ -667,7 +667,7 @@ class SnapshotCliTests(unittest.TestCase):
             self.assertEqual(list(repository.iterdir()), [])
             self.assertEqual(target_lock.read_text(encoding="utf-8"), "command=import\npid=123\n")
 
-    def test_snapshot_create_rejects_same_size_corrupt_existing_object(self) -> None:
+    def test_snapshot_create_defers_same_size_object_corruption_to_full_check(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -691,12 +691,17 @@ class SnapshotCliTests(unittest.TestCase):
             code, stdout, stderr = capture_cli(
                 ["--target", str(target), "snapshot", "create", str(repository)]
             )
+            check_code, check_stdout, check_stderr = capture_cli(
+                ["snapshot", "check", "--full", str(repository)]
+            )
 
-            self.assertEqual(code, 1)
+            self.assertEqual(code, 0, stderr)
             self.assertIn("Snapshot: byte=", stdout)
-            self.assertIn("Eksisterende backupobjekt besto ikke SHA-256-kontroll", stderr)
             self.assertEqual(object_path.read_bytes(), corrupt_content)
-            self.assertEqual(len(list((repository / "snapshots").iterdir())), 1)
+            self.assertEqual(len(list((repository / "snapshots").iterdir())), 2)
+            self.assertEqual(check_code, 3)
+            self.assertIn("Repositoryavvik: 1", check_stdout)
+            self.assertIn("Objektet har feil SHA-256", check_stderr)
 
     def test_snapshot_create_publish_failure_keeps_staging_and_releases_locks(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
