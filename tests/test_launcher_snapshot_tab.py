@@ -18,7 +18,11 @@ from bildebank.launcher_snapshot_tab import (
     snapshot_plan_log_lines,
 )
 from bildebank.program_state import KnownSnapshotRepository
-from bildebank.snapshot import MainDatabaseSourceError, REPOSITORY_LOCK_FILENAME
+from bildebank.snapshot import (
+    MainDatabaseSourceError,
+    REPOSITORY_LOCK_FILENAME,
+    RepositoryBindingChange,
+)
 from bildebank.snapshot_create import create_snapshot
 from bildebank.snapshot_progress import SnapshotCancelled, SnapshotPlanProgress
 from bildebank.snapshot_repository import ObjectReference, SnapshotStorageError
@@ -162,7 +166,14 @@ def test_launcher_snapshot_helpers_use_shared_plan_and_create_functions(tmp_path
         progress=progress_events.append,
         should_cancel=cancel_requested,
     )
-    creator.assert_called_once_with(collection, repository, face_config=face_config)
+    creator.assert_called_once_with(
+        collection,
+        repository,
+        face_config=face_config,
+        confirmed_binding_change=None,
+        progress=None,
+        should_cancel=None,
+    )
 
 
 def test_launcher_snapshot_plan_uses_read_only_recovery_preflight(tmp_path: Path) -> None:
@@ -359,6 +370,76 @@ def test_snapshot_tab_uses_selected_repository_for_create_and_check(tmp_path: Pa
         assert check_task(lambda: False) is expected
     assert check.call_args.args == (repository,)
     assert check.call_args.kwargs["full"] is True
+
+
+def test_launcher_requires_specific_confirmation_for_moved_collection(
+    tmp_path: Path,
+) -> None:
+    collection = tmp_path / "flyttet-samling"
+    previous_collection = tmp_path / "opprinnelig-samling"
+    repository = tmp_path / "repository"
+    binding_change = RepositoryBindingChange(
+        previous_collection_path=str(previous_collection),
+        current_collection_path=str(collection),
+        previous_machine_name="GAMMEL-PC",
+        current_machine_name="NY-PC",
+    )
+    tab = bare_snapshot_tab(collection, repository)
+    jobs: list[tuple[object, dict[str, object]]] = []
+    questions: list[dict[str, object]] = []
+    tab._run_background_task = lambda task, **options: jobs.append((task, options))
+    tab._show_log_review_question = (
+        lambda title, message, **options: questions.append(
+            {"title": title, "message": message, **options}
+        )
+    )
+    tab._log = lambda _message: None
+    tab._post_to_ui = lambda callback: (callback(), True)[1]
+    plan = SimpleNamespace(
+        source_dir=collection,
+        repository_dir=repository,
+        repository_state="existing",
+        binding_change=binding_change,
+        inventory=SimpleNamespace(
+            total_files=1,
+            total_bytes=100,
+            excluded_files=0,
+            excluded_bytes=0,
+        ),
+        storage=SimpleNamespace(
+            estimated_new_objects=0,
+            estimated_new_bytes=0,
+            free_bytes=1000,
+            has_estimated_capacity=True,
+        ),
+        warnings=(),
+    )
+
+    tab._snapshot_plan_task_finished(repository, plan)
+
+    question = questions[0]
+    self_message = str(question["message"])
+    assert question["title"] == "Bekreft flytting av bildesamlingen"
+    assert question["yes_text"] == "Bekreft flytting og opprett"
+    assert str(previous_collection) in self_message
+    assert str(collection) in self_message
+    assert "to uavhengige kopier" in self_message
+
+    question["on_yes"]()
+    create_task = jobs[0][0]
+    expected_result = object()
+    with patch(
+        "bildebank.launcher_snapshot_tab.create_launcher_snapshot",
+        return_value=expected_result,
+    ) as create:
+        assert create_task(lambda: False) is expected_result
+    create.assert_called_once_with(
+        collection,
+        repository,
+        confirmed_binding_change=binding_change,
+        progress=create.call_args.kwargs["progress"],
+        should_cancel=create.call_args.kwargs["should_cancel"],
+    )
 
 
 def test_launcher_reports_controlled_snapshot_cancellation(tmp_path: Path) -> None:

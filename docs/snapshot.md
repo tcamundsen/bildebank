@@ -114,6 +114,37 @@ ufullstendige data beholdes for kontroll. Hvis det siste, korte
 publiseringstrinnet allerede har startet, fullføres det i stedet for å etterlate
 snapshotet i en uklar tilstand.
 
+## Når bildesamlingen er flyttet
+
+Repositoryet husker maskinen og den absolutte stien der bildesamlingen sist ble
+bekreftet. Hvis du flytter samlingen, bytter PC eller lar en gjenopprettet kopi
+overta som den aktive samlingen, stopper neste snapshot først. Dry-run viser
+både det gamle og det nye arbeidsstedet uten å endre repositoryet.
+
+Kontroller nøye at dette er samme logiske bildesamling som er flyttet. Ikke
+bekreft hvis den gamle og den nye kopien skal brukes videre som to uavhengige
+samlinger. Når du er sikker, kjører du den reelle kommandoen med det særskilte
+bekreftelsesvalget:
+
+```powershell
+bildebank snapshot create `
+  --confirm-moved-collection `
+  E:\Bildebank-snapshots\Familiebilder
+```
+
+Bekreftelsen gjelder nøyaktig det gamle og nye arbeidsstedet som Bildebank
+kontrollerer ved denne kjøringen. Hvis noe har endret seg siden planen, stopper
+kommandoen og ber om en ny dry-run. Hoveddatabasen må være frisk og ha samme
+`collection_id` som repositoryet. Recovery-snapshot kan ikke brukes til å
+bekrefte en flytting.
+
+I Bildebank-vinduet vises den samme advarselen med begge arbeidsstedene.
+Knappen heter da **Bekreft flytting og opprett**. Ved bekreftelse oppdateres
+bare repositoryets registrerte arbeidssted før snapshotet opprettes. Eldre
+snapshots, repository-ID-en og samlings-ID-en endres ikke. Hvis den gamle
+kopien brukes mot repositoryet senere, stopper Bildebank og krever samme
+kontroll på nytt.
+
 Et resultat kan ha én av disse statusene:
 
 - `complete`: Snapshotet ble fullført uten kjente avvik.

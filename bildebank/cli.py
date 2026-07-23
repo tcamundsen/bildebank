@@ -632,6 +632,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--note",
         help="Valgfri, uforanderlig kommentar på høyst 1000 tegn",
     )
+    snapshot_create.add_argument(
+        "--confirm-moved-collection",
+        action="store_true",
+        help=(
+            "Bekreft at samme logiske bildesamling er flyttet til arbeidsstedet "
+            "som vises av --dry-run"
+        ),
+    )
     snapshot_list = snapshot_subparsers.add_parser(
         "list",
         usage="bildebank snapshot list repository",
@@ -2087,10 +2095,30 @@ def run_where_is() -> int:
 def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
     if args.snapshot_command != "create":
         raise ValueError(f"Ukjent snapshot-kommando: {args.snapshot_command}")
+    if args.dry_run and args.confirm_moved_collection:
+        raise ValueError(
+            "--confirm-moved-collection kan ikke kombineres med --dry-run. "
+            "Kjør først dry-run uten bekreftelsesvalget."
+        )
 
     config = load_config(program_repo_root(), migrate_legacy=False)
     configured_face_dir = config.face_recognition.database_dir
     if not args.dry_run:
+        confirmed_binding_change = None
+        if args.confirm_moved_collection:
+            print("Kontrollerer den flyttede repositorybindingen skrivefritt ...")
+            confirmation_plan = plan_snapshot(
+                target,
+                args.repository,
+                configured_face_database_dir=configured_face_dir,
+                note=args.note,
+            )
+            confirmed_binding_change = confirmation_plan.binding_change
+            if confirmed_binding_change is None:
+                raise ValueError(
+                    "Flyttebekreftelse ble angitt, men bildesamlingen har ikke flyttet "
+                    "seg siden sist bekreftede snapshot."
+                )
         meter = ProgressMeter("Snapshot")
         current_stage: list[str | None] = [None]
 
@@ -2141,6 +2169,7 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
                 args.repository,
                 face_config=config.face_recognition,
                 note=args.note,
+                confirmed_binding_change=confirmed_binding_change,
                 progress=show_progress,
             )
         finally:
@@ -2535,6 +2564,24 @@ def print_snapshot_plan(plan: SnapshotPlan) -> None:
     print(f"  collection_id: {plan.collection_id}")
     if plan.note is not None:
         print(f"  Kommentar: {plan.note}")
+    if plan.binding_change is not None:
+        change = plan.binding_change
+        print()
+        print("Flytting må bekreftes før snapshotet kan opprettes")
+        print("  Sist bekreftede arbeidssted:")
+        print(f"    Maskin: {change.previous_machine_name}")
+        print(f"    Samlingssti: {change.previous_collection_path}")
+        print("  Nåværende arbeidssted:")
+        print(f"    Maskin: {change.current_machine_name}")
+        print(f"    Samlingssti: {change.current_collection_path}")
+        print(
+            "  Fortsett bare hvis dette er samme logiske samling som er flyttet, "
+            "ikke to uavhengige kopier."
+        )
+        print(
+            "  Kjør den reelle kommandoen med --confirm-moved-collection "
+            "for å bekrefte flyttingen."
+        )
     print()
     print("Inventar")
     print(f"  Alle filer: {inventory.total_files} ({format_bytes(inventory.total_bytes)})")

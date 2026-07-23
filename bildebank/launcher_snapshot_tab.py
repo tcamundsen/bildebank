@@ -14,7 +14,12 @@ from .program_state import (
     known_snapshot_repositories_for_target,
     record_published_snapshot_best_effort,
 )
-from .snapshot import MainDatabaseSourceError, SnapshotPlan, plan_snapshot
+from .snapshot import (
+    MainDatabaseSourceError,
+    RepositoryBindingChange,
+    SnapshotPlan,
+    plan_snapshot,
+)
 from .snapshot_check import (
     SnapshotCheckProgress,
     SnapshotCheckResult,
@@ -158,20 +163,16 @@ def create_launcher_snapshot(
     collection: Path,
     repository: Path,
     *,
+    confirmed_binding_change: RepositoryBindingChange | None = None,
     progress: SnapshotCreateProgressCallback | None = None,
     should_cancel: SnapshotCancelCallback | None = None,
 ) -> SnapshotCreationResult:
     config = load_config(program_repo_root(), migrate_legacy=False)
-    if progress is None and should_cancel is None:
-        return create_snapshot(
-            collection,
-            repository,
-            face_config=config.face_recognition,
-        )
     return create_snapshot(
         collection,
         repository,
         face_config=config.face_recognition,
+        confirmed_binding_change=confirmed_binding_change,
         progress=progress,
         should_cancel=should_cancel,
     )
@@ -208,6 +209,19 @@ def snapshot_plan_log_lines(plan: SnapshotPlan | LauncherRecoveryPlan) -> tuple[
         "  Estimert plass er tilstrekkelig: "
         + ("ja" if plan.storage.has_estimated_capacity else "nei"),
     ]
+    binding_change = getattr(plan, "binding_change", None)
+    if binding_change is not None:
+        lines.extend(
+            (
+                "  ADVARSEL: Repositoryets bekreftede arbeidssted er endret.",
+                "    Sist bekreftede maskin: "
+                f"{binding_change.previous_machine_name}",
+                "    Sist bekreftede samlingssti: "
+                f"{binding_change.previous_collection_path}",
+                f"    Nåværende maskin: {binding_change.current_machine_name}",
+                f"    Nåværende samlingssti: {binding_change.current_collection_path}",
+            )
+        )
     lines.extend(f"  ADVARSEL: {warning}" for warning in plan.warnings)
     return tuple(lines)
 
@@ -565,6 +579,9 @@ class SnapshotTab:
         for line in snapshot_plan_log_lines(plan):
             self._log(line)
         if isinstance(plan, LauncherRecoveryPlan):
+            title = "Opprett snapshot?"
+            yes_text = "Opprett snapshot"
+            binding_change = None
             explanation = (
                 "Hoveddatabasen kunne ikke valideres. Repositorybindingen er kontrollert, "
                 "men normal plassberegning er ikke mulig.\n\n"
@@ -573,27 +590,54 @@ class SnapshotTab:
             )
             estimated_size = ""
         else:
-            explanation = (
-                "Et nytt snapshot legges til. Eldre snapshots og tilhørende objekter "
-                "blir ikke slettet eller overskrevet."
-            )
+            binding_change = getattr(plan, "binding_change", None)
+            if binding_change is None:
+                title = "Opprett snapshot?"
+                yes_text = "Opprett snapshot"
+                explanation = (
+                    "Et nytt snapshot legges til. Eldre snapshots og tilhørende objekter "
+                    "blir ikke slettet eller overskrevet."
+                )
+            else:
+                title = "Bekreft flytting av bildesamlingen"
+                yes_text = "Bekreft flytting og opprett"
+                explanation = (
+                    "Repositoryet er sist brukt fra et annet arbeidssted:\n\n"
+                    f"Sist bekreftede maskin: {binding_change.previous_machine_name}\n"
+                    "Sist bekreftede samlingssti: "
+                    f"{binding_change.previous_collection_path}\n\n"
+                    f"Nåværende maskin: {binding_change.current_machine_name}\n"
+                    f"Nåværende samlingssti: {binding_change.current_collection_path}\n\n"
+                    "Fortsett bare hvis dette er samme logiske bildesamling som er flyttet. "
+                    "Ikke fortsett hvis dette er to uavhengige kopier som begge skal brukes. "
+                    "Ved bekreftelse oppdateres bare repositoryets arbeidssted før et nytt "
+                    "snapshot opprettes."
+                )
             estimated_size = (
                 f"\n\nEstimert ny datamengde: {format_bytes(plan.storage.estimated_new_bytes)}"
             )
         self._show_log_review_question(
-            "Opprett snapshot?",
+            title,
             (
                 "Den skrivefrie kontrollen er fullført og planen står i loggen.\n\n"
                 f"{explanation}\n\nRepository:\n{repository}"
                 f"{estimated_size}\n\nVil du opprette snapshotet nå?"
             ),
-            yes_text="Opprett snapshot",
+            yes_text=yes_text,
             no_text="Avbryt",
-            on_yes=lambda: self._run_snapshot_create(repository),
+            on_yes=lambda: self._run_snapshot_create(
+                repository,
+                confirmed_binding_change=binding_change,
+            ),
             on_no=lambda: self._log("Snapshot avbrutt etter kontrollen."),
         )
 
-    def _run_snapshot_create(self, repository: Path) -> None:
+    def _run_snapshot_create(
+        self,
+        repository: Path,
+        *,
+        confirmed_binding_change: RepositoryBindingChange | None = None,
+    ) -> None:
         last_progress_at = [0.0]
         last_stage: list[str | None] = [None]
         last_objects = [-1]
@@ -645,6 +689,7 @@ class SnapshotTab:
                 return create_launcher_snapshot(
                     self.collection_path,
                     repository,
+                    confirmed_binding_change=confirmed_binding_change,
                     progress=report_progress,
                     should_cancel=should_cancel,
                 )

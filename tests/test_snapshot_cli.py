@@ -84,6 +84,100 @@ class SnapshotCliTests(unittest.TestCase):
             self.assertIn("Finnes og er tom; ville blitt initialisert", stdout)
             self.assertEqual(list(repository.iterdir()), [])
 
+    def test_snapshot_cli_requires_explicit_confirmation_after_collection_move(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            moved_target = root / "flyttet-target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            first_code, _first_stdout, first_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+            self.assertEqual(first_code, 0, first_stderr)
+            target.rename(moved_target)
+            repository_before = tree_file_bytes(repository)
+
+            dry_code, dry_stdout, dry_stderr = capture_cli(
+                [
+                    "--target",
+                    str(moved_target),
+                    "snapshot",
+                    "create",
+                    "--dry-run",
+                    str(repository),
+                ]
+            )
+            blocked_code, _blocked_stdout, blocked_stderr = capture_cli(
+                [
+                    "--target",
+                    str(moved_target),
+                    "snapshot",
+                    "create",
+                    str(repository),
+                ]
+            )
+
+            self.assertEqual(dry_code, 0, dry_stderr)
+            self.assertIn("Flytting må bekreftes", dry_stdout)
+            self.assertIn(str(target.resolve()), dry_stdout)
+            self.assertIn(str(moved_target.resolve()), dry_stdout)
+            self.assertIn("--confirm-moved-collection", dry_stdout)
+            self.assertEqual(blocked_code, 1)
+            self.assertIn("eksplisitt bekreftelse", blocked_stderr)
+            self.assertEqual(tree_file_bytes(repository), repository_before)
+
+            confirmed_code, confirmed_stdout, confirmed_stderr = capture_cli(
+                [
+                    "--target",
+                    str(moved_target),
+                    "snapshot",
+                    "create",
+                    "--confirm-moved-collection",
+                    str(repository),
+                ]
+            )
+
+            self.assertEqual(confirmed_code, 0, confirmed_stderr)
+            self.assertIn("Snapshot opprettet", confirmed_stdout)
+            metadata = json.loads(
+                (repository / REPOSITORY_METADATA_FILENAME).read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                metadata["last_confirmed_source"]["collection_path"],
+                str(moved_target.resolve()),
+            )
+            self.assertEqual(len(list((repository / "snapshots").iterdir())), 2)
+
+    def test_snapshot_cli_rejects_move_confirmation_when_binding_already_matches(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            first_code, _first_stdout, first_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+            self.assertEqual(first_code, 0, first_stderr)
+            repository_before = tree_file_bytes(repository)
+
+            code, _stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "snapshot",
+                    "create",
+                    "--confirm-moved-collection",
+                    str(repository),
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertIn("har ikke flyttet", stderr)
+            self.assertEqual(tree_file_bytes(repository), repository_before)
+
     def test_snapshot_dry_run_can_be_cancelled_without_writing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

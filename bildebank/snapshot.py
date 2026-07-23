@@ -5,6 +5,7 @@ import os
 import platform
 import re
 import shutil
+import socket
 import sqlite3
 import stat
 import unicodedata
@@ -87,6 +88,14 @@ class MainDatabaseSourceError(ValueError):
 
 
 @dataclass(frozen=True)
+class RepositoryBindingChange:
+    previous_collection_path: str
+    current_collection_path: str
+    previous_machine_name: str
+    current_machine_name: str
+
+
+@dataclass(frozen=True)
 class SnapshotExclusionStats:
     reason: str
     files: int
@@ -137,6 +146,7 @@ class SnapshotPlan:
     inventory: SnapshotInventoryStats
     storage: SnapshotStorageEstimate
     warnings: tuple[str, ...]
+    binding_change: RepositoryBindingChange | None = None
     note: str | None = None
 
     @property
@@ -181,7 +191,12 @@ def plan_snapshot(
                 total_objects=len(database_rows),
             )
         )
-    repository_state = validate_repository(repository, source, collection_id)
+    repository_state, binding_change = validate_repository(
+        repository,
+        source,
+        collection_id,
+        allow_binding_change=True,
+    )
 
     if progress is not None:
         progress(SnapshotPlanProgress(stage="inventory"))
@@ -235,6 +250,7 @@ def plan_snapshot(
         inventory=inventory,
         storage=storage,
         warnings=warnings,
+        binding_change=binding_change,
         note=clean_note,
     )
 
@@ -340,7 +356,13 @@ def validate_repository_location(source: Path, repository: Path) -> None:
             raise ValueError(f"Repositoryet kan ikke ligge inne i et annet repository: {repository}")
 
 
-def validate_repository(repository: Path, source: Path, collection_id: str) -> str:
+def validate_repository(
+    repository: Path,
+    source: Path,
+    collection_id: str,
+    *,
+    allow_binding_change: bool = False,
+) -> tuple[str, RepositoryBindingChange | None]:
     if not repository.exists():
         parent = repository.parent
         if not parent.exists():
@@ -351,14 +373,14 @@ def validate_repository(repository: Path, source: Path, collection_id: str) -> s
             )
         if not parent.is_dir():
             raise ValueError(f"Forelderen til repositoryet er ikke en mappe: {parent}")
-        return "missing"
+        return "missing", None
     if not repository.is_dir():
         raise ValueError(f"Repositoryplasseringen finnes, men er ikke en mappe: {repository}")
 
     metadata_path = repository / REPOSITORY_METADATA_FILENAME
     entries = list(repository.iterdir())
     if not entries:
-        return "empty"
+        return "empty", None
     lock_path = repository / REPOSITORY_LOCK_FILENAME
     if lock_path.exists() or lock_path.is_symlink():
         raise ValueError(
@@ -373,9 +395,11 @@ def validate_repository(repository: Path, source: Path, collection_id: str) -> s
         )
     validate_regular_file_without_links(metadata_path, label="Repositorymetadata")
     metadata = read_repository_metadata(metadata_path)
-    validate_repository_metadata(metadata, source, collection_id)
+    binding_change = repository_binding_change(metadata, source, collection_id)
+    if binding_change is not None and not allow_binding_change:
+        raise_repository_binding_confirmation_required(binding_change)
     validate_repository_root_entries(repository, entries)
-    return "existing"
+    return "existing", binding_change
 
 
 def read_repository_metadata(metadata_path: Path) -> dict[str, object]:
@@ -393,6 +417,16 @@ def validate_repository_metadata(
     source: Path,
     collection_id: str,
 ) -> None:
+    binding_change = repository_binding_change(metadata, source, collection_id)
+    if binding_change is not None:
+        raise_repository_binding_confirmation_required(binding_change)
+
+
+def repository_binding_change(
+    metadata: dict[str, object],
+    source: Path,
+    collection_id: str,
+) -> RepositoryBindingChange | None:
     validate_repository_metadata_for_read(metadata)
 
     stored_collection_id = metadata["collection_id"]
@@ -405,17 +439,42 @@ def validate_repository_metadata(
     stored_machine = last_source["machine_name"]
     assert isinstance(stored_path, str)
     assert isinstance(stored_machine, str)
-    if normalized_path_text(Path(stored_path)) != normalized_path_text(source):
-        raise ValueError(
-            "Repositoryet er sist brukt med en annen samlingssti. "
-            "Flytting av en samling krever en senere, eksplisitt bekreftelsesflyt."
-        )
-    current_machine = platform.node()
-    if current_machine and stored_machine.casefold() != current_machine.casefold():
-        raise ValueError(
-            "Repositoryet er sist brukt på en annen maskin. "
-            "Flytting av en samling krever en senere, eksplisitt bekreftelsesflyt."
-        )
+    current_path = str(source.resolve())
+    current_machine = current_machine_name()
+    path_changed = normalized_path_text(Path(stored_path)) != normalized_path_text(source)
+    machine_changed = stored_machine.casefold() != current_machine.casefold()
+    if not path_changed and not machine_changed:
+        return None
+    return RepositoryBindingChange(
+        previous_collection_path=stored_path,
+        current_collection_path=current_path,
+        previous_machine_name=stored_machine,
+        current_machine_name=current_machine,
+    )
+
+
+def raise_repository_binding_confirmation_required(
+    binding_change: RepositoryBindingChange,
+) -> None:
+    changed_parts = []
+    if normalized_path_text(Path(binding_change.previous_collection_path)) != normalized_path_text(
+        Path(binding_change.current_collection_path)
+    ):
+        changed_parts.append("en annen samlingssti")
+    if (
+        binding_change.previous_machine_name.casefold()
+        != binding_change.current_machine_name.casefold()
+    ):
+        changed_parts.append("en annen maskin")
+    changed_text = " og ".join(changed_parts)
+    raise ValueError(
+        f"Repositoryet er sist brukt med {changed_text}. "
+        "Flytting av en samling krever eksplisitt bekreftelse."
+    )
+
+
+def current_machine_name() -> str:
+    return platform.node() or socket.gethostname()
 
 
 def validate_repository_metadata_for_read(metadata: dict[str, object]) -> None:

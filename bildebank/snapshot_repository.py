@@ -4,7 +4,6 @@ import builtins
 import hashlib
 import json
 import os
-import platform
 import socket
 import sqlite3
 import stat
@@ -19,6 +18,7 @@ from .snapshot import (
     REPOSITORY_FORMAT_VERSION,
     REPOSITORY_LOCK_FILENAME,
     REPOSITORY_METADATA_FILENAME,
+    current_machine_name,
     snapshot_object_path,
     portable_path_key,
     read_repository_metadata,
@@ -245,7 +245,7 @@ def initialize_repository(
         "last_confirmed_source": {
             "collection_path": str(source.resolve()),
             "confirmed_at": timestamp,
-            "machine_name": platform.node() or socket.gethostname(),
+            "machine_name": current_machine_name(),
         },
         "repository_id": canonical_repository_id,
         "required_features": [],
@@ -1097,6 +1097,31 @@ def write_new_durable_file(path: Path, content: bytes) -> None:
             path.unlink()
         except FileNotFoundError:
             pass
+        raise
+
+
+def replace_durable_file(path: Path, content: bytes) -> None:
+    candidate = path.with_name(f"{path.name}.tmp-{uuid.uuid4()}")
+    flags = _binary_write_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    fd: int | None = None
+    replaced = False
+    try:
+        fd = os.open(candidate, flags, 0o600)
+        write_all(fd, content)
+        os.fsync(fd)
+        os.close(fd)
+        fd = None
+        os.replace(candidate, path)
+        replaced = True
+        fsync_directory(path.parent)
+    except Exception:
+        if fd is not None:
+            os.close(fd)
+        if not replaced:
+            try:
+                candidate.unlink()
+            except FileNotFoundError:
+                pass
         raise
 
 
