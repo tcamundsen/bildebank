@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
+from .media import sha256_file
 from .target_lock import TargetLock
 
 
@@ -14,6 +15,8 @@ class PendingFileDelete:
     path: Path
     reason: str
     source_id: int | None
+    expected_sha256: str | None
+    expected_size_bytes: int | None
     attempts: int
     last_error: str | None
     created_at: str
@@ -34,6 +37,8 @@ def enqueue_pending_delete(
     *,
     reason: str,
     source_id: int | None = None,
+    expected_sha256: str,
+    expected_size_bytes: int,
 ) -> PendingFileDelete:
     with TargetLock(target, command="pending-delete-enqueue"):
         conn = db.connect(target)
@@ -44,6 +49,8 @@ def enqueue_pending_delete(
                 path,
                 reason=reason,
                 source_id=source_id,
+                expected_sha256=expected_sha256,
+                expected_size_bytes=expected_size_bytes,
             )
             conn.commit()
         finally:
@@ -58,6 +65,8 @@ def enqueue_pending_delete_in_transaction(
     *,
     reason: str,
     source_id: int | None = None,
+    expected_sha256: str,
+    expected_size_bytes: int,
 ) -> PendingFileDelete:
     relative_path, _ = managed_pending_delete_path(target, path)
     clean_reason = reason.strip()
@@ -65,14 +74,24 @@ def enqueue_pending_delete_in_transaction(
         raise ValueError("Pending-delete krever en årsak.")
     conn.execute(
         """
-        INSERT INTO pending_file_deletes(path, reason, source_id)
-        VALUES(?, ?, ?)
+        INSERT INTO pending_file_deletes(
+            path, reason, source_id, expected_sha256, expected_size_bytes
+        )
+        VALUES(?, ?, ?, ?, ?)
         ON CONFLICT(path) DO UPDATE SET
             reason = excluded.reason,
             source_id = COALESCE(excluded.source_id, pending_file_deletes.source_id),
+            expected_sha256 = excluded.expected_sha256,
+            expected_size_bytes = excluded.expected_size_bytes,
             updated_at = CURRENT_TIMESTAMP
         """,
-        (relative_path.as_posix(), clean_reason, source_id),
+        (
+            relative_path.as_posix(),
+            clean_reason,
+            source_id,
+            expected_sha256,
+            expected_size_bytes,
+        ),
     )
     row = conn.execute(
         "SELECT * FROM pending_file_deletes WHERE path = ?",
@@ -200,6 +219,24 @@ def _try_pending_delete(
             return PendingDeleteResult(pending_id, normalized_path, "missing")
         if not absolute_path.is_file():
             raise ValueError("Pending-delete-stien er ikke en vanlig fil.")
+        if row["expected_sha256"] is None or row["expected_size_bytes"] is None:
+            raise ValueError(
+                "Pending-delete-raden mangler forventet SHA-256/størrelse og kan "
+                "ikke slettes automatisk."
+            )
+        expected_size = int(row["expected_size_bytes"])
+        actual_size = absolute_path.stat().st_size
+        if actual_size != expected_size:
+            raise ValueError(
+                "Filen på pending-delete-stien har endret størrelse "
+                f"(nå {actual_size}, forventet {expected_size})."
+            )
+        expected_sha256 = str(row["expected_sha256"])
+        actual_sha256 = sha256_file(absolute_path)
+        if actual_sha256 != expected_sha256:
+            raise ValueError(
+                "Filen på pending-delete-stien har endret innhold og slettes ikke."
+            )
         absolute_path.unlink()
         conn.execute("DELETE FROM pending_file_deletes WHERE id = ?", (pending_id,))
         return PendingDeleteResult(pending_id, normalized_path, "deleted")
@@ -225,6 +262,16 @@ def pending_delete_from_row(row: sqlite3.Row) -> PendingFileDelete:
         path=Path(str(row["path"])),
         reason=str(row["reason"]),
         source_id=source_id,
+        expected_sha256=(
+            str(row["expected_sha256"])
+            if row["expected_sha256"] is not None
+            else None
+        ),
+        expected_size_bytes=(
+            int(row["expected_size_bytes"])
+            if row["expected_size_bytes"] is not None
+            else None
+        ),
         attempts=int(row["attempts"]),
         last_error=str(row["last_error"]) if row["last_error"] is not None else None,
         created_at=str(row["created_at"]),

@@ -14,7 +14,9 @@ Hvis bruker starter prompt med "Spørsmål:" så skal du ikke endre kode.
 # AI-regler for bildebanksystemet
 
 - Sikkerhet for bilder er viktigere enn ryddighet og automatisering.
-- Ingen kommando skal permanent slette bildefiler.
+- Ingen kommando skal permanent slette bildefiler. Unntaket er kommandoen unimport.
+  Hvis vi kjører unimport av en import, skal resultatet på bildesamlingens databaser
+  og bilder være som om importen vi har kjørt unimport på aldra har skjedd.
 - "bildebank remove" skal bare flytte filer til deleted/ og markere metadata,
   ikke slette fysisk.
 - Snapshots skal alltid ta med `deleted/`.

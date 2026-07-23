@@ -49,7 +49,7 @@ def find_source_by_name(conn: sqlite3.Connection, name: str) -> Source | None:
 
 def add_named_source(conn: sqlite3.Connection, path: Path, name: str) -> int:
     existing = conn.execute(
-        "SELECT id, path, imported_at FROM sources WHERE name = ?",
+        "SELECT id, path, path_key, imported_at FROM sources WHERE name = ?",
         (name,),
     ).fetchone()
     if existing is not None and existing["imported_at"] is not None:
@@ -57,6 +57,22 @@ def add_named_source(conn: sqlite3.Connection, path: Path, name: str) -> int:
             f"Kilde med navn {name!r} er allerede importert som "
             f"{existing['path']}. Bruk et nytt --name hvis dette er en annen mappe/import."
         )
+    new_path_key = path_key(path)
+    if existing is not None:
+        existing_path_key = existing["path_key"] or path_key(Path(str(existing["path"])))
+        if existing_path_key != new_path_key:
+            recorded_files = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM file_sources WHERE source_id = ?",
+                    (int(existing["id"]),),
+                ).fetchone()[0]
+            )
+            if recorded_files:
+                raise ValueError(
+                    f"Kilde med navn {name!r} har en delvis import fra {existing['path']}. "
+                    "Kilden kan ikke flyttes eller få ny stasjon før den delvise importen "
+                    "er fullført fra den opprinnelige plasseringen."
+                )
     cur = conn.execute(
         """
         INSERT INTO sources(path, path_key, name)
@@ -64,7 +80,7 @@ def add_named_source(conn: sqlite3.Connection, path: Path, name: str) -> int:
         ON CONFLICT(name) DO UPDATE SET path = excluded.path, path_key = excluded.path_key
         RETURNING id
         """,
-        (str(path.resolve()), path_key(path), name),
+        (str(path.resolve()), new_path_key, name),
     )
     return int(cur.fetchone()["id"])
 

@@ -123,6 +123,64 @@ class RescanSourceCliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_successful_rescan_resolves_old_errors_for_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"jpeg")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                for stage in ("scan", "import", "rescan-source"):
+                    conn.execute(
+                        """
+                        INSERT INTO errors(source_path, stage, message)
+                        VALUES(?, ?, 'gammel feil')
+                        """,
+                        (str(source_file), stage),
+                    )
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, _stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "rescan-source",
+                    "--name",
+                    source.name,
+                    "--quiet",
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                unresolved = conn.execute(
+                    "SELECT COUNT(*) FROM errors WHERE resolved_at IS NULL"
+                ).fetchone()[0]
+                self.assertEqual(unresolved, 0)
+            finally:
+                conn.close()
+
     def test_rescan_source_takes_target_lock_before_database_lookup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -140,4 +198,3 @@ class RescanSourceCliTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
             self.assertIn("Bildesamlingen er låst", stderr)
-

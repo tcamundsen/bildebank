@@ -77,9 +77,20 @@ også under `deleted/`, følger de vanlige snapshotreglene.
 
 unimport må være konservativ, verifiser filene i kilden før endring, aldri føre til
 tap, og fjerne bare proveniens når andre kilder fortsatt peker på samme fil.
+Alle registrerte originalfiler skal kontrolleres på nytt etter at brukeren har
+bekreftet operasjonen. Hvis en fil endres mens et bekreftelsesspørsmål venter,
+skal `unimport` stoppe uten databaseendringer.
 Hvis en fil som skal fjernes ved `unimport` ikke lenger matcher databaseført
 størrelse og SHA-256, skal brukeren varsles og eksplisitt bekrefte før
 `unimport` fortsetter.
+
+`unimport` er et eksplisitt unntak fra hovedregelen om at kommandoer ikke skal
+slette mediefiler permanent. Unntaket gjelder bare etter at alle registrerte
+originalfiler i kilden er kontrollert med størrelse og SHA-256. Mediefiler som
+ikke har referanser fra andre importer fjernes da fra bildesamlingen, og alle
+referanser til importen fjernes. En kølagt sletting skal være bundet til
+forventet størrelse og SHA-256 og må nekte å slette hvis innholdet på stien har
+endret seg.
 
 ## Låsing av samlingsendringer
 
@@ -101,7 +112,7 @@ lagring uten å kreve en separat databaseserver.
 
 ## Databaseversjoner
 
-- gjeldende schema er v15
+- gjeldende schema er v16
 - historiske migreringer ligger i devel-docs/database-v4-migration.md og
   devel-docs/database-v5-migration.md, devel-docs/database-v6-migration.md og
   devel-docs/database-v7-migration.md, devel-docs/database-v8-migration.md,
@@ -109,9 +120,10 @@ lagring uten å kreve en separat databaseserver.
   devel-docs/database-v11-migration.md,
   devel-docs/database-v12-migration.md og
   devel-docs/database-v13-migration.md og
-  devel-docs/database-v14-migration.md og
-  devel-docs/database-v15-migration.md
-- ny runtime-kode skal anta v15, med mindre oppgaven eksplisitt gjelder
+  devel-docs/database-v14-migration.md,
+  devel-docs/database-v15-migration.md og
+  devel-docs/database-v16-migration.md
+- ny runtime-kode skal anta v16, med mindre oppgaven eksplisitt gjelder
   migrering
 
 ## Plattform

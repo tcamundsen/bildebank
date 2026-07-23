@@ -34,5 +34,11 @@ bildebank cleanup-pending-deletes --apply
 ```
 
 Før hver sletting kontrollerer Bildebank stien på nytt og sjekker at filen
-ikke lenger finnes i importdatabasen. Feil på én fil stopper ikke kontrollen
-av de neste filene.
+ikke lenger finnes i importdatabasen. Programmet kontrollerer også at størrelse
+og SHA-256 er de samme som da filen ble lagt i køen. Hvis filen er byttet ut
+eller endret, blir den stående og køposten får en feilmelding.
+
+Gamle køposter fra en tidligere databaseversjon kan mangle størrelse og
+SHA-256. Slike filer slettes ikke automatisk. Undersøk filen og feilmeldingen
+før du gjør noe manuelt. Feil på én fil stopper ikke kontrollen av de neste
+filene.

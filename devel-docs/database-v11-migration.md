@@ -68,3 +68,10 @@ fortsette.
 Ikke foreslå karantene for normal `unimport` uten at kravene endres. Hvis det
 senere skal støttes `unimport` uten tilgjengelige originalfiler, må det
 vurderes som en separat og eksplisitt tapsrisiko-flyt.
+
+## Senere sikkerhetsendring
+
+Schema v16 beholder denne unimportmodellen, men binder hver ny
+`pending_file_deletes`-rad til forventet SHA-256 og størrelse. Se
+`devel-docs/database-v16-migration.md`. Eldre køposter uten innholdsidentitet
+skal ikke slettes automatisk.

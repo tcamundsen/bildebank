@@ -131,6 +131,22 @@ def active_file_integrity_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     )
 
 
+def active_files_without_sources(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT files.id, files.target_path, files.sha256, files.size_bytes
+            FROM files
+            LEFT JOIN file_sources ON file_sources.file_id = files.id
+            WHERE files.deleted_at IS NULL
+            GROUP BY files.id
+            HAVING COUNT(file_sources.id) = 0
+            ORDER BY files.id
+            """
+        )
+    )
+
+
 def file_target_path_keys(conn: sqlite3.Connection) -> set[str]:
     return {
         str(row["target_path_key"])
@@ -165,6 +181,8 @@ def insert_imported_file(
     camera_model: str | None = None,
     metadata_datetime: str | None = None,
 ) -> int:
+    savepoint = "insert_imported_file"
+    conn.execute(f"SAVEPOINT {savepoint}")
     try:
         cur = conn.execute(
             """
@@ -200,11 +218,16 @@ def insert_imported_file(
             sha256=sha256,
             size_bytes=size_bytes,
         )
-        return file_id
-    except sqlite3.IntegrityError as exc:
-        raise sqlite3.IntegrityError(
-            f"Kunne ikke registrere importert fil i databasen: {exc}"
-        ) from exc
+    except BaseException as exc:
+        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+        conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        if isinstance(exc, sqlite3.IntegrityError):
+            raise sqlite3.IntegrityError(
+                f"Kunne ikke registrere importert fil i databasen: {exc}"
+            ) from exc
+        raise
+    conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+    return file_id
 
 
 def insert_duplicate(

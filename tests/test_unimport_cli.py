@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -269,6 +270,254 @@ class UnimportCliTests(unittest.TestCase):
             self.assertIn("Unimport: kontrollerer 1 filer i kilden.", stdout)
             self.assertIn("Originalfilen har endret", stderr)
             self.assertTrue((target / "2024" / "01" / "IMG_20240102.jpg").exists())
+
+    def test_unimport_rechecks_source_after_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+
+            def replace_source_during_confirmation(_prompt: str) -> str:
+                source_file.write_bytes(b"replacement")
+                return "ja, det vil jeg"
+
+            with patch("builtins.input", side_effect=replace_source_during_confirmation):
+                code, _stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--name", source.name]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn("Originalfilen har endret", stderr)
+            self.assertEqual(imported.read_bytes(), b"image")
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0],
+                    1,
+                )
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 1)
+            finally:
+                conn.close()
+
+    def test_unimport_detects_target_change_during_main_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            answers = iter(("ja, det vil jeg", "nei"))
+
+            def change_target_on_first_prompt(_prompt: str) -> str:
+                answer = next(answers)
+                if answer == "ja, det vil jeg":
+                    imported.write_bytes(b"manual change")
+                return answer
+
+            with patch("builtins.input", side_effect=change_target_on_first_prompt):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--name", source.name]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("ADVARSEL: fil(er) i bildesamlingen er endret", stdout)
+            self.assertIn("Avbrutt. Ingen endringer er gjort.", stdout)
+            self.assertEqual(imported.read_bytes(), b"manual change")
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0],
+                    1,
+                )
+            finally:
+                conn.close()
+
+    def test_unimport_aborts_if_target_changes_during_extra_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            imported.write_bytes(b"first manual change")
+            prompt_count = 0
+
+            def change_target_on_extra_prompt(_prompt: str) -> str:
+                nonlocal prompt_count
+                prompt_count += 1
+                if prompt_count == 1:
+                    return "ja, det vil jeg"
+                imported.write_bytes(b"second manual change")
+                return "ja"
+
+            with patch("builtins.input", side_effect=change_target_on_extra_prompt):
+                code, _stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--name", source.name]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn("endret mens bekreftelsen ventet", stderr)
+            self.assertEqual(imported.read_bytes(), b"second manual change")
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0],
+                    1,
+                )
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 1)
+            finally:
+                conn.close()
+
+    def test_unimport_rejects_source_symlink_after_import(self) -> None:
+        if not hasattr(os, "symlink"):
+            self.skipTest("plattformen støtter ikke symbolske lenker")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "IMG_20240102.jpg"
+            source_file.write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            source_file.unlink()
+            try:
+                source_file.symlink_to(imported)
+            except OSError as exc:
+                self.skipTest(f"kunne ikke opprette symbolsk lenke: {exc}")
+
+            with patch("builtins.input", return_value="ja, det vil jeg"):
+                code, _stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--name", source.name]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn("symbolsk lenke", stderr)
+            self.assertEqual(imported.read_bytes(), b"image")
+            self.assertTrue(source_file.is_symlink())
+
+    def test_unimport_rejects_legacy_source_path_inside_collection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    UPDATE file_sources
+                    SET source_path = ?, source_path_key = ?
+                    """,
+                    (str(imported.resolve()), db.path_key(imported)),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with patch("builtins.input", return_value="ja, det vil jeg"):
+                code, _stdout, stderr = capture_cli(
+                    ["--target", str(target), "unimport", "--name", source.name]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn("ligger inne i bildesamlingen", stderr)
+            self.assertEqual(imported.read_bytes(), b"image")
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 1)
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0],
+                    1,
+                )
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 1)
+            finally:
+                conn.close()
 
     def test_unimport_warns_and_aborts_when_target_file_changed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

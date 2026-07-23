@@ -128,6 +128,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
         print("Databaseintegritet:")
         doctor_check_pending_file_moves(target)
         doctor_check_duplicate_active_sha256(target)
+        doctor_check_active_files_have_sources(target)
         doctor_check_orphan_openclip_rows(target)
         doctor_check_active_files_exist(target)
         doctor_check_orphan_files(target)
@@ -175,6 +176,28 @@ def doctor_check_duplicate_active_sha256(target: Path) -> None:
             f"  file #{int(row['id'])}: "
             f"{Path(str(row['target_path'])).as_posix()}"
         )
+
+
+def doctor_check_active_files_have_sources(target: Path) -> None:
+    conn = db.connect(target)
+    try:
+        rows = db.active_files_without_sources(conn)
+    finally:
+        conn.close()
+
+    if not rows:
+        doctor_ok("alle aktive files-rader har minst én file_sources-rad")
+        return
+
+    doctor_error(
+        f"{len(rows)} aktiv(e) files-rad(er) mangler file_sources-proveniens."
+    )
+    for row in rows[:20]:
+        doctor_info(
+            f"file #{int(row['id'])}: {Path(str(row['target_path'])).as_posix()}"
+        )
+    doctor_report_omitted_details(len(rows))
+    doctor_advice("Undersøk importfeilen og sikkerhetskopien før databasen endres.")
 
 
 def doctor_check_pending_file_moves(target: Path) -> None:

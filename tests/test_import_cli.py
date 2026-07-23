@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -53,7 +54,7 @@ class ImportCliTests(unittest.TestCase):
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0], 1)
                 self.assertEqual(
                     conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0],
-                    "15",
+                    "16",
                 )
                 file_columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
                 self.assertNotIn("source_id", file_columns)
@@ -65,6 +66,85 @@ class ImportCliTests(unittest.TestCase):
                 self.assertNotIn("superseded_by_source_id", source_columns)
                 self.assertNotIn("kind", file_source_columns)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources WHERE name IS NULL").fetchone()[0], 0)
+            finally:
+                conn.close()
+
+    def test_import_rolls_back_file_row_when_file_source_insert_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            with patch(
+                "bildebank.db_files.insert_or_validate_file_source",
+                side_effect=sqlite3.OperationalError("simulert file_sources-feil"),
+            ):
+                code, _stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 2, stderr)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0],
+                    0,
+                )
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM errors").fetchone()[0], 1)
+            finally:
+                conn.close()
+
+    def test_import_rolls_back_file_row_when_file_source_insert_is_interrupted(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            with patch(
+                "bildebank.db_files.insert_or_validate_file_source",
+                side_effect=KeyboardInterrupt,
+            ):
+                code, _stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 2, stderr)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0],
+                    0,
+                )
+                self.assertEqual(
+                    conn.execute("SELECT status, imported_at FROM sources").fetchone(),
+                    ("pending", None),
+                )
             finally:
                 conn.close()
 
@@ -566,6 +646,46 @@ class ImportCliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_import_rejects_source_symlink_to_collection_file(self) -> None:
+        if not hasattr(os, "symlink"):
+            self.skipTest("plattformen støtter ikke symbolske lenker")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            collection_file = target / "2024" / "01" / "IMG_20240102.jpg"
+            collection_file.parent.mkdir(parents=True)
+            collection_file.write_bytes(b"only-copy")
+            source_link = source / "IMG_20240102.jpg"
+            try:
+                source_link.symlink_to(collection_file)
+            except OSError as exc:
+                self.skipTest(f"kunne ikke opprette symbolsk lenke: {exc}")
+
+            code, _stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "import",
+                    "--name",
+                    source.name,
+                    "--quiet",
+                    str(source),
+                ]
+            )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertEqual(collection_file.read_bytes(), b"only-copy")
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
+                error = conn.execute("SELECT message FROM errors").fetchone()[0]
+                self.assertIn("symbolske lenker", error)
+            finally:
+                conn.close()
+
     def test_safe_copy_does_not_overwrite_existing_different_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -664,6 +784,142 @@ class ImportCliTests(unittest.TestCase):
             try:
                 rows = conn.execute("SELECT path FROM sources WHERE name = 'usb-test'").fetchall()
                 self.assertEqual(rows, [(str(first.resolve()),)])
+            finally:
+                conn.close()
+
+    def test_partial_import_rejects_same_name_from_moved_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            good = source / "A_20240102.jpg"
+            bad = source / "B_20240103.jpg"
+            good.write_bytes(b"good")
+            bad.write_bytes(b"bad")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            def fail_selected(path: Path) -> str:
+                if path == bad:
+                    raise PermissionError("simulert lesefeil")
+                return sha256_file(path)
+
+            with patch("bildebank.importer.sha256_file", side_effect=fail_selected):
+                self.assertEqual(
+                    run_cli(
+                        [
+                            "--target",
+                            str(target),
+                            "import",
+                            "--name",
+                            "usb-test",
+                            "--quiet",
+                            str(source),
+                        ]
+                    ),
+                    2,
+                )
+
+            moved = root / "moved-source"
+            source.rename(moved)
+            code, _stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "import",
+                    "--name",
+                    "usb-test",
+                    "--quiet",
+                    str(moved),
+                ]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertIn("delvis import", stderr)
+            self.assertIn("opprinnelige plasseringen", stderr)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT path FROM sources WHERE name = 'usb-test'").fetchone()[0],
+                    str(source.resolve()),
+                )
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM file_sources").fetchone()[0],
+                    1,
+                )
+            finally:
+                conn.close()
+
+    def test_interrupted_import_returns_failure_and_reports_stopped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with patch(
+                "bildebank.importer.iter_media_files",
+                side_effect=KeyboardInterrupt,
+            ):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("Avbrutt.", stdout)
+            self.assertIn("avbrutt=ja", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                row = conn.execute(
+                    "SELECT status, imported_at FROM sources"
+                ).fetchone()
+                self.assertEqual(row, ("pending", None))
+            finally:
+                conn.close()
+
+    def test_interrupted_import_dry_run_returns_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+
+            with patch(
+                "bildebank.importer.iter_media_files",
+                side_effect=KeyboardInterrupt,
+            ):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--dry-run",
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("Avbrutt.", stdout)
+            self.assertIn("avbrutt=ja", stdout)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
             finally:
                 conn.close()
 
