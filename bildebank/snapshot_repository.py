@@ -35,6 +35,126 @@ from .target_lock import lock_details
 
 COPY_CHUNK_SIZE = 1024 * 1024
 README_FILENAME = "README.txt"
+LEGACY_README_CONTENT = (
+    "Bildebank versioned backup repository\n"
+    "\n"
+    "Do not edit or rename files in this directory.\n"
+    "Published snapshots are stored under snapshots/.\n"
+    "File objects are stored under objects/sha256/.\n"
+).encode("utf-8")
+README_CONTENT = """Bildebank versioned backup repository
+======================================
+
+Format version: 1
+
+This repository is append-only backup storage. Do not edit, rename, or delete
+files in place. Work on a separate copy when performing manual recovery.
+Objects contain the original, uncompressed bytes. They are not encrypted by
+Bildebank.
+
+Repository layout
+-----------------
+
+.bildebank-backup-repository.json
+    Repository identity and the collection_id this repository belongs to.
+
+snapshots/<timestamp>-<snapshot_id>/
+    One published snapshot. A published snapshot contains manifest.json,
+    files.jsonl, and commit.json.
+
+objects/sha256/<first 2>/<next 2>/<sha256>-<size_bytes>
+    Content-addressed file objects. The two directory names are the first four
+    hexadecimal characters of the SHA-256 value.
+
+incomplete/<run_id>/
+    Data from an interrupted or failed run. It is not a published snapshot.
+    Do not delete it automatically.
+
+Manual recovery
+---------------
+
+The remaining sections describe how to validate and extract data without the
+Bildebank program.
+
+Validate a snapshot before recovery
+-----------------------------------
+
+Choose a directory under snapshots/. A snapshot is published only when all
+three metadata files exist and commit.json is valid. commit.json records the
+SHA-256 and byte size of manifest.json and files.jsonl. Compare both values
+before trusting either file. In PowerShell:
+
+    (Get-FileHash -Algorithm SHA256 .\\manifest.json).Hash.ToLower()
+    (Get-Item -LiteralPath .\\manifest.json).Length
+    (Get-FileHash -Algorithm SHA256 .\\files.jsonl).Hash.ToLower()
+    (Get-Item -LiteralPath .\\files.jsonl).Length
+
+The snapshot_id in commit.json must match manifest.json and the selected
+snapshot. These checks detect accidental damage. They are not a digital
+signature and cannot prove authenticity if an attacker changed both data and
+checksums.
+
+Recover normal files
+--------------------
+
+files.jsonl is UTF-8 with one independent JSON object per line. For each line:
+
+* entry_id is the stable identifier within this snapshot.
+* path is the portable relative destination for a normal file.
+* object identifies the observed stored bytes by sha256 and size_bytes.
+* expected contains the database-recorded hash and size when applicable.
+* integrity_status describes whether the observed bytes matched expectations.
+* mtime_ns is the original modification time when it could be read.
+
+For an object reference, derive the physical object path exactly as:
+
+    objects/sha256/<first 2>/<next 2>/<sha256>-<size_bytes>
+
+Confirm that the object is a regular file, that its byte size matches
+size_bytes, and that Get-FileHash reports the exact SHA-256 before copying it.
+Create a new recovery directory outside this repository, then copy the object
+under the relative path from path. Reject absolute paths, ".." components, and
+Windows name collisions. Never overwrite an existing recovery file.
+
+For integrity_status "ok", object is the normal variant. For a degraded entry,
+expected describes the database-recorded variant and object describes the
+observed variant. An expected object is available only if an object exists at
+the path derived from expected.sha256 and expected.size_bytes and passes both
+checks. Keep expected and observed variants separate when investigating an
+integrity problem.
+
+Recover recovery_only entries
+-----------------------------
+
+A recovery_only line has path set to null. Use entry_id to correlate the line
+with reports and use only recovery_name as its portable output name.
+original_path_display is informational and may be unsafe; never use it as a
+destination path. The object field identifies the recoverable bytes. A null
+object means no stable byte sequence was stored for that entry.
+
+Recover databases
+-----------------
+
+manifest.json contains a databases array. For a database with capture set to
+"sqlite_backup", use restore_path as its relative destination and object as
+the verified content reference. The main database normally restores as
+.bilder.sqlite3. Other roles include openclip, face:<model_name>, and
+auxiliary:<relative-path>.
+
+source_path_display is informational only and must never be used as a recovery
+destination. A database with capture "raw_recovery" has no normal restore_path;
+its recoverable raw files are recovery_only records in files.jsonl and must be
+handled with entry_id and recovery_name.
+
+For a complete manual collection recovery, restore normal file entries and
+all "sqlite_backup" database entries into one new directory while preserving
+their relative paths. Keep recovery_only and observed problem variants in a
+separate investigation directory. Configuration outside the collection is
+not restored automatically.
+
+When Bildebank is available again, run snapshot check --full on the repository
+and validate the recovered collection before using it as the active copy.
+""".encode("utf-8")
 FILE_INTEGRITY_STATUSES = frozenset(
     {
         "ok",
@@ -267,17 +387,16 @@ def ensure_repository_layout(repository: Path) -> None:
         if not directory.is_dir():
             raise SnapshotStorageError(f"Repositoryoppføringen er ikke en mappe: {directory}")
     readme_path = repository / README_FILENAME
-    if not readme_path.exists():
-        write_new_durable_file(
-            readme_path,
-            (
-                "Bildebank versioned backup repository\n"
-                "\n"
-                "Do not edit or rename files in this directory.\n"
-                "Published snapshots are stored under snapshots/.\n"
-                "File objects are stored under objects/sha256/.\n"
-            ).encode("utf-8"),
-        )
+    if not readme_path.exists() and not readme_path.is_symlink():
+        write_new_durable_file(readme_path, README_CONTENT)
+    else:
+        validate_regular_file_without_links(readme_path, label="Repositoryets README")
+        try:
+            existing_readme = readme_path.read_bytes()
+        except OSError:
+            existing_readme = None
+        if existing_readme == LEGACY_README_CONTENT:
+            replace_durable_file(readme_path, README_CONTENT)
     fsync_directory(repository)
 
 

@@ -23,6 +23,7 @@ from bildebank.snapshot_repository import (
     backup_sqlite_database,
     canonical_json_bytes,
     create_staging_run,
+    ensure_repository_layout,
     initialize_repository,
     publish_snapshot,
     store_verified_file,
@@ -122,6 +123,131 @@ class SnapshotRepositoryTests(unittest.TestCase):
             self.assertTrue((repository / "incomplete").is_dir())
             self.assertTrue((repository / "README.txt").is_file())
             self.assertEqual(plan_snapshot(target, repository).repository_state, "existing")
+
+    def test_readme_is_sufficient_for_manual_file_recovery(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "Familiebilder"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            content = b"familienotat\n"
+            (target / "notater.txt").write_bytes(content)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "snapshot",
+                        "create",
+                        str(repository),
+                    ]
+                ),
+                0,
+            )
+
+            readme = (repository / "README.txt").read_text(encoding="utf-8")
+            for required_text in (
+                "Format version: 1",
+                "files.jsonl",
+                "entry_id",
+                "recovery_name",
+                "manifest.json",
+                "databases",
+                "commit.json",
+                "Get-FileHash",
+                "source_path_display",
+                "objects/sha256/<first 2>/<next 2>/<sha256>-<size_bytes>",
+            ):
+                self.assertIn(required_text, readme)
+
+            snapshot = next((repository / "snapshots").iterdir())
+            entries = [
+                json.loads(line)
+                for line in (snapshot / "files.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            entry = next(item for item in entries if item["path"] == "notater.txt")
+            reference = entry["object"]
+            sha256 = reference["sha256"]
+            size_bytes = int(reference["size_bytes"])
+            object_path = (
+                repository
+                / "objects"
+                / "sha256"
+                / sha256[:2]
+                / sha256[2:4]
+                / f"{sha256}-{size_bytes}"
+            )
+            recovered = root / "manually-recovered" / entry["path"]
+            recovered.parent.mkdir()
+            recovered.write_bytes(object_path.read_bytes())
+
+            self.assertEqual(recovered.read_bytes(), content)
+            self.assertEqual(hashlib.sha256(recovered.read_bytes()).hexdigest(), sha256)
+
+    def test_layout_upgrades_only_the_exact_legacy_readme(self) -> None:
+        legacy_readme = (
+            "Bildebank versioned backup repository\n"
+            "\n"
+            "Do not edit or rename files in this directory.\n"
+            "Published snapshots are stored under snapshots/.\n"
+            "File objects are stored under objects/sha256/.\n"
+        ).encode("utf-8")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "Familiebilder"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            with RepositoryLock(repository, command="snapshot create"):
+                initialize_repository(repository, target, read_collection_id(target))
+            readme_path = repository / "README.txt"
+            readme_path.write_bytes(legacy_readme)
+
+            with RepositoryLock(repository, command="snapshot create"):
+                ensure_repository_layout(repository)
+
+            upgraded = readme_path.read_bytes()
+            self.assertNotEqual(upgraded, legacy_readme)
+            self.assertIn(b"Manual recovery", upgraded)
+
+            customized = upgraded + b"\nMy own repository note.\n"
+            readme_path.write_bytes(customized)
+            with RepositoryLock(repository, command="snapshot create"):
+                ensure_repository_layout(repository)
+
+            self.assertEqual(readme_path.read_bytes(), customized)
+
+    def test_legacy_readme_upgrade_failure_preserves_old_file(self) -> None:
+        legacy_readme = (
+            "Bildebank versioned backup repository\n"
+            "\n"
+            "Do not edit or rename files in this directory.\n"
+            "Published snapshots are stored under snapshots/.\n"
+            "File objects are stored under objects/sha256/.\n"
+        ).encode("utf-8")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "Familiebilder"
+            repository = root / "repository"
+            repository.mkdir()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            with RepositoryLock(repository, command="snapshot create"):
+                initialize_repository(repository, target, read_collection_id(target))
+            readme_path = repository / "README.txt"
+            readme_path.write_bytes(legacy_readme)
+
+            with RepositoryLock(repository, command="snapshot create"):
+                with (
+                    patch(
+                        "bildebank.snapshot_repository.os.replace",
+                        side_effect=OSError("simulert replace-feil"),
+                    ),
+                    self.assertRaisesRegex(OSError, "simulert replace-feil"),
+                ):
+                    ensure_repository_layout(repository)
+
+            self.assertEqual(readme_path.read_bytes(), legacy_readme)
+            self.assertEqual(list(repository.glob("README.txt.tmp-*")), [])
 
     def test_initialization_refuses_unexpected_content_without_changing_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
