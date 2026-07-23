@@ -476,7 +476,8 @@ def read_snapshot(
 def validate_commit(value: dict[str, object]) -> None:
     if set(value) != {"files_jsonl", "format_version", "manifest", "snapshot_id"}:
         raise SnapshotStorageError("commit.json har feil felt")
-    if value["format_version"] != REPOSITORY_FORMAT_VERSION:
+    format_version = value["format_version"]
+    if type(format_version) is not int or format_version != REPOSITORY_FORMAT_VERSION:
         raise SnapshotStorageError("commit.json har en ustøttet format_version")
     validate_canonical_uuid(value["snapshot_id"], label="snapshot_id")
     validate_reference_mapping(value["manifest"], label="commit.manifest")
@@ -511,7 +512,8 @@ def validate_manifest(
     missing = sorted(required.difference(value))
     if missing:
         raise SnapshotStorageError(f"manifest.json mangler feltet {missing[0]}")
-    if value["format_version"] != REPOSITORY_FORMAT_VERSION:
+    format_version = value["format_version"]
+    if type(format_version) is not int or format_version != REPOSITORY_FORMAT_VERSION:
         raise SnapshotStorageError("manifest.json har en ustøttet format_version")
     required_features = value["required_features"]
     if not isinstance(required_features, list) or not all(isinstance(item, str) for item in required_features):
@@ -531,7 +533,7 @@ def validate_manifest(
     if completed_at < started_at:
         raise SnapshotStorageError("completed_at er før started_at")
     status = value["status"]
-    if status not in SNAPSHOT_STATUSES:
+    if not isinstance(status, str) or status not in SNAPSHOT_STATUSES:
         raise SnapshotStorageError(f"manifest.json har ugyldig status: {status!r}")
     identity = value["collection_identity"]
     expected_identity = (
@@ -579,7 +581,7 @@ def validate_manifest(
         files_reference,
         label="manifest.files_jsonl",
     )
-    return snapshot_id, completed_at, str(status), note, entry_count
+    return snapshot_id, completed_at, status, note, entry_count
 
 
 def validate_database_entries(databases: list[object], schema_versions: object) -> None:

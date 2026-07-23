@@ -247,6 +247,112 @@ class SnapshotCheckTests(unittest.TestCase):
             self.assertEqual(result.incomplete_runs[0].run_id, "avbrutt-kjoring")
             self.assertEqual((interrupted / "bevar.bin").read_bytes(), b"skal ikke slettes")
 
+    def test_check_reports_wrong_manifest_value_types_as_invalid_snapshot(self) -> None:
+        cases = (
+            ("format_version", True),
+            ("status", []),
+        )
+        for field, invalid_value in cases:
+            with self.subTest(field=field), snapshot_repository() as (
+                _root,
+                _target,
+                repository,
+            ):
+                snapshot = next((repository / "snapshots").iterdir())
+                manifest = json.loads((snapshot / "manifest.json").read_bytes())
+                manifest[field] = invalid_value
+                rewrite_manifest(snapshot, manifest)
+                before = tree_file_bytes(repository)
+
+                result = check_snapshot_repository(repository)
+
+                self.assertEqual(result.exit_code, 3)
+                self.assertEqual(result.snapshots, ())
+                self.assertTrue(
+                    any(issue.code == "invalid_snapshot" for issue in result.issues)
+                )
+                self.assertEqual(tree_file_bytes(repository), before)
+
+    def test_check_reports_wrong_database_value_types_as_invalid_snapshot(self) -> None:
+        cases = (
+            ("role", 123),
+            ("source_path_display", 123),
+            ("restore_path", 123),
+            ("capture", []),
+            ("status", []),
+        )
+        for field, invalid_value in cases:
+            with self.subTest(field=field), snapshot_repository() as (
+                _root,
+                _target,
+                repository,
+            ):
+                snapshot = next((repository / "snapshots").iterdir())
+                manifest = json.loads((snapshot / "manifest.json").read_bytes())
+                manifest["databases"][0][field] = invalid_value
+                rewrite_manifest(snapshot, manifest)
+                before = tree_file_bytes(repository)
+
+                result = check_snapshot_repository(repository)
+
+                self.assertEqual(result.exit_code, 3)
+                self.assertEqual(result.snapshots, ())
+                self.assertTrue(
+                    any(issue.code == "invalid_snapshot" for issue in result.issues)
+                )
+                self.assertEqual(tree_file_bytes(repository), before)
+
+    def test_check_reports_wrong_file_value_types_as_invalid_snapshot(self) -> None:
+        cases = (
+            ("original_path_display", 123),
+            ("path", 123),
+            ("record_type", []),
+            ("restore_kind", []),
+            ("integrity_status", []),
+        )
+        for field, invalid_value in cases:
+            with self.subTest(field=field), snapshot_repository() as (
+                _root,
+                _target,
+                repository,
+            ):
+                snapshot = next((repository / "snapshots").iterdir())
+                entries = tuple(
+                    json.loads(line)
+                    for line in (snapshot / "files.jsonl")
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                )
+                entries[0][field] = invalid_value
+                rewrite_file_entries(snapshot, entries)
+                before = tree_file_bytes(repository)
+
+                result = check_snapshot_repository(repository)
+
+                self.assertEqual(result.exit_code, 3)
+                self.assertEqual(result.snapshots, ())
+                self.assertTrue(
+                    any(issue.code == "invalid_snapshot" for issue in result.issues)
+                )
+                self.assertEqual(tree_file_bytes(repository), before)
+
+    def test_check_rejects_boolean_commit_format_version(self) -> None:
+        with snapshot_repository() as (_root, _target, repository):
+            snapshot = next((repository / "snapshots").iterdir())
+            commit = json.loads((snapshot / "commit.json").read_bytes())
+            commit["format_version"] = True
+            (snapshot / "commit.json").write_bytes(canonical_json_bytes(commit))
+            before = tree_file_bytes(repository)
+
+            result = check_snapshot_repository(repository)
+
+            self.assertEqual(result.exit_code, 3)
+            self.assertEqual(result.snapshots, ())
+            self.assertTrue(
+                any(issue.code == "invalid_snapshot" for issue in result.issues)
+            )
+            self.assertEqual(tree_file_bytes(repository), before)
+
     def test_full_check_can_cancel_without_changing_repository(self) -> None:
         with snapshot_repository() as (_root, _target, repository):
             before = tree_file_bytes(repository)
@@ -333,6 +439,18 @@ class database_media_snapshot_repository:
 
 def remove_all_file_entries(snapshot: Path) -> None:
     rewrite_file_entries(snapshot, ())
+
+
+def rewrite_manifest(snapshot: Path, manifest: dict[str, object]) -> None:
+    manifest_content = canonical_json_bytes(manifest)
+    (snapshot / "manifest.json").write_bytes(manifest_content)
+
+    commit = json.loads((snapshot / "commit.json").read_bytes())
+    commit["manifest"] = {
+        "sha256": hashlib.sha256(manifest_content).hexdigest(),
+        "size_bytes": str(len(manifest_content)),
+    }
+    (snapshot / "commit.json").write_bytes(canonical_json_bytes(commit))
 
 
 def rewrite_file_entries(

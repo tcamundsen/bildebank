@@ -803,13 +803,22 @@ def validate_repository_binding(repository: Path, *, collection_id: str, reposit
 
 
 def validate_file_record(record: SnapshotFileRecord) -> None:
-    if not record.original_path_display:
+    if not isinstance(record.original_path_display, str) or not record.original_path_display:
         raise SnapshotStorageError("Snapshotposten mangler original_path_display.")
-    if record.restore_kind not in {"normal", "recovery_only"}:
+    if not isinstance(record.restore_kind, str) or record.restore_kind not in {
+        "normal",
+        "recovery_only",
+    }:
         raise SnapshotStorageError(f"Ugyldig restore_kind: {record.restore_kind!r}")
-    if record.record_type not in {"file", "database_raw"}:
+    if not isinstance(record.record_type, str) or record.record_type not in {
+        "file",
+        "database_raw",
+    }:
         raise SnapshotStorageError(f"Ugyldig record_type: {record.record_type!r}")
-    if record.integrity_status not in FILE_INTEGRITY_STATUSES:
+    if (
+        not isinstance(record.integrity_status, str)
+        or record.integrity_status not in FILE_INTEGRITY_STATUSES
+    ):
         raise SnapshotStorageError(f"Ugyldig integrity_status: {record.integrity_status!r}")
     if record.mtime_ns is not None:
         validate_nonnegative_integer(record.mtime_ns, label="mtime_ns")
@@ -818,7 +827,10 @@ def validate_file_record(record: SnapshotFileRecord) -> None:
     if record.object is not None:
         validate_object_reference(record.object)
     if record.restore_kind == "normal":
-        if record.path is None or portable_path_key(record.path) is None:
+        if (
+            not isinstance(record.path, str)
+            or portable_path_key(record.path) is None
+        ):
             raise SnapshotStorageError(f"Normal snapshotpost har en utrygg restore-sti: {record.path!r}")
     elif record.path is not None:
         raise SnapshotStorageError("En recovery_only-post kan ikke ha normal restore-sti.")
@@ -839,16 +851,27 @@ def file_record_sort_key(record: SnapshotFileRecord) -> tuple[int, str, str]:
 
 
 def validate_database_record(record: SnapshotDatabaseRecord) -> None:
+    if not isinstance(record.role, str):
+        raise SnapshotStorageError(f"Ugyldig databaserolle: {record.role!r}")
     valid_role = record.role in {"main", "openclip"} or record.role.startswith(("face:", "auxiliary:"))
     if not valid_role or record.role.endswith(":"):
         raise SnapshotStorageError(f"Ugyldig databaserolle: {record.role!r}")
-    if not record.source_path_display:
+    if not isinstance(record.source_path_display, str) or not record.source_path_display:
         raise SnapshotStorageError("Databaseposten mangler source_path_display.")
+    if record.restore_path is not None and not isinstance(record.restore_path, str):
+        raise SnapshotStorageError("Databasepostens restore_path må være en streng eller null.")
     if type(record.required) is not bool or type(record.regenerable) is not bool:
         raise SnapshotStorageError("Databasepostens required og regenerable må være boolske verdier.")
-    if record.capture not in {"sqlite_backup", "raw_recovery"}:
+    if not isinstance(record.capture, str) or record.capture not in {
+        "sqlite_backup",
+        "raw_recovery",
+    }:
         raise SnapshotStorageError(f"Ugyldig database-capture: {record.capture!r}")
-    if record.status not in {"ok", "backup_failed", "unreadable"}:
+    if not isinstance(record.status, str) or record.status not in {
+        "ok",
+        "backup_failed",
+        "unreadable",
+    }:
         raise SnapshotStorageError(f"Ugyldig databasestatus: {record.status!r}")
     if record.schema_version is not None:
         validate_nonnegative_integer(record.schema_version, label="database.schema_version")
