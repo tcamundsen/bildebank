@@ -83,7 +83,7 @@ def create_snapshot(
     raise_if_snapshot_cancelled(should_cancel)
     clean_note = validate_snapshot_note(note)
     source = source_dir.resolve()
-    validate_source_collection(source)
+    validate_source_collection(source, allow_missing_main=True)
     repository = prepare_repository_path(source, repository_arg)
     started_at = utc_timestamp()
 
@@ -240,7 +240,7 @@ def prepare_repository_path(source: Path, repository_arg: Path) -> Path:
 
 def validate_existing_recovery_repository(source_dir: Path, repository_arg: Path) -> Path:
     source = source_dir.resolve()
-    validate_source_collection(source)
+    validate_source_collection(source, allow_missing_main=True)
     repository_input = repository_arg.expanduser()
     validate_non_network_path(repository_input, label="Repositoryet")
     validate_existing_path_components(repository_input)

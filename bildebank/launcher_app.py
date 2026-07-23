@@ -45,6 +45,14 @@ def close_blocked_by_running_command(busy: bool) -> bool:
     return busy
 
 
+def snapshot_creation_available(
+    collection_path: Path,
+    *,
+    migration_required: bool,
+) -> bool:
+    return collection_path.is_dir() and not migration_required
+
+
 class LauncherApp:
     def __init__(self) -> None:
         import tkinter as tk
@@ -321,7 +329,12 @@ class LauncherApp:
         self.buttons = []
         main_state = self.main_tab.refresh()
         self.buttons.extend(
-            self.snapshot_tab.refresh(create_available=main_state.available)
+            self.snapshot_tab.refresh(
+                create_available=snapshot_creation_available(
+                    self.collection_path,
+                    migration_required=self.main_tab.migration_required,
+                )
+            )
         )
         self.advanced_start_tab.set_available(main_state.available)
         self.buttons.extend(
@@ -365,10 +378,9 @@ class LauncherApp:
         if self.main_tab is not None:
             self.main_tab.set_buttons_enabled(enabled)
         if self.snapshot_tab is not None and self.main_tab is not None:
-            self.snapshot_tab.create_available = (
-                is_collection_created(self.collection_path)
-                and not self.main_tab.migration_required
-                and self.main_tab.migration_status_error is None
+            self.snapshot_tab.create_available = snapshot_creation_available(
+                self.collection_path,
+                migration_required=self.main_tab.migration_required,
             )
             self.snapshot_tab.set_buttons_enabled(enabled)
         if self.advanced_start_tab is not None and self.main_tab is not None:

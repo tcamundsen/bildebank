@@ -12,6 +12,7 @@ from bildebank.launcher_app import (
     NOTEBOOK_TAB_STYLE,
     LauncherApp,
     close_blocked_by_running_command,
+    snapshot_creation_available,
 )
 from bildebank.launcher_status import LauncherConfig
 
@@ -169,12 +170,14 @@ def test_launcher_app_starts_tab_status_refreshes(tmp_path: Path) -> None:
     ]
 
 
-def test_refresh_state_applies_main_availability_to_advanced_start() -> None:
+def test_refresh_state_applies_main_availability_to_advanced_start(tmp_path: Path) -> None:
     app = LauncherApp.__new__(LauncherApp)
     availability: list[bool] = []
     app.main_tab = SimpleNamespace(
-        refresh=lambda: SimpleNamespace(available=False, buttons=[])
+        refresh=lambda: SimpleNamespace(available=False, buttons=[]),
+        migration_required=False,
     )
+    app.collection_path = tmp_path / "manglende-samling"
     app.advanced_start_tab = SimpleNamespace(set_available=availability.append)
     app.snapshot_tab = SimpleNamespace(refresh=lambda *, create_available: [])
     app.import_tab = SimpleNamespace(refresh=lambda *, available: [])
@@ -186,6 +189,20 @@ def test_refresh_state_applies_main_availability_to_advanced_start() -> None:
     app._refresh_state()
 
     assert availability == [False]
+
+
+def test_snapshot_creation_remains_available_for_recovery_without_main_database(
+    tmp_path: Path,
+) -> None:
+    collection = tmp_path / "samling"
+    collection.mkdir()
+
+    assert snapshot_creation_available(collection, migration_required=False)
+    assert not snapshot_creation_available(collection, migration_required=True)
+    assert not snapshot_creation_available(
+        tmp_path / "manglende",
+        migration_required=False,
+    )
 
 
 def test_post_to_tk_ignores_callbacks_after_close_started() -> None:

@@ -162,7 +162,7 @@ def plan_snapshot(
     raise_if_snapshot_cancelled(should_cancel)
     clean_note = validate_snapshot_note(note)
     source = source_dir.resolve()
-    validate_source_collection(source)
+    validate_source_collection(source, allow_missing_main=True)
 
     repository_input = repository_arg.expanduser()
     validate_non_network_path(repository_input, label="Repositoryet")
@@ -249,8 +249,10 @@ def validate_snapshot_note(note: str | None) -> str | None:
     return note
 
 
-def validate_source_collection(source: Path) -> None:
-    if not source.is_dir() or not db.db_path_for_target(source).is_file():
+def validate_source_collection(source: Path, *, allow_missing_main: bool = False) -> None:
+    if not source.is_dir() or (
+        not allow_missing_main and not db.db_path_for_target(source).is_file()
+    ):
         raise ValueError(f"Bildesamlingen er ikke initialisert: {source}")
 
 

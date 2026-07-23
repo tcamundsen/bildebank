@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from bildebank import db
 from bildebank.launcher_snapshot_tab import (
     LauncherRecoveryPlan,
     SnapshotTab,
@@ -18,6 +19,7 @@ from bildebank.launcher_snapshot_tab import (
 )
 from bildebank.program_state import KnownSnapshotRepository
 from bildebank.snapshot import MainDatabaseSourceError, REPOSITORY_LOCK_FILENAME
+from bildebank.snapshot_create import create_snapshot
 from bildebank.snapshot_progress import SnapshotCancelled, SnapshotPlanProgress
 from bildebank.snapshot_repository import ObjectReference, SnapshotStorageError
 from bildebank.snapshot_restore import RestoreEntry
@@ -187,6 +189,33 @@ def test_launcher_snapshot_plan_uses_read_only_recovery_preflight(tmp_path: Path
     assert isinstance(plan, LauncherRecoveryPlan)
     assert plan.database_error == "integrity_check feilet"
     validate_recovery.assert_called_once_with(collection, repository)
+
+
+def test_launcher_snapshot_plan_accepts_missing_main_database_for_bound_repository(
+    tmp_path: Path,
+) -> None:
+    collection = tmp_path / "samling"
+    repository = tmp_path / "repository"
+    db.init_database(collection)
+    create_snapshot(collection, repository)
+    (collection / db.DB_FILENAME).unlink()
+    repository_before = tree_file_bytes(repository)
+    config = SimpleNamespace(
+        face_recognition=SimpleNamespace(database_dir=Path(".bildebank-faces"))
+    )
+
+    with (
+        patch("bildebank.launcher_snapshot_tab.load_config", return_value=config),
+        patch(
+            "bildebank.launcher_snapshot_tab.program_repo_root",
+            return_value=tmp_path,
+        ),
+    ):
+        plan = plan_launcher_snapshot(collection, repository)
+
+    assert isinstance(plan, LauncherRecoveryPlan)
+    assert "hoveddatabasen" in plan.database_error.lower()
+    assert tree_file_bytes(repository) == repository_before
 
 
 def test_snapshot_tab_buttons_require_repository_and_collection_for_create(tmp_path: Path) -> None:

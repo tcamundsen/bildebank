@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import unittest
 import uuid
+from contextlib import chdir
 from pathlib import Path
 from unittest.mock import patch
 
@@ -401,6 +402,137 @@ class SnapshotCliTests(unittest.TestCase):
                 recovery_manifest["collection_identity"],
                 {"source": "repository", "verified": False},
             )
+
+    def test_snapshot_create_publishes_recovery_when_main_database_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            first_code, _stdout, first_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+            self.assertEqual(first_code, 0, first_stderr)
+            new_file = target / "ny-fil.jpg"
+            new_file.write_bytes(b"nytt innhold")
+            (target / DB_FILENAME).unlink()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+
+            self.assertEqual(code, 4, stderr)
+            self.assertIn("Status: recovery", stdout)
+            self.assertIn("Hoveddatabasen", stderr)
+            snapshots = list((repository / "snapshots").iterdir())
+            self.assertEqual(len(snapshots), 2)
+            manifests = [
+                json.loads((snapshot / "manifest.json").read_bytes())
+                for snapshot in snapshots
+            ]
+            recovery_manifest = next(
+                manifest for manifest in manifests if manifest["status"] == "recovery"
+            )
+            recovery_snapshot = next(
+                snapshot
+                for snapshot in snapshots
+                if json.loads((snapshot / "manifest.json").read_bytes())["status"]
+                == "recovery"
+            )
+            file_records = [
+                json.loads(line)
+                for line in (recovery_snapshot / "files.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            self.assertEqual(
+                recovery_manifest["collection_identity"],
+                {"source": "repository", "verified": False},
+            )
+            self.assertTrue(
+                any(
+                    record.get("path") == "ny-fil.jpg"
+                    and record.get("integrity_status") == "ok"
+                    for record in file_records
+                )
+            )
+
+    def test_snapshot_recovery_dry_run_accepts_missing_main_database_without_writing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            first_code, _stdout, first_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+            self.assertEqual(first_code, 0, first_stderr)
+            (target / DB_FILENAME).unlink()
+            repository_before = tree_file_bytes(repository)
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "snapshot",
+                    "create",
+                    "--dry-run",
+                    str(repository),
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Plan for recovery-snapshot", stdout)
+            self.assertIn("Repositorybindingen er kontrollert", stdout)
+            self.assertIn("Hoveddatabasen", stdout)
+            self.assertEqual(tree_file_bytes(repository), repository_before)
+            self.assertFalse((target / LOCK_FILENAME).exists())
+
+    def test_snapshot_create_finds_current_collection_directory_when_database_is_missing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            first_code, _stdout, first_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(repository)]
+            )
+            self.assertEqual(first_code, 0, first_stderr)
+            (target / DB_FILENAME).unlink()
+
+            with chdir(target):
+                code, stdout, stderr = capture_cli(
+                    ["snapshot", "create", str(repository)]
+                )
+
+            self.assertEqual(code, 4, stderr)
+            self.assertIn("Status: recovery", stdout)
+
+    def test_snapshot_create_refuses_missing_main_database_with_new_repository(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            bound_repository = root / "bound-repository"
+            new_repository = root / "new-repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            first_code, _stdout, first_stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(bound_repository)]
+            )
+            self.assertEqual(first_code, 0, first_stderr)
+            (target / DB_FILENAME).unlink()
+
+            code, _stdout, stderr = capture_cli(
+                ["--target", str(target), "snapshot", "create", str(new_repository)]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertIn("Recovery krever et allerede initialisert repository", stderr)
+            self.assertTrue(new_repository.is_dir())
+            self.assertEqual(list(new_repository.iterdir()), [])
 
     def test_snapshot_create_refuses_recovery_with_new_repository(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

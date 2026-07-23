@@ -60,14 +60,18 @@ from .program_state import (
 )
 from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
 from .server_slideshow import DEFAULT_SLIDESHOW_DELAY_SECONDS
-from .snapshot import SnapshotPlan, plan_snapshot
+from .snapshot import MainDatabaseSourceError, SnapshotPlan, plan_snapshot
 from .snapshot_check import (
     SnapshotCheckProgress,
     SnapshotCheckResult,
     check_snapshot_repository,
     list_repository_snapshots,
 )
-from .snapshot_create import SnapshotCreationResult, create_snapshot
+from .snapshot_create import (
+    SnapshotCreationResult,
+    create_snapshot,
+    validate_existing_recovery_repository,
+)
 from .snapshot_progress import SnapshotCreateProgress, SnapshotPlanProgress
 from .snapshot_restore import (
     FullRestorePlan,
@@ -1178,7 +1182,12 @@ def run(args: argparse.Namespace) -> int:
     }:
         return run_snapshot_repository_command(args)
 
-    target = resolve_target(args.target)
+    target = resolve_target(
+        args.target,
+        allow_missing_main=(
+            args.command == "snapshot" and args.snapshot_command == "create"
+        ),
+    )
     validate_collection_platform(target)
     if should_recover_pending_file_moves(args):
         recover_pending_file_moves(target)
@@ -1862,14 +1871,24 @@ def print_video_preview_progress(
         VIDEO_PREVIEW_PROGRESS = None
 
 
-def resolve_target(target_arg: Path | None) -> Path:
+def resolve_target(
+    target_arg: Path | None,
+    *,
+    allow_missing_main: bool = False,
+) -> Path:
     if target_arg is not None:
         target = target_arg.resolve()
-        if not db.db_path_for_target(target).exists():
+        if not db.db_path_for_target(target).exists() and not (
+            allow_missing_main and target.is_dir()
+        ):
             raise ValueError(f"Bildesamlingen er ikke initialisert: {target}")
         return target
     found_target = db.find_target()
     if found_target is None:
+        if allow_missing_main:
+            current = Path.cwd().resolve()
+            if current.is_dir():
+                return current
         raise ValueError("Fant ingen bildesamling. Kjør kommandoen fra bildesamlingsmappen.")
     return found_target
 
@@ -2195,13 +2214,21 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
             meter.message("Snapshot dry-run: beregner plassbehov ...")
 
     try:
-        plan = plan_snapshot(
-            target,
-            args.repository,
-            configured_face_database_dir=configured_face_dir,
-            note=args.note,
-            progress=show_plan_progress,
-        )
+        try:
+            plan = plan_snapshot(
+                target,
+                args.repository,
+                configured_face_database_dir=configured_face_dir,
+                note=args.note,
+                progress=show_plan_progress,
+            )
+        except MainDatabaseSourceError as exc:
+            repository = validate_existing_recovery_repository(
+                target,
+                args.repository,
+            )
+            print_snapshot_recovery_plan(target, repository, str(exc))
+            return 0
     finally:
         meter.done()
     print_snapshot_plan(plan)
@@ -2540,6 +2567,25 @@ def print_snapshot_plan(plan: SnapshotPlan) -> None:
     print(f"  Estimert plass er tilstrekkelig: {'ja' if storage.has_estimated_capacity else 'nei'}")
     for warning in plan.warnings:
         print(f"ADVARSEL: {warning}", file=sys.stderr)
+    print()
+    print("Dry-run: Ingen filer, metadata, mapper eller låser er opprettet eller endret.")
+
+
+def print_snapshot_recovery_plan(
+    source: Path,
+    repository: Path,
+    database_error: str,
+) -> None:
+    print("Plan for recovery-snapshot")
+    print(f"  Bildesamling: {source}")
+    print(f"  Repository: {repository}")
+    print("  Hoveddatabasen kunne ikke valideres normalt.")
+    print(f"  Databasefeil: {database_error}")
+    print("  Repositorybindingen er kontrollert skrivefritt.")
+    print("  Normal plassberegning er ikke mulig uten en gyldig hoveddatabase.")
+    print(
+        "  Reell kjøring vil sikre lesbare filer og rå databaser som recovery-data."
+    )
     print()
     print("Dry-run: Ingen filer, metadata, mapper eller låser er opprettet eller endret.")
 

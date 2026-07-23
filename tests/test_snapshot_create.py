@@ -169,6 +169,47 @@ class SnapshotCreateTests(unittest.TestCase):
             self.assertEqual(tree_file_bytes(repository), repository_before)
             self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
 
+    def test_missing_main_database_publishes_recovery_to_previously_bound_repository(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            db.init_database(target)
+            create_snapshot(target, repository)
+            new_file = target / "ny-fil.jpg"
+            new_file.write_bytes(b"innhold som bare finnes etter forrige snapshot")
+            (target / db.DB_FILENAME).unlink()
+
+            result = create_snapshot(target, repository)
+
+            self.assertEqual(result.status, "recovery")
+            self.assertEqual(result.exit_code, 4)
+            recovered = next(item for item in result.build.files if item.path == "ny-fil.jpg")
+            self.assertEqual(recovered.integrity_status, "ok")
+            self.assertIsNotNone(recovered.object)
+            self.assertFalse((target / db.DB_FILENAME).exists())
+            self.assertEqual(len(list((repository / "snapshots").iterdir())), 2)
+
+    def test_recovery_preflight_accepts_missing_main_database_without_writing_repository(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            db.init_database(target)
+            create_snapshot(target, repository)
+            (target / db.DB_FILENAME).unlink()
+            repository_before = tree_file_bytes(repository)
+
+            validated = validate_existing_recovery_repository(target, repository)
+
+            self.assertEqual(validated, repository.resolve())
+            self.assertEqual(tree_file_bytes(repository), repository_before)
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
+
     def test_recovery_preflight_does_not_create_missing_repository(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
