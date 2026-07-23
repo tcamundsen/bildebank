@@ -23,6 +23,7 @@ from .snapshot import (
     snapshot_object_path,
     validate_canonical_uuid,
     validate_existing_path_components,
+    is_reparse_stat,
     validate_non_network_path,
     validate_regular_file_without_links,
     validate_repository_metadata_for_read,
@@ -392,7 +393,11 @@ def snapshot_directories(
         except OSError as exc:
             issues.append(SnapshotCheckIssue("unreadable_snapshot_entry", f"Kunne ikke lese {entry.path}: {exc}"))
             continue
-        if entry.is_symlink() or not stat.S_ISDIR(entry_stat.st_mode):
+        if (
+            entry.is_symlink()
+            or is_reparse_stat(entry_stat)
+            or not stat.S_ISDIR(entry_stat.st_mode)
+        ):
             issues.append(
                 SnapshotCheckIssue(
                     "invalid_snapshot_entry",
@@ -958,7 +963,28 @@ def scan_object_store(
     should_cancel: CancelCallback | None = None,
 ) -> dict[ObjectKey, _RepositoryObject]:
     root = repository / "objects" / "sha256"
-    if not root.is_dir() or root.is_symlink():
+    try:
+        root_stat = root.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        issues.append(SnapshotCheckIssue("invalid_object_store", f"Objektlageret mangler: {root}"))
+        return {}
+    except OSError as exc:
+        issues.append(
+            SnapshotCheckIssue(
+                "invalid_object_store",
+                f"Kunne ikke kontrollere objektlageret {root}: {exc}",
+            )
+        )
+        return {}
+    if root.is_symlink() or is_reparse_stat(root_stat):
+        issues.append(
+            SnapshotCheckIssue(
+                "invalid_object_store",
+                f"Objektlageret kan ikke være en lenke eller et reparse point: {root}",
+            )
+        )
+        return {}
+    if not stat.S_ISDIR(root_stat.st_mode):
         issues.append(SnapshotCheckIssue("invalid_object_store", f"Objektlageret mangler: {root}"))
         return {}
     objects: dict[ObjectKey, _RepositoryObject] = {}
@@ -981,8 +1007,13 @@ def scan_object_store(
             except OSError as exc:
                 issues.append(SnapshotCheckIssue("unreadable_object", f"Kunne ikke kontrollere {path}: {exc}"))
                 continue
-            if entry.is_symlink():
-                issues.append(SnapshotCheckIssue("linked_object_entry", f"Objektlageret inneholder en lenke: {path}"))
+            if entry.is_symlink() or is_reparse_stat(entry_stat):
+                issues.append(
+                    SnapshotCheckIssue(
+                        "linked_object_entry",
+                        f"Objektlageret inneholder en lenke eller et reparse point: {path}",
+                    )
+                )
             elif stat.S_ISDIR(entry_stat.st_mode):
                 pending.append(path)
             elif stat.S_ISREG(entry_stat.st_mode):
@@ -1071,7 +1102,11 @@ def scan_incomplete_runs(
         except OSError as exc:
             issues.append(SnapshotCheckIssue("unreadable_incomplete", f"Kunne ikke kontrollere {path}: {exc}"))
             continue
-        if entry.is_symlink() or not stat.S_ISDIR(entry_stat.st_mode):
+        if (
+            entry.is_symlink()
+            or is_reparse_stat(entry_stat)
+            or not stat.S_ISDIR(entry_stat.st_mode)
+        ):
             issues.append(SnapshotCheckIssue("invalid_incomplete_entry", f"Ugyldig oppføring i incomplete: {path}"))
             continue
         size_bytes, has_entries, safe = tree_size_without_links(path)
@@ -1108,7 +1143,7 @@ def tree_size_without_links(root: Path) -> tuple[int, bool, bool]:
             except OSError:
                 safe = False
                 continue
-            if entry.is_symlink():
+            if entry.is_symlink() or is_reparse_stat(entry_stat):
                 safe = False
             elif stat.S_ISDIR(entry_stat.st_mode):
                 pending.append(Path(entry.path))

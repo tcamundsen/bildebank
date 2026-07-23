@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from dataclasses import replace
@@ -11,7 +13,12 @@ from unittest.mock import patch
 
 from bildebank import db
 from bildebank.snapshot import REPOSITORY_LOCK_FILENAME, snapshot_object_path
-from bildebank.snapshot_check import check_snapshot_repository, list_repository_snapshots
+from bildebank.snapshot_check import (
+    SnapshotCheckIssue,
+    check_snapshot_repository,
+    list_repository_snapshots,
+    scan_object_store,
+)
 from bildebank.snapshot_create import create_snapshot
 from bildebank.snapshot_repository import SnapshotStorageError, canonical_json_bytes
 from bildebank.snapshot_restore import (
@@ -352,6 +359,121 @@ class SnapshotCheckTests(unittest.TestCase):
                 any(issue.code == "invalid_snapshot" for issue in result.issues)
             )
             self.assertEqual(tree_file_bytes(repository), before)
+
+    def test_check_rejects_snapshot_directory_marked_as_reparse_point(self) -> None:
+        with snapshot_repository() as (_root, _target, repository):
+            snapshot = next((repository / "snapshots").iterdir())
+            snapshot_inode = snapshot.stat(follow_symlinks=False).st_ino
+            before = tree_file_bytes(repository)
+
+            with patch(
+                "bildebank.snapshot_check.is_reparse_stat",
+                side_effect=lambda path_stat: path_stat.st_ino == snapshot_inode,
+            ):
+                result = check_snapshot_repository(repository)
+
+            self.assertEqual(result.exit_code, 3)
+            self.assertEqual(result.snapshots, ())
+            self.assertTrue(
+                any(issue.code == "invalid_snapshot_entry" for issue in result.issues)
+            )
+            self.assertEqual(tree_file_bytes(repository), before)
+
+    def test_object_scan_rejects_nested_directories_marked_as_reparse_points(self) -> None:
+        for location in ("sha256-root", "prefix-directory"):
+            with self.subTest(location=location), snapshot_repository() as (
+                _root,
+                _target,
+                repository,
+            ):
+                object_root = repository / "objects" / "sha256"
+                tagged = (
+                    object_root
+                    if location == "sha256-root"
+                    else next(path for path in object_root.iterdir() if path.is_dir())
+                )
+                tagged_inode = tagged.stat(follow_symlinks=False).st_ino
+                issues: list[SnapshotCheckIssue] = []
+
+                with patch(
+                    "bildebank.snapshot_check.is_reparse_stat",
+                    side_effect=lambda path_stat: path_stat.st_ino == tagged_inode,
+                ):
+                    objects = scan_object_store(repository, issues)
+
+                expected_code = (
+                    "invalid_object_store"
+                    if location == "sha256-root"
+                    else "linked_object_entry"
+                )
+                self.assertTrue(any(issue.code == expected_code for issue in issues))
+                self.assertFalse(
+                    any(item.path.is_relative_to(tagged) for item in objects.values())
+                )
+
+    def test_incomplete_scan_rejects_directories_marked_as_reparse_points(self) -> None:
+        for location in ("run", "nested"):
+            with self.subTest(location=location), snapshot_repository() as (
+                _root,
+                _target,
+                repository,
+            ):
+                run = repository / "incomplete" / "avbrutt"
+                nested = run / "nested"
+                nested.mkdir(parents=True)
+                (nested / "utenfor.bin").write_bytes(b"skal ikke telles")
+                tagged = run if location == "run" else nested
+                tagged_inode = tagged.stat(follow_symlinks=False).st_ino
+
+                with patch(
+                    "bildebank.snapshot_check.is_reparse_stat",
+                    side_effect=lambda path_stat: path_stat.st_ino == tagged_inode,
+                ):
+                    result = check_snapshot_repository(repository)
+
+                expected_code = (
+                    "invalid_incomplete_entry"
+                    if location == "run"
+                    else "unsafe_incomplete"
+                )
+                self.assertTrue(
+                    any(issue.code == expected_code for issue in result.issues)
+                )
+                if location == "run":
+                    self.assertEqual(result.incomplete_runs, ())
+                else:
+                    self.assertEqual(result.incomplete_runs[0].size_bytes, 0)
+
+    @unittest.skipUnless(os.name == "nt", "Junction-test krever Windows")
+    def test_check_rejects_nested_windows_junction_without_following_it(self) -> None:
+        with snapshot_repository() as (root, _target, repository):
+            outside = root / "outside"
+            outside.mkdir()
+            marker = outside / "bevar.txt"
+            marker.write_text("ikke følg junction\n", encoding="utf-8")
+            junction = repository / "incomplete" / "junction-run"
+            created = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if created.returncode != 0:
+                self.skipTest(
+                    f"Kunne ikke opprette junction: {created.stderr or created.stdout}"
+                )
+
+            result = check_snapshot_repository(repository)
+
+            self.assertEqual(result.exit_code, 3)
+            self.assertTrue(
+                any(
+                    issue.code == "invalid_incomplete_entry"
+                    for issue in result.issues
+                )
+            )
+            self.assertEqual(marker.read_text(encoding="utf-8"), "ikke følg junction\n")
+            self.assertEqual(result.incomplete_runs, ())
 
     def test_full_check_can_cancel_without_changing_repository(self) -> None:
         with snapshot_repository() as (_root, _target, repository):
