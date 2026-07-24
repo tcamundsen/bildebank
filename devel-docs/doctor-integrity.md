@@ -124,10 +124,10 @@ Ferdig:
 - rapportering av `pending_file_moves`
 - read-only kontroll av `pending_file_deletes`, inkludert sti, referanser,
   forventet innholdsidentitet og stabil SHA-256
+- dyp, stabil SHA-256 for både aktive og slettede databasefiler
 - eksisterende kontroller for aktive filer og OpenCLIP-orphans
 
 Gjenstår:
 
-- dyp SHA-256 for slettede filer
 - alle InsightFace-modeller og full sidecar-konsistens
 - samme read-only hoveddatabase- og stiregler i `check-source`

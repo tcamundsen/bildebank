@@ -28,7 +28,7 @@ from .db_core import connect_database_read_only
 from .exiftool import resolve_exiftool_path, validate_exiftool_install
 from .face import face_db_path, face_db_summary, insightface_runtime_error
 from .ffmpeg_tools import resolve_ffmpeg_tools
-from .media import is_supported_media, sha256_file
+from .media import is_supported_media
 from .openclip import openclip_db_path, openclip_db_summary, torch_gpu_status
 from .pending_deletes import pending_delete_integrity_rows
 from .platform_guard import validate_collection_platform
@@ -159,7 +159,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
                     if deep:
                         print()
                         print("Dyp filintegritet:")
-                        doctor_deep_check_active_file_hashes(target)
+                        doctor_deep_check_file_hashes(target)
                 else:
                     doctor_obs(
                         "filkontroller er hoppet over fordi databaseførte "
@@ -946,16 +946,16 @@ def doctor_check_files_on_disk(target: Path) -> None:
     )
 
 
-def doctor_deep_check_active_file_hashes(target: Path) -> None:
+def doctor_deep_check_file_hashes(target: Path) -> None:
     conn = db.connect_read_only(target)
     try:
-        rows = db.active_file_integrity_rows(conn)
+        rows = db.all_file_integrity_rows(conn)
     finally:
         conn.close()
 
-    missing: list[tuple[int, Path]] = []
-    unreadable: list[tuple[int, Path, str]] = []
-    wrong_hash: list[tuple[int, Path, str, str]] = []
+    missing: list[tuple[int, str, Path]] = []
+    unreadable: list[tuple[int, str, Path, str]] = []
+    wrong_hash: list[tuple[int, str, Path, str, str]] = []
 
     progress = ProgressMeter("Doctor SHA-256")
     progress.update(
@@ -967,12 +967,14 @@ def doctor_deep_check_active_file_hashes(target: Path) -> None:
     )
     for current, row in enumerate(rows, start=1):
         file_id = int(row["id"])
+        state = "slettet" if row["deleted_at"] is not None else "aktiv"
         try:
             target_path = parse_collection_relative_path(row["target_path"])
         except InvalidCollectionRelativePath:
             unreadable.append(
                 (
                     file_id,
+                    state,
                     Path(str(row["target_path"])),
                     "databaseført filsti er ugyldig",
                 )
@@ -983,26 +985,35 @@ def doctor_deep_check_active_file_hashes(target: Path) -> None:
                 target_path,
             )
             if inspection.status == COLLECTION_FILE_MISSING:
-                missing.append((file_id, target_path))
+                missing.append((file_id, state, target_path))
             elif inspection.status != COLLECTION_FILE_OK:
                 unreadable.append(
                     (
                         file_id,
+                        state,
                         target_path,
                         inspection.message or "filen er ikke en vanlig fil",
                     )
                 )
             else:
                 try:
-                    actual_sha256 = sha256_file(inspection.path)
-                except OSError as exc:
-                    unreadable.append((file_id, target_path, str(exc)))
+                    actual_sha256, _actual_size = (
+                        hash_stable_collection_file(
+                            target,
+                            target_path,
+                        )
+                    )
+                except (CollectionFileHashError, OSError) as exc:
+                    unreadable.append(
+                        (file_id, state, target_path, str(exc))
+                    )
                 else:
                     expected_sha256 = str(row["sha256"])
                     if actual_sha256 != expected_sha256:
                         wrong_hash.append(
                             (
                                 file_id,
+                                state,
                                 target_path,
                                 expected_sha256,
                                 actual_sha256,
@@ -1018,28 +1029,47 @@ def doctor_deep_check_active_file_hashes(target: Path) -> None:
         f"Doctor SHA-256: ferdig kontrollert {len(rows)}/{len(rows)} filer."
     )
 
-    doctor_info(f"aktive databasefiler kontrollert: {len(rows)}")
+    active_count = sum(row["deleted_at"] is None for row in rows)
+    deleted_count = len(rows) - active_count
+    doctor_info(
+        f"databasefiler kontrollert: {len(rows)} "
+        f"(aktive={active_count}, slettede={deleted_count})"
+    )
     if not missing and not unreadable and not wrong_hash:
-        doctor_ok(f"SHA-256 stemmer for alle {len(rows)} aktive filer")
+        doctor_ok(
+            f"SHA-256 stemmer for alle {len(rows)} databasefiler "
+            f"(aktive={active_count}, slettede={deleted_count})"
+        )
         return
 
     if missing:
-        doctor_error(f"{len(missing)} aktiv(e) fil(er) mangler på disk.")
-        for file_id, target_path in missing[:20]:
-            doctor_info(f"file #{file_id}: {target_path.as_posix()}")
+        doctor_error(
+            f"{len(missing)} databasefil(er) mangler under SHA-256-kontroll."
+        )
+        for file_id, state, target_path in missing[:20]:
+            doctor_info(
+                f"file #{file_id} ({state}): {target_path.as_posix()}"
+            )
         doctor_report_omitted_details(len(missing))
 
     if unreadable:
-        doctor_error(f"{len(unreadable)} aktiv(e) fil(er) kunne ikke leses.")
-        for file_id, target_path, error in unreadable[:20]:
-            doctor_info(f"file #{file_id}: {target_path.as_posix()} ({error})")
+        doctor_error(
+            f"{len(unreadable)} databasefil(er) kunne ikke hashes stabilt."
+        )
+        for file_id, state, target_path, error in unreadable[:20]:
+            doctor_info(
+                f"file #{file_id} ({state}): "
+                f"{target_path.as_posix()} ({error})"
+            )
         doctor_report_omitted_details(len(unreadable))
 
     if wrong_hash:
-        doctor_error(f"{len(wrong_hash)} aktiv(e) fil(er) har feil SHA-256.")
-        for file_id, target_path, expected, actual in wrong_hash[:20]:
+        doctor_error(
+            f"{len(wrong_hash)} databasefil(er) har feil SHA-256."
+        )
+        for file_id, state, target_path, expected, actual in wrong_hash[:20]:
             doctor_info(
-                f"file #{file_id}: {target_path.as_posix()} "
+                f"file #{file_id} ({state}): {target_path.as_posix()} "
                 f"(database={expected}, disk={actual})"
             )
         doctor_report_omitted_details(len(wrong_hash))

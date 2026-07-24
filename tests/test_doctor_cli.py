@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from bildebank import db
 from bildebank.cli import build_parser
+from bildebank.collection_paths import hash_stable_collection_file
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.ffmpeg_tools import FFmpegTools
 from bildebank.media import sha256_file
@@ -577,7 +578,9 @@ class DoctorCliTests(unittest.TestCase):
                     "bildebank.cli_doctor.python_module_available",
                     return_value=False,
                 ),
-                patch("bildebank.cli_doctor.sha256_file") as hash_file,
+                patch(
+                    "bildebank.cli_doctor.hash_stable_collection_file"
+                ) as hash_file,
             ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "doctor", "--deep"]
@@ -1042,7 +1045,9 @@ enabled = true
             with (
                 patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
-                patch("bildebank.cli_doctor.sha256_file") as hash_file,
+                patch(
+                    "bildebank.cli_doctor.hash_stable_collection_file"
+                ) as hash_file,
             ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "doctor"]
@@ -1092,7 +1097,9 @@ enabled = true
                     "bildebank.cli_doctor.python_module_available",
                     return_value=False,
                 ),
-                patch("bildebank.cli_doctor.sha256_file") as hash_file,
+                patch(
+                    "bildebank.cli_doctor.hash_stable_collection_file"
+                ) as hash_file,
             ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "doctor"]
@@ -1309,15 +1316,24 @@ enabled = true
             database_path = target / DB_FILENAME
             database_before = database_path.read_bytes()
 
-            def hash_or_fail(path: Path) -> str:
-                if path.name == "unreadable.jpg":
+            def hash_or_fail(
+                target_root: Path,
+                relative_path: Path,
+            ) -> tuple[str, int]:
+                if relative_path.name == "unreadable.jpg":
                     raise OSError("ingen lesetilgang")
-                return sha256_file(path)
+                return hash_stable_collection_file(
+                    target_root,
+                    relative_path,
+                )
 
             with (
                 patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")),
                 patch("bildebank.cli_doctor.python_module_available", return_value=False),
-                patch("bildebank.cli_doctor.sha256_file", side_effect=hash_or_fail),
+                patch(
+                    "bildebank.cli_doctor.hash_stable_collection_file",
+                    side_effect=hash_or_fail,
+                ),
             ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "doctor", "--deep"]
@@ -1333,13 +1349,90 @@ enabled = true
             "Doctor SHA-256: ferdig kontrollert 4/4 filer.",
             stdout,
         )
-        self.assertIn("INFO: aktive databasefiler kontrollert: 4", stdout)
-        self.assertIn("FEIL: 1 aktiv(e) fil(er) mangler på disk.", stdout)
-        self.assertIn("FEIL: 1 aktiv(e) fil(er) kunne ikke leses.", stdout)
-        self.assertIn("unreadable.jpg (ingen lesetilgang)", stdout)
-        self.assertIn("FEIL: 1 aktiv(e) fil(er) har feil SHA-256.", stdout)
-        self.assertIn("changed.jpg", stdout)
+        self.assertIn(
+            "INFO: databasefiler kontrollert: 4 (aktive=4, slettede=0)",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: 1 databasefil(er) mangler under SHA-256-kontroll.",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: 1 databasefil(er) kunne ikke hashes stabilt.",
+            stdout,
+        )
+        self.assertIn(
+            "unreadable.jpg (ingen lesetilgang)",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: 1 databasefil(er) har feil SHA-256.",
+            stdout,
+        )
+        self.assertIn("file #2 (aktiv): 2024/01/changed.jpg", stdout)
         self.assertEqual(database_after, database_before)
+
+    def test_doctor_deep_hashes_active_and_deleted_files(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            active_path = target / "2024" / "01" / "active.jpg"
+            deleted_path = (
+                target / "deleted" / "2024" / "01" / "deleted.jpg"
+            )
+            active_path.parent.mkdir(parents=True)
+            deleted_path.parent.mkdir(parents=True)
+            active_path.write_bytes(b"active")
+            deleted_path.write_bytes(b"before")
+            register_target_file(target, active_path.relative_to(target))
+            deleted_id = register_target_file(
+                target,
+                deleted_path.relative_to(target),
+            )
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET deleted_at = CURRENT_TIMESTAMP,
+                        deleted_original_target_path = '2024/01/deleted.jpg'
+                    WHERE id = ?
+                    """,
+                    (deleted_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            deleted_path.write_bytes(b"change")
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor", "--deep"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "INFO: databasefiler kontrollert: 2 (aktive=1, slettede=1)",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: 1 databasefil(er) har feil SHA-256.",
+            stdout,
+        )
+        self.assertIn(
+            f"file #{deleted_id} (slettet): "
+            "deleted/2024/01/deleted.jpg",
+            stdout,
+        )
 
     def test_doctor_reports_orphan_file_in_collection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -60,8 +60,10 @@ disk må stemme med `files.size_bytes`. Denne kontrollen leser filinformasjon,
 men ikke selve filinnholdet. Unntaket er ekstra filer i slettingskøen, som må
 hashes for å kunne avgjøre om innholdsidentiteten fortsatt stemmer.
 
-`bildebank doctor --deep` leser i tillegg alle aktive filer og kontrollerer
-SHA-256 mot databasen. Denne kontrollen kan ta lang tid for en stor samling.
+`bildebank doctor --deep` leser i tillegg alle aktive filer og alle filer
+under `deleted`, og kontrollerer SHA-256 mot databasen. Filen må være den samme
+vanlige filen gjennom hele lesingen; hvis den byttes eller endres underveis,
+blir den ikke godkjent. Denne kontrollen kan ta lang tid for en stor samling.
 Doctor viser fremdrift mens den leter etter manglende filer, scanner etter
 orphan-filer og kontrollerer SHA-256. Den rapporterer feil, men endrer ikke
 databasen eller filene.
