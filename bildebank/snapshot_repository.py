@@ -7,6 +7,7 @@ import os
 import socket
 import sqlite3
 import stat
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from .snapshot import (
     REPOSITORY_LOCK_FILENAME,
     REPOSITORY_METADATA_FILENAME,
     current_machine_name,
+    is_reparse_stat,
     snapshot_object_path,
     portable_path_key,
     read_repository_metadata,
@@ -40,6 +42,8 @@ from .target_lock import (
 
 
 COPY_CHUNK_SIZE = 1024 * 1024
+SNAPSHOT_PUBLISH_RENAME_ATTEMPTS = 20
+SNAPSHOT_PUBLISH_RENAME_RETRY_SECONDS = 0.25
 README_FILENAME = "README.txt"
 LEGACY_README_CONTENT = (
     "Bildebank versioned backup repository\n"
@@ -834,7 +838,7 @@ def publish_snapshot(
         try:
             if not published:
                 try:
-                    os.rename(snapshot_staging, destination)
+                    rename_snapshot_staging(snapshot_staging, destination)
                 except OSError as exc:
                     raise SnapshotStorageError(
                         f"Kunne ikke publisere snapshotet atomisk: {destination}: {exc}"
@@ -854,6 +858,32 @@ def publish_snapshot(
                     continue
                 if not published:
                     raise
+
+
+def rename_snapshot_staging(source: Path, destination: Path) -> None:
+    source_identity = source.stat(follow_symlinks=False)
+    for attempt in range(SNAPSHOT_PUBLISH_RENAME_ATTEMPTS):
+        try:
+            os.rename(source, destination)
+            return
+        except PermissionError as exc:
+            if atomic_directory_move_completed(source, destination):
+                return
+            if (
+                getattr(exc, "winerror", None) != 5
+                or destination.exists()
+                or destination.is_symlink()
+                or attempt == SNAPSHOT_PUBLISH_RENAME_ATTEMPTS - 1
+            ):
+                raise
+            current_source_identity = source.stat(follow_symlinks=False)
+            if (
+                not stat.S_ISDIR(current_source_identity.st_mode)
+                or is_reparse_stat(current_source_identity)
+                or not same_file_identity(source_identity, current_source_identity)
+            ):
+                raise
+            time.sleep(SNAPSHOT_PUBLISH_RENAME_RETRY_SECONDS)
 
 
 def atomic_directory_move_completed(source: Path, destination: Path) -> bool:

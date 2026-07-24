@@ -692,6 +692,83 @@ class SnapshotRepositoryTests(unittest.TestCase):
             self.assertTrue((staging / "snapshot" / "commit.json").is_file())
             self.assertEqual(list((repository / "snapshots").iterdir()), [])
 
+    def test_publish_snapshot_retries_transient_windows_access_denied(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repository, collection_id, repository_id, staging = initialized_staging(root)
+            source = root / "a.jpg"
+            source.write_bytes(b"a")
+            real_rename = snapshot_repository_module.os.rename
+            attempts = 0
+
+            def transient_rename(source_path, destination_path) -> None:  # noqa: ANN001
+                nonlocal attempts
+                attempts += 1
+                if attempts < 3:
+                    error = PermissionError(13, "Ingen tilgang", str(source_path), 5)
+                    error.winerror = 5
+                    raise error
+                real_rename(source_path, destination_path)
+
+            with RepositoryLock(repository, command="snapshot create"):
+                stored = store_verified_file(repository, staging, source)
+                with (
+                    patch(
+                        "bildebank.snapshot_repository.os.rename",
+                        side_effect=transient_rename,
+                    ),
+                    patch("bildebank.snapshot_repository.time.sleep") as sleep,
+                ):
+                    published = publish_snapshot(
+                        repository,
+                        staging,
+                        collection_id=collection_id,
+                        repository_id=repository_id,
+                        status="complete",
+                        collection_identity_source="database",
+                        started_at="2026-07-15T12:00:00Z",
+                        completed_at="2026-07-15T12:01:00Z",
+                        files=(normal_file_record("2026/07/a.jpg", stored.reference),),
+                        databases=(main_database_record(stored.reference),),
+                        schema_versions={"main": 14},
+                    )
+
+            self.assertEqual(attempts, 3)
+            self.assertEqual(sleep.call_count, 2)
+            self.assertTrue(published.snapshot_dir.is_dir())
+            self.assertFalse(staging.exists())
+
+    def test_publish_retry_never_replaces_a_destination_that_appears(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "snapshot"
+            destination = root / "published"
+            source.mkdir()
+            attempts = 0
+
+            def destination_appears(source_path, destination_path) -> None:  # noqa: ANN001
+                nonlocal attempts
+                attempts += 1
+                Path(destination_path).mkdir()
+                error = PermissionError(13, "Ingen tilgang", str(source_path), 5)
+                error.winerror = 5
+                raise error
+
+            with (
+                patch(
+                    "bildebank.snapshot_repository.os.rename",
+                    side_effect=destination_appears,
+                ),
+                patch("bildebank.snapshot_repository.time.sleep") as sleep,
+                self.assertRaises(PermissionError),
+            ):
+                snapshot_repository_module.rename_snapshot_staging(source, destination)
+
+            self.assertEqual(attempts, 1)
+            sleep.assert_not_called()
+            self.assertTrue(source.is_dir())
+            self.assertTrue(destination.is_dir())
+
     def test_controlled_cancel_before_atomic_publish_keeps_complete_staging(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
