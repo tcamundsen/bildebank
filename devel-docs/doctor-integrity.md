@@ -16,6 +16,9 @@ eventuelle senere, eksplisitte reparasjonskommandoer.
   `check-source` kjører heller ikke recovery.
 - En eventuell target-lås er bare koordinering for et konsistent øyeblikksbilde.
   Den skal ikke utløse recovery.
+- `check-source` holder target-låsen fra før hoveddatabasen åpnes til
+  sikkerhetsdommen er ferdig. Låsen er den eneste midlertidige filen i
+  samlingen og skal fjernes kontrollert.
 - Doctor foreslår undersøkelse og sikkerhetskopi før databaseendringer. Den
   reparerer ikke manglende filer, feil innhold, orphan-filer eller
   provenienskonflikter.
@@ -161,9 +164,13 @@ Ferdig:
   sikkerhetsdom
 - validering av hver aktuell målsti og stabil SHA-256 av en vanlig fil uten
   symlinker eller Windows reparse points i `check-source`
+- target-lås gjennom hele `check-source`, stabil hashing av kildefilene og en
+  avsluttende filoversikt som avviser nye, forsvunne eller nylig ulestelige
+  kildefiler
+- presis rapportering av at ignorerte Google JSON-sidecarfiler ikke er
+  kontrollert mot bildesamlingen
 
 Gjenstår:
 
-- target-lås gjennom hele `check-source`
-- stabil hashing av kildefilene og en avsluttende, ny kildefiloversikt
-- presis sikkerhetstekst når Google JSON-sidecarfiler er bevisst ignorert
+- interne InsightFace-`face_id`-referanser og `scanned_files.face_count` som
+  et separat diagnoseområde

@@ -30,6 +30,15 @@ bildesamlingen eller Bildebanks lokale programstatus. En målfil godtas bare
 når stien er trygg, filen er en vanlig fil uten lenker, og størrelse og
 SHA-256 stemmer.
 
+Mens kontrollen pågår, bruker `check-source` samlingens vanlige, midlertidige
+lås. Andre Bildebank-kommandoer som kan endre samlingen må vente. Låsen
+fjernes når kontrollen er ferdig.
+
+Kildefilene kontrolleres slik at en fil som byttes eller endres mens SHA-256
+leses, ikke kan godkjennes. Til slutt scanner `check-source` kildemappen på
+nytt. Hvis en fil har kommet til eller forsvunnet, regnes ikke mappen som
+trygg; kjør kommandoen på nytt når kildemappen er i ro.
+
 Eksempel:
 
 ```powershell
@@ -39,7 +48,8 @@ bildebank check-source "C:\Users\Tom\Pictures\Gamle bilder"
 Hvis kildemappen kommer fra Google Takeout, ignorerer `check-source`
 JSON-sidecarfiler som hører til en bilde- eller videofil i samme mappe, for
 eksempel `IMG_20240102.jpg.json`. Andre `.json`-filer rapporteres fortsatt som
-problemfiler.
+problemfiler. Oppsummeringen sier uttrykkelig hvor mange Google-sidecarfiler
+som ble ignorert og at de ikke er kontrollert mot bildesamlingen.
 
 Hvis alt er dekket, får du en oppsummering og en linje som ligner:
 

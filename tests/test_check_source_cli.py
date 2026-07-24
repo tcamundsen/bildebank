@@ -6,9 +6,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from bildebank import db
-from bildebank.collection_paths import PathComponentIssue
+from bildebank import cli_check_source, db
+from bildebank.collection_paths import (
+    CollectionFileHashError,
+    PathComponentIssue,
+    hash_stable_collection_file,
+)
 from bildebank.db import DB_FILENAME
+from bildebank.target_lock import LOCK_FILENAME, TargetLock
 from tests.cli_helpers import capture_cli, run_cli
 
 
@@ -108,6 +113,145 @@ class CheckSourceCliTests(unittest.TestCase):
             self.assertEqual(query_only_values, [1])
             recover.assert_not_called()
             record_target.assert_not_called()
+
+    def test_check_source_holds_target_lock_while_hashing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, source = self.create_imported_collection(root)
+            lock_observations: list[bool] = []
+
+            def hash_while_locked(root_path: Path, relative_path: Path):
+                lock_observations.append((target / LOCK_FILENAME).is_file())
+                return hash_stable_collection_file(root_path, relative_path)
+
+            with patch(
+                "bildebank.cli_check_source.hash_stable_collection_file",
+                side_effect=hash_while_locked,
+            ):
+                code, _, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "check-source",
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertTrue(lock_observations)
+            self.assertTrue(all(lock_observations))
+            self.assertFalse((target / LOCK_FILENAME).exists())
+
+    def test_check_source_refuses_collection_locked_by_another_command(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, source = self.create_imported_collection(root)
+
+            with (
+                TargetLock(target, command="other-command"),
+                patch(
+                    "bildebank.cli_check_source.hash_stable_collection_file"
+                ) as hash_file,
+            ):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "check-source",
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("Bildesamlingen er låst", stderr)
+            hash_file.assert_not_called()
+
+    def test_check_source_rejects_source_file_changed_during_hashing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, source = self.create_imported_collection(root)
+
+            def changed_source(root_path: Path, relative_path: Path):
+                if root_path == source:
+                    raise CollectionFileHashError(
+                        "filen ble endret under hashing"
+                    )
+                return hash_stable_collection_file(root_path, relative_path)
+
+            with (
+                patch(
+                    "bildebank.cli_check_source.hash_stable_collection_file",
+                    side_effect=changed_source,
+                ),
+                patch(
+                    "bildebank.cli_check_source.open_check_source_missing_report"
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "check-source",
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("kildefeil=1", stdout)
+            self.assertIn("kan ikke kontrollere filen stabilt i kilden", stdout)
+            self.assertIn("filen ble endret under hashing", stdout)
+            self.assertNotIn("Remove-Item", stdout)
+
+    def test_check_source_rejects_file_added_after_initial_inventory(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, source = self.create_imported_collection(root)
+            added = source / "added-after-scan.txt"
+            original_iter = cli_check_source.iter_check_source_files
+            inventory_calls = 0
+
+            def changing_inventory(root_path: Path):
+                nonlocal inventory_calls
+                inventory_calls += 1
+                if inventory_calls == 2:
+                    added.write_bytes(b"new")
+                return original_iter(root_path)
+
+            with (
+                patch(
+                    "bildebank.cli_check_source.iter_check_source_files",
+                    side_effect=changing_inventory,
+                ),
+                patch(
+                    "bildebank.cli_check_source.open_check_source_missing_report"
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "check-source",
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertEqual(inventory_calls, 2)
+            self.assertIn("kildefeil=1", stdout)
+            self.assertIn(str(added), stdout)
+            self.assertIn("filen kom til etter første filoversikt", stdout)
+            self.assertNotIn("Remove-Item", stdout)
 
     def test_check_source_rejects_database_integrity_error_before_hashing_targets(
         self,
@@ -348,6 +492,57 @@ class CheckSourceCliTests(unittest.TestCase):
             self.assertIn(str(other_json), stdout)
             self.assertEqual(opened[0].read_text(encoding="utf-8"), f"{other_json}\n")
             opened[0].unlink()
+
+    def test_check_source_safe_report_distinguishes_ignored_google_sidecar(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            image = source / "IMG_20240102.jpg"
+            sidecar = source / "IMG_20240102.jpg.json"
+            image.write_bytes(b"image")
+            sidecar.write_text(
+                '{"title":"IMG_20240102.jpg"}',
+                encoding="utf-8",
+            )
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "check-source",
+                    "--quiet",
+                    str(source),
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("ignorert_json=1", stdout)
+            self.assertIn(
+                "Google JSON-sidecarfil ble bevisst ignorert og er ikke kontrollert",
+                stdout,
+            )
+            self.assertIn("Alle kontrollerte filer finnes", stdout)
+            self.assertNotIn("Alle filer i kildemappen finnes", stdout)
 
     def test_check_source_writes_and_opens_missing_file_list(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

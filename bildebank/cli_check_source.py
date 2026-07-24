@@ -20,8 +20,9 @@ from .collection_paths import (
     parse_collection_relative_path,
 )
 from .importer import WalkError, validate_source_target
-from .media import is_supported_media, sha256_file
+from .media import is_supported_media
 from .progress import ProgressMeter
+from .target_lock import TargetLock
 
 
 CHECK_SOURCE_PROGRESS: ProgressMeter | None = None
@@ -61,6 +62,22 @@ def run_check_source(
         raise ValueError(f"Kilden finnes ikke som mappe: {source}")
     validate_source_target(source, target)
 
+    with TargetLock(target, command="check-source"):
+        return run_check_source_locked(
+            target,
+            source,
+            verbose=verbose,
+            accept_deleted=accept_deleted,
+        )
+
+
+def run_check_source_locked(
+    target: Path,
+    source: Path,
+    *,
+    verbose: bool,
+    accept_deleted: bool,
+) -> int:
     try:
         conn = db.connect_read_only(target, require_current=False)
     except sqlite3.Error as exc:
@@ -98,10 +115,18 @@ def run_check_source(
                 continue
             stats.scanned += 1
             try:
-                file_hash = sha256_file(path)
-            except OSError as exc:
+                file_hash, _size_bytes = hash_stable_collection_file(
+                    source,
+                    path.relative_to(source),
+                )
+            except (CollectionFileHashError, OSError, ValueError) as exc:
                 stats.source_errors += 1
-                problems.append(CheckSourceProblem(path, f"kan ikke lese filen i kilden: {exc}"))
+                problems.append(
+                    CheckSourceProblem(
+                        path,
+                        f"kan ikke kontrollere filen stabilt i kilden: {exc}",
+                    )
+                )
                 continue
 
             rows = db.files_by_hash(conn, file_hash)
@@ -148,6 +173,18 @@ def run_check_source(
                     details=check_source_progress_details(stats),
                     eta=True,
                 )
+
+        if progress is not None:
+            progress.message(
+                f"Check-source: leser filoversikt på nytt for {source}."
+            )
+        final_source_items = list(iter_check_source_files(source))
+        inventory_problems = check_source_inventory_problems(
+            source_items,
+            final_source_items,
+        )
+        stats.source_errors += len(inventory_problems)
+        problems.extend(inventory_problems)
         if progress is not None:
             progress.done()
     finally:
@@ -221,6 +258,51 @@ def is_google_json_sidecar(path: Path) -> bool:
         return media_path.is_file() and is_supported_media(media_path)
     except OSError:
         return False
+
+
+def check_source_inventory_problems(
+    initial_items: list[Path | WalkError],
+    final_items: list[Path | WalkError],
+) -> list[CheckSourceProblem]:
+    problems: list[CheckSourceProblem] = []
+    initial_paths = {
+        item for item in initial_items if not isinstance(item, WalkError)
+    }
+    final_paths = {
+        item for item in final_items if not isinstance(item, WalkError)
+    }
+    initial_errors = {
+        (item.path, item.message)
+        for item in initial_items
+        if isinstance(item, WalkError)
+    }
+
+    for item in final_items:
+        if (
+            isinstance(item, WalkError)
+            and (item.path, item.message) not in initial_errors
+        ):
+            problems.append(
+                CheckSourceProblem(
+                    item.path,
+                    f"kan ikke lese kilden ved sluttkontrollen: {item.message}",
+                )
+            )
+    for path in sorted(final_paths - initial_paths, key=str):
+        problems.append(
+            CheckSourceProblem(
+                path,
+                "filen kom til etter første filoversikt; kjør check-source på nytt",
+            )
+        )
+    for path in sorted(initial_paths - final_paths, key=str):
+        problems.append(
+            CheckSourceProblem(
+                path,
+                "filen forsvant etter første filoversikt; kjør check-source på nytt",
+            )
+        )
+    return problems
 
 
 def check_source_hash_is_validated(target: Path, rows: list, target_hash_cache: dict[int, bool]) -> bool:
@@ -408,6 +490,16 @@ def print_check_source_report(
         f"scannet={stats.scanned}, dekket={stats.covered}, mangler={stats.missing}, slettet={stats.deleted}, "
         f"ignorert_json={stats.ignored_json}, kildefeil={stats.source_errors}, målfeil={stats.target_errors}"
     )
+    if stats.ignored_json:
+        sidecar_label = (
+            "Google JSON-sidecarfil ble"
+            if stats.ignored_json == 1
+            else "Google JSON-sidecarfiler ble"
+        )
+        print(
+            f"  {stats.ignored_json} {sidecar_label} bevisst ignorert og "
+            "er ikke kontrollert mot bildesamlingen."
+        )
     if problems:
         print("  Det finnes filer som ikke er aktive i bildesamlingen, eller som ikke kan valideres.")
         print("  Kildemappen er derfor ikke trygg å slette.")
@@ -420,10 +512,11 @@ def print_check_source_report(
             print(f"Liste over problemfiler er lagret i: {problem_report_path}")
         return
 
+    checked_label = "Alle kontrollerte filer" if stats.ignored_json else "Alle filer i kildemappen"
     if stats.deleted:
-        print("  Alle filer i kildemappen finnes i bildesamlingen eller deleted/ og er validert med SHA-256.")
+        print(f"  {checked_label} finnes i bildesamlingen eller deleted/ og er validert med SHA-256.")
     else:
-        print("  Alle filer i kildemappen finnes i bildesamlingen og er validert med SHA-256.")
+        print(f"  {checked_label} finnes i bildesamlingen og er validert med SHA-256.")
     print("  Bildebank sletter ikke kildemapper.")
     print("  Hvis du vil slette mappen selv i PowerShell:")
     print()
