@@ -173,3 +173,6 @@ Piloten er godkjent når:
 
 Eventuelle avvik skal registreres i dette dokumentet eller i en egen
 pilotrapport før planen markeres som ferdig.
+
+
+Hele piloten er bestått 24.07.2026 klokken 11:48.
