@@ -147,6 +147,53 @@ def active_files_without_sources(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     )
 
 
+def files_without_sources(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT
+                files.id,
+                files.target_path,
+                files.sha256,
+                files.size_bytes,
+                files.deleted_at
+            FROM files
+            LEFT JOIN file_sources ON file_sources.file_id = files.id
+            GROUP BY files.id
+            HAVING COUNT(file_sources.id) = 0
+            ORDER BY files.id
+            """
+        )
+    )
+
+
+def file_source_integrity_mismatches(
+    conn: sqlite3.Connection,
+) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT
+                file_sources.id AS file_source_id,
+                file_sources.file_id,
+                file_sources.source_id,
+                file_sources.source_path,
+                file_sources.sha256 AS source_sha256,
+                file_sources.size_bytes AS source_size_bytes,
+                files.target_path,
+                files.deleted_at,
+                files.sha256 AS file_sha256,
+                files.size_bytes AS file_size_bytes
+            FROM file_sources
+            JOIN files ON files.id = file_sources.file_id
+            WHERE file_sources.sha256 <> files.sha256
+               OR file_sources.size_bytes <> files.size_bytes
+            ORDER BY file_sources.id
+            """
+        )
+    )
+
+
 def file_target_path_keys(conn: sqlite3.Connection) -> set[str]:
     return {
         str(row["target_path_key"])

@@ -35,6 +35,11 @@ Hvis databasefilens integritet ikke kan bekreftes, hopper doctor over senere
 filkontroller. Da unngår kommandoen å gi en sikkerhetsvurdering basert på en
 database som kan være skadet.
 
+Doctor kontrollerer også at alle databaseførte filer, inkludert filer under
+`deleted`, har registrert kildeinformasjon. SHA-256 og filstørrelse skal være
+like i filraden og den tilhørende kildeinformasjonen. Avvik rapporteres, men
+repareres ikke.
+
 `bildebank doctor --deep` leser i tillegg alle aktive filer og kontrollerer
 SHA-256 mot databasen. Denne kontrollen kan ta lang tid for en stor samling.
 Doctor viser fremdrift mens den leter etter manglende filer, scanner etter

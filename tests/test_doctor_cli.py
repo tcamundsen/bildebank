@@ -390,7 +390,7 @@ enabled = true
         )
         self.assertIn("Undersøk filene og sikkerhetskopien", stdout)
 
-    def test_doctor_reports_active_file_without_source_provenance(self) -> None:
+    def test_doctor_reports_active_and_deleted_files_without_source_provenance(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
@@ -444,11 +444,108 @@ enabled = true
 
             self.assertEqual(code, 0, stderr)
             self.assertIn(
-                "FEIL: 1 aktiv(e) files-rad(er) mangler file_sources-proveniens.",
+                "FEIL: 2 files-rad(er) mangler file_sources-proveniens "
+                "(aktive=1, slettede=1).",
                 stdout,
             )
-            self.assertIn("INFO: file #1: 2024/01/active.jpg", stdout)
-            self.assertNotIn("INFO: file #2: deleted/2024/01/deleted.jpg", stdout)
+            self.assertIn("INFO: file #1 (aktiv): 2024/01/active.jpg", stdout)
+            self.assertIn(
+                "INFO: file #2 (slettet): deleted/2024/01/deleted.jpg",
+                stdout,
+            )
+
+    def test_doctor_reports_file_source_hash_and_size_mismatches(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            init_database(target)
+            source.mkdir()
+            active_path = target / "2024" / "01" / "active.jpg"
+            deleted_path = target / "deleted" / "2024" / "01" / "deleted.jpg"
+            active_path.parent.mkdir(parents=True)
+            deleted_path.parent.mkdir(parents=True)
+            active_path.write_bytes(b"active")
+            deleted_path.write_bytes(b"deleted")
+
+            conn = db.connect(target)
+            try:
+                source_id = db.add_named_source(conn, source, "source")
+                active_id = db.insert_imported_file(
+                    conn,
+                    source_id=source_id,
+                    source_path=source / active_path.name,
+                    target_root=target,
+                    target_path=active_path,
+                    original_filename=active_path.name,
+                    stored_filename=active_path.name,
+                    sha256=sha256_file(active_path),
+                    size_bytes=active_path.stat().st_size,
+                    taken_date="2024-01-02",
+                    date_source="filename",
+                    name_conflict=False,
+                )
+                deleted_id = db.insert_imported_file(
+                    conn,
+                    source_id=source_id,
+                    source_path=source / deleted_path.name,
+                    target_root=target,
+                    target_path=deleted_path,
+                    original_filename=deleted_path.name,
+                    stored_filename=deleted_path.name,
+                    sha256=sha256_file(deleted_path),
+                    size_bytes=deleted_path.stat().st_size,
+                    taken_date="2024-01-03",
+                    date_source="filename",
+                    name_conflict=False,
+                )
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET deleted_at = CURRENT_TIMESTAMP,
+                        deleted_original_target_path = '2024/01/deleted.jpg'
+                    WHERE id = ?
+                    """,
+                    (deleted_id,),
+                )
+                conn.execute(
+                    "UPDATE file_sources SET sha256 = 'wrong-hash' WHERE file_id = ?",
+                    (active_id,),
+                )
+                conn.execute(
+                    "UPDATE file_sources SET size_bytes = 999 WHERE file_id = ?",
+                    (deleted_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch("bildebank.cli_doctor.python_module_available", return_value=False),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: 1 file_sources-rad(er) har SHA-256 som ikke stemmer med files.",
+            stdout,
+        )
+        self.assertIn("file #1 (aktiv): 2024/01/active.jpg", stdout)
+        self.assertIn("files.sha256=", stdout)
+        self.assertIn("file_sources.sha256=wrong-hash", stdout)
+        self.assertIn(
+            "FEIL: 1 file_sources-rad(er) har størrelse som ikke stemmer med files.",
+            stdout,
+        )
+        self.assertIn(
+            "file #2 (slettet): deleted/2024/01/deleted.jpg",
+            stdout,
+        )
+        self.assertIn("files.size_bytes=7, file_sources.size_bytes=999", stdout)
 
     def test_doctor_reports_database_files_present_on_disk(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -191,6 +191,62 @@ def test_files_by_hash_prefers_active_file_before_deleted_file(tmp_path: Path) -
         conn.close()
 
 
+def test_file_source_integrity_queries_include_deleted_files(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    conn = open_test_db(target)
+    try:
+        source_id, source = add_source(conn, tmp_path, "source-a")
+        active_id = add_imported_file(
+            conn,
+            source_id=source_id,
+            source_path=source / "active.jpg",
+            target=target,
+            target_path=target / "2024" / "01" / "active.jpg",
+            sha256="active-hash",
+            size_bytes=10,
+        )
+        deleted_id = add_imported_file(
+            conn,
+            source_id=source_id,
+            source_path=source / "deleted.jpg",
+            target=target,
+            target_path=target / "deleted" / "2024" / "01" / "deleted.jpg",
+            sha256="deleted-hash",
+            size_bytes=20,
+        )
+        conn.execute(
+            "UPDATE files SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (deleted_id,),
+        )
+
+        assert db.files_without_sources(conn) == []
+        assert db.file_source_integrity_mismatches(conn) == []
+
+        conn.execute("DELETE FROM file_sources WHERE file_id = ?", (deleted_id,))
+        conn.execute(
+            """
+            UPDATE file_sources
+            SET sha256 = 'wrong-hash', size_bytes = 11
+            WHERE file_id = ?
+            """,
+            (active_id,),
+        )
+
+        missing = db.files_without_sources(conn)
+        mismatches = db.file_source_integrity_mismatches(conn)
+
+        assert [row["id"] for row in missing] == [deleted_id]
+        assert missing[0]["deleted_at"] is not None
+        assert len(mismatches) == 1
+        assert mismatches[0]["file_id"] == active_id
+        assert mismatches[0]["file_sha256"] == "active-hash"
+        assert mismatches[0]["source_sha256"] == "wrong-hash"
+        assert mismatches[0]["file_size_bytes"] == 10
+        assert mismatches[0]["source_size_bytes"] == 11
+    finally:
+        conn.close()
+
+
 def test_unimport_plan_keeps_file_when_another_source_also_references_it(
     tmp_path: Path,
 ) -> None:

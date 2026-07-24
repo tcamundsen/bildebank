@@ -100,12 +100,12 @@ Ferdig:
 
 - read-only-kontrakten for vanlig og dyp doctor
 - uttrykkelig `integrity_check` og `foreign_key_check` for hoveddatabasen
+- alle `files` ↔ `file_sources`-invarianter, også for slettede filer
 - rapportering av `pending_file_moves`
 - eksisterende kontroller for aktive filer og OpenCLIP-orphans
 
 Gjenstår:
 
-- alle `files` ↔ `file_sources`-invarianter, også for slettede filer
 - full stivalidering uten lenker/reparse points
 - slettede filer, størrelse og dyp SHA-256
 - `pending_file_deletes`

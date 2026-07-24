@@ -130,7 +130,8 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
         if doctor_check_main_database_health(target):
             doctor_check_pending_file_moves(target)
             doctor_check_duplicate_active_sha256(target)
-            doctor_check_active_files_have_sources(target)
+            doctor_check_files_have_sources(target)
+            doctor_check_file_source_identity(target)
             doctor_check_orphan_openclip_rows(target)
             doctor_check_active_files_exist(target)
             doctor_check_orphan_files(target)
@@ -248,26 +249,98 @@ def doctor_check_duplicate_active_sha256(target: Path) -> None:
         )
 
 
-def doctor_check_active_files_have_sources(target: Path) -> None:
+def doctor_check_files_have_sources(target: Path) -> None:
     conn = db.connect_read_only(target)
     try:
-        rows = db.active_files_without_sources(conn)
+        rows = db.files_without_sources(conn)
     finally:
         conn.close()
 
     if not rows:
-        doctor_ok("alle aktive files-rader har minst én file_sources-rad")
+        doctor_ok("alle files-rader har minst én file_sources-rad")
         return
 
+    active_count = sum(row["deleted_at"] is None for row in rows)
+    deleted_count = len(rows) - active_count
     doctor_error(
-        f"{len(rows)} aktiv(e) files-rad(er) mangler file_sources-proveniens."
+        f"{len(rows)} files-rad(er) mangler file_sources-proveniens "
+        f"(aktive={active_count}, slettede={deleted_count})."
     )
     for row in rows[:20]:
+        state = "slettet" if row["deleted_at"] is not None else "aktiv"
         doctor_info(
-            f"file #{int(row['id'])}: {Path(str(row['target_path'])).as_posix()}"
+            f"file #{int(row['id'])} ({state}): "
+            f"{Path(str(row['target_path'])).as_posix()}"
         )
     doctor_report_omitted_details(len(rows))
     doctor_advice("Undersøk importfeilen og sikkerhetskopien før databasen endres.")
+
+
+def doctor_check_file_source_identity(target: Path) -> None:
+    conn = db.connect_read_only(target)
+    try:
+        rows = db.file_source_integrity_mismatches(conn)
+    finally:
+        conn.close()
+
+    if not rows:
+        doctor_ok("SHA-256 og størrelse stemmer mellom files og file_sources")
+        return
+
+    hash_mismatches = [
+        row for row in rows if str(row["source_sha256"]) != str(row["file_sha256"])
+    ]
+    size_mismatches = [
+        row
+        for row in rows
+        if row["source_size_bytes"] != row["file_size_bytes"]
+    ]
+
+    if hash_mismatches:
+        doctor_error(
+            f"{len(hash_mismatches)} file_sources-rad(er) har SHA-256 "
+            "som ikke stemmer med files."
+        )
+        for row in hash_mismatches[:20]:
+            doctor_file_source_mismatch_info(
+                row,
+                field="sha256",
+                file_value=str(row["file_sha256"]),
+                source_value=str(row["source_sha256"]),
+            )
+        doctor_report_omitted_details(len(hash_mismatches))
+
+    if size_mismatches:
+        doctor_error(
+            f"{len(size_mismatches)} file_sources-rad(er) har størrelse "
+            "som ikke stemmer med files."
+        )
+        for row in size_mismatches[:20]:
+            doctor_file_source_mismatch_info(
+                row,
+                field="size_bytes",
+                file_value=str(row["file_size_bytes"]),
+                source_value=str(row["source_size_bytes"]),
+            )
+        doctor_report_omitted_details(len(size_mismatches))
+
+    doctor_advice("Undersøk importen og sikkerhetskopien før databasen endres.")
+
+
+def doctor_file_source_mismatch_info(
+    row: sqlite3.Row,
+    *,
+    field: str,
+    file_value: str,
+    source_value: str,
+) -> None:
+    state = "slettet" if row["deleted_at"] is not None else "aktiv"
+    target_path = Path(str(row["target_path"])).as_posix()
+    doctor_info(
+        f"file_sources #{int(row['file_source_id'])} -> "
+        f"file #{int(row['file_id'])} ({state}): {target_path} "
+        f"(files.{field}={file_value}, file_sources.{field}={source_value})"
+    )
 
 
 def doctor_check_pending_file_moves(target: Path) -> None:
