@@ -906,6 +906,27 @@ class SnapshotCliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIn("Bildebank-migreringsbackuper: 1", stdout)
 
+    def test_snapshot_dry_run_recognizes_numbered_migration_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            backup = target / (
+                f"{DB_FILENAME}.backup-before-schema-"
+                "15-20260718-210818-2"
+            )
+            backup.write_bytes(b"bevar meg")
+
+            plan = plan_snapshot(target, repository)
+
+            self.assertEqual(plan.inventory.migration_backup_files, 1)
+            self.assertEqual(
+                plan.inventory.migration_backup_bytes,
+                len(b"bevar meg"),
+            )
+            self.assertEqual(plan.inventory.unknown_files, 0)
+
     def test_snapshot_dry_run_recognizes_face_migration_backup(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

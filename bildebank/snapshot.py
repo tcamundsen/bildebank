@@ -39,7 +39,8 @@ ABSOLUTE_FACE_DATABASE_RESTORE_WARNING = (
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _UTC_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 _MIGRATION_BACKUP_FILENAME_RE = re.compile(
-    rf"{re.escape(db.DB_FILENAME)}\.backup-before-schema-\d+-\d{{8}}-\d{{6}}"
+    rf"{re.escape(db.DB_FILENAME)}\.backup-before-schema-\d+-"
+    r"\d{8}-\d{6}(?:-\d+)?"
 )
 _FACE_MIGRATION_BACKUP_FILENAME_RE = re.compile(
     r"[A-Za-z0-9._-]+\.sqlite3\.backup-before-schema-\d+-"

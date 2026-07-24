@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 import shutil
@@ -692,8 +693,30 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
 def backup_database(target: Path) -> Path:
     db_path = db_path_for_target(target)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    backup_path = target / f"{DB_FILENAME}.backup-before-schema-{SCHEMA_VERSION}-{stamp}"
-    shutil.copy2(db_path, backup_path)
+    base_path = target / f"{DB_FILENAME}.backup-before-schema-{SCHEMA_VERSION}-{stamp}"
+    suffix = 1
+    while True:
+        backup_path = (
+            base_path
+            if suffix == 1
+            else base_path.with_name(f"{base_path.name}-{suffix}")
+        )
+        try:
+            fd = os.open(
+                backup_path,
+                os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                0o666,
+            )
+        except FileExistsError:
+            suffix += 1
+            continue
+        os.close(fd)
+        break
+    try:
+        shutil.copy2(db_path, backup_path)
+    except BaseException:
+        backup_path.unlink(missing_ok=True)
+        raise
     return backup_path
 
 

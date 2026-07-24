@@ -505,6 +505,33 @@ class MigrateCliTests(unittest.TestCase):
             self.assertIn("Registrerte filer i kilder: 2", stdout)
             self.assertIn("Duplikatkilder: 1", stdout)
 
+    def test_backup_database_numbers_same_second_without_overwriting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            database_path = target / DB_FILENAME
+            database_path.write_bytes(b"first database")
+            with mock.patch("bildebank.db_schema.datetime") as datetime_mock:
+                datetime_mock.now.return_value.strftime.return_value = (
+                    "20260724-153012"
+                )
+
+                first = db.backup_database(target)
+                database_path.write_bytes(b"second database")
+                second = db.backup_database(target)
+                database_path.write_bytes(b"third database")
+                third = db.backup_database(target)
+
+            base_name = (
+                f"{DB_FILENAME}.backup-before-schema-"
+                f"{db.SCHEMA_VERSION}-20260724-153012"
+            )
+            self.assertEqual(first, target / base_name)
+            self.assertEqual(second, target / f"{base_name}-2")
+            self.assertEqual(third, target / f"{base_name}-3")
+            self.assertEqual(first.read_bytes(), b"first database")
+            self.assertEqual(second.read_bytes(), b"second database")
+            self.assertEqual(third.read_bytes(), b"third database")
+
     def test_migrate_v5_to_v11_creates_performance_indexes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
