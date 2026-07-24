@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import stat
 from dataclasses import dataclass
@@ -7,6 +8,10 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 
 class InvalidCollectionRelativePath(ValueError):
+    pass
+
+
+class CollectionFileHashError(ValueError):
     pass
 
 
@@ -29,6 +34,7 @@ class CollectionFileInspection:
     status: str
     size_bytes: int | None = None
     message: str | None = None
+    path_stat: os.stat_result | None = None
 
 
 def parse_collection_relative_path(value: object) -> Path:
@@ -158,7 +164,90 @@ def inspect_collection_file(
         path=file_path,
         status=COLLECTION_FILE_OK,
         size_bytes=path_stat.st_size,
+        path_stat=path_stat,
     )
+
+
+def hash_stable_collection_file(
+    target: Path,
+    relative_path: Path,
+    *,
+    chunk_size: int = 1024 * 1024,
+) -> tuple[str, int]:
+    if chunk_size <= 0:
+        raise ValueError("chunk_size må være større enn 0")
+    before = inspect_collection_file(target, relative_path)
+    if before.status != COLLECTION_FILE_OK or before.path_stat is None:
+        raise CollectionFileHashError(
+            before.message or "filen finnes ikke som en vanlig fil uten lenker"
+        )
+
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    try:
+        file_descriptor = os.open(before.path, flags)
+    except OSError as exc:
+        raise CollectionFileHashError(
+            f"filen kunne ikke åpnes uten å følge lenker: {exc}"
+        ) from exc
+
+    digest = hashlib.sha256()
+    size_bytes = 0
+    try:
+        opened_before = os.fstat(file_descriptor)
+        if (
+            not stat.S_ISREG(opened_before.st_mode)
+            or is_reparse_stat(opened_before)
+            or not same_file_identity(before.path_stat, opened_before)
+            or before.path_stat.st_size != opened_before.st_size
+            or before.path_stat.st_mtime_ns != opened_before.st_mtime_ns
+        ):
+            raise CollectionFileHashError(
+                "filen ble byttet eller endret før hashing"
+            )
+
+        with os.fdopen(file_descriptor, "rb", closefd=True) as stream:
+            file_descriptor = -1
+            while True:
+                chunk = stream.read(chunk_size)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                size_bytes += len(chunk)
+            opened_after = os.fstat(stream.fileno())
+    except BaseException:
+        if file_descriptor >= 0:
+            os.close(file_descriptor)
+        raise
+
+    after = inspect_collection_file(target, relative_path)
+    if after.status != COLLECTION_FILE_OK or after.path_stat is None:
+        raise CollectionFileHashError(
+            "filen forsvant eller ble utrygg under hashing"
+        )
+    if not (
+        same_file_identity(before.path_stat, opened_after)
+        and same_file_identity(opened_after, after.path_stat)
+        and before.path_stat.st_size
+        == opened_after.st_size
+        == after.path_stat.st_size
+        == size_bytes
+        and before.path_stat.st_mtime_ns
+        == opened_after.st_mtime_ns
+        == after.path_stat.st_mtime_ns
+    ):
+        raise CollectionFileHashError("filen ble endret under hashing")
+    return digest.hexdigest(), size_bytes
+
+
+def same_file_identity(
+    first: os.stat_result,
+    second: os.stat_result,
+) -> bool:
+    return first.st_dev == second.st_dev and first.st_ino == second.st_ino
 
 
 def is_reparse_stat(path_stat: os.stat_result) -> bool:

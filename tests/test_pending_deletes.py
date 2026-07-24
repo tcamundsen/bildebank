@@ -10,6 +10,7 @@ from bildebank.pending_deletes import (
     cleanup_pending_deletes,
     enqueue_pending_delete,
     list_pending_deletes,
+    pending_delete_integrity_rows,
 )
 
 
@@ -113,6 +114,32 @@ def test_pending_delete_path_is_unique(tmp_path: Path) -> None:
     assert rows[0].reason == "oppdatert årsak"
     assert rows[0].expected_sha256 == "second"
     assert rows[0].expected_size_bytes == 2
+
+
+def test_pending_delete_integrity_rows_are_read_from_existing_connection(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    db.init_database(target)
+    pending = enqueue_pending_delete(
+        target,
+        Path("2024/01/image.jpg"),
+        reason="doctor",
+        expected_sha256="a" * 64,
+        expected_size_bytes=12,
+    )
+    conn = db.connect_read_only(target)
+    try:
+        rows = pending_delete_integrity_rows(conn)
+    finally:
+        conn.close()
+
+    assert len(rows) == 1
+    assert int(rows[0]["id"]) == pending.id
+    assert rows[0]["path"] == "2024/01/image.jpg"
+    assert rows[0]["reason"] == "doctor"
+    assert rows[0]["expected_sha256"] == "a" * 64
+    assert rows[0]["expected_size_bytes"] == 12
 
 
 def test_migrate_repairs_legacy_pending_source_foreign_key(tmp_path: Path) -> None:

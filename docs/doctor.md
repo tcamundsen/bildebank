@@ -40,6 +40,13 @@ Doctor kontrollerer også at alle databaseførte filer, inkludert filer under
 like i filraden og den tilhørende kildeinformasjonen. Avvik rapporteres, men
 repareres ikke.
 
+Doctor rapporterer også uavklarte filflyttinger og filer som står i kø for
+sletting etter `unimport`. En fil i slettingskøen må ha en trygg samlingssti,
+ikke lenger være referert av databasen og ha samme størrelse og SHA-256 som da
+den ble lagt i køen. Derfor leser doctor innholdet i disse køfilene også uten
+`--deep`. En endret eller utrygg fil rapporteres som feil og røres ikke.
+Doctor behandler aldri køene automatisk.
+
 Databaseførte samlingsstier må være relative og bruke `/` som skilletegn.
 Doctor avviser blant annet absolutte stier, `..`, feil mappeplassering,
 `target_path_key` som ikke stemmer, og stier som går gjennom en symlink,
@@ -50,7 +57,8 @@ kjøring.
 Vanlig doctor kontrollerer både aktive filer og filer under `deleted`. Hver
 databaseført fil må finnes som en vanlig fil uten lenker, og størrelsen på
 disk må stemme med `files.size_bytes`. Denne kontrollen leser filinformasjon,
-men ikke selve filinnholdet.
+men ikke selve filinnholdet. Unntaket er ekstra filer i slettingskøen, som må
+hashes for å kunne avgjøre om innholdsidentiteten fortsatt stemmer.
 
 `bildebank doctor --deep` leser i tillegg alle aktive filer og kontrollerer
 SHA-256 mot databasen. Denne kontrollen kan ta lang tid for en stor samling.

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import os
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -9,7 +12,9 @@ from bildebank.collection_paths import (
     COLLECTION_FILE_MISSING,
     COLLECTION_FILE_NOT_REGULAR,
     COLLECTION_FILE_OK,
+    CollectionFileHashError,
     InvalidCollectionRelativePath,
+    hash_stable_collection_file,
     inspect_collection_file,
     inspect_existing_collection_path_components,
     is_active_collection_file_path,
@@ -136,6 +141,74 @@ def test_collection_file_inspection_does_not_follow_final_symlink(
 
     assert result.status == COLLECTION_FILE_NOT_REGULAR
     assert result.size_bytes is None
+
+
+def test_stable_collection_hash_uses_regular_file_identity(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    file_path = target / "2024" / "01" / "regular.jpg"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_bytes(b"regular")
+
+    sha256, size_bytes = hash_stable_collection_file(
+        target,
+        Path("2024/01/regular.jpg"),
+    )
+
+    assert sha256 == hashlib.sha256(b"regular").hexdigest()
+    assert size_bytes == len(b"regular")
+
+
+def test_stable_collection_hash_rejects_final_symlink(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    outside = tmp_path / "outside.jpg"
+    linked = target / "2024" / "01" / "linked.jpg"
+    linked.parent.mkdir(parents=True)
+    outside.write_bytes(b"outside")
+    try:
+        linked.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"Kan ikke opprette test-symlink: {exc}")
+
+    with pytest.raises(CollectionFileHashError):
+        hash_stable_collection_file(
+            target,
+            Path("2024/01/linked.jpg"),
+        )
+
+
+def test_stable_collection_hash_rejects_file_replaced_before_open(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    file_path = target / "2024" / "01" / "changed.jpg"
+    replacement = tmp_path / "replacement.jpg"
+    file_path.parent.mkdir(parents=True)
+    file_path.write_bytes(b"original")
+    replacement.write_bytes(b"replaced")
+    real_open = os.open
+
+    def replace_then_open(path: Path, flags: int) -> int:
+        replacement.replace(file_path)
+        return real_open(path, flags)
+
+    with (
+        patch(
+            "bildebank.collection_paths.os.open",
+            side_effect=replace_then_open,
+        ),
+        pytest.raises(
+            CollectionFileHashError,
+            match="byttet eller endret før hashing",
+        ),
+    ):
+        hash_stable_collection_file(
+            target,
+            Path("2024/01/changed.jpg"),
+        )
 
 
 def test_windows_reparse_attribute_is_detected_portably() -> None:

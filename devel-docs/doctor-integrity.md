@@ -80,6 +80,12 @@ ikke har noen `files`-rad. De rapporteres, men adopteres eller slettes ikke.
   ekstra fil fortsatt finnes.
 - En delete-rad med usikker sti, manglende forventet SHA-256/størrelse eller
   endret fil er `FEIL`.
+- En fullt identifisert delete-rad der filen allerede mangler er `OBS`; raden
+  blir stående slik at en eksplisitt cleanup kan avklare køtilstanden.
+- En delete-rad som fortsatt peker på en `files`-rad er `FEIL`.
+- Eksisterende pending-delete-filer hashes via et åpent filhåndtak. Filtype,
+  identitet, størrelse og endringstid kontrolleres før og etter lesing. En fil
+  som byttes eller endres under kontrollen blir ikke godkjent.
 - Ingen pending-rad behandles automatisk av doctor.
 
 ## Sidecar-databaser
@@ -116,11 +122,12 @@ Ferdig:
 - eksistens, vanlig filtype uten lenker og `size_bytes` for både aktive og
   slettede databasefiler
 - rapportering av `pending_file_moves`
+- read-only kontroll av `pending_file_deletes`, inkludert sti, referanser,
+  forventet innholdsidentitet og stabil SHA-256
 - eksisterende kontroller for aktive filer og OpenCLIP-orphans
 
 Gjenstår:
 
 - dyp SHA-256 for slettede filer
-- `pending_file_deletes`
 - alle InsightFace-modeller og full sidecar-konsistens
 - samme read-only hoveddatabase- og stiregler i `check-source`

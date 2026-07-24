@@ -10,9 +10,10 @@ from unittest.mock import patch
 from bildebank import db
 from bildebank.cli import build_parser
 from bildebank.db import DB_FILENAME, init_database
-from bildebank.media import sha256_file
 from bildebank.ffmpeg_tools import FFmpegTools
+from bildebank.media import sha256_file
 from bildebank.openclip import OpenClipConfig, connect_openclip_db, embedding_blob, openclip_db_path
+from bildebank.pending_deletes import enqueue_pending_delete, list_pending_deletes
 from tests.cli_helpers import capture_cli, run_cli
 from tests.db_test_helpers import insert_test_file, register_target_file
 
@@ -81,6 +82,18 @@ class DoctorCliTests(unittest.TestCase):
                     target,
                     deleted_path.relative_to(target),
                 )
+                pending_delete_path = (
+                    target / "udatert" / "pending-delete.jpg"
+                )
+                pending_delete_path.parent.mkdir(parents=True)
+                pending_delete_path.write_bytes(b"pending delete")
+                enqueue_pending_delete(
+                    target,
+                    pending_delete_path.relative_to(target),
+                    reason="read-only test",
+                    expected_sha256=sha256_file(pending_delete_path),
+                    expected_size_bytes=pending_delete_path.stat().st_size,
+                )
 
                 conn = db.connect(target)
                 try:
@@ -145,6 +158,249 @@ class DoctorCliTests(unittest.TestCase):
                 self.assertEqual(code, 0, stderr)
                 self.assertEqual(tree_image(self.program_root), program_before)
                 self.assertEqual(tree_image(target), collection_before)
+
+    def test_doctor_reports_identified_pending_delete_without_applying_it(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            pending_path = target / "2024" / "01" / "queued.jpg"
+            pending_path.parent.mkdir(parents=True)
+            pending_path.write_bytes(b"queued")
+            pending = enqueue_pending_delete(
+                target,
+                pending_path.relative_to(target),
+                reason="test",
+                expected_sha256=sha256_file(pending_path),
+                expected_size_bytes=pending_path.stat().st_size,
+            )
+            before = tree_image(target)
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+            after = tree_image(target)
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "OBS: 1 identifisert(e) ekstra fil(er) venter i "
+            "pending_file_deletes.",
+            stdout,
+        )
+        self.assertIn(
+            f"pending_file_deletes #{pending.id}: 2024/01/queued.jpg",
+            stdout,
+        )
+        self.assertEqual(after, before)
+
+    def test_doctor_reports_pending_delete_for_already_missing_file(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            pending = enqueue_pending_delete(
+                target,
+                Path("udatert/missing.jpg"),
+                reason="test",
+                expected_sha256="0" * 64,
+                expected_size_bytes=7,
+            )
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            rows = list_pending_deletes(target)
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "OBS: 1 pending_file_deletes-rad(er) peker på filer som "
+            "allerede mangler.",
+            stdout,
+        )
+        self.assertEqual([row.id for row in rows], [pending.id])
+
+    def test_doctor_rejects_unsafe_and_unidentified_pending_deletes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            init_database(target)
+            outside = root / "outside.jpg"
+            outside.write_bytes(b"outside")
+            legacy = target / "2024" / "01" / "legacy.jpg"
+            legacy.parent.mkdir(parents=True)
+            legacy.write_bytes(b"legacy")
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO pending_file_deletes(
+                        path, reason, expected_sha256, expected_size_bytes
+                    )
+                    VALUES('../outside.jpg', 'unsafe', ?, 7)
+                    """,
+                    ("0" * 64,),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO pending_file_deletes(path, reason)
+                    VALUES('2024/01/legacy.jpg', 'legacy')
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+                patch(
+                    "bildebank.cli_doctor.hash_stable_collection_file"
+                ) as hash_file,
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            rows = list_pending_deletes(target)
+            outside_content = outside.read_bytes()
+            legacy_content = legacy.read_bytes()
+
+        self.assertEqual(code, 0, stderr)
+        hash_file.assert_not_called()
+        self.assertIn(
+            "FEIL: 2 pending_file_deletes-rad(er) er ikke trygge å "
+            "behandle.",
+            stdout,
+        )
+        self.assertIn("ugyldig køsti", stdout)
+        self.assertIn(
+            "mangler gyldig forventet SHA-256 og størrelse",
+            stdout,
+        )
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(outside_content, b"outside")
+        self.assertEqual(legacy_content, b"legacy")
+
+    def test_doctor_rejects_changed_pending_delete_content(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            pending_path = target / "2024" / "01" / "queued.jpg"
+            pending_path.parent.mkdir(parents=True)
+            pending_path.write_bytes(b"original")
+            enqueue_pending_delete(
+                target,
+                pending_path.relative_to(target),
+                reason="test",
+                expected_sha256=sha256_file(pending_path),
+                expected_size_bytes=pending_path.stat().st_size,
+            )
+            pending_path.write_bytes(b"replaced")
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            rows = list_pending_deletes(target)
+            pending_content = pending_path.read_bytes()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: 1 pending_file_deletes-rad(er) er ikke trygge å "
+            "behandle.",
+            stdout,
+        )
+        self.assertIn(
+            "SHA-256 stemmer ikke med forventet innhold",
+            stdout,
+        )
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(pending_content, b"replaced")
+
+    def test_doctor_rejects_pending_delete_still_referenced_by_files(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            pending_path = target / "2024" / "01" / "referenced.jpg"
+            pending_path.parent.mkdir(parents=True)
+            pending_path.write_bytes(b"referenced")
+            register_target_file(target, pending_path.relative_to(target))
+            enqueue_pending_delete(
+                target,
+                pending_path.relative_to(target),
+                reason="test",
+                expected_sha256=sha256_file(pending_path),
+                expected_size_bytes=pending_path.stat().st_size,
+            )
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+                patch(
+                    "bildebank.cli_doctor.hash_stable_collection_file"
+                ) as hash_file,
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            rows = list_pending_deletes(target)
+            pending_content = pending_path.read_bytes()
+
+        self.assertEqual(code, 0, stderr)
+        hash_file.assert_not_called()
+        self.assertIn("filen har fortsatt en referanse i files", stdout)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(pending_content, b"referenced")
 
     def test_doctor_shows_exiftool_status(self) -> None:
         exiftool = self.program_root / "bildebank-tools" / "exiftool" / "exiftool.exe"

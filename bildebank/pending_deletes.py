@@ -115,6 +115,30 @@ def list_pending_deletes(target: Path) -> list[PendingFileDelete]:
         conn.close()
 
 
+def pending_delete_integrity_rows(
+    conn: sqlite3.Connection,
+) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT
+                id,
+                path,
+                reason,
+                source_id,
+                expected_sha256,
+                expected_size_bytes,
+                attempts,
+                last_error,
+                created_at,
+                updated_at
+            FROM pending_file_deletes
+            ORDER BY id
+            """
+        )
+    )
+
+
 def cleanup_pending_deletes(
     target: Path,
     *,

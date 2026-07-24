@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import sqlite3
 import stat
 import sys
@@ -12,9 +13,13 @@ from .collection_paths import (
     COLLECTION_FILE_MISSING,
     COLLECTION_FILE_NOT_REGULAR,
     COLLECTION_FILE_OK,
+    CollectionFileHashError,
     InvalidCollectionRelativePath,
+    hash_stable_collection_file,
     inspect_collection_file,
     inspect_existing_collection_path_components,
+    is_active_collection_file_path,
+    is_deleted_collection_file_path,
     is_reparse_stat,
     parse_collection_relative_path,
 )
@@ -25,6 +30,7 @@ from .face import face_db_path, face_db_summary, insightface_runtime_error
 from .ffmpeg_tools import resolve_ffmpeg_tools
 from .media import is_supported_media, sha256_file
 from .openclip import openclip_db_path, openclip_db_summary, torch_gpu_status
+from .pending_deletes import pending_delete_integrity_rows
 from .platform_guard import validate_collection_platform
 from .progress import ProgressMeter
 
@@ -142,6 +148,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
             file_paths_safe = doctor_check_file_paths(target)
             if doctor_check_current_schema(target):
                 doctor_check_pending_file_moves(target)
+                doctor_check_pending_file_deletes(target)
                 doctor_check_duplicate_active_sha256(target)
                 doctor_check_files_have_sources(target)
                 doctor_check_file_source_identity(target)
@@ -477,6 +484,238 @@ def doctor_check_pending_file_moves(target: Path) -> None:
         )
     doctor_report_omitted_details(len(rows))
     doctor_advice("Kjør en Bildebank-kommando på nytt etter at filtilstanden er rettet.")
+
+
+def doctor_check_pending_file_deletes(target: Path) -> None:
+    conn = db.connect_read_only(target)
+    try:
+        rows = pending_delete_integrity_rows(conn)
+        referenced_path_keys = db.file_target_path_keys(conn)
+    finally:
+        conn.close()
+
+    if not rows:
+        doctor_ok("ingen filer i pending_file_deletes")
+        return
+
+    ready: list[tuple[int, str, str, int, str | None]] = []
+    missing: list[tuple[int, str, str, int, str | None]] = []
+    errors: list[tuple[int, object, str]] = []
+    progress = ProgressMeter("Doctor pending deletes")
+    progress.update(0, len(rows), action="kontrollert", force=True)
+
+    for current, row in enumerate(rows, start=1):
+        pending_id = int(row["id"])
+        raw_path = row["path"]
+        reason_value = row["reason"]
+        attempts_value = row["attempts"]
+        if (
+            not isinstance(reason_value, str)
+            or not reason_value.strip()
+            or type(attempts_value) is not int
+            or attempts_value < 0
+        ):
+            errors.append(
+                (
+                    pending_id,
+                    raw_path,
+                    "køposten har ugyldig årsak eller antall forsøk",
+                )
+            )
+            progress.update(current, len(rows), action="kontrollert")
+            continue
+        reason = reason_value
+        attempts = attempts_value
+        last_error = (
+            str(row["last_error"])
+            if row["last_error"] is not None
+            else None
+        )
+        try:
+            relative_path = parse_collection_relative_path(raw_path)
+        except InvalidCollectionRelativePath as exc:
+            errors.append(
+                (pending_id, raw_path, f"ugyldig køsti: {exc}")
+            )
+            progress.update(current, len(rows), action="kontrollert")
+            continue
+
+        if not (
+            is_active_collection_file_path(relative_path)
+            or is_deleted_collection_file_path(relative_path)
+        ):
+            errors.append(
+                (
+                    pending_id,
+                    raw_path,
+                    "køstien har ikke en gyldig års-/måneds-, "
+                    "udatert/- eller deleted/-layout",
+                )
+            )
+            progress.update(current, len(rows), action="kontrollert")
+            continue
+
+        expected_sha256 = row["expected_sha256"]
+        expected_size = row["expected_size_bytes"]
+        if (
+            not isinstance(expected_sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None
+            or type(expected_size) is not int
+            or expected_size < 0
+        ):
+            errors.append(
+                (
+                    pending_id,
+                    raw_path,
+                    "mangler gyldig forventet SHA-256 og størrelse",
+                )
+            )
+            progress.update(current, len(rows), action="kontrollert")
+            continue
+
+        path_key = db.relative_path_key(relative_path)
+        if path_key in referenced_path_keys:
+            errors.append(
+                (
+                    pending_id,
+                    raw_path,
+                    "filen har fortsatt en referanse i files",
+                )
+            )
+            progress.update(current, len(rows), action="kontrollert")
+            continue
+
+        inspection = inspect_collection_file(target, relative_path)
+        if inspection.status == COLLECTION_FILE_MISSING:
+            missing.append(
+                (
+                    pending_id,
+                    relative_path.as_posix(),
+                    reason,
+                    attempts,
+                    last_error,
+                )
+            )
+            progress.update(current, len(rows), action="kontrollert")
+            continue
+        if inspection.status != COLLECTION_FILE_OK:
+            errors.append(
+                (
+                    pending_id,
+                    raw_path,
+                    inspection.message
+                    or "køstien er ikke en vanlig, trygg fil",
+                )
+            )
+            progress.update(current, len(rows), action="kontrollert")
+            continue
+        if inspection.size_bytes != expected_size:
+            errors.append(
+                (
+                    pending_id,
+                    raw_path,
+                    "filstørrelsen stemmer ikke "
+                    f"(forventet={expected_size}, disk={inspection.size_bytes})",
+                )
+            )
+            progress.update(current, len(rows), action="kontrollert")
+            continue
+
+        try:
+            actual_sha256, actual_size = hash_stable_collection_file(
+                target,
+                relative_path,
+            )
+        except (CollectionFileHashError, OSError) as exc:
+            errors.append(
+                (
+                    pending_id,
+                    raw_path,
+                    f"filen kunne ikke hashes stabilt: {exc}",
+                )
+            )
+        else:
+            if actual_size != expected_size:
+                errors.append(
+                    (
+                        pending_id,
+                        raw_path,
+                        "filstørrelsen endret seg under hashing "
+                        f"(forventet={expected_size}, lest={actual_size})",
+                    )
+                )
+            elif actual_sha256 != expected_sha256:
+                errors.append(
+                    (
+                        pending_id,
+                        raw_path,
+                        "SHA-256 stemmer ikke med forventet innhold",
+                    )
+                )
+            else:
+                ready.append(
+                    (
+                        pending_id,
+                        relative_path.as_posix(),
+                        reason,
+                        attempts,
+                        last_error,
+                    )
+                )
+        progress.update(current, len(rows), action="kontrollert")
+
+    progress.done(
+        "Doctor pending deletes: ferdig kontrollert "
+        f"{len(rows)}/{len(rows)} køposter."
+    )
+
+    if errors:
+        doctor_error(
+            f"{len(errors)} pending_file_deletes-rad(er) er ikke trygge "
+            "å behandle."
+        )
+        for pending_id, path, error in errors[:20]:
+            doctor_info(
+                f"pending_file_deletes #{pending_id}: path={path!r} ({error})"
+            )
+        doctor_report_omitted_details(len(errors))
+        doctor_advice(
+            "Ikke kjør cleanup-pending-deletes --apply før feilene er "
+            "undersøkt mot databasen og sikkerhetskopien."
+        )
+
+    if ready:
+        doctor_obs(
+            f"{len(ready)} identifisert(e) ekstra fil(er) venter i "
+            "pending_file_deletes."
+        )
+        doctor_pending_delete_details(ready)
+
+    if missing:
+        doctor_obs(
+            f"{len(missing)} pending_file_deletes-rad(er) peker på filer "
+            "som allerede mangler."
+        )
+        doctor_pending_delete_details(missing)
+
+    if ready or missing:
+        doctor_advice(
+            "Doctor endrer ikke køen. Kontroller den med "
+            "`bildebank cleanup-pending-deletes --list`."
+        )
+
+
+def doctor_pending_delete_details(
+    rows: list[tuple[int, str, str, int, str | None]],
+) -> None:
+    for pending_id, path, reason, attempts, last_error in rows[:20]:
+        doctor_info(
+            f"pending_file_deletes #{pending_id}: {path} "
+            f"(årsak={reason!r}, forsøk={attempts})"
+        )
+        if last_error is not None:
+            doctor_info(f"  siste feil: {last_error}")
+    doctor_report_omitted_details(len(rows))
 
 
 def doctor_check_orphan_openclip_rows(target: Path) -> None:
