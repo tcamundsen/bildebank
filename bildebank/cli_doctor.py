@@ -127,16 +127,22 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
             doctor_obs(f"openclip-database finnes ikke ennå: {openclip_db_path(target)}")
         print()
         print("Databaseintegritet:")
-        doctor_check_pending_file_moves(target)
-        doctor_check_duplicate_active_sha256(target)
-        doctor_check_active_files_have_sources(target)
-        doctor_check_orphan_openclip_rows(target)
-        doctor_check_active_files_exist(target)
-        doctor_check_orphan_files(target)
-        if deep:
-            print()
-            print("Dyp filintegritet:")
-            doctor_deep_check_active_file_hashes(target)
+        if doctor_check_main_database_health(target):
+            doctor_check_pending_file_moves(target)
+            doctor_check_duplicate_active_sha256(target)
+            doctor_check_active_files_have_sources(target)
+            doctor_check_orphan_openclip_rows(target)
+            doctor_check_active_files_exist(target)
+            doctor_check_orphan_files(target)
+            if deep:
+                print()
+                print("Dyp filintegritet:")
+                doctor_deep_check_active_file_hashes(target)
+        else:
+            doctor_obs(
+                "øvrige database- og filkontroller er hoppet over fordi "
+                "hoveddatabasens integritet ikke er bekreftet."
+            )
     else:
         print()
         print("Aktiv bildesamling:")
@@ -144,6 +150,69 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
         doctor_advice("Kjør kommandoen fra en bildesamling, eller bruk `--target`.")
         doctor_advice('Eksempel: "bildebank --target C:\\bildesamling doctor"')
     return 0
+
+
+def doctor_check_main_database_health(target: Path) -> bool:
+    try:
+        conn = db.connect_read_only(target, require_current=False)
+    except sqlite3.Error as exc:
+        doctor_error(f"kunne ikke åpne hoveddatabasen read-only: {exc}")
+        doctor_advice("Undersøk databasen og sikkerhetskopien før du gjør endringer.")
+        return False
+
+    integrity_errors: list[str] | None = None
+    foreign_key_errors: list[sqlite3.Row] | None = None
+    try:
+        try:
+            integrity_errors = db.database_integrity_errors(conn)
+        except sqlite3.Error as exc:
+            doctor_error(f"SQLite integrity_check kunne ikke kjøres: {exc}")
+
+        try:
+            foreign_key_errors = db.database_foreign_key_errors(conn)
+        except sqlite3.Error as exc:
+            doctor_error(f"SQLite foreign_key_check kunne ikke kjøres: {exc}")
+    finally:
+        conn.close()
+
+    if integrity_errors is not None:
+        if integrity_errors:
+            doctor_error(
+                f"SQLite integrity_check fant {len(integrity_errors)} feil."
+            )
+            for error in integrity_errors[:20]:
+                doctor_info(error)
+            doctor_report_omitted_details(len(integrity_errors))
+        else:
+            doctor_ok("SQLite integrity_check: ok")
+
+    if foreign_key_errors is not None:
+        if foreign_key_errors:
+            reference_label = (
+                "ugyldig referanse"
+                if len(foreign_key_errors) == 1
+                else "ugyldige referanser"
+            )
+            doctor_error(
+                "SQLite foreign_key_check fant "
+                f"{len(foreign_key_errors)} {reference_label}."
+            )
+            for row in foreign_key_errors[:20]:
+                doctor_info(
+                    f"table={row['table']} rowid={row['rowid']} "
+                    f"parent={row['parent']} foreign_key={row['fkid']}"
+                )
+            doctor_report_omitted_details(len(foreign_key_errors))
+        else:
+            doctor_ok("SQLite foreign_key_check: ingen feil")
+
+    can_continue = (
+        integrity_errors == []
+        and foreign_key_errors is not None
+    )
+    if not can_continue or foreign_key_errors:
+        doctor_advice("Undersøk databasen og sikkerhetskopien før du gjør endringer.")
+    return can_continue
 
 
 def doctor_check_duplicate_active_sha256(target: Path) -> None:

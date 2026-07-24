@@ -1522,13 +1522,26 @@ def repair_tags_schema(conn: sqlite3.Connection) -> None:
     seed_system_tags(conn)
 
 
+def database_foreign_key_errors(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(conn.execute("PRAGMA foreign_key_check"))
+
+
+def database_integrity_errors(conn: sqlite3.Connection) -> list[str]:
+    results = [str(row[0]) for row in conn.execute("PRAGMA integrity_check")]
+    if results == ["ok"]:
+        return []
+    if not results:
+        return ["integrity_check returnerte ikke noe resultat"]
+    return results
+
+
 def validate_database_health(conn: sqlite3.Connection) -> None:
-    foreign_key_errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+    foreign_key_errors = database_foreign_key_errors(conn)
     if foreign_key_errors:
         raise ValueError(f"foreign_key_check feilet: {foreign_key_errors[0]}")
-    integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
-    if integrity != "ok":
-        raise ValueError(f"integrity_check feilet: {integrity}")
+    integrity_errors = database_integrity_errors(conn)
+    if integrity_errors:
+        raise ValueError(f"integrity_check feilet: {integrity_errors[0]}")
 
 
 def validate_performance_indexes(conn: sqlite3.Connection) -> None:

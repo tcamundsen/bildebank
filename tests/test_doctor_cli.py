@@ -138,6 +138,94 @@ class DoctorCliTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertIn(f"  OK: ExifTool funnet: {exiftool} (13.58)", stdout)
 
+    def test_doctor_reports_healthy_main_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch("bildebank.cli_doctor.python_module_available", return_value=False),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("OK: SQLite integrity_check: ok", stdout)
+        self.assertIn("OK: SQLite foreign_key_check: ingen feil", stdout)
+
+    def test_doctor_reports_main_database_foreign_key_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                source_id = conn.execute(
+                    """
+                    INSERT INTO sources(path, path_key, name, status)
+                    VALUES('C:\\source', 'c:/source', 'source', 'imported')
+                    RETURNING id
+                    """
+                ).fetchone()[0]
+                conn.execute(
+                    """
+                    INSERT INTO file_sources(
+                        file_id, source_id, source_path, source_path_key,
+                        sha256, size_bytes
+                    )
+                    VALUES(999, ?, 'C:\\source\\missing.jpg',
+                           'c:/source/missing.jpg', 'sha', 1)
+                    """,
+                    (source_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch("bildebank.cli_doctor.python_module_available", return_value=False),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("OK: SQLite integrity_check: ok", stdout)
+        self.assertIn(
+            "FEIL: SQLite foreign_key_check fant 1 ugyldig referanse.",
+            stdout,
+        )
+        self.assertIn("INFO: table=file_sources", stdout)
+        self.assertIn("parent=files", stdout)
+
+    def test_doctor_skips_other_checks_when_integrity_check_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch("bildebank.cli_doctor.python_module_available", return_value=False),
+                patch(
+                    "bildebank.cli_doctor.db.database_integrity_errors",
+                    return_value=["database disk image is malformed"],
+                ),
+            ):
+                code, stdout, stderr = capture_cli(["--target", str(target), "doctor"])
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("FEIL: SQLite integrity_check fant 1 feil.", stdout)
+        self.assertIn("INFO: database disk image is malformed", stdout)
+        self.assertIn("øvrige database- og filkontroller er hoppet over", stdout)
+        self.assertNotIn("ingen uavklarte filflyttinger", stdout)
+
     def test_doctor_reports_missing_exiftool_without_failing(self) -> None:
         with patch("bildebank.cli_doctor.resolve_exiftool_path", side_effect=FileNotFoundError("mangler")):
             code, stdout, stderr = capture_cli(["doctor"])

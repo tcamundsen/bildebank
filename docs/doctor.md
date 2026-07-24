@@ -29,6 +29,12 @@ på filer som mangler i hoveddatabasen eller er markert som slettet. Hvis for ek
 `face_recognition` er slått på, men InsightFace mangler eller ikke kan lastes,
 viser kommandoen en `FEIL:`-linje og et råd om hva du bør gjøre videre.
 
+Før doctor vurderer de databaseførte filene, kontrollerer den at
+hoveddatabasen er hel og at databasereferanser ikke peker på rader som mangler.
+Hvis databasefilens integritet ikke kan bekreftes, hopper doctor over senere
+filkontroller. Da unngår kommandoen å gi en sikkerhetsvurdering basert på en
+database som kan være skadet.
+
 `bildebank doctor --deep` leser i tillegg alle aktive filer og kontrollerer
 SHA-256 mot databasen. Denne kontrollen kan ta lang tid for en stor samling.
 Doctor viser fremdrift mens den leter etter manglende filer, scanner etter
