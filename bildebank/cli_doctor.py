@@ -23,11 +23,12 @@ from .collection_paths import (
     is_reparse_stat,
     parse_collection_relative_path,
 )
-from .config import CONFIG_FILENAME, load_config
+from .config import CONFIG_FILENAME, FaceRecognitionConfig, load_config
 from .db_core import connect_database_read_only
 from .exiftool import resolve_exiftool_path, validate_exiftool_install
 from .face import face_db_path, face_db_summary, insightface_runtime_error
 from .ffmpeg_tools import resolve_ffmpeg_tools
+from .item_sidecars import existing_face_database_paths
 from .media import is_supported_media
 from .openclip import (
     openclip_db_path,
@@ -130,18 +131,38 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
         doctor_obs("image_search er slått av.")
 
     if target is not None:
-        exists, scanned, faces = face_db_summary(target, face)
-        openclip_summary = openclip_db_summary(target)
+        face_summary_error: Exception | None = None
+        openclip_summary_error: Exception | None = None
+        try:
+            exists, scanned, faces = face_db_summary(target, face)
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            exists, scanned, faces = False, 0, 0
+            face_summary_error = exc
+        try:
+            openclip_summary = openclip_db_summary(target)
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            openclip_summary = None
+            openclip_summary_error = exc
         print()
         print("Aktiv bildesamling:")
         doctor_ok(f"aktiv bildesamling funnet: {target}")
-        if exists:
+        if face_summary_error is not None:
+            doctor_error(
+                "face-databasen kunne ikke leses read-only for "
+                f"oppsummering: {face_summary_error}"
+            )
+        elif exists:
             doctor_ok(f"face-database finnes: {face_db_path(target, face)}")
             doctor_info(f"scannede filer: {scanned}")
             doctor_info(f"ansikter funnet: {faces}")
         else:
             doctor_obs(f"face-database finnes ikke ennå: {face_db_path(target, face)}")
-        if openclip_summary.exists:
+        if openclip_summary_error is not None:
+            doctor_error(
+                "OpenCLIP-databasen kunne ikke leses read-only for "
+                f"oppsummering: {openclip_summary_error}"
+            )
+        elif openclip_summary is not None and openclip_summary.exists:
             doctor_ok(f"openclip-database finnes: {openclip_db_path(target)}")
             doctor_info(f"bilde-embeddings: {openclip_summary.embeddings}")
             doctor_info(f"bildesøk: {openclip_summary.search_runs}")
@@ -152,12 +173,23 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
         if doctor_check_main_database_health(target):
             file_paths_safe = doctor_check_file_paths(target)
             if doctor_check_current_schema(target):
+                openclip_healthy = doctor_check_sidecar_database_health(
+                    target,
+                    face,
+                    deep=deep,
+                )
                 doctor_check_pending_file_moves(target)
                 doctor_check_pending_file_deletes(target)
                 doctor_check_duplicate_active_sha256(target)
                 doctor_check_files_have_sources(target)
                 doctor_check_file_source_identity(target)
-                doctor_check_openclip_consistency(target)
+                if openclip_healthy:
+                    doctor_check_openclip_consistency(target)
+                else:
+                    doctor_obs(
+                        "OpenCLIP-konsistens er hoppet over fordi "
+                        "SQLite-helsen ikke er bekreftet."
+                    )
                 if file_paths_safe:
                     doctor_check_files_on_disk(target)
                     doctor_check_orphan_files(target)
@@ -250,6 +282,119 @@ def doctor_check_main_database_health(target: Path) -> bool:
     if not can_continue or foreign_key_errors:
         doctor_advice("Undersøk databasen og sikkerhetskopien før du gjør endringer.")
     return can_continue
+
+
+def doctor_check_sidecar_database_health(
+    target: Path,
+    face_config: FaceRecognitionConfig,
+    *,
+    deep: bool,
+) -> bool:
+    openclip_path = openclip_db_path(target)
+    openclip_present = openclip_path.exists()
+    databases: list[tuple[str, Path]] = []
+    if openclip_present:
+        databases.append(("OpenCLIP", openclip_path))
+
+    inventory_error: Exception | None = None
+    try:
+        face_paths = existing_face_database_paths(target, face_config)
+    except (OSError, RuntimeError, ValueError) as exc:
+        face_paths = ()
+        inventory_error = exc
+        doctor_error(
+            "kunne ikke lage read-only oversikt over InsightFace-databaser: "
+            f"{exc}"
+        )
+
+    excluded_paths = {db.db_path_for_target(target).resolve()}
+    if openclip_present:
+        excluded_paths.add(openclip_path.resolve())
+    databases.extend(
+        ("InsightFace", path)
+        for path in face_paths
+        if path.resolve() not in excluded_paths
+    )
+
+    if not databases:
+        if inventory_error is None:
+            doctor_ok("ingen sidecar-databaser å helsekontrollere")
+        return True
+
+    check_name = "integrity_check" if deep else "quick_check"
+    healthy_count = 0
+    openclip_healthy = not openclip_present
+    for kind, path in databases:
+        try:
+            conn = connect_database_read_only(path)
+        except (OSError, RuntimeError, sqlite3.Error) as exc:
+            doctor_error(
+                f"{kind}-databasen kunne ikke åpnes read-only: {path} ({exc})"
+            )
+            continue
+
+        check_errors: list[str] | None = None
+        foreign_key_errors: list[sqlite3.Row] | None = None
+        try:
+            try:
+                check_errors = (
+                    db.database_integrity_errors(conn)
+                    if deep
+                    else db.database_quick_check_errors(conn)
+                )
+            except sqlite3.Error as exc:
+                doctor_error(
+                    f"{kind}-databasens SQLite {check_name} kunne ikke "
+                    f"kjøres: {path} ({exc})"
+                )
+            try:
+                foreign_key_errors = db.database_foreign_key_errors(conn)
+            except sqlite3.Error as exc:
+                doctor_error(
+                    f"{kind}-databasens SQLite foreign_key_check kunne ikke "
+                    f"kjøres: {path} ({exc})"
+                )
+        finally:
+            conn.close()
+
+        if check_errors:
+            doctor_error(
+                f"{kind}-databasens SQLite {check_name} fant "
+                f"{len(check_errors)} feil: {path}"
+            )
+            for error in check_errors[:20]:
+                doctor_info(error)
+            doctor_report_omitted_details(len(check_errors))
+
+        if foreign_key_errors:
+            doctor_error(
+                f"{kind}-databasens SQLite foreign_key_check fant "
+                f"{len(foreign_key_errors)} ugyldig(e) referanse(r): {path}"
+            )
+            for row in foreign_key_errors[:20]:
+                doctor_info(
+                    f"table={row['table']} rowid={row['rowid']} "
+                    f"parent={row['parent']} foreign_key={row['fkid']}"
+                )
+            doctor_report_omitted_details(len(foreign_key_errors))
+
+        healthy = check_errors == [] and foreign_key_errors == []
+        if healthy:
+            healthy_count += 1
+        if kind == "OpenCLIP":
+            openclip_healthy = healthy
+
+    if healthy_count:
+        doctor_ok(
+            f"SQLite {check_name} og foreign_key_check: "
+            f"{healthy_count}/{len(databases)} sidecar-databaser ok"
+        )
+    if healthy_count != len(databases) or inventory_error is not None:
+        doctor_advice(
+            "Undersøk sidecar-databasene og sikkerhetskopien før de endres "
+            "eller regenereres."
+        )
+    return openclip_healthy
 
 
 def doctor_check_current_schema(target: Path) -> bool:

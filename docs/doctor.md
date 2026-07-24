@@ -32,6 +32,13 @@ doctor migrerer, rydder eller regenererer ikke OpenCLIP-data. Hvis for eksempel
 `face_recognition` er slått på, men InsightFace mangler eller ikke kan lastes,
 viser kommandoen en `FEIL:`-linje og et råd om hva du bør gjøre videre.
 
+Doctor kjører også en read-only SQLite-helsekontroll av OpenCLIP-databasen,
+den eldre face-databasen hvis den finnes, og alle face-databaser for
+forskjellige InsightFace-modeller. Vanlig doctor bruker den raske
+`quick_check`; `doctor --deep` bruker full `integrity_check`. Begge kjører
+også `foreign_key_check`. En feil i én sidecar-database rapporteres uten å
+stanse kontrollen av de andre databasene eller resten av bildesamlingen.
+
 Før doctor vurderer de databaseførte filene, kontrollerer den at
 hoveddatabasen er hel og at databasereferanser ikke peker på rader som mangler.
 Hvis databasefilens integritet ikke kan bekreftes, hopper doctor over senere

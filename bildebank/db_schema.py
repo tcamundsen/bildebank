@@ -1527,11 +1527,24 @@ def database_foreign_key_errors(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def database_integrity_errors(conn: sqlite3.Connection) -> list[str]:
-    results = [str(row[0]) for row in conn.execute("PRAGMA integrity_check")]
+    return _database_check_errors(conn, "integrity_check")
+
+
+def database_quick_check_errors(conn: sqlite3.Connection) -> list[str]:
+    return _database_check_errors(conn, "quick_check")
+
+
+def _database_check_errors(
+    conn: sqlite3.Connection,
+    pragma: str,
+) -> list[str]:
+    if pragma not in {"integrity_check", "quick_check"}:
+        raise ValueError(f"Uventet SQLite-kontroll: {pragma}")
+    results = [str(row[0]) for row in conn.execute(f"PRAGMA {pragma}")]
     if results == ["ok"]:
         return []
     if not results:
-        return ["integrity_check returnerte ikke noe resultat"]
+        return [f"{pragma} returnerte ikke noe resultat"]
     return results
 
 

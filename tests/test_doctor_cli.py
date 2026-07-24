@@ -10,7 +10,13 @@ from unittest.mock import patch
 from bildebank import db
 from bildebank.cli import build_parser
 from bildebank.collection_paths import hash_stable_collection_file
+from bildebank.config import FaceRecognitionConfig
 from bildebank.db import DB_FILENAME, init_database
+from bildebank.face import (
+    connect_face_db,
+    ensure_face_schema_path,
+    face_db_path,
+)
 from bildebank.ffmpeg_tools import FFmpegTools
 from bildebank.media import sha256_file
 from bildebank.openclip import OpenClipConfig, connect_openclip_db, embedding_blob, openclip_db_path
@@ -431,6 +437,189 @@ class DoctorCliTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr)
         self.assertIn("OK: SQLite integrity_check: ok", stdout)
         self.assertIn("OK: SQLite foreign_key_check: ingen feil", stdout)
+
+    def test_doctor_checks_all_existing_sidecar_databases_read_only(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            connect_openclip_db(target).close()
+            connect_face_db(
+                target,
+                FaceRecognitionConfig(model_name="buffalo_l"),
+            ).close()
+            connect_face_db(
+                target,
+                FaceRecognitionConfig(model_name="antelopev2"),
+            ).close()
+            ensure_face_schema_path(target / ".bilder-faces.sqlite3")
+            before = tree_image(target)
+
+            outputs: dict[bool, str] = {}
+            for deep in (False, True):
+                args = ["--target", str(target), "doctor"]
+                if deep:
+                    args.append("--deep")
+                with (
+                    patch(
+                        "bildebank.cli_doctor.resolve_exiftool_path",
+                        side_effect=FileNotFoundError("mangler"),
+                    ),
+                    patch(
+                        "bildebank.cli_doctor.python_module_available",
+                        return_value=False,
+                    ),
+                ):
+                    code, stdout, stderr = capture_cli(args)
+                self.assertEqual(code, 0, stderr)
+                outputs[deep] = stdout
+
+            after = tree_image(target)
+
+        self.assertIn(
+            "OK: SQLite quick_check og foreign_key_check: "
+            "4/4 sidecar-databaser ok",
+            outputs[False],
+        )
+        self.assertIn(
+            "OK: SQLite integrity_check og foreign_key_check: "
+            "4/4 sidecar-databaser ok",
+            outputs[True],
+        )
+        self.assertEqual(after, before)
+
+    def test_doctor_reports_corrupt_active_face_database_without_stopping(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            face_path = face_db_path(target)
+            face_path.parent.mkdir(parents=True)
+            face_path.write_bytes(b"not a sqlite database")
+            before = face_path.read_bytes()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            after = face_path.read_bytes()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: face-databasen kunne ikke leses read-only for "
+            "oppsummering:",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: InsightFace-databasens SQLite quick_check kunne ikke "
+            "kjøres:",
+            stdout,
+        )
+        self.assertIn("OK: ingen OpenCLIP-database å kontrollere", stdout)
+        self.assertEqual(after, before)
+
+    def test_doctor_skips_openclip_consistency_when_database_is_corrupt(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            openclip_path = openclip_db_path(target)
+            openclip_path.write_bytes(b"not a sqlite database")
+            before = openclip_path.read_bytes()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            after = openclip_path.read_bytes()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: OpenCLIP-databasen kunne ikke leses read-only for "
+            "oppsummering:",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: OpenCLIP-databasens SQLite quick_check kunne ikke "
+            "kjøres:",
+            stdout,
+        )
+        self.assertIn(
+            "OBS: OpenCLIP-konsistens er hoppet over fordi SQLite-helsen "
+            "ikke er bekreftet.",
+            stdout,
+        )
+        self.assertNotIn(
+            "OpenCLIP-schema og kopierte filreferanser stemmer",
+            stdout,
+        )
+        self.assertEqual(after, before)
+
+    def test_doctor_reports_sidecar_foreign_key_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            face_path = face_db_path(target)
+            connect_face_db(target).close()
+            conn = sqlite3.connect(face_path)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO person_faces(person_id, face_id)
+                    VALUES(999, 999)
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: InsightFace-databasens SQLite foreign_key_check fant "
+            "1 ugyldig(e) referanse(r):",
+            stdout,
+        )
+        self.assertIn(
+            "INFO: table=person_faces rowid=",
+            stdout,
+        )
 
     def test_doctor_reports_absolute_database_path_before_schema_gate(
         self,

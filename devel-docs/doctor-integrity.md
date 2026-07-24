@@ -94,6 +94,13 @@ ikke har noen `files`-rad. De rapporteres, men adopteres eller slettes ikke.
 - Doctor migrerer, adopterer eller oppretter ikke sidecar-databaser.
 - En eksisterende OpenCLIP-database må ha eksplisitt gjeldende
   schema-versjon og komplett schema før logiske konsistenskontroller kjøres.
+- Vanlig doctor kjører `quick_check` og `foreign_key_check` på eksisterende
+  OpenCLIP-database, legacy face-database og alle modellspesifikke
+  InsightFace-databaser. `doctor --deep` bruker full `integrity_check`.
+- En sidecar som ikke kan åpnes eller ikke består helsekontrollen, skal
+  rapporteres uten å stoppe kontrollen av de andre databasene. Logiske
+  OpenCLIP-kontroller kjøres bare når OpenCLIP-databasens SQLite-helse er
+  bekreftet.
 - Alle InsightFace-modelldatabaser under samlingens konfigurerte
   databasemappe skal kontrolleres, ikke bare aktiv modell.
 - Sidecar-rader som peker på manglende eller slettede `files`-rader er feil.
@@ -129,8 +136,10 @@ Ferdig:
 - dyp, stabil SHA-256 for både aktive og slettede databasefiler
 - read-only schema-gate og orphan-/identitetskontroll for OpenCLIP, inkludert
   kopiert `target_path`, `target_path_key` og SHA-256
+- read-only `quick_check`/`integrity_check` og `foreign_key_check` for alle
+  eksisterende OpenCLIP- og InsightFace-databaser
 
 Gjenstår:
 
-- alle InsightFace-modeller og SQLite-helsekontroll for sidecar-databasene
+- schema og filreferanser i alle InsightFace-modelldatabaser
 - samme read-only hoveddatabase- og stiregler i `check-source`
