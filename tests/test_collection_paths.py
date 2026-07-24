@@ -6,7 +6,11 @@ from types import SimpleNamespace
 import pytest
 
 from bildebank.collection_paths import (
+    COLLECTION_FILE_MISSING,
+    COLLECTION_FILE_NOT_REGULAR,
+    COLLECTION_FILE_OK,
     InvalidCollectionRelativePath,
+    inspect_collection_file,
     inspect_existing_collection_path_components,
     is_active_collection_file_path,
     is_deleted_collection_file_path,
@@ -81,6 +85,57 @@ def test_existing_component_check_rejects_path_outside_target(
             target,
             Path("../outside.jpg"),
         )
+
+
+def test_collection_file_inspection_reports_regular_missing_and_directory(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    regular = target / "2024" / "01" / "regular.jpg"
+    directory = target / "2024" / "01" / "directory.jpg"
+    regular.parent.mkdir(parents=True)
+    regular.write_bytes(b"regular")
+    directory.mkdir()
+
+    regular_result = inspect_collection_file(
+        target,
+        Path("2024/01/regular.jpg"),
+    )
+    missing_result = inspect_collection_file(
+        target,
+        Path("2024/01/missing.jpg"),
+    )
+    directory_result = inspect_collection_file(
+        target,
+        Path("2024/01/directory.jpg"),
+    )
+
+    assert regular_result.status == COLLECTION_FILE_OK
+    assert regular_result.size_bytes == len(b"regular")
+    assert missing_result.status == COLLECTION_FILE_MISSING
+    assert directory_result.status == COLLECTION_FILE_NOT_REGULAR
+
+
+def test_collection_file_inspection_does_not_follow_final_symlink(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    outside = tmp_path / "outside.jpg"
+    linked = target / "2024" / "01" / "linked.jpg"
+    linked.parent.mkdir(parents=True)
+    outside.write_bytes(b"outside")
+    try:
+        linked.symlink_to(outside)
+    except OSError as exc:
+        pytest.skip(f"Kan ikke opprette test-symlink: {exc}")
+
+    result = inspect_collection_file(
+        target,
+        Path("2024/01/linked.jpg"),
+    )
+
+    assert result.status == COLLECTION_FILE_NOT_REGULAR
+    assert result.size_bytes is None
 
 
 def test_windows_reparse_attribute_is_detected_portably() -> None:

@@ -10,10 +10,25 @@ class InvalidCollectionRelativePath(ValueError):
     pass
 
 
+COLLECTION_FILE_MISSING = "missing"
+COLLECTION_FILE_NOT_REGULAR = "not_regular"
+COLLECTION_FILE_OK = "ok"
+COLLECTION_FILE_UNSAFE = "unsafe"
+COLLECTION_FILE_UNREADABLE = "unreadable"
+
+
 @dataclass(frozen=True)
 class PathComponentIssue:
     path: Path
     reason: str
+
+
+@dataclass(frozen=True)
+class CollectionFileInspection:
+    path: Path
+    status: str
+    size_bytes: int | None = None
+    message: str | None = None
 
 
 def parse_collection_relative_path(value: object) -> Path:
@@ -93,6 +108,57 @@ def inspect_existing_collection_path_components(
                 "stikomponenten er en symlink eller et Windows reparse point",
             )
     return None
+
+
+def inspect_collection_file(
+    target: Path,
+    relative_path: Path,
+) -> CollectionFileInspection:
+    relative_path = parse_collection_relative_path(relative_path.as_posix())
+    file_path = target / relative_path
+
+    parent_parts = relative_path.parts[:-1]
+    if parent_parts:
+        component_issue = inspect_existing_collection_path_components(
+            target,
+            Path(*parent_parts),
+        )
+        if component_issue is not None:
+            return CollectionFileInspection(
+                path=file_path,
+                status=COLLECTION_FILE_UNSAFE,
+                message=f"{component_issue.path}: {component_issue.reason}",
+            )
+
+    try:
+        path_stat = file_path.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        return CollectionFileInspection(
+            path=file_path,
+            status=COLLECTION_FILE_MISSING,
+        )
+    except OSError as exc:
+        return CollectionFileInspection(
+            path=file_path,
+            status=COLLECTION_FILE_UNREADABLE,
+            message=str(exc),
+        )
+
+    if (
+        stat.S_ISLNK(path_stat.st_mode)
+        or is_reparse_stat(path_stat)
+        or not stat.S_ISREG(path_stat.st_mode)
+    ):
+        return CollectionFileInspection(
+            path=file_path,
+            status=COLLECTION_FILE_NOT_REGULAR,
+            message="er ikke en vanlig fil uten lenker",
+        )
+    return CollectionFileInspection(
+        path=file_path,
+        status=COLLECTION_FILE_OK,
+        size_bytes=path_stat.st_size,
+    )
 
 
 def is_reparse_stat(path_stat: os.stat_result) -> bool:

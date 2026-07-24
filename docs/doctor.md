@@ -47,6 +47,11 @@ junction eller et annet Windows reparse point. Hvis stiene ikke kan bekreftes
 som trygge, åpner eller hasher doctor ikke databaseførte bildefiler i samme
 kjøring.
 
+Vanlig doctor kontrollerer både aktive filer og filer under `deleted`. Hver
+databaseført fil må finnes som en vanlig fil uten lenker, og størrelsen på
+disk må stemme med `files.size_bytes`. Denne kontrollen leser filinformasjon,
+men ikke selve filinnholdet.
+
 `bildebank doctor --deep` leser i tillegg alle aktive filer og kontrollerer
 SHA-256 mot databasen. Denne kontrollen kan ta lang tid for en stor samling.
 Doctor viser fremdrift mens den leter etter manglende filer, scanner etter

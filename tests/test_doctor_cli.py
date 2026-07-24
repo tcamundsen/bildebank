@@ -72,9 +72,28 @@ class DoctorCliTests(unittest.TestCase):
                 stored_path.parent.mkdir(parents=True)
                 stored_path.write_bytes(b"pending")
                 file_id = register_target_file(target, stored_path.relative_to(target))
+                deleted_path = (
+                    target / "deleted" / "2024" / "01" / "deleted.jpg"
+                )
+                deleted_path.parent.mkdir(parents=True)
+                deleted_path.write_bytes(b"deleted")
+                deleted_id = register_target_file(
+                    target,
+                    deleted_path.relative_to(target),
+                )
 
                 conn = db.connect(target)
                 try:
+                    conn.execute(
+                        """
+                        UPDATE files
+                        SET deleted_at = CURRENT_TIMESTAMP,
+                            deleted_original_target_path =
+                                '2024/01/deleted.jpg'
+                        WHERE id = ?
+                        """,
+                        (deleted_id,),
+                    )
                     db.create_pending_file_move(
                         conn,
                         file_id=file_id,
@@ -543,11 +562,11 @@ enabled = true
             stdout,
         )
         self.assertIn(
-            "FEIL: 1 aktiv(e) databasefil(er) mangler på disk.",
+            "FEIL: 1 databasefil(er) mangler på disk.",
             stdout,
         )
         self.assertIn(
-            "INFO: file #1: 2024/01/missing.jpg",
+            "INFO: file #1 (aktiv): 2024/01/missing.jpg",
             stdout,
         )
         self.assertIn("Undersøk filene og sikkerhetskopien", stdout)
@@ -711,7 +730,7 @@ enabled = true
         )
         self.assertIn("files.size_bytes=7, file_sources.size_bytes=999", stdout)
 
-    def test_doctor_reports_database_files_present_on_disk(self) -> None:
+    def test_doctor_checks_deleted_files_on_disk(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
@@ -775,17 +794,219 @@ enabled = true
 
         self.assertEqual(code, 0, stderr)
         hash_file.assert_not_called()
-        self.assertIn("Doctor filer: kontrollert=1/1", stdout)
+        self.assertIn("Doctor filer: kontrollert=1/2", stdout)
         self.assertIn(
-            "Doctor filer: ferdig kontrollert 1/1 filer.",
+            "Doctor filer: ferdig kontrollert 2/2 filer.",
             stdout,
         )
         self.assertIn(
-            "OK: alle 1 aktive databasefiler finnes på disk",
+            "FEIL: 1 databasefil(er) mangler på disk.",
             stdout,
         )
-        self.assertNotIn("aktiv(e) databasefil(er) mangler på disk", stdout)
+        self.assertIn(
+            "INFO: file #2 (slettet): deleted/2024/01/missing.jpg",
+            stdout,
+        )
         self.assertNotIn("Dyp filintegritet:", stdout)
+
+    def test_doctor_accepts_active_and_deleted_regular_files_with_matching_size(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            insert_test_file(
+                target,
+                "2024/01/active.png",
+                sha256="active-hash",
+            )
+            insert_test_file(
+                target,
+                "deleted/2024/01/deleted.png",
+                sha256="deleted-hash",
+                deleted=True,
+            )
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+                patch("bildebank.cli_doctor.sha256_file") as hash_file,
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        hash_file.assert_not_called()
+        self.assertIn(
+            "OK: alle 2 databasefiler finnes som vanlige filer med riktig "
+            "størrelse (aktive=1, slettede=1)",
+            stdout,
+        )
+
+    def test_doctor_reports_active_and_deleted_file_size_mismatches(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            active_id = insert_test_file(
+                target,
+                "2024/01/active.png",
+                sha256="active-hash",
+            )
+            deleted_id = insert_test_file(
+                target,
+                "deleted/2024/01/deleted.png",
+                sha256="deleted-hash",
+                deleted=True,
+            )
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET size_bytes = size_bytes + 1
+                    WHERE id IN (?, ?)
+                    """,
+                    (active_id, deleted_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: 2 databasefil(er) har feil størrelse.",
+            stdout,
+        )
+        self.assertIn(
+            f"file #{active_id} (aktiv): 2024/01/active.png",
+            stdout,
+        )
+        self.assertIn(
+            f"file #{deleted_id} (slettet): "
+            "deleted/2024/01/deleted.png",
+            stdout,
+        )
+        self.assertIn("database=", stdout)
+        self.assertIn("disk=", stdout)
+
+    def test_doctor_rejects_negative_database_file_size(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_path = target / "2024" / "01" / "negative.jpg"
+            file_path.parent.mkdir(parents=True)
+            file_path.write_bytes(b"content")
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename,
+                        stored_filename, sha256, size_bytes, date_source
+                    ) VALUES(
+                        '2024/01/negative.jpg',
+                        '2024/01/negative.jpg',
+                        'negative.jpg', 'negative.jpg',
+                        'negative-size-hash', -1, 'filename'
+                    )
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: 1 databasefil(er) kunne ikke kontrolleres trygt.",
+            stdout,
+        )
+        self.assertIn("ugyldig size_bytes i databasen: -1", stdout)
+
+    def test_doctor_reports_database_path_that_is_a_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            directory_path = target / "2024" / "01" / "directory.jpg"
+            directory_path.mkdir(parents=True)
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename,
+                        stored_filename, sha256, size_bytes, date_source
+                    ) VALUES(
+                        '2024/01/directory.jpg',
+                        '2024/01/directory.jpg',
+                        'directory.jpg', 'directory.jpg',
+                        'directory-hash', 0, 'filename'
+                    )
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: 1 databasefil(er) er ikke vanlige filer uten lenker.",
+            stdout,
+        )
+        self.assertIn(
+            "file #1 (aktiv): 2024/01/directory.jpg",
+            stdout,
+        )
 
     def test_doctor_deep_reports_missing_unreadable_and_wrong_hash(
         self,

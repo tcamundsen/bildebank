@@ -310,6 +310,18 @@ def active_file_integrity_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     )
 
 
+def all_file_integrity_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT id, target_path, sha256, size_bytes, deleted_at
+            FROM files
+            ORDER BY id
+            """
+        )
+    )
+
+
 def active_files_without_sources(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     return list(
         conn.execute(

@@ -113,12 +113,14 @@ Ferdig:
 - full databaseført stivalidering for `files`, inkludert relativt format,
   aktiv/slettet mappeplassering, `deleted_original_target_path`,
   `target_path_key`, symlinker og Windows reparse points
+- eksistens, vanlig filtype uten lenker og `size_bytes` for både aktive og
+  slettede databasefiler
 - rapportering av `pending_file_moves`
 - eksisterende kontroller for aktive filer og OpenCLIP-orphans
 
 Gjenstår:
 
-- slettede filer, størrelse og dyp SHA-256
+- dyp SHA-256 for slettede filer
 - `pending_file_deletes`
 - alle InsightFace-modeller og full sidecar-konsistens
 - samme read-only hoveddatabase- og stiregler i `check-source`

@@ -9,7 +9,11 @@ from pathlib import Path
 
 from . import db
 from .collection_paths import (
+    COLLECTION_FILE_MISSING,
+    COLLECTION_FILE_NOT_REGULAR,
+    COLLECTION_FILE_OK,
     InvalidCollectionRelativePath,
+    inspect_collection_file,
     inspect_existing_collection_path_components,
     is_reparse_stat,
     parse_collection_relative_path,
@@ -143,7 +147,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
                 doctor_check_file_source_identity(target)
                 doctor_check_orphan_openclip_rows(target)
                 if file_paths_safe:
-                    doctor_check_active_files_exist(target)
+                    doctor_check_files_on_disk(target)
                     doctor_check_orphan_files(target)
                     if deep:
                         print()
@@ -563,56 +567,140 @@ def doctor_report_omitted_openclip_groups(total: int) -> None:
         doctor_info(f"... og {total - 20} file_id/sti-grupper til")
 
 
-def doctor_check_active_files_exist(target: Path) -> None:
+def doctor_check_files_on_disk(target: Path) -> None:
     conn = db.connect_read_only(target)
     try:
-        rows = db.active_file_integrity_rows(conn)
+        rows = db.all_file_integrity_rows(conn)
     finally:
         conn.close()
 
-    missing: list[tuple[int, Path]] = []
-    invalid: list[tuple[int, Path]] = []
+    missing: list[tuple[int, str, Path]] = []
+    not_regular: list[tuple[int, str, Path]] = []
+    unreadable: list[tuple[int, str, Path, str]] = []
+    wrong_size: list[tuple[int, str, Path, int, int]] = []
     progress = ProgressMeter("Doctor filer")
     progress.update(0, len(rows), action="kontrollert", force=True)
     for current, row in enumerate(rows, start=1):
+        file_id = int(row["id"])
+        state = "slettet" if row["deleted_at"] is not None else "aktiv"
         try:
             target_path = parse_collection_relative_path(row["target_path"])
-        except InvalidCollectionRelativePath:
-            invalid.append((int(row["id"]), Path(str(row["target_path"]))))
+        except InvalidCollectionRelativePath as exc:
+            unreadable.append(
+                (
+                    file_id,
+                    state,
+                    Path(str(row["target_path"])),
+                    f"databaseført filsti er ugyldig: {exc}",
+                )
+            )
         else:
-            file_path = target / target_path
-            component_issue = inspect_existing_collection_path_components(
+            inspection = inspect_collection_file(
                 target,
                 target_path,
             )
-            if component_issue is not None:
-                invalid.append((int(row["id"]), target_path))
-            elif not file_path.is_file():
-                missing.append((int(row["id"]), target_path))
+            if inspection.status == COLLECTION_FILE_MISSING:
+                missing.append((file_id, state, target_path))
+            elif inspection.status == COLLECTION_FILE_NOT_REGULAR:
+                not_regular.append((file_id, state, target_path))
+            elif inspection.status != COLLECTION_FILE_OK:
+                unreadable.append(
+                    (
+                        file_id,
+                        state,
+                        target_path,
+                        inspection.message or "ukjent filsystemfeil",
+                    )
+                )
+            else:
+                expected_size = row["size_bytes"]
+                if type(expected_size) is not int or expected_size < 0:
+                    unreadable.append(
+                        (
+                            file_id,
+                            state,
+                            target_path,
+                            f"ugyldig size_bytes i databasen: {expected_size!r}",
+                        )
+                    )
+                else:
+                    actual_size = inspection.size_bytes
+                    if actual_size is None:
+                        unreadable.append(
+                            (
+                                file_id,
+                                state,
+                                target_path,
+                                "filstørrelsen kunne ikke leses",
+                            )
+                        )
+                    elif actual_size != expected_size:
+                        wrong_size.append(
+                            (
+                                file_id,
+                                state,
+                                target_path,
+                                expected_size,
+                                actual_size,
+                            )
+                        )
         progress.update(current, len(rows), action="kontrollert")
     progress.done(
         f"Doctor filer: ferdig kontrollert {len(rows)}/{len(rows)} filer."
     )
 
-    if not missing and not invalid:
-        doctor_ok(f"alle {len(rows)} aktive databasefiler finnes på disk")
+    active_count = sum(row["deleted_at"] is None for row in rows)
+    deleted_count = len(rows) - active_count
+    if not missing and not not_regular and not unreadable and not wrong_size:
+        doctor_ok(
+            f"alle {len(rows)} databasefiler finnes som vanlige filer med "
+            "riktig størrelse "
+            f"(aktive={active_count}, slettede={deleted_count})"
+        )
         return
 
     if missing:
         doctor_error(
-            f"{len(missing)} aktiv(e) databasefil(er) mangler på disk."
+            f"{len(missing)} databasefil(er) mangler på disk."
         )
-        for file_id, target_path in missing[:20]:
-            doctor_info(f"file #{file_id}: {target_path.as_posix()}")
+        for file_id, state, target_path in missing[:20]:
+            doctor_info(
+                f"file #{file_id} ({state}): {target_path.as_posix()}"
+            )
         doctor_report_omitted_details(len(missing))
 
-    if invalid:
+    if not_regular:
         doctor_error(
-            f"{len(invalid)} aktiv(e) databasefilsti(er) er ikke trygge å åpne."
+            f"{len(not_regular)} databasefil(er) er ikke vanlige filer uten "
+            "lenker."
         )
-        for file_id, target_path in invalid[:20]:
-            doctor_info(f"file #{file_id}: {target_path.as_posix()}")
-        doctor_report_omitted_details(len(invalid))
+        for file_id, state, target_path in not_regular[:20]:
+            doctor_info(
+                f"file #{file_id} ({state}): {target_path.as_posix()}"
+            )
+        doctor_report_omitted_details(len(not_regular))
+
+    if unreadable:
+        doctor_error(
+            f"{len(unreadable)} databasefil(er) kunne ikke kontrolleres trygt."
+        )
+        for file_id, state, target_path, error in unreadable[:20]:
+            doctor_info(
+                f"file #{file_id} ({state}): "
+                f"{target_path.as_posix()} ({error})"
+            )
+        doctor_report_omitted_details(len(unreadable))
+
+    if wrong_size:
+        doctor_error(
+            f"{len(wrong_size)} databasefil(er) har feil størrelse."
+        )
+        for file_id, state, target_path, expected, actual in wrong_size[:20]:
+            doctor_info(
+                f"file #{file_id} ({state}): {target_path.as_posix()} "
+                f"(database={expected}, disk={actual})"
+            )
+        doctor_report_omitted_details(len(wrong_size))
 
     doctor_advice(
         "Undersøk filene og sikkerhetskopien før du endrer databasen."
@@ -651,20 +739,23 @@ def doctor_deep_check_active_file_hashes(target: Path) -> None:
                 )
             )
         else:
-            resolved_path = target / target_path
-            component_issue = inspect_existing_collection_path_components(
+            inspection = inspect_collection_file(
                 target,
                 target_path,
             )
-            if component_issue is not None:
-                unreadable.append(
-                    (file_id, target_path, component_issue.reason)
-                )
-            elif not resolved_path.is_file():
+            if inspection.status == COLLECTION_FILE_MISSING:
                 missing.append((file_id, target_path))
+            elif inspection.status != COLLECTION_FILE_OK:
+                unreadable.append(
+                    (
+                        file_id,
+                        target_path,
+                        inspection.message or "filen er ikke en vanlig fil",
+                    )
+                )
             else:
                 try:
-                    actual_sha256 = sha256_file(resolved_path)
+                    actual_sha256 = sha256_file(inspection.path)
                 except OSError as exc:
                     unreadable.append((file_id, target_path, str(exc)))
                 else:
