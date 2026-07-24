@@ -30,7 +30,13 @@ from .snapshot_progress import (
     SnapshotCancelCallback,
     raise_if_snapshot_cancelled,
 )
-from .target_lock import lock_details
+from .target_lock import (
+    LockFileOwnershipError,
+    LockFileState,
+    create_lock_file,
+    lock_details,
+    release_lock_file,
+)
 
 
 COPY_CHUNK_SIZE = 1024 * 1024
@@ -285,11 +291,20 @@ class RepositoryLock:
         self.path = repository / REPOSITORY_LOCK_FILENAME
         self.command = command
         self.fd: int | None = None
+        self._state: LockFileState | None = None
 
     def __enter__(self) -> RepositoryLock:
-        flags = _binary_write_flags(os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        content = canonical_json_bytes(
+            {
+                "command": self.command,
+                "machine_name": socket.gethostname(),
+                "owner_id": str(uuid.uuid4()),
+                "pid": os.getpid(),
+                "started_at": utc_timestamp(),
+            }
+        )
         try:
-            self.fd = os.open(self.path, flags, 0o600)
+            state = create_lock_file(self.path, content, durable=True)
         except FileExistsError as exc:
             details = lock_details(self.path)
             raise RepositoryLockError(
@@ -300,35 +315,27 @@ class RepositoryLock:
         except OSError as exc:
             raise RepositoryLockError(f"Kunne ikke opprette repositorylås: {self.path}: {exc}") from exc
 
-        content = canonical_json_bytes(
-            {
-                "command": self.command,
-                "machine_name": socket.gethostname(),
-                "pid": os.getpid(),
-                "started_at": utc_timestamp(),
-            }
-        )
-        try:
-            write_all(self.fd, content)
-            os.fsync(self.fd)
-        except OSError:
-            os.close(self.fd)
-            self.fd = None
-            try:
-                self.path.unlink()
-            except OSError:
-                pass
-            raise
+        self._state = state
+        self.fd = state.fd
         return self
 
     def __exit__(self, exc_type, exc, traceback) -> None:  # noqa: ANN001
-        if self.fd is not None:
-            os.close(self.fd)
-            self.fd = None
+        state = self._state
+        self._state = None
+        self.fd = None
+        if state is None:
+            return
         try:
-            self.path.unlink()
-        except FileNotFoundError:
-            pass
+            release_lock_file(state)
+        except (LockFileOwnershipError, OSError) as cleanup_error:
+            message = (
+                "Kunne ikke fjerne repositorylåsen sikkert. Låsfilen er beholdt for å "
+                f"unngå å fjerne en annen prosess sin lås: {self.path}: {cleanup_error}"
+            )
+            if exc is not None:
+                exc.add_note(message)
+                return
+            raise RepositoryLockError(message) from cleanup_error
 
 
 def initialize_repository(

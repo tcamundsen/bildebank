@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import tempfile
 import unittest
@@ -80,6 +81,47 @@ class SnapshotRepositoryTests(unittest.TestCase):
                         self.fail("En ny repositorylås skal ikke kunne tas")
 
             self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
+
+    def test_interrupted_repository_lock_write_removes_incomplete_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = Path(tmp) / "repository"
+            repository.mkdir()
+
+            with (
+                patch("bildebank.target_lock._write_all", side_effect=KeyboardInterrupt),
+                self.assertRaises(KeyboardInterrupt),
+            ):
+                RepositoryLock(repository, command="snapshot create").__enter__()
+
+            self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
+
+    def test_repository_release_does_not_remove_replacement_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = Path(tmp) / "repository"
+            repository.mkdir()
+            lock_path = repository / REPOSITORY_LOCK_FILENAME
+            lock = RepositoryLock(repository, command="snapshot create")
+            lock.__enter__()
+            owned_fd = lock.fd
+            replacement = b'{"command":"snapshot check","owner_id":"new"}\n'
+            real_close = os.close
+            replaced = False
+
+            def close_then_replace(fd: int) -> None:
+                nonlocal replaced
+                real_close(fd)
+                if fd == owned_fd and not replaced:
+                    replaced = True
+                    lock_path.unlink()
+                    lock_path.write_bytes(replacement)
+
+            with (
+                patch("bildebank.target_lock.os.close", side_effect=close_then_replace),
+                self.assertRaises(RepositoryLockError),
+            ):
+                lock.__exit__(None, None, None)
+
+            self.assertEqual(lock_path.read_bytes(), replacement)
 
     def test_dry_run_rejects_existing_repository_lock_without_removing_it(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -3,6 +3,13 @@
 `TargetLock` bruker `.bildebank.lock` i roten av bildesamlingen for å hindre at
 operasjoner som ikke tåler samtidig kjøring endrer samme samling parallelt.
 
+Låsfilen opprettes eksklusivt med private filrettigheter og får en unik
+eier-ID. Opprettelsen rydder opp også hvis den avbrytes før context manageren
+er ferdig etablert. Ved frigjøring kontrolleres både filidentitet og innhold,
+slik at en eldre prosess aldri fjerner en låsfil som har blitt erstattet av en
+nyere lås. Uventede, store eller lenkede låsfiler behandles som opptatte uten
+at innholdet leses eller vises.
+
 ## Invariant for filflytting
 
 En operasjon som flytter en samlingsfil og oppdaterer hoveddatabasen, skal ta
