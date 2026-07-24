@@ -2795,6 +2795,8 @@ def run_named_import_dry_run(target: Path, args: argparse.Namespace) -> int:
 
 def run_migrate(target: Path, *, check: bool) -> int:
     plan = db.migration_plan(target, validate=check)
+    if not check and plan.current_version == plan.target_version:
+        plan = db.migration_plan(target, validate=True)
     print(f"Bildesamling: {target}")
     print(f"Database: {db.db_path_for_target(target)}")
     print(f"Nåværende schema_version: {plan.current_version}")

@@ -563,6 +563,61 @@ class MigrateCliTests(unittest.TestCase):
             finally:
                 conn.close()
 
+    def test_migrate_rejects_invalid_current_schema_before_already_migrated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            database_path = target / DB_FILENAME
+            absolute_target_path = str((target / "2024" / "01" / "image.jpg").resolve())
+            conn = sqlite3.connect(database_path)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename, stored_filename,
+                        sha256, size_bytes, date_source
+                    )
+                    VALUES(?, ?, 'image.jpg', 'image.jpg', 'abc', 3, 'filename')
+                    """,
+                    (absolute_target_path, absolute_target_path),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            before = database_path.read_bytes()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "migrate"]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertNotIn("Databasen er allerede migrert.", stdout)
+            self.assertIn("absolutt target_path", stderr)
+            self.assertEqual(database_path.read_bytes(), before)
+            self.assertFalse(
+                list(target.glob(".bilder.sqlite3.backup-before-schema-16-*"))
+            )
+
+    def test_migrate_valid_current_schema_is_already_migrated_without_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            database_path = target / DB_FILENAME
+            before = database_path.read_bytes()
+            before_mtime = database_path.stat().st_mtime_ns
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "migrate"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Databasen er allerede migrert.", stdout)
+            self.assertEqual(database_path.read_bytes(), before)
+            self.assertEqual(database_path.stat().st_mtime_ns, before_mtime)
+            self.assertFalse(
+                list(target.glob(".bilder.sqlite3.backup-before-schema-16-*"))
+            )
+
     def test_migrate_check_reports_internal_v11_repairs_without_changes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
