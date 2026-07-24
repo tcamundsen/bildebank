@@ -11,6 +11,7 @@ import warnings
 from collections.abc import Callable
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from typing import Any, Concatenate, ParamSpec, TypeVar
@@ -200,26 +201,73 @@ def move_legacy_face_db_if_needed(target: Path, new_path: Path, model_name: str)
 
 def connect_face_db(target: Path, config: FaceRecognitionConfig | None = None) -> sqlite3.Connection:
     model_name = config.model_name if config is not None else DEFAULT_FACE_MODEL_NAME
-    conn = sqlite3.connect(face_db_path(target, config))
+    path = face_db_path(target, config)
+    conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     try:
-        apply_face_schema(conn)
+        reject_face_database_model_mismatch(conn, model_name)
+        prepare_face_schema(conn, path)
         validate_face_database_model(conn, model_name)
         set_meta(conn, "target_path", str(target.resolve()))
         conn.commit()
         return conn
-    except Exception:
+    except BaseException:
         conn.close()
         raise
 
 
 def ensure_face_schema_path(path: Path) -> None:
     conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
     try:
-        apply_face_schema(conn)
+        prepare_face_schema(conn, path)
         conn.commit()
     finally:
         conn.close()
+
+
+def prepare_face_schema(conn: sqlite3.Connection, path: Path) -> None:
+    version = face_schema_version(conn)
+    if 2 <= version < FACE_SCHEMA_VERSION:
+        backup_face_database(conn, path)
+    apply_face_schema(conn)
+
+
+def backup_face_database(conn: sqlite3.Connection, path: Path) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    backup_path = path.with_name(
+        f"{path.name}.backup-before-schema-{FACE_SCHEMA_VERSION}-"
+        f"{stamp}-{uuid.uuid4().hex}"
+    )
+    try:
+        backup_conn = sqlite3.connect(backup_path)
+        try:
+            conn.backup(backup_conn)
+            integrity = backup_conn.execute("PRAGMA integrity_check").fetchone()[0]
+            if integrity != "ok":
+                raise ValueError(
+                    f"Integritetskontroll av face-databasebackup feilet: {integrity}"
+                )
+        finally:
+            backup_conn.close()
+    except BaseException:
+        backup_path.unlink(missing_ok=True)
+        raise
+    return backup_path
+
+
+def reject_face_database_model_mismatch(
+    conn: sqlite3.Connection,
+    model_name: str,
+) -> None:
+    if not db.table_exists(conn, "meta"):
+        return
+    stored_model = get_meta(conn, "model_name")
+    if stored_model is not None and stored_model != model_name:
+        raise ValueError(
+            "Face-databasen tilhører en annen modell "
+            f"({stored_model}) enn aktiv config ({model_name})."
+        )
 
 
 def validate_face_database_model(conn: sqlite3.Connection, model_name: str) -> None:
@@ -235,7 +283,31 @@ def validate_face_database_model(conn: sqlite3.Connection, model_name: str) -> N
 
 
 def apply_face_schema(conn: sqlite3.Connection) -> None:
-    version = face_schema_version(conn)
+    initial_version = face_schema_version(conn)
+    if initial_version == FACE_SCHEMA_VERSION:
+        validate_current_face_schema(conn)
+        return
+    if conn.in_transaction:
+        conn.execute("SAVEPOINT face_schema_migration")
+        try:
+            apply_face_schema_version(conn, face_schema_version(conn))
+            conn.execute("RELEASE SAVEPOINT face_schema_migration")
+        except BaseException:
+            conn.execute("ROLLBACK TO SAVEPOINT face_schema_migration")
+            conn.execute("RELEASE SAVEPOINT face_schema_migration")
+            raise
+        return
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        apply_face_schema_version(conn, face_schema_version(conn))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+
+
+def apply_face_schema_version(conn: sqlite3.Connection, version: int) -> None:
     if version > FACE_SCHEMA_VERSION:
         raise ValueError(
             f"Face-databasen bruker et nyere format (schema_version={version}) "
@@ -291,7 +363,8 @@ def migrate_face_schema_v2_to_v3(conn: sqlite3.Connection) -> None:
 
 
 def migrate_face_schema_v3_to_v4(conn: sqlite3.Connection) -> None:
-    conn.executescript(
+    db.execute_sql_statements(
+        conn,
         """
         CREATE TABLE IF NOT EXISTS person_files (
             person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,
@@ -306,7 +379,7 @@ def migrate_face_schema_v3_to_v4(conn: sqlite3.Connection) -> None:
 
 
 def migrate_face_schema_v4_to_v5(conn: sqlite3.Connection) -> None:
-    conn.executescript(
+    conn.execute(
         """
         CREATE TABLE IF NOT EXISTS face_suggestions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -315,12 +388,17 @@ def migrate_face_schema_v4_to_v5(conn: sqlite3.Connection) -> None:
             similarity REAL NOT NULL,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(person_id, face_id)
-        );
-
-        ALTER TABLE face_suggestions ADD COLUMN reference_face_id INTEGER;
-
+        )
+        """
+    )
+    if "reference_face_id" not in db.table_columns(conn, "face_suggestions"):
+        conn.execute(
+            "ALTER TABLE face_suggestions ADD COLUMN reference_face_id INTEGER"
+        )
+    conn.execute(
+        """
         CREATE INDEX IF NOT EXISTS idx_face_suggestions_reference_face_id
-        ON face_suggestions(reference_face_id);
+        ON face_suggestions(reference_face_id)
         """
     )
 
@@ -362,7 +440,8 @@ def validate_relative_face_paths(conn: sqlite3.Connection) -> None:
 
 
 def create_current_face_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(
+    db.execute_sql_statements(
+        conn,
         """
         CREATE TABLE IF NOT EXISTS meta (
             key TEXT PRIMARY KEY,

@@ -108,15 +108,32 @@ stedet bekrefte gode enkeltansikter og deretter bruke `face-suggest`.
 
 V3 fjerner gruppetabellene.
 
-Migreringen skjer i `apply_face_schema()`:
+Produksjonsåpningene går gjennom `prepare_face_schema()`:
 
 - les `meta.schema_version`
+- ta en konsistent SQLite-backup før en kjent v2-, v3- eller v4-database endres
+
+Selve migreringen skjer deretter i `apply_face_schema()`:
+
+- start `BEGIN IMMEDIATE` og les versjonen på nytt etter at skrivelåsen er tatt
 - hvis versjonen er 0, opprett v5 direkte
 - hvis versjonen er 2, kjør `migrate_face_schema_v2_to_v3()`
 - hvis versjonen er 3, kjør `migrate_face_schema_v3_to_v4()`
 - hvis versjonen er 4, kjør `migrate_face_schema_v4_to_v5()`
 - sett `meta.schema_version = 5`
 - valider gjeldende face-schema
+- commit hele migreringen samlet, eller rull alt tilbake ved feil og avbrudd
+
+Backupen legges ved siden av face-databasen og får et unikt navn på formen:
+
+```text
+buffalo_l.sqlite3.backup-before-schema-5-20260724-120000-<unik-id>
+```
+
+Backupen tas med SQLite sitt backup-API, slik at også committed innhold i en
+eventuell WAL blir med. Hvis backup eller integritetskontrollen av backupen
+feiler, skal migreringen ikke starte. Face-migreringsbackuper under
+bildesamlingen tas med i snapshots som migreringsbackuper.
 
 `migrate_face_schema_v2_to_v3()` gjør bare dette:
 
@@ -136,6 +153,12 @@ forslag.
 `migrate_face_schema_v4_to_v5()` legger til `reference_face_id` i
 `face_suggestions` og en indeks på kolonnen. Eksisterende forslag beholder
 verdien `NULL` frem til `face-suggest` kjøres på nytt.
+
+V4→v5-steget er idempotent for den kjente mellomtilstanden fra eldre kode:
+Hvis `reference_face_id` allerede finnes, opprettes bare eventuell manglende
+indeks før migreringen fullføres. Dette gjør at en v4-database som ble delvis
+endret av et tidligere avbrudd, kan åpnes og migreres på nytt uten at personer,
+bekreftelser eller forslag går tapt.
 
 ## Validering
 
@@ -157,8 +180,9 @@ Dette følger samme prinsipp som hoveddatabasen:
 Face-databasen migreres ikke av `bildebank migrate`.
 
 Den migreres når face-kode åpner `.bilder-faces.sqlite3` med
-`connect_face_db()`. Det er akseptabelt fordi face-databasen er en separat
-side-database og v2 til v3 bare fjerner den gamle gruppeflyten.
+`connect_face_db()`. Migreringen er beskyttet av egen backup og én
+SQLite-transaksjon. Samtidige åpninger leser schema-versjonen på nytt etter
+skrivelåsen, slik at bare den første åpningen utfører migreringen.
 
 Likevel skal face-migreringer være små, versjonsstyrte og testet. Nye
 destruktive endringer skal ikke legges direkte inn i generell schema-oppretting

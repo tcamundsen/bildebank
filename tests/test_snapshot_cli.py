@@ -906,6 +906,29 @@ class SnapshotCliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             self.assertIn("Bildebank-migreringsbackuper: 1", stdout)
 
+    def test_snapshot_dry_run_recognizes_face_migration_backup(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            repository = root / "repository"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            backup_dir = target / ".bildebank-faces"
+            backup_dir.mkdir()
+            backup = backup_dir / (
+                "buffalo_l.sqlite3.backup-before-schema-5-"
+                f"20260724-120000-{'0' * 32}"
+            )
+            backup.write_bytes(b"bevar meg")
+
+            plan = plan_snapshot(target, repository)
+
+            self.assertEqual(plan.inventory.migration_backup_files, 1)
+            self.assertEqual(
+                plan.inventory.migration_backup_bytes,
+                len(b"bevar meg"),
+            )
+            self.assertEqual(plan.inventory.unknown_files, 0)
+
     def test_snapshot_dry_run_keeps_similarly_named_file_as_unknown(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

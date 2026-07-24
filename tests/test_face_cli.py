@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -33,6 +34,57 @@ from bildebank.server_faces import cached_face_box_media_metadata, update_face_b
 from bildebank.target_lock import LOCK_FILENAME, TargetLock, TargetLockError
 from tests.cli_helpers import capture_cli, run_cli
 from tests.test_media import minimal_png
+
+
+def face_database_dump(path: Path) -> str:
+    conn = sqlite3.connect(path)
+    try:
+        return "\n".join(conn.iterdump())
+    finally:
+        conn.close()
+
+
+def create_face_v4_database(target: Path, *, partial_v5: bool = False) -> Path:
+    path = face_db_path(target)
+    conn = sqlite3.connect(path)
+    try:
+        apply_face_schema(conn)
+        conn.execute(
+            """
+            INSERT INTO scanned_files(
+                file_id, target_path, target_path_key, sha256, status, face_count
+            ) VALUES(1, 'image.jpg', 'image.jpg', 'hash', 'ok', 1)
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO faces(
+                id, file_id, target_path_key, bbox_x, bbox_y, bbox_width, bbox_height,
+                detection_score, embedding_model, embedding
+            ) VALUES(1, 1, 'image.jpg', 1, 2, 10, 20, 0.9, 'test', x'00000000')
+            """
+        )
+        conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
+        conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
+        conn.execute("INSERT INTO person_files(person_id, file_id) VALUES(1, 1)")
+        conn.execute(
+            """
+            INSERT INTO face_suggestions(person_id, face_id, similarity)
+            VALUES(1, 10, 0.95)
+            """
+        )
+        if not partial_v5:
+            conn.execute("DROP INDEX idx_face_suggestions_reference_face_id")
+            conn.execute(
+                "ALTER TABLE face_suggestions DROP COLUMN reference_face_id"
+            )
+        conn.execute(
+            "UPDATE meta SET value = '4' WHERE key = 'schema_version'"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return path
 
 
 class FaceCliTests(unittest.TestCase):
@@ -1594,6 +1646,310 @@ model_name = "buffalo_l"
                 self.assertIn("idx_face_suggestions_reference_face_id", indexes)
             finally:
                 conn.close()
+
+    def test_face_schema_v4_migration_rolls_back_late_failure_and_keeps_backup(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = create_face_v4_database(target)
+            wal_conn = sqlite3.connect(path)
+            try:
+                self.assertEqual(
+                    wal_conn.execute("PRAGMA journal_mode = WAL").fetchone()[0],
+                    "wal",
+                )
+                wal_conn.execute(
+                    "UPDATE persons SET name = 'Kari fra WAL' WHERE id = 1"
+                )
+                wal_conn.commit()
+                self.assertTrue(
+                    path.with_name(f"{path.name}-wal").exists()
+                )
+                before_dump = face_database_dump(path)
+
+                with patch(
+                    "bildebank.face.validate_current_face_schema",
+                    side_effect=RuntimeError("injisert sen face-feil"),
+                ):
+                    with self.assertRaisesRegex(
+                        RuntimeError,
+                        "injisert sen face-feil",
+                    ):
+                        connect_face_db(target)
+            finally:
+                wal_conn.close()
+
+            self.assertEqual(face_database_dump(path), before_dump)
+            backups = list(
+                path.parent.glob(
+                    f"{path.name}.backup-before-schema-5-*"
+                )
+            )
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(face_database_dump(backups[0]), before_dump)
+
+            conn = connect_face_db(target)
+            try:
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT value FROM meta WHERE key = 'schema_version'"
+                    ).fetchone()[0],
+                    "5",
+                )
+                self.assertEqual(
+                    tuple(
+                        conn.execute(
+                            """
+                            SELECT person_id, face_id, reference_face_id, similarity
+                            FROM face_suggestions
+                            """
+                        ).fetchone()
+                    ),
+                    (1, 10, None, 0.95),
+                )
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    conn.execute("SELECT name FROM persons WHERE id = 1").fetchone()[0],
+                    "Kari fra WAL",
+                )
+                self.assertEqual(
+                    conn.execute("PRAGMA integrity_check").fetchone()[0],
+                    "ok",
+                )
+                self.assertEqual(
+                    conn.execute("PRAGMA foreign_key_check").fetchall(),
+                    [],
+                )
+            finally:
+                conn.close()
+            self.assertEqual(
+                len(
+                    list(
+                        path.parent.glob(
+                            f"{path.name}.backup-before-schema-5-*"
+                        )
+                    )
+                ),
+                2,
+            )
+
+    def test_face_schema_v2_keyboard_interrupt_restores_legacy_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = create_face_v4_database(target)
+            conn = sqlite3.connect(path)
+            try:
+                conn.execute("DROP INDEX idx_person_files_file_id")
+                conn.execute("DROP TABLE person_files")
+                conn.execute(
+                    "CREATE TABLE face_group_runs (id INTEGER PRIMARY KEY)"
+                )
+                conn.execute(
+                    "CREATE TABLE face_groups (id INTEGER PRIMARY KEY)"
+                )
+                conn.execute(
+                    """
+                    CREATE TABLE face_group_members (
+                        group_id INTEGER NOT NULL,
+                        face_id INTEGER NOT NULL
+                    )
+                    """
+                )
+                conn.execute("INSERT INTO face_group_runs(id) VALUES(1)")
+                conn.execute("INSERT INTO face_groups(id) VALUES(1)")
+                conn.execute(
+                    "INSERT INTO face_group_members(group_id, face_id) VALUES(1, 1)"
+                )
+                conn.execute(
+                    "UPDATE meta SET value = '2' WHERE key = 'schema_version'"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            before_dump = face_database_dump(path)
+
+            with patch(
+                "bildebank.face.validate_current_face_schema",
+                side_effect=KeyboardInterrupt,
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    connect_face_db(target)
+
+            self.assertEqual(face_database_dump(path), before_dump)
+            conn = sqlite3.connect(path)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM face_group_members").fetchone()[0],
+                    1,
+                )
+            finally:
+                conn.close()
+
+            conn = connect_face_db(target)
+            try:
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT value FROM meta WHERE key = 'schema_version'"
+                    ).fetchone()[0],
+                    "5",
+                )
+                self.assertFalse(
+                    conn.execute(
+                        """
+                        SELECT 1 FROM sqlite_master
+                        WHERE type = 'table' AND name = 'face_group_members'
+                        """
+                    ).fetchone()
+                )
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0],
+                    1,
+                )
+            finally:
+                conn.close()
+
+    def test_face_schema_v4_migration_recovers_old_partial_v5_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = create_face_v4_database(target, partial_v5=True)
+
+            conn = connect_face_db(target)
+            try:
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT value FROM meta WHERE key = 'schema_version'"
+                    ).fetchone()[0],
+                    "5",
+                )
+                self.assertIn(
+                    "reference_face_id",
+                    {
+                        row[1]
+                        for row in conn.execute(
+                            "PRAGMA table_info(face_suggestions)"
+                        )
+                    },
+                )
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT COUNT(*) FROM face_suggestions"
+                    ).fetchone()[0],
+                    1,
+                )
+            finally:
+                conn.close()
+
+            self.assertEqual(
+                len(
+                    list(
+                        path.parent.glob(
+                            f"{path.name}.backup-before-schema-5-*"
+                        )
+                    )
+                ),
+                1,
+            )
+
+    def test_face_schema_backup_failure_prevents_migration(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = create_face_v4_database(target)
+            before_dump = face_database_dump(path)
+
+            with patch(
+                "bildebank.face.backup_face_database",
+                side_effect=OSError("injisert backupfeil"),
+            ):
+                with self.assertRaisesRegex(OSError, "injisert backupfeil"):
+                    connect_face_db(target)
+
+            self.assertEqual(face_database_dump(path), before_dump)
+
+    def test_concurrent_face_schema_open_migrates_v4_safely(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = create_face_v4_database(target)
+
+            def open_and_close() -> None:
+                conn = connect_face_db(target)
+                conn.close()
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [executor.submit(open_and_close) for _ in range(2)]
+                for future in futures:
+                    future.result()
+
+            conn = connect_face_db(target)
+            try:
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT value FROM meta WHERE key = 'schema_version'"
+                    ).fetchone()[0],
+                    "5",
+                )
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0],
+                    1,
+                )
+                self.assertEqual(
+                    conn.execute("PRAGMA integrity_check").fetchone()[0],
+                    "ok",
+                )
+            finally:
+                conn.close()
+
+            self.assertGreaterEqual(
+                len(
+                    list(
+                        path.parent.glob(
+                            f"{path.name}.backup-before-schema-5-*"
+                        )
+                    )
+                ),
+                1,
+            )
+
+    def test_face_schema_does_not_migrate_database_for_other_model(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = create_face_v4_database(target)
+            conn = sqlite3.connect(path)
+            try:
+                conn.execute(
+                    "INSERT INTO meta(key, value) VALUES('model_name', 'wrong-model')"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            before_dump = face_database_dump(path)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "tilhører en annen modell",
+            ):
+                connect_face_db(target)
+
+            self.assertEqual(face_database_dump(path), before_dump)
+            self.assertEqual(
+                list(
+                    path.parent.glob(
+                        f"{path.name}.backup-before-schema-5-*"
+                    )
+                ),
+                [],
+            )
 
     def test_face_schema_current_version_rejects_legacy_group_tables(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

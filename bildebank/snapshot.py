@@ -41,6 +41,10 @@ _UTC_TIMESTAMP_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 _MIGRATION_BACKUP_FILENAME_RE = re.compile(
     rf"{re.escape(db.DB_FILENAME)}\.backup-before-schema-\d+-\d{{8}}-\d{{6}}"
 )
+_FACE_MIGRATION_BACKUP_FILENAME_RE = re.compile(
+    r"[A-Za-z0-9._-]+\.sqlite3\.backup-before-schema-\d+-"
+    r"\d{8}-\d{6}-[0-9a-f]{32}"
+)
 _RESERVED_WINDOWS_NAMES = {
     "CON",
     "PRN",
@@ -888,8 +892,11 @@ def snapshot_exclusion_reason(relative_path: str) -> str | None:
 
 
 def is_migration_backup_file(relative_path: str) -> bool:
-    """Return whether this is a Bildebank migration backup at the collection root."""
-    return "/" not in relative_path and _MIGRATION_BACKUP_FILENAME_RE.fullmatch(relative_path) is not None
+    """Return whether this is a Bildebank migration backup."""
+    if "/" not in relative_path and _MIGRATION_BACKUP_FILENAME_RE.fullmatch(relative_path) is not None:
+        return True
+    filename = relative_path.rsplit("/", 1)[-1]
+    return _FACE_MIGRATION_BACKUP_FILENAME_RE.fullmatch(filename) is not None
 
 
 def is_snapshot_excluded(relative_path: str) -> bool:
