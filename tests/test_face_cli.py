@@ -1968,3 +1968,104 @@ model_name = "buffalo_l"
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_group_runs").fetchone()[0], 1)
             finally:
                 conn.close()
+
+    def test_face_schema_current_version_rejects_missing_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = face_db_path(target)
+            conn = sqlite3.connect(path)
+            try:
+                conn.execute(
+                    "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+                )
+                conn.execute(
+                    "INSERT INTO meta(key, value) VALUES('schema_version', '5')"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            before = face_database_dump(path)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "mangler forventede tabeller",
+            ):
+                opened = connect_face_db(target)
+                opened.close()
+
+            self.assertEqual(face_database_dump(path), before)
+
+    def test_face_schema_current_version_rejects_missing_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = face_db_path(target)
+            conn = connect_face_db(target)
+            conn.close()
+            conn = sqlite3.connect(path)
+            try:
+                conn.execute("ALTER TABLE faces DROP COLUMN embedding")
+                conn.commit()
+            finally:
+                conn.close()
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "faces mangler forventede kolonner: embedding",
+            ):
+                opened = connect_face_db(target)
+                opened.close()
+
+    def test_face_schema_current_version_rejects_foreign_key_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = face_db_path(target)
+            conn = connect_face_db(target)
+            conn.close()
+            conn = sqlite3.connect(path)
+            try:
+                conn.execute(
+                    "INSERT INTO person_faces(person_id, face_id) VALUES(999, 1)"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with self.assertRaisesRegex(ValueError, "foreign_key_check feilet"):
+                opened = connect_face_db(target)
+                opened.close()
+
+    def test_connect_face_db_enables_foreign_keys(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+
+            conn = connect_face_db(target)
+            try:
+                self.assertEqual(
+                    conn.execute("PRAGMA foreign_keys").fetchone()[0],
+                    1,
+                )
+                with self.assertRaises(sqlite3.IntegrityError):
+                    conn.execute(
+                        "INSERT INTO person_faces(person_id, face_id) VALUES(999, 1)"
+                    )
+            finally:
+                conn.close()
+
+    def test_face_schema_migration_health_failure_rolls_back(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = create_face_v4_database(target)
+            before = face_database_dump(path)
+
+            with patch(
+                "bildebank.face.db.validate_database_health",
+                side_effect=RuntimeError("injisert face-integritetsfeil"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "injisert face-integritetsfeil",
+                ):
+                    opened = connect_face_db(target)
+                    opened.close()
+
+            self.assertEqual(face_database_dump(path), before)

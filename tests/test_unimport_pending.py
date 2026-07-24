@@ -365,7 +365,7 @@ def test_unimport_migrates_legacy_face_db_before_deleting_item_rows(
                 sha256 TEXT NOT NULL,
                 status TEXT NOT NULL,
                 face_count INTEGER NOT NULL DEFAULT 0,
-                error TEXT,
+                error_message TEXT,
                 scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE faces (
@@ -384,7 +384,8 @@ def test_unimport_migrates_legacy_face_db_before_deleting_item_rows(
             CREATE TABLE persons (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE person_faces (
                 person_id INTEGER NOT NULL REFERENCES persons(id) ON DELETE CASCADE,

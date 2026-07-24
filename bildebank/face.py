@@ -32,6 +32,43 @@ FACE_SCHEMA_VERSION = 5
 FACE_MODEL_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 FACE_SUGGEST_BATCH_SIZE = 5000
 FACE_SCAN_RUN_META_KEY = "face_scan_run_id"
+FACE_SCHEMA_REQUIRED_COLUMNS = {
+    "meta": {"key", "value"},
+    "scanned_files": {
+        "file_id",
+        "target_path",
+        "target_path_key",
+        "sha256",
+        "scanned_at",
+        "status",
+        "error_message",
+        "face_count",
+    },
+    "faces": {
+        "id",
+        "file_id",
+        "target_path_key",
+        "bbox_x",
+        "bbox_y",
+        "bbox_width",
+        "bbox_height",
+        "detection_score",
+        "embedding_model",
+        "embedding",
+        "created_at",
+    },
+    "persons": {"id", "name", "created_at", "updated_at"},
+    "person_faces": {"person_id", "face_id", "confirmed_at"},
+    "person_files": {"person_id", "file_id", "confirmed_at"},
+    "face_suggestions": {
+        "id",
+        "person_id",
+        "face_id",
+        "reference_face_id",
+        "similarity",
+        "created_at",
+    },
+}
 P = ParamSpec("P")
 R = TypeVar("R")
 
@@ -204,6 +241,7 @@ def connect_face_db(target: Path, config: FaceRecognitionConfig | None = None) -
     path = face_db_path(target, config)
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     try:
         reject_face_database_model_mismatch(conn, model_name)
         prepare_face_schema(conn, path)
@@ -219,6 +257,7 @@ def connect_face_db(target: Path, config: FaceRecognitionConfig | None = None) -
 def ensure_face_schema_path(path: Path) -> None:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     try:
         prepare_face_schema(conn, path)
         conn.commit()
@@ -320,11 +359,13 @@ def apply_face_schema_version(conn: sqlite3.Connection, version: int) -> None:
         create_current_face_schema(conn)
         set_meta(conn, "schema_version", str(FACE_SCHEMA_VERSION))
         validate_current_face_schema(conn)
+        db.validate_database_health(conn)
         return
     migrate_face_schema(conn, version)
     create_current_face_schema(conn)
     set_meta(conn, "schema_version", str(FACE_SCHEMA_VERSION))
     validate_current_face_schema(conn)
+    db.validate_database_health(conn)
 
 
 def face_schema_version(conn: sqlite3.Connection) -> int:
@@ -415,7 +456,41 @@ def validate_current_face_schema(conn: sqlite3.Connection) -> None:
             f"Face-databasen har schema_version={FACE_SCHEMA_VERSION}, men inneholder legacy-gruppetabeller "
             f"({', '.join(existing_legacy_tables)})."
         )
+    validate_current_face_schema_structure(conn)
     validate_relative_face_paths(conn)
+    validate_face_foreign_keys(conn)
+
+
+def validate_current_face_schema_structure(conn: sqlite3.Connection) -> None:
+    missing_tables = sorted(
+        table
+        for table in FACE_SCHEMA_REQUIRED_COLUMNS
+        if not db.table_exists(conn, table)
+    )
+    if missing_tables:
+        raise ValueError(
+            "Face-databasen mangler forventede tabeller: "
+            f"{', '.join(missing_tables)}."
+        )
+    for table, required_columns in FACE_SCHEMA_REQUIRED_COLUMNS.items():
+        columns = {
+            str(row[1])
+            for row in conn.execute(f"PRAGMA table_info({table})")
+        }
+        missing_columns = sorted(required_columns - columns)
+        if missing_columns:
+            raise ValueError(
+                f"Face-databasen: {table} mangler forventede kolonner: "
+                f"{', '.join(missing_columns)}."
+            )
+
+
+def validate_face_foreign_keys(conn: sqlite3.Connection) -> None:
+    errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+    if errors:
+        raise ValueError(
+            f"Face-databasens foreign_key_check feilet: {tuple(errors[0])}"
+        )
 
 
 def validate_relative_face_paths(conn: sqlite3.Connection) -> None:

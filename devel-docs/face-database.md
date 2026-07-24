@@ -164,9 +164,28 @@ bekreftelser eller forslag går tapt.
 
 Etter schema-oppretting eller migrering kjører `validate_current_face_schema()`.
 
-For v5 skal legacy-gruppetabellene ikke finnes. Hvis en database sier
-`schema_version=5`, men fortsatt inneholder gruppetabeller, skal programmet
-feile tydelig i stedet for å slette tabellene lydløst.
+For v5 skal:
+
+- alle forventede tabeller og nødvendige kolonner finnes
+- legacy-gruppetabellene ikke finnes
+- samlingsinterne stier være relative
+- `PRAGMA foreign_key_check` ikke finne brutte deklarerte referanser
+
+Hvis en database sier `schema_version=5`, men ikke oppfyller disse kravene,
+skal programmet feile tydelig i stedet for å opprette, bygge om eller slette
+tabeller lydløst.
+
+Produksjonstilkoblinger aktiverer også `PRAGMA foreign_keys = ON`, slik at nye
+skriveoperasjoner ikke kan opprette brutte deklarerte referanser. Eldre
+støttede schema-varianter bygges ikke om bare for å legge til flere foreign
+keys; valideringen respekterer derfor de deklarerte relasjonene i den aktuelle
+databasen.
+
+Etter at en ny database er opprettet eller en eldre database er migrert, kjøres
+i tillegg både `PRAGMA foreign_key_check` og `PRAGMA integrity_check` før
+transaksjonen committes. En feil ruller tilbake hele opprettingen eller
+migreringen. Full `integrity_check` kjøres ikke ved hver åpning av en allerede
+gjeldende database, fordi face-databasen kan inneholde mange store embeddings.
 
 Dette følger samme prinsipp som hoveddatabasen:
 
