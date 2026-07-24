@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from pathlib import PureWindowsPath
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .config import FaceRecognitionConfig
 
 from . import db_core
 from .db_core import (
@@ -33,7 +37,8 @@ from .db_tags import (
     tag_name_key,
 )
 
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 18
+ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION = 17
 GPS_ERROR_EXIFTOOL = "exiftool_error"
 GPS_ERROR_FILE_MISSING = "file_missing"
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".m4v", ".mpg", ".mpeg", ".mts", ".m2ts", ".3gp", ".wmv"}
@@ -105,6 +110,9 @@ class MigrationPlan:
     removes_superseded_sources: bool = False
     adds_comment_column: bool = False
     adds_pending_file_delete_identity: bool = False
+    cleans_item_sidecars: bool = False
+    terminal_file_moves: int = 0
+    face_database_backups: tuple[Path, ...] = ()
     internal_repairs: tuple[str, ...] = ()
 
 
@@ -617,7 +625,7 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 refreshes_performance_indexes=bool(missing_performance_indexes(conn)),
                 internal_repairs=internal_repairs,
             )
-        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}:
+        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}:
             if validate:
                 validate_current_schema(
                     conn,
@@ -652,6 +660,10 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
                 ),
                 adds_comment_column=version < 15,
                 adds_pending_file_delete_identity=version < 16,
+                cleans_item_sidecars=(
+                    version < ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION
+                ),
+                terminal_file_moves=count_terminal_file_moves(conn),
             )
         if validate:
             validate_pre_migration(conn, version)
@@ -685,6 +697,8 @@ def migration_plan(target: Path, *, validate: bool = True) -> MigrationPlan:
             ),
             adds_comment_column=True,
             adds_pending_file_delete_identity=True,
+            cleans_item_sidecars=True,
+            terminal_file_moves=count_terminal_file_moves(conn),
         )
     finally:
         conn.close()
@@ -720,7 +734,11 @@ def backup_database(target: Path) -> Path:
     return backup_path
 
 
-def migrate_database(target: Path) -> MigrationPlan:
+def migrate_database(
+    target: Path,
+    *,
+    face_config: FaceRecognitionConfig | None = None,
+) -> MigrationPlan:
     conn = connect(target, require_current=False)
     try:
         version = schema_version(conn)
@@ -754,7 +772,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 refreshes_performance_indexes=refreshes_performance_indexes,
                 internal_repairs=internal_repairs,
             )
-        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}:
+        if version in {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}:
             imported_files = count_rows(conn, "files")
             duplicate_findings = count_rows(conn, "duplicate_findings")
             cleans_gps_errors = has_legacy_gps_errors(conn)
@@ -762,6 +780,19 @@ def migrate_database(target: Path) -> MigrationPlan:
             removes_superseded_sources = (
                 "superseded_by_source_id" in table_columns(conn, "sources")
                 or has_superseded_source_status(conn)
+            )
+            terminal_file_moves = count_terminal_file_moves(conn)
+            cleans_item_sidecars = (
+                version < ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION
+            )
+            face_database_backups = (
+                prepare_item_sidecars_for_migration(
+                    conn,
+                    target,
+                    face_config,
+                )
+                if cleans_item_sidecars
+                else ()
             )
             try:
                 conn.execute("PRAGMA foreign_keys = OFF")
@@ -774,6 +805,9 @@ def migrate_database(target: Path) -> MigrationPlan:
                 ensure_performance_indexes(conn)
                 cleanup_legacy_gps_errors(conn)
                 backfill_h3_10_11(conn)
+                if cleans_item_sidecars:
+                    cleanup_obsolete_item_sidecars(conn)
+                cleanup_terminal_file_moves(conn)
                 set_meta(conn, "schema_version", str(SCHEMA_VERSION))
                 log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
                 validate_current_schema(conn)
@@ -801,6 +835,9 @@ def migrate_database(target: Path) -> MigrationPlan:
                 removes_superseded_sources=removes_superseded_sources,
                 adds_comment_column=version < 15,
                 adds_pending_file_delete_identity=version < 16,
+                cleans_item_sidecars=cleans_item_sidecars,
+                terminal_file_moves=terminal_file_moves,
+                face_database_backups=face_database_backups,
             )
         validate_pre_migration(conn, version)
         imported_files = count_rows(conn, "files")
@@ -821,6 +858,12 @@ def migrate_database(target: Path) -> MigrationPlan:
         removes_superseded_sources = (
             "superseded_by_source_id" in source_columns
             or has_superseded_source_status(conn)
+        )
+        terminal_file_moves = count_terminal_file_moves(conn)
+        face_database_backups = prepare_item_sidecars_for_migration(
+            conn,
+            target,
+            face_config,
         )
         try:
             conn.execute("PRAGMA foreign_keys = OFF")
@@ -846,6 +889,8 @@ def migrate_database(target: Path) -> MigrationPlan:
             ensure_performance_indexes(conn)
             cleanup_legacy_gps_errors(conn)
             backfill_h3_10_11(conn)
+            cleanup_obsolete_item_sidecars(conn)
+            cleanup_terminal_file_moves(conn)
             set_meta(conn, "schema_version", str(SCHEMA_VERSION))
             log_command(conn, "migrate", {"from_schema_version": version, "to_schema_version": SCHEMA_VERSION})
             validate_current_schema(conn)
@@ -878,9 +923,68 @@ def migrate_database(target: Path) -> MigrationPlan:
             removes_superseded_sources=removes_superseded_sources,
             adds_comment_column=True,
             adds_pending_file_delete_identity=True,
+            cleans_item_sidecars=True,
+            terminal_file_moves=terminal_file_moves,
+            face_database_backups=face_database_backups,
         )
     finally:
         conn.close()
+
+
+def prepare_item_sidecars_for_migration(
+    conn: sqlite3.Connection,
+    target: Path,
+    face_config: FaceRecognitionConfig | None,
+) -> tuple[Path, ...]:
+    from .item_sidecars import (
+        attach_existing_item_databases,
+        backup_existing_face_databases,
+    )
+
+    backup_paths = backup_existing_face_databases(
+        target,
+        face_config,
+        target_schema_version=ITEM_SIDECAR_CLEANUP_SCHEMA_VERSION,
+    )
+    attach_existing_item_databases(
+        conn,
+        target,
+        face_config,
+    )
+    return backup_paths
+
+
+def cleanup_obsolete_item_sidecars(conn: sqlite3.Connection) -> None:
+    from .item_sidecars import (
+        delete_attached_obsolete_item_data,
+        validate_attached_item_databases_health,
+    )
+
+    delete_attached_obsolete_item_data(conn)
+    validate_attached_item_databases_health(conn)
+
+
+def count_terminal_file_moves(conn: sqlite3.Connection) -> int:
+    if not table_exists(conn, "pending_file_moves"):
+        return 0
+    return int(
+        conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM pending_file_moves
+            WHERE state IN ('completed', 'aborted')
+            """
+        ).fetchone()[0]
+    )
+
+
+def cleanup_terminal_file_moves(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        DELETE FROM pending_file_moves
+        WHERE state IN ('completed', 'aborted')
+        """
+    )
 
 
 def validate_pre_migration(conn: sqlite3.Connection, version: int) -> None:

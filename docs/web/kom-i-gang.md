@@ -122,8 +122,8 @@ kan gjøre det, og da ser det slik ut:
 
 ![Skjermbilde av migreringsdialogen](screenshots/bildebank-migrate.png)
 
-Det er da helt trygt å klikke "Migrer". Det tas sikkerhetskopi av filen som endres,
-og ingen bildefiler endres ved migrering.
+Det er da helt trygt å klikke "Migrer". Det tas sikkerhetskopi av databasene
+som trenger det, og ingen bildefiler endres ved migrering.
 
 Hvis du jobber med Bildebank fra PowerShell, oppgraderer du ved å gå til
 mappen med bildesamlingen og kjøre `migrate`:
@@ -138,9 +138,11 @@ Du kan kontrollere hva migreringen vil gjøre uten å endre databasen:
 bildebank migrate --check
 ```
 
-Når `bildebank migrate` kjøres, lager programmet en sikkerhetskopi av `.bilder.sqlite3`
-før databasen endres. Hvis migreringen feiler, skal databasen ikke oppgraderes,
-og sikkerhetskopien beholdes.
+Når `bildebank migrate` kjøres, lager programmet en sikkerhetskopi av
+`.bilder.sqlite3` før databasen endres. Migrering til v17 sikkerhetskopierer
+også eksisterende InsightFace-databaser før gamle data for slettede bilder
+ryddes. Ingen bildefiler endres. Hvis migreringen feiler, skal databasen ikke
+oppgraderes, og sikkerhetskopiene beholdes.
 
 ## Angre import av en kilde
 

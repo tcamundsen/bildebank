@@ -365,8 +365,10 @@ bildebank migrate --check
 ```
 
 Når `bildebank migrate` kjøres, lager programmet en sikkerhetskopi av
-`.bilder.sqlite3` før databasen endres. Hvis migreringen feiler, skal databasen
-ikke oppgraderes, og sikkerhetskopien beholdes.
+`.bilder.sqlite3` før databasen endres. Migrering til v17 sikkerhetskopierer
+også eksisterende InsightFace-databaser før gamle data for slettede bilder
+ryddes. Ingen bildefiler endres. Hvis migreringen feiler, skal databasen ikke
+oppgraderes, og sikkerhetskopiene beholdes.
 
 ## Angre import av en kilde
 

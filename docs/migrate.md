@@ -55,9 +55,25 @@ bildebank migrate --check
 ## Backup
 
 Når `bildebank migrate` faktisk endrer databasen, lager programmet en backup av
-databasen først.
+hoveddatabasen først. Ved migrering til v17 lager programmet også en backup av
+hver InsightFace-database som finnes i bildesamlingen.
 
 Hvis migreringen feiler, skal databasen ikke oppgraderes, og backupen beholdes.
+
+## Migrering til v18
+
+V18 rydder ferdigbehandlede rader fra Bildebanks interne
+filflyttingsjournal. Uavklarte flyttinger beholdes, slik at Bildebank fortsatt
+kan fullføre eller stoppe dem på en trygg måte.
+
+## Migrering til v17
+
+V17 rydder gamle OpenCLIP- og ansiktsdata for bilder som allerede er slettet,
+eller som er helt fjernet fra hoveddatabasen av en eldre versjon. Data for
+aktive bilder beholdes. Migreringen sletter eller flytter ingen bildefiler.
+
+InsightFace-databasene sikkerhetskopieres før oppryddingen. Hvis oppryddingen
+feiler, rulles databaseendringene tilbake og backupene beholdes.
 
 ## Migrering til v9
 

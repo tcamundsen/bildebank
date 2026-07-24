@@ -59,15 +59,14 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
-                    """
-                    SELECT files.target_path, files.deleted_at, pending_file_moves.state
-                    FROM files
-                    JOIN pending_file_moves ON pending_file_moves.file_id = files.id
-                    """
+                    "SELECT target_path, deleted_at FROM files"
                 ).fetchone()
+                pending_count = conn.execute(
+                    "SELECT COUNT(*) FROM pending_file_moves"
+                ).fetchone()[0]
             self.assertEqual(row[0], "deleted/2024/01/IMG_20240102.jpg")
             self.assertIsNotNone(row[1])
-            self.assertEqual(row[2], "completed")
+            self.assertEqual(pending_count, 0)
 
     def test_recovery_aborts_remove_when_file_was_not_moved(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -97,15 +96,14 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
-                    """
-                    SELECT files.target_path, files.deleted_at, pending_file_moves.state
-                    FROM files
-                    JOIN pending_file_moves ON pending_file_moves.file_id = files.id
-                    """
+                    "SELECT target_path, deleted_at FROM files"
                 ).fetchone()
+                pending_count = conn.execute(
+                    "SELECT COUNT(*) FROM pending_file_moves"
+                ).fetchone()[0]
             self.assertEqual(row[0], "2024/01/IMG_20240102.jpg")
             self.assertIsNone(row[1])
-            self.assertEqual(row[2], "aborted")
+            self.assertEqual(pending_count, 0)
 
     def test_recovery_completes_undelete_after_file_was_moved(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -162,18 +160,18 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
                     """
-                    SELECT files.target_path, files.deleted_at,
-                           files.deleted_original_target_path,
-                           pending_file_moves.state
+                    SELECT target_path, deleted_at,
+                           deleted_original_target_path
                     FROM files
-                    JOIN pending_file_moves ON pending_file_moves.file_id = files.id
-                    WHERE pending_file_moves.operation = 'undelete'
                     """
                 ).fetchone()
+                pending_count = conn.execute(
+                    "SELECT COUNT(*) FROM pending_file_moves"
+                ).fetchone()[0]
             self.assertEqual(row[0], "2024/01/IMG_20240102.jpg")
             self.assertIsNone(row[1])
             self.assertIsNone(row[2])
-            self.assertEqual(row[3], "completed")
+            self.assertEqual(pending_count, 0)
 
     def test_recovery_stops_when_both_move_paths_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -382,16 +380,17 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
                     """
-                    SELECT files.target_path, files.taken_date, files.date_source,
-                           pending_file_moves.state
+                    SELECT target_path, taken_date, date_source
                     FROM files
-                    JOIN pending_file_moves ON pending_file_moves.file_id = files.id
                     """
                 ).fetchone()
+                pending_count = conn.execute(
+                    "SELECT COUNT(*) FROM pending_file_moves"
+                ).fetchone()[0]
             self.assertEqual(row[0], "2007/03/video.avi")
             self.assertEqual(row[1], "2007-03-12")
             self.assertEqual(row[2], "metadata")
-            self.assertEqual(row[3], "completed")
+            self.assertEqual(pending_count, 0)
 
     def test_refresh_metadata_refuses_to_run_while_target_is_locked(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

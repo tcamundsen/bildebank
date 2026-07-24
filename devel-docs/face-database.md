@@ -61,6 +61,12 @@ Når `unimport` fjerner siste `file_sources`-rad og dermed `files`-raden, skal
 den utføre samme opprydding. Databasene ATTACH-es til hovedforbindelsen, slik
 at sidecar-opprydding og hoveddatabaseendring committes samlet.
 
+Hoveddatabasens migrering til v17 rydder tilsvarende rester etter eldre
+versjoner. Den beholder data for aktive `files`-rader, rydder data for rader
+med `deleted_at` og for `file_id` som mangler i hoveddatabasen, og lager en
+integritetskontrollert backup av hver eksisterende InsightFace-database før
+slettingen. Se `devel-docs/database-v17-migration.md`.
+
 `person_files` har disse kolonnene:
 
 ```sql

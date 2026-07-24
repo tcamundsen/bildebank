@@ -236,7 +236,7 @@ class SnapshotBuilderTests(unittest.TestCase):
                     "auxiliary:metadata/extra.sqlite3",
                 },
             )
-            self.assertEqual(result.schema_versions["main"], 16)
+            self.assertEqual(result.schema_versions["main"], 18)
             self.assertEqual(result.schema_versions["openclip"], 3)
             self.assertEqual(result.schema_versions["face:antelopev2"], 5)
             self.assertTrue(any("Ukjent SQLite-database" in warning for warning in result.warnings))

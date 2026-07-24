@@ -2868,6 +2868,16 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("  legge til comment i files")
     if plan.removes_superseded_sources:
         print("  fjerne gammel superseded-kildemodell")
+    if plan.cleans_item_sidecars:
+        print(
+            "  fjerne OpenCLIP- og InsightFace-data for slettede "
+            "eller ikke lenger registrerte bilder"
+        )
+    if plan.terminal_file_moves:
+        print(
+            "  fjerne ferdigbehandlede filflyttinger fra arbeidsjournalen: "
+            f"{plan.terminal_file_moves}"
+        )
     if plan.refreshes_performance_indexes:
         print("  oppdatere manglende ytelsesindekser")
     for repair in plan.internal_repairs:
@@ -2883,7 +2893,14 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print(f"Lager backup: {backup_path}")
         print("Validerer eksisterende database.")
         try:
-            result = db.migrate_database(target)
+            face_config = load_config(
+                program_repo_root(),
+                migrate_legacy=False,
+            ).face_recognition
+            result = db.migrate_database(
+                target,
+                face_config=face_config,
+            )
         except Exception as exc:
             raise ValueError(
                 f"{exc}\n"
@@ -2927,6 +2944,18 @@ def run_migrate(target: Path, *, check: bool) -> int:
         print("Legger til comment i files.")
     if result.removes_superseded_sources:
         print("Fjerner gammel superseded-kildemodell.")
+    if result.cleans_item_sidecars:
+        print(
+            "Rydder OpenCLIP- og InsightFace-data for slettede "
+            "eller ikke lenger registrerte bilder."
+        )
+    if result.terminal_file_moves:
+        print(
+            "Fjerner ferdigbehandlede filflyttinger fra arbeidsjournalen: "
+            f"{result.terminal_file_moves}."
+        )
+    for face_backup_path in result.face_database_backups:
+        print(f"Laget backup av InsightFace-database: {face_backup_path}")
     if result.refreshes_performance_indexes:
         print("Oppdaterer manglende ytelsesindekser.")
     if result.internal_repairs:

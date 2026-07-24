@@ -66,18 +66,16 @@ class SnapshotCreateTests(unittest.TestCase):
             conn = db.connect(target)
             try:
                 row = conn.execute(
-                    """
-                    SELECT files.target_path, files.deleted_at,
-                           pending_file_moves.state
-                    FROM files
-                    JOIN pending_file_moves ON pending_file_moves.file_id = files.id
-                    """
+                    "SELECT target_path, deleted_at FROM files"
                 ).fetchone()
+                pending_count = conn.execute(
+                    "SELECT COUNT(*) FROM pending_file_moves"
+                ).fetchone()[0]
             finally:
                 conn.close()
             self.assertEqual(row["target_path"], "deleted/2024/01/active.png")
             self.assertIsNotNone(row["deleted_at"])
-            self.assertEqual(row["state"], "completed")
+            self.assertEqual(pending_count, 0)
 
     def test_moved_collection_requires_exact_confirmation_from_read_only_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

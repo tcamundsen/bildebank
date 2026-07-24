@@ -98,11 +98,7 @@ def prepared_pending_file_moves(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 def complete_pending_file_move(conn: sqlite3.Connection, *, move_id: int) -> None:
     conn.execute(
         """
-        UPDATE pending_file_moves
-        SET state = 'completed',
-            updated_at = CURRENT_TIMESTAMP,
-            completed_at = CURRENT_TIMESTAMP,
-            last_error = NULL
+        DELETE FROM pending_file_moves
         WHERE id = ?
           AND state = 'prepared'
           AND completed_at IS NULL
@@ -114,11 +110,7 @@ def complete_pending_file_move(conn: sqlite3.Connection, *, move_id: int) -> Non
 def abort_pending_file_move(conn: sqlite3.Connection, *, move_id: int) -> None:
     conn.execute(
         """
-        UPDATE pending_file_moves
-        SET state = 'aborted',
-            updated_at = CURRENT_TIMESTAMP,
-            completed_at = CURRENT_TIMESTAMP,
-            last_error = NULL
+        DELETE FROM pending_file_moves
         WHERE id = ?
           AND state = 'prepared'
           AND completed_at IS NULL

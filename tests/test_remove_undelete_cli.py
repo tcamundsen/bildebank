@@ -201,7 +201,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
                 ).fetchone()
             self.assertEqual(row, ("2024/01/IMG_20240102.jpg", None))
 
-    def test_remove_completes_pending_move_row(self) -> None:
+    def test_remove_deletes_completed_pending_move_row(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             source = Path(tmp) / "source"
@@ -216,12 +216,10 @@ class RemoveUndeleteCliTests(unittest.TestCase):
             self.assertEqual(run_cli(["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]), 0)
 
             with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
-                row = conn.execute(
-                    "SELECT operation, state, completed_at FROM pending_file_moves"
-                ).fetchone()
-            self.assertEqual(row[0], "remove")
-            self.assertEqual(row[1], "completed")
-            self.assertIsNotNone(row[2])
+                pending_count = conn.execute(
+                    "SELECT COUNT(*) FROM pending_file_moves"
+                ).fetchone()[0]
+            self.assertEqual(pending_count, 0)
 
     def test_remove_rejects_target_file_with_changed_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -346,16 +344,14 @@ class RemoveUndeleteCliTests(unittest.TestCase):
             )
             with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
-                    """
-                    SELECT files.target_path, files.deleted_at,
-                           pending_file_moves.state
-                    FROM files
-                    JOIN pending_file_moves ON pending_file_moves.file_id = files.id
-                    """
+                    "SELECT target_path, deleted_at FROM files"
                 ).fetchone()
+                pending_count = conn.execute(
+                    "SELECT COUNT(*) FROM pending_file_moves"
+                ).fetchone()[0]
             self.assertEqual(row[0], "deleted/2024/01/IMG_20240102.jpg")
             self.assertIsNotNone(row[1])
-            self.assertEqual(row[2], "completed")
+            self.assertEqual(pending_count, 0)
 
     def test_browser_remove_does_not_use_unrelated_recovery_as_success(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -423,7 +419,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
                 ).fetchone()
             finally:
                 conn.close()
-            self.assertEqual(pending_row["state"], "aborted")
+            self.assertIsNone(pending_row)
 
     def test_undelete_restores_removed_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -628,17 +624,14 @@ class RemoveUndeleteCliTests(unittest.TestCase):
             self.assertEqual(result, Path("2024/01/IMG_20240102.jpg"))
             with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 row = conn.execute(
-                    """
-                    SELECT files.target_path, files.deleted_at,
-                           pending_file_moves.state
-                    FROM files
-                    JOIN pending_file_moves ON pending_file_moves.file_id = files.id
-                    WHERE pending_file_moves.operation = 'undelete'
-                    """
+                    "SELECT target_path, deleted_at FROM files"
                 ).fetchone()
+                pending_count = conn.execute(
+                    "SELECT COUNT(*) FROM pending_file_moves"
+                ).fetchone()[0]
             self.assertEqual(row[0], "2024/01/IMG_20240102.jpg")
             self.assertIsNone(row[1])
-            self.assertEqual(row[2], "completed")
+            self.assertEqual(pending_count, 0)
 
     def test_undelete_rejects_original_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

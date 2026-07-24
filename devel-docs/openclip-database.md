@@ -24,6 +24,11 @@ Når `unimport` fjerner siste `file_sources`-rad og dermed `files`-raden, skal
 den utføre samme opprydding. Slettingen skjer gjennom en ATTACH-et
 OpenCLIP-database i samme transaksjon som hoveddatabaseendringen.
 
+Hoveddatabasens migrering til v17 rydder tilsvarende rester etter eldre
+versjoner. Den beholder data for aktive `files`-rader og fjerner data for
+slettede eller manglende `file_id`. Se
+`devel-docs/database-v17-migration.md`.
+
 ## Dagens versjon
 
 Dagens schema er `OPENCLIP_SCHEMA_VERSION = 1` i `bildebank/openclip.py`.
