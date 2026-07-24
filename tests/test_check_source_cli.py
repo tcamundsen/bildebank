@@ -6,11 +6,35 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from bildebank import db
+from bildebank.collection_paths import PathComponentIssue
 from bildebank.db import DB_FILENAME
 from tests.cli_helpers import capture_cli, run_cli
 
 
 class CheckSourceCliTests(unittest.TestCase):
+    def create_imported_collection(self, root: Path) -> tuple[Path, Path]:
+        target = root / "target"
+        source = root / "source"
+        source.mkdir()
+        (source / "IMG_20240102.jpg").write_bytes(b"image")
+        self.assertEqual(run_cli(["create", str(target)]), 0)
+        self.assertEqual(
+            run_cli(
+                [
+                    "--target",
+                    str(target),
+                    "import",
+                    "--name",
+                    source.name,
+                    "--quiet",
+                    str(source),
+                ]
+            ),
+            0,
+        )
+        return target, source
+
     def test_check_source_reports_imported_folder_as_safe_without_logging_command(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -45,6 +69,202 @@ class CheckSourceCliTests(unittest.TestCase):
             finally:
                 conn.close()
             self.assertEqual(commands_after, commands_before)
+
+    def test_check_source_uses_read_only_database_without_recovery_or_program_state_write(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, source = self.create_imported_collection(root)
+
+            original_files_by_hash = db.files_by_hash
+            query_only_values: list[int] = []
+
+            def files_by_hash_read_only(conn, sha256):  # noqa: ANN001
+                query_only_values.append(int(conn.execute("PRAGMA query_only").fetchone()[0]))
+                with self.assertRaises(sqlite3.OperationalError):
+                    conn.execute("UPDATE files SET stored_filename = stored_filename")
+                return original_files_by_hash(conn, sha256)
+
+            with (
+                patch("bildebank.cli.recover_pending_file_moves") as recover,
+                patch("bildebank.cli.record_target_best_effort") as record_target,
+                patch(
+                    "bildebank.cli_check_source.db.files_by_hash",
+                    side_effect=files_by_hash_read_only,
+                ),
+            ):
+                code, _, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "check-source",
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertEqual(query_only_values, [1])
+            recover.assert_not_called()
+            record_target.assert_not_called()
+
+    def test_check_source_rejects_database_integrity_error_before_hashing_targets(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, source = self.create_imported_collection(root)
+
+            with (
+                patch(
+                    "bildebank.cli_check_source.db.database_integrity_errors",
+                    return_value=["simulert integritetsfeil"],
+                ),
+                patch(
+                    "bildebank.cli_check_source.hash_stable_collection_file"
+                ) as hash_target,
+            ):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "check-source",
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("SQLite integrity_check fant 1 feil", stdout)
+            self.assertIn("Kildemappen er derfor ikke trygg å slette.", stdout)
+            self.assertNotIn("Remove-Item", stdout)
+            hash_target.assert_not_called()
+
+    def test_check_source_rejects_foreign_key_error_before_source_verdict(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, source = self.create_imported_collection(root)
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute("UPDATE file_sources SET source_id = 999999")
+                conn.commit()
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "check-source",
+                    "--quiet",
+                    str(source),
+                ]
+            )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("SQLite foreign_key_check fant 1", stdout)
+            self.assertIn("Kildemappen er derfor ikke trygg å slette.", stdout)
+
+    def test_check_source_rejects_old_schema_without_migrating_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, source = self.create_imported_collection(root)
+
+            database_path = target / DB_FILENAME
+            conn = sqlite3.connect(database_path)
+            try:
+                conn.execute(
+                    "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                    (str(db.SCHEMA_VERSION - 1),),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            content_before = database_path.read_bytes()
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "check-source",
+                    "--quiet",
+                    str(source),
+                ]
+            )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("gjeldende databaseschema kunne ikke bekreftes", stdout)
+            self.assertEqual(database_path.read_bytes(), content_before)
+
+    def test_check_source_rejects_unsafe_database_path_before_target_hash(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, source = self.create_imported_collection(root)
+            (root / "outside.jpg").write_bytes(b"image")
+
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET target_path = '../outside.jpg',
+                        target_path_key = '../outside.jpg'
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with patch(
+                "bildebank.cli_check_source.hash_stable_collection_file"
+            ) as hash_target:
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "check-source",
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("databaseført(e) stifeil", stdout)
+            self.assertIn("kan ikke inneholde ..", stdout)
+            hash_target.assert_not_called()
+
+    def test_check_source_rejects_unsafe_database_path_component(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, source = self.create_imported_collection(root)
+
+            issue = PathComponentIssue(
+                path=target / "2024",
+                reason="stikomponenten er en symlink eller et Windows reparse point",
+            )
+            with patch(
+                "bildebank.cli_check_source.inspect_existing_collection_path_components",
+                return_value=issue,
+            ):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "check-source",
+                        "--quiet",
+                        str(source),
+                    ]
+                )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("usikker stikomponent", stdout)
+            self.assertIn("Windows reparse point", stdout)
 
     def test_check_source_progress_counts_files_before_checking(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

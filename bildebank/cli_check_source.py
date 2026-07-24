@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -9,6 +10,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
+from .collection_paths import (
+    CollectionFileHashError,
+    InvalidCollectionRelativePath,
+    hash_stable_collection_file,
+    inspect_existing_collection_path_components,
+    is_active_collection_file_path,
+    is_deleted_collection_file_path,
+    parse_collection_relative_path,
+)
 from .importer import WalkError, validate_source_target
 from .media import is_supported_media, sha256_file
 from .progress import ProgressMeter
@@ -51,7 +61,21 @@ def run_check_source(
         raise ValueError(f"Kilden finnes ikke som mappe: {source}")
     validate_source_target(source, target)
 
-    conn = db.connect(target)
+    try:
+        conn = db.connect_read_only(target, require_current=False)
+    except sqlite3.Error as exc:
+        print_check_source_database_errors(
+            source,
+            [f"hoveddatabasen kunne ikke åpnes read-only: {exc}"],
+        )
+        return 2
+
+    database_errors = check_source_database_errors(target, conn)
+    if database_errors:
+        conn.close()
+        print_check_source_database_errors(source, database_errors)
+        return 2
+
     progress = check_source_progress() if verbose else None
     stats = CheckSourceStats()
     problems: list[CheckSourceProblem] = []
@@ -210,13 +234,142 @@ def check_source_hash_is_validated(target: Path, rows: list, target_hash_cache: 
 
 
 def validate_check_source_target_file(target: Path, row) -> bool:
-    target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
-    if not target_path.exists() or not target_path.is_file():
-        return False
     try:
-        return sha256_file(target_path) == row["sha256"]
-    except OSError:
+        target_path = parse_collection_relative_path(row["target_path"])
+    except InvalidCollectionRelativePath:
         return False
+
+    if row["deleted_at"] is None:
+        if not is_active_collection_file_path(target_path):
+            return False
+    elif not is_deleted_collection_file_path(target_path):
+        return False
+
+    try:
+        actual_sha256, actual_size = hash_stable_collection_file(
+            target,
+            target_path,
+        )
+    except (CollectionFileHashError, OSError):
+        return False
+    return (
+        actual_sha256 == row["sha256"]
+        and actual_size == row["size_bytes"]
+    )
+
+
+def check_source_database_errors(
+    target: Path,
+    conn: sqlite3.Connection,
+) -> list[str]:
+    errors: list[str] = []
+    integrity_errors: list[str] | None = None
+    foreign_key_errors: list[sqlite3.Row] | None = None
+
+    try:
+        integrity_errors = db.database_integrity_errors(conn)
+    except sqlite3.Error as exc:
+        errors.append(f"SQLite integrity_check kunne ikke kjøres: {exc}")
+    else:
+        if integrity_errors:
+            errors.append(
+                "SQLite integrity_check fant "
+                f"{len(integrity_errors)} feil: {integrity_errors[0]}"
+            )
+
+    try:
+        foreign_key_errors = db.database_foreign_key_errors(conn)
+    except sqlite3.Error as exc:
+        errors.append(f"SQLite foreign_key_check kunne ikke kjøres: {exc}")
+    else:
+        if foreign_key_errors:
+            first = foreign_key_errors[0]
+            errors.append(
+                "SQLite foreign_key_check fant "
+                f"{len(foreign_key_errors)} ugyldig(e) referanse(r); "
+                f"første: table={first['table']} rowid={first['rowid']} "
+                f"parent={first['parent']} foreign_key={first['fkid']}"
+            )
+
+    if (
+        integrity_errors != []
+        or foreign_key_errors is None
+        or foreign_key_errors
+    ):
+        return errors
+
+    try:
+        db.require_current_schema(conn)
+    except (sqlite3.Error, ValueError) as exc:
+        return [*errors, f"gjeldende databaseschema kunne ikke bekreftes: {exc}"]
+
+    try:
+        rows = db.file_path_integrity_rows(conn)
+        path_issues = db.file_path_integrity_issues(conn)
+    except sqlite3.Error as exc:
+        return [
+            *errors,
+            f"databaseførte samlingsstier kunne ikke kontrolleres: {exc}",
+        ]
+
+    if path_issues:
+        first = path_issues[0]
+        errors.append(
+            f"{len(path_issues)} databaseført(e) stifeil; første: "
+            f"file #{first.file_id} {first.field}={first.value!r}: "
+            f"{first.message}"
+        )
+
+    component_issues: list[tuple[int, str, object, Path, str]] = []
+    for row in rows:
+        for field in ("target_path", "deleted_original_target_path"):
+            value = row[field]
+            if value is None:
+                continue
+            try:
+                relative_path = parse_collection_relative_path(value)
+            except InvalidCollectionRelativePath:
+                continue
+            issue = inspect_existing_collection_path_components(
+                target,
+                relative_path,
+            )
+            if issue is not None:
+                component_issues.append(
+                    (
+                        int(row["id"]),
+                        field,
+                        value,
+                        issue.path,
+                        issue.reason,
+                    )
+                )
+
+    if component_issues:
+        file_id, field, value, component, reason = component_issues[0]
+        errors.append(
+            f"{len(component_issues)} databaseført(e) sti(er) går gjennom "
+            f"en usikker stikomponent; første: file #{file_id} "
+            f"{field}={value!r}: {component} ({reason})"
+        )
+    return errors
+
+
+def print_check_source_database_errors(
+    source: Path,
+    errors: list[str],
+) -> None:
+    print("Check-source")
+    print(f"  Kildemappe: {source}")
+    print(
+        "  Hoveddatabasen eller databaseførte samlingsstier kunne ikke "
+        "bekreftes som trygge."
+    )
+    print("  Kildemappen er derfor ikke trygg å slette.")
+    print("Databaseproblemer:")
+    for error in errors:
+        print(f"- {error}")
+    print("  Råd: Kjør bildebank doctor og undersøk sikkerhetskopien før du gjør endringer.")
 
 
 def check_source_progress() -> ProgressMeter:

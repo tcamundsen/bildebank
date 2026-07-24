@@ -8,8 +8,12 @@ eventuelle senere, eksplisitte reparasjonskommandoer.
 
 - `doctor` og `doctor --deep` er read-only. De skal ikke endre config,
   hoveddatabase, sidecar-databaser, mediefiler eller lokal programstatus.
+- `check-source` skal ikke endre bildesamlingen eller lokal programstatus.
+  En midlertidig problemrapport utenfor samlingen kan fortsatt opprettes og
+  åpnes for brukeren.
 - SQLite-databaser åpnes med `mode=ro` og `PRAGMA query_only=ON`.
 - Doctor rapporterer pending-køer, men kjører ikke recovery eller opprydding.
+  `check-source` kjører heller ikke recovery.
 - En eventuell target-lås er bare koordinering for et konsistent øyeblikksbilde.
   Den skal ikke utløse recovery.
 - Doctor foreslår undersøkelse og sikkerhetskopi før databaseendringer. Den
@@ -150,7 +154,16 @@ Ferdig:
   eksisterende OpenCLIP- og InsightFace-databaser
 - read-only schema-, modell- og filreferansekontroll for alle eksisterende
   InsightFace-databaser
+- read-only hoveddatabase i `check-source`, uten recovery eller oppdatering av
+  lokal programstatus
+- hoveddatabasens `integrity_check`, `foreign_key_check`, schema og alle
+  databaseførte samlingsstier som gate før `check-source` kan gi en trygg
+  sikkerhetsdom
+- validering av hver aktuell målsti og stabil SHA-256 av en vanlig fil uten
+  symlinker eller Windows reparse points i `check-source`
 
 Gjenstår:
 
-- samme read-only hoveddatabase- og stiregler i `check-source`
+- target-lås gjennom hele `check-source`
+- stabil hashing av kildefilene og en avsluttende, ny kildefiloversikt
+- presis sikkerhetstekst når Google JSON-sidecarfiler er bevisst ignorert

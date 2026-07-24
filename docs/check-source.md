@@ -23,6 +23,13 @@ kildemappen, og sjekker at samme innhold finnes i bildesamlingen.
 Bildebank sletter aldri kildemappen. Hvis kontrollen er trygg, viser kommandoen
 en PowerShell-kommando du kan velge å kjøre selv.
 
+Før kontrollen leser `check-source` hoveddatabasen uten skrivetilgang og
+kontrollerer databasehelse, gjeldende databaseformat og alle databaseførte
+samlingsstier. Kommandoen kjører ikke recovery og endrer ikke
+bildesamlingen eller Bildebanks lokale programstatus. En målfil godtas bare
+når stien er trygg, filen er en vanlig fil uten lenker, og størrelse og
+SHA-256 stemmer.
+
 Eksempel:
 
 ```powershell
@@ -47,6 +54,11 @@ fra kommandoen, trykke Ctrl-C for å kopiere, og så Ctrl-V for å lime inn.
 Hvis Bildebank finner filer som ikke er importert i bildesamlingen, eller hvis
 en fil i bildesamlingen ikke kan valideres med SHA-256, skriver kommandoen at
 kildemappen ikke er trygg å slette.
+
+Kildemappen regnes heller ikke som trygg hvis hoveddatabasen har
+integritetsfeil, ugyldige referanser, feil databaseformat eller usikre
+databaseførte stier. Kjør `bildebank doctor` og undersøk sikkerhetskopien før
+du gjør endringer.
 
 Hvis det finnes problemfiler, lagrer kommandoen listen med filnavn i en
 midlertidig tekstfil. På Windows åpnes listen i Notepad når kommandoen er
