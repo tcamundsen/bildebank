@@ -103,9 +103,19 @@ ikke har noen `files`-rad. De rapporteres, men adopteres eller slettes ikke.
   bekreftet.
 - Alle InsightFace-modelldatabaser under samlingens konfigurerte
   databasemappe skal kontrolleres, ikke bare aktiv modell.
+- En InsightFace-database må ha eksplisitt gjeldende schema-versjon og
+  komplett v5-schema. Modellspesifikke databasefiler må ha
+  `meta.model_name` lik modellen i filnavnet. Legacy-databasen regnes som
+  `buffalo_l` etter den eksisterende kompatibilitetsregelen og kan mangle
+  `model_name`; doctor skriver den ikke inn.
 - Sidecar-rader som peker på manglende eller slettede `files`-rader er feil.
 - Kopiert `target_path`, `target_path_key` og SHA-256 skal stemme med
   hoveddatabasen der sidecar-schemaet lagrer disse verdiene.
+- For InsightFace gjelder dette `scanned_files.target_path`,
+  `target_path_key` og SHA-256 samt `faces.target_path_key`.
+  `faces.embedding_model` skal stemme med databasemodellen.
+  `scanned_files`, `faces` og `person_files` skal bare peke på aktive
+  `files`-rader.
 
 ## Kontrollnivåer
 
@@ -138,8 +148,9 @@ Ferdig:
   kopiert `target_path`, `target_path_key` og SHA-256
 - read-only `quick_check`/`integrity_check` og `foreign_key_check` for alle
   eksisterende OpenCLIP- og InsightFace-databaser
+- read-only schema-, modell- og filreferansekontroll for alle eksisterende
+  InsightFace-databaser
 
 Gjenstår:
 
-- schema og filreferanser i alle InsightFace-modelldatabaser
 - samme read-only hoveddatabase- og stiregler i `check-source`

@@ -489,6 +489,291 @@ class DoctorCliTests(unittest.TestCase):
         )
         self.assertEqual(after, before)
 
+    def test_doctor_accepts_matching_insightface_references_for_all_models(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = insert_test_file(
+                target,
+                "2024/01/active.png",
+                sha256="sha-active",
+            )
+            for model_name in ("buffalo_l", "antelopev2"):
+                conn = connect_face_db(
+                    target,
+                    FaceRecognitionConfig(model_name=model_name),
+                )
+                try:
+                    conn.execute(
+                        """
+                        INSERT INTO scanned_files(
+                            file_id, target_path, target_path_key, sha256,
+                            status, face_count
+                        ) VALUES(
+                            ?, '2024/01/active.png',
+                            '2024/01/active.png', 'sha-active', 'ok', 1
+                        )
+                        """,
+                        (file_id,),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO faces(
+                            file_id, target_path_key, bbox_x, bbox_y,
+                            bbox_width, bbox_height, detection_score,
+                            embedding_model, embedding
+                        ) VALUES(
+                            ?, '2024/01/active.png', 1, 2, 3, 4, 0.9, ?, ?
+                        )
+                        """,
+                        (file_id, model_name, b"embedding"),
+                    )
+                    person_id = conn.execute(
+                        "INSERT INTO persons(name) VALUES(?) RETURNING id",
+                        (f"Person {model_name}",),
+                    ).fetchone()[0]
+                    conn.execute(
+                        """
+                        INSERT INTO person_files(person_id, file_id)
+                        VALUES(?, ?)
+                        """,
+                        (person_id, file_id),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+            before = tree_image(target)
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            after = tree_image(target)
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "OK: InsightFace-schema og filreferanser: 2/2 databaser ok",
+            stdout,
+        )
+        self.assertEqual(after, before)
+
+    def test_doctor_reports_insightface_file_reference_mismatches_read_only(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            active_id = insert_test_file(
+                target,
+                "2024/01/active.png",
+                sha256="sha-active",
+            )
+            deleted_id = insert_test_file(
+                target,
+                "deleted/2024/01/deleted.png",
+                sha256="sha-deleted",
+                deleted=True,
+            )
+            missing_id = active_id + deleted_id + 100
+            face_config = FaceRecognitionConfig(model_name="buffalo_l")
+            conn = connect_face_db(target, face_config)
+            try:
+                conn.executemany(
+                    """
+                    INSERT INTO scanned_files(
+                        file_id, target_path, target_path_key, sha256,
+                        status, face_count
+                    ) VALUES(?, ?, ?, ?, 'ok', ?)
+                    """,
+                    [
+                        (
+                            active_id,
+                            "2023/12/old.png",
+                            "2023/12/old.png",
+                            "sha-old",
+                            1,
+                        ),
+                        (
+                            deleted_id,
+                            "deleted/2024/01/deleted.png",
+                            "deleted/2024/01/deleted.png",
+                            "sha-deleted",
+                            0,
+                        ),
+                    ],
+                )
+                conn.executemany(
+                    """
+                    INSERT INTO faces(
+                        file_id, target_path_key, bbox_x, bbox_y,
+                        bbox_width, bbox_height, detection_score,
+                        embedding_model, embedding
+                    ) VALUES(?, ?, 1, 2, 3, 4, 0.9, ?, ?)
+                    """,
+                    [
+                        (
+                            active_id,
+                            "2023/12/old.png",
+                            "wrong-model",
+                            b"active",
+                        ),
+                        (
+                            missing_id,
+                            "2025/01/missing.png",
+                            "buffalo_l",
+                            b"missing",
+                        ),
+                    ],
+                )
+                person_id = conn.execute(
+                    "INSERT INTO persons(name) VALUES('Person') RETURNING id"
+                ).fetchone()[0]
+                conn.executemany(
+                    """
+                    INSERT INTO person_files(person_id, file_id)
+                    VALUES(?, ?)
+                    """,
+                    [
+                        (person_id, deleted_id),
+                        (person_id, missing_id),
+                    ],
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            face_path = face_db_path(target, face_config)
+            before = face_path.read_bytes()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            after = face_path.read_bytes()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: 1 InsightFace scanned_files-rad(er) i "
+            "buffalo_l.sqlite3 peker på manglende eller slettet fil.",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: 1 InsightFace faces-rad(er) i buffalo_l.sqlite3 peker "
+            "på manglende eller slettet fil.",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: 2 InsightFace person_files-rad(er) i "
+            "buffalo_l.sqlite3 peker på manglende eller slettet fil.",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: 1 InsightFace scanned_files-rad(er) i "
+            "buffalo_l.sqlite3 stemmer ikke med aktiv fil i hoveddatabasen.",
+            stdout,
+        )
+        self.assertIn(
+            "avvik=target_path,target_path_key,sha256",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: 1 InsightFace faces-rad(er) i buffalo_l.sqlite3 stemmer "
+            "ikke med aktiv fil eller databasemodell.",
+            stdout,
+        )
+        self.assertIn(
+            "avvik=target_path_key,embedding_model",
+            stdout,
+        )
+        self.assertEqual(after, before)
+
+    def test_doctor_rejects_invalid_insightface_schemas_without_migration(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            old_config = FaceRecognitionConfig(model_name="buffalo_l")
+            incomplete_config = FaceRecognitionConfig(
+                model_name="antelopev2"
+            )
+            wrong_model_config = FaceRecognitionConfig(model_name="wrong")
+
+            conn = connect_face_db(target, old_config)
+            conn.execute(
+                "UPDATE meta SET value = '4' WHERE key = 'schema_version'"
+            )
+            conn.commit()
+            conn.close()
+
+            conn = connect_face_db(target, incomplete_config)
+            conn.execute("DROP TABLE person_files")
+            conn.commit()
+            conn.close()
+
+            conn = connect_face_db(target, wrong_model_config)
+            conn.execute(
+                "UPDATE meta SET value = 'other' WHERE key = 'model_name'"
+            )
+            conn.commit()
+            conn.close()
+            before = tree_image(target)
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            after = tree_image(target)
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "buffalo_l.sqlite3 (InsightFace-databasen bruker "
+            "schema_version=4",
+            stdout,
+        )
+        self.assertIn(
+            "antelopev2.sqlite3 (Face-databasen mangler forventede "
+            "tabeller: person_files.",
+            stdout,
+        )
+        self.assertIn(
+            "wrong.sqlite3 (InsightFace-databasen tilhører en annen modell "
+            "(other) enn databasefilen (wrong).",
+            stdout,
+        )
+        self.assertEqual(after, before)
+
     def test_doctor_reports_corrupt_active_face_database_without_stopping(
         self,
     ) -> None:

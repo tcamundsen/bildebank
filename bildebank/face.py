@@ -381,6 +381,55 @@ def face_schema_version(conn: sqlite3.Connection) -> int:
         raise ValueError(f"Ugyldig schema_version i face-databasen: {value}") from exc
 
 
+def require_current_face_schema_read_only(
+    conn: sqlite3.Connection,
+    model_name: str,
+    *,
+    allow_missing_model_name: bool = False,
+) -> None:
+    if not db.table_exists(conn, "meta"):
+        raise ValueError(
+            "InsightFace-databasen mangler eksplisitt schema_version. "
+            "Doctor adopterer eller migrerer ikke databasen."
+        )
+    row = conn.execute(
+        "SELECT value FROM meta WHERE key = 'schema_version'"
+    ).fetchone()
+    if row is None:
+        raise ValueError(
+            "InsightFace-databasen mangler eksplisitt schema_version. "
+            "Doctor adopterer eller migrerer ikke databasen."
+        )
+    value = row[0]
+    try:
+        version = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Ugyldig schema_version i InsightFace-databasen: {value}"
+        ) from exc
+    if version != FACE_SCHEMA_VERSION:
+        raise ValueError(
+            f"InsightFace-databasen bruker schema_version={version}, men "
+            f"doctor krever schema_version={FACE_SCHEMA_VERSION}. "
+            "Doctor migrerer ikke databasen."
+        )
+
+    validate_current_face_schema(conn)
+    stored_model = get_meta(conn, "model_name")
+    if stored_model is None:
+        if allow_missing_model_name:
+            return
+        raise ValueError(
+            "InsightFace-databasen mangler eksplisitt model_name. "
+            "Doctor adopterer ikke databasen."
+        )
+    if stored_model != model_name:
+        raise ValueError(
+            "InsightFace-databasen tilhører en annen modell "
+            f"({stored_model}) enn databasefilen ({model_name})."
+        )
+
+
 def migrate_face_schema(conn: sqlite3.Connection, version: int) -> None:
     if version < 2:
         raise ValueError(f"Kan ikke migrere face-database med schema_version={version}.")

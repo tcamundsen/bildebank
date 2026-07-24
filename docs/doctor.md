@@ -39,6 +39,13 @@ forskjellige InsightFace-modeller. Vanlig doctor bruker den raske
 også `foreign_key_check`. En feil i én sidecar-database rapporteres uten å
 stanse kontrollen av de andre databasene eller resten av bildesamlingen.
 
+Hver InsightFace-database må også ha gjeldende schema og høre til modellen
+som står i databasefilnavnet. Doctor kontrollerer at scannede filer, funne
+ansikter og manuelle person-fil-koblinger bare peker på aktive bilder i
+hoveddatabasen. Kopiert filsti, stinøkkel, SHA-256 og embedding-modell må
+stemme der InsightFace lagrer disse verdiene. Avvik rapporteres, men doctor
+migrerer, flytter, rydder eller regenererer ikke face-data.
+
 Før doctor vurderer de databaseførte filene, kontrollerer den at
 hoveddatabasen er hel og at databasereferanser ikke peker på rader som mangler.
 Hvis databasefilens integritet ikke kan bekreftes, hopper doctor over senere

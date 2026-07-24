@@ -6,6 +6,7 @@ import re
 import sqlite3
 import stat
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
@@ -26,7 +27,15 @@ from .collection_paths import (
 from .config import CONFIG_FILENAME, FaceRecognitionConfig, load_config
 from .db_core import connect_database_read_only
 from .exiftool import resolve_exiftool_path, validate_exiftool_install
-from .face import face_db_path, face_db_summary, insightface_runtime_error
+from .face import (
+    LEGACY_FACE_DB_FILENAME,
+    LEGACY_FACE_DB_MODEL_NAME,
+    face_db_path,
+    face_db_summary,
+    face_model_db_filename,
+    insightface_runtime_error,
+    require_current_face_schema_read_only,
+)
 from .ffmpeg_tools import resolve_ffmpeg_tools
 from .item_sidecars import existing_face_database_paths
 from .media import is_supported_media
@@ -39,6 +48,14 @@ from .openclip import (
 from .pending_deletes import pending_delete_integrity_rows
 from .platform_guard import validate_collection_platform
 from .progress import ProgressMeter
+
+
+@dataclass(frozen=True)
+class SidecarDatabaseHealth:
+    openclip_healthy: bool
+    face_inventory_complete: bool
+    face_database_count: int
+    healthy_face_paths: tuple[Path, ...]
 
 
 def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root: Path) -> int:
@@ -173,7 +190,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
         if doctor_check_main_database_health(target):
             file_paths_safe = doctor_check_file_paths(target)
             if doctor_check_current_schema(target):
-                openclip_healthy = doctor_check_sidecar_database_health(
+                sidecar_health = doctor_check_sidecar_database_health(
                     target,
                     face,
                     deep=deep,
@@ -183,7 +200,8 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
                 doctor_check_duplicate_active_sha256(target)
                 doctor_check_files_have_sources(target)
                 doctor_check_file_source_identity(target)
-                if openclip_healthy:
+                doctor_check_insightface_consistency(target, sidecar_health)
+                if sidecar_health.openclip_healthy:
                     doctor_check_openclip_consistency(target)
                 else:
                     doctor_obs(
@@ -289,7 +307,7 @@ def doctor_check_sidecar_database_health(
     face_config: FaceRecognitionConfig,
     *,
     deep: bool,
-) -> bool:
+) -> SidecarDatabaseHealth:
     openclip_path = openclip_db_path(target)
     openclip_present = openclip_path.exists()
     databases: list[tuple[str, Path]] = []
@@ -319,11 +337,20 @@ def doctor_check_sidecar_database_health(
     if not databases:
         if inventory_error is None:
             doctor_ok("ingen sidecar-databaser å helsekontrollere")
-        return True
+        return SidecarDatabaseHealth(
+            openclip_healthy=True,
+            face_inventory_complete=inventory_error is None,
+            face_database_count=0,
+            healthy_face_paths=(),
+        )
 
     check_name = "integrity_check" if deep else "quick_check"
     healthy_count = 0
     openclip_healthy = not openclip_present
+    healthy_face_paths: list[Path] = []
+    face_database_count = sum(
+        1 for kind, _path in databases if kind == "InsightFace"
+    )
     for kind, path in databases:
         try:
             conn = connect_database_read_only(path)
@@ -381,6 +408,8 @@ def doctor_check_sidecar_database_health(
         healthy = check_errors == [] and foreign_key_errors == []
         if healthy:
             healthy_count += 1
+            if kind == "InsightFace":
+                healthy_face_paths.append(path)
         if kind == "OpenCLIP":
             openclip_healthy = healthy
 
@@ -394,7 +423,283 @@ def doctor_check_sidecar_database_health(
             "Undersøk sidecar-databasene og sikkerhetskopien før de endres "
             "eller regenereres."
         )
-    return openclip_healthy
+    return SidecarDatabaseHealth(
+        openclip_healthy=openclip_healthy,
+        face_inventory_complete=inventory_error is None,
+        face_database_count=face_database_count,
+        healthy_face_paths=tuple(healthy_face_paths),
+    )
+
+
+def doctor_check_insightface_consistency(
+    target: Path,
+    health: SidecarDatabaseHealth,
+) -> None:
+    if not health.face_inventory_complete:
+        doctor_obs(
+            "InsightFace-konsistens er hoppet over fordi databaseoversikten "
+            "ikke er komplett."
+        )
+        return
+    if health.face_database_count == 0:
+        doctor_ok("ingen InsightFace-databaser å kontrollere")
+        return
+
+    skipped = health.face_database_count - len(health.healthy_face_paths)
+    if skipped:
+        doctor_obs(
+            f"InsightFace-konsistens er hoppet over for {skipped} "
+            "database(r) fordi SQLite-helsen ikke er bekreftet."
+        )
+
+    consistent = 0
+    errors_found = False
+    for path in health.healthy_face_paths:
+        try:
+            model_name, allow_missing_model_name = doctor_face_database_model(
+                path
+            )
+            conn = connect_database_read_only(path)
+            try:
+                require_current_face_schema_read_only(
+                    conn,
+                    model_name,
+                    allow_missing_model_name=allow_missing_model_name,
+                )
+                main_db_uri = (
+                    f"{db.db_path_for_target(target).resolve().as_uri()}?mode=ro"
+                )
+                conn.execute("ATTACH DATABASE ? AS main_db", (main_db_uri,))
+                obsolete_rows = {
+                    table: doctor_obsolete_insightface_file_rows(conn, table)
+                    for table in ("scanned_files", "faces", "person_files")
+                }
+                scanned_mismatches = (
+                    doctor_insightface_scanned_file_mismatches(conn)
+                )
+                face_mismatches = doctor_insightface_face_mismatches(
+                    conn,
+                    model_name,
+                )
+            finally:
+                conn.close()
+        except (OSError, RuntimeError, sqlite3.Error, ValueError) as exc:
+            errors_found = True
+            doctor_error(
+                "InsightFace-databasen kunne ikke valideres read-only: "
+                f"{path} ({exc})"
+            )
+            continue
+
+        has_issues = any(obsolete_rows.values())
+        has_issues = has_issues or bool(
+            scanned_mismatches or face_mismatches
+        )
+        for table, rows in obsolete_rows.items():
+            doctor_report_obsolete_insightface_file_rows(path, table, rows)
+        doctor_report_insightface_scanned_file_mismatches(
+            path,
+            scanned_mismatches,
+        )
+        doctor_report_insightface_face_mismatches(
+            path,
+            model_name,
+            face_mismatches,
+        )
+        if has_issues:
+            errors_found = True
+        else:
+            consistent += 1
+
+    if consistent:
+        doctor_ok(
+            "InsightFace-schema og filreferanser: "
+            f"{consistent}/{health.face_database_count} databaser ok"
+        )
+    if errors_found:
+        doctor_advice(
+            "Undersøk InsightFace-databasene og sikkerhetskopien før "
+            "face-data endres eller regenereres."
+        )
+
+
+def doctor_face_database_model(path: Path) -> tuple[str, bool]:
+    if path.name == LEGACY_FACE_DB_FILENAME:
+        return LEGACY_FACE_DB_MODEL_NAME, True
+    model_name = path.stem
+    if face_model_db_filename(model_name) != path.name:
+        raise ValueError(
+            f"Ugyldig InsightFace-databasefilnavn: {path.name}"
+        )
+    return model_name, False
+
+
+def doctor_obsolete_insightface_file_rows(
+    conn: sqlite3.Connection,
+    table: str,
+) -> list[sqlite3.Row]:
+    if table not in {"scanned_files", "faces", "person_files"}:
+        raise ValueError(f"Uventet InsightFace-tabell: {table}")
+    return list(
+        conn.execute(
+            f"""
+            SELECT {table}.file_id, COUNT(*) AS row_count
+            FROM {table}
+            LEFT JOIN main_db.files ON main_db.files.id = {table}.file_id
+            WHERE main_db.files.id IS NULL
+               OR main_db.files.deleted_at IS NOT NULL
+            GROUP BY {table}.file_id
+            ORDER BY {table}.file_id
+            """
+        )
+    )
+
+
+def doctor_insightface_scanned_file_mismatches(
+    conn: sqlite3.Connection,
+) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT
+                scanned_files.file_id,
+                scanned_files.target_path AS sidecar_target_path,
+                scanned_files.target_path_key AS sidecar_target_path_key,
+                scanned_files.sha256 AS sidecar_sha256,
+                main_db.files.target_path AS main_target_path,
+                main_db.files.target_path_key AS main_target_path_key,
+                main_db.files.sha256 AS main_sha256
+            FROM scanned_files
+            JOIN main_db.files ON main_db.files.id = scanned_files.file_id
+            WHERE main_db.files.deleted_at IS NULL
+              AND (
+                    scanned_files.target_path <> main_db.files.target_path
+                 OR scanned_files.target_path_key
+                    <> main_db.files.target_path_key
+                 OR scanned_files.sha256 <> main_db.files.sha256
+              )
+            ORDER BY scanned_files.file_id
+            """
+        )
+    )
+
+
+def doctor_insightface_face_mismatches(
+    conn: sqlite3.Connection,
+    model_name: str,
+) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT
+                faces.file_id,
+                faces.target_path_key AS sidecar_target_path_key,
+                faces.embedding_model AS sidecar_embedding_model,
+                main_db.files.target_path_key AS main_target_path_key,
+                COUNT(*) AS row_count
+            FROM faces
+            JOIN main_db.files ON main_db.files.id = faces.file_id
+            WHERE main_db.files.deleted_at IS NULL
+              AND (
+                    faces.target_path_key <> main_db.files.target_path_key
+                 OR faces.embedding_model <> ?
+              )
+            GROUP BY
+                faces.file_id,
+                faces.target_path_key,
+                faces.embedding_model,
+                main_db.files.target_path_key
+            ORDER BY
+                faces.file_id,
+                faces.target_path_key,
+                faces.embedding_model
+            """,
+            (model_name,),
+        )
+    )
+
+
+def doctor_report_obsolete_insightface_file_rows(
+    path: Path,
+    table: str,
+    rows: list[sqlite3.Row],
+) -> None:
+    if not rows:
+        return
+    total_rows = sum(int(row["row_count"]) for row in rows)
+    doctor_error(
+        f"{total_rows} InsightFace {table}-rad(er) i {path.name} peker på "
+        "manglende eller slettet fil."
+    )
+    for row in rows[:20]:
+        row_count = int(row["row_count"])
+        count_suffix = f", rader={row_count}" if row_count > 1 else ""
+        doctor_info(
+            f"{path.name} {table} file #{int(row['file_id'])}"
+            f"{count_suffix}"
+        )
+    doctor_report_omitted_insightface_groups(len(rows))
+
+
+def doctor_report_insightface_scanned_file_mismatches(
+    path: Path,
+    rows: list[sqlite3.Row],
+) -> None:
+    if not rows:
+        return
+    doctor_error(
+        f"{len(rows)} InsightFace scanned_files-rad(er) i {path.name} "
+        "stemmer ikke med aktiv fil i hoveddatabasen."
+    )
+    for row in rows[:20]:
+        fields = [
+            field
+            for field in ("target_path", "target_path_key", "sha256")
+            if row[f"sidecar_{field}"] != row[f"main_{field}"]
+        ]
+        doctor_info(
+            f"{path.name} scanned_files file #{int(row['file_id'])}: "
+            f"avvik={','.join(fields)}; "
+            f"InsightFace-sti={row['sidecar_target_path']!r}, "
+            f"files-sti={row['main_target_path']!r}"
+        )
+    doctor_report_omitted_insightface_groups(len(rows))
+
+
+def doctor_report_insightface_face_mismatches(
+    path: Path,
+    model_name: str,
+    rows: list[sqlite3.Row],
+) -> None:
+    if not rows:
+        return
+    total_rows = sum(int(row["row_count"]) for row in rows)
+    doctor_error(
+        f"{total_rows} InsightFace faces-rad(er) i {path.name} stemmer ikke "
+        "med aktiv fil eller databasemodell."
+    )
+    for row in rows[:20]:
+        fields = []
+        if (
+            row["sidecar_target_path_key"]
+            != row["main_target_path_key"]
+        ):
+            fields.append("target_path_key")
+        if row["sidecar_embedding_model"] != model_name:
+            fields.append("embedding_model")
+        row_count = int(row["row_count"])
+        count_suffix = f", rader={row_count}" if row_count > 1 else ""
+        doctor_info(
+            f"{path.name} faces file #{int(row['file_id'])}: "
+            f"avvik={','.join(fields)}{count_suffix}; "
+            f"embedding_model={row['sidecar_embedding_model']!r}"
+        )
+    doctor_report_omitted_insightface_groups(len(rows))
+
+
+def doctor_report_omitted_insightface_groups(total: int) -> None:
+    if total > 20:
+        doctor_info(f"... og {total - 20} InsightFace-grupper til")
 
 
 def doctor_check_current_schema(target: Path) -> bool:
