@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import db
 from .config import FaceRecognitionConfig
 from .db import DB_FILENAME
+from .file_moves import recover_pending_file_moves_in_connection
 from .snapshot import (
     MainDatabaseSourceError,
     REPOSITORY_LOCK_FILENAME,
@@ -106,6 +109,7 @@ def create_snapshot(
             allow_binding_change=confirmed_binding_change is not None,
         )
         with TargetLock(source, command="snapshot create"):
+            recover_snapshot_pending_file_moves(source)
             if progress is not None:
                 progress(SnapshotCreateProgress(stage="inventory"))
             inventory = inventory_tree(source, should_cancel=should_cancel)
@@ -232,6 +236,22 @@ def create_snapshot(
         build=build,
         published=published,
     )
+
+
+def recover_snapshot_pending_file_moves(source: Path) -> int:
+    database_path = source / DB_FILENAME
+    if not database_path.is_file():
+        return 0
+    try:
+        conn = db.connect(source)
+    except (sqlite3.DatabaseError, ValueError):
+        # Recovery-snapshots must still work when the main database is damaged
+        # or uses a schema this runtime cannot safely mutate.
+        return 0
+    try:
+        return recover_pending_file_moves_in_connection(conn, source)
+    finally:
+        conn.close()
 
 
 def prepare_repository_path(

@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Callable
 from pathlib import Path
 
 from . import db
 from .config import BrowserHotkeyConfig, FaceRecognitionConfig
 from .face import AddPersonToFileResult, add_person_to_file
 from .file_lifecycle import remove_file, undelete_file
+from .file_moves import recover_pending_file_moves_in_connection
 from .file_tags import set_file_tag
 from .geo import h3_cells_for_manual_cell
 from .manual_dates import date_range_from_uncertainty
-from .target_lock import TargetLock
+from .target_lock import TargetLock, TargetLockError
 
 
 def set_comment_on_file(target: Path, file_id: int, comment: str | None) -> str | None:
@@ -224,8 +226,57 @@ def parse_manual_iso_date(value: str, label: str) -> dt.date:
 
 
 def remove_file_from_browser(target: Path, file_id: int) -> Path:
-    return remove_file(target, file_id=file_id)
+    return _run_browser_file_move(
+        target,
+        file_id,
+        operation=remove_file,
+        operation_name="remove",
+        expect_deleted=True,
+    )
 
 
 def undelete_file_from_browser(target: Path, file_id: int) -> Path:
-    return undelete_file(target, file_id=file_id)
+    return _run_browser_file_move(
+        target,
+        file_id,
+        operation=undelete_file,
+        operation_name="undelete",
+        expect_deleted=False,
+    )
+
+
+def _run_browser_file_move(
+    target: Path,
+    file_id: int,
+    *,
+    operation: Callable[..., Path],
+    operation_name: str,
+    expect_deleted: bool,
+) -> Path:
+    try:
+        return operation(target, file_id=file_id)
+    except TargetLockError:
+        raise
+    except Exception:
+        with TargetLock(target, command="recover-file-moves"):
+            conn = db.connect(target)
+            try:
+                requested_move_was_pending = any(
+                    int(row["file_id"]) == file_id
+                    and str(row["operation"]) == operation_name
+                    for row in db.prepared_pending_file_moves(conn)
+                )
+                recover_pending_file_moves_in_connection(conn, target)
+                row = conn.execute(
+                    "SELECT target_path, deleted_at FROM files WHERE id = ?",
+                    (file_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+        if (
+            requested_move_was_pending
+            and row is not None
+            and (row["deleted_at"] is not None) == expect_deleted
+        ):
+            return Path(str(row["target_path"]))
+        raise

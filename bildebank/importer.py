@@ -20,6 +20,7 @@ from .media import (
     stored_media_filename,
 )
 from .progress import ProgressMeter
+from .safe_file_move import move_file_no_replace
 from .target_lock import TargetLock
 
 
@@ -668,6 +669,7 @@ def refresh_non_metadata_file(
     current_path = db.absolute_target_path(target, Path(str(row["target_path"])))
     if not current_path.exists():
         raise FileNotFoundError(f"Filen finnes ikke: {current_path}")
+    file_hash = str(row["sha256"])
 
     date = media_date(current_path)
     camera = camera_info(current_path)
@@ -690,7 +692,6 @@ def refresh_non_metadata_file(
     destination_dir = destination_directory(target, date)
     if not dry_run:
         destination_dir.mkdir(parents=True, exist_ok=True)
-    file_hash = str(row["sha256"])
     destination_path, name_conflict, already_present = find_existing_or_available_destination(
         destination_dir, current_path.name, file_hash
     )
@@ -708,6 +709,12 @@ def refresh_non_metadata_file(
         if verbose:
             print(f"ALLEREDE_RIKTIG\t{current_path}", flush=True)
     else:
+        actual_hash = sha256_file(current_path)
+        if actual_hash != file_hash:
+            raise ValueError(
+                f"Fila på disk har feil SHA-256: {current_path} "
+                f"(forventet {file_hash}, fant {actual_hash})"
+            )
         if not dry_run:
             destination_path.parent.mkdir(parents=True, exist_ok=True)
             move_id = db.create_pending_file_move(
@@ -720,7 +727,11 @@ def refresh_non_metadata_file(
                 operation="refresh-metadata",
             )
             conn.commit()
-            shutil.move(str(current_path), str(destination_path))
+            move_file_no_replace(
+                current_path,
+                destination_path,
+                expected_sha256=file_hash,
+            )
         stats.moved += 1
         if verbose:
             action = "VILLE_FLYTTE" if dry_run else "FLYTTET"

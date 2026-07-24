@@ -10,20 +10,33 @@ from .target_lock import TargetLock
 
 def recover_pending_file_moves(target: Path) -> int:
     with TargetLock(target, command="recover-file-moves"):
-        conn = db.connect(target)
-        try:
-            rows = db.prepared_pending_file_moves(conn)
-            recovered = 0
-            for row in rows:
-                _recover_pending_file_move(conn, target, row)
-                conn.commit()
-                recovered += 1
-            return recovered
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+        return recover_pending_file_moves_locked(target)
+
+
+def recover_pending_file_moves_locked(target: Path) -> int:
+    """Recover pending moves while the caller already holds the target lock."""
+    conn = db.connect(target)
+    try:
+        return recover_pending_file_moves_in_connection(conn, target)
+    finally:
+        conn.close()
+
+
+def recover_pending_file_moves_in_connection(
+    conn: sqlite3.Connection,
+    target: Path,
+) -> int:
+    try:
+        rows = db.prepared_pending_file_moves(conn)
+        recovered = 0
+        for row in rows:
+            _recover_pending_file_move(conn, target, row)
+            conn.commit()
+            recovered += 1
+        return recovered
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def _recover_pending_file_move(

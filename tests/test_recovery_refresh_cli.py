@@ -13,6 +13,7 @@ from unittest.mock import patch
 from bildebank import db
 from bildebank.db import DB_FILENAME
 from bildebank.media import sha256_file
+from bildebank.safe_file_move import move_file_no_replace
 from bildebank.target_lock import LOCK_FILENAME
 from tests.cli_helpers import capture_cli, run_cli
 from tests.test_media import jpeg_with_exif_camera, minimal_avi_with_idit_outside_info
@@ -32,13 +33,20 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             )
             imported = target / "2024" / "01" / "IMG_20240102.jpg"
             deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
-            real_move = shutil.move
+            real_move = move_file_no_replace
 
-            def move_then_crash(source_path, destination_path):  # noqa: ANN001
-                real_move(source_path, destination_path)
+            def move_then_crash(source_path, destination_path, *, expected_sha256):  # noqa: ANN001
+                real_move(
+                    source_path,
+                    destination_path,
+                    expected_sha256=expected_sha256,
+                )
                 raise RuntimeError("crash after move")
 
-            with patch("bildebank.file_lifecycle.shutil.move", side_effect=move_then_crash):
+            with patch(
+                "bildebank.file_lifecycle.move_file_no_replace",
+                side_effect=move_then_crash,
+            ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]
                 )
@@ -74,7 +82,10 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             )
             imported = target / "2024" / "01" / "IMG_20240102.jpg"
 
-            with patch("bildebank.file_lifecycle.shutil.move", side_effect=OSError("move failed")):
+            with patch(
+                "bildebank.file_lifecycle.move_file_no_replace",
+                side_effect=OSError("move failed"),
+            ):
                 code, stdout, stderr = capture_cli(
                     ["--target", str(target), "remove", "2024/01/IMG_20240102.jpg"]
                 )
@@ -95,6 +106,74 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             self.assertEqual(row[0], "2024/01/IMG_20240102.jpg")
             self.assertIsNone(row[1])
             self.assertEqual(row[2], "aborted")
+
+    def test_recovery_completes_undelete_after_file_was_moved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            source = Path(tmp) / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image-one")
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "remove",
+                        "2024/01/IMG_20240102.jpg",
+                    ]
+                ),
+                0,
+            )
+            restored = target / "2024" / "01" / "IMG_20240102.jpg"
+            deleted = target / "deleted" / "2024" / "01" / "IMG_20240102.jpg"
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
+                db.create_pending_file_move(
+                    conn,
+                    file_id=1,
+                    target_root=target,
+                    from_path=deleted,
+                    to_path=restored,
+                    sha256=sha256_file(deleted),
+                    operation="undelete",
+                )
+                conn.commit()
+            shutil.move(str(deleted), str(restored))
+
+            code, stdout, stderr = capture_cli(["--target", str(target), "status"])
+
+            self.assertEqual(code, 0, stderr)
+            self.assertTrue(restored.exists())
+            self.assertFalse(deleted.exists())
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
+                row = conn.execute(
+                    """
+                    SELECT files.target_path, files.deleted_at,
+                           files.deleted_original_target_path,
+                           pending_file_moves.state
+                    FROM files
+                    JOIN pending_file_moves ON pending_file_moves.file_id = files.id
+                    WHERE pending_file_moves.operation = 'undelete'
+                    """
+                ).fetchone()
+            self.assertEqual(row[0], "2024/01/IMG_20240102.jpg")
+            self.assertIsNone(row[1])
+            self.assertIsNone(row[2])
+            self.assertEqual(row[3], "completed")
 
     def test_recovery_stops_when_both_move_paths_exist(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -180,6 +259,12 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             self.assertTrue(old_target.exists())
 
             old_target.write_bytes(minimal_avi_with_idit_outside_info())
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
+                conn.execute(
+                    "UPDATE files SET sha256 = ?, size_bytes = ?",
+                    (sha256_file(old_target), old_target.stat().st_size),
+                )
+                conn.commit()
 
             code, stdout, stderr = capture_cli(["--target", str(target), "refresh-metadata"])
 
@@ -200,6 +285,54 @@ class RecoveryRefreshCliTests(unittest.TestCase):
                 self.assertEqual(row[2], "metadata")
             finally:
                 conn.close()
+
+    def test_refresh_metadata_rejects_changed_content_before_moving(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "video.avi"
+            source_file.write_bytes(b"RIFF\x04\x00\x00\x00AVI ")
+            old_time = dt.datetime(2008, 2, 29, 12, 0).timestamp()
+            os.utime(source_file, (old_time, old_time))
+
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            old_target = target / "2008" / "02" / "video.avi"
+            new_target = target / "2007" / "03" / "video.avi"
+            old_target.write_bytes(minimal_avi_with_idit_outside_info())
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "refresh-metadata", "--verbose"]
+            )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("feil SHA-256", stdout)
+            self.assertTrue(old_target.exists())
+            self.assertFalse(new_target.exists())
+            with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
+                row = conn.execute(
+                    "SELECT target_path, date_source FROM files"
+                ).fetchone()
+                pending_count = conn.execute(
+                    "SELECT COUNT(*) FROM pending_file_moves"
+                ).fetchone()[0]
+            self.assertEqual(row, ("2008/02/video.avi", "mtime"))
+            self.assertEqual(pending_count, 0)
 
     def test_recovery_completes_refresh_metadata_after_file_was_moved(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -224,13 +357,20 @@ class RecoveryRefreshCliTests(unittest.TestCase):
             with closing(sqlite3.connect(target / DB_FILENAME)) as conn, conn:
                 conn.execute("UPDATE files SET sha256 = ?", (sha256_file(old_target),))
                 conn.commit()
-            real_move = shutil.move
+            real_move = move_file_no_replace
 
-            def move_then_crash(source_path, destination_path):  # noqa: ANN001
-                real_move(source_path, destination_path)
+            def move_then_crash(source_path, destination_path, *, expected_sha256):  # noqa: ANN001
+                real_move(
+                    source_path,
+                    destination_path,
+                    expected_sha256=expected_sha256,
+                )
                 raise RuntimeError("crash after move")
 
-            with patch("bildebank.importer.shutil.move", side_effect=move_then_crash):
+            with patch(
+                "bildebank.importer.move_file_no_replace",
+                side_effect=move_then_crash,
+            ):
                 code, stdout, stderr = capture_cli(["--target", str(target), "refresh-metadata"])
 
             self.assertEqual(code, 2)

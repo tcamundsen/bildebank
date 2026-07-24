@@ -34,6 +34,10 @@ Flytteregler:
 
 Oppstartsrecovery kjøres tidlig for kommandoer som bruker en bildesamling,
 inkludert `doctor`. `migrate` er unntatt fordi den må kunne åpne eldre schema.
+`snapshot create` kjører recovery etter at snapshotoperasjonen har tatt
+target-låsen, når hoveddatabasen kan åpnes trygt med gjeldende schema. En
+manglende eller skadet hoveddatabase endres ikke; den eksisterende
+recovery-snapshotflyten brukes da som før.
 
 Recovery behandler bare rader med `state='prepared'` og `completed_at IS NULL`:
 
@@ -43,6 +47,12 @@ Recovery behandler bare rader med `state='prepared'` og `completed_at IS NULL`:
   fullføres databaseoppdateringen og pending-raden markeres `completed`.
 - Hvis begge stier finnes, ingen av stiene finnes, eller SHA-256 ikke matcher,
   stopper recovery med feil og kommandoen kjøres ikke.
+
+Runtime-flytting skal bruke en no-clobber-operasjon som aldri erstatter en
+eksisterende målsti. På filsystemer uten en egnet atomisk flytting kan
+implementasjonen kopiere til en eksklusivt opprettet målfil, verifisere begge
+kopiene og først deretter fjerne kildestien. Et avbrudd som etterlater begge
+stier, forblir med vilje en uavklart recovery-tilstand.
 
 `doctor` er ikke primær recovery-mekanisme. Normal CLI-oppstart kjører recovery
 før `doctor` samler diagnose. Doctor rapporterer derfor normalt bare pending

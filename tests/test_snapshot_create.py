@@ -3,12 +3,14 @@ from __future__ import annotations
 import errno
 import json
 import platform
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from bildebank import db
+from bildebank.media import sha256_file
 from bildebank.snapshot import (
     REPOSITORY_LOCK_FILENAME,
     REPOSITORY_METADATA_FILENAME,
@@ -23,9 +25,60 @@ from bildebank.snapshot_create import (
 from bildebank.snapshot_repository import COPY_CHUNK_SIZE, RepositoryLockError, SnapshotStorageError
 from bildebank.snapshot_progress import SnapshotCancelled, SnapshotCreateProgress
 from bildebank.target_lock import LOCK_FILENAME
+from tests.db_test_helpers import insert_test_file
 
 
 class SnapshotCreateTests(unittest.TestCase):
+    def test_snapshot_recovers_pending_move_before_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "collection"
+            repository = root / "repository"
+            db.init_database(target)
+            source = target / "2024" / "01" / "active.png"
+            file_id = insert_test_file(target, "2024/01/active.png")
+            expected_sha256 = sha256_file(source)
+            deleted = target / "deleted" / "2024" / "01" / "active.png"
+            deleted.parent.mkdir(parents=True)
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    "UPDATE files SET sha256 = ?, size_bytes = ? WHERE id = ?",
+                    (expected_sha256, source.stat().st_size, file_id),
+                )
+                db.create_pending_file_move(
+                    conn,
+                    file_id=file_id,
+                    target_root=target,
+                    from_path=source,
+                    to_path=deleted,
+                    sha256=expected_sha256,
+                    operation="remove",
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            shutil.move(str(source), str(deleted))
+
+            result = create_snapshot(target, repository)
+
+            self.assertEqual(result.status, "complete")
+            conn = db.connect(target)
+            try:
+                row = conn.execute(
+                    """
+                    SELECT files.target_path, files.deleted_at,
+                           pending_file_moves.state
+                    FROM files
+                    JOIN pending_file_moves ON pending_file_moves.file_id = files.id
+                    """
+                ).fetchone()
+            finally:
+                conn.close()
+            self.assertEqual(row["target_path"], "deleted/2024/01/active.png")
+            self.assertIsNotNone(row["deleted_at"])
+            self.assertEqual(row["state"], "completed")
+
     def test_moved_collection_requires_exact_confirmation_from_read_only_plan(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

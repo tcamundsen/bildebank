@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from . import db
 from .media import sha256_file
+from .safe_file_move import move_file_no_replace
 from .target_lock import TargetLock
 
 
@@ -72,8 +72,11 @@ def remove_file(
                 operation="remove",
             )
             conn.commit()
-            shutil.move(str(original_path), str(deleted_path))
-            _verify_expected_sha256(deleted_path, str(row["sha256"]))
+            move_file_no_replace(
+                original_path,
+                deleted_path,
+                expected_sha256=str(row["sha256"]),
+            )
             db.mark_file_deleted(
                 conn,
                 file_id=int(row["id"]),
@@ -161,8 +164,11 @@ def undelete_file(
                 operation="undelete",
             )
             conn.commit()
-            shutil.move(str(deleted_path), str(restored_path))
-            _verify_expected_sha256(restored_path, str(row["sha256"]))
+            move_file_no_replace(
+                deleted_path,
+                restored_path,
+                expected_sha256=str(row["sha256"]),
+            )
             db.mark_file_undeleted(
                 conn,
                 file_id=int(row["id"]),

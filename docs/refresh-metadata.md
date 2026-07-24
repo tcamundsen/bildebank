@@ -16,6 +16,10 @@ options:
 Hvis Bildebank senere klarer å lese metadata som manglet da filen ble
 importert, vil denne kommandoen flytte filen til riktig datomappe.
 
+Før en fil flyttes, kontrollerer Bildebank at innholdet fortsatt har samme
+SHA-256 som da filen ble importert. Hvis innholdet er endret, rapporteres en
+feil uten at filen flyttes eller databaseplasseringen endres.
+
 Hvis en aktiv databaseført fil mangler på disk, rapporterer kommandoen feil.
 Den leter ikke etter en erstatningsfil andre steder i bildesamlingen.
 

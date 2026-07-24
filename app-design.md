@@ -100,6 +100,13 @@ databaseoppslag og validering til etter at databaseendringen er committed.
 Dette gjelder uavhengig av om operasjonen startes fra kommandolinjen eller
 webgrensesnittet.
 
+En intern filflytting skal aldri overskrive en fil som allerede finnes på
+målstien, heller ikke hvis målfilen dukker opp etter den første valideringen.
+Kilden skal verifiseres mot databaseført SHA-256 før flyttejournalen committes,
+og den flyttede filen skal verifiseres før operasjonen markeres fullført.
+Ved en uavklart filtilstand skal automatisk recovery ikke fjerne noen av
+filstiene som finnes; operasjonen skal stoppe for manuell avklaring.
+
 ## Teknologi
 
 Programmet skal skrives i Python. Planen er at dette skal være et program

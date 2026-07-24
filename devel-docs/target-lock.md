@@ -15,6 +15,10 @@ og committe den før fysisk flytting. Oppstartsrecovery av `pending_file_moves`
 tar også target-låsen før den eventuelt fullfører eller aborterer en entydig
 flytting.
 
+Den fysiske flyttingen skal være no-clobber: en målsti som finnes eller dukker
+opp under operasjonen skal aldri overskrives. `remove`, `undelete` og
+`refresh-metadata` bruker den felles flytteprimitiven i `safe_file_move.py`.
+
 ## Beskyttede operasjoner
 
 - `import` og `rescan-source` holder target-låsen mens filer kopieres og
@@ -23,6 +27,9 @@ flytting.
   databaseoppdatering.
 - `remove` og `undelete` bruker den felles modulen `file_lifecycle.py` fra både
   CLI og web. Modulen tar låsen før oppslag og holder den til etter commit.
+  Hvis en vanlig exception oppstår etter en fysisk webflytting, kjører
+  webhandlingen recovery før den svarer og behandler operasjonen som vellykket
+  når ønsket database- og filtilstand ble fullført entydig.
 - `migrate` holder låsen mens hoveddatabasen migreres.
 - `make-thumbnails` holder låsen mens thumbnail-settet oppdateres.
 - `make-video-previews` holder låsen mens MP4-cachefiler kontrolleres og
@@ -66,7 +73,12 @@ flytting.
   før første databaseoppslag til etter commit.
 - `refresh-metadata` holder låsen fra før filer og database leses til siste
   databaseendring er committed. Låsen beholdes over del-commits og
-  filflyttinger. `--dry-run` skriver ikke og tar derfor ikke låsen.
+  filflyttinger. En fil som skal flyttes verifiseres mot databaseført SHA-256
+  før pending-raden opprettes. `--dry-run` skriver ikke og tar derfor ikke
+  låsen.
+- `snapshot create` kjører entydig pending-move-recovery under sin egen
+  target-lås før inventaret bygges. Manglende eller skadet hoveddatabase
+  muteres ikke, slik at recovery-snapshot fortsatt kan opprettes.
 - lazy lagring av avledet mediemetadata (bredde, høyde og orientering) tar
   låsen ved cache-miss før filen leses og holder den til cacheoppdateringen er
   committed. Cache-hit er skrivefri og tar ikke låsen.
