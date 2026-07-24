@@ -8,17 +8,27 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest import mock
 
 from bildebank import db
 from bildebank.db import DB_FILENAME, init_database
 from bildebank.geo import h3_cells_for_point
 from bildebank.media import sha256_file
+from bildebank.target_lock import LOCK_FILENAME
 from tests.cli_helpers import capture_cli, run_cli
 from tests.db_test_helpers import create_legacy_database, create_v4_database
 from tests.test_media import (
     jpeg_with_exif_camera,
     jpeg_with_exif_datetime,
 )
+
+
+def database_dump(path: Path) -> str:
+    conn = sqlite3.connect(path)
+    try:
+        return "\n".join(conn.iterdump())
+    finally:
+        conn.close()
 
 
 class MigrateCliTests(unittest.TestCase):
@@ -1197,6 +1207,145 @@ class MigrateCliTests(unittest.TestCase):
                         "select 1 from sqlite_master where type = 'table' and name = 'file_sources'"
                     ).fetchone()
                 )
+            finally:
+                conn.close()
+
+    def test_migrate_v1_rolls_back_late_failure_and_can_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            create_legacy_database(target, source, include_duplicate=True)
+            database_path = target / DB_FILENAME
+            before_dump = database_dump(database_path)
+            before_bytes = database_path.read_bytes()
+
+            with mock.patch(
+                "bildebank.db_schema.validate_database_health",
+                side_effect=RuntimeError("injisert sen feil"),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "migrate"]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn("injisert sen feil", stderr)
+            self.assertIn("Ingen endringer er skrevet", stderr)
+            self.assertEqual(database_dump(database_path), before_dump)
+            backups = list(
+                target.glob(".bilder.sqlite3.backup-before-schema-16-*")
+            )
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_bytes(), before_bytes)
+            conn = sqlite3.connect(database_path)
+            try:
+                self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+                self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+            finally:
+                conn.close()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "migrate"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            conn = db.connect(target)
+            try:
+                self.assertEqual(db.schema_version(conn), db.SCHEMA_VERSION)
+                self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+                self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+            finally:
+                conn.close()
+
+    def test_migrate_v14_rolls_back_rebuilt_sources_after_late_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            database_path = target / DB_FILENAME
+            conn = sqlite3.connect(database_path)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO sources(path, path_key, name, imported_at, status)
+                    VALUES('C:\\Bilder', 'c:\\bilder', 'eldre-kilde',
+                           CURRENT_TIMESTAMP, 'superseded')
+                    """
+                )
+                conn.execute(
+                    "ALTER TABLE sources ADD COLUMN superseded_by_source_id INTEGER"
+                )
+                conn.execute(
+                    "UPDATE meta SET value = '14' WHERE key = 'schema_version'"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            before_dump = database_dump(database_path)
+
+            with mock.patch(
+                "bildebank.db_schema.validate_database_health",
+                side_effect=RuntimeError("injisert sen feil"),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "migrate"]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn("Ingen endringer er skrevet", stderr)
+            self.assertEqual(database_dump(database_path), before_dump)
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "migrate"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            conn = db.connect(target)
+            try:
+                self.assertNotIn(
+                    "superseded_by_source_id",
+                    db.table_columns(conn, "sources"),
+                )
+                self.assertEqual(
+                    conn.execute("SELECT status FROM sources").fetchone()[0],
+                    "imported",
+                )
+                self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+                self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+            finally:
+                conn.close()
+
+    def test_migrate_keyboard_interrupt_rolls_back_and_releases_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            create_legacy_database(target, source, include_duplicate=True)
+            database_path = target / DB_FILENAME
+            before_dump = database_dump(database_path)
+
+            with mock.patch(
+                "bildebank.db_schema.validate_database_health",
+                side_effect=KeyboardInterrupt,
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "migrate"]
+                )
+
+            self.assertEqual(code, 130)
+            self.assertEqual(stderr, "Avbrutt.\n")
+            self.assertEqual(database_dump(database_path), before_dump)
+            self.assertFalse((target / LOCK_FILENAME).exists())
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "migrate"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            conn = db.connect(target)
+            try:
+                self.assertEqual(db.schema_version(conn), db.SCHEMA_VERSION)
+                self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+                self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
             finally:
                 conn.close()
 

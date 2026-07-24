@@ -456,7 +456,8 @@ def create_geo_place_names_schema(conn: sqlite3.Connection) -> None:
 
 
 def create_geo_places_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(
+    execute_sql_statements(
+        conn,
         """
         CREATE TABLE IF NOT EXISTS geo_places (
             slug TEXT PRIMARY KEY,
@@ -526,7 +527,8 @@ def seed_system_tags(conn: sqlite3.Connection) -> None:
 
 
 def create_file_sources_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(
+    execute_sql_statements(
+        conn,
         """
         CREATE TABLE IF NOT EXISTS file_sources (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -717,7 +719,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 validate_current_schema(conn)
                 validate_database_health(conn)
                 conn.commit()
-            except Exception:
+            except BaseException:
                 conn.rollback()
                 raise
             return MigrationPlan(
@@ -755,7 +757,7 @@ def migrate_database(target: Path) -> MigrationPlan:
                 set_collection_id(conn)
                 validate_database_health(conn)
                 conn.commit()
-            except Exception:
+            except BaseException:
                 conn.rollback()
                 raise
             finally:
@@ -827,7 +829,7 @@ def migrate_database(target: Path) -> MigrationPlan:
             set_collection_id(conn)
             validate_database_health(conn)
             conn.commit()
-        except Exception:
+        except BaseException:
             conn.rollback()
             raise
         finally:
@@ -1602,7 +1604,8 @@ def rebuild_files_without_legacy_source_columns(conn: sqlite3.Connection) -> Non
     if not (legacy_columns & table_columns(conn, "files")):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_files_sha256 ON files(sha256)")
         return
-    conn.executescript(
+    execute_sql_statements(
+        conn,
         """
         CREATE TABLE files_v3 (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1640,7 +1643,8 @@ def rebuild_files_without_legacy_source_columns(conn: sqlite3.Connection) -> Non
 
 def rebuild_errors_without_source_fk(conn: sqlite3.Connection) -> None:
     if not table_exists(conn, "errors"):
-        conn.executescript(
+        execute_sql_statements(
+            conn,
             """
             CREATE TABLE errors (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1656,7 +1660,8 @@ def rebuild_errors_without_source_fk(conn: sqlite3.Connection) -> None:
         return
     if not conn.execute("PRAGMA foreign_key_list(errors)").fetchall():
         return
-    conn.executescript(
+    execute_sql_statements(
+        conn,
         """
         CREATE TABLE errors_v3 (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1759,7 +1764,8 @@ def rebuild_sources_table(conn: sqlite3.Connection) -> None:
                 status,
             )
         )
-    conn.executescript(
+    execute_sql_statements(
+        conn,
         """
         CREATE TABLE sources_v4 (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1780,7 +1786,8 @@ def rebuild_sources_table(conn: sqlite3.Connection) -> None:
         """,
         named_rows,
     )
-    conn.executescript(
+    execute_sql_statements(
+        conn,
         """
         DROP TABLE sources;
         ALTER TABLE sources_v4 RENAME TO sources;
@@ -1791,7 +1798,8 @@ def rebuild_sources_table(conn: sqlite3.Connection) -> None:
 def rebuild_file_sources_without_kind(conn: sqlite3.Connection) -> None:
     if "kind" not in table_columns(conn, "file_sources"):
         return
-    conn.executescript(
+    execute_sql_statements(
+        conn,
         """
         CREATE TABLE file_sources_v4 (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
