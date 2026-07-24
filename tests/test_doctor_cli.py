@@ -564,7 +564,153 @@ class DoctorCliTests(unittest.TestCase):
 
         self.assertEqual(code, 0, stderr)
         self.assertIn(
-            "OK: InsightFace-schema og filreferanser: 2/2 databaser ok",
+            "OK: InsightFace-schema og intern konsistens: "
+            "2/2 databaser ok",
+            stdout,
+        )
+        self.assertEqual(after, before)
+
+    def test_doctor_reports_insightface_internal_reference_and_count_issues_read_only(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            first_file_id = insert_test_file(
+                target,
+                "2024/01/first.png",
+                sha256="sha-first",
+            )
+            second_file_id = insert_test_file(
+                target,
+                "2024/01/second.png",
+                sha256="sha-second",
+            )
+            face_config = FaceRecognitionConfig(model_name="buffalo_l")
+            conn = connect_face_db(target, face_config)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO scanned_files(
+                        file_id, target_path, target_path_key, sha256,
+                        status, face_count
+                    ) VALUES(
+                        ?, '2024/01/first.png',
+                        '2024/01/first.png', 'sha-first', 'ok', 2
+                    )
+                    """,
+                    (first_file_id,),
+                )
+                first_face_id = int(
+                    conn.execute(
+                        """
+                        INSERT INTO faces(
+                            file_id, target_path_key, bbox_x, bbox_y,
+                            bbox_width, bbox_height, detection_score,
+                            embedding_model, embedding
+                        ) VALUES(
+                            ?, '2024/01/first.png',
+                            1, 2, 3, 4, 0.9, 'buffalo_l', ?
+                        )
+                        RETURNING id
+                        """,
+                        (first_file_id, b"first"),
+                    ).fetchone()[0]
+                )
+                conn.execute(
+                    """
+                    INSERT INTO faces(
+                        file_id, target_path_key, bbox_x, bbox_y,
+                        bbox_width, bbox_height, detection_score,
+                        embedding_model, embedding
+                    ) VALUES(
+                        ?, '2024/01/second.png',
+                        1, 2, 3, 4, 0.9, 'buffalo_l', ?
+                    )
+                    """,
+                    (second_file_id, b"second"),
+                )
+                person_id = int(
+                    conn.execute(
+                        "INSERT INTO persons(name) VALUES('Person') "
+                        "RETURNING id"
+                    ).fetchone()[0]
+                )
+                conn.execute(
+                    "INSERT INTO person_faces(person_id, face_id) "
+                    "VALUES(?, 900001)",
+                    (person_id,),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO face_suggestions(
+                        person_id, face_id, reference_face_id, similarity
+                    ) VALUES(?, 900002, NULL, 0.8)
+                    """,
+                    (person_id,),
+                )
+                conn.execute(
+                    """
+                    INSERT INTO face_suggestions(
+                        person_id, face_id, reference_face_id, similarity
+                    ) VALUES(?, ?, 900003, 0.9)
+                    """,
+                    (person_id, first_face_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            face_path = face_db_path(target, face_config)
+            before = face_path.read_bytes()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            after = face_path.read_bytes()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: 3 interne InsightFace face_id-referanse(r) i "
+            "buffalo_l.sqlite3 peker på manglende faces-rad.",
+            stdout,
+        )
+        self.assertIn(
+            "buffalo_l.sqlite3 person_faces.face_id=900001",
+            stdout,
+        )
+        self.assertIn(
+            "buffalo_l.sqlite3 face_suggestions.face_id=900002",
+            stdout,
+        )
+        self.assertIn(
+            "buffalo_l.sqlite3 "
+            "face_suggestions.reference_face_id=900003",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: 2 InsightFace fil(er) i buffalo_l.sqlite3 har "
+            "inkonsistent faces/scanned_files-telling.",
+            stdout,
+        )
+        self.assertIn(
+            f"buffalo_l.sqlite3 file #{first_file_id}: "
+            "scanned_files.face_count=2, faces=1, status='ok'",
+            stdout,
+        )
+        self.assertIn(
+            f"buffalo_l.sqlite3 file #{second_file_id}: "
+            "scanned_files-rad mangler; faces=1",
             stdout,
         )
         self.assertEqual(after, before)

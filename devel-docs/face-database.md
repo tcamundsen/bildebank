@@ -193,6 +193,16 @@ For v5 skal:
 - samlingsinterne stier være relative
 - `PRAGMA foreign_key_check` ikke finne brutte deklarerte referanser
 
+Doctor kontrollerer i tillegg relasjoner som ikke er deklarerte foreign keys
+i det støttede schemaet:
+
+- `person_faces.face_id` og begge face-id-feltene i `face_suggestions` peker
+  på eksisterende `faces`
+- `scanned_files.face_count` stemmer med antall `faces` for filen
+- `faces` finnes ikke for en fil uten en tilhørende `scanned_files`-rad
+
+Disse kontrollene er read-only og endrer ikke eldre face-schemaer.
+
 Hvis en database sier `schema_version=5`, men ikke oppfyller disse kravene,
 skal programmet feile tydelig i stedet for å opprette, bygge om eller slette
 tabeller lydløst.

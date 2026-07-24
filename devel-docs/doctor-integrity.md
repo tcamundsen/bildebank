@@ -123,6 +123,12 @@ ikke har noen `files`-rad. De rapporteres, men adopteres eller slettes ikke.
   `faces.embedding_model` skal stemme med databasemodellen.
   `scanned_files`, `faces` og `person_files` skal bare peke på aktive
   `files`-rader.
+- `person_faces.face_id`, `face_suggestions.face_id` og en ikke-NULL
+  `face_suggestions.reference_face_id` skal peke på en eksisterende
+  `faces.id`. Disse relasjonene er ikke deklarerte foreign keys i eldre,
+  støttede face-schemaer og må derfor kontrolleres semantisk.
+- `scanned_files.face_count` skal være lik antall `faces`-rader for filen.
+  En fil med `faces`-rader skal også ha en `scanned_files`-rad.
 
 ## Kontrollnivåer
 
@@ -169,8 +175,10 @@ Ferdig:
   kildefiler
 - presis rapportering av at ignorerte Google JSON-sidecarfiler ikke er
   kontrollert mot bildesamlingen
+- semantisk InsightFace-kontroll av interne `face_id`-referanser,
+  `scanned_files.face_count` og `faces` uten tilhørende `scanned_files`
 
 Gjenstår:
 
-- interne InsightFace-`face_id`-referanser og `scanned_files.face_count` som
-  et separat diagnoseområde
+- klassifiser faktiske funntyper før eventuelle smale reparasjonskommandoer
+  vurderes

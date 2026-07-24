@@ -481,6 +481,10 @@ def doctor_check_insightface_consistency(
                     conn,
                     model_name,
                 )
+                face_reference_issues = (
+                    doctor_insightface_face_reference_issues(conn)
+                )
+                face_count_issues = doctor_insightface_face_count_issues(conn)
             finally:
                 conn.close()
         except (OSError, RuntimeError, sqlite3.Error, ValueError) as exc:
@@ -493,7 +497,10 @@ def doctor_check_insightface_consistency(
 
         has_issues = any(obsolete_rows.values())
         has_issues = has_issues or bool(
-            scanned_mismatches or face_mismatches
+            scanned_mismatches
+            or face_mismatches
+            or face_reference_issues
+            or face_count_issues
         )
         for table, rows in obsolete_rows.items():
             doctor_report_obsolete_insightface_file_rows(path, table, rows)
@@ -506,6 +513,14 @@ def doctor_check_insightface_consistency(
             model_name,
             face_mismatches,
         )
+        doctor_report_insightface_face_reference_issues(
+            path,
+            face_reference_issues,
+        )
+        doctor_report_insightface_face_count_issues(
+            path,
+            face_count_issues,
+        )
         if has_issues:
             errors_found = True
         else:
@@ -513,7 +528,7 @@ def doctor_check_insightface_consistency(
 
     if consistent:
         doctor_ok(
-            "InsightFace-schema og filreferanser: "
+            "InsightFace-schema og intern konsistens: "
             f"{consistent}/{health.face_database_count} databaser ok"
         )
     if errors_found:
@@ -619,6 +634,107 @@ def doctor_insightface_face_mismatches(
     )
 
 
+def doctor_insightface_face_reference_issues(
+    conn: sqlite3.Connection,
+) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT
+                'person_faces' AS source_table,
+                'face_id' AS source_column,
+                person_faces.face_id,
+                COUNT(*) AS row_count
+            FROM person_faces
+            LEFT JOIN faces ON faces.id = person_faces.face_id
+            WHERE faces.id IS NULL
+            GROUP BY person_faces.face_id
+
+            UNION ALL
+
+            SELECT
+                'face_suggestions' AS source_table,
+                'face_id' AS source_column,
+                face_suggestions.face_id,
+                COUNT(*) AS row_count
+            FROM face_suggestions
+            LEFT JOIN faces
+              ON faces.id = face_suggestions.face_id
+            WHERE faces.id IS NULL
+            GROUP BY face_suggestions.face_id
+
+            UNION ALL
+
+            SELECT
+                'face_suggestions' AS source_table,
+                'reference_face_id' AS source_column,
+                face_suggestions.reference_face_id AS face_id,
+                COUNT(*) AS row_count
+            FROM face_suggestions
+            LEFT JOIN faces
+              ON faces.id = face_suggestions.reference_face_id
+            WHERE face_suggestions.reference_face_id IS NOT NULL
+              AND faces.id IS NULL
+            GROUP BY face_suggestions.reference_face_id
+
+            ORDER BY source_table, source_column, face_id
+            """
+        )
+    )
+
+
+def doctor_insightface_face_count_issues(
+    conn: sqlite3.Connection,
+) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            WITH actual_face_counts AS (
+                SELECT file_id, COUNT(*) AS actual_face_count
+                FROM faces
+                GROUP BY file_id
+            ),
+            inconsistent_scanned_files AS (
+                SELECT
+                    scanned_files.file_id,
+                    scanned_files.face_count AS stored_face_count,
+                    COALESCE(
+                        actual_face_counts.actual_face_count,
+                        0
+                    ) AS actual_face_count,
+                    scanned_files.status AS scan_status,
+                    0 AS missing_scanned_file
+                FROM scanned_files
+                LEFT JOIN actual_face_counts
+                  ON actual_face_counts.file_id = scanned_files.file_id
+                WHERE scanned_files.face_count <> COALESCE(
+                    actual_face_counts.actual_face_count,
+                    0
+                )
+            ),
+            faces_without_scanned_file AS (
+                SELECT
+                    actual_face_counts.file_id,
+                    NULL AS stored_face_count,
+                    actual_face_counts.actual_face_count,
+                    NULL AS scan_status,
+                    1 AS missing_scanned_file
+                FROM actual_face_counts
+                LEFT JOIN scanned_files
+                  ON scanned_files.file_id = actual_face_counts.file_id
+                WHERE scanned_files.file_id IS NULL
+            )
+            SELECT *
+            FROM inconsistent_scanned_files
+            UNION ALL
+            SELECT *
+            FROM faces_without_scanned_file
+            ORDER BY file_id
+            """
+        )
+    )
+
+
 def doctor_report_obsolete_insightface_file_rows(
     path: Path,
     table: str,
@@ -693,6 +809,55 @@ def doctor_report_insightface_face_mismatches(
             f"{path.name} faces file #{int(row['file_id'])}: "
             f"avvik={','.join(fields)}{count_suffix}; "
             f"embedding_model={row['sidecar_embedding_model']!r}"
+        )
+    doctor_report_omitted_insightface_groups(len(rows))
+
+
+def doctor_report_insightface_face_reference_issues(
+    path: Path,
+    rows: list[sqlite3.Row],
+) -> None:
+    if not rows:
+        return
+    total_rows = sum(int(row["row_count"]) for row in rows)
+    doctor_error(
+        f"{total_rows} interne InsightFace face_id-referanse(r) i "
+        f"{path.name} peker på manglende faces-rad."
+    )
+    for row in rows[:20]:
+        row_count = int(row["row_count"])
+        count_suffix = f", rader={row_count}" if row_count > 1 else ""
+        doctor_info(
+            f"{path.name} {row['source_table']}.{row['source_column']}="
+            f"{int(row['face_id'])}{count_suffix}"
+        )
+    doctor_report_omitted_insightface_groups(len(rows))
+
+
+def doctor_report_insightface_face_count_issues(
+    path: Path,
+    rows: list[sqlite3.Row],
+) -> None:
+    if not rows:
+        return
+    doctor_error(
+        f"{len(rows)} InsightFace fil(er) i {path.name} har inkonsistent "
+        "faces/scanned_files-telling."
+    )
+    for row in rows[:20]:
+        if int(row["missing_scanned_file"]):
+            detail = (
+                "scanned_files-rad mangler; "
+                f"faces={int(row['actual_face_count'])}"
+            )
+        else:
+            detail = (
+                f"scanned_files.face_count={row['stored_face_count']!r}, "
+                f"faces={int(row['actual_face_count'])}, "
+                f"status={row['scan_status']!r}"
+            )
+        doctor_info(
+            f"{path.name} file #{int(row['file_id'])}: {detail}"
         )
     doctor_report_omitted_insightface_groups(len(rows))
 
