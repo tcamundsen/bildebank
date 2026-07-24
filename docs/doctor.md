@@ -40,6 +40,13 @@ Doctor kontrollerer også at alle databaseførte filer, inkludert filer under
 like i filraden og den tilhørende kildeinformasjonen. Avvik rapporteres, men
 repareres ikke.
 
+Databaseførte samlingsstier må være relative og bruke `/` som skilletegn.
+Doctor avviser blant annet absolutte stier, `..`, feil mappeplassering,
+`target_path_key` som ikke stemmer, og stier som går gjennom en symlink,
+junction eller et annet Windows reparse point. Hvis stiene ikke kan bekreftes
+som trygge, åpner eller hasher doctor ikke databaseførte bildefiler i samme
+kjøring.
+
 `bildebank doctor --deep` leser i tillegg alle aktive filer og kontrollerer
 SHA-256 mot databasen. Denne kontrollen kan ta lang tid for en stor samling.
 Doctor viser fremdrift mens den leter etter manglende filer, scanner etter

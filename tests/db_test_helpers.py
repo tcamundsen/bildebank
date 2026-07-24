@@ -34,8 +34,8 @@ def insert_test_file(
             INSERT INTO files(
                 target_path, target_path_key, original_filename, stored_filename,
                 sha256, size_bytes, taken_date, date_source, name_conflict,
-                deleted_at, gps_scanned_at
-            ) VALUES(?, ?, ?, ?, ?, ?, ?, 'filename', 0, ?, ?)
+                deleted_at, deleted_original_target_path, gps_scanned_at
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, 'filename', 0, ?, ?, ?)
             RETURNING id
             """,
             (
@@ -47,6 +47,7 @@ def insert_test_file(
                 file_path.stat().st_size,
                 "2024-01-02",
                 "2024-02-03 04:05:06" if deleted else None,
+                relative_path.removeprefix("deleted/") if deleted else None,
                 "2024-02-03 04:05:06" if gps_scanned else None,
             ),
         ).fetchone()

@@ -120,6 +120,7 @@ from .db_tags import (
     untag_file,
 )
 from .db_files import (
+    FilePathIntegrityIssue,
     MAX_FILE_COMMENT_LENGTH,
     UnimportPlan,
     active_file_integrity_rows,
@@ -131,6 +132,8 @@ from .db_files import (
     duplicate_source_count,
     file_source_integrity_mismatches,
     file_by_target_path,
+    file_path_integrity_issues,
+    file_path_integrity_rows,
     file_sources_by_target_path,
     file_target_path_keys,
     files_without_sources,
@@ -309,6 +312,7 @@ __all__ = (
     "tags",
     "tags_for_file",
     "untag_file",
+    "FilePathIntegrityIssue",
     "UnimportPlan",
     "active_file_integrity_rows",
     "active_files_without_sources",
@@ -319,6 +323,8 @@ __all__ = (
     "duplicate_source_count",
     "file_source_integrity_mismatches",
     "file_by_target_path",
+    "file_path_integrity_issues",
+    "file_path_integrity_rows",
     "file_sources_by_target_path",
     "file_target_path_keys",
     "files_without_sources",

@@ -5,9 +5,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from .collection_paths import (
+    InvalidCollectionRelativePath,
+    is_active_collection_file_path,
+    is_deleted_collection_file_path,
+    parse_collection_relative_path,
+)
 from .db_core import (
     absolute_target_path,
     path_key,
+    relative_path_key,
     target_relative_path,
     target_relative_path_key,
 )
@@ -52,6 +59,178 @@ class UnimportPlan:
     file_ids_to_delete: tuple[int, ...]
     target_paths_to_delete: tuple[Path, ...]
     target_paths_to_keep: tuple[Path, ...]
+
+
+@dataclass(frozen=True)
+class FilePathIntegrityIssue:
+    file_id: int
+    target_path: object
+    field: str
+    value: object
+    message: str
+
+
+def file_path_integrity_rows(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT
+                id,
+                target_path,
+                target_path_key,
+                deleted_at,
+                deleted_original_target_path
+            FROM files
+            ORDER BY id
+            """
+        )
+    )
+
+
+def file_path_integrity_issues(
+    conn: sqlite3.Connection,
+) -> list[FilePathIntegrityIssue]:
+    issues: list[FilePathIntegrityIssue] = []
+    for row in file_path_integrity_rows(conn):
+        file_id = int(row["id"])
+        target_path_value = row["target_path"]
+        target_path = _validated_collection_path(
+            issues,
+            file_id=file_id,
+            target_path=target_path_value,
+            field="target_path",
+            value=target_path_value,
+        )
+        if target_path is not None:
+            expected_key = relative_path_key(target_path)
+            if row["target_path_key"] != expected_key:
+                issues.append(
+                    FilePathIntegrityIssue(
+                        file_id=file_id,
+                        target_path=target_path_value,
+                        field="target_path_key",
+                        value=row["target_path_key"],
+                        message=(
+                            "stemmer ikke med normalisert target_path "
+                            f"(forventet {expected_key!r})"
+                        ),
+                    )
+                )
+
+        original_value = row["deleted_original_target_path"]
+        if row["deleted_at"] is None:
+            if target_path is not None and not is_active_collection_file_path(
+                target_path
+            ):
+                issues.append(
+                    FilePathIntegrityIssue(
+                        file_id=file_id,
+                        target_path=target_path_value,
+                        field="target_path",
+                        value=target_path_value,
+                        message=(
+                            "aktiv fil må ligge under udatert/ eller en gyldig "
+                            "års-/månedsmappe"
+                        ),
+                    )
+                )
+            if original_value is not None:
+                issues.append(
+                    FilePathIntegrityIssue(
+                        file_id=file_id,
+                        target_path=target_path_value,
+                        field="deleted_original_target_path",
+                        value=original_value,
+                        message="skal være NULL for en aktiv fil",
+                    )
+                )
+            continue
+
+        if target_path is not None and not is_deleted_collection_file_path(
+            target_path
+        ):
+            issues.append(
+                FilePathIntegrityIssue(
+                    file_id=file_id,
+                    target_path=target_path_value,
+                    field="target_path",
+                    value=target_path_value,
+                    message=(
+                        "slettet fil må ligge under deleted/ med opprinnelig "
+                        "års-/måneds- eller udatert-layout"
+                    ),
+                )
+            )
+        if original_value is None:
+            issues.append(
+                FilePathIntegrityIssue(
+                    file_id=file_id,
+                    target_path=target_path_value,
+                    field="deleted_original_target_path",
+                    value=original_value,
+                    message="mangler for en slettet fil",
+                )
+            )
+            continue
+
+        original_path = _validated_collection_path(
+            issues,
+            file_id=file_id,
+            target_path=target_path_value,
+            field="deleted_original_target_path",
+            value=original_value,
+        )
+        if original_path is None:
+            continue
+        if not is_active_collection_file_path(original_path):
+            issues.append(
+                FilePathIntegrityIssue(
+                    file_id=file_id,
+                    target_path=target_path_value,
+                    field="deleted_original_target_path",
+                    value=original_value,
+                    message=(
+                        "må peke til en gyldig opprinnelig års-/måneds- "
+                        "eller udatert-layout"
+                    ),
+                )
+            )
+        if target_path is not None and target_path != Path(
+            "deleted", *original_path.parts
+        ):
+            issues.append(
+                FilePathIntegrityIssue(
+                    file_id=file_id,
+                    target_path=target_path_value,
+                    field="deleted_original_target_path",
+                    value=original_value,
+                    message="stemmer ikke med plasseringen under deleted/",
+                )
+            )
+    return issues
+
+
+def _validated_collection_path(
+    issues: list[FilePathIntegrityIssue],
+    *,
+    file_id: int,
+    target_path: object,
+    field: str,
+    value: object,
+) -> Path | None:
+    try:
+        return parse_collection_relative_path(value)
+    except InvalidCollectionRelativePath as exc:
+        issues.append(
+            FilePathIntegrityIssue(
+                file_id=file_id,
+                target_path=target_path,
+                field=field,
+                value=value,
+                message=str(exc),
+            )
+        )
+        return None
 
 
 def source_file_sources(conn: sqlite3.Connection, source_id: int) -> list[sqlite3.Row]:

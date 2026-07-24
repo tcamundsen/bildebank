@@ -45,10 +45,18 @@ brukes som grunnlag for fil- eller proveniensdommer i samme doctor-kjøring.
 - Ingen sti går gjennom symlinker eller Windows reparse points.
 - `files.target_path_key` stemmer med normalisert nøkkel for `target_path`.
 - En aktiv fil ligger under `udatert/` eller en gyldig års-/månedsmappe.
+- En aktiv fil har ikke `deleted_original_target_path`.
 - En slettet fil ligger under `deleted/` og har
+  `deleted_original_target_path`.
+- En slettet fils sti under `deleted/` stemmer med
   `deleted_original_target_path`.
 - En fil på databaseført målsti er en vanlig fil, ikke en symlink, junction
   eller annen reparse point.
+
+Stivalideringen skjer før filtilgang. Hvis en databaseført sti ikke består
+kontrakten, hopper doctor over filkontrollene i den kjøringen. Eksisterende
+stikomponenter kontrolleres med `follow_symlinks=False`; stivalideringen skal
+ikke bruke `resolve()` på den databaseførte filstien.
 
 ## Filer på disk
 
@@ -100,13 +108,16 @@ Ferdig:
 
 - read-only-kontrakten for vanlig og dyp doctor
 - uttrykkelig `integrity_check` og `foreign_key_check` for hoveddatabasen
+- uttrykkelig read-only gate for gjeldende databaseschema
 - alle `files` ↔ `file_sources`-invarianter, også for slettede filer
+- full databaseført stivalidering for `files`, inkludert relativt format,
+  aktiv/slettet mappeplassering, `deleted_original_target_path`,
+  `target_path_key`, symlinker og Windows reparse points
 - rapportering av `pending_file_moves`
 - eksisterende kontroller for aktive filer og OpenCLIP-orphans
 
 Gjenstår:
 
-- full stivalidering uten lenker/reparse points
 - slettede filer, størrelse og dyp SHA-256
 - `pending_file_deletes`
 - alle InsightFace-modeller og full sidecar-konsistens

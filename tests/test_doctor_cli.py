@@ -156,6 +156,168 @@ class DoctorCliTests(unittest.TestCase):
         self.assertIn("OK: SQLite integrity_check: ok", stdout)
         self.assertIn("OK: SQLite foreign_key_check: ingen feil", stdout)
 
+    def test_doctor_reports_absolute_database_path_before_schema_gate(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            init_database(target)
+            absolute_path = str(root / "outside.jpg")
+            conn = sqlite3.connect(target / DB_FILENAME)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename,
+                        stored_filename, sha256, size_bytes, date_source
+                    ) VALUES(?, ?, 'outside.jpg', 'outside.jpg',
+                             'outside-hash', 10, 'filename')
+                    """,
+                    (absolute_path, absolute_path),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("FEIL: 1 databaseført(e) stifeil", stdout)
+        self.assertIn("target_path=", stdout)
+        self.assertIn("må være relativ til bildesamlingen", stdout)
+        self.assertIn(
+            "gjeldende databaseschema kunne ikke bekreftes",
+            stdout,
+        )
+        self.assertIn(
+            "øvrige database- og filkontroller er hoppet over",
+            stdout,
+        )
+        self.assertNotIn("Doctor filer:", stdout)
+
+    def test_doctor_skips_file_access_for_parent_component_path(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename,
+                        stored_filename, sha256, size_bytes, date_source
+                    ) VALUES(
+                        '2024/../outside.jpg', 'outside.jpg',
+                        'outside.jpg', 'outside.jpg',
+                        'outside-hash', 10, 'filename'
+                    )
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn("kan ikke inneholde ..", stdout)
+        self.assertIn(f"OK: databaseschema v{db.SCHEMA_VERSION}: ok", stdout)
+        self.assertIn("mangler file_sources-proveniens", stdout)
+        self.assertIn(
+            "filkontroller er hoppet over fordi databaseførte "
+            "samlingsstier ikke er bekreftet som trygge",
+            stdout,
+        )
+        self.assertNotIn("Doctor filer:", stdout)
+
+    def test_doctor_deep_does_not_follow_database_path_symlink(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            outside = root / "outside"
+            init_database(target)
+            (outside / "01").mkdir(parents=True)
+            (outside / "01" / "linked.jpg").write_bytes(b"outside")
+            try:
+                (target / "2024").symlink_to(
+                    outside,
+                    target_is_directory=True,
+                )
+            except OSError as exc:
+                self.skipTest(f"Kan ikke opprette test-symlink: {exc}")
+
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO files(
+                        target_path, target_path_key, original_filename,
+                        stored_filename, sha256, size_bytes, date_source
+                    ) VALUES(
+                        '2024/01/linked.jpg', '2024/01/linked.jpg',
+                        'linked.jpg', 'linked.jpg',
+                        'outside-hash', 7, 'filename'
+                    )
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+                patch("bildebank.cli_doctor.sha256_file") as hash_file,
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor", "--deep"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        hash_file.assert_not_called()
+        self.assertIn(
+            "databaseført(e) sti(er) går gjennom en usikker stikomponent",
+            stdout,
+        )
+        self.assertIn("symlink eller et Windows reparse point", stdout)
+        self.assertNotIn("Dyp filintegritet:", stdout)
+        self.assertNotIn("Doctor filer:", stdout)
+
     def test_doctor_reports_main_database_foreign_key_errors(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -412,10 +574,11 @@ enabled = true
                         INSERT INTO files(
                             target_path, target_path_key, original_filename,
                             stored_filename, sha256, size_bytes, date_source,
-                            deleted_at
+                            deleted_at, deleted_original_target_path
                         )
                         VALUES(?, ?, ?, ?, ?, ?, 'filename',
-                               CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END)
+                               CASE WHEN ? THEN CURRENT_TIMESTAMP ELSE NULL END,
+                               CASE WHEN ? THEN '2024/01/deleted.jpg' ELSE NULL END)
                         """,
                         (
                             relative.as_posix(),
@@ -424,6 +587,7 @@ enabled = true
                             path.name,
                             sha256_file(path),
                             len(content),
+                            deleted,
                             deleted,
                         ),
                     )
@@ -578,8 +742,11 @@ enabled = true
                     INSERT INTO files(
                         target_path, target_path_key, original_filename,
                         stored_filename, sha256, size_bytes, date_source,
-                        deleted_at
-                    ) VALUES(?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        deleted_at, deleted_original_target_path
+                    ) VALUES(
+                        ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP,
+                        '2024/01/missing.jpg'
+                    )
                     """,
                     (
                         "deleted/2024/01/missing.jpg",
@@ -738,6 +905,45 @@ enabled = true
         self.assertIn("INFO: orphan: 2024/01/orphan.jpg", stdout)
         self.assertNotIn("orphan: 2024/01/registered.jpg", stdout)
         self.assertNotIn("orphan: 2024/01/notes.txt", stdout)
+
+    def test_doctor_orphan_scan_does_not_follow_managed_root_symlink(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            outside = root / "outside"
+            init_database(target)
+            outside.mkdir()
+            (outside / "outside.jpg").write_bytes(b"outside")
+            try:
+                (target / "2024").symlink_to(
+                    outside,
+                    target_is_directory=True,
+                )
+            except OSError as exc:
+                self.skipTest(f"Kan ikke opprette test-symlink: {exc}")
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "Doctor orphan: ferdig scannet 0 mediefiler.",
+            stdout,
+        )
+        self.assertNotIn("outside.jpg", stdout)
 
     def test_doctor_reports_orphan_openclip_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

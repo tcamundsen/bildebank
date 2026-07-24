@@ -3,10 +3,17 @@ from __future__ import annotations
 import importlib.util
 import os
 import sqlite3
+import stat
 import sys
 from pathlib import Path
 
 from . import db
+from .collection_paths import (
+    InvalidCollectionRelativePath,
+    inspect_existing_collection_path_components,
+    is_reparse_stat,
+    parse_collection_relative_path,
+)
 from .config import CONFIG_FILENAME, load_config
 from .db_core import connect_database_read_only
 from .exiftool import resolve_exiftool_path, validate_exiftool_install
@@ -128,17 +135,30 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
         print()
         print("Databaseintegritet:")
         if doctor_check_main_database_health(target):
-            doctor_check_pending_file_moves(target)
-            doctor_check_duplicate_active_sha256(target)
-            doctor_check_files_have_sources(target)
-            doctor_check_file_source_identity(target)
-            doctor_check_orphan_openclip_rows(target)
-            doctor_check_active_files_exist(target)
-            doctor_check_orphan_files(target)
-            if deep:
-                print()
-                print("Dyp filintegritet:")
-                doctor_deep_check_active_file_hashes(target)
+            file_paths_safe = doctor_check_file_paths(target)
+            if doctor_check_current_schema(target):
+                doctor_check_pending_file_moves(target)
+                doctor_check_duplicate_active_sha256(target)
+                doctor_check_files_have_sources(target)
+                doctor_check_file_source_identity(target)
+                doctor_check_orphan_openclip_rows(target)
+                if file_paths_safe:
+                    doctor_check_active_files_exist(target)
+                    doctor_check_orphan_files(target)
+                    if deep:
+                        print()
+                        print("Dyp filintegritet:")
+                        doctor_deep_check_active_file_hashes(target)
+                else:
+                    doctor_obs(
+                        "filkontroller er hoppet over fordi databaseførte "
+                        "samlingsstier ikke er bekreftet som trygge."
+                    )
+            else:
+                doctor_obs(
+                    "øvrige database- og filkontroller er hoppet over fordi "
+                    "gjeldende databaseschema ikke er bekreftet."
+                )
         else:
             doctor_obs(
                 "øvrige database- og filkontroller er hoppet over fordi "
@@ -214,6 +234,98 @@ def doctor_check_main_database_health(target: Path) -> bool:
     if not can_continue or foreign_key_errors:
         doctor_advice("Undersøk databasen og sikkerhetskopien før du gjør endringer.")
     return can_continue
+
+
+def doctor_check_current_schema(target: Path) -> bool:
+    try:
+        conn = db.connect_read_only(target)
+    except (sqlite3.Error, ValueError) as exc:
+        doctor_error(f"gjeldende databaseschema kunne ikke bekreftes: {exc}")
+        doctor_advice("Undersøk databasen og sikkerhetskopien før du gjør endringer.")
+        return False
+    conn.close()
+    doctor_ok(f"databaseschema v{db.SCHEMA_VERSION}: ok")
+    return True
+
+
+def doctor_check_file_paths(target: Path) -> bool:
+    try:
+        conn = db.connect_read_only(target, require_current=False)
+    except sqlite3.Error as exc:
+        doctor_error(f"databaseførte samlingsstier kunne ikke leses: {exc}")
+        return False
+
+    try:
+        rows = db.file_path_integrity_rows(conn)
+        database_issues = db.file_path_integrity_issues(conn)
+    except sqlite3.Error as exc:
+        doctor_error(f"databaseførte samlingsstier kunne ikke kontrolleres: {exc}")
+        return False
+    finally:
+        conn.close()
+
+    component_issues: list[tuple[int, str, object, Path, str]] = []
+    for row in rows:
+        for field in ("target_path", "deleted_original_target_path"):
+            value = row[field]
+            if value is None:
+                continue
+            try:
+                relative_path = parse_collection_relative_path(value)
+            except InvalidCollectionRelativePath:
+                continue
+            issue = inspect_existing_collection_path_components(
+                target,
+                relative_path,
+            )
+            if issue is not None:
+                component_issues.append(
+                    (
+                        int(row["id"]),
+                        field,
+                        value,
+                        issue.path,
+                        issue.reason,
+                    )
+                )
+
+    if not database_issues and not component_issues:
+        doctor_ok(
+            "databaseførte samlingsstier, mappeplasseringer og "
+            "target_path_key er gyldige"
+        )
+        return True
+
+    if database_issues:
+        affected_files = len({issue.file_id for issue in database_issues})
+        doctor_error(
+            f"{len(database_issues)} databaseført(e) stifeil i "
+            f"{affected_files} files-rad(er)."
+        )
+        for issue in database_issues[:20]:
+            doctor_info(
+                f"file #{issue.file_id} {issue.field}={issue.value!r}: "
+                f"{issue.message}"
+            )
+        doctor_report_omitted_details(len(database_issues))
+
+    if component_issues:
+        doctor_error(
+            f"{len(component_issues)} databaseført(e) sti(er) går gjennom "
+            "en usikker stikomponent."
+        )
+        for file_id, field, value, component, reason in component_issues[:20]:
+            doctor_info(
+                f"file #{file_id} {field}={value!r}: "
+                f"{component} ({reason})"
+            )
+        doctor_report_omitted_details(len(component_issues))
+
+    doctor_advice(
+        "Ikke åpne, flytt eller hash databaseførte filer før stifeilene er "
+        "undersøkt mot sikkerhetskopien."
+    )
+    return False
 
 
 def doctor_check_duplicate_active_sha256(target: Path) -> None:
@@ -458,20 +570,24 @@ def doctor_check_active_files_exist(target: Path) -> None:
     finally:
         conn.close()
 
-    target_root = target.resolve()
     missing: list[tuple[int, Path]] = []
     invalid: list[tuple[int, Path]] = []
     progress = ProgressMeter("Doctor filer")
     progress.update(0, len(rows), action="kontrollert", force=True)
     for current, row in enumerate(rows, start=1):
-        target_path = Path(str(row["target_path"]))
-        resolved_path = db.absolute_target_path(target, target_path).resolve()
         try:
-            resolved_path.relative_to(target_root)
-        except ValueError:
-            invalid.append((int(row["id"]), target_path))
+            target_path = parse_collection_relative_path(row["target_path"])
+        except InvalidCollectionRelativePath:
+            invalid.append((int(row["id"]), Path(str(row["target_path"]))))
         else:
-            if not resolved_path.is_file():
+            file_path = target / target_path
+            component_issue = inspect_existing_collection_path_components(
+                target,
+                target_path,
+            )
+            if component_issue is not None:
+                invalid.append((int(row["id"]), target_path))
+            elif not file_path.is_file():
                 missing.append((int(row["id"]), target_path))
         progress.update(current, len(rows), action="kontrollert")
     progress.done(
@@ -492,7 +608,7 @@ def doctor_check_active_files_exist(target: Path) -> None:
 
     if invalid:
         doctor_error(
-            f"{len(invalid)} aktiv(e) databasefilsti(er) peker utenfor bildesamlingen."
+            f"{len(invalid)} aktiv(e) databasefilsti(er) er ikke trygge å åpne."
         )
         for file_id, target_path in invalid[:20]:
             doctor_info(f"file #{file_id}: {target_path.as_posix()}")
@@ -510,7 +626,6 @@ def doctor_deep_check_active_file_hashes(target: Path) -> None:
     finally:
         conn.close()
 
-    target_root = target.resolve()
     missing: list[tuple[int, Path]] = []
     unreadable: list[tuple[int, Path, str]] = []
     wrong_hash: list[tuple[int, Path, str, str]] = []
@@ -525,16 +640,27 @@ def doctor_deep_check_active_file_hashes(target: Path) -> None:
     )
     for current, row in enumerate(rows, start=1):
         file_id = int(row["id"])
-        target_path = Path(str(row["target_path"]))
-        resolved_path = db.absolute_target_path(target, target_path).resolve()
         try:
-            resolved_path.relative_to(target_root)
-        except ValueError:
+            target_path = parse_collection_relative_path(row["target_path"])
+        except InvalidCollectionRelativePath:
             unreadable.append(
-                (file_id, target_path, "filstien peker utenfor bildesamlingen")
+                (
+                    file_id,
+                    Path(str(row["target_path"])),
+                    "databaseført filsti er ugyldig",
+                )
             )
         else:
-            if not resolved_path.is_file():
+            resolved_path = target / target_path
+            component_issue = inspect_existing_collection_path_components(
+                target,
+                target_path,
+            )
+            if component_issue is not None:
+                unreadable.append(
+                    (file_id, target_path, component_issue.reason)
+                )
+            elif not resolved_path.is_file():
                 missing.append((file_id, target_path))
             else:
                 try:
@@ -624,7 +750,7 @@ def doctor_find_orphan_files(
         (
             path
             for path in target.iterdir()
-            if path.is_dir()
+            if doctor_is_directory_without_links(path)
             and (
                 path.name in {"udatert", "deleted"}
                 or (len(path.name) == 4 and path.name.isdigit())
@@ -637,13 +763,23 @@ def doctor_find_orphan_files(
     progress = ProgressMeter("Doctor orphan")
     progress.update_count(0, action="scannet", force=True)
     for managed_root in managed_roots:
-        for dirpath, _, filenames in os.walk(managed_root):
+        for dirpath, dirnames, filenames in os.walk(
+            managed_root,
+            followlinks=False,
+        ):
+            dirnames[:] = [
+                dirname
+                for dirname in dirnames
+                if doctor_is_directory_without_links(Path(dirpath) / dirname)
+            ]
             for filename in filenames:
                 path = Path(dirpath) / filename
+                if not doctor_is_regular_file_without_links(path):
+                    continue
                 if not is_supported_media(path):
                     continue
                 scanned += 1
-                relative_path = db.target_relative_path(target, path)
+                relative_path = path.relative_to(target)
                 if db.relative_path_key(relative_path) not in referenced_path_keys:
                     orphan_files.append(relative_path)
                 progress.update_count(scanned, action="scannet")
@@ -651,6 +787,22 @@ def doctor_find_orphan_files(
         f"Doctor orphan: ferdig scannet {scanned} mediefiler."
     )
     return sorted(orphan_files, key=lambda path: path.as_posix())
+
+
+def doctor_is_directory_without_links(path: Path) -> bool:
+    try:
+        path_stat = path.stat(follow_symlinks=False)
+    except OSError:
+        return False
+    return stat.S_ISDIR(path_stat.st_mode) and not is_reparse_stat(path_stat)
+
+
+def doctor_is_regular_file_without_links(path: Path) -> bool:
+    try:
+        path_stat = path.stat(follow_symlinks=False)
+    except OSError:
+        return False
+    return stat.S_ISREG(path_stat.st_mode) and not is_reparse_stat(path_stat)
 
 
 def doctor_report_omitted_details(total: int) -> None:

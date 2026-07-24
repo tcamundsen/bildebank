@@ -247,6 +247,83 @@ def test_file_source_integrity_queries_include_deleted_files(tmp_path: Path) -> 
         conn.close()
 
 
+def test_file_path_integrity_accepts_active_and_deleted_layouts(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    conn = open_test_db(target)
+    try:
+        conn.executescript(
+            """
+            INSERT INTO files(
+                target_path, target_path_key, original_filename,
+                stored_filename, sha256, size_bytes, date_source
+            ) VALUES(
+                '2024/01/active.jpg', '2024/01/active.jpg',
+                'active.jpg', 'active.jpg', 'active-hash', 10, 'filename'
+            );
+            INSERT INTO files(
+                target_path, target_path_key, original_filename,
+                stored_filename, sha256, size_bytes, date_source,
+                deleted_at, deleted_original_target_path
+            ) VALUES(
+                'deleted/udatert/deleted.jpg',
+                'deleted/udatert/deleted.jpg',
+                'deleted.jpg', 'deleted.jpg', 'deleted-hash', 20, 'filename',
+                CURRENT_TIMESTAMP, 'udatert/deleted.jpg'
+            );
+            """
+        )
+
+        assert db.file_path_integrity_issues(conn) == []
+    finally:
+        conn.close()
+
+
+def test_file_path_integrity_reports_key_layout_and_deleted_origin(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    conn = open_test_db(target)
+    try:
+        conn.executescript(
+            """
+            INSERT INTO files(
+                target_path, target_path_key, original_filename,
+                stored_filename, sha256, size_bytes, date_source,
+                deleted_original_target_path
+            ) VALUES(
+                '2024/13/active.jpg', 'wrong-key',
+                'active.jpg', 'active.jpg', 'active-hash', 10, 'filename',
+                '2024/01/old.jpg'
+            );
+            INSERT INTO files(
+                target_path, target_path_key, original_filename,
+                stored_filename, sha256, size_bytes, date_source,
+                deleted_at
+            ) VALUES(
+                'deleted/2024/01/deleted.jpg',
+                'deleted/2024/01/deleted.jpg',
+                'deleted.jpg', 'deleted.jpg', 'deleted-hash', 20, 'filename',
+                CURRENT_TIMESTAMP
+            );
+            """
+        )
+
+        issues = db.file_path_integrity_issues(conn)
+
+        assert [(issue.file_id, issue.field) for issue in issues] == [
+            (1, "target_path_key"),
+            (1, "target_path"),
+            (1, "deleted_original_target_path"),
+            (2, "deleted_original_target_path"),
+        ]
+        assert "gyldig års-/månedsmappe" in issues[1].message
+        assert issues[3].message == "mangler for en slettet fil"
+    finally:
+        conn.close()
+
+
 def test_unimport_plan_keeps_file_when_another_source_also_references_it(
     tmp_path: Path,
 ) -> None:
