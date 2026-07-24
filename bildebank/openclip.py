@@ -11,6 +11,7 @@ from typing import Any, Callable
 
 from . import db
 from .config import OpenClipConfig
+from .db_core import connect_database_read_only
 from .html_paths import display_relative_path, path_to_url, relative_to_target
 from .media import IMAGE_EXTENSIONS
 from .media_cache import cached_image_dimensions
@@ -660,7 +661,7 @@ def openclip_db_summary(target: Path) -> OpenClipDbSummary:
     path = openclip_db_path(target)
     if not path.exists():
         return OpenClipDbSummary(False, 0, 0, 0)
-    conn = sqlite3.connect(path)
+    conn = connect_database_read_only(path)
     try:
         return OpenClipDbSummary(
             exists=True,

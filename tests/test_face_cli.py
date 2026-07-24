@@ -46,6 +46,7 @@ def face_database_dump(path: Path) -> str:
 
 def create_face_v4_database(target: Path, *, partial_v5: bool = False) -> Path:
     path = face_db_path(target)
+    path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     try:
         apply_face_schema(conn)
@@ -85,6 +86,15 @@ def create_face_v4_database(target: Path, *, partial_v5: bool = False) -> Path:
     finally:
         conn.close()
     return path
+
+
+def connect_raw_face_db(
+    target: Path,
+    config: FaceRecognitionConfig | None = None,
+) -> sqlite3.Connection:
+    path = face_db_path(target, config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return sqlite3.connect(path)
 
 
 class FaceCliTests(unittest.TestCase):
@@ -670,7 +680,7 @@ model_name = "buffalo_l"
             image_path.write_bytes(b"image")
             config = load_config(self.program_root).face_recognition
 
-            conn = sqlite3.connect(face_db_path(target, config))
+            conn = connect_raw_face_db(target, config)
             try:
                 apply_face_schema(conn)
                 conn.execute(
@@ -703,7 +713,7 @@ model_name = "buffalo_l"
             target = Path(tmp) / "target"
             image_path = target / "2024" / "01" / "IMG_20240102.jpg"
             target.mkdir()
-            conn = sqlite3.connect(face_db_path(target))
+            conn = connect_raw_face_db(target)
             try:
                 apply_face_schema(conn)
                 conn.execute(
@@ -738,7 +748,7 @@ model_name = "buffalo_l"
             target = Path(tmp) / "target"
             target.mkdir()
             antelope_config = FaceRecognitionConfig(model_name="antelopev2")
-            conn = sqlite3.connect(face_db_path(target, antelope_config))
+            conn = connect_raw_face_db(target, antelope_config)
             try:
                 apply_face_schema(conn)
                 conn.execute(
@@ -763,7 +773,13 @@ model_name = "buffalo_l"
             finally:
                 conn.close()
 
-            new_path = face_db_path(target, FaceRecognitionConfig(model_name="buffalo_l"))
+            config = FaceRecognitionConfig(model_name="buffalo_l")
+            new_path = face_db_path(target, config)
+
+            self.assertTrue(legacy_path.exists())
+            self.assertFalse(new_path.exists())
+
+            connect_face_db(target, config).close()
 
             self.assertFalse(legacy_path.exists())
             self.assertTrue(new_path.exists())
@@ -821,7 +837,7 @@ model_name = "buffalo_l"
             image_path.write_bytes(minimal_png(640, 480))
             config = load_config(self.program_root).face_recognition
 
-            conn = sqlite3.connect(face_db_path(target, config))
+            conn = connect_raw_face_db(target, config)
             try:
                 apply_face_schema(conn)
                 embedding = struct.pack("ff", 1.0, 0.0)
@@ -856,7 +872,7 @@ model_name = "buffalo_l"
             self.assertIn("Face-suggest: sammenlignet=1/1", stdout)
             self.assertIn("forslag=1", stdout)
             self.assertNotIn("Kari\tface-id=2", stdout)
-            conn = sqlite3.connect(face_db_path(target, config))
+            conn = connect_raw_face_db(target, config)
             try:
                 self.assertEqual(
                     conn.execute("SELECT target_path FROM scanned_files WHERE file_id = 1").fetchone()[0],
@@ -909,7 +925,7 @@ model_name = "buffalo_l"
             self.assertIn("Modell: antelopev2", stdout)
             self.assertIn("forslag=1", stdout)
             self.assertEqual(load_config(self.program_root).face_recognition.model_name, "buffalo_l")
-            conn = sqlite3.connect(face_db_path(target, antelope_config))
+            conn = connect_raw_face_db(target, antelope_config)
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 1)
             finally:
@@ -1277,7 +1293,7 @@ model_name = "buffalo_l"
             self.assertIn('data-view-rotation="270"', index_html)
 
             config = load_config(self.program_root).face_recognition
-            conn = sqlite3.connect(face_db_path(target, config))
+            conn = connect_raw_face_db(target, config)
             try:
                 suggestion = conn.execute(
                     """
@@ -1298,6 +1314,7 @@ model_name = "buffalo_l"
             self.assertEqual(run_cli(["create", str(target)]), 0)
             config = load_config(self.program_root).face_recognition
             face_db = face_db_path(target, config)
+            face_db.parent.mkdir(parents=True, exist_ok=True)
             face_db.write_bytes(b"face-data")
 
             with patch("builtins.input", return_value="nei"):
@@ -1321,6 +1338,7 @@ model_name = "buffalo_l"
             self.assertEqual(run_cli(["create", str(target)]), 0)
             config = load_config(self.program_root).face_recognition
             face_db = face_db_path(target, config)
+            face_db.parent.mkdir(parents=True, exist_ok=True)
             face_db.write_bytes(b"face-data")
             (target / LOCK_FILENAME).write_text("command=face-scan\n", encoding="utf-8")
 
@@ -1338,7 +1356,7 @@ model_name = "buffalo_l"
             self.enable_face_recognition_config()
             self.assertEqual(run_cli(["create", str(target)]), 0)
             config = load_config(self.program_root).face_recognition
-            conn = sqlite3.connect(face_db_path(target, config))
+            conn = connect_raw_face_db(target, config)
             try:
                 conn.executescript(
                     """
@@ -1428,7 +1446,7 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-scan-resultater er beholdt", stdout)
-            conn = sqlite3.connect(face_db_path(target, config))
+            conn = connect_raw_face_db(target, config)
             try:
                 self.assertEqual(conn.execute("SELECT value FROM meta WHERE key = 'schema_version'").fetchone()[0], "5")
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 0)
@@ -1451,7 +1469,7 @@ model_name = "buffalo_l"
             finally:
                 conn.close()
 
-            conn = sqlite3.connect(face_db_path(target, config))
+            conn = connect_raw_face_db(target, config)
             try:
                 conn.execute("INSERT INTO persons(id, name) VALUES(1, 'Kari')")
                 conn.execute("INSERT INTO person_faces(person_id, face_id) VALUES(1, 1)")
@@ -1466,7 +1484,7 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Face-scan-resultater er beholdt", stdout)
-            conn = sqlite3.connect(face_db_path(target, config))
+            conn = connect_raw_face_db(target, config)
             try:
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM scanned_files").fetchone()[0], 1)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM faces").fetchone()[0], 1)
@@ -1478,7 +1496,7 @@ model_name = "buffalo_l"
     def test_face_schema_v2_migration_drops_legacy_group_tables(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
-            conn = sqlite3.connect(face_db_path(target))
+            conn = connect_raw_face_db(target)
             try:
                 conn.executescript(
                     """
@@ -1527,7 +1545,7 @@ model_name = "buffalo_l"
     def test_face_schema_v3_migration_adds_person_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
-            conn = sqlite3.connect(face_db_path(target))
+            conn = connect_raw_face_db(target)
             try:
                 conn.executescript(
                     """
@@ -1604,7 +1622,7 @@ model_name = "buffalo_l"
     def test_face_schema_v4_migration_adds_reference_face_id(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
-            conn = sqlite3.connect(face_db_path(target))
+            conn = connect_raw_face_db(target)
             try:
                 conn.executescript(
                     """
@@ -1954,7 +1972,7 @@ model_name = "buffalo_l"
     def test_face_schema_current_version_rejects_legacy_group_tables(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
-            conn = sqlite3.connect(face_db_path(target))
+            conn = connect_raw_face_db(target)
             try:
                 apply_face_schema(conn)
                 conn.execute("CREATE TABLE face_group_runs (id INTEGER PRIMARY KEY)")
@@ -1973,6 +1991,7 @@ model_name = "buffalo_l"
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp)
             path = face_db_path(target)
+            path.parent.mkdir(parents=True, exist_ok=True)
             conn = sqlite3.connect(path)
             try:
                 conn.execute(

@@ -65,6 +65,18 @@ def db_path_for_target(target: Path) -> Path:
     return target / DB_FILENAME
 
 
+def connect_database_read_only(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA query_only = ON")
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+    except Exception:
+        conn.close()
+        raise
+
+
 def find_target(start: Path | None = None) -> Path | None:
     current = (start or Path.cwd()).resolve()
     for candidate in [current, *current.parents]:

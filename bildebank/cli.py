@@ -1303,12 +1303,11 @@ def run_no_target_command(args: argparse.Namespace) -> int:
         target = db.find_target(args.target)
         if target is not None:
             validate_collection_platform(target)
-            face_config = load_config(
-                program_repo_root(),
-                migrate_legacy=False,
-            ).face_recognition
-            recover_pending_file_moves(target, face_config=face_config)
-        return run_doctor(target, deep=getattr(args, "deep", False), repo_root=program_repo_root())
+        return run_doctor(
+            target,
+            deep=getattr(args, "deep", False),
+            repo_root=program_repo_root(),
+        )
 
     if args.command == "config":
         return run_config(args.section, enabled=args.action == "enable")

@@ -18,6 +18,7 @@ from typing import Any, Concatenate, ParamSpec, TypeVar
 
 from . import db
 from .config import DEFAULT_FACE_MODEL_NAME, FaceRecognitionConfig
+from .db_core import connect_database_read_only
 from .html_paths import path_to_url, relative_to_target
 from .html_export import render_html
 from .media import IMAGE_EXTENSIONS
@@ -219,10 +220,7 @@ def face_model_db_filename(model_name: str) -> str:
 
 def face_db_path(target: Path, config: FaceRecognitionConfig | None = None) -> Path:
     model_name = config.model_name if config is not None else DEFAULT_FACE_MODEL_NAME
-    path = face_database_dir(target, config) / face_model_db_filename(model_name)
-    move_legacy_face_db_if_needed(target, path, model_name)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return path
+    return face_database_dir(target, config) / face_model_db_filename(model_name)
 
 
 def move_legacy_face_db_if_needed(target: Path, new_path: Path, model_name: str) -> None:
@@ -239,6 +237,8 @@ def move_legacy_face_db_if_needed(target: Path, new_path: Path, model_name: str)
 def connect_face_db(target: Path, config: FaceRecognitionConfig | None = None) -> sqlite3.Connection:
     model_name = config.model_name if config is not None else DEFAULT_FACE_MODEL_NAME
     path = face_db_path(target, config)
+    move_legacy_face_db_if_needed(target, path, model_name)
+    path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
@@ -610,7 +610,7 @@ def face_db_summary(target: Path, config: FaceRecognitionConfig | None = None) -
     path = face_db_path(target, config)
     if not path.exists():
         return False, 0, 0
-    conn = sqlite3.connect(path)
+    conn = connect_database_read_only(path)
     try:
         scanned = count_rows(conn, "scanned_files")
         faces = count_rows(conn, "faces")

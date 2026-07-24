@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -51,6 +52,80 @@ class DoctorCliTests(unittest.TestCase):
 
         self.assertFalse(default_args.deep)
         self.assertTrue(deep_args.deep)
+
+    def test_doctor_and_deep_doctor_leave_all_files_unchanged(self) -> None:
+        config_path = self.program_root / "bildebank-config.toml"
+        legacy_config = (
+            "[face_recognition]\n"
+            'model_name = "buffalo_l"\n'
+            "\n"
+            "[openclip]\n"
+            "enabled = false\n"
+        )
+
+        for deep in (False, True):
+            with self.subTest(deep=deep), tempfile.TemporaryDirectory() as tmp:
+                config_path.write_text(legacy_config, encoding="utf-8")
+                target = Path(tmp) / "target"
+                init_database(target)
+                stored_path = target / "2024" / "01" / "pending.jpg"
+                stored_path.parent.mkdir(parents=True)
+                stored_path.write_bytes(b"pending")
+                file_id = register_target_file(target, stored_path.relative_to(target))
+
+                conn = db.connect(target)
+                try:
+                    db.create_pending_file_move(
+                        conn,
+                        file_id=file_id,
+                        target_root=target,
+                        from_path=stored_path,
+                        to_path=target / "deleted" / "2024" / "01" / stored_path.name,
+                        sha256=sha256_file(stored_path),
+                        operation="remove",
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+
+                legacy_face_path = target / ".bilder-faces.sqlite3"
+                conn = sqlite3.connect(legacy_face_path)
+                try:
+                    conn.executescript(
+                        """
+                        CREATE TABLE scanned_files(id INTEGER);
+                        CREATE TABLE faces(id INTEGER);
+                        """
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+
+                openclip_conn = connect_openclip_db(target)
+                openclip_conn.close()
+
+                program_before = tree_image(self.program_root)
+                collection_before = tree_image(target)
+                args = ["--target", str(target), "doctor"]
+                if deep:
+                    args.append("--deep")
+
+                with (
+                    patch(
+                        "bildebank.cli_doctor.resolve_exiftool_path",
+                        side_effect=FileNotFoundError("mangler"),
+                    ),
+                    patch(
+                        "bildebank.cli_doctor.resolve_ffmpeg_tools",
+                        side_effect=FileNotFoundError("mangler"),
+                    ),
+                    patch("bildebank.cli_doctor.python_module_available", return_value=False),
+                ):
+                    code, _stdout, stderr = capture_cli(args)
+
+                self.assertEqual(code, 0, stderr)
+                self.assertEqual(tree_image(self.program_root), program_before)
+                self.assertEqual(tree_image(target), collection_before)
 
     def test_doctor_shows_exiftool_status(self) -> None:
         exiftool = self.program_root / "bildebank-tools" / "exiftool" / "exiftool.exe"
@@ -658,3 +733,20 @@ enabled = true
                 )
             finally:
                 conn.close()
+
+
+def tree_image(root: Path) -> dict[str, tuple[object, ...]]:
+    image: dict[str, tuple[object, ...]] = {}
+    for path in (root, *sorted(root.rglob("*"))):
+        relative = "." if path == root else path.relative_to(root).as_posix()
+        path_stat = path.stat(follow_symlinks=False)
+        common = (
+            stat.S_IMODE(path_stat.st_mode),
+            path_stat.st_size,
+            path_stat.st_mtime_ns,
+        )
+        if path.is_dir():
+            image[relative] = ("directory", *common)
+        else:
+            image[relative] = ("file", *common, path.read_bytes())
+    return image

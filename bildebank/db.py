@@ -44,6 +44,7 @@ from .db_schema import (
     SchemaMigrationRequired,
     MigrationPlan,
     connect,
+    connect_read_only,
     prepare_database,
     schema_version,
     require_current_schema,

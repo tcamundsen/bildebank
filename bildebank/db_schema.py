@@ -124,6 +124,17 @@ def connect(target: Path, *, require_current: bool = True) -> sqlite3.Connection
     )
 
 
+def connect_read_only(target: Path, *, require_current: bool = True) -> sqlite3.Connection:
+    conn = db_core.connect_database_read_only(db_path_for_target(target))
+    try:
+        if require_current:
+            require_current_schema(conn)
+        return conn
+    except Exception:
+        conn.close()
+        raise
+
+
 def prepare_database(target: Path) -> None:
     db_core.prepare_database(target, schema_validator=require_current_schema)
 

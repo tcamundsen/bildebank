@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import db
 from .config import CONFIG_FILENAME, load_config
+from .db_core import connect_database_read_only
 from .exiftool import resolve_exiftool_path, validate_exiftool_install
 from .face import face_db_path, face_db_summary, insightface_runtime_error
 from .ffmpeg_tools import resolve_ffmpeg_tools
@@ -23,7 +24,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
         validate_collection_platform(target)
 
     config_path = repo_root / CONFIG_FILENAME
-    config = load_config(repo_root)
+    config = load_config(repo_root, migrate_legacy=False)
     face = config.face_recognition
 
     print("Bildebank doctor")
@@ -146,7 +147,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
 
 
 def doctor_check_duplicate_active_sha256(target: Path) -> None:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         rows = db.duplicate_active_sha256_files(conn)
     finally:
@@ -179,7 +180,7 @@ def doctor_check_duplicate_active_sha256(target: Path) -> None:
 
 
 def doctor_check_active_files_have_sources(target: Path) -> None:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         rows = db.active_files_without_sources(conn)
     finally:
@@ -201,7 +202,7 @@ def doctor_check_active_files_have_sources(target: Path) -> None:
 
 
 def doctor_check_pending_file_moves(target: Path) -> None:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         rows = db.prepared_pending_file_moves(conn)
     finally:
@@ -226,13 +227,13 @@ def doctor_check_orphan_openclip_rows(target: Path) -> None:
         doctor_ok("ingen OpenCLIP-database å kontrollere")
         return
 
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
+    conn = connect_database_read_only(path)
     try:
         if not doctor_openclip_table_exists(conn, "image_embeddings"):
             doctor_obs("OpenCLIP-databasen mangler image_embeddings.")
             return
-        conn.execute("ATTACH DATABASE ? AS main_db", (str(db.db_path_for_target(target)),))
+        main_db_uri = f"{db.db_path_for_target(target).resolve().as_uri()}?mode=ro"
+        conn.execute("ATTACH DATABASE ? AS main_db", (main_db_uri,))
         embedding_rows = doctor_orphan_openclip_rows(conn, "image_embeddings")
         result_rows = (
             doctor_orphan_openclip_rows(conn, "image_search_results")
@@ -309,7 +310,7 @@ def doctor_report_omitted_openclip_groups(total: int) -> None:
 
 
 def doctor_check_active_files_exist(target: Path) -> None:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         rows = db.active_file_integrity_rows(conn)
     finally:
@@ -361,7 +362,7 @@ def doctor_check_active_files_exist(target: Path) -> None:
 
 
 def doctor_deep_check_active_file_hashes(target: Path) -> None:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         rows = db.active_file_integrity_rows(conn)
     finally:
@@ -451,7 +452,7 @@ def doctor_deep_check_active_file_hashes(target: Path) -> None:
 
 
 def doctor_check_orphan_files(target: Path) -> None:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         referenced_path_keys = db.file_target_path_keys(conn)
     finally:

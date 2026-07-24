@@ -492,6 +492,7 @@ def test_unimport_migrates_legacy_face_db_before_deleting_item_rows(
     target, source, _imported = create_single_file_import(tmp_path)
     config = AppConfig()
     legacy_face_path = face_db_path(target, config.face_recognition)
+    legacy_face_path.parent.mkdir(parents=True, exist_ok=True)
     face_conn = sqlite3.connect(legacy_face_path)
     try:
         face_conn.executescript(
