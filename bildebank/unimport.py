@@ -10,7 +10,7 @@ from . import db
 from .config import AppConfig
 from .face import ensure_face_schema_path, face_database_dir
 from .media import sha256_file
-from .openclip import openclip_db_path
+from .openclip import ensure_openclip_schema_path, openclip_db_path
 from .pending_deletes import (
     PendingDeleteResult,
     cleanup_pending_deletes,
@@ -360,6 +360,7 @@ def attach_item_databases(
             )
     openclip_path = openclip_db_path(target)
     if openclip_path.is_file():
+        ensure_openclip_schema_path(openclip_path)
         conn.execute("ATTACH DATABASE ? AS openclip_db", (str(openclip_path),))
 
 

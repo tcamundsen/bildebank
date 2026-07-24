@@ -306,6 +306,7 @@ def test_unimport_removes_item_dependent_face_and_openclip_rows(
             """,
             (run_id,),
         )
+        openclip_conn.execute("DELETE FROM meta WHERE key = 'schema_version'")
         openclip_conn.commit()
     finally:
         openclip_conn.close()
@@ -330,8 +331,11 @@ def test_unimport_removes_item_dependent_face_and_openclip_rows(
             assert face_conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
     finally:
         face_conn.close()
-    openclip_conn = connect_openclip_db(target)
+    openclip_conn = sqlite3.connect(target / ".bilder-openclip.sqlite3")
     try:
+        assert openclip_conn.execute(
+            "SELECT value FROM meta WHERE key = 'schema_version'"
+        ).fetchone()[0] == "1"
         assert openclip_conn.execute(
             "SELECT COUNT(*) FROM image_embeddings"
         ).fetchone()[0] == 0

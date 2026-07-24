@@ -29,6 +29,14 @@ from tests.cli_helpers import capture_cli, run_cli
 from tests.db_test_helpers import insert_openclip_cleanup_fixture, insert_test_file
 
 
+def openclip_database_dump(path: Path) -> str:
+    conn = sqlite3.connect(path)
+    try:
+        return "\n".join(conn.iterdump())
+    finally:
+        conn.close()
+
+
 class ImageSearchCliTests(unittest.TestCase):
     def setUp(self) -> None:
         self.program_root_tempdir = tempfile.TemporaryDirectory()
@@ -90,6 +98,9 @@ pretrained = "laion2b_s34b_b79k"
                         "SELECT name FROM sqlite_master WHERE type = 'table'"
                     )
                 }
+                schema_version = conn.execute(
+                    "SELECT value FROM meta WHERE key = 'schema_version'"
+                ).fetchone()[0]
             finally:
                 conn.close()
 
@@ -97,6 +108,225 @@ pretrained = "laion2b_s34b_b79k"
             self.assertIn("image_embeddings", tables)
             self.assertIn("image_search_runs", tables)
             self.assertIn("image_search_results", tables)
+            self.assertEqual(schema_version, "1")
+
+    def test_openclip_adopts_complete_unversioned_schema_without_losing_data(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = openclip_db_path(target)
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256,
+                        model_name, pretrained, embedding
+                    )
+                    VALUES(1, '2024/01/image.jpg', '2024/01/image.jpg',
+                           'sha', 'model', 'weights', X'01020304')
+                    """
+                )
+                conn.execute("DELETE FROM meta WHERE key = 'schema_version'")
+                conn.commit()
+            finally:
+                conn.close()
+
+            conn = connect_openclip_db(target)
+            try:
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT value FROM meta WHERE key = 'schema_version'"
+                    ).fetchone()[0],
+                    "1",
+                )
+                row = conn.execute(
+                    """
+                    SELECT file_id, target_path, sha256, model_name, pretrained,
+                           embedding
+                    FROM image_embeddings
+                    """
+                ).fetchone()
+                self.assertEqual(
+                    tuple(row),
+                    (
+                        1,
+                        "2024/01/image.jpg",
+                        "sha",
+                        "model",
+                        "weights",
+                        b"\x01\x02\x03\x04",
+                    ),
+                )
+            finally:
+                conn.close()
+
+            self.assertTrue(path.exists())
+
+    def test_openclip_adopts_oldest_complete_schema_without_meta_table(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256,
+                        model_name, pretrained, embedding
+                    )
+                    VALUES(1, '2024/01/image.jpg', '2024/01/image.jpg',
+                           'sha', 'model', 'weights', X'01020304')
+                    """
+                )
+                conn.execute("DROP TABLE meta")
+                conn.commit()
+            finally:
+                conn.close()
+
+            conn = connect_openclip_db(target)
+            try:
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT value FROM meta WHERE key = 'schema_version'"
+                    ).fetchone()[0],
+                    "1",
+                )
+                self.assertEqual(
+                    conn.execute(
+                        "SELECT embedding FROM image_embeddings WHERE file_id = 1"
+                    ).fetchone()[0],
+                    b"\x01\x02\x03\x04",
+                )
+            finally:
+                conn.close()
+
+    def test_openclip_rejects_incomplete_unversioned_schema_without_changes(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = openclip_db_path(target)
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute("DELETE FROM meta WHERE key = 'schema_version'")
+                conn.execute("ALTER TABLE image_embeddings DROP COLUMN embedding")
+                conn.commit()
+            finally:
+                conn.close()
+            before = openclip_database_dump(path)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "image_embeddings mangler forventede kolonner: embedding",
+            ):
+                opened = connect_openclip_db(target)
+                opened.close()
+
+            self.assertEqual(openclip_database_dump(path), before)
+
+    def test_openclip_rejects_incomplete_current_schema_without_repair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = openclip_db_path(target)
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO meta(key, value) VALUES('schema_version', '1')
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    """
+                )
+                conn.execute("DROP TABLE image_search_results")
+                conn.commit()
+            finally:
+                conn.close()
+            before = openclip_database_dump(path)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "mangler forventede tabeller: image_search_results",
+            ):
+                opened = connect_openclip_db(target)
+                opened.close()
+
+            self.assertEqual(openclip_database_dump(path), before)
+
+    def test_openclip_rejects_newer_schema_version_without_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = openclip_db_path(target)
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO meta(key, value) VALUES('schema_version', '2')
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            before = openclip_database_dump(path)
+
+            with self.assertRaisesRegex(ValueError, "nyere format"):
+                opened = connect_openclip_db(target)
+                opened.close()
+
+            self.assertEqual(openclip_database_dump(path), before)
+
+    def test_openclip_rejects_foreign_key_errors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = openclip_db_path(target)
+            conn = connect_openclip_db(target)
+            conn.close()
+            conn = sqlite3.connect(path)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO image_search_results(
+                        run_id, file_id, target_path, target_path_key,
+                        similarity, rank
+                    )
+                    VALUES(999, 1, '2024/01/image.jpg',
+                           '2024/01/image.jpg', 0.5, 1)
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with self.assertRaisesRegex(ValueError, "foreign_key_check feilet"):
+                opened = connect_openclip_db(target)
+                opened.close()
+
+    def test_openclip_adoption_health_failure_rolls_back(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp)
+            path = openclip_db_path(target)
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute("DELETE FROM meta WHERE key = 'schema_version'")
+                conn.commit()
+            finally:
+                conn.close()
+            before = openclip_database_dump(path)
+
+            with patch(
+                "bildebank.openclip.db.validate_database_health",
+                side_effect=RuntimeError("injisert OpenCLIP-integritetsfeil"),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "injisert OpenCLIP-integritetsfeil",
+                ):
+                    opened = connect_openclip_db(target)
+                    opened.close()
+
+            self.assertEqual(openclip_database_dump(path), before)
 
     def test_openclip_device_validation(self) -> None:
         self.assertEqual(resolve_torch_device("cpu"), "cpu")

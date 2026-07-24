@@ -19,8 +19,39 @@ from .value_parsing import optional_int
 
 
 OPENCLIP_DB_FILENAME = ".bilder-openclip.sqlite3"
+OPENCLIP_SCHEMA_VERSION = 1
 MAIN_DB_ALIAS = "main_db"
 IMAGE_SCAN_RUN_META_KEY = "image_scan_run_id"
+OPENCLIP_SCHEMA_REQUIRED_COLUMNS = {
+    "meta": {"key", "value"},
+    "image_embeddings": {
+        "file_id",
+        "target_path",
+        "target_path_key",
+        "sha256",
+        "model_name",
+        "pretrained",
+        "embedding",
+        "created_at",
+        "updated_at",
+    },
+    "image_search_runs": {
+        "id",
+        "query",
+        "model_name",
+        "pretrained",
+        "result_limit",
+        "created_at",
+    },
+    "image_search_results": {
+        "run_id",
+        "file_id",
+        "target_path",
+        "target_path_key",
+        "similarity",
+        "rank",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -96,24 +127,125 @@ def connect_openclip_db(target: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys = ON")
     try:
         apply_schema(conn)
-        validate_relative_openclip_paths(conn)
         set_meta(conn, "target_path", str(target.resolve()))
         conn.commit()
         return conn
-    except Exception:
+    except BaseException:
         conn.close()
         raise
 
 
+def ensure_openclip_schema_path(path: Path) -> None:
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        apply_schema(conn)
+    finally:
+        conn.close()
+
+
 def apply_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(
+    version = openclip_schema_version(conn)
+    if version == OPENCLIP_SCHEMA_VERSION:
+        validate_current_openclip_schema(conn)
+        return
+    reject_unknown_openclip_schema_version(version)
+
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        version = openclip_schema_version(conn)
+        if version == OPENCLIP_SCHEMA_VERSION:
+            validate_current_openclip_schema(conn)
+            conn.commit()
+            return
+        reject_unknown_openclip_schema_version(version)
+
+        existing_tables = openclip_user_tables(conn)
+        if existing_tables:
+            validate_openclip_schema_structure(conn, require_meta=False)
+            validate_relative_openclip_paths(conn)
+            validate_openclip_foreign_keys(conn)
+            if not db.table_exists(conn, "meta"):
+                create_openclip_meta_schema(conn)
+        else:
+            create_current_openclip_schema(conn)
+
+        set_meta(conn, "schema_version", str(OPENCLIP_SCHEMA_VERSION))
+        validate_current_openclip_schema(conn)
+        db.validate_database_health(conn)
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+
+
+def openclip_schema_version(conn: sqlite3.Connection) -> int | None:
+    if not db.table_exists(conn, "meta"):
+        return None
+    validate_openclip_table_columns(conn, "meta", OPENCLIP_SCHEMA_REQUIRED_COLUMNS["meta"])
+    row = conn.execute(
+        "SELECT value FROM meta WHERE key = 'schema_version'"
+    ).fetchone()
+    if row is None:
+        return None
+    value = row[0]
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"Ugyldig schema_version i OpenCLIP-databasen: {value}"
+        ) from exc
+
+
+def reject_unknown_openclip_schema_version(version: int | None) -> None:
+    if version is None:
+        return
+    if version > OPENCLIP_SCHEMA_VERSION:
+        raise ValueError(
+            "OpenCLIP-databasen bruker et nyere format "
+            f"(schema_version={version}) enn programmet støtter "
+            f"(schema_version={OPENCLIP_SCHEMA_VERSION})."
+        )
+    raise ValueError(
+        f"Kan ikke migrere OpenCLIP-database med schema_version={version}."
+    )
+
+
+def openclip_user_tables(conn: sqlite3.Connection) -> set[str]:
+    return {
+        str(row[0])
+        for row in conn.execute(
+            """
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+            """
+        )
+    }
+
+
+def create_openclip_meta_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
         """
-        CREATE TABLE IF NOT EXISTS meta (
+        CREATE TABLE meta (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+        """
+    )
+
+
+def create_current_openclip_schema(conn: sqlite3.Connection) -> None:
+    db.execute_sql_statements(
+        conn,
+        """
+        CREATE TABLE meta (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS image_embeddings (
+        CREATE TABLE image_embeddings (
             file_id INTEGER NOT NULL,
             target_path TEXT NOT NULL,
             target_path_key TEXT NOT NULL,
@@ -126,10 +258,10 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             PRIMARY KEY(file_id, model_name, pretrained)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_image_embeddings_model
+        CREATE INDEX idx_image_embeddings_model
         ON image_embeddings(model_name, pretrained);
 
-        CREATE TABLE IF NOT EXISTS image_search_runs (
+        CREATE TABLE image_search_runs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             query TEXT NOT NULL,
             model_name TEXT NOT NULL,
@@ -138,7 +270,7 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
 
-        CREATE TABLE IF NOT EXISTS image_search_results (
+        CREATE TABLE image_search_results (
             run_id INTEGER NOT NULL REFERENCES image_search_runs(id) ON DELETE CASCADE,
             file_id INTEGER NOT NULL,
             target_path TEXT NOT NULL,
@@ -148,10 +280,63 @@ def apply_schema(conn: sqlite3.Connection) -> None:
             PRIMARY KEY(run_id, rank)
         );
 
-        CREATE INDEX IF NOT EXISTS idx_image_search_results_run_id
+        CREATE INDEX idx_image_search_results_run_id
         ON image_search_results(run_id);
         """
     )
+
+
+def validate_current_openclip_schema(conn: sqlite3.Connection) -> None:
+    validate_openclip_schema_structure(conn, require_meta=True)
+    validate_relative_openclip_paths(conn)
+    validate_openclip_foreign_keys(conn)
+
+
+def validate_openclip_schema_structure(
+    conn: sqlite3.Connection,
+    *,
+    require_meta: bool,
+) -> None:
+    required_tables = set(OPENCLIP_SCHEMA_REQUIRED_COLUMNS)
+    if not require_meta:
+        required_tables.remove("meta")
+    missing_tables = sorted(
+        table for table in required_tables if not db.table_exists(conn, table)
+    )
+    if missing_tables:
+        raise ValueError(
+            "OpenCLIP-databasen mangler forventede tabeller: "
+            f"{', '.join(missing_tables)}."
+        )
+    for table, required_columns in OPENCLIP_SCHEMA_REQUIRED_COLUMNS.items():
+        if table == "meta" and not db.table_exists(conn, table):
+            continue
+        validate_openclip_table_columns(conn, table, required_columns)
+
+
+def validate_openclip_table_columns(
+    conn: sqlite3.Connection,
+    table: str,
+    required_columns: set[str],
+) -> None:
+    columns = {
+        str(row[1])
+        for row in conn.execute(f"PRAGMA table_info({table})")
+    }
+    missing_columns = sorted(required_columns - columns)
+    if missing_columns:
+        raise ValueError(
+            f"OpenCLIP-databasen: {table} mangler forventede kolonner: "
+            f"{', '.join(missing_columns)}."
+        )
+
+
+def validate_openclip_foreign_keys(conn: sqlite3.Connection) -> None:
+    errors = conn.execute("PRAGMA foreign_key_check").fetchall()
+    if errors:
+        raise ValueError(
+            f"OpenCLIP-databasens foreign_key_check feilet: {tuple(errors[0])}"
+        )
 
 
 def get_meta(conn: sqlite3.Connection, key: str) -> str | None:

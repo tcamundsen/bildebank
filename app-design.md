@@ -125,6 +125,8 @@ lagring uten å kreve en separat databaseserver.
   devel-docs/database-v16-migration.md
 - ny runtime-kode skal anta v16, med mindre oppgaven eksplisitt gjelder
   migrering
+- den separate OpenCLIP-databasen har schema v1 og er beskrevet i
+  devel-docs/openclip-database.md
 
 ## Plattform
 

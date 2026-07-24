@@ -291,6 +291,12 @@ OpenCLIP bruker disse filene:
 
 Disse er separate fra ansiktsgjenkjenningens filer.
 
+Bildebank validerer databasestrukturen før OpenCLIP-data brukes. Eldre,
+uversjonerte databaser med komplett kjent struktur merkes automatisk med
+gjeldende databaseversjon uten at embeddings beregnes på nytt. Hvis strukturen
+er mangelfull eller fra en nyere programversjon, stopper Bildebank uten å
+overskrive eksisterende OpenCLIP-data.
+
 ## Foreløpig ikke støttet
 
 - videosøk
