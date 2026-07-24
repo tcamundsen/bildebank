@@ -27,6 +27,10 @@ opp under operasjonen skal aldri overskrives. `remove`, `undelete` og
   databaseoppdatering.
 - `remove` og `undelete` bruker den felles modulen `file_lifecycle.py` fra både
   CLI og web. Modulen tar låsen før oppslag og holder den til etter commit.
+  Før en remove-flytting valideres og ATTACH-es eksisterende OpenCLIP- og
+  InsightFace-databaser. Etter flyttingen slettes bildeavhengige sidecar-rader
+  i samme commit som slettemarkeringen og fullføringen av flyttejournalen.
+  Recovery utfører den samme idempotente oppryddingen.
   Hvis en vanlig exception oppstår etter en fysisk webflytting, kjører
   webhandlingen recovery før den svarer og behandler operasjonen som vellykket
   når ønsket database- og filtilstand ble fullført entydig.

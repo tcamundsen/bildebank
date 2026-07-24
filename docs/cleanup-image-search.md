@@ -16,6 +16,10 @@ options:
 Kommandoen rydder i databasen for tekstbasert bildesøk. Den sletter ikke
 bildefiler.
 
+Ny `remove`-opprydding sletter normalt bildesøkdata samtidig som et bilde
+flyttes til `deleted`. Denne kommandoen kan fortsatt rydde eldre rader og rader
+som er blitt foreldreløse av andre årsaker.
+
 Standard er dry-run:
 
 ```powershell

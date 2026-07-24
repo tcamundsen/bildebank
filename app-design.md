@@ -259,6 +259,25 @@ finner samme filinnhold, skal importen registrere ny `file_sources`-rad mot den
 slettede `files`-raden, ikke kopiere inn en ny aktiv fil og ikke automatisk
 gjenopprette bildet.
 
+Samme beslutning betyr at data som gjør bildet søkbart eller bruker det i
+ansiktsgjenkjenning, skal fjernes. `remove` skal slette bildets OpenCLIP-rader
+og bildeavhengige rader fra alle InsightFace-modelldatabaser. Det omfatter
+bekreftede ansiktskoblinger, manuelle person-fil-koblinger og forslag som
+bruker et av bildets ansikter som referanse. Globale `persons`-rader beholdes.
+`undelete` gjenoppretter filen og hoveddatabasens metadata, men ikke disse
+sidecar-dataene.
+
+For et aktivt bilde skal sidecar-dataene beholdes så lenge minst én
+`file_sources`-rad finnes. `unimport` skal derfor bare slette sidecar-data når
+den aktuelle unimporten fjerner den siste kildereferansen og dermed selve
+`files`-raden. Sidecar-opprydding og hoveddatabaseendring skal skje i samme
+transaksjon.
+
+Dette endrer ikke kontrakten for selve mediefilen: `remove` beholder den under
+`deleted/`. En eventuell fremtidig funksjon for permanent tømming av
+`deleted/` er en egen destruktiv operasjon som også må avklare proveniens,
+senere reimport og eksisterende snapshots.
+
 Før importen hopper over kopiering på grunn av et database-treff på SHA-256, må
 den verifisere at den registrerte filen fortsatt finnes på disk og har
 forventet SHA-256. Hvis filen mangler eller innholdet ikke matcher databasen, er

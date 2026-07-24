@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from . import db
+from .config import FaceRecognitionConfig
+from .item_sidecars import (
+    attach_existing_item_databases,
+    delete_attached_item_data,
+)
 from .media import sha256_file
 from .safe_file_move import move_file_no_replace
 from .target_lock import TargetLock
@@ -17,14 +22,12 @@ def remove_file(
     collection_path: Path | None = None,
     command_args: dict[str, Any] | None = None,
     path_adapter: Callable[[Path], Path] | None = None,
+    face_config: FaceRecognitionConfig | None = None,
 ) -> Path:
     _require_one_identifier(file_id=file_id, collection_path=collection_path)
     with TargetLock(target, command="remove"):
         conn = db.connect(target)
         try:
-            if command_args is not None:
-                db.log_command(conn, "remove", command_args)
-
             if collection_path is not None:
                 if path_adapter is not None:
                     collection_path = path_adapter(collection_path)
@@ -61,6 +64,9 @@ def remove_file(
             if deleted_path.exists():
                 raise ValueError(f"Slettemål finnes allerede: {deleted_path}")
 
+            attach_existing_item_databases(conn, target, face_config)
+            if command_args is not None:
+                db.log_command(conn, "remove", command_args)
             deleted_path.parent.mkdir(parents=True, exist_ok=True)
             move_id = db.create_pending_file_move(
                 conn,
@@ -77,6 +83,7 @@ def remove_file(
                 deleted_path,
                 expected_sha256=str(row["sha256"]),
             )
+            delete_attached_item_data(conn, (int(row["id"]),))
             db.mark_file_deleted(
                 conn,
                 file_id=int(row["id"]),

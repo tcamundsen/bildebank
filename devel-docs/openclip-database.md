@@ -10,6 +10,20 @@ Databasen inneholder regenererbare data, men embeddings kan være svært
 tidkrevende å beregne på nytt. Eksisterende data skal derfor valideres og
 bevares fremfor å repareres eller overskrives automatisk.
 
+## Livssyklus for bilder
+
+Et aktivt bilde beholder OpenCLIP-data så lenge minst én `file_sources`-rad
+finnes. `unimport` av én av flere kilder skal ikke rydde disse radene.
+
+`remove` er en eksplisitt beslutning om at bildet ikke lenger skal brukes.
+Operasjonen sletter derfor bildets `image_embeddings` og
+`image_search_results`, og sletter søkekjøringer som blir tomme.
+`undelete` gjenoppretter ikke radene; `image-scan` må bygge embeddings på nytt.
+
+Når `unimport` fjerner siste `file_sources`-rad og dermed `files`-raden, skal
+den utføre samme opprydding. Slettingen skjer gjennom en ATTACH-et
+OpenCLIP-database i samme transaksjon som hoveddatabaseendringen.
+
 ## Dagens versjon
 
 Dagens schema er `OPENCLIP_SCHEMA_VERSION = 1` i `bildebank/openclip.py`.

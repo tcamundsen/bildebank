@@ -5,7 +5,9 @@ import uuid
 from pathlib import Path
 
 from bildebank import db
+from bildebank.config import FaceRecognitionConfig
 from bildebank.db import DB_FILENAME
+from bildebank.face import connect_face_db
 from bildebank.media import sha256_file
 from bildebank.openclip import connect_openclip_db, embedding_blob
 from tests.test_media import minimal_png
@@ -154,14 +156,101 @@ def insert_openclip_cleanup_fixture(target: Path) -> dict[str, int]:
             ],
         )
         conn.commit()
-        return {
-            "active_id": active_id,
-            "deleted_id": deleted_id,
-            "missing_id": missing_id,
-            "active_run_id": int(active_run_id),
-            "orphan_run_id": int(orphan_run_id),
-            "empty_run_id": int(empty_run_id),
-        }
+    finally:
+        conn.close()
+    return {
+        "active_id": active_id,
+        "deleted_id": deleted_id,
+        "missing_id": missing_id,
+        "active_run_id": int(active_run_id),
+        "orphan_run_id": int(orphan_run_id),
+        "empty_run_id": int(empty_run_id),
+    }
+
+
+def insert_basic_item_sidecar_fixture(
+    target: Path,
+    *,
+    file_id: int,
+    target_path: str,
+    sha256: str,
+    face_configs: tuple[FaceRecognitionConfig, ...],
+) -> None:
+    for face_config in face_configs:
+        conn = connect_face_db(target, face_config)
+        try:
+            conn.execute(
+                """
+                INSERT INTO scanned_files(
+                    file_id, target_path, target_path_key, sha256, status, face_count
+                ) VALUES(?, ?, ?, ?, 'ok', 1)
+                """,
+                (file_id, target_path, target_path.casefold(), sha256),
+            )
+            face_id = int(
+                conn.execute(
+                    """
+                    INSERT INTO faces(
+                        file_id, target_path_key, bbox_x, bbox_y, bbox_width,
+                        bbox_height, detection_score, embedding_model, embedding
+                    ) VALUES(?, ?, 1, 2, 3, 4, 0.9, 'test', X'00')
+                    RETURNING id
+                    """,
+                    (file_id, target_path.casefold()),
+                ).fetchone()[0]
+            )
+            person_id = int(
+                conn.execute(
+                    "INSERT INTO persons(name) VALUES('Kari') RETURNING id"
+                ).fetchone()[0]
+            )
+            conn.execute(
+                "INSERT INTO person_faces(person_id, face_id) VALUES(?, ?)",
+                (person_id, face_id),
+            )
+            conn.execute(
+                "INSERT INTO person_files(person_id, file_id) VALUES(?, ?)",
+                (person_id, file_id),
+            )
+            conn.execute(
+                """
+                INSERT INTO face_suggestions(
+                    person_id, face_id, reference_face_id, similarity
+                ) VALUES(?, ?, ?, 0.8)
+                """,
+                (person_id, face_id, face_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    conn = connect_openclip_db(target)
+    try:
+        conn.execute(
+            """
+            INSERT INTO image_embeddings(
+                file_id, target_path, target_path_key, sha256,
+                model_name, pretrained, embedding
+            ) VALUES(?, ?, ?, ?, 'test', 'test', X'00')
+            """,
+            (file_id, target_path, target_path.casefold(), sha256),
+        )
+        run_id = conn.execute(
+            """
+            INSERT INTO image_search_runs(
+                query, model_name, pretrained, result_limit
+            ) VALUES('test', 'test', 'test', 1)
+            """
+        ).lastrowid
+        conn.execute(
+            """
+            INSERT INTO image_search_results(
+                run_id, file_id, target_path, target_path_key, similarity, rank
+            ) VALUES(?, ?, ?, ?, 0.9, 1)
+            """,
+            (run_id, file_id, target_path, target_path.casefold()),
+        )
+        conn.commit()
     finally:
         conn.close()
 

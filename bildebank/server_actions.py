@@ -225,23 +225,33 @@ def parse_manual_iso_date(value: str, label: str) -> dt.date:
         raise ValueError(f"{label} må være på formen YYYY-MM-DD.") from exc
 
 
-def remove_file_from_browser(target: Path, file_id: int) -> Path:
+def remove_file_from_browser(
+    target: Path,
+    file_id: int,
+    face_config: FaceRecognitionConfig | None = None,
+) -> Path:
     return _run_browser_file_move(
         target,
         file_id,
         operation=remove_file,
         operation_name="remove",
         expect_deleted=True,
+        face_config=face_config,
     )
 
 
-def undelete_file_from_browser(target: Path, file_id: int) -> Path:
+def undelete_file_from_browser(
+    target: Path,
+    file_id: int,
+    face_config: FaceRecognitionConfig | None = None,
+) -> Path:
     return _run_browser_file_move(
         target,
         file_id,
         operation=undelete_file,
         operation_name="undelete",
         expect_deleted=False,
+        face_config=face_config,
     )
 
 
@@ -252,9 +262,13 @@ def _run_browser_file_move(
     operation: Callable[..., Path],
     operation_name: str,
     expect_deleted: bool,
+    face_config: FaceRecognitionConfig | None,
 ) -> Path:
     try:
-        return operation(target, file_id=file_id)
+        operation_kwargs = {"file_id": file_id}
+        if operation_name == "remove":
+            operation_kwargs["face_config"] = face_config
+        return operation(target, **operation_kwargs)
     except TargetLockError:
         raise
     except Exception:
@@ -266,7 +280,11 @@ def _run_browser_file_move(
                     and str(row["operation"]) == operation_name
                     for row in db.prepared_pending_file_moves(conn)
                 )
-                recover_pending_file_moves_in_connection(conn, target)
+                recover_pending_file_moves_in_connection(
+                    conn,
+                    target,
+                    face_config=face_config,
+                )
                 row = conn.execute(
                     "SELECT target_path, deleted_at FROM files WHERE id = ?",
                     (file_id,),

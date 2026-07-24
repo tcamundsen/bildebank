@@ -65,6 +65,11 @@ livssykluskompleksitet uten å være nødvendig for denne flyten, fordi
 originalinnholdet allerede er kontrollert i kilden før unimporten får
 fortsette.
 
+I samme transaksjon slettes bildeavhengige OpenCLIP- og InsightFace-rader.
+Hvis en annen `file_sources`-rad blir stående, beholdes både `files`-raden,
+samlingsfilen og alle sidecar-data. Globale InsightFace-`persons` slettes ikke
+automatisk.
+
 Ikke foreslå karantene for normal `unimport` uten at kravene endres. Hvis det
 senere skal støttes `unimport` uten tilgjengelige originalfiler, må det
 vurderes som en separat og eksplisitt tapsrisiko-flyt.

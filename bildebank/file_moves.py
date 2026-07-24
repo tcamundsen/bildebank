@@ -4,20 +4,40 @@ import sqlite3
 from pathlib import Path
 
 from . import db
+from .config import FaceRecognitionConfig
+from .item_sidecars import (
+    attach_existing_item_databases,
+    delete_attached_item_data,
+)
 from .media import camera_info, media_date, metadata_datetime, sha256_file
 from .target_lock import TargetLock
 
 
-def recover_pending_file_moves(target: Path) -> int:
+def recover_pending_file_moves(
+    target: Path,
+    *,
+    face_config: FaceRecognitionConfig | None = None,
+) -> int:
     with TargetLock(target, command="recover-file-moves"):
-        return recover_pending_file_moves_locked(target)
+        return recover_pending_file_moves_locked(
+            target,
+            face_config=face_config,
+        )
 
 
-def recover_pending_file_moves_locked(target: Path) -> int:
+def recover_pending_file_moves_locked(
+    target: Path,
+    *,
+    face_config: FaceRecognitionConfig | None = None,
+) -> int:
     """Recover pending moves while the caller already holds the target lock."""
     conn = db.connect(target)
     try:
-        return recover_pending_file_moves_in_connection(conn, target)
+        return recover_pending_file_moves_in_connection(
+            conn,
+            target,
+            face_config=face_config,
+        )
     finally:
         conn.close()
 
@@ -25,12 +45,19 @@ def recover_pending_file_moves_locked(target: Path) -> int:
 def recover_pending_file_moves_in_connection(
     conn: sqlite3.Connection,
     target: Path,
+    *,
+    face_config: FaceRecognitionConfig | None = None,
 ) -> int:
     try:
         rows = db.prepared_pending_file_moves(conn)
         recovered = 0
         for row in rows:
-            _recover_pending_file_move(conn, target, row)
+            _recover_pending_file_move(
+                conn,
+                target,
+                row,
+                face_config=face_config,
+            )
             conn.commit()
             recovered += 1
         return recovered
@@ -43,6 +70,8 @@ def _recover_pending_file_move(
     conn: sqlite3.Connection,
     target: Path,
     row: sqlite3.Row,
+    *,
+    face_config: FaceRecognitionConfig | None,
 ) -> None:
     move_id = int(row["id"])
     from_path = db.absolute_target_path(target, Path(str(row["from_path"])))
@@ -66,7 +95,14 @@ def _recover_pending_file_move(
                     f"{to_path} har sha256={actual_hash}, forventet {expected_hash}."
                 ),
             )
-        _complete_database_move(conn, target, row, from_path=from_path, to_path=to_path)
+        _complete_database_move(
+            conn,
+            target,
+            row,
+            from_path=from_path,
+            to_path=to_path,
+            face_config=face_config,
+        )
         db.complete_pending_file_move(conn, move_id=move_id)
         return
 
@@ -97,10 +133,13 @@ def _complete_database_move(
     *,
     from_path: Path,
     to_path: Path,
+    face_config: FaceRecognitionConfig | None,
 ) -> None:
     operation = str(row["operation"])
     file_id = int(row["file_id"])
     if operation == "remove":
+        attach_existing_item_databases(conn, target, face_config)
+        delete_attached_item_data(conn, (file_id,))
         db.mark_file_deleted(
             conn,
             file_id=file_id,

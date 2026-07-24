@@ -109,7 +109,10 @@ def create_snapshot(
             allow_binding_change=confirmed_binding_change is not None,
         )
         with TargetLock(source, command="snapshot create"):
-            recover_snapshot_pending_file_moves(source)
+            recover_snapshot_pending_file_moves(
+                source,
+                face_config=face_config,
+            )
             if progress is not None:
                 progress(SnapshotCreateProgress(stage="inventory"))
             inventory = inventory_tree(source, should_cancel=should_cancel)
@@ -238,7 +241,11 @@ def create_snapshot(
     )
 
 
-def recover_snapshot_pending_file_moves(source: Path) -> int:
+def recover_snapshot_pending_file_moves(
+    source: Path,
+    *,
+    face_config: FaceRecognitionConfig | None = None,
+) -> int:
     database_path = source / DB_FILENAME
     if not database_path.is_file():
         return 0
@@ -249,7 +256,11 @@ def recover_snapshot_pending_file_moves(source: Path) -> int:
         # or uses a schema this runtime cannot safely mutate.
         return 0
     try:
-        return recover_pending_file_moves_in_connection(conn, source)
+        return recover_pending_file_moves_in_connection(
+            conn,
+            source,
+            face_config=face_config,
+        )
     finally:
         conn.close()
 

@@ -45,6 +45,22 @@ uten å bekrefte et bestemt face-id.
 `face_suggestions` lagrer beregnede forslag. `reference_face_id` peker på det
 bekreftede ansiktet som ga høyest similarity for forslaget.
 
+## Livssyklus for bilder
+
+Et aktivt bilde beholder face-data så lenge minst én `file_sources`-rad finnes.
+`unimport` av én av flere kilder skal derfor ikke endre `scanned_files`,
+`faces`, `person_faces`, `person_files` eller `face_suggestions`.
+
+`remove` sletter bildets rader fra `scanned_files`, `faces`, `person_faces` og
+`person_files` i alle eksisterende InsightFace-modelldatabaser. Forslag som
+gjelder et av ansiktene, eller bruker et av dem som `reference_face_id`,
+slettes også. `persons` beholdes. `undelete` gjenoppretter ikke face-data eller
+brukerbekreftelser; bildet må scannes og koblingene bekreftes på nytt.
+
+Når `unimport` fjerner siste `file_sources`-rad og dermed `files`-raden, skal
+den utføre samme opprydding. Databasene ATTACH-es til hovedforbindelsen, slik
+at sidecar-opprydding og hoveddatabaseendring committes samlet.
+
 `person_files` har disse kolonnene:
 
 ```sql

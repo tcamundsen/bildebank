@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from . import db, server_actions, server_request
-from .config import BrowserHotkeyConfig, HOTKEY_KEYS
+from .config import BrowserHotkeyConfig, FaceRecognitionConfig, HOTKEY_KEYS
 from .server_browser_queries import adjacent_items_from_id_order, adjacent_source_items, source_item_by_id
 from .server_browser_sources import (
     BrowserSource,
@@ -29,6 +29,11 @@ def clear_browser_navigation_cache(server: Any) -> None:
     clear_cache = getattr(server, "clear_browser_navigation_cache", None)
     if clear_cache is not None:
         clear_cache()
+
+
+def server_face_config(server: Any) -> FaceRecognitionConfig | None:
+    config = getattr(server, "config", None)
+    return getattr(config, "face_recognition", None)
 
 
 def respond_comment_item(handler: BildebankRequestHandler) -> None:
@@ -482,7 +487,11 @@ def respond_delete_item(handler: BildebankRequestHandler) -> None:
         handler.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
         return
     try:
-        deleted_path = server_actions.remove_file_from_browser(handler.server.target, file_id)
+        deleted_path = server_actions.remove_file_from_browser(
+            handler.server.target,
+            file_id,
+            server_face_config(handler.server),
+        )
     except TargetLockError as exc:
         handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
         return
@@ -501,7 +510,11 @@ def respond_undelete_item(handler: BildebankRequestHandler) -> None:
         handler.respond_json({"ok": False, "error": "Ugyldig file_id."}, status=HTTPStatus.BAD_REQUEST)
         return
     try:
-        restored_path = server_actions.undelete_file_from_browser(handler.server.target, file_id)
+        restored_path = server_actions.undelete_file_from_browser(
+            handler.server.target,
+            file_id,
+            server_face_config(handler.server),
+        )
     except TargetLockError as exc:
         handler.respond_json({"ok": False, "error": str(exc)}, status=HTTPStatus.CONFLICT)
         return

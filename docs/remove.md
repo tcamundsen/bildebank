@@ -55,6 +55,14 @@ Etterpå vises ikke filen i nettleservisningen.
 
 Originalfilen i kilden blir ikke slettet.
 
+Hvis bildet er scannet for bildesøk eller ansikter, fjernes disse dataene når
+bildet flyttes til `deleted`. Det omfatter også bekreftede ansikter,
+personkoblinger og bruk av ansikter i bildet som referanse for forslag.
+Personer som er registrert i Bildebank, beholdes.
+
+Hvis du senere bruker [`undelete`](undelete.md), må bildet scannes på nytt for
+bildesøk og ansikter. Eventuelle personkoblinger må bekreftes på nytt.
+
 ## Når skal du bruke remove?
 
 Bruk `remove` når én bestemt importert fil ikke skal være med i den aktive

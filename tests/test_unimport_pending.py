@@ -7,13 +7,14 @@ from unittest.mock import patch
 
 from bildebank import db
 from bildebank.cli import main
-from bildebank.config import AppConfig
+from bildebank.config import AppConfig, FaceRecognitionConfig
 from bildebank.face import connect_face_db, face_db_path
 from bildebank.file_lifecycle import remove_file
 from bildebank.media import sha256_file
 from bildebank.openclip import connect_openclip_db
 from bildebank.pending_deletes import cleanup_pending_deletes, list_pending_deletes
 from bildebank.unimport import run_unimport
+from tests.db_test_helpers import insert_basic_item_sidecar_fixture
 
 
 def run_cli(args: list[str]) -> int:
@@ -230,6 +231,142 @@ def test_deleted_duplicate_stays_deleted_until_last_source_is_unimported(
     assert list_pending_deletes(target) == []
 
 
+def test_unimport_keeps_sidecars_until_last_source_reference(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "target"
+    source_a = tmp_path / "source-a"
+    source_b = tmp_path / "source-b"
+    source_a.mkdir()
+    source_b.mkdir()
+    (source_a / "IMG_20240102.jpg").write_bytes(b"same image")
+    (source_b / "COPY_20240102.jpg").write_bytes(b"same image")
+
+    assert run_cli(["create", str(target)]) == 0
+    for source in (source_a, source_b):
+        assert (
+            run_cli(
+                [
+                    "--target",
+                    str(target),
+                    "import",
+                    "--name",
+                    source.name,
+                    "--quiet",
+                    str(source),
+                ]
+            )
+            == 0
+        )
+
+    conn = db.connect(target)
+    try:
+        file_row = conn.execute(
+            "SELECT id, target_path, sha256 FROM files"
+        ).fetchone()
+        assert conn.execute(
+            "SELECT COUNT(*) FROM file_sources WHERE file_id = ?",
+            (int(file_row["id"]),),
+        ).fetchone()[0] == 2
+    finally:
+        conn.close()
+
+    face_configs = (
+        FaceRecognitionConfig(
+            database_dir=Path(".custom-faces"),
+            model_name="buffalo_l",
+        ),
+        FaceRecognitionConfig(
+            database_dir=Path(".custom-faces"),
+            model_name="antelopev2",
+        ),
+    )
+    insert_basic_item_sidecar_fixture(
+        target,
+        file_id=int(file_row["id"]),
+        target_path=str(file_row["target_path"]),
+        sha256=str(file_row["sha256"]),
+        face_configs=face_configs,
+    )
+    config = AppConfig(face_recognition=face_configs[0])
+
+    first = run_unimport(
+        target,
+        source_a.name,
+        config=config,
+        dry_run=False,
+        confirm=lambda _plan: True,
+    )
+
+    assert first.plan.file_ids_to_delete == ()
+    for face_config in face_configs:
+        face_conn = connect_face_db(target, face_config)
+        try:
+            for table in (
+                "scanned_files",
+                "faces",
+                "person_faces",
+                "person_files",
+                "face_suggestions",
+            ):
+                assert face_conn.execute(
+                    f"SELECT COUNT(*) FROM {table}"
+                ).fetchone()[0] == 1
+        finally:
+            face_conn.close()
+    openclip_conn = connect_openclip_db(target)
+    try:
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_embeddings"
+        ).fetchone()[0] == 1
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_search_results"
+        ).fetchone()[0] == 1
+    finally:
+        openclip_conn.close()
+
+    second = run_unimport(
+        target,
+        source_b.name,
+        config=config,
+        dry_run=False,
+        confirm=lambda _plan: True,
+    )
+
+    assert second.plan.file_ids_to_delete == (int(file_row["id"]),)
+    for face_config in face_configs:
+        face_conn = connect_face_db(target, face_config)
+        try:
+            for table in (
+                "scanned_files",
+                "faces",
+                "person_faces",
+                "person_files",
+                "face_suggestions",
+            ):
+                assert face_conn.execute(
+                    f"SELECT COUNT(*) FROM {table}"
+                ).fetchone()[0] == 0
+            assert face_conn.execute(
+                "SELECT COUNT(*) FROM persons"
+            ).fetchone()[0] == 1
+        finally:
+            face_conn.close()
+    openclip_conn = connect_openclip_db(target)
+    try:
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_embeddings"
+        ).fetchone()[0] == 0
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_search_results"
+        ).fetchone()[0] == 0
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_search_runs"
+        ).fetchone()[0] == 0
+    finally:
+        openclip_conn.close()
+
+
 def test_unimport_removes_item_dependent_face_and_openclip_rows(
     tmp_path: Path,
 ) -> None:
@@ -341,6 +478,9 @@ def test_unimport_removes_item_dependent_face_and_openclip_rows(
         ).fetchone()[0] == 0
         assert openclip_conn.execute(
             "SELECT COUNT(*) FROM image_search_results"
+        ).fetchone()[0] == 0
+        assert openclip_conn.execute(
+            "SELECT COUNT(*) FROM image_search_runs"
         ).fetchone()[0] == 0
     finally:
         openclip_conn.close()

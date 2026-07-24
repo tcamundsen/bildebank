@@ -73,6 +73,11 @@ bildesamlingen.
 Hvis den samme filen også finnes i en annen import, blir filen liggende. Da fjernes
 bare henvisningen til importen du angrer.
 
+Data for bildesøk og ansiktsgjenkjenning beholdes når minst én annen import
+fortsatt refererer til bildet. Når den siste importkoblingen fjernes, slettes
+også bildets OpenCLIP-data og bildeavhengige data fra alle
+InsightFace-databasene. Registrerte personer beholdes.
+
 Filer som mister den siste importkoblingen legges først i Bildebanks
 `pending_file_deletes`-kø i samme databasetransaksjon som importkoblingene
 fjernes. Databasen lagres før Bildebank prøver fysisk sletting.

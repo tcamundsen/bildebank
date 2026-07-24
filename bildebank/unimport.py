@@ -8,9 +8,11 @@ from typing import Any, Callable
 
 from . import db
 from .config import AppConfig
-from .face import ensure_face_schema_path, face_database_dir
+from .item_sidecars import (
+    attach_existing_item_databases,
+    delete_attached_item_data,
+)
 from .media import sha256_file
-from .openclip import ensure_openclip_schema_path, openclip_db_path
 from .pending_deletes import (
     PendingDeleteResult,
     cleanup_pending_deletes,
@@ -112,7 +114,11 @@ def run_unimport(
                         "Unimport er avbrutt; kjør kommandoen på nytt."
                     )
 
-            attach_item_databases(conn, target, config)
+            attach_existing_item_databases(
+                conn,
+                target,
+                config.face_recognition,
+            )
             validate_source_files(conn, target, source)
             validate_target_paths(target, plan)
             final_target_content_changes = find_target_content_changes(
@@ -343,78 +349,3 @@ def apply_unimport_transaction(
     delete_attached_item_data(conn, plan.file_ids_to_delete)
     db.apply_unimport(conn, plan)
     return tuple(pending_ids)
-
-
-def attach_item_databases(
-    conn: sqlite3.Connection,
-    target: Path,
-    config: AppConfig,
-) -> None:
-    face_dir = face_database_dir(target, config.face_recognition)
-    if face_dir.is_dir():
-        for index, path in enumerate(sorted(face_dir.glob("*.sqlite3"))):
-            ensure_face_schema_path(path)
-            conn.execute(
-                f"ATTACH DATABASE ? AS face_db_{index}",
-                (str(path),),
-            )
-    openclip_path = openclip_db_path(target)
-    if openclip_path.is_file():
-        ensure_openclip_schema_path(openclip_path)
-        conn.execute("ATTACH DATABASE ? AS openclip_db", (str(openclip_path),))
-
-
-def delete_attached_item_data(
-    conn: sqlite3.Connection,
-    file_ids: tuple[int, ...],
-) -> None:
-    if not file_ids:
-        return
-    placeholders = ",".join("?" for _ in file_ids)
-    databases = [
-        str(row["name"])
-        for row in conn.execute("PRAGMA database_list")
-    ]
-    for database in databases:
-        if database.startswith("face_db_"):
-            face_ids_sql = (
-                f"SELECT id FROM {database}.faces "
-                f"WHERE file_id IN ({placeholders})"
-            )
-            conn.execute(
-                f"DELETE FROM {database}.face_suggestions "
-                f"WHERE face_id IN ({face_ids_sql}) "
-                f"OR reference_face_id IN ({face_ids_sql})",
-                (*file_ids, *file_ids),
-            )
-            conn.execute(
-                f"DELETE FROM {database}.person_faces "
-                f"WHERE face_id IN ({face_ids_sql})",
-                file_ids,
-            )
-            conn.execute(
-                f"DELETE FROM {database}.person_files "
-                f"WHERE file_id IN ({placeholders})",
-                file_ids,
-            )
-            conn.execute(
-                f"DELETE FROM {database}.faces "
-                f"WHERE file_id IN ({placeholders})",
-                file_ids,
-            )
-            conn.execute(
-                f"DELETE FROM {database}.scanned_files "
-                f"WHERE file_id IN ({placeholders})",
-                file_ids,
-            )
-        elif database == "openclip_db":
-            conn.execute(
-                f"DELETE FROM openclip_db.image_search_results "
-                f"WHERE file_id IN ({placeholders})",
-                file_ids,
-            )
-            conn.execute(
-                f"DELETE FROM openclip_db.image_embeddings "
-                f"WHERE file_id IN ({placeholders})",
-                file_ids,
-            )

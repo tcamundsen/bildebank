@@ -22,7 +22,7 @@ from .cli_geo import h3_resolution_arg, run_geo_command
 from .cli_image import run_image_command
 from .cli_server import run_server_command
 from .cli_update import run_update
-from .config import load_config, set_config_enabled
+from .config import FaceRecognitionConfig, load_config, set_config_enabled
 from .exiftool import install_managed_exiftool
 from .exiftool_probe import exiftool_metadata_gaps
 from .export_person import PersonExportInterrupted
@@ -1197,8 +1197,13 @@ def run(args: argparse.Namespace) -> int:
         ),
     )
     validate_collection_platform(target)
+    face_config = None
     if should_recover_pending_file_moves(args):
-        recover_pending_file_moves(target)
+        face_config = load_config(
+            program_repo_root(),
+            migrate_legacy=False,
+        ).face_recognition
+        recover_pending_file_moves(target, face_config=face_config)
     if args.command != "snapshot":
         record_target_best_effort(program_repo_root(), target)
 
@@ -1214,7 +1219,16 @@ def run(args: argparse.Namespace) -> int:
         return run_face_command(args, target, repo_root=program_repo_root())
 
     if args.command in {"remove", "undelete"}:
-        return run_file_lifecycle_command(args, target)
+        if face_config is None:
+            face_config = load_config(
+                program_repo_root(),
+                migrate_legacy=False,
+            ).face_recognition
+        return run_file_lifecycle_command(
+            args,
+            target,
+            face_config=face_config,
+        )
 
     if args.command == "unimport":
         return run_unimport_command(target, args)
@@ -1289,7 +1303,11 @@ def run_no_target_command(args: argparse.Namespace) -> int:
         target = db.find_target(args.target)
         if target is not None:
             validate_collection_platform(target)
-            recover_pending_file_moves(target)
+            face_config = load_config(
+                program_repo_root(),
+                migrate_legacy=False,
+            ).face_recognition
+            recover_pending_file_moves(target, face_config=face_config)
         return run_doctor(target, deep=getattr(args, "deep", False), repo_root=program_repo_root())
 
     if args.command == "config":
@@ -1368,13 +1386,19 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
     )
 
 
-def run_file_lifecycle_command(args: argparse.Namespace, target: Path) -> int:
+def run_file_lifecycle_command(
+    args: argparse.Namespace,
+    target: Path,
+    *,
+    face_config: FaceRecognitionConfig,
+) -> int:
     if args.command == "remove":
         result_path = remove_file(
             target,
             collection_path=args.path,
             command_args=vars_for_log(args),
             path_adapter=existing_path_arg,
+            face_config=face_config,
         )
         print(f"Flyttet til slettet mappe: {target / result_path}")
         return 0

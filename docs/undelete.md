@@ -36,6 +36,11 @@ ble kjørt, og fjerner slettemarkeringen i databasen.
 Hvis en fil allerede finnes på den opprinnelige plasseringen, stopper kommandoen
 uten å flytte noe.
 
+Data for bildesøk og ansiktsgjenkjenning som ble fjernet av `remove`,
+gjenopprettes ikke automatisk. Kjør bildesøk- og ansiktsskanning på nytt hvis
+bildet skal brukes av disse funksjonene. Tidligere personkoblinger må
+eventuelt bekreftes på nytt.
+
 ## Se slettede filer
 
 Du kan finne filer som kan flyttes tilbake med:
