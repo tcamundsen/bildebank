@@ -1610,6 +1610,206 @@ enabled = true
         self.assertIn("Råd: Kjør bildebank cleanup-image-search --apply", stdout)
         self.assertNotIn("image_embeddings file #1: 2024/01/active.png", stdout)
 
+    def test_doctor_accepts_matching_openclip_file_references(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            active_id = insert_test_file(
+                target,
+                "2024/01/active.png",
+                sha256="sha-active",
+            )
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256,
+                        model_name, pretrained, embedding
+                    ) VALUES(
+                        ?, '2024/01/active.png', '2024/01/active.png',
+                        'sha-active', 'Test-Model', 'test-weights', ?
+                    )
+                    """,
+                    (active_id, embedding_blob([1.0, 0.0])),
+                )
+                run_id = conn.execute(
+                    """
+                    INSERT INTO image_search_runs(
+                        query, model_name, pretrained, result_limit
+                    ) VALUES('cat', 'Test-Model', 'test-weights', 10)
+                    """
+                ).lastrowid
+                conn.execute(
+                    """
+                    INSERT INTO image_search_results(
+                        run_id, file_id, target_path, target_path_key,
+                        similarity, rank
+                    ) VALUES(
+                        ?, ?, '2024/01/active.png', '2024/01/active.png',
+                        0.9, 1
+                    )
+                    """,
+                    (run_id, active_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "OK: OpenCLIP-schema og kopierte filreferanser stemmer med "
+            "hoveddatabasen",
+            stdout,
+        )
+
+    def test_doctor_reports_mismatched_openclip_file_references(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            active_id = insert_test_file(
+                target,
+                "2024/01/current.png",
+                sha256="sha-current",
+            )
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256,
+                        model_name, pretrained, embedding
+                    ) VALUES(
+                        ?, '2023/12/old.png', '2023/12/old.png',
+                        'sha-old', 'Test-Model', 'test-weights', ?
+                    )
+                    """,
+                    (active_id, embedding_blob([1.0, 0.0])),
+                )
+                run_id = conn.execute(
+                    """
+                    INSERT INTO image_search_runs(
+                        query, model_name, pretrained, result_limit
+                    ) VALUES('cat', 'Test-Model', 'test-weights', 10)
+                    """
+                ).lastrowid
+                conn.execute(
+                    """
+                    INSERT INTO image_search_results(
+                        run_id, file_id, target_path, target_path_key,
+                        similarity, rank
+                    ) VALUES(
+                        ?, ?, '2023/12/old.png', '2023/12/old.png',
+                        0.9, 1
+                    )
+                    """,
+                    (run_id, active_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            openclip_path = openclip_db_path(target)
+            database_before = openclip_path.read_bytes()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            database_after = openclip_path.read_bytes()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: 1 OpenCLIP embedding-rad(er) stemmer ikke med aktiv "
+            "fil i hoveddatabasen.",
+            stdout,
+        )
+        self.assertIn(
+            "image_embeddings file #1: "
+            "avvik=target_path,target_path_key,sha256",
+            stdout,
+        )
+        self.assertIn(
+            "FEIL: 1 OpenCLIP søkeresultat-rad(er) stemmer ikke med aktiv "
+            "fil i hoveddatabasen.",
+            stdout,
+        )
+        self.assertIn(
+            "image_search_results file #1: "
+            "avvik=target_path,target_path_key",
+            stdout,
+        )
+        self.assertNotIn(
+            "Kjør bildebank cleanup-image-search --apply",
+            stdout,
+        )
+        self.assertEqual(database_after, database_before)
+
+    def test_doctor_rejects_incomplete_current_openclip_schema_read_only(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute("DROP TABLE image_search_results")
+                conn.commit()
+            finally:
+                conn.close()
+            openclip_path = openclip_db_path(target)
+            database_before = openclip_path.read_bytes()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+            database_after = openclip_path.read_bytes()
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "FEIL: OpenCLIP-databasen kunne ikke valideres read-only: "
+            "OpenCLIP-databasen mangler forventede tabeller: "
+            "image_search_results.",
+            stdout,
+        )
+        self.assertEqual(database_after, database_before)
+
     def test_doctor_uses_explicit_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1677,11 +1877,20 @@ enabled = true
                 conn.commit()
             finally:
                 conn.close()
+            openclip_path = openclip_db_path(target)
+            database_before = openclip_path.read_bytes()
 
             code, stdout, stderr = capture_cli(["--target", str(target), "doctor"])
+            database_after = openclip_path.read_bytes()
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("bilde-embeddings: 1", stdout)
+            self.assertIn(
+                "FEIL: OpenCLIP-databasen kunne ikke valideres read-only: "
+                "OpenCLIP-databasen mangler eksplisitt schema_version.",
+                stdout,
+            )
+            self.assertEqual(database_after, database_before)
             conn = sqlite3.connect(openclip_db_path(target))
             try:
                 self.assertEqual(

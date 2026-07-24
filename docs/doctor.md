@@ -25,7 +25,10 @@ tekstbasert bildesøk, aktiv bildesamling og om databaseførte bildefiler
 faktisk finnes i samlingen. Den leter også etter mediefiler i samlingen som
 ikke har noen databasepost, og rapporterer dem som orphan-filer. Hvis
 OpenCLIP-databasen for bildesøk finnes, sjekker den også om bildesøkdata peker
-på filer som mangler i hoveddatabasen eller er markert som slettet. Hvis for eksempel
+på filer som mangler i hoveddatabasen eller er markert som slettet. Databasen
+må ha gjeldende, eksplisitt OpenCLIP-schema. For aktive filer må kopiert
+filsti, stinøkkel og SHA-256 stemme med hoveddatabasen. Avvik rapporteres, men
+doctor migrerer, rydder eller regenererer ikke OpenCLIP-data. Hvis for eksempel
 `face_recognition` er slått på, men InsightFace mangler eller ikke kan lastes,
 viser kommandoen en `FEIL:`-linje og et råd om hva du bør gjøre videre.
 

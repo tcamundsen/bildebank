@@ -293,6 +293,20 @@ def validate_current_openclip_schema(conn: sqlite3.Connection) -> None:
     validate_openclip_foreign_keys(conn)
 
 
+def require_current_openclip_schema_read_only(
+    conn: sqlite3.Connection,
+) -> None:
+    version = openclip_schema_version(conn)
+    if version is None:
+        raise ValueError(
+            "OpenCLIP-databasen mangler eksplisitt schema_version. "
+            "Doctor adopterer eller migrerer ikke databasen."
+        )
+    if version != OPENCLIP_SCHEMA_VERSION:
+        reject_unknown_openclip_schema_version(version)
+    validate_current_openclip_schema(conn)
+
+
 def validate_openclip_schema_structure(
     conn: sqlite3.Connection,
     *,

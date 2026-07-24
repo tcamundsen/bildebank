@@ -29,7 +29,12 @@ from .exiftool import resolve_exiftool_path, validate_exiftool_install
 from .face import face_db_path, face_db_summary, insightface_runtime_error
 from .ffmpeg_tools import resolve_ffmpeg_tools
 from .media import is_supported_media
-from .openclip import openclip_db_path, openclip_db_summary, torch_gpu_status
+from .openclip import (
+    openclip_db_path,
+    openclip_db_summary,
+    require_current_openclip_schema_read_only,
+    torch_gpu_status,
+)
 from .pending_deletes import pending_delete_integrity_rows
 from .platform_guard import validate_collection_platform
 from .progress import ProgressMeter
@@ -152,7 +157,7 @@ def run_doctor(target_arg: Path | None = None, *, deep: bool = False, repo_root:
                 doctor_check_duplicate_active_sha256(target)
                 doctor_check_files_have_sources(target)
                 doctor_check_file_source_identity(target)
-                doctor_check_orphan_openclip_rows(target)
+                doctor_check_openclip_consistency(target)
                 if file_paths_safe:
                     doctor_check_files_on_disk(target)
                     doctor_check_orphan_files(target)
@@ -718,69 +723,106 @@ def doctor_pending_delete_details(
     doctor_report_omitted_details(len(rows))
 
 
-def doctor_check_orphan_openclip_rows(target: Path) -> None:
+def doctor_check_openclip_consistency(target: Path) -> None:
     path = openclip_db_path(target)
     if not path.exists():
         doctor_ok("ingen OpenCLIP-database å kontrollere")
         return
 
-    conn = connect_database_read_only(path)
     try:
-        if not doctor_openclip_table_exists(conn, "image_embeddings"):
-            doctor_obs("OpenCLIP-databasen mangler image_embeddings.")
-            return
-        main_db_uri = f"{db.db_path_for_target(target).resolve().as_uri()}?mode=ro"
-        conn.execute("ATTACH DATABASE ? AS main_db", (main_db_uri,))
-        embedding_rows = doctor_orphan_openclip_rows(conn, "image_embeddings")
-        result_rows = (
-            doctor_orphan_openclip_rows(conn, "image_search_results")
-            if doctor_openclip_table_exists(conn, "image_search_results")
-            else []
+        conn = connect_database_read_only(path)
+        try:
+            require_current_openclip_schema_read_only(conn)
+            main_db_uri = (
+                f"{db.db_path_for_target(target).resolve().as_uri()}?mode=ro"
+            )
+            conn.execute("ATTACH DATABASE ? AS main_db", (main_db_uri,))
+            embedding_orphans = doctor_orphan_openclip_rows(
+                conn,
+                "image_embeddings",
+            )
+            result_orphans = doctor_orphan_openclip_rows(
+                conn,
+                "image_search_results",
+            )
+            embedding_mismatches = doctor_openclip_identity_mismatches(
+                conn,
+                "image_embeddings",
+            )
+            result_mismatches = doctor_openclip_identity_mismatches(
+                conn,
+                "image_search_results",
+            )
+        finally:
+            conn.close()
+    except (sqlite3.Error, ValueError) as exc:
+        doctor_error(
+            f"OpenCLIP-databasen kunne ikke valideres read-only: {exc}"
         )
-    finally:
-        conn.close()
-
-    if not embedding_rows and not result_rows:
-        doctor_ok("ingen foreldreløse OpenCLIP-rader")
+        doctor_advice(
+            "Undersøk OpenCLIP-databasen og sikkerhetskopien før den endres "
+            "eller regenereres."
+        )
         return
 
-    if embedding_rows:
-        total_embedding_rows = sum(int(row["row_count"]) for row in embedding_rows)
+    if not (
+        embedding_orphans
+        or result_orphans
+        or embedding_mismatches
+        or result_mismatches
+    ):
+        doctor_ok(
+            "OpenCLIP-schema og kopierte filreferanser stemmer med "
+            "hoveddatabasen"
+        )
+        return
+
+    if embedding_orphans:
+        total_embedding_rows = sum(
+            int(row["row_count"]) for row in embedding_orphans
+        )
         doctor_error(
             f"{total_embedding_rows} OpenCLIP embedding-rad(er) peker på manglende eller slettet fil."
         )
-        for row in embedding_rows[:20]:
+        for row in embedding_orphans[:20]:
             row_count = int(row["row_count"])
             count_suffix = f" ({row_count} rader)" if row_count > 1 else ""
             doctor_info(
                 f"image_embeddings file #{int(row['file_id'])}: "
                 f"{Path(str(row['target_path'])).as_posix()}{count_suffix}"
             )
-        doctor_report_omitted_openclip_groups(len(embedding_rows))
-    if result_rows:
-        total_result_rows = sum(int(row["row_count"]) for row in result_rows)
+        doctor_report_omitted_openclip_groups(len(embedding_orphans))
+    if result_orphans:
+        total_result_rows = sum(
+            int(row["row_count"]) for row in result_orphans
+        )
         doctor_error(
             f"{total_result_rows} OpenCLIP søkeresultat-rad(er) peker på manglende eller slettet fil."
         )
-        for row in result_rows[:20]:
+        for row in result_orphans[:20]:
             row_count = int(row["row_count"])
             count_suffix = f" ({row_count} rader)" if row_count > 1 else ""
             doctor_info(
                 f"image_search_results file #{int(row['file_id'])}: "
                 f"{Path(str(row['target_path'])).as_posix()}{count_suffix}"
             )
-        doctor_report_omitted_openclip_groups(len(result_rows))
-    doctor_advice("Kjør bildebank cleanup-image-search --apply")
+        doctor_report_omitted_openclip_groups(len(result_orphans))
+    if embedding_orphans or result_orphans:
+        doctor_advice("Kjør bildebank cleanup-image-search --apply")
 
-
-def doctor_openclip_table_exists(conn: sqlite3.Connection, table: str) -> bool:
-    return (
-        conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-            (table,),
-        ).fetchone()
-        is not None
+    doctor_report_openclip_identity_mismatches(
+        "image_embeddings",
+        embedding_mismatches,
     )
+    doctor_report_openclip_identity_mismatches(
+        "image_search_results",
+        result_mismatches,
+    )
+    if embedding_mismatches or result_mismatches:
+        doctor_advice(
+            "Undersøk hoveddatabasen og sikkerhetskopien før OpenCLIP-data "
+            "regenereres."
+        )
 
 
 def doctor_orphan_openclip_rows(conn: sqlite3.Connection, table: str) -> list[sqlite3.Row]:
@@ -799,6 +841,95 @@ def doctor_orphan_openclip_rows(conn: sqlite3.Connection, table: str) -> list[sq
             """
         )
     )
+
+
+def doctor_openclip_identity_mismatches(
+    conn: sqlite3.Connection,
+    table: str,
+) -> list[sqlite3.Row]:
+    if table not in {"image_embeddings", "image_search_results"}:
+        raise ValueError(f"Uventet OpenCLIP-tabell: {table}")
+    sha_select = (
+        f", {table}.sha256 AS sidecar_sha256, "
+        "main_db.files.sha256 AS main_sha256"
+        if table == "image_embeddings"
+        else ""
+    )
+    sha_condition = (
+        f" OR {table}.sha256 <> main_db.files.sha256"
+        if table == "image_embeddings"
+        else ""
+    )
+    return list(
+        conn.execute(
+            f"""
+            SELECT
+                {table}.file_id,
+                {table}.target_path AS sidecar_target_path,
+                {table}.target_path_key AS sidecar_target_path_key,
+                main_db.files.target_path AS main_target_path,
+                main_db.files.target_path_key AS main_target_path_key
+                {sha_select},
+                COUNT(*) AS row_count
+            FROM {table}
+            JOIN main_db.files
+              ON main_db.files.id = {table}.file_id
+            WHERE main_db.files.deleted_at IS NULL
+              AND (
+                    {table}.target_path <> main_db.files.target_path
+                 OR {table}.target_path_key <> main_db.files.target_path_key
+                 {sha_condition}
+              )
+            GROUP BY
+                {table}.file_id,
+                {table}.target_path,
+                {table}.target_path_key,
+                main_db.files.target_path,
+                main_db.files.target_path_key
+                {', ' + table + '.sha256, main_db.files.sha256'
+                 if table == 'image_embeddings' else ''}
+            ORDER BY {table}.file_id, {table}.target_path
+            """
+        )
+    )
+
+
+def doctor_report_openclip_identity_mismatches(
+    table: str,
+    rows: list[sqlite3.Row],
+) -> None:
+    if not rows:
+        return
+    total_rows = sum(int(row["row_count"]) for row in rows)
+    label = (
+        "embedding-rad(er)"
+        if table == "image_embeddings"
+        else "søkeresultat-rad(er)"
+    )
+    doctor_error(
+        f"{total_rows} OpenCLIP {label} stemmer ikke med aktiv fil i "
+        "hoveddatabasen."
+    )
+    for row in rows[:20]:
+        fields = [
+            field
+            for field in ("target_path", "target_path_key")
+            if row[f"sidecar_{field}"] != row[f"main_{field}"]
+        ]
+        if (
+            table == "image_embeddings"
+            and row["sidecar_sha256"] != row["main_sha256"]
+        ):
+            fields.append("sha256")
+        row_count = int(row["row_count"])
+        count_suffix = f", rader={row_count}" if row_count > 1 else ""
+        doctor_info(
+            f"{table} file #{int(row['file_id'])}: "
+            f"avvik={','.join(fields)}{count_suffix}; "
+            f"OpenCLIP-sti={row['sidecar_target_path']!r}, "
+            f"files-sti={row['main_target_path']!r}"
+        )
+    doctor_report_omitted_openclip_groups(len(rows))
 
 
 def doctor_report_omitted_openclip_groups(total: int) -> None:
