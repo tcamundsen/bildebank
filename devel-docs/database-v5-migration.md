@@ -1,8 +1,21 @@
 # Database v5: relative stier i bildesamlingen
 
-Status: v5-migreringen regnes som fullført for støttede databaser. Gjeldende
-kode antar at samlingsinterne bildestier allerede er relative, og inneholder
-ikke lenger runtime-reparasjon av gamle absolutte `target_path`-verdier.
+Status: Dette er en historisk migrering. Gjeldende migrator støtter
+`schema_version=5` og nyere, men kjører ikke lenger v4→v5. Koden antar at
+samlingsinterne bildestier allerede er relative, og inneholder ikke
+runtime-reparasjon av gamle absolutte `target_path`-verdier.
+
+V4→v5-konverteringen ble innført i commit `ca73a3f` og fjernet i commit
+`7cbc94a` etter at overgangen var regnet som fullført. Beskrivelsen nedenfor
+er derfor historisk dokumentasjon, ikke en garanti om at kommandoen i dagens
+versjon kan utføre konverteringen.
+
+Hvis en v1–v4-database likevel oppdages, skal `schema_version` ikke redigeres
+manuelt. Bevar hele samlingen og snapshots uendret. Foretrekk gjenoppretting
+fra et kontrollert v5+-snapshot. Hvis det ikke finnes, må en utvikler lage en
+isolert kopi og bruke den historiske spesifikasjonen nedenfor til en særskilt,
+testet konvertering til v5. Først den ferdig validerte kopien kan migreres
+videre med gjeldende kode.
 
 Dette dokumentet beskriver ønsket migrering fra absolutte stier til relative
 stier for filer som ligger inne i en Bildebank-samling.
@@ -104,9 +117,9 @@ merkes som utdaterte eller slettes/regenereres trygt. Face-scan og OpenCLIP
 scan kan gjenskapes, men de kan være tidkrevende. Derfor bør migrering
 foretrekkes når dataene er konsistente.
 
-## Migrering fra v4 til v5
+## Historisk migrering fra v4 til v5
 
-Migreringen skal være eksplisitt og kjøres med:
+Da migreringen var støttet, ble den kjørt eksplisitt med:
 
 ```powershell
 bildebank migrate

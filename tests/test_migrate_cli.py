@@ -1135,6 +1135,35 @@ class MigrateCliTests(unittest.TestCase):
             self.assertIn("absolutt target_path", stderr)
             self.assertIn("bildebank migrate", stderr)
 
+    def test_migrate_rejects_unsupported_v4_without_database_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            imported = target / "2024" / "01" / "IMG_20240102.jpg"
+            create_v4_database(target, source, imported=imported)
+            database_path = target / DB_FILENAME
+            before = database_dump(database_path)
+            before_bytes = database_path.read_bytes()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "migrate"]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertIn("Lager backup:", stdout)
+            self.assertIn(
+                "Kan ikke migrere database med schema_version=4",
+                stderr,
+            )
+            self.assertEqual(database_dump(database_path), before)
+            self.assertEqual(database_path.read_bytes(), before_bytes)
+            backups = list(
+                target.glob(".bilder.sqlite3.backup-before-schema-16-*")
+            )
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_bytes(), before_bytes)
+
     def test_migrate_v3_names_unnamed_sources_and_removes_kind_columns(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

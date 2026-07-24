@@ -22,6 +22,16 @@ Noen programoppdateringer endrer hvordan Bildebank lagrer informasjon i
 databasen. Da kan Bildebank si fra om at databasen må migreres før du kan
 fortsette.
 
+Gjeldende Bildebank kan oppgradere databaser fra databaseformat v5 og nyere.
+Format v4 og eldre er utfaset og støttes ikke av dagens migrering. Det skyldes
+at disse formatene brukte en eldre måte å lagre stier til bilder på.
+
+Hvis du mot formodning får beskjed om `schema_version=4` eller lavere, skal du
+ikke endre versjonsnummeret manuelt. Behold hele bildesamlingen og eventuelle
+snapshots uendret, og kontakt den som vedlikeholder Bildebank. En slik samling
+må først konverteres kontrollert til v5 på en kopi, eller gjenopprettes fra et
+snapshot som allerede bruker v5 eller nyere.
+
 Gå til bildesamlingsmappen før du kjører kommandoen:
 
 ```powershell

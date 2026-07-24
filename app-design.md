@@ -113,6 +113,11 @@ lagring uten å kreve en separat databaseserver.
 ## Databaseversjoner
 
 - gjeldende schema er v16
+- eldste hoveddatabaseformat som støttes av gjeldende migrator er v5
+- v1–v4 er historiske, utfasete formater; eldre hjelpegrener i koden er ikke
+  et løfte om at disse formatene kan oppgraderes direkte
+- en uventet v1–v4-database skal bevares uendret og håndteres etter
+  gjenopprettingsveien i devel-docs/database-v5-migration.md
 - historiske migreringer ligger i devel-docs/database-v4-migration.md og
   devel-docs/database-v5-migration.md, devel-docs/database-v6-migration.md og
   devel-docs/database-v7-migration.md, devel-docs/database-v8-migration.md,
