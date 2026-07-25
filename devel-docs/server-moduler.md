@@ -19,7 +19,11 @@ server
   `BildebankServer`, servertilstand og browsernavigasjonscache.
 - `server_handler.py` eier HTTP-livssyklus, read-only- og CSRF-kontroll,
   eksplisitt GET/POST-ruting samt generelle ressurser som filer, preview og
-  dokumentasjon. Originalfiler og MP4-avspillingskopier strømmes her med
+  dokumentasjon. Før CSRF-kontroll leser handleren POST-body gjennom den
+  felles, tekstbaserte 1 MiB-grensen i `server_request.py`. Ugyldig eller
+  duplisert `Content-Length`, ufullstendig eller ugyldig UTF-8 og enhver
+  `Transfer-Encoding` avvises før endepunktet kjøres. Originalfiler og
+  MP4-avspillingskopier strømmes her med
   støtte for én HTTP `Range` og `206 Partial Content`; stioppslag og
   range-parsing eies av `server_files.py`. Originalfiler og thumbnails slås
   bare opp via numerisk `file_id`; vilkårlige relative stier i samlingsmappen

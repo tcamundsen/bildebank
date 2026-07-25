@@ -68,10 +68,16 @@ def client_disconnected_error(exc: OSError) -> bool:
     )
 
 
-def validate_csrf_request(handler: Any) -> bool:
+def validate_csrf_request(
+    handler: Any,
+    body: bytes | None = None,
+) -> bool:
     expected = str(handler.server.csrf_token)
-    length = int(handler.headers.get("Content-Length") or "0")
-    body = handler.rfile.read(length) if length > 0 else b""
+    if body is None:
+        body = server_request.read_request_body_bytes(
+            handler.headers,
+            handler.rfile,
+        )
     handler.rfile = BytesIO(body)
     supplied = str(handler.headers.get("X-CSRF-Token") or "")
     if not supplied and body:
@@ -452,12 +458,34 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         self.server_timing_steps = {}
         parsed = urllib.parse.urlparse(self.path)
         if getattr(self.server, "slideshow", None) is not None:
+            self.close_connection = True
             self.respond_text("Siden finnes ikke.", status=HTTPStatus.NOT_FOUND)
             return
         if getattr(self.server, "read_only", False):
+            self.close_connection = True
             self.respond_read_only_forbidden(parsed.path)
             return
-        if not validate_csrf_request(self):
+        try:
+            body = server_request.read_request_body_bytes(
+                self.headers,
+                self.rfile,
+            )
+        except server_request.RequestBodyError as exc:
+            self.close_connection = True
+            status = (
+                HTTPStatus.CONTENT_TOO_LARGE
+                if isinstance(exc, server_request.RequestBodyTooLarge)
+                else HTTPStatus.BAD_REQUEST
+            )
+            if parsed.path.startswith("/api/"):
+                self.respond_json(
+                    {"ok": False, "error": str(exc)},
+                    status=status,
+                )
+            else:
+                self.respond_text(str(exc), status=status)
+            return
+        if not validate_csrf_request(self, body):
             return
         try:
             if parsed.path == "/people/face-suggest":

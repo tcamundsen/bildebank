@@ -336,6 +336,13 @@ samlingsstien og filtypen uten å følge symlinker eller Windows reparse points.
 Filen skal åpnes kontrollert før HTTP-responsen starter, slik at en fil som
 byttes etter stioppslaget ikke kan omgå kontrollen.
 
+Serverens POST-kall er små tekstbaserte skjema- eller JSON-kall, ikke
+filopplasting. Request body skal derfor ha en fast maksimumsgrense på 1 MiB,
+én entydig og gyldig `Content-Length` og gyldig UTF-8.
+`Transfer-Encoding` støttes ikke. Ugyldig framing skal avvises før CSRF- og
+endepunktbehandling, og forbindelsen skal lukkes uten at en for stor body
+leses.
+
 ## Lokal status for snapshots
 
 Et publisert snapshot kan registreres i programmets lokale programdatabase

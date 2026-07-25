@@ -6,6 +6,17 @@ from http import HTTPStatus
 from typing import Any, Protocol
 
 
+MAX_REQUEST_BODY_BYTES = 1024 * 1024
+
+
+class RequestBodyError(ValueError):
+    pass
+
+
+class RequestBodyTooLarge(RequestBodyError):
+    pass
+
+
 class RequestBodyReader(Protocol):
     def read(self, size: int = -1, /) -> bytes: ...
 
@@ -47,9 +58,71 @@ def parse_file_id(value: str) -> int:
     return file_id
 
 
+def read_request_body_bytes(
+    headers: Any,
+    rfile: RequestBodyReader,
+    *,
+    max_bytes: int = MAX_REQUEST_BODY_BYTES,
+) -> bytes:
+    if max_bytes < 0:
+        raise ValueError("max_bytes kan ikke være negativ")
+
+    if header_values(headers, "Transfer-Encoding"):
+        raise RequestBodyError("Transfer-Encoding støttes ikke.")
+
+    content_lengths = header_values(headers, "Content-Length")
+    if len(content_lengths) > 1:
+        raise RequestBodyError("Flere Content-Length-headere er ikke tillatt.")
+    if not content_lengths:
+        return b""
+
+    raw_length = content_lengths[0].strip()
+    if (
+        not raw_length
+        or not raw_length.isascii()
+        or not raw_length.isdecimal()
+    ):
+        raise RequestBodyError("Ugyldig Content-Length.")
+    normalized_length = raw_length.lstrip("0") or "0"
+    maximum_length = str(max_bytes)
+    if (
+        len(normalized_length) > len(maximum_length)
+        or (
+            len(normalized_length) == len(maximum_length)
+            and normalized_length > maximum_length
+        )
+    ):
+        raise RequestBodyTooLarge(
+            f"Forespørselsinnholdet er større enn tillatt grense på "
+            f"{max_bytes} byte."
+        )
+    length = int(normalized_length)
+    body = rfile.read(length) if length else b""
+    if len(body) != length:
+        raise RequestBodyError(
+            "Forespørselsinnholdet er kortere enn oppgitt Content-Length."
+        )
+    try:
+        body.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise RequestBodyError(
+            "Forespørselsinnholdet må være gyldig UTF-8."
+        ) from exc
+    return body
+
+
+def header_values(headers: Any, name: str) -> list[str]:
+    get_all = getattr(headers, "get_all", None)
+    if callable(get_all):
+        values = get_all(name)
+        if values is not None:
+            return [str(value) for value in values]
+    value = headers.get(name)
+    return [] if value is None else [str(value)]
+
+
 def read_request_body(headers: Any, rfile: RequestBodyReader) -> str:
-    length = int(headers.get("Content-Length") or "0")
-    return rfile.read(length).decode("utf-8") if length > 0 else ""
+    return read_request_body_bytes(headers, rfile).decode("utf-8")
 
 
 def read_form_params(headers: Any, rfile: RequestBodyReader) -> dict[str, list[str]]:

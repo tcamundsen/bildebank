@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from bildebank import db
+from bildebank import db, server_request
 from bildebank.cli import build_parser, main, should_recover_pending_file_moves
 from bildebank.cli_server import lan_share_urls, run_server_command
 from bildebank.config import AppConfig, FaceRecognitionConfig, OpenClipConfig
@@ -1110,6 +1110,183 @@ class ServerCoreCliTests(unittest.TestCase):
             {"ok": False, "error": "Ugyldig eller manglende CSRF-token."},
             handler.body,
         )
+
+    def test_run_server_rejects_unsafe_request_body_before_endpoint(self) -> None:
+        cases = (
+            (
+                "too large",
+                {
+                    "Content-Length": str(
+                        server_request.MAX_REQUEST_BODY_BYTES + 1
+                    ),
+                    "X-CSRF-Token": "test-token",
+                },
+                b"",
+                HTTPStatus.CONTENT_TOO_LARGE,
+            ),
+            (
+                "invalid length",
+                {
+                    "Content-Length": "not-a-number",
+                    "X-CSRF-Token": "test-token",
+                },
+                b"",
+                HTTPStatus.BAD_REQUEST,
+            ),
+            (
+                "unreasonably long length",
+                {
+                    "Content-Length": "9" * 5000,
+                    "X-CSRF-Token": "test-token",
+                },
+                b"",
+                HTTPStatus.CONTENT_TOO_LARGE,
+            ),
+            (
+                "negative length",
+                {
+                    "Content-Length": "-1",
+                    "X-CSRF-Token": "test-token",
+                },
+                b"",
+                HTTPStatus.BAD_REQUEST,
+            ),
+            (
+                "transfer encoding",
+                {
+                    "Content-Length": "0",
+                    "Transfer-Encoding": "chunked",
+                    "X-CSRF-Token": "test-token",
+                },
+                b"",
+                HTTPStatus.BAD_REQUEST,
+            ),
+            (
+                "incomplete body",
+                {
+                    "Content-Length": "10",
+                    "X-CSRF-Token": "test-token",
+                },
+                b"{}",
+                HTTPStatus.BAD_REQUEST,
+            ),
+            (
+                "invalid utf-8",
+                {
+                    "Content-Length": "1",
+                    "X-CSRF-Token": "test-token",
+                },
+                b"\xff",
+                HTTPStatus.BAD_REQUEST,
+            ),
+        )
+
+        for label, headers, body, expected_status in cases:
+            with self.subTest(label=label):
+                class FakeHandler:
+                    path = "/api/item-tag"
+                    rfile = BytesIO(body)
+                    server = SimpleNamespace(
+                        csrf_token="test-token",
+                        read_only=False,
+                        slideshow=None,
+                    )
+                    response: tuple[dict[str, object], HTTPStatus] | None = None
+                    close_connection = False
+
+                    def respond_json(
+                        self,
+                        content: dict[str, object],
+                        *,
+                        status: HTTPStatus,
+                    ) -> None:
+                        self.response = content, status
+
+                handler = FakeHandler()
+                handler.headers = headers
+                with patch(
+                    "bildebank.server_handler.server_endpoints_items.respond_tag_item",
+                    side_effect=AssertionError(
+                        "endepunktet skal ikke behandle en utrygg body"
+                    ),
+                ):
+                    BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+
+                self.assertIsNotNone(handler.response)
+                assert handler.response is not None
+                self.assertEqual(handler.response[1], expected_status)
+                self.assertTrue(handler.close_connection)
+
+    def test_run_server_rejects_duplicate_content_length(self) -> None:
+        class DuplicateLengthHeaders(dict[str, str]):
+            def get_all(self, name: str) -> list[str] | None:
+                if name.casefold() == "content-length":
+                    return ["2", "2"]
+                return None
+
+        class FakeHandler:
+            path = "/api/item-tag"
+            headers = DuplicateLengthHeaders(
+                {
+                    "Content-Length": "2",
+                    "X-CSRF-Token": "test-token",
+                }
+            )
+            rfile = BytesIO(b"{}")
+            server = SimpleNamespace(
+                csrf_token="test-token",
+                read_only=False,
+                slideshow=None,
+            )
+            response: tuple[dict[str, object], HTTPStatus] | None = None
+            close_connection = False
+
+            def respond_json(
+                self,
+                content: dict[str, object],
+                *,
+                status: HTTPStatus,
+            ) -> None:
+                self.response = content, status
+
+        handler = FakeHandler()
+        with patch(
+            "bildebank.server_handler.server_endpoints_items.respond_tag_item",
+            side_effect=AssertionError(
+                "endepunktet skal ikke behandle tvetydig Content-Length"
+            ),
+        ):
+            BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
+
+        self.assertIsNotNone(handler.response)
+        assert handler.response is not None
+        self.assertEqual(handler.response[1], HTTPStatus.BAD_REQUEST)
+        self.assertTrue(handler.close_connection)
+
+    def test_request_body_limit_accepts_exact_maximum(self) -> None:
+        body = b" " * server_request.MAX_REQUEST_BODY_BYTES
+
+        result = server_request.read_request_body_bytes(
+            {"Content-Length": str(len(body))},
+            BytesIO(body),
+        )
+
+        self.assertEqual(len(result), server_request.MAX_REQUEST_BODY_BYTES)
+
+    def test_oversized_request_body_is_rejected_without_reading_stream(self) -> None:
+        class UnreadableBody:
+            def read(self, size: int = -1) -> bytes:
+                raise AssertionError("for stor request body skal ikke leses")
+
+        with self.assertRaises(server_request.RequestBodyTooLarge):
+            server_request.read_request_body_bytes(
+                {
+                    "Content-Length": str(
+                        server_request.MAX_REQUEST_BODY_BYTES + 1
+                    )
+                },
+                UnreadableBody(),
+            )
 
     def test_run_server_generates_one_csrf_token_at_startup(self) -> None:
         with (
