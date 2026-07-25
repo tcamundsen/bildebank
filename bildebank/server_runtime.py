@@ -376,8 +376,7 @@ def run_server(
             file=sys.stderr,
         )
     if read_only:
-        conn = db.connect_read_only(target)
-        conn.close()
+        db.prepare_database_read_only(target)
     else:
         db.prepare_database(target)
     slideshow = (

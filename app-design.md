@@ -366,7 +366,10 @@ modus.
 Browserqueries og sidecaroppslag som kan vedlegge face-databasen, skal åpne
 hoveddatabasen gjennom den felles read-only-tilkoblingen. Dette håndhever
 `query_only` og aktiverer SQLite URI-støtte som kreves for at et vedlegg med
-`mode=ro` skal fungere likt på Windows og Linux.
+`mode=ro` skal fungere likt på Windows og Linux. Serveroppstarten skal gjøre
+den komplette schemasjekken én gang. Senere read-only-tilkoblinger i samme
+prosess skal fortsatt kontrollere `schema_version`, men skal ikke gjenta hele
+strukturkontrollen for hver browserforespørsel.
 
 ## Lokal status for snapshots
 

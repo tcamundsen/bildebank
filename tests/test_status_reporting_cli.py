@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import ANY, call, patch
 
 from bildebank import db
 from bildebank.db import DB_FILENAME
@@ -14,6 +15,32 @@ from tests.test_media import minimal_mp4_with_creation_date
 
 
 class StatusReportingCliTests(unittest.TestCase):
+    def test_read_only_connections_reuse_successful_database_preparation(self) -> None:
+        for prepare_database in (
+            db.prepare_database,
+            db.prepare_database_read_only,
+        ):
+            with self.subTest(prepare_database=prepare_database.__name__):
+                with tempfile.TemporaryDirectory() as tmp:
+                    target = Path(tmp) / "target"
+                    db.init_database(target)
+
+                    with patch(
+                        "bildebank.db_schema.require_current_schema",
+                        wraps=db.require_current_schema,
+                    ) as require_current_schema:
+                        prepare_database(target)
+                        conn = db.connect_read_only(target)
+                        conn.close()
+
+                self.assertEqual(
+                    require_current_schema.call_args_list,
+                    [
+                        call(ANY, full=True),
+                        call(ANY, full=False),
+                    ],
+                )
+
     def test_status_and_browser_database_preparation_do_not_write_current_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -24,6 +51,7 @@ class StatusReportingCliTests(unittest.TestCase):
 
             code, stdout, stderr = capture_cli(["--target", str(target), "status"])
             db.prepare_database(target)
+            db.prepare_database_read_only(target)
             out_of_focus_file_ids(target)
 
             self.assertEqual(code, 0, stderr)

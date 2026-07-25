@@ -77,6 +77,24 @@ def connect_database_read_only(path: Path) -> sqlite3.Connection:
         raise
 
 
+def connect_read_only(
+    target: Path,
+    *,
+    require_current: bool = True,
+    schema_validator: SchemaValidator | None = None,
+) -> sqlite3.Connection:
+    conn = connect_database_read_only(db_path_for_target(target))
+    try:
+        if require_current:
+            if schema_validator is None:
+                raise ValueError("schema_validator kreves når require_current=True")
+            schema_validator(conn, full=str(target.resolve()) not in _PREPARED_TARGETS)
+        return conn
+    except Exception:
+        conn.close()
+        raise
+
+
 def find_target(start: Path | None = None) -> Path | None:
     current = (start or Path.cwd()).resolve()
     for candidate in [current, *current.parents]:
@@ -107,6 +125,19 @@ def connect(
 
 def prepare_database(target: Path, *, schema_validator: SchemaValidator) -> None:
     conn = connect(target, require_current=False)
+    try:
+        schema_validator(conn, full=True)
+        _PREPARED_TARGETS.add(str(target.resolve()))
+    finally:
+        conn.close()
+
+
+def prepare_database_read_only(
+    target: Path,
+    *,
+    schema_validator: SchemaValidator,
+) -> None:
+    conn = connect_read_only(target, require_current=False)
     try:
         schema_validator(conn, full=True)
         _PREPARED_TARGETS.add(str(target.resolve()))

@@ -400,19 +400,17 @@ class ServerCoreCliTests(unittest.TestCase):
             serve_forever=lambda: None,
             server_close=lambda: None,
         )
-        fake_connection = SimpleNamespace(close=lambda: None)
         with (
             patch("bildebank.server_runtime.db.prepare_database") as prepare_database,
             patch(
-                "bildebank.server_runtime.db.connect_read_only",
-                return_value=fake_connection,
-            ) as connect_read_only,
+                "bildebank.server_runtime.db.prepare_database_read_only"
+            ) as prepare_database_read_only,
             patch("bildebank.server_runtime.BildebankServer", return_value=fake_server) as server_class,
         ):
             run_http_server(Path("."), AppConfig(), read_only=True)
 
         prepare_database.assert_not_called()
-        connect_read_only.assert_called_once_with(Path("."))
+        prepare_database_read_only.assert_called_once_with(Path("."))
         server_class.assert_called_once_with(
             ("127.0.0.1", 8765),
             Path("."),
