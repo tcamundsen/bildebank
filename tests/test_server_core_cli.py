@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import http.client
 import tempfile
+import threading
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from http import HTTPStatus
@@ -276,6 +278,208 @@ class ServerCoreCliTests(unittest.TestCase):
         )
         self.assertTrue(args.allow_remote)
         self.assertEqual(args.host, "0.0.0.0")
+
+    def test_request_authority_accepts_local_and_lan_addresses(self) -> None:
+        cases = (
+            (
+                {"Host": "127.0.0.1:8765"},
+                "127.0.0.1",
+                "127.0.0.1",
+            ),
+            (
+                {"Host": "127.0.0.1"},
+                "127.0.0.1",
+                "127.0.0.1",
+            ),
+            (
+                {
+                    "Host": "localhost:8765",
+                    "Origin": "http://localhost:8765",
+                },
+                "127.0.0.1",
+                "127.0.0.1",
+            ),
+            (
+                {
+                    "Host": "192.168.86.11:8765",
+                    "Origin": "http://192.168.86.11:8765",
+                },
+                "0.0.0.0",
+                "0.0.0.0",
+            ),
+            (
+                {
+                    "Host": "my-pc:8765",
+                    "Origin": "http://my-pc:8765",
+                },
+                "my-pc",
+                "192.168.86.11",
+            ),
+        )
+
+        for headers, bind_host, server_host in cases:
+            with self.subTest(headers=headers, bind_host=bind_host):
+                server_request.validate_request_authority(
+                    headers,
+                    bind_host=bind_host,
+                    server_host=server_host,
+                    server_port=8765,
+                )
+
+    def test_request_authority_rejects_rebinding_and_ambiguous_headers(
+        self,
+    ) -> None:
+        class RepeatedHeaders(dict[str, str]):
+            repeated: dict[str, list[str]]
+
+            def get_all(self, name: str) -> list[str] | None:
+                return self.repeated.get(name.casefold())
+
+        cases: tuple[
+            str,
+            dict[str, str] | RepeatedHeaders,
+            HTTPStatus,
+        ] = (
+            (
+                "hostname through wildcard bind",
+                {"Host": "attacker.example:8765"},
+                HTTPStatus.MISDIRECTED_REQUEST,
+            ),
+            (
+                "cross-origin",
+                {
+                    "Host": "127.0.0.1:8765",
+                    "Origin": "http://attacker.example:8765",
+                },
+                HTTPStatus.FORBIDDEN,
+            ),
+            (
+                "wrong origin port",
+                {
+                    "Host": "127.0.0.1:8765",
+                    "Origin": "http://127.0.0.1:9000",
+                },
+                HTTPStatus.FORBIDDEN,
+            ),
+            (
+                "wrong host port",
+                {"Host": "127.0.0.1:9000"},
+                HTTPStatus.MISDIRECTED_REQUEST,
+            ),
+            (
+                "missing host",
+                {},
+                HTTPStatus.BAD_REQUEST,
+            ),
+            (
+                "invalid host",
+                {"Host": "127.0.0.1:invalid"},
+                HTTPStatus.BAD_REQUEST,
+            ),
+            (
+                "null origin",
+                {
+                    "Host": "127.0.0.1:8765",
+                    "Origin": "null",
+                },
+                HTTPStatus.BAD_REQUEST,
+            ),
+        )
+        repeated_host = RepeatedHeaders({"Host": "127.0.0.1:8765"})
+        repeated_host.repeated = {
+            "host": ["127.0.0.1:8765", "attacker.example:8765"],
+        }
+        repeated_origin = RepeatedHeaders(
+            {
+                "Host": "127.0.0.1:8765",
+                "Origin": "http://127.0.0.1:8765",
+            }
+        )
+        repeated_origin.repeated = {
+            "host": ["127.0.0.1:8765"],
+            "origin": [
+                "http://127.0.0.1:8765",
+                "http://attacker.example:8765",
+            ],
+        }
+        cases += (
+            ("repeated host", repeated_host, HTTPStatus.BAD_REQUEST),
+            ("repeated origin", repeated_origin, HTTPStatus.BAD_REQUEST),
+        )
+
+        for label, headers, expected_status in cases:
+            with self.subTest(label=label):
+                with self.assertRaises(server_request.RequestAuthorityError) as raised:
+                    server_request.validate_request_authority(
+                        headers,
+                        bind_host="0.0.0.0",
+                        server_host="0.0.0.0",
+                        server_port=8765,
+                    )
+
+                self.assertEqual(raised.exception.status, expected_status)
+
+    def test_http_server_rejects_rebinding_host_and_cross_origin(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            try:
+                server = BildebankServer(
+                    ("127.0.0.1", 0),
+                    target,
+                    AppConfig(),
+                    read_only=True,
+                )
+            except PermissionError as exc:
+                self.skipTest(f"Miljøet tillater ikke lokal HTTP-socket: {exc}")
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            port = server.server_address[1]
+
+            def request(headers: dict[str, str]) -> tuple[int, bytes]:
+                connection = http.client.HTTPConnection(
+                    "127.0.0.1",
+                    port,
+                    timeout=5,
+                )
+                try:
+                    connection.putrequest("GET", "/", skip_host=True)
+                    for name, value in headers.items():
+                        connection.putheader(name, value)
+                    connection.putheader("Connection", "close")
+                    connection.endheaders()
+                    response = connection.getresponse()
+                    return response.status, response.read()
+                finally:
+                    connection.close()
+
+            try:
+                valid_status, valid_body = request(
+                    {
+                        "Host": f"127.0.0.1:{port}",
+                        "Origin": f"http://127.0.0.1:{port}",
+                    }
+                )
+                rebinding_status, rebinding_body = request(
+                    {"Host": f"attacker.example:{port}"}
+                )
+                cross_origin_status, cross_origin_body = request(
+                    {
+                        "Host": f"127.0.0.1:{port}",
+                        "Origin": f"http://attacker.example:{port}",
+                    }
+                )
+            finally:
+                server.shutdown()
+                thread.join(timeout=5)
+                server.server_close()
+
+        self.assertEqual(valid_status, HTTPStatus.OK)
+        self.assertIn(b"<!doctype html>", valid_body)
+        self.assertEqual(rebinding_status, HTTPStatus.MISDIRECTED_REQUEST)
+        self.assertIn(b"Host-headeren er ikke tillatt", rebinding_body)
+        self.assertEqual(cross_origin_status, HTTPStatus.FORBIDDEN)
+        self.assertIn(b"Origin-headeren stemmer ikke", cross_origin_body)
 
     def test_run_server_command_forwards_remote_permission(self) -> None:
         config = AppConfig()

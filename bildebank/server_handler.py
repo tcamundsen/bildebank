@@ -111,6 +111,22 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     server_timing_steps: dict[str, float]
     protocol_version = "HTTP/1.1"
 
+    def parse_request(self) -> bool:
+        if not super().parse_request():
+            return False
+        try:
+            server_request.validate_request_authority(
+                self.headers,
+                bind_host=str(self.server.bind_host),
+                server_host=str(self.server.server_address[0]),
+                server_port=int(self.server.server_address[1]),
+            )
+        except server_request.RequestAuthorityError as exc:
+            self.close_connection = True
+            self.respond_text(str(exc), status=exc.status)
+            return False
+        return True
+
     def browser_db_connection(self) -> tuple[Any, bool]:
         if not hasattr(self, "request"):
             return db.connect_read_only(self.server.target), True

@@ -115,6 +115,12 @@ lokale stier. Bruk `--lan-share` når samlingen skal deles read-only på LAN.
 Når serveren starter, skriver Bildebank ut hele adressen du kan åpne på andre
 enheter, for eksempel `http://192.168.86.11:8765/`.
 
+Bruk IP-adressen Bildebank skriver ut. Når serveren lytter på alle
+nettverksadresser, avviser den ukjente vertsnavn for å beskytte mot at et
+nettsted peker sitt eget navn mot Bildebank-serveren. Hvis du bevisst vil bruke
+et bestemt vertsnavn, må du i stedet velge det med `--host` og tillate ekstern
+tilgang med `--allow-remote`, sammen med de øvrige innstillingene du ønsker.
+
 Advarsel: Serveren kan nås av alle på samme LAN. Bildene kan dermed bli
 eksponert til alle på samme nettverk. Ikke bruk `--lan-share` på offentlige
 nettverk, gjestenett eller nettverk du ikke stoler på.
@@ -184,9 +190,11 @@ Bildet åpnes fortsatt i original størrelse når du klikker på det.
 
 Serveren bruker en liten lokal HTTP-server fra Python-standardbiblioteket. Hvis
 behovet vokser, kan vi vurdere FastAPI eller lignende senere. Serveren beskytter
-endreforespørsler mot enkel CSRF, men har ikke innlogging eller tilgangskontroll.
-Den bør derfor bare kjøres lokalt på PC-en eller på et privat LAN der man har
-kontroll på brukerne.
+endreforespørsler mot enkel CSRF. Den avviser også forespørsler som bruker et
+ukjent vertsnavn eller oppgir at de kommer fra et annet nettsted. Dette
+beskytter blant annet mot DNS-rebinding, men er ikke innlogging eller
+tilgangskontroll. Serveren bør derfor bare kjøres lokalt på PC-en eller på et
+privat LAN der man har kontroll på brukerne.
 
 OpenCLIP-modellen ligger i serverprosessen, slik at den kan brukes om igjen
 mellom søk. Serveren håndterer at modellen ikke er lastet ennå, og gir en lesbar

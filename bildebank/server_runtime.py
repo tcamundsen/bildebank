@@ -110,6 +110,7 @@ class BildebankServer(ThreadingHTTPServer):
         super().__init__(address, server_handler.BildebankRequestHandler)
         self.target = target
         self.config = config
+        self.bind_host = address[0]
         self.preview_images = preview_images
         self.read_only = read_only
         self.lan_share = lan_share

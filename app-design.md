@@ -358,6 +358,18 @@ LAN-share-profilen; vanlig lokal read-only og en manuelt sammensatt
 `--host`/`--allow-remote`-modus beholder den ordinære detaljvisningen.
 Slideshow beholder sin strengere, separate rutegrense.
 
+Alle ekte HTTP-forespørsler skal valideres før GET-/POST-ruting. De skal ha
+nøyaktig én gyldig `Host`-header. Hvis `Host` oppgir en port, skal den være
+serverens faktiske port. Ved binding til en bestemt adresse godtas den
+konfigurerte adressen, den faktiske bundne adressen og `localhost`. Ved
+wildcard-binding godtas IP-litteraler og `localhost`, men ikke vilkårlige
+domenenavn; et ønsket vertsnavn må bindes eksplisitt. Dette hindrer at et
+angriperstyrt DNS-navn brukes til rebinding mot den lokale serveren. Hvis en
+`Origin`-header finnes, skal den være en enkel `http`-origin med samme
+vertsnavn/IP som `Host` og serverens faktiske port. Manglende `Origin` forblir
+tillatt for vanlig navigasjon og enkle klienter. Muterende POST-kall krever i
+tillegg fortsatt gyldig CSRF-token.
+
 Dashboard- og maintenance-status er rene statusoppslag, også når den vanlige
 serveren er skrivbar. De skal åpne hoveddatabasen og eksisterende OpenCLIP- og
 InsightFace-databaser read-only. Dashboardet skal ikke opprette eller migrere
