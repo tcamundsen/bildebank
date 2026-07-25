@@ -659,6 +659,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             return
         self.respond_preview_image(
             file_id,
+            require_active=getattr(self.server, "read_only", False),
             apply_view_rotation=True,
             resize=self.server.preview_images,
         )
@@ -672,7 +673,10 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         if not self.server.preview_images:
             self.respond_file(str(file_id))
             return
-        self.respond_preview_image(file_id)
+        self.respond_preview_image(
+            file_id,
+            require_active=getattr(self.server, "read_only", False),
+        )
 
     def respond_preview_image(
         self,
@@ -691,19 +695,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_text("Filen finnes ikke.", status=HTTPStatus.NOT_FOUND)
             return False
         try:
-            absolute_path = server_files.server_file_path_by_id(
-                self.server.target, file_id
+            served_file = server_files.resolve_server_file_by_id(
+                self.server.target,
+                file_id,
+                require_active=require_active,
             )
         except PermissionError as exc:
             self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
             return False
         except (FileNotFoundError, OSError) as exc:
             self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
-            return False
-        if not absolute_path.is_file():
-            self.respond_text(
-                "Bildefilen finnes ikke på disk.", status=HTTPStatus.NOT_FOUND
-            )
             return False
         try:
             from PIL import Image, ImageOps, UnidentifiedImageError
@@ -714,20 +715,27 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             )
             return False
         try:
-            with Image.open(absolute_path) as image:
-                preview = ImageOps.exif_transpose(image)
-                if apply_view_rotation:
-                    rotation = db.normalize_view_rotation(
-                        item["view_rotation_degrees"]
-                    )
-                    if rotation:
-                        preview = preview.rotate(-rotation, expand=True)
-                if resize:
-                    preview.thumbnail((PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE))
-                if preview.mode != "RGB":
-                    preview = preview.convert("RGB")
-                output = BytesIO()
-                preview.save(output, format="JPEG", quality=85)
+            with server_files.open_server_file(served_file) as stream:
+                with Image.open(stream) as image:
+                    preview = ImageOps.exif_transpose(image)
+                    if apply_view_rotation:
+                        rotation = db.normalize_view_rotation(
+                            item["view_rotation_degrees"]
+                        )
+                        if rotation:
+                            preview = preview.rotate(-rotation, expand=True)
+                    if resize:
+                        preview.thumbnail((PREVIEW_MAX_SIZE, PREVIEW_MAX_SIZE))
+                    if preview.mode != "RGB":
+                        preview = preview.convert("RGB")
+                    output = BytesIO()
+                    preview.save(output, format="JPEG", quality=85)
+        except PermissionError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            return False
+        except FileNotFoundError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            return False
         except UnidentifiedImageError:
             self.respond_text("Filen er ikke et bilde.", status=HTTPStatus.BAD_REQUEST)
             return False
@@ -740,7 +748,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_file(self, encoded_relative_path: str) -> None:
         try:
             served_file = server_files.resolve_server_file(
-                self.server.target, encoded_relative_path
+                self.server.target,
+                encoded_relative_path,
+                require_active=getattr(self.server, "read_only", False),
             )
         except PermissionError as exc:
             self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
@@ -754,7 +764,22 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         # Keep the small handler doubles used by callers/tests working while the
         # real HTTP handler streams files and supports Range requests.
         if not hasattr(self, "respond_server_file"):
-            self.respond_bytes(served_file.path.read_bytes(), served_file.content_type)
+            try:
+                with server_files.open_server_file(served_file) as stream:
+                    content = stream.read()
+            except PermissionError as exc:
+                self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+                return
+            except FileNotFoundError as exc:
+                self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+                return
+            except OSError as exc:
+                self.respond_text(
+                    str(exc),
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                )
+                return
+            self.respond_bytes(content, served_file.content_type)
             return
         self.respond_server_file(served_file)
 
@@ -775,7 +800,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     def respond_thumbnail(self, raw_file_id: str) -> None:
         try:
             served_file = server_files.resolve_server_thumbnail_file(
-                self.server.target, raw_file_id
+                self.server.target,
+                raw_file_id,
+                require_active=getattr(self.server, "read_only", False),
             )
         except PermissionError as exc:
             self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
@@ -790,33 +817,55 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
 
     def respond_server_file(self, served_file: server_files.ServerFilePath) -> None:
         try:
-            byte_range = server_files.parse_byte_range(
-                self.headers.get("Range"),
-                served_file.size,
+            stream = server_files.open_server_file(served_file)
+        except PermissionError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            return
+        except FileNotFoundError as exc:
+            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            return
+        except OSError as exc:
+            self.respond_text(
+                str(exc),
+                status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
-        except ValueError:
-            self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
-            self.send_header("Content-Range", f"bytes */{served_file.size}")
-            self.send_header("Content-Length", "0")
-            self.send_header("Accept-Ranges", "bytes")
-            self.respond_timing_headers()
-            self.end_headers()
             return
 
-        start = byte_range.start if byte_range is not None else 0
-        end = byte_range.end if byte_range is not None else served_file.size - 1
-        length = byte_range.length if byte_range is not None else served_file.size
-        self.send_response(HTTPStatus.PARTIAL_CONTENT if byte_range is not None else HTTPStatus.OK)
-        self.send_header("Content-Type", served_file.content_type)
-        self.send_header("Content-Length", str(length))
-        self.send_header("Accept-Ranges", "bytes")
-        if byte_range is not None:
-            self.send_header("Content-Range", f"bytes {start}-{end}/{served_file.size}")
-        self.respond_timing_headers()
-        self.end_headers()
-        remaining = length
-        try:
-            with served_file.path.open("rb") as stream:
+        with stream:
+            try:
+                byte_range = server_files.parse_byte_range(
+                    self.headers.get("Range"),
+                    served_file.size,
+                )
+            except ValueError:
+                self.send_response(HTTPStatus.REQUESTED_RANGE_NOT_SATISFIABLE)
+                self.send_header("Content-Range", f"bytes */{served_file.size}")
+                self.send_header("Content-Length", "0")
+                self.send_header("Accept-Ranges", "bytes")
+                self.respond_timing_headers()
+                self.end_headers()
+                return
+
+            start = byte_range.start if byte_range is not None else 0
+            end = byte_range.end if byte_range is not None else served_file.size - 1
+            length = byte_range.length if byte_range is not None else served_file.size
+            self.send_response(
+                HTTPStatus.PARTIAL_CONTENT
+                if byte_range is not None
+                else HTTPStatus.OK
+            )
+            self.send_header("Content-Type", served_file.content_type)
+            self.send_header("Content-Length", str(length))
+            self.send_header("Accept-Ranges", "bytes")
+            if byte_range is not None:
+                self.send_header(
+                    "Content-Range",
+                    f"bytes {start}-{end}/{served_file.size}",
+                )
+            self.respond_timing_headers()
+            self.end_headers()
+            remaining = length
+            try:
                 stream.seek(start)
                 while remaining > 0:
                     chunk = stream.read(min(1024 * 1024, remaining))
@@ -824,9 +873,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                         break
                     self.wfile.write(chunk)
                     remaining -= len(chunk)
-        except OSError as exc:
-            if not client_disconnected_error(exc):
-                raise
+            except OSError as exc:
+                if not client_disconnected_error(exc):
+                    raise
 
     def respond_help(self, raw_help_path: str) -> None:
         doc_asset_path = resolve_doc_asset_path(raw_help_path)

@@ -23,7 +23,11 @@ server
   støtte for én HTTP `Range` og `206 Partial Content`; stioppslag og
   range-parsing eies av `server_files.py`. Originalfiler og thumbnails slås
   bare opp via numerisk `file_id`; vilkårlige relative stier i samlingsmappen
-  er ikke en del av serverens fil-API.
+  er ikke en del av serverens fil-API. I read-only-modus krever alle direkte
+  medievarianter en aktiv `files`-rad. `server_files.py` validerer
+  aktiv/slettet layout og databaseført stinøkkel, avviser symlinker og Windows
+  reparse points i hele stien og åpner den kontrollerte filen med en stabil
+  fil-deskriptor før responsheaderne sendes.
 - `server_slideshow.py` bygger det faste slideshowutvalget og eier den minimale
   slideshow-siden. Når modusen er aktiv, bruker handleren en egen allowlist og
   slipper ikke forespørsler videre til de vanlige browserrutene.

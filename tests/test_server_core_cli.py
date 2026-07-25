@@ -27,7 +27,12 @@ from bildebank.server_runtime import (
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_item_html import item_media_html
 from bildebank.target_lock import LOCK_FILENAME
-from bildebank.server_files import resolve_server_file, server_file_path, server_file_path_by_id
+from bildebank.server_files import (
+    open_server_file,
+    resolve_server_file,
+    server_file_path,
+    server_file_path_by_id,
+)
 from bildebank.server_pages import (
     app_status_page_html,
     index_html,
@@ -38,7 +43,7 @@ from bildebank.server_pages import (
 from bildebank.server_response import ServerResponseMixin, add_csrf_to_html, read_only_html
 from bildebank.server_search import DEFAULT_SEARCH_LIMIT, ServerSearchStats
 from tests.cli_helpers import write_test_image
-from tests.db_test_helpers import register_target_file
+from tests.db_test_helpers import insert_test_file, register_target_file
 
 
 class ServerCoreCliTests(unittest.TestCase):
@@ -788,11 +793,11 @@ class ServerCoreCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
-            image_path = target / "2024" / "Januar bilder" / "bilde.jpg"
+            image_path = target / "2024" / "01" / "Januar bilde.jpg"
             image_path.parent.mkdir(parents=True)
             image_path.write_bytes(b"image")
             file_id = register_target_file(
-                target, Path("2024/Januar bilder/bilde.jpg")
+                target, Path("2024/01/Januar bilde.jpg")
             )
 
             self.assertEqual(
@@ -826,6 +831,237 @@ class ServerCoreCliTests(unittest.TestCase):
 
             with self.assertRaisesRegex(FileNotFoundError, "Filen finnes ikke"):
                 server_file_path_by_id(target, 999)
+
+    def test_server_file_path_by_id_can_require_active_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = insert_test_file(
+                target,
+                "deleted/2024/01/image.png",
+                deleted=True,
+            )
+
+            self.assertEqual(
+                server_file_path_by_id(target, file_id),
+                (target / "deleted/2024/01/image.png").resolve(),
+            )
+            with self.assertRaisesRegex(FileNotFoundError, "Filen finnes ikke"):
+                server_file_path_by_id(target, file_id, require_active=True)
+
+    def test_read_only_server_media_endpoints_reject_deleted_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = insert_test_file(
+                target,
+                "deleted/2024/01/image.png",
+                deleted=True,
+            )
+
+            class FakeHandler:
+                server = SimpleNamespace(
+                    target=target,
+                    preview_images=True,
+                    read_only=True,
+                )
+                status = HTTPStatus.OK
+
+                def reset(self) -> None:
+                    self.status = HTTPStatus.OK
+
+                def respond_bytes(
+                    self,
+                    content: bytes,
+                    content_type: str,
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.status = status
+
+                def respond_text(
+                    self,
+                    content: str,
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.status = status
+
+                def respond_preview_image(
+                    self,
+                    requested_file_id: int,
+                    **kwargs: object,
+                ) -> bool:
+                    return BildebankRequestHandler.respond_preview_image(  # type: ignore[arg-type]
+                        self,
+                        requested_file_id,
+                        **kwargs,
+                    )
+
+                def respond_file(self, encoded_relative_path: str) -> None:
+                    BildebankRequestHandler.respond_file(  # type: ignore[arg-type]
+                        self,
+                        encoded_relative_path,
+                    )
+
+                def respond_server_file(self, served_file: object) -> None:
+                    self.status = HTTPStatus.OK
+
+            handler = FakeHandler()
+            endpoints = (
+                BildebankRequestHandler.respond_display,
+                BildebankRequestHandler.respond_preview,
+                BildebankRequestHandler.respond_file,
+                BildebankRequestHandler.respond_thumbnail,
+            )
+            for endpoint in endpoints:
+                with self.subTest(endpoint=endpoint.__name__):
+                    handler.reset()
+                    endpoint(handler, str(file_id))  # type: ignore[arg-type]
+                    self.assertEqual(handler.status, HTTPStatus.NOT_FOUND)
+
+    def test_writable_server_file_endpoint_keeps_deleted_file_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = insert_test_file(
+                target,
+                "deleted/2024/01/image.png",
+                deleted=True,
+            )
+            expected = (target / "deleted/2024/01/image.png").read_bytes()
+
+            class FakeHandler:
+                server = SimpleNamespace(target=target, read_only=False)
+                content = b""
+                status = HTTPStatus.OK
+
+                def respond_bytes(
+                    self,
+                    content: bytes,
+                    content_type: str,
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.content = content
+                    self.status = status
+
+                def respond_text(
+                    self,
+                    content: str,
+                    *,
+                    status: HTTPStatus = HTTPStatus.OK,
+                ) -> None:
+                    self.status = status
+
+            handler = FakeHandler()
+            BildebankRequestHandler.respond_file(  # type: ignore[arg-type]
+                handler,
+                str(file_id),
+            )
+
+            self.assertEqual(handler.status, HTTPStatus.OK)
+            self.assertEqual(handler.content, expected)
+
+    def test_resolve_server_file_rejects_internal_file_from_corrupt_database_path(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            relative_path = Path("2024/01/image.jpg")
+            image_path = target / relative_path
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"image")
+            file_id = register_target_file(target, relative_path)
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET target_path = '.bilder.sqlite3',
+                        target_path_key = '.bilder.sqlite3'
+                    WHERE id = ?
+                    """,
+                    (file_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with self.assertRaisesRegex(
+                PermissionError,
+                "Ugyldig filsti i databasen",
+            ):
+                resolve_server_file(target, str(file_id))
+
+    def test_resolve_server_file_rejects_symlink_at_database_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            relative_path = Path("2024/01/image.jpg")
+            image_path = target / relative_path
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"image")
+            file_id = register_target_file(target, relative_path)
+            image_path.unlink()
+            try:
+                image_path.symlink_to(target / db.DB_FILENAME)
+            except OSError as exc:
+                self.skipTest(f"Miljøet tillater ikke filsymlink: {exc}")
+
+            with self.assertRaisesRegex(
+                PermissionError,
+                "vanlig fil uten lenker",
+            ):
+                resolve_server_file(target, str(file_id))
+
+    def test_resolve_server_file_rejects_symlinked_parent_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            relative_path = Path("2024/01/image.jpg")
+            image_path = target / relative_path
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"image")
+            file_id = register_target_file(target, relative_path)
+            real_year_directory = target / "stored-2024"
+            (target / "2024").replace(real_year_directory)
+            try:
+                (target / "2024").symlink_to(
+                    real_year_directory,
+                    target_is_directory=True,
+                )
+            except OSError as exc:
+                real_year_directory.replace(target / "2024")
+                self.skipTest(f"Miljøet tillater ikke katalogsymlink: {exc}")
+
+            with self.assertRaisesRegex(
+                PermissionError,
+                "symlink eller et Windows reparse point",
+            ):
+                resolve_server_file(target, str(file_id))
+
+    def test_open_server_file_rejects_file_replaced_after_resolution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            relative_path = Path("2024/01/image.jpg")
+            image_path = target / relative_path
+            image_path.parent.mkdir(parents=True)
+            image_path.write_bytes(b"image")
+            file_id = register_target_file(target, relative_path)
+            served_file = resolve_server_file(target, str(file_id))
+
+            replacement = image_path.with_name("replacement.jpg")
+            replacement.write_bytes(b"other")
+            replacement.replace(image_path)
+
+            with self.assertRaisesRegex(
+                PermissionError,
+                "byttet eller endret",
+            ):
+                open_server_file(served_file)
 
     def test_server_file_path_by_id_rejects_database_path_outside_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

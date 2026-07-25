@@ -303,7 +303,10 @@ def test_server_file_response_honors_range_without_loading_whole_file(tmp_path: 
             pass
 
     handler = FakeHandler()
-    BildebankRequestHandler.respond_server_file(handler, describe_server_file(media))  # type: ignore[arg-type]
+    BildebankRequestHandler.respond_server_file(  # type: ignore[arg-type]
+        handler,
+        describe_server_file(tmp_path, media),
+    )
 
     assert handler.status == HTTPStatus.PARTIAL_CONTENT
     assert handler.response_headers["Content-Range"] == "bytes 3-6/10"

@@ -328,6 +328,14 @@ bruke felles funksjoner for selve browseren, for eksempel
 utvalg får samme blaing, rotering, bildeinfo, sletting og lenkestruktur uten at
 det lages egne parallelle browsere for hvert tilfelle.
 
+I read-only-modus skal også direkte medieendepunkter bare gi tilgang til
+aktive `files`-rader. At innstillinger og siden for fjernede filer er skjult,
+er ikke i seg selv en tilstrekkelig tilgangsgrense. Før serveren åpner en
+databaseført original, previewkilde eller thumbnail, skal den validere
+samlingsstien og filtypen uten å følge symlinker eller Windows reparse points.
+Filen skal åpnes kontrollert før HTTP-responsen starter, slik at en fil som
+byttes etter stioppslaget ikke kan omgå kontrollen.
+
 ## Lokal status for snapshots
 
 Et publisert snapshot kan registreres i programmets lokale programdatabase

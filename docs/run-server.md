@@ -85,6 +85,8 @@ bildebank run-server --host 0.0.0.0 --allow-remote --read-only
 Read-only-modus lar andre bla, søke, se personer og åpne bildeinfo. Den
 blokkerer innstillinger, administrasjon og endringer i database og bildefiler.
 Lagrede kommentarer vises fortsatt, men kan ikke redigeres.
+Filer som er markert som fjernet, kan heller ikke åpnes gjennom en gammel
+eller direkte medielenke mens serveren kjører read-only.
 Dette er fortsatt bare ment for privat LAN. Det er ikke innlogging eller en
 sikkerhetsmodell for internett.
 
