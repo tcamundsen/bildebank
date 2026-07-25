@@ -6,7 +6,11 @@ import webbrowser
 from pathlib import Path
 
 from .config import load_config
-from .server_runtime import run_server as run_local_server
+from .server_runtime import (
+    run_server as run_local_server,
+    validate_bind_host,
+    validate_remote_write,
+)
 
 
 def run_server_command(
@@ -17,12 +21,19 @@ def run_server_command(
     repo_root: Path,
     browser: bool = True,
     allow_remote: bool = False,
+    allow_remote_write: bool = False,
     preview_images: bool = False,
     read_only: bool = False,
     lan_share: bool = False,
     slideshow_delay_seconds: int | None = None,
     slideshow_filter: str | None = None,
 ) -> int:
+    validate_bind_host(host, allow_remote=allow_remote)
+    validate_remote_write(
+        host,
+        read_only=read_only,
+        allow_remote_write=allow_remote_write,
+    )
     config = load_config(repo_root, migrate_legacy=not read_only)
     print("Starter Bildebank-server. Dette kan ta noen sekunder.")
     print(f"Bildesamling: {target}")
@@ -43,6 +54,7 @@ def run_server_command(
         host=host,
         port=port,
         allow_remote=allow_remote,
+        allow_remote_write=allow_remote_write,
         preview_images=preview_images,
         read_only=read_only,
         lan_share=lan_share,

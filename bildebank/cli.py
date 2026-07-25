@@ -59,7 +59,7 @@ from .program_state import (
     record_published_snapshot_best_effort,
     record_target_best_effort,
 )
-from .server_runtime import DEFAULT_HOST, DEFAULT_PORT
+from .server_runtime import DEFAULT_HOST, DEFAULT_PORT, is_local_bind_host
 from .server_slideshow import DEFAULT_SLIDESHOW_DELAY_SECONDS
 from .snapshot import MainDatabaseSourceError, SnapshotPlan, plan_snapshot
 from .snapshot_check import (
@@ -152,6 +152,24 @@ def validate_parsed_args(parser: argparse.ArgumentParser, args: argparse.Namespa
         parser.error("--filter kan bare brukes sammen med --slideshow.")
     if not args.slideshow and args.delay is not None:
         parser.error("--delay kan bare brukes sammen med --slideshow.")
+    remote_host = args.host is not None and not is_local_bind_host(args.host)
+    shared_read_only = args.read_only or args.lan_share or args.slideshow
+    if args.allow_remote_write and not args.allow_remote:
+        parser.error("--allow-remote-write krever også --allow-remote.")
+    if args.allow_remote_write and shared_read_only:
+        parser.error("--allow-remote-write kan ikke brukes sammen med en read-only-modus.")
+    if args.allow_remote_write and not remote_host:
+        parser.error("--allow-remote-write kan bare brukes med en ekstern --host.")
+    if remote_host and not args.allow_remote:
+        parser.error(
+            "En ekstern --host krever --allow-remote. "
+            "Bruk --lan-share for tryggere read-only-deling."
+        )
+    if remote_host and not shared_read_only and not args.allow_remote_write:
+        parser.error(
+            "En skrivbar server på ekstern --host krever --allow-remote-write. "
+            "Bruk --read-only for visning."
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -898,6 +916,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Tillat bevisst binding til en adresse som kan nås fra andre maskiner.",
     )
     run_server_parser.add_argument(
+        "--allow-remote-write",
+        action="store_true",
+        help=(
+            "Tillat at klienter på en ekstern server kan endre bildesamlingen. "
+            "Krever --allow-remote."
+        ),
+    )
+    run_server_parser.add_argument(
         "--slideshow",
         action="store_true",
         help="Vis et automatisk slideshow read-only på privat LAN.",
@@ -1428,6 +1454,7 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
             repo_root=program_repo_root(),
             browser=not args.no_browser,
             allow_remote=args.allow_remote or lan_share,
+            allow_remote_write=args.allow_remote_write,
             preview_images=args.preview_images or lan_share,
             read_only=args.read_only or lan_share,
             lan_share=lan_share,

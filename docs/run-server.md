@@ -7,20 +7,23 @@ usage: bildebank run-server [valg]
 Start Bildebank-server som lar deg se bildene i nettleser.
 
 options:
-  -h, --help        show this help message and exit
-  --host HOST       Adresse serveren lytter på. Standard: 127.0.0.1
-  --port PORT       Port serveren lytter på. Standard: 8765
-  --no-browser      Ikke åpne serveren automatisk i nettleser.
-  --preview-images  Bruk nedskalerte preview-bilder i hovedvisningen.
-  --read-only       Vis bilder og metadata, men blokker innstillinger,
-                    administrasjon og endringer.
-  --lan-share       Del read-only på privat LAN med preview-bilder og skjul
-                    lokale stier. Avviser --host, men kan brukes med --port.
-  --allow-remote    Tillat bevisst binding til en adresse som kan nås fra
-                    andre maskiner.
-  --slideshow       Vis et automatisk slideshow read-only på privat LAN.
-  --delay SEKUNDER  Sekunder per slideshow-bilde. Standard: 10
-  --filter UTTRYKK  Avgrens slideshowet med samme syntaks som Filtersøk.
+  -h, --help            show this help message and exit
+  --host HOST           Adresse serveren lytter på. Standard: 127.0.0.1
+  --port PORT           Port serveren lytter på. Standard: 8765
+  --no-browser          Ikke åpne serveren automatisk i nettleser.
+  --preview-images      Bruk nedskalerte preview-bilder i hovedvisningen.
+  --read-only           Vis bilder og metadata, men blokker innstillinger,
+                        administrasjon og endringer.
+  --lan-share           Del read-only på privat LAN med preview-bilder og
+                        skjul lokale stier. Avviser --host, men kan brukes med
+                        --port.
+  --allow-remote        Tillat bevisst binding til en adresse som kan nås fra
+                        andre maskiner.
+  --allow-remote-write  Tillat at klienter på en ekstern server kan endre
+                        bildesamlingen. Krever --allow-remote.
+  --slideshow           Vis et automatisk slideshow read-only på privat LAN.
+  --delay SEKUNDER      Sekunder per slideshow-bilde. Standard: 10
+  --filter UTTRYKK      Avgrens slideshowet med samme syntaks som Filtersøk.
 ```
 <!-- CLI-HELP-END -->
 
@@ -60,11 +63,11 @@ selv: [http://127.0.0.1:8765](http://127.0.0.1:8765/).
 Denne adressen gjør at den kan brukes fra samme PC, men ikke deles på
 nettverket ved et uhell.
 
-Hvis du vil dele bildesamlingen på LAN, må du åpne brannmuren og uttrykkelig
-tillate ekstern binding:
+Hvis du vil vise bildesamlingen på LAN, må du åpne brannmuren og uttrykkelig
+tillate ekstern binding i read-only-modus:
 
 ```powershell
-bildebank run-server --host 0.0.0.0 --allow-remote
+bildebank run-server --host 0.0.0.0 --allow-remote --read-only
 ```
 
 Uten `--allow-remote` avviser Bildebank alle adresser unntatt `localhost` og
@@ -75,12 +78,18 @@ Og så må du finne IP-adressen til PC-en som kjører serveren med `ipconfig`.
 Hvis adressen er 192.168.86.11, så skriver du `http://192.168.86.11:8765/` i
 adressefeltet til nettleseren.
 
-Hvis andre enheter bare skal se på bilder og metadata, bruk read-only sammen
-med LAN-innstillingene:
+En ekstern server er ikke skrivbar med bare `--allow-remote`. Hvis klientene
+uttrykkelig skal kunne endre metadata og flytte bilder til `deleted/`, kreves
+også `--allow-remote-write`:
 
 ```powershell
-bildebank run-server --host 0.0.0.0 --allow-remote --read-only
+bildebank run-server --host 0.0.0.0 --allow-remote --allow-remote-write
 ```
+
+Den skrivbare serveren har ingen innlogging. Alle som kan nå adressen, kan
+derfor gjøre endringer. Bruk den bare på et privat LAN der du stoler på alle
+klientene. For vanlig visning bør du bruke read-only-kommandoen over eller
+`--lan-share`.
 
 Read-only-modus lar andre bla, søke, se personer og åpne bildeinfo. Den
 blokkerer innstillinger, administrasjon og endringer i database og bildefiler.
@@ -121,7 +130,8 @@ Bruk IP-adressen Bildebank skriver ut. Når serveren lytter på alle
 nettverksadresser, avviser den ukjente vertsnavn for å beskytte mot at et
 nettsted peker sitt eget navn mot Bildebank-serveren. Hvis du bevisst vil bruke
 et bestemt vertsnavn, må du i stedet velge det med `--host` og tillate ekstern
-tilgang med `--allow-remote`, sammen med de øvrige innstillingene du ønsker.
+tilgang med `--allow-remote`, sammen med `--read-only` eller et uttrykkelig
+`--allow-remote-write`.
 
 Advarsel: Serveren kan nås av alle på samme LAN. Bildene kan dermed bli
 eksponert til alle på samme nettverk. Ikke bruk `--lan-share` på offentlige

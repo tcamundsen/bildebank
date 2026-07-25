@@ -349,6 +349,13 @@ den lokale programdatabasen og åpne hoveddatabasen read-only for å kontrollere
 gjeldende schema. Dette gjelder også `--lan-share` og `--slideshow`. Vanlig
 skrivbar server beholder den ordinære databaseforberedelsen.
 
+En skrivbar server på en adresse som kan nås fra andre maskiner, skal kreve
+`--allow-remote-write` i tillegg til `--allow-remote`. Kontrollen skal skje før
+recovery og databaseforberedelse. Ekstern read-only, LAN-share, slideshow og
+lokal skrivbar server krever ikke dette ekstra flagget. Flagget er en
+uttrykkelig risikobekreftelse, ikke autentisering; alle klienter som kan nå en
+skrivbar server, kan hente CSRF-token og utføre tillatte endringer.
+
 `--lan-share` er en egen presentasjonsprofil i tillegg til å være read-only.
 Den deler aktive originalfiler, nøyaktig GPS, kommentarer, personer og tagger,
 men skal ikke vise maskinspesifikke `sources.path`,

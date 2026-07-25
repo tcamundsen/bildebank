@@ -75,6 +75,7 @@ class ServerSlideshowTests(unittest.TestCase):
             repo_root=run_server.call_args.kwargs["repo_root"],
             browser=True,
             allow_remote=True,
+            allow_remote_write=False,
             preview_images=True,
             read_only=True,
             lan_share=True,

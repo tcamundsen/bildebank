@@ -12,7 +12,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bildebank import db, server_request
-from bildebank.cli import build_parser, main, should_recover_pending_file_moves
+from bildebank.cli import (
+    build_parser,
+    main,
+    run_target_command,
+    should_recover_pending_file_moves,
+    validate_parsed_args,
+)
 from bildebank.cli_server import lan_share_urls, run_server_command
 from bildebank.config import AppConfig, BrowserConfig, FaceRecognitionConfig, OpenClipConfig
 from bildebank.db import init_database
@@ -25,6 +31,7 @@ from bildebank.server_runtime import (
     is_local_bind_host,
     run_server as run_http_server,
     validate_bind_host,
+    validate_remote_write,
 )
 from bildebank.server_assets import SERVER_JS
 from bildebank.server_browser_item_html import item_media_html
@@ -82,6 +89,7 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertIn("--read-only", stdout)
         self.assertIn("--lan-share", stdout)
         self.assertIn("--allow-remote", stdout)
+        self.assertIn("--allow-remote-write", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_read_only_html_removes_only_generated_settings_navigation_links(self) -> None:
@@ -374,11 +382,124 @@ class ServerCoreCliTests(unittest.TestCase):
         validate_bind_host("192.168.1.10", allow_remote=True)
         validate_bind_host("127.0.0.1", allow_remote=False)
 
-        args = build_parser().parse_args(
-            ["run-server", "--host", "0.0.0.0", "--allow-remote", "--no-browser"]
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "run-server",
+                "--host",
+                "0.0.0.0",
+                "--allow-remote",
+                "--allow-remote-write",
+                "--no-browser",
+            ]
         )
+        validate_parsed_args(parser, args)
         self.assertTrue(args.allow_remote)
+        self.assertTrue(args.allow_remote_write)
         self.assertEqual(args.host, "0.0.0.0")
+
+    def test_run_server_remote_write_requires_separate_permission(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            ["run-server", "--host", "0.0.0.0", "--allow-remote"]
+        )
+        stderr = StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            validate_parsed_args(parser, args)
+
+        self.assertEqual(raised.exception.code, 2)
+        self.assertIn("--allow-remote-write", stderr.getvalue())
+
+        read_only_args = parser.parse_args(
+            [
+                "run-server",
+                "--host",
+                "0.0.0.0",
+                "--allow-remote",
+                "--read-only",
+            ]
+        )
+        validate_parsed_args(parser, read_only_args)
+
+    def test_run_server_forwards_explicit_remote_write_permission(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "run-server",
+                "--host",
+                "0.0.0.0",
+                "--allow-remote",
+                "--allow-remote-write",
+                "--no-browser",
+            ]
+        )
+        validate_parsed_args(parser, args)
+
+        with patch("bildebank.cli.run_server_command", return_value=0) as run_server:
+            result = run_target_command(args, Path("C:/Users/Tom/Bilder"))
+
+        self.assertEqual(result, 0)
+        self.assertTrue(run_server.call_args.kwargs["allow_remote"])
+        self.assertTrue(run_server.call_args.kwargs["allow_remote_write"])
+        self.assertFalse(run_server.call_args.kwargs["read_only"])
+
+    def test_run_server_remote_write_permission_rejects_incompatible_modes(self) -> None:
+        cases = (
+            (
+                "missing remote permission",
+                ["run-server", "--host", "0.0.0.0", "--allow-remote-write"],
+                "krever også --allow-remote",
+            ),
+            (
+                "read only",
+                [
+                    "run-server",
+                    "--host",
+                    "0.0.0.0",
+                    "--allow-remote",
+                    "--allow-remote-write",
+                    "--read-only",
+                ],
+                "read-only",
+            ),
+            (
+                "local host",
+                [
+                    "run-server",
+                    "--host",
+                    "127.0.0.1",
+                    "--allow-remote",
+                    "--allow-remote-write",
+                ],
+                "ekstern --host",
+            ),
+        )
+        for label, argv, expected in cases:
+            with self.subTest(label=label):
+                parser = build_parser()
+                args = parser.parse_args(argv)
+                stderr = StringIO()
+                with redirect_stderr(stderr), self.assertRaises(SystemExit):
+                    validate_parsed_args(parser, args)
+                self.assertIn(expected, stderr.getvalue())
+
+    def test_runtime_rejects_remote_write_without_separate_permission(self) -> None:
+        validate_remote_write(
+            "127.0.0.1",
+            read_only=False,
+            allow_remote_write=False,
+        )
+        validate_remote_write(
+            "0.0.0.0",
+            read_only=True,
+            allow_remote_write=False,
+        )
+        with self.assertRaisesRegex(ValueError, "--allow-remote-write"):
+            validate_remote_write(
+                "0.0.0.0",
+                read_only=False,
+                allow_remote_write=False,
+            )
 
     def test_request_authority_accepts_local_and_lan_addresses(self) -> None:
         cases = (
@@ -672,6 +793,7 @@ class ServerCoreCliTests(unittest.TestCase):
         run_local_server.assert_called_once()
         self.assertEqual(run_local_server.call_args.kwargs["host"], "0.0.0.0")
         self.assertTrue(run_local_server.call_args.kwargs["allow_remote"])
+        self.assertFalse(run_local_server.call_args.kwargs["allow_remote_write"])
         self.assertTrue(run_local_server.call_args.kwargs["preview_images"])
         self.assertTrue(run_local_server.call_args.kwargs["read_only"])
         self.assertTrue(run_local_server.call_args.kwargs["lan_share"])
@@ -682,6 +804,24 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertIn("Serveren kan nås av alle på samme LAN", output)
         self.assertIn("Ikke bruk --lan-share på offentlige nettverk", output)
         self.assertIn("http://192.168.86.11:8765/", output)
+
+    def test_run_server_command_rejects_remote_write_before_loading_config(self) -> None:
+        with (
+            patch("bildebank.cli_server.load_config") as load_config,
+            patch("bildebank.cli_server.run_local_server") as run_local_server,
+            self.assertRaisesRegex(ValueError, "--allow-remote-write"),
+        ):
+            run_server_command(
+                Path("C:/Users/Tom/Bilder"),
+                host="0.0.0.0",
+                port=8765,
+                repo_root=self.program_root,
+                browser=False,
+                allow_remote=True,
+            )
+
+        load_config.assert_not_called()
+        run_local_server.assert_not_called()
 
     def test_run_server_lan_share_opens_localhost_in_browser(self) -> None:
         config = AppConfig()
@@ -733,7 +873,7 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertEqual(config_path.read_bytes(), original)
 
-    def test_run_server_warns_before_allowed_remote_bind(self) -> None:
+    def test_run_server_warns_before_allowed_remote_write(self) -> None:
         fake_server = SimpleNamespace(
             server_address=("0.0.0.0", 8765),
             serve_forever=lambda: None,
@@ -752,6 +892,7 @@ class ServerCoreCliTests(unittest.TestCase):
                 AppConfig(),
                 host="0.0.0.0",
                 allow_remote=True,
+                allow_remote_write=True,
             )
 
         prepare_database.assert_called_once_with(Path("."))
@@ -765,7 +906,24 @@ class ServerCoreCliTests(unittest.TestCase):
             slideshow=None,
         )
         self.assertIn("ADVARSEL", stderr.getvalue())
-        self.assertIn("andre maskiner på nettverket", stderr.getvalue())
+        self.assertIn("skrivbar", stderr.getvalue())
+        self.assertIn("deleted/", stderr.getvalue())
+
+    def test_run_server_rejects_remote_write_before_database_preparation(self) -> None:
+        with (
+            patch("bildebank.server_runtime.db.prepare_database") as prepare_database,
+            patch("bildebank.server_runtime.BildebankServer") as server_class,
+            self.assertRaisesRegex(ValueError, "--allow-remote-write"),
+        ):
+            run_http_server(
+                Path("."),
+                AppConfig(),
+                host="0.0.0.0",
+                allow_remote=True,
+            )
+
+        prepare_database.assert_not_called()
+        server_class.assert_not_called()
 
     def test_run_server_creates_server_in_read_only_mode(self) -> None:
         fake_server = SimpleNamespace(

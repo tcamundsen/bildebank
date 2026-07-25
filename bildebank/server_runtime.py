@@ -66,6 +66,22 @@ def validate_bind_host(host: str, *, allow_remote: bool) -> None:
     )
 
 
+def validate_remote_write(
+    host: str,
+    *,
+    read_only: bool,
+    allow_remote_write: bool,
+) -> None:
+    if is_local_bind_host(host) or read_only or allow_remote_write:
+        return
+    raise ValueError(
+        f"Kan ikke starte en skrivbar Bildebank-server på {host!r} uten "
+        "--allow-remote-write. Bruk --read-only for visning, eller angi "
+        "--allow-remote-write hvis alle med tilgang til serveren skal kunne "
+        "endre bildesamlingen."
+    )
+
+
 def first_day_item_ids_for_order(target: Path, item_ids: list[int]) -> dict[str, int]:
     if not item_ids:
         return {}
@@ -365,6 +381,7 @@ def run_server(
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_PORT,
     allow_remote: bool = False,
+    allow_remote_write: bool = False,
     preview_images: bool = False,
     read_only: bool = False,
     lan_share: bool = False,
@@ -373,12 +390,23 @@ def run_server(
     ready: Callable[[str], None] | None = None,
 ) -> None:
     validate_bind_host(host, allow_remote=allow_remote)
+    validate_remote_write(
+        host,
+        read_only=read_only,
+        allow_remote_write=allow_remote_write,
+    )
     if allow_remote and not is_local_bind_host(host):
-        print(
-            f"ADVARSEL: Bildebank-serveren bindes til {host!r} og kan bli tilgjengelig "
-            "fra andre maskiner på nettverket.",
-            file=sys.stderr,
-        )
+        if read_only:
+            warning = (
+                f"Bildebank-serveren bindes til {host!r} og kan bli tilgjengelig "
+                "fra andre maskiner på nettverket."
+            )
+        else:
+            warning = (
+                f"Bildebank-serveren bindes skrivbar til {host!r}. Alle som kan nå "
+                "serveren, kan endre metadata og flytte bilder til deleted/."
+            )
+        print(f"ADVARSEL: {warning}", file=sys.stderr)
     if read_only:
         db.prepare_database_read_only(target)
     else:

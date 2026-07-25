@@ -73,8 +73,9 @@ som antar at én `files`-rad bare har én kilde.
 
 1. Ingen tilsiktet endring i produktoppførsel, URL-er, HTTP-metoder,
    statuskoder, responsformat, sikkerhet eller filbehandling skal blandes inn.
-2. `read_only`, CSRF-kontroll, lokal bind som standard og kravet om eksplisitt
-   `--allow-remote` skal bevares og testes etter alle relevante trinn.
+2. `read_only`, CSRF-kontroll, lokal bind som standard og kravene om eksplisitt
+   `--allow-remote` og eget `--allow-remote-write` for ekstern skrivetilgang
+   skal bevares og testes etter alle relevante trinn.
 3. Handlinger som endrer samlingen skal fortsatt bruke eksisterende
    domenefunksjoner og target-lås. Ingen filhandling skal flyttes inn i
    transportlaget.

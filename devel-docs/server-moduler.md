@@ -17,6 +17,9 @@ server
   bare serverens offentlige API.
 - `server_runtime.py` eier oppstart, sikker bind-validering,
   `BildebankServer`, servertilstand og browsernavigasjonscache.
+  Ekstern skrivbar binding krever både `allow_remote` og
+  `allow_remote_write`, og avvises før databaseforberedelse. Read-only,
+  LAN-share, slideshow og lokal binding trenger ikke skriveflagget.
   Read-only-oppstart validerer hoveddatabasen gjennom en read-only-tilkobling.
   CLI-laget leser samtidig config uten legacy-migrering og hopper over
   oppdatering av lokal programstatus. Dette gjelder også LAN-share og
