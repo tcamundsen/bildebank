@@ -9,6 +9,11 @@ from io import BufferedIOBase
 from typing import TYPE_CHECKING, Any
 
 BENCHMARK_HEADER = "X-Bildebank-Benchmark"
+SECURITY_RESPONSE_HEADERS = (
+    ("X-Content-Type-Options", "nosniff"),
+    ("Referrer-Policy", "no-referrer"),
+    ("X-Frame-Options", "DENY"),
+)
 POST_FORM_RE = re.compile(
     r"(<form\b(?=[^>]*\bmethod\s*=\s*([\"'])post\2)[^>]*>)",
     re.IGNORECASE,
@@ -32,6 +37,11 @@ def read_only_html(content: str) -> str:
     for settings_link in SETTINGS_LINK_HTML:
         content = content.replace(settings_link, "")
     return content
+
+
+def send_security_response_headers(handler: Any) -> None:
+    for name, value in SECURITY_RESPONSE_HEADERS:
+        handler.send_header(name, value)
 
 
 class ServerResponseMixin:

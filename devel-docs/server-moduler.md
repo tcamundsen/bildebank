@@ -42,8 +42,12 @@ server
   dokumentasjon. Etter standardbibliotekets HTTP-parsing og før ruting
   validerer handleren én entydig `Host` og eventuell same-origin `Origin`
   gjennom `server_request.py`. Wildcard-binding godtar IP-litteraler, ikke
-  vilkårlige domenenavn, slik at DNS-rebinding avvises. Før CSRF-kontroll
-  leser handleren POST-body gjennom den
+  vilkårlige domenenavn, slik at DNS-rebinding avvises.
+  `BildebankRequestHandler.end_headers()` legger den felles, faste
+  sikkerhetspakken fra `server_response.py` på alle ferdige responser,
+  inkludert filer, redirects og tidlige HTTP-feil. Handlerens `Server`-header
+  røper ikke Python-versjonen. Før CSRF-kontroll leser handleren POST-body
+  gjennom den
   felles, tekstbaserte 1 MiB-grensen i `server_request.py`. Ugyldig eller
   duplisert `Content-Length`, ufullstendig eller ugyldig UTF-8 og enhver
   `Transfer-Encoding` avvises før endepunktet kjøres. Originalfiler og

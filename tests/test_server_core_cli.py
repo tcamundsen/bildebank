@@ -42,7 +42,13 @@ from bildebank.server_pages import (
     search_html,
     sources_page_html,
 )
-from bildebank.server_response import ServerResponseMixin, add_csrf_to_html, read_only_html
+from bildebank.server_response import (
+    SECURITY_RESPONSE_HEADERS,
+    ServerResponseMixin,
+    add_csrf_to_html,
+    read_only_html,
+    send_security_response_headers,
+)
 from bildebank.server_search import DEFAULT_SEARCH_LIMIT, ServerSearchStats
 from tests.cli_helpers import write_test_image
 from tests.db_test_helpers import insert_test_file, register_target_file
@@ -140,6 +146,19 @@ class ServerCoreCliTests(unittest.TestCase):
                     handler.redirect(f"/item/1{line_break}X-Injected: true")
 
                 self.assertEqual(handler.events, [])
+
+    def test_security_response_headers_are_fixed_and_central(self) -> None:
+        class Handler:
+            def __init__(self) -> None:
+                self.headers: list[tuple[str, str]] = []
+
+            def send_header(self, name: str, value: str) -> None:
+                self.headers.append((name, value))
+
+        handler = Handler()
+        send_security_response_headers(handler)
+
+        self.assertEqual(handler.headers, list(SECURITY_RESPONSE_HEADERS))
 
     def test_run_server_preview_images_is_explicit_and_defaults_to_false(self) -> None:
         default_args = build_parser().parse_args(["run-server"])
@@ -423,6 +442,10 @@ class ServerCoreCliTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             init_database(target)
+            relative_path = Path("2024/01/image.png")
+            write_test_image(target / relative_path)
+            file_id = register_target_file(target, relative_path)
+            expected_file_content = (target / relative_path).read_bytes()
             try:
                 server = BildebankServer(
                     ("127.0.0.1", 0),
@@ -436,34 +459,52 @@ class ServerCoreCliTests(unittest.TestCase):
             thread.start()
             port = server.server_address[1]
 
-            def request(headers: dict[str, str]) -> tuple[int, bytes]:
+            def request(
+                path: str,
+                headers: dict[str, str],
+            ) -> tuple[int, dict[str, str], bytes]:
                 connection = http.client.HTTPConnection(
                     "127.0.0.1",
                     port,
                     timeout=5,
                 )
                 try:
-                    connection.putrequest("GET", "/", skip_host=True)
+                    connection.putrequest("GET", path, skip_host=True)
                     for name, value in headers.items():
                         connection.putheader(name, value)
                     connection.putheader("Connection", "close")
                     connection.endheaders()
                     response = connection.getresponse()
-                    return response.status, response.read()
+                    return (
+                        response.status,
+                        dict(response.getheaders()),
+                        response.read(),
+                    )
                 finally:
                     connection.close()
 
             try:
-                valid_status, valid_body = request(
+                valid_status, valid_headers, valid_body = request(
+                    "/",
                     {
                         "Host": f"127.0.0.1:{port}",
                         "Origin": f"http://127.0.0.1:{port}",
                     }
                 )
-                rebinding_status, rebinding_body = request(
+                file_status, file_headers, file_body = request(
+                    f"/file/{file_id}",
+                    {"Host": f"127.0.0.1:{port}"},
+                )
+                redirect_status, redirect_headers, redirect_body = request(
+                    "/filter?q=year%3A2024",
+                    {"Host": f"127.0.0.1:{port}"},
+                )
+                rebinding_status, rebinding_headers, rebinding_body = request(
+                    "/",
                     {"Host": f"attacker.example:{port}"}
                 )
-                cross_origin_status, cross_origin_body = request(
+                cross_origin_status, cross_origin_headers, cross_origin_body = request(
+                    "/",
                     {
                         "Host": f"127.0.0.1:{port}",
                         "Origin": f"http://attacker.example:{port}",
@@ -476,10 +517,25 @@ class ServerCoreCliTests(unittest.TestCase):
 
         self.assertEqual(valid_status, HTTPStatus.OK)
         self.assertIn(b"<!doctype html>", valid_body)
+        self.assertEqual(file_status, HTTPStatus.OK)
+        self.assertEqual(file_body, expected_file_content)
+        self.assertEqual(redirect_status, HTTPStatus.FOUND)
+        self.assertEqual(redirect_body, b"")
         self.assertEqual(rebinding_status, HTTPStatus.MISDIRECTED_REQUEST)
         self.assertIn(b"Host-headeren er ikke tillatt", rebinding_body)
         self.assertEqual(cross_origin_status, HTTPStatus.FORBIDDEN)
         self.assertIn(b"Origin-headeren stemmer ikke", cross_origin_body)
+        for response_headers in (
+            valid_headers,
+            file_headers,
+            redirect_headers,
+            rebinding_headers,
+            cross_origin_headers,
+        ):
+            with self.subTest(response_headers=response_headers):
+                self.assertEqual(response_headers["Server"], "Bildebank")
+                for name, value in SECURITY_RESPONSE_HEADERS:
+                    self.assertEqual(response_headers[name], value)
 
     def test_run_server_command_forwards_remote_permission(self) -> None:
         config = AppConfig()

@@ -196,6 +196,11 @@ beskytter blant annet mot DNS-rebinding, men er ikke innlogging eller
 tilgangskontroll. Serveren bør derfor bare kjøres lokalt på PC-en eller på et
 privat LAN der man har kontroll på brukerne.
 
+Serveren ber nettleseren om ikke å gjette andre filtyper enn den Bildebank
+oppgir, ikke sende Bildebank-adressen videre når du åpner en ekstern lenke, og
+ikke vise Bildebank inne i en annen nettsides ramme. Dette endrer ikke vanlig
+bruk av browseren eller LAN-share.
+
 OpenCLIP-modellen ligger i serverprosessen, slik at den kan brukes om igjen
 mellom søk. Serveren håndterer at modellen ikke er lastet ennå, og gir en lesbar
 feil hvis OpenCLIP ikke er installert eller `image-scan` ikke er kjørt.

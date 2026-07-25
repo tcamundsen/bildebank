@@ -48,7 +48,7 @@ from .server_search import (
     search_server_images,
 )
 from .target_lock import TargetLockError
-from .server_response import ServerResponseMixin
+from .server_response import ServerResponseMixin, send_security_response_headers
 from . import server_request
 from .server_request import (
     first_param,
@@ -110,6 +110,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
     server: Any
     server_timing_steps: dict[str, float]
     protocol_version = "HTTP/1.1"
+
+    def version_string(self) -> str:
+        return "Bildebank"
+
+    def end_headers(self) -> None:
+        send_security_response_headers(self)
+        super().end_headers()
 
     def parse_request(self) -> bool:
         if not super().parse_request():

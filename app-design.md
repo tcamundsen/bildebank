@@ -370,6 +370,14 @@ vertsnavn/IP som `Host` og serverens faktiske port. Manglende `Origin` forblir
 tillatt for vanlig navigasjon og enkle klienter. Muterende POST-kall krever i
 tillegg fortsatt gyldig CSRF-token.
 
+Alle ferdige HTTP-responser, også redirects, direkte medier og tidlige
+feilresponser, skal ha `X-Content-Type-Options: nosniff`,
+`Referrer-Policy: no-referrer` og `X-Frame-Options: DENY`. Bildebank har ingen
+dokumentert iframe-integrasjon, og serveren bruker ikke `Referer` som del av
+funksjonaliteten. `Server`-headeren skal identifisere Bildebank uten å røpe
+Python-versjonen. CSP skal ikke legges til som del av denne pakken; inline
+HTML, CSS og JavaScript må kartlegges og tilpasses før en bred CSP innføres.
+
 Dashboard- og maintenance-status er rene statusoppslag, også når den vanlige
 serveren er skrivbar. De skal åpne hoveddatabasen og eksisterende OpenCLIP- og
 InsightFace-databaser read-only. Dashboardet skal ikke opprette eller migrere
