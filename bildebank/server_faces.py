@@ -14,11 +14,12 @@ from .config import FaceRecognitionConfig
 from .face import (
     connect_face_db_read_only,
     embedding_array_from_blob,
-    ensure_face_schema_path,
     face_db_path,
     normalize_person_name,
     normalized_vector_matrix,
+    require_current_face_schema_read_only,
 )
+from .db_core import connect_database_read_only
 from .html_export import face_tables_exist
 from .media import ImageDimensions, image_dimensions, image_orientation, media_kind
 from .server_browser_item_html import rotation_style_attr, video_item_html
@@ -64,17 +65,29 @@ def current_face_db_path_and_mtime(
         mtime_ns = path.stat().st_mtime_ns
     except OSError:
         return path, None
-    ensure_current_face_schema(str(path), mtime_ns)
+    require_current_server_face_schema(
+        str(path),
+        mtime_ns,
+        face_config.model_name,
+    )
     return path, mtime_ns
 
 
 @lru_cache(maxsize=8)
-def ensure_current_face_schema(face_db_path: str, face_db_mtime_ns: int) -> None:
-    ensure_face_schema_path(Path(face_db_path))
+def require_current_server_face_schema(
+    face_database_path: str,
+    face_db_mtime_ns: int,
+    model_name: str,
+) -> None:
+    conn = connect_database_read_only(Path(face_database_path))
+    try:
+        require_current_face_schema_read_only(conn, model_name)
+    finally:
+        conn.close()
 
 
 def clear_face_caches() -> None:
-    ensure_current_face_schema.cache_clear()
+    require_current_server_face_schema.cache_clear()
     cached_people_for_file_rows.cache_clear()
     cached_people_with_references_for_file_rows.cache_clear()
     cached_unconfirmed_face_count_for_item.cache_clear()
@@ -217,7 +230,7 @@ def cached_people_for_file_rows(
     face_db_mtime_ns: int,
     file_id: int,
 ) -> tuple[tuple[str, int, int | None, bool], ...]:
-    conn = sqlite3.connect(face_db_path)
+    conn = connect_database_read_only(Path(face_db_path))
     conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(conn):
@@ -265,7 +278,7 @@ def cached_people_with_references_for_file_rows(
     face_db_mtime_ns: int,
     file_id: int,
 ) -> tuple[tuple[str, int, int | None, bool, int | None, int | None], ...]:
-    conn = sqlite3.connect(face_db_path)
+    conn = connect_database_read_only(Path(face_db_path))
     conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(conn):
@@ -362,7 +375,7 @@ def cached_registered_people_options_html(face_db_path: str, face_db_mtime_ns: i
 
 @lru_cache(maxsize=8)
 def cached_registered_people(face_db_path: str, face_db_mtime_ns: int) -> tuple[str, ...]:
-    conn = sqlite3.connect(face_db_path)
+    conn = connect_database_read_only(Path(face_db_path))
     conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(conn):
@@ -383,7 +396,7 @@ def person_item_url_for_face(
 ) -> str:
     db_path = current_face_db_path(target, face_config)
     try:
-        conn = sqlite3.connect(db_path)
+        conn = connect_database_read_only(db_path)
         try:
             row = conn.execute("SELECT file_id FROM faces WHERE id = ?", (face_id,)).fetchone()
         finally:
@@ -437,7 +450,7 @@ def cached_unconfirmed_face_count_for_item(
     face_db_mtime_ns: int,
     file_id: int,
 ) -> int:
-    conn = sqlite3.connect(face_db_path)
+    conn = connect_database_read_only(Path(face_db_path))
     conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(conn):
@@ -473,7 +486,7 @@ def unconfirmed_faces_for_item(
     db_path = current_face_db_path(target, face_config)
     if not db_path.exists():
         return []
-    conn = sqlite3.connect(db_path)
+    conn = connect_database_read_only(db_path)
     conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(conn):
@@ -581,7 +594,7 @@ def person_by_name(
     if not db_path.exists():
         return None
     clean_name = normalize_person_name(person_name)
-    conn = sqlite3.connect(db_path)
+    conn = connect_database_read_only(db_path)
     conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(conn):
@@ -616,7 +629,7 @@ def cached_person_file_ids(
     person_name: str,
     include_suggestions: bool,
 ) -> tuple[int, ...]:
-    conn = sqlite3.connect(face_db_path)
+    conn = connect_database_read_only(Path(face_db_path))
     conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(conn):
@@ -694,7 +707,7 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
         }
     finally:
         main_conn.close()
-    face_conn = sqlite3.connect(db_path)
+    face_conn = connect_database_read_only(db_path)
     face_conn.row_factory = sqlite3.Row
     try:
         if not face_tables_exist(face_conn):
@@ -972,7 +985,9 @@ def person_faces_for_item(
     person = person_by_name(target, person_name, face_config)
     if person is None:
         return []
-    conn = sqlite3.connect(current_face_db_path(target, face_config))
+    conn = connect_database_read_only(
+        current_face_db_path(target, face_config)
+    )
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
@@ -1070,7 +1085,9 @@ def confirmed_person_face_count_for_item(
     person = person_by_name(target, person_name, face_config)
     if person is None:
         return 0
-    conn = sqlite3.connect(current_face_db_path(target, face_config))
+    conn = connect_database_read_only(
+        current_face_db_path(target, face_config)
+    )
     try:
         row = conn.execute(
             """
@@ -1288,7 +1305,9 @@ def person_reference_items(
     person = person_by_name(target, person_name, face_config)
     if person is None:
         return []
-    conn = sqlite3.connect(current_face_db_path(target, face_config))
+    conn = connect_database_read_only(
+        current_face_db_path(target, face_config)
+    )
     conn.row_factory = sqlite3.Row
     try:
         confirmed_rows = list(
@@ -1395,7 +1414,11 @@ def people_page_html(
     read_only: bool = False,
 ) -> str:
     people = registered_people_rows(target, face_config)
-    summary = people_face_summary(target, face_config)
+    summary = people_face_summary(
+        target,
+        face_config,
+        read_only=read_only,
+    )
     rows = "\n".join(people_row_html(person) for person in people)
     content = (
         f'<div class="people-table">{rows}</div>'
@@ -1574,7 +1597,7 @@ def item_face_matches_content_html(
     if not path.exists():
         return '<p class="empty">Bildet har ingen scannede ansikter.</p>'
 
-    conn = sqlite3.connect(path)
+    conn = connect_database_read_only(path)
     conn.row_factory = sqlite3.Row
     try:
         target_faces = list(

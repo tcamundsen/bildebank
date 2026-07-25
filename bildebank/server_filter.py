@@ -1080,13 +1080,13 @@ def attach_text_filter_databases(conn: Any, target: Path, text_filter: BrowserTe
     conn.create_function("bildebank_casefold", 1, unicode_casefold, deterministic=True)
     if not text_filter.persons:
         return
-    from .face import connect_face_db, face_db_path
+    from .server_faces import current_face_db_path
 
     if any(str(row["name"]) == "face_db" for row in conn.execute("PRAGMA database_list")):
         return
-    face_conn = connect_face_db(target)
-    face_conn.close()
-    conn.execute("ATTACH DATABASE ? AS face_db", (str(face_db_path(target)),))
+    path = current_face_db_path(target)
+    uri = f"{path.resolve().as_uri()}?mode=ro"
+    conn.execute("ATTACH DATABASE ? AS face_db", (uri,))
 
 
 def unicode_casefold(value: str | None) -> str:

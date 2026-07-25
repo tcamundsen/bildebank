@@ -25,7 +25,7 @@ from bildebank import (
 )
 from bildebank.config import AppConfig, BrowserConfig, FaceRecognitionConfig
 from bildebank.db import DB_FILENAME, init_database
-from bildebank.face import connect_face_db
+from bildebank.face import connect_face_db, face_db_path
 from bildebank.geo import h3_cells_for_point
 from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_runtime import BildebankServer
@@ -86,6 +86,54 @@ from tests.test_media import (
 
 
 class ServerBrowserCliTests(unittest.TestCase):
+    def test_person_filter_get_does_not_create_missing_face_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            source = text_filter_browser_source("person:Kari")
+            database_path = face_db_path(target)
+
+            with self.assertRaises(sqlite3.OperationalError):
+                source_items(target, source)
+
+            self.assertFalse(database_path.exists())
+
+    def test_person_filter_get_does_not_migrate_older_face_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = connect_face_db(target)
+            try:
+                conn.execute(
+                    "UPDATE meta SET value = '4' WHERE key = 'schema_version'"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            database_path = face_db_path(target)
+            database_dir = database_path.parent
+            original = {
+                path.name: path.read_bytes()
+                for path in database_dir.iterdir()
+                if path.is_file()
+            }
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "read-only-åpning krever schema_version",
+            ):
+                source_items(
+                    target,
+                    text_filter_browser_source("person:Kari"),
+                )
+
+            after = {
+                path.name: path.read_bytes()
+                for path in database_dir.iterdir()
+                if path.is_file()
+            }
+            self.assertEqual(after, original)
+
     def test_browser_selections_delegate_to_common_source_responder(self) -> None:
         handler = object.__new__(BildebankRequestHandler)
         handler.server = SimpleNamespace(  # type: ignore[attr-defined]

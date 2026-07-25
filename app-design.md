@@ -356,6 +356,13 @@ tabeller i den lokale programdatabasen. Et statusoppslag skal heller ikke
 adoptere eller migrere et eldre sidecar-schema eller oppdatere sidecarens
 metadata.
 
+Vanlige person-, item- og filtersider skal heller ikke bruke GET til å
+opprette eller migrere InsightFace-databasen. Serverens face-lesehjelpere skal
+kreve gjeldende eksplisitt schema og åpne den eksisterende databasen
+read-only. En personfiltrering uten face-database kan feile uten å opprette en
+tom database. Migrering hører til en eksplisitt face-operasjon i skrivbar
+modus.
+
 ## Lokal status for snapshots
 
 Et publisert snapshot kan registreres i programmets lokale programdatabase

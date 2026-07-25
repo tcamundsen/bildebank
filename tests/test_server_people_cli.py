@@ -12,7 +12,12 @@ from unittest.mock import patch
 
 from bildebank import db, server_endpoints_browser, server_endpoints_faces
 from bildebank.config import AppConfig, FaceRecognitionConfig, OpenClipConfig
-from bildebank.face import add_person_to_file, connect_face_db, remove_person_from_file
+from bildebank.face import (
+    add_person_to_file,
+    connect_face_db,
+    face_db_path,
+    remove_person_from_file,
+)
 from bildebank.media_cache import cached_image_dimensions, cached_image_orientation
 from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_runtime import BildebankServer
@@ -60,6 +65,66 @@ from tests.test_media import minimal_png
 
 
 class ServerPeopleCliTests(unittest.TestCase):
+    def test_read_only_people_get_does_not_migrate_older_face_database(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            db.init_database(target)
+            config = FaceRecognitionConfig()
+            conn = connect_face_db(target, config)
+            try:
+                conn.execute(
+                    "UPDATE meta SET value = '4' WHERE key = 'schema_version'"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            database_path = face_db_path(target, config)
+            database_dir = database_path.parent
+            original = {
+                path.name: path.read_bytes()
+                for path in database_dir.iterdir()
+                if path.is_file()
+            }
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "read-only-åpning krever schema_version",
+            ):
+                people_page_html(target, config, read_only=True)
+
+            after = {
+                path.name: path.read_bytes()
+                for path in database_dir.iterdir()
+                if path.is_file()
+            }
+            self.assertEqual(after, original)
+
+    def test_item_face_get_does_not_migrate_older_face_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            db.init_database(target)
+            config = FaceRecognitionConfig()
+            conn = connect_face_db(target, config)
+            try:
+                conn.execute(
+                    "UPDATE meta SET value = '4' WHERE key = 'schema_version'"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            database_path = face_db_path(target, config)
+            original = database_path.read_bytes()
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "read-only-åpning krever schema_version",
+            ):
+                people_for_file(target, 1, config)
+
+            self.assertEqual(database_path.read_bytes(), original)
+
     def test_run_server_item_page_links_known_and_suggested_people(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"

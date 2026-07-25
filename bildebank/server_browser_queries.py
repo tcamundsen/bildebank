@@ -1580,11 +1580,11 @@ def attach_face_database(
 ) -> None:
     if any(str(row["name"]) == "face_db" for row in conn.execute("PRAGMA database_list")):
         return
-    from .face import face_db_path
     from .server_faces import current_face_db_path
 
-    current_face_db_path(target, face_config)
-    conn.execute("ATTACH DATABASE ? AS face_db", (str(face_db_path(target, face_config)),))
+    path = current_face_db_path(target, face_config)
+    uri = f"{path.resolve().as_uri()}?mode=ro"
+    conn.execute("ATTACH DATABASE ? AS face_db", (uri,))
 
 
 def browser_month_navigation_for_key(
