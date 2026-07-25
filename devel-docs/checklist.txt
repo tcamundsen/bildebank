@@ -1,0 +1,30 @@
+Dette er områder som tidligere er sikkerhets- og integritetsgjennomgått. De kan gjennomgås på nytt ved bruk av en
+vesentlig kraftigere modell, etter kodeendringer som berører området, eller når konkrete feil eller nye funn tilsier
+det. En ny gjennomgang bør avgrenses til det berørte området.
+
+# Nylig gjennomgåtte områder
+
+Denne filen er en kort oversikt for utvikler-/AI-kontekst. Detaljer om
+rettelser finnes i Git-historikken, testene og relevant dokumentasjon i
+`devel-docs/` og `docs/`.
+
+Følgende områder av Bildebank har nylig fått en ny gjennomgang med vekt på
+filsikkerhet, dataintegritet og forsiktig feilbehandling:
+
+- `doctor` og `check-source`, inkludert hoveddatabase, mediefiler,
+  filproveniens og sidecar-databaser
+- smale, bevisbare reparasjoner for manglende mediefiler og utdaterte
+  OpenCLIP-stier
+- import og `unimport`, inkludert transaksjoner, avbrudd og recovery
+- `remove`, `undelete`, filflytting, sletting og tilhørende recovery
+- snapshot-oppretting, kontroll og restore, inkludert målkonflikter,
+  lenker, avbrudd og Windows-oppførsel
+- databasemigreringer, sikkerhetskopier og recovery av ufullførte
+  filoperasjoner
+- låsehåndtering rundt muterende operasjoner og recovery
+- browser/server, inkludert reelt read-only oppsett, trygg filservering,
+  søk, LAN-share, ekstern binding og skrivetilgang
+
+Kjente funn fra disse gjennomgangene er håndtert. Områdene er ikke dermed
+garantert feilfrie, men en ny bred gjennomgang bør bare startes ved relevante
+kodeendringer, observerte feil eller et konkret nytt funn.
