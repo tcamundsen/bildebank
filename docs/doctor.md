@@ -49,6 +49,10 @@ antall registrerte ansikter per scannet fil stemmer med de lagrede
 ansiktsradene. Avvik rapporteres, men doctor migrerer, flytter, rydder eller
 regenererer ikke face-data.
 
+Hvis bare filsti og stinøkkel i en OpenCLIP embedding er utdaterte, mens
+`file_id` og SHA-256 fortsatt stemmer, anbefaler doctor en dry-run med
+`bildebank repair-image-search-paths`. Doctor utfører aldri reparasjonen selv.
+
 Før doctor vurderer de databaseførte filene, kontrollerer den at
 hoveddatabasen er hel og at databasereferanser ikke peker på rader som mangler.
 Hvis databasefilens integritet ikke kan bekreftes, hopper doctor over senere

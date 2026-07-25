@@ -1433,7 +1433,19 @@ def doctor_check_openclip_consistency(target: Path) -> None:
         "image_search_results",
         result_mismatches,
     )
-    if embedding_mismatches or result_mismatches:
+    repairable_embedding_paths = [
+        row
+        for row in embedding_mismatches
+        if row["sidecar_sha256"] == row["main_sha256"]
+    ]
+    if repairable_embedding_paths:
+        doctor_advice(
+            "Kjør `bildebank repair-image-search-paths` for en dry-run uten "
+            "databaseendringer av reparerbare OpenCLIP embedding-stier."
+        )
+    if result_mismatches or len(repairable_embedding_paths) != len(
+        embedding_mismatches
+    ):
         doctor_advice(
             "Undersøk hoveddatabasen og sikkerhetskopien før OpenCLIP-data "
             "regenereres."

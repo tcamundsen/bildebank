@@ -107,5 +107,6 @@ Kommandoer om ansiktsgjenkjenning du kanskje ikke trenger hvis du bruker
 
 - [`image-scan`](image-scan.md) **`vindu`**
 - [`cleanup-image-search`](cleanup-image-search.md) **`cli`**
+- [`repair-image-search-paths`](repair-image-search-paths.md) **`cli`**
 
 Se den samlede innføringen: [`openclip`](openclip.md).

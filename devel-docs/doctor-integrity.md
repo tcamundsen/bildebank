@@ -182,3 +182,40 @@ Gjenstår:
 
 - klassifiser faktiske funntyper før eventuelle smale reparasjonskommandoer
   vurderes
+
+## Reparasjonsgrense
+
+`doctor` skal fortsatt være read-only. Reparasjoner ligger i egne, eksplisitte
+kommandoer med dry-run som standard.
+
+Prioriteringen er:
+
+1. Reparasjoner av regenererbare, kopierte metadata når identiteten kan bevises
+   uten skjønn.
+2. Gjenoppretting av en manglende mediefil bare når brukeren oppgir en ekstern
+   kandidat som har nøyaktig databaseført størrelse og SHA-256.
+3. Avgrenset fjerning eller regenerering av utelukkende avledede sidecar-data.
+
+Følgende skal ikke repareres automatisk:
+
+- manglende mediefiler uten en verifisert ekstern kopi
+- orphan-medier
+- hashavvik der det er uklart om databasen eller filen er autoritativ
+- manglende eller motstridende `file_sources`-proveniens
+- SQLite-skade eller ukjent schema
+- brukerbekreftede face-koblinger
+
+Første nye reparasjon er `repair-image-search-paths`. Den kan bare
+synkronisere `image_embeddings.target_path` og `target_path_key` når:
+
+- hoved- og OpenCLIP-databasen har gjeldende schema og består full
+  databasehelsekontroll
+- ingen `pending_file_moves` er uavklart
+- `files`-raden er aktiv og har en gyldig samlingssti
+- `file_id` og SHA-256 er identiske i `files` og `image_embeddings`
+- mediefilen på den databaseførte stien kan hashes stabilt og stemmer med
+  databaseført størrelse og SHA-256
+
+Kommandoen endrer ikke embedding, søkeresultater, hoveddatabase eller
+mediefiler. Apply kjører under target-lås, beregner planen på nytt og oppdaterer
+alle kvalifiserte rader i én transaksjon. SHA-avvik blir stående urørt.

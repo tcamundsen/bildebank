@@ -8,6 +8,7 @@ from .config import CONFIG_FILENAME, load_config
 from .openclip import (
     cleanup_image_search,
     openclip_db_path,
+    repair_image_search_paths,
     scan_images,
     search_images,
 )
@@ -22,6 +23,8 @@ IMAGE_SEARCH_PROGRESS: ProgressMeter | None = None
 def run_image_command(args: argparse.Namespace, target: Path, *, repo_root: Path) -> int:
     if args.command == "cleanup-image-search":
         return run_cleanup_image_search(target, apply=args.apply)
+    if args.command == "repair-image-search-paths":
+        return run_repair_image_search_paths(target, apply=args.apply)
     require_openclip_enabled(load_config(repo_root).openclip.enabled)
     if args.command == "image-scan":
         return run_image_scan(target, repo_root=repo_root, limit=args.limit)
@@ -149,6 +152,42 @@ def run_cleanup_image_search(target: Path, *, apply: bool) -> int:
         f"image_search_results={stats.deleted_search_result_rows}, "
         f"tomme_image_search_runs={stats.deleted_search_runs}"
     )
+    return 0
+
+
+def run_repair_image_search_paths(target: Path, *, apply: bool) -> int:
+    with TargetLock(target, command="repair-image-search-paths"):
+        stats = repair_image_search_paths(target, apply=apply)
+    if not stats.exists:
+        print("Ingen OpenCLIP-database å reparere.")
+        return 0
+    print(
+        "Bildesøk-stireparasjon: "
+        f"reparerbare_embeddingrader={stats.repairable_rows}, "
+        f"SHA-avvik_som_ikke_røres={stats.unrepairable_sha_rows}"
+    )
+    for group in stats.groups[:20]:
+        suffix = f" ({group.row_count} rader)" if group.row_count > 1 else ""
+        print(
+            f"file #{group.file_id}\t"
+            f"{group.stored_target_path.as_posix()} -> "
+            f"{group.expected_target_path.as_posix()}{suffix}"
+        )
+    if len(stats.groups) > 20:
+        print(f"... og {len(stats.groups) - 20} file_id/sti-grupper til")
+    if not apply:
+        print("Dry-run: ingen endringer er gjort.")
+        if stats.repairable_rows:
+            print("Ta et oppdatert snapshot før du bruker --apply.")
+            print("Kjør: bildebank repair-image-search-paths --apply")
+    else:
+        print(f"Oppdatert: image_embeddings={stats.updated_rows}")
+    if stats.unrepairable_sha_rows:
+        print(
+            "SHA-256-avvik ble ikke reparert. Undersøk hoveddatabasen, "
+            "mediefilene og sikkerhetskopien."
+        )
+        return 2
     return 0
 
 

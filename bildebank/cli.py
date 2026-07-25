@@ -805,6 +805,22 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Slett foreldreløse image_embeddings og image_search_results.",
     )
+    repair_image_search_paths_parser = add_command(
+        subparsers,
+        "repair-image-search-paths",
+        usage="bildebank repair-image-search-paths [valg]",
+        help="Synkroniser trygt utdaterte OpenCLIP embedding-stier",
+        description=(
+            "Vis eller synkroniser utdaterte stier i OpenCLIP embeddings når "
+            "file_id, SHA-256 og mediefilen fortsatt stemmer med "
+            "hoveddatabasen."
+        ),
+    )
+    repair_image_search_paths_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Oppdater reparerbare target_path- og target_path_key-felt.",
+    )
     run_server_parser = add_command(
         subparsers,
         "run-server",
@@ -1158,7 +1174,12 @@ TARGET_COMMANDS = {
     "cleanup-pending-deletes",
 }
 
-IMAGE_COMMANDS = {"image-scan", "image-search", "cleanup-image-search"}
+IMAGE_COMMANDS = {
+    "image-scan",
+    "image-search",
+    "cleanup-image-search",
+    "repair-image-search-paths",
+}
 
 FACE_COMMANDS = {
     "face-scan",
@@ -1319,7 +1340,11 @@ def run_no_target_command(args: argparse.Namespace) -> int:
 
 
 def should_recover_pending_file_moves(args: argparse.Namespace) -> bool:
-    if args.command in {"check-source", "migrate"}:
+    if args.command in {
+        "check-source",
+        "migrate",
+        "repair-image-search-paths",
+    }:
         return False
     if args.command == "run-server" and (args.read_only or args.lan_share or args.slideshow):
         return False

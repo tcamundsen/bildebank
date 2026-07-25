@@ -84,6 +84,25 @@ gjeldende database.
 hovedtransaksjonen. Dermed stopper et ukjent eller mangelfullt schema før
 bildesamlingen endres.
 
+## Reparasjon av kopierte embedding-stier
+
+`repair-image-search-paths` reparerer bare utdaterte `target_path`- og
+`target_path_key`-felt i `image_embeddings`. Den reparerer ikke SHA-avvik,
+søkeresultater, orphan-rader eller mediefiler.
+
+Reparasjonen krever samme aktive `file_id` og SHA-256 i hoveddatabasen og
+OpenCLIP-databasen. Den hasher også den faktiske mediefilen stabilt og krever
+at både størrelse og SHA-256 stemmer med `files`. Hoveddatabasens stier,
+begge databasenes schema og databasehelse samt `pending_file_moves`
+kontrolleres før endring.
+
+Standardkjøringen er dry-run. `--apply` holder target-låsen, bygger planen på
+nytt og oppdaterer bare de to kopierte sti-feltene i én transaksjon. Embedding-
+blobber og `updated_at` endres ikke. Det tas ikke automatisk en full kopi av
+OpenCLIP-databasen, fordi den kan være svært stor og feltene er avledet direkte
+fra tre identiske identitetsbevis. Et oppdatert snapshot anbefales likevel før
+`--apply`.
+
 ## Regler for senere schema-endringer
 
 - Øk `OPENCLIP_SCHEMA_VERSION`.

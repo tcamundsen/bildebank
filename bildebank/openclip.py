@@ -4,12 +4,19 @@ import array
 import html
 import math
 import sqlite3
+import stat
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from . import db
+from .collection_paths import (
+    CollectionFileHashError,
+    hash_stable_collection_file,
+    is_reparse_stat,
+    parse_collection_relative_path,
+)
 from .config import OpenClipConfig
 from .db_core import connect_database_read_only
 from .html_paths import display_relative_path, path_to_url, relative_to_target
@@ -115,6 +122,28 @@ class OpenClipCleanupStats:
     deleted_embedding_rows: int = 0
     deleted_search_result_rows: int = 0
     deleted_search_runs: int = 0
+    applied: bool = False
+
+
+@dataclass(frozen=True)
+class OpenClipEmbeddingPathRepairGroup:
+    file_id: int
+    stored_target_path: Path
+    stored_target_path_key: str
+    expected_target_path: Path
+    expected_target_path_key: str
+    expected_sha256: str
+    expected_size_bytes: int
+    row_count: int
+
+
+@dataclass(frozen=True)
+class OpenClipEmbeddingPathRepairStats:
+    exists: bool
+    repairable_rows: int = 0
+    unrepairable_sha_rows: int = 0
+    groups: tuple[OpenClipEmbeddingPathRepairGroup, ...] = ()
+    updated_rows: int = 0
     applied: bool = False
 
 
@@ -736,6 +765,288 @@ def cleanup_image_search(target: Path, *, apply: bool = False) -> OpenClipCleanu
         ) from exc
     finally:
         conn.close()
+
+
+def repair_image_search_paths(
+    target: Path,
+    *,
+    apply: bool = False,
+) -> OpenClipEmbeddingPathRepairStats:
+    path = openclip_db_path(target)
+    if not validate_repair_database_path(
+        path,
+        label="OpenCLIP-databasen",
+        allow_missing=True,
+    ):
+        return OpenClipEmbeddingPathRepairStats(exists=False, applied=apply)
+
+    validate_repair_database_path(
+        db.db_path_for_target(target),
+        label="hoveddatabasen",
+    )
+    validate_image_search_path_repair_main_database(target)
+    conn = sqlite3.connect(
+        f"{path.resolve().as_uri()}?mode=rw",
+        uri=True,
+    )
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
+        require_current_openclip_schema_read_only(conn)
+        db.validate_database_health(conn)
+        attach_main_database_read_only(conn, target)
+        groups = repairable_embedding_path_groups(conn)
+        unrepairable_sha_rows = count_unrepairable_embedding_sha_rows(conn)
+        repairable_rows = sum(group.row_count for group in groups)
+        if not apply:
+            validate_repairable_embedding_files(target, groups)
+            return OpenClipEmbeddingPathRepairStats(
+                exists=True,
+                repairable_rows=repairable_rows,
+                unrepairable_sha_rows=unrepairable_sha_rows,
+                groups=groups,
+            )
+
+        conn.execute("BEGIN IMMEDIATE")
+        current_groups = repairable_embedding_path_groups(conn)
+        current_unrepairable_sha_rows = (
+            count_unrepairable_embedding_sha_rows(conn)
+        )
+        validate_repairable_embedding_files(target, current_groups)
+        current_repairable_rows = sum(
+            group.row_count for group in current_groups
+        )
+        updated_rows = update_repairable_embedding_paths(conn)
+        if updated_rows != current_repairable_rows:
+            raise ValueError(
+                "OpenCLIP-stireparasjonen endret et uventet antall rader "
+                f"(planlagt={current_repairable_rows}, endret={updated_rows})."
+            )
+        remaining_groups = repairable_embedding_path_groups(conn)
+        if remaining_groups:
+            raise ValueError(
+                "OpenCLIP-stireparasjonen etterlot reparerbare "
+                "embedding-stiavvik."
+            )
+        db.validate_database_health(conn)
+        conn.commit()
+        return OpenClipEmbeddingPathRepairStats(
+            exists=True,
+            repairable_rows=current_repairable_rows,
+            unrepairable_sha_rows=current_unrepairable_sha_rows,
+            groups=current_groups,
+            updated_rows=updated_rows,
+            applied=True,
+        )
+    except (sqlite3.DatabaseError, ValueError) as exc:
+        conn.rollback()
+        raise ValueError(
+            "OpenCLIP-stiene kan ikke repareres trygt. "
+            f"Ingen embedding-stier ble endret: {exc}"
+        ) from exc
+    finally:
+        conn.close()
+
+
+def validate_repair_database_path(
+    path: Path,
+    *,
+    label: str,
+    allow_missing: bool = False,
+) -> bool:
+    try:
+        path_stat = path.stat(follow_symlinks=False)
+    except FileNotFoundError:
+        if allow_missing:
+            return False
+        raise ValueError(f"{label} mangler: {path}") from None
+    except OSError as exc:
+        raise ValueError(f"{label} kunne ikke kontrolleres: {exc}") from exc
+    if (
+        stat.S_ISLNK(path_stat.st_mode)
+        or is_reparse_stat(path_stat)
+        or not stat.S_ISREG(path_stat.st_mode)
+    ):
+        raise ValueError(
+            f"{label} er ikke en vanlig fil uten lenker: {path}"
+        )
+    return True
+
+
+def validate_image_search_path_repair_main_database(target: Path) -> None:
+    conn = db.connect_read_only(target)
+    try:
+        db.validate_database_health(conn)
+        path_issues = db.file_path_integrity_issues(conn)
+        if path_issues:
+            first = path_issues[0]
+            raise ValueError(
+                "hoveddatabasen har databaseførte stifeil; "
+                f"første avvik er file #{first.file_id} {first.field}: "
+                f"{first.message}"
+            )
+        pending_moves = db.prepared_pending_file_moves(conn)
+        if pending_moves:
+            raise ValueError(
+                f"hoveddatabasen har {len(pending_moves)} uavklart(e) "
+                "filflytting(er)"
+            )
+    finally:
+        conn.close()
+
+
+def attach_main_database_read_only(
+    conn: sqlite3.Connection,
+    target: Path,
+) -> None:
+    main_db_uri = (
+        f"{db.db_path_for_target(target).resolve().as_uri()}?mode=ro"
+    )
+    conn.execute(f"ATTACH DATABASE ? AS {MAIN_DB_ALIAS}", (main_db_uri,))
+
+
+def repairable_embedding_path_groups(
+    conn: sqlite3.Connection,
+) -> tuple[OpenClipEmbeddingPathRepairGroup, ...]:
+    rows = conn.execute(
+        f"""
+        SELECT
+            image_embeddings.file_id,
+            image_embeddings.target_path AS stored_target_path,
+            image_embeddings.target_path_key AS stored_target_path_key,
+            {MAIN_DB_ALIAS}.files.target_path AS expected_target_path,
+            {MAIN_DB_ALIAS}.files.target_path_key AS expected_target_path_key,
+            {MAIN_DB_ALIAS}.files.sha256 AS expected_sha256,
+            {MAIN_DB_ALIAS}.files.size_bytes AS expected_size_bytes,
+            COUNT(*) AS row_count
+        FROM image_embeddings
+        JOIN {MAIN_DB_ALIAS}.files
+          ON {MAIN_DB_ALIAS}.files.id = image_embeddings.file_id
+        WHERE {MAIN_DB_ALIAS}.files.deleted_at IS NULL
+          AND image_embeddings.sha256 = {MAIN_DB_ALIAS}.files.sha256
+          AND (
+                image_embeddings.target_path
+                    <> {MAIN_DB_ALIAS}.files.target_path
+             OR image_embeddings.target_path_key
+                    <> {MAIN_DB_ALIAS}.files.target_path_key
+          )
+        GROUP BY
+            image_embeddings.file_id,
+            image_embeddings.target_path,
+            image_embeddings.target_path_key,
+            {MAIN_DB_ALIAS}.files.target_path,
+            {MAIN_DB_ALIAS}.files.target_path_key,
+            {MAIN_DB_ALIAS}.files.sha256,
+            {MAIN_DB_ALIAS}.files.size_bytes
+        ORDER BY image_embeddings.file_id, image_embeddings.target_path
+        """
+    )
+    return tuple(
+        OpenClipEmbeddingPathRepairGroup(
+            file_id=int(row["file_id"]),
+            stored_target_path=Path(str(row["stored_target_path"])),
+            stored_target_path_key=str(row["stored_target_path_key"]),
+            expected_target_path=Path(str(row["expected_target_path"])),
+            expected_target_path_key=str(row["expected_target_path_key"]),
+            expected_sha256=str(row["expected_sha256"]),
+            expected_size_bytes=int(row["expected_size_bytes"]),
+            row_count=int(row["row_count"]),
+        )
+        for row in rows
+    )
+
+
+def count_unrepairable_embedding_sha_rows(
+    conn: sqlite3.Connection,
+) -> int:
+    row = conn.execute(
+        f"""
+        SELECT COUNT(*)
+        FROM image_embeddings
+        JOIN {MAIN_DB_ALIAS}.files
+          ON {MAIN_DB_ALIAS}.files.id = image_embeddings.file_id
+        WHERE {MAIN_DB_ALIAS}.files.deleted_at IS NULL
+          AND image_embeddings.sha256 <> {MAIN_DB_ALIAS}.files.sha256
+        """
+    ).fetchone()
+    return int(row[0])
+
+
+def validate_repairable_embedding_files(
+    target: Path,
+    groups: tuple[OpenClipEmbeddingPathRepairGroup, ...],
+) -> None:
+    expected_by_file: dict[int, OpenClipEmbeddingPathRepairGroup] = {}
+    for group in groups:
+        previous = expected_by_file.setdefault(group.file_id, group)
+        if (
+            previous.expected_target_path != group.expected_target_path
+            or previous.expected_target_path_key
+            != group.expected_target_path_key
+            or previous.expected_sha256 != group.expected_sha256
+            or previous.expected_size_bytes != group.expected_size_bytes
+        ):
+            raise ValueError(
+                f"file #{group.file_id} har motstridende reparasjonsgrunnlag"
+            )
+
+    for group in expected_by_file.values():
+        relative_path = parse_collection_relative_path(
+            group.expected_target_path.as_posix()
+        )
+        try:
+            actual_sha256, actual_size = hash_stable_collection_file(
+                target,
+                relative_path,
+            )
+        except (CollectionFileHashError, OSError) as exc:
+            raise ValueError(
+                f"file #{group.file_id} kunne ikke hashes stabilt: {exc}"
+            ) from exc
+        if actual_size != group.expected_size_bytes:
+            raise ValueError(
+                f"file #{group.file_id} har feil størrelse på disk "
+                f"(database={group.expected_size_bytes}, disk={actual_size})"
+            )
+        if actual_sha256 != group.expected_sha256:
+            raise ValueError(
+                f"file #{group.file_id} har SHA-256-avvik mellom "
+                "hoveddatabasen og filen på disk"
+            )
+
+
+def update_repairable_embedding_paths(
+    conn: sqlite3.Connection,
+) -> int:
+    cursor = conn.execute(
+        f"""
+        UPDATE image_embeddings
+        SET
+            target_path = (
+                SELECT files.target_path
+                FROM {MAIN_DB_ALIAS}.files
+                WHERE files.id = image_embeddings.file_id
+            ),
+            target_path_key = (
+                SELECT files.target_path_key
+                FROM {MAIN_DB_ALIAS}.files
+                WHERE files.id = image_embeddings.file_id
+            )
+        WHERE EXISTS (
+            SELECT 1
+            FROM {MAIN_DB_ALIAS}.files
+            WHERE files.id = image_embeddings.file_id
+              AND files.deleted_at IS NULL
+              AND files.sha256 = image_embeddings.sha256
+              AND (
+                    files.target_path <> image_embeddings.target_path
+                 OR files.target_path_key
+                        <> image_embeddings.target_path_key
+              )
+        )
+        """
+    )
+    return cursor.rowcount if cursor.rowcount >= 0 else 0
 
 
 def validate_openclip_cleanup_schema(conn: sqlite3.Connection) -> None:

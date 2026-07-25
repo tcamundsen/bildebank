@@ -14,6 +14,7 @@ from bildebank.cli import main
 from bildebank.cli_image import print_image_search_progress
 from bildebank.config import AppConfig, OpenClipConfig
 from bildebank.db import init_database
+from bildebank.media import sha256_file
 from bildebank.openclip import (
     IMAGE_SCAN_RUN_META_KEY,
     connect_openclip_db,
@@ -35,6 +36,48 @@ def openclip_database_dump(path: Path) -> str:
         return "\n".join(conn.iterdump())
     finally:
         conn.close()
+
+
+def insert_openclip_embedding_path_mismatch(
+    target: Path,
+    *,
+    embedding_count: int = 1,
+    sidecar_sha256: str | None = None,
+) -> tuple[int, Path, str]:
+    relative_path = Path("2024/01/current.png")
+    media_path = target / relative_path
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"current image content")
+    expected_sha256 = sha256_file(media_path)
+    file_id = insert_test_file(
+        target,
+        relative_path.as_posix(),
+        sha256=expected_sha256,
+    )
+    conn = connect_openclip_db(target)
+    try:
+        for index in range(embedding_count):
+            conn.execute(
+                """
+                INSERT INTO image_embeddings(
+                    file_id, target_path, target_path_key, sha256,
+                    model_name, pretrained, embedding
+                ) VALUES(
+                    ?, '2023/12/old.png', '2023/12/old.png',
+                    ?, ?, 'test-weights', ?
+                )
+                """,
+                (
+                    file_id,
+                    sidecar_sha256 or expected_sha256,
+                    f"Test-Model-{index}",
+                    embedding_blob([1.0, 0.0]),
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return file_id, media_path, expected_sha256
 
 
 class ImageSearchCliTests(unittest.TestCase):
@@ -85,6 +128,26 @@ pretrained = "laion2b_s34b_b79k"
         self.assertIn("usage: bildebank cleanup-image-search [valg]", stdout)
         self.assertIn("--apply", stdout)
         self.assertIn("foreldreløse", stdout)
+        self.assertEqual(stderr_buffer.getvalue(), "")
+
+    def test_repair_image_search_paths_help_documents_apply(self) -> None:
+        stdout_buffer = StringIO()
+        stderr_buffer = StringIO()
+        with (
+            redirect_stdout(stdout_buffer),
+            redirect_stderr(stderr_buffer),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            main(["repair-image-search-paths", "-h"])
+
+        self.assertEqual(raised.exception.code, 0)
+        stdout = stdout_buffer.getvalue()
+        self.assertIn(
+            "usage: bildebank repair-image-search-paths [valg]",
+            stdout,
+        )
+        self.assertIn("--apply", stdout)
+        self.assertIn("SHA-256", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
 
     def test_openclip_database_schema_is_separate(self) -> None:
@@ -457,6 +520,197 @@ pretrained = "laion2b_s34b_b79k"
                 )
             finally:
                 conn.close()
+
+    def test_repair_image_search_paths_dry_run_then_apply_updates_exact_rows(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id, media_path, _expected_sha256 = (
+                insert_openclip_embedding_path_mismatch(
+                    target,
+                    embedding_count=2,
+                )
+            )
+            openclip_path = openclip_db_path(target)
+            main_path = db.db_path_for_target(target)
+            dump_before = openclip_database_dump(openclip_path)
+            main_before = main_path.read_bytes()
+            media_before = media_path.read_bytes()
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "repair-image-search-paths"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("reparerbare_embeddingrader=2", stdout)
+            self.assertIn("SHA-avvik_som_ikke_røres=0", stdout)
+            self.assertIn(
+                f"file #{file_id}\t2023/12/old.png -> "
+                "2024/01/current.png (2 rader)",
+                stdout,
+            )
+            self.assertIn("Dry-run: ingen endringer er gjort.", stdout)
+            self.assertIn(
+                "Ta et oppdatert snapshot før du bruker --apply.",
+                stdout,
+            )
+            self.assertIn(
+                "Kjør: bildebank repair-image-search-paths --apply",
+                stdout,
+            )
+            self.assertEqual(
+                openclip_database_dump(openclip_path),
+                dump_before,
+            )
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "repair-image-search-paths",
+                    "--apply",
+                ]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Oppdatert: image_embeddings=2", stdout)
+            conn = sqlite3.connect(openclip_path)
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT target_path, target_path_key
+                    FROM image_embeddings
+                    ORDER BY model_name
+                    """
+                ).fetchall()
+            finally:
+                conn.close()
+
+            self.assertEqual(
+                rows,
+                [
+                    ("2024/01/current.png", "2024/01/current.png"),
+                    ("2024/01/current.png", "2024/01/current.png"),
+                ],
+            )
+            self.assertEqual(main_path.read_bytes(), main_before)
+            self.assertEqual(media_path.read_bytes(), media_before)
+            self.assertFalse((target / LOCK_FILENAME).exists())
+
+    def test_repair_image_search_paths_refuses_embedding_sha_mismatch(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            insert_openclip_embedding_path_mismatch(
+                target,
+                sidecar_sha256="different-sha256",
+            )
+            openclip_path = openclip_db_path(target)
+            dump_before = openclip_database_dump(openclip_path)
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "repair-image-search-paths",
+                    "--apply",
+                ]
+            )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("reparerbare_embeddingrader=0", stdout)
+            self.assertIn("SHA-avvik_som_ikke_røres=1", stdout)
+            self.assertIn("Oppdatert: image_embeddings=0", stdout)
+            self.assertIn("SHA-256-avvik ble ikke reparert.", stdout)
+            self.assertEqual(
+                openclip_database_dump(openclip_path),
+                dump_before,
+            )
+
+    def test_repair_image_search_paths_refuses_changed_media_file(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            _file_id, media_path, _expected_sha256 = (
+                insert_openclip_embedding_path_mismatch(target)
+            )
+            openclip_path = openclip_db_path(target)
+            dump_before = openclip_database_dump(openclip_path)
+            media_path.write_bytes(b"changed after database registration")
+
+            code, stdout, stderr = capture_cli(
+                [
+                    "--target",
+                    str(target),
+                    "repair-image-search-paths",
+                    "--apply",
+                ]
+            )
+
+            self.assertEqual(code, 1, stdout)
+            self.assertEqual(stdout, "")
+            self.assertIn(
+                "OpenCLIP-stiene kan ikke repareres trygt.",
+                stderr,
+            )
+            self.assertIn("Ingen embedding-stier ble endret", stderr)
+            self.assertEqual(
+                openclip_database_dump(openclip_path),
+                dump_before,
+            )
+            self.assertFalse((target / LOCK_FILENAME).exists())
+
+    def test_repair_image_search_paths_refuses_pending_move_without_recovery(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id, media_path, expected_sha256 = (
+                insert_openclip_embedding_path_mismatch(target)
+            )
+            conn = db.connect(target)
+            try:
+                db.create_pending_file_move(
+                    conn,
+                    file_id=file_id,
+                    target_root=target,
+                    from_path=media_path,
+                    to_path=target / "deleted" / "2024/01/current.png",
+                    sha256=expected_sha256,
+                    operation="remove",
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            openclip_path = openclip_db_path(target)
+            dump_before = openclip_database_dump(openclip_path)
+
+            with patch(
+                "bildebank.cli.recover_pending_file_moves"
+            ) as recover:
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "repair-image-search-paths",
+                        "--apply",
+                    ]
+                )
+
+            self.assertEqual(code, 1, stdout)
+            recover.assert_not_called()
+            self.assertIn("uavklart(e) filflytting", stderr)
+            self.assertEqual(
+                openclip_database_dump(openclip_path),
+                dump_before,
+            )
 
     def test_cleanup_image_search_reports_missing_openclip_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

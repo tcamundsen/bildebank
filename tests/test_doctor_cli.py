@@ -2390,6 +2390,60 @@ enabled = true
         )
         self.assertEqual(database_after, database_before)
 
+    def test_doctor_recommends_dry_run_for_repairable_openclip_paths(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            active_id = insert_test_file(
+                target,
+                "2024/01/current.png",
+                sha256="same-sha",
+            )
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256,
+                        model_name, pretrained, embedding
+                    ) VALUES(
+                        ?, '2023/12/old.png', '2023/12/old.png',
+                        'same-sha', 'Test-Model', 'test-weights', ?
+                    )
+                    """,
+                    (active_id, embedding_blob([1.0, 0.0])),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with (
+                patch(
+                    "bildebank.cli_doctor.resolve_exiftool_path",
+                    side_effect=FileNotFoundError("mangler"),
+                ),
+                patch(
+                    "bildebank.cli_doctor.python_module_available",
+                    return_value=False,
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    ["--target", str(target), "doctor"]
+                )
+
+        self.assertEqual(code, 0, stderr)
+        self.assertIn(
+            "Råd: Kjør `bildebank repair-image-search-paths` for en "
+            "dry-run uten databaseendringer",
+            stdout,
+        )
+        self.assertNotIn(
+            "før OpenCLIP-data regenereres",
+            stdout,
+        )
+
     def test_doctor_rejects_incomplete_current_openclip_schema_read_only(
         self,
     ) -> None:
