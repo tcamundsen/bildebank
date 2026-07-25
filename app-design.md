@@ -107,6 +107,19 @@ og den flyttede filen skal verifiseres før operasjonen markeres fullført.
 Ved en uavklart filtilstand skal automatisk recovery ikke fjerne noen av
 filstiene som finnes; operasjonen skal stoppe for manuell avklaring.
 
+## Gjenoppretting av en manglende samlingsfil
+
+En databaseført fil som mangler på disk, skal ikke fjernes fra databasen eller
+erstattes automatisk. En egen reparasjon kan legge filen tilbake når brukeren
+oppgir en kopi utenfor samlingen og kopiens størrelse og SHA-256 er eksakt lik
+den konsistente identiteten i `files` og `file_sources`.
+
+Reparasjonen skal ha dry-run som standard og holde target-låsen ved apply.
+Kandidaten skal kopieres, aldri flyttes, og den eksterne kopien skal beholdes.
+Kandidaten skal først kopieres til en midlertidig fil og verifiseres før
+publisering. En eksisterende målsti skal aldri overskrives. Hoveddatabasen
+skal ikke endres, og en slettet filrad skal fortsatt peke under `deleted/`.
+
 ## Teknologi
 
 Programmet skal skrives i Python. Planen er at dette skal være et program

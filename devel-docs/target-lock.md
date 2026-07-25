@@ -90,6 +90,10 @@ opp under operasjonen skal aldri overskrives. `remove`, `undelete` og
 - `snapshot create` kjører entydig pending-move-recovery under sin egen
   target-lås før inventaret bygges. Manglende eller skadet hoveddatabase
   muteres ikke, slik at recovery-snapshot fortsatt kan opprettes.
+- `repair-missing-file` holder target-låsen fra før database- og
+  kandidatkontroll til en eventuell verifisert kopi er publisert og fsync-et.
+  Kommandoen utløser ikke pending-move-recovery; en uavklart flytting stopper
+  reparasjonen.
 - lazy lagring av avledet mediemetadata (bredde, høyde og orientering) tar
   låsen ved cache-miss før filen leses og holder den til cacheoppdateringen er
   committed. Cache-hit er skrivefri og tar ikke låsen.

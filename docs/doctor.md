@@ -53,6 +53,12 @@ Hvis bare filsti og stinøkkel i en OpenCLIP embedding er utdaterte, mens
 `file_id` og SHA-256 fortsatt stemmer, anbefaler doctor en dry-run med
 `bildebank repair-image-search-paths`. Doctor utfører aldri reparasjonen selv.
 
+Hvis en databaseført mediefil mangler, viser doctor fil-ID-en og et eksempel
+på dry-run med `bildebank repair-missing-file`. Kommandoen krever at du selv
+oppgir en gjenopprettet kopi utenfor samlingen. Kopien kan bare legges tilbake
+når størrelse og SHA-256 stemmer nøyaktig med både databaseposten og
+kildeinformasjonen. Doctor kopierer aldri filen selv.
+
 Før doctor vurderer de databaseførte filene, kontrollerer den at
 hoveddatabasen er hel og at databasereferanser ikke peker på rader som mangler.
 Hvis databasefilens integritet ikke kan bekreftes, hopper doctor over senere

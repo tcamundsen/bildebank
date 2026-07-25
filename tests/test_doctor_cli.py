@@ -1448,6 +1448,12 @@ enabled = true
             "INFO: file #1 (aktiv): 2024/01/missing.jpg",
             stdout,
         )
+        self.assertIn(
+            "bildebank repair-missing-file 1 "
+            '"C:\\sti\\til\\gjenopprettet-fil"',
+            stdout,
+        )
+        self.assertIn("uten --apply", stdout)
         self.assertIn("Undersøk filene og sikkerhetskopien", stdout)
 
     def test_doctor_reports_active_and_deleted_files_without_source_provenance(self) -> None:

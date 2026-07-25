@@ -45,6 +45,10 @@ er merket har jeg ikke sett over ennå.
 - [`cleanup-pending-deletes`](cleanup-pending-deletes.md) **`vindu`**
 - [`list-removed`](list-removed.md) **`web`**
 
+## Reparere
+
+- [`repair-missing-file`](repair-missing-file.md) **`cli`**
+
 ## Programmet
 
 - [`where-is`](where-is.md) **`cli`**

@@ -1665,6 +1665,12 @@ def doctor_check_files_on_disk(target: Path) -> None:
                 f"file #{file_id} ({state}): {target_path.as_posix()}"
             )
         doctor_report_omitted_details(len(missing))
+        first_file_id = missing[0][0]
+        doctor_advice(
+            "Hvis du har en gjenopprettet kopi, kontroller den først med "
+            f'`bildebank repair-missing-file {first_file_id} '
+            '"C:\\sti\\til\\gjenopprettet-fil"` uten --apply.'
+        )
 
     if not_regular:
         doctor_error(

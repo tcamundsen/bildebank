@@ -45,9 +45,10 @@ from .importer import (
     validate_source_target,
 )
 from .html_export import export_html
+from .manual_dates import date_range_from_uncertainty
 from .media import explain_date, inspect_metadata
 from .media_cache import MediaMetadataCache, cached_image_dimensions
-from .manual_dates import date_range_from_uncertainty
+from .missing_file_repair import repair_missing_file
 from .openclip import openclip_db_path
 from .platform_guard import validate_collection_platform
 from .pending_deletes import cleanup_pending_deletes, list_pending_deletes
@@ -821,6 +822,36 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Oppdater reparerbare target_path- og target_path_key-felt.",
     )
+    repair_missing_file_parser = add_command(
+        subparsers,
+        "repair-missing-file",
+        usage=(
+            "bildebank repair-missing-file [valg] "
+            "fil-id gjenopprettet-fil"
+        ),
+        help="Legg tilbake en manglende databaseført fil fra en verifisert kopi",
+        description=(
+            "Kontroller en brukeroppgitt kopi mot databaseført størrelse og "
+            "SHA-256, og legg den tilbake uten å overskrive en fil."
+        ),
+    )
+    repair_missing_file_parser.add_argument(
+        "file_id",
+        metavar="fil-id",
+        type=positive_int_arg,
+        help="ID-en doctor viser som file #nummer.",
+    )
+    repair_missing_file_parser.add_argument(
+        "candidate_path",
+        metavar="gjenopprettet-fil",
+        type=Path,
+        help="En gjenopprettet kopi som ligger utenfor bildesamlingen.",
+    )
+    repair_missing_file_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Kopier filen inn etter en ny full kontroll.",
+    )
     run_server_parser = add_command(
         subparsers,
         "run-server",
@@ -1172,6 +1203,7 @@ TARGET_COMMANDS = {
     "run-server",
     "check-source",
     "cleanup-pending-deletes",
+    "repair-missing-file",
 }
 
 IMAGE_COMMANDS = {
@@ -1225,7 +1257,11 @@ def run(args: argparse.Namespace) -> int:
             migrate_legacy=False,
         ).face_recognition
         recover_pending_file_moves(target, face_config=face_config)
-    if args.command not in {"check-source", "snapshot"}:
+    if args.command not in {
+        "check-source",
+        "repair-missing-file",
+        "snapshot",
+    }:
         record_target_best_effort(program_repo_root(), target)
 
     if args.command in TARGET_COMMANDS or (
@@ -1344,6 +1380,7 @@ def should_recover_pending_file_moves(args: argparse.Namespace) -> bool:
         "check-source",
         "migrate",
         "repair-image-search-paths",
+        "repair-missing-file",
     }:
         return False
     if args.command == "run-server" and (args.read_only or args.lan_share or args.slideshow):
@@ -1395,6 +1432,14 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
             limit=args.limit,
         )
 
+    if args.command == "repair-missing-file":
+        return run_repair_missing_file(
+            target,
+            file_id=args.file_id,
+            candidate_path=args.candidate_path,
+            apply=args.apply,
+        )
+
     if args.command == "import":
         return run_named_import_dry_run(target, args)
 
@@ -1408,6 +1453,39 @@ def run_target_command(args: argparse.Namespace, target: Path) -> int:
         accept_deleted=args.accept_deleted,
         path_adapter=existing_path_arg,
     )
+
+
+def run_repair_missing_file(
+    target: Path,
+    *,
+    file_id: int,
+    candidate_path: Path,
+    apply: bool,
+) -> int:
+    result = repair_missing_file(
+        target,
+        file_id=file_id,
+        candidate_path=existing_path_arg(candidate_path),
+        apply=apply,
+    )
+    plan = result.plan
+    print(f"Databasepost: file #{plan.file_id} ({plan.state})")
+    print(f"Mål i samlingen: {plan.target_path.as_posix()}")
+    print(f"Gjenopprettet kopi: {plan.candidate_path}")
+    print(f"Størrelse: {format_bytes(plan.size_bytes)} ({plan.size_bytes} byte)")
+    print(f"SHA-256: {plan.sha256}")
+    if not result.applied:
+        print("Dry-run: kopien stemmer eksakt. Ingen endringer er gjort.")
+        print("Ta et oppdatert snapshot før du bruker --apply.")
+        print(
+            "Kjør for å kopiere filen inn: "
+            f'bildebank repair-missing-file {plan.file_id} '
+            f'"{plan.candidate_path}" --apply'
+        )
+        return 0
+    print(f"Gjenopprettet fil: {target / plan.target_path}")
+    print("Den brukeroppgitte kopien utenfor samlingen er beholdt.")
+    return 0
 
 
 def run_file_lifecycle_command(

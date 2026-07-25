@@ -219,3 +219,21 @@ synkronisere `image_embeddings.target_path` og `target_path_key` når:
 Kommandoen endrer ikke embedding, søkeresultater, hoveddatabase eller
 mediefiler. Apply kjører under target-lås, beregner planen på nytt og oppdaterer
 alle kvalifiserte rader i én transaksjon. SHA-avvik blir stående urørt.
+
+Den neste smale reparasjonen er `repair-missing-file`. Den gjelder én
+eksisterende `files`-rad og én brukeroppgitt ekstern kopi om gangen.
+
+- Dry-run er standard, og `doctor` viser bare hvordan dry-run startes.
+- Hoveddatabasen må ha gjeldende schema og bestå full helsekontroll.
+- Valgt filrad må ha en gyldig samlingssti og konsistent
+  `file_sources`-proveniens.
+- Målstien må mangle, og ingen `pending_file_moves` eller konflikt på samme
+  sti i `pending_file_deletes` kan være uavklart.
+- Kandidaten må være en stabil vanlig fil uten lenker, ligge utenfor samlingen
+  og ha eksakt databaseført størrelse og SHA-256.
+- Apply holder target-låsen, beregner planen på nytt, kopierer til en
+  midlertidig fil i målmappen, verifiserer kopien og publiserer uten
+  overskriving.
+- Den eksterne kopien beholdes, og hoveddatabasen endres ikke.
+- En slettet filrad gjenopprettes til sin databaseførte sti under `deleted`;
+  kommandoen gjør den ikke aktiv.
