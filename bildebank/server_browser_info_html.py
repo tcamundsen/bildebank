@@ -30,11 +30,30 @@ def manual_h3_cell_name(target: Path, h3_cell: str, *, conn: sqlite3.Connection 
     finally:
         if owned_conn:
             conn.close()
-def image_info_content_html(target: Path, item: Any, *, read_only: bool = False) -> str:
-    return "\n".join(image_info_rows(target, item, read_only=read_only))
+def image_info_content_html(
+    target: Path,
+    item: Any,
+    *,
+    read_only: bool = False,
+    hide_local_paths: bool = False,
+) -> str:
+    return "\n".join(
+        image_info_rows(
+            target,
+            item,
+            read_only=read_only,
+            hide_local_paths=hide_local_paths,
+        )
+    )
 
 
-def image_info_rows(target: Path, item: Any, *, read_only: bool = False) -> list[str]:
+def image_info_rows(
+    target: Path,
+    item: Any,
+    *,
+    read_only: bool = False,
+    hide_local_paths: bool = False,
+) -> list[str]:
     target_path = Path(str(item["target_path"]))
     absolute_path = db.absolute_target_path(target, target_path)
     dimensions = cached_image_dimensions(target, absolute_path) if not read_only else cached_item_dimensions(item)
@@ -49,7 +68,11 @@ def image_info_rows(target: Path, item: Any, *, read_only: bool = False) -> list
         rows.append(info_row_html("Opprinnelig dato", f"{item['taken_date'] or '-'} ({date_source_text(str(item['date_source'] or ''))})"))
         if item["manual_date_note"]:
             rows.append(info_row_html("Datonotat", str(item["manual_date_note"])))
-    sources = image_source_rows(target, target_path)
+    sources = image_source_rows(
+        target,
+        target_path,
+        hide_local_paths=hide_local_paths,
+    )
     if sources:
         rows.append(info_row_html("Kilder", "\n\n".join(sources), multiline=True))
     else:
@@ -281,16 +304,27 @@ def optional_item_value(item: Any, key: str) -> Any | None:
         return None
 
 
-def image_source_rows(target: Path, target_path: Path) -> list[str]:
+def image_source_rows(
+    target: Path,
+    target_path: Path,
+    *,
+    hide_local_paths: bool = False,
+) -> list[str]:
     conn = db.connect(target)
     try:
         rows = db.file_sources_by_target_path(conn, target, db.absolute_target_path(target, target_path))
     finally:
         conn.close()
-    result = []
+    result: list[str] = []
     for row in rows:
-        source_name = str(row["source_name"] or row["source_root"] or f"Kilde #{row['source_id']}")
-        result.append(f"{source_name}: {row['source_path']}")
+        source_name = str(
+            row["source_name"]
+            or (None if hide_local_paths else row["source_root"])
+            or f"Kilde #{row['source_id']}"
+        )
+        value = source_name if hide_local_paths else f"{source_name}: {row['source_path']}"
+        if value not in result:
+            result.append(value)
     return result
 
 

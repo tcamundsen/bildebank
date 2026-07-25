@@ -1249,6 +1249,8 @@ class ServerBrowserCliTests(unittest.TestCase):
             handler.server = SimpleNamespace(
                 target=target,
                 config=AppConfig(face_recognition=FaceRecognitionConfig(enabled=True)),
+                lan_share=False,
+                read_only=True,
             )
 
             def fake_respond_json(
@@ -1259,13 +1261,20 @@ class ServerBrowserCliTests(unittest.TestCase):
 
             handler.respond_json = fake_respond_json  # type: ignore[method-assign]
             handler.respond_item_info("file_id=1")
+            local_html = str(response["content"]["html"])
+            handler.server.lan_share = True
+            handler.respond_item_info("file_id=1")
+            lan_share_html = str(response["content"]["html"])
 
         self.assertEqual(response["status"], HTTPStatus.OK)
         content = response["content"]
         assert isinstance(content, dict)
         self.assertIs(content["ok"], True)
-        self.assertIn("<dt>Filnavn</dt>", str(content["html"]))
-        self.assertIn("IMG_20240102.png", str(content["html"]))
+        self.assertIn("<dt>Filnavn</dt>", lan_share_html)
+        self.assertIn("IMG_20240102.png", lan_share_html)
+        self.assertIn(str(source / "IMG_20240102.png"), local_html)
+        self.assertNotIn(str(source / "IMG_20240102.png"), lan_share_html)
+        self.assertIn(source.name, lan_share_html)
 
     def test_run_server_item_info_api_rejects_unknown_and_deleted_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

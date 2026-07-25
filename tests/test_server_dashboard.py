@@ -206,13 +206,29 @@ class ServerDashboardTests(unittest.TestCase):
                 shell_page_html=lambda title, content, **kwargs: content,
                 program_root=program_root,
             )
+            lan_share_body = dashboard_page_html(
+                target,
+                AppConfig(),
+                shell_page_html=lambda title, content, **kwargs: content,
+                program_root=program_root,
+                hide_local_paths=True,
+            )
 
         for repository_id in repository_ids:
             self.assertIn(repository_id[:8], body)
+            self.assertIn(repository_id[:8], lan_share_body)
         self.assertEqual(body.count(str(repository.resolve())), 3)
+        self.assertNotIn(str(repository.resolve()), lan_share_body)
+        self.assertNotIn(repository.name, lan_share_body)
         self.assertIn("complete – uten kjente avvik", body)
         self.assertIn("degraded – publisert med problemer", body)
         self.assertIn("recovery – kan ikke brukes som vanlig hel restore", body)
+        self.assertIn("complete – uten kjente avvik", lan_share_body)
+        self.assertIn("degraded – publisert med problemer", lan_share_body)
+        self.assertIn(
+            "recovery – kan ikke brukes som vanlig hel restore",
+            lan_share_body,
+        )
 
     def test_dashboard_does_not_migrate_legacy_program_database(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -333,3 +349,20 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertIn('<header class="browser-header">', body)
         self.assertIn('href="/dashboard">Dashboard</a>', body)
         self.assertIn("Dashboard", body)
+
+    def test_routed_dashboard_forwards_lan_share_path_policy(self) -> None:
+        server = SimpleNamespace(
+            target=Path("target"),
+            config=AppConfig(),
+            face_enabled=True,
+            openclip_enabled=True,
+            lan_share=True,
+        )
+        with patch(
+            "bildebank.server_pages.server_dashboard.dashboard_page_html",
+            return_value="<h1>Dashboard</h1>",
+        ) as render_dashboard:
+            body = routed_dashboard_page_html(server)
+
+        self.assertEqual(body, "<h1>Dashboard</h1>")
+        self.assertTrue(render_dashboard.call_args.kwargs["hide_local_paths"])

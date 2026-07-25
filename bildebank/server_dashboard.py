@@ -61,6 +61,7 @@ def dashboard_page_html(
     face_enabled: bool = True,
     openclip_enabled: bool = True,
     program_root: Path | None = None,
+    hide_local_paths: bool = False,
 ) -> str:
     summary = dashboard_summary(target, program_root=program_root)
     actions = dashboard_actions(summary)
@@ -82,7 +83,7 @@ def dashboard_page_html(
         <section class="dashboard-grid" aria-label="Status">
           {overview_section_html(summary)}
           {control_section_html(summary)}
-          {snapshot_repositories_section_html(summary)}
+          {snapshot_repositories_section_html(summary, hide_local_paths=hide_local_paths)}
           {coverage_section_html(summary)}
         </section>
         """,
@@ -361,12 +362,22 @@ def dashboard_snapshot_repositories(
         return ()
 
 
-def snapshot_repositories_section_html(summary: DashboardSummary) -> str:
+def snapshot_repositories_section_html(
+    summary: DashboardSummary,
+    *,
+    hide_local_paths: bool = False,
+) -> str:
     if summary.snapshot_repositories:
         rows = "".join(
             info_row_html(
-                snapshot_repository_label(repository),
-                snapshot_repository_status_text(repository),
+                snapshot_repository_label(
+                    repository,
+                    hide_local_paths=hide_local_paths,
+                ),
+                snapshot_repository_status_text(
+                    repository,
+                    hide_local_paths=hide_local_paths,
+                ),
             )
             for repository in summary.snapshot_repositories
         )
@@ -386,21 +397,31 @@ def snapshot_repositories_section_html(summary: DashboardSummary) -> str:
     )
 
 
-def snapshot_repository_label(repository: KnownSnapshotRepository) -> str:
+def snapshot_repository_label(
+    repository: KnownSnapshotRepository,
+    *,
+    hide_local_paths: bool = False,
+) -> str:
+    if hide_local_paths:
+        return f"Repository {repository.repository_id[:8]}"
     folder_name = repository.path.name or str(repository.path)
     return f"{folder_name} ({repository.repository_id[:8]})"
 
 
-def snapshot_repository_status_text(repository: KnownSnapshotRepository) -> str:
+def snapshot_repository_status_text(
+    repository: KnownSnapshotRepository,
+    *,
+    hide_local_paths: bool = False,
+) -> str:
     status = {
         "complete": "complete – uten kjente avvik",
         "degraded": "degraded – publisert med problemer",
         "recovery": "recovery – kan ikke brukes som vanlig hel restore",
     }.get(repository.last_snapshot_status, repository.last_snapshot_status)
-    return (
-        f"{status}; sist publisert {format_snapshot_time(repository.last_snapshot_at)}; "
-        f"{repository.path}"
-    )
+    result = f"{status}; sist publisert {format_snapshot_time(repository.last_snapshot_at)}"
+    if not hide_local_paths:
+        result += f"; {repository.path}"
+    return result
 
 
 def format_snapshot_time(value: str) -> str:

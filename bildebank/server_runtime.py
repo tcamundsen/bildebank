@@ -104,6 +104,7 @@ class BildebankServer(ThreadingHTTPServer):
         config: AppConfig,
         preview_images: bool = False,
         read_only: bool = False,
+        lan_share: bool = False,
         slideshow: Slideshow | None = None,
     ) -> None:
         super().__init__(address, server_handler.BildebankRequestHandler)
@@ -111,6 +112,7 @@ class BildebankServer(ThreadingHTTPServer):
         self.config = config
         self.preview_images = preview_images
         self.read_only = read_only
+        self.lan_share = lan_share
         self.slideshow = slideshow
         self.csrf_token = secrets.token_urlsafe(32)
         self.search_cache = OpenClipSearchCache(config)
@@ -364,6 +366,7 @@ def run_server(
     allow_remote: bool = False,
     preview_images: bool = False,
     read_only: bool = False,
+    lan_share: bool = False,
     slideshow_delay_seconds: int | None = None,
     slideshow_filter: str | None = None,
     ready: Callable[[str], None] | None = None,
@@ -395,6 +398,7 @@ def run_server(
         config,
         preview_images=preview_images,
         read_only=read_only,
+        lan_share=lan_share,
         slideshow=slideshow,
     )
     actual_host, actual_port = server.server_address

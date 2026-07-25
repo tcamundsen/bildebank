@@ -305,8 +305,11 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertTrue(run_local_server.call_args.kwargs["allow_remote"])
         self.assertTrue(run_local_server.call_args.kwargs["preview_images"])
         self.assertTrue(run_local_server.call_args.kwargs["read_only"])
+        self.assertTrue(run_local_server.call_args.kwargs["lan_share"])
         output = stdout.getvalue()
         self.assertIn("LAN-share er aktiv", output)
+        self.assertIn("Lokale kilde- og snapshotbaner skjules", output)
+        self.assertIn("nøyaktig GPS", output)
         self.assertIn("Serveren kan nås av alle på samme LAN", output)
         self.assertIn("Ikke bruk --lan-share på offentlige nettverk", output)
         self.assertIn("http://192.168.86.11:8765/", output)
@@ -389,6 +392,7 @@ class ServerCoreCliTests(unittest.TestCase):
             AppConfig(),
             preview_images=False,
             read_only=False,
+            lan_share=False,
             slideshow=None,
         )
         self.assertIn("ADVARSEL", stderr.getvalue())
@@ -417,6 +421,44 @@ class ServerCoreCliTests(unittest.TestCase):
             AppConfig(),
             preview_images=False,
             read_only=True,
+            lan_share=False,
+            slideshow=None,
+        )
+
+    def test_run_server_forwards_lan_share_profile(self) -> None:
+        fake_server = SimpleNamespace(
+            server_address=("0.0.0.0", 8765),
+            serve_forever=lambda: None,
+            server_close=lambda: None,
+        )
+        with (
+            patch(
+                "bildebank.server_runtime.db.prepare_database_read_only"
+            ) as prepare_database_read_only,
+            patch(
+                "bildebank.server_runtime.BildebankServer",
+                return_value=fake_server,
+            ) as server_class,
+            redirect_stderr(StringIO()),
+        ):
+            run_http_server(
+                Path("."),
+                AppConfig(),
+                host="0.0.0.0",
+                allow_remote=True,
+                preview_images=True,
+                read_only=True,
+                lan_share=True,
+            )
+
+        prepare_database_read_only.assert_called_once_with(Path("."))
+        server_class.assert_called_once_with(
+            ("0.0.0.0", 8765),
+            Path("."),
+            AppConfig(),
+            preview_images=True,
+            read_only=True,
+            lan_share=True,
             slideshow=None,
         )
 

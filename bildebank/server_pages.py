@@ -112,6 +112,7 @@ def dashboard_page_html(server: Any) -> str:
         shell_page_html=shell_page_html,
         face_enabled=server.face_enabled,
         openclip_enabled=server.openclip_enabled,
+        hide_local_paths=getattr(server, "lan_share", False),
     )
 
 

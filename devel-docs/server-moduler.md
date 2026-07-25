@@ -20,7 +20,9 @@ server
   Read-only-oppstart validerer hoveddatabasen gjennom en read-only-tilkobling.
   CLI-laget leser samtidig config uten legacy-migrering og hopper over
   oppdatering av lokal programstatus. Dette gjelder også LAN-share og
-  slideshow.
+  slideshow. Den uttrykkelige LAN-share-profilen følger med som servertilstand
+  og brukes av visningslaget til å utelate lokale kilde- og
+  snapshot-repositorystier. Vanlig lokal read-only påvirkes ikke.
 - Dashboard og maintenance-status bruker read-only-tilkoblinger uavhengig av
   servermodus. Dashboardets snapshotoversikt sikrer eller migrerer ikke lokal
   programdatabase. OpenCLIP- og InsightFace-status krever gjeldende eksplisitt

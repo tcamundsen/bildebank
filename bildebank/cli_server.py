@@ -45,6 +45,7 @@ def run_server_command(
         allow_remote=allow_remote,
         preview_images=preview_images,
         read_only=read_only,
+        lan_share=lan_share,
         slideshow_delay_seconds=slideshow_delay_seconds,
         slideshow_filter=slideshow_filter,
         ready=on_ready,
@@ -54,6 +55,10 @@ def run_server_command(
 
 def print_lan_share_warning(port: int) -> None:
     print("LAN-share er aktiv: read-only, preview-bilder og tilgang fra andre enheter på LAN.")
+    print(
+        "Lokale kilde- og snapshotbaner skjules. Originalbilder, nøyaktig GPS, "
+        "kommentarer, personer og tagger er fortsatt tilgjengelige."
+    )
     print(
         "ADVARSEL: Serveren kan nås av alle på samme LAN. "
         "Bildene kan dermed bli eksponert til alle på samme nettverk."

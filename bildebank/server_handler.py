@@ -1051,6 +1051,7 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     self.server.target,
                     item,
                     read_only=getattr(self.server, "read_only", False),
+                    hide_local_paths=getattr(self.server, "lan_share", False),
                 ),
             }
         )

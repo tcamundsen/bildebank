@@ -349,6 +349,15 @@ den lokale programdatabasen og åpne hoveddatabasen read-only for å kontrollere
 gjeldende schema. Dette gjelder også `--lan-share` og `--slideshow`. Vanlig
 skrivbar server beholder den ordinære databaseforberedelsen.
 
+`--lan-share` er en egen presentasjonsprofil i tillegg til å være read-only.
+Den deler aktive originalfiler, nøyaktig GPS, kommentarer, personer og tagger,
+men skal ikke vise maskinspesifikke `sources.path`,
+`file_sources.source_path` eller lokale snapshot-repositorystier. Kildenavn og
+snapshotstatus kan vises. Denne redigeringen gjelder den uttrykkelige
+LAN-share-profilen; vanlig lokal read-only og en manuelt sammensatt
+`--host`/`--allow-remote`-modus beholder den ordinære detaljvisningen.
+Slideshow beholder sin strengere, separate rutegrense.
+
 Dashboard- og maintenance-status er rene statusoppslag, også når den vanlige
 serveren er skrivbar. De skal åpne hoveddatabasen og eksisterende OpenCLIP- og
 InsightFace-databaser read-only. Dashboardet skal ikke opprette eller migrere

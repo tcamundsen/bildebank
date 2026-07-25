@@ -887,7 +887,10 @@ def build_parser() -> argparse.ArgumentParser:
     run_server_parser.add_argument(
         "--lan-share",
         action="store_true",
-        help="Del read-only på privat LAN med preview-bilder. Avviser --host, men kan brukes med --port.",
+        help=(
+            "Del read-only på privat LAN med preview-bilder og skjul lokale stier. "
+            "Avviser --host, men kan brukes med --port."
+        ),
     )
     run_server_parser.add_argument(
         "--allow-remote",
