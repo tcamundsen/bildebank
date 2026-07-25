@@ -64,10 +64,18 @@ def index_html(server: Any, *, message: str = "") -> str:
     )
 
 
-def search_start_html(server: Any, *, message: str = "") -> str:
+def search_start_html(
+    server: Any,
+    *,
+    query: str = "",
+    limit: int = server_search.DEFAULT_SEARCH_LIMIT,
+    message: str = "",
+) -> str:
     return server_search.search_start_html(
         server.config.openclip,
         shell_page_html=shell_page_html,
+        query=query,
+        limit=limit,
         model_loaded=server.search_cache.loaded,
         message=message,
         face_enabled=server.face_enabled,

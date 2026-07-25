@@ -266,6 +266,8 @@ def search_start_html(
     openclip_config: OpenClipConfig,
     *,
     shell_page_html: ShellPageRenderer,
+    query: str = "",
+    limit: int = DEFAULT_SEARCH_LIMIT,
     model_loaded: bool = False,
     message: str = "",
     face_enabled: bool = True,
@@ -277,7 +279,7 @@ def search_start_html(
         <h1>Bildesøk</h1>
         <p class="meta">OpenCLIP {html.escape(openclip_config.model_name)} ({html.escape(openclip_config.pretrained)})</p>
         {message_html(message)}
-        {search_form("", model_loaded=model_loaded)}
+        {search_form(query, limit, model_loaded=model_loaded)}
         """,
         face_enabled=face_enabled,
         openclip_enabled=openclip_enabled,
@@ -321,7 +323,7 @@ def search_form(query: str, limit: int = DEFAULT_SEARCH_LIMIT, *, model_loaded: 
     model_status = "true" if model_loaded else "false"
     return f"""
     <p class="search-loading" hidden data-search-loading>Laster bildesøkmodellen. Dette kan ta 10-20 sekunder...</p>
-    <form action="/search" method="get" class="search" data-search-form data-model-loaded="{model_status}">
+    <form action="/search" method="post" class="search" data-search-form data-model-loaded="{model_status}">
       <input name="q" value="{html.escape(query)}" placeholder="a photo of a beach" autofocus>
       <input name="limit" value="{limit}" inputmode="numeric" aria-label="Antall treff">
       <button type="submit">Søk</button>

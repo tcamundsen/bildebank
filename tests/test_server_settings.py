@@ -126,6 +126,10 @@ class ServerSettingsTests(unittest.TestCase):
         self.assertIn("bildebank ${payload.name}", SERVER_JS)
         self.assertIn("bilder trenger ${payload.name}", SERVER_JS)
         self.assertIn("/api/maintenance/thumbnails", SERVER_JS)
+        self.assertIn(
+            'csrfFetch("/api/maintenance/thumbnails", {method: "POST"})',
+            SERVER_JS,
+        )
         self.assertIn("Teller thumbnails...", SERVER_JS)
         self.assertIn("data-thumbnail-coverage-status", SERVER_JS)
         self.assertIn('Klikk "Lag miniatyrbilder" i Bildebank-vinduet.', SERVER_JS)
@@ -367,6 +371,41 @@ class ServerSettingsTests(unittest.TestCase):
             response["content"],
             {"ok": True, "name": "thumbnails", "total": 2, "current": 1, "missing": 1},
         )
+
+    def test_run_server_thumbnail_maintenance_requires_csrf_protected_post(
+        self,
+    ) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        handler.path = "/api/maintenance/thumbnails"
+        handler.server = SimpleNamespace(
+            read_only=False,
+            csrf_token="test-token",
+        )
+        response: dict[str, object] = {}
+
+        def fake_respond_json(
+            content: dict[str, object],
+            *,
+            status: HTTPStatus = HTTPStatus.OK,
+        ) -> None:
+            response["content"] = content
+            response["status"] = status
+
+        handler.respond_json = fake_respond_json  # type: ignore[method-assign]
+        BildebankRequestHandler.do_GET(handler)
+
+        self.assertEqual(response["status"], HTTPStatus.METHOD_NOT_ALLOWED)
+
+        handler.headers = {"X-CSRF-Token": "test-token"}
+        handler.rfile = BytesIO()
+        with patch.object(
+            BildebankRequestHandler,
+            "respond_thumbnail_maintenance",
+            autospec=True,
+        ) as respond_thumbnail_maintenance:
+            BildebankRequestHandler.do_POST(handler)
+
+        respond_thumbnail_maintenance.assert_called_once_with(handler)
 
     def test_run_server_settings_image_scan_status_counts_current_embeddings(
         self,

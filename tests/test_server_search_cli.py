@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import unittest
 from http import HTTPStatus
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -42,6 +43,7 @@ class ServerSearchCliTests(unittest.TestCase):
         self.assertIn("Laster bildesøkmodellen", body)
         self.assertIn('data-model-loaded="false"', body)
         self.assertIn("data-search-loading", body)
+        self.assertIn('<form action="/search" method="post"', body)
 
     def test_run_server_search_results_marks_model_loaded(self) -> None:
         server = SimpleNamespace(
@@ -75,12 +77,52 @@ class ServerSearchCliTests(unittest.TestCase):
                 self.body = content
                 self.status = status
 
+            def respond_search_preload(self) -> None:
+                BildebankRequestHandler.respond_search_preload(self)  # type: ignore[arg-type]
+
         handler = FakeHandler()
-        BildebankRequestHandler.respond_search_preload(handler)  # type: ignore[arg-type]
+        handler.path = "/api/search-preload"
+        handler.headers = {"X-CSRF-Token": "test-token"}
+        handler.rfile = BytesIO()
+        handler.server.csrf_token = "test-token"
+        BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
 
         self.assertTrue(handler.server.search_cache.started)
         self.assertEqual(handler.status, HTTPStatus.OK)
         self.assertEqual(handler.body, {"ok": True, "status": "loading", "loaded": False})
+
+    def test_run_server_search_preload_get_does_not_start_model_load(self) -> None:
+        class FakeSearchCache:
+            loaded = False
+            started = False
+
+            def preload_model_async(self) -> str:
+                self.started = True
+                return "loading"
+
+        class FakeHandler:
+            path = "/api/search-preload"
+            server = SimpleNamespace(
+                read_only=False,
+                openclip_enabled=True,
+                search_cache=FakeSearchCache(),
+            )
+            body: dict[str, object] | None = None
+            status = HTTPStatus.OK
+
+            def respond_json(self, content: dict[str, object], *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                self.body = content
+                self.status = status
+
+        handler = FakeHandler()
+        BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
+
+        self.assertFalse(handler.server.search_cache.started)
+        self.assertEqual(handler.status, HTTPStatus.METHOD_NOT_ALLOWED)
+        self.assertEqual(
+            handler.body,
+            {"ok": False, "error": "Endepunktet krever POST."},
+        )
 
     def test_run_server_image_search_stores_relative_result_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -147,19 +189,63 @@ class ServerSearchCliTests(unittest.TestCase):
             with self.assertRaises(TargetLockError):
                 search_server_images(server, query="test", limit=10)
 
-    def test_run_server_search_route_reports_target_lock_conflict(self) -> None:
+    def test_run_server_search_get_with_query_only_renders_post_form(self) -> None:
+        class FakeSearchCache:
+            loaded = False
+
+            def preload_model_async(self) -> str:
+                raise AssertionError("GET skal ikke laste modellen")
+
+        class FakeHandler:
+            path = "/search?q=test&limit=7"
+            server = SimpleNamespace(
+                read_only=False,
+                config=AppConfig(openclip=OpenClipConfig(enabled=True)),
+                face_enabled=True,
+                openclip_enabled=True,
+                search_cache=FakeSearchCache(),
+            )
+            body = ""
+            status: HTTPStatus | None = None
+
+            def respond_html(self, content: str, *, status: HTTPStatus = HTTPStatus.OK) -> None:
+                self.body = content
+                self.status = status
+
+        handler = FakeHandler()
+        with patch(
+            "bildebank.server_handler.search_server_images",
+            side_effect=AssertionError("GET skal ikke kjøre søk"),
+        ):
+            BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
+
+        self.assertEqual(handler.status, HTTPStatus.OK)
+        self.assertIn('method="post"', handler.body)
+        self.assertIn('name="q" value="test"', handler.body)
+        self.assertIn('name="limit" value="7"', handler.body)
+        self.assertIn("Trykk Søk for å kjøre dette søket.", handler.body)
+
+    def test_run_server_search_post_reports_target_lock_conflict(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
             target.mkdir()
             (target / LOCK_FILENAME).write_text("command=image-scan\n", encoding="utf-8")
+            encoded = b"q=test&limit=100&csrf_token=test-token"
 
             class FakeHandler:
-                path = "/search?q=test"
+                path = "/search"
+                headers = {
+                    "Content-Length": str(len(encoded)),
+                    "Content-Type": "application/x-www-form-urlencoded",
+                }
+                rfile = BytesIO(encoded)
                 server = SimpleNamespace(
                     target=target,
                     config=AppConfig(openclip=OpenClipConfig(enabled=True)),
                     face_enabled=True,
                     openclip_enabled=True,
+                    read_only=False,
+                    csrf_token="test-token",
                     search_cache=OpenClipSearchCache(AppConfig(openclip=OpenClipConfig(enabled=True))),
                 )
                 body = ""
@@ -170,7 +256,7 @@ class ServerSearchCliTests(unittest.TestCase):
                     self.status = status
 
             handler = FakeHandler()
-            BildebankRequestHandler.do_GET(handler)  # type: ignore[arg-type]
+            BildebankRequestHandler.do_POST(handler)  # type: ignore[arg-type]
 
         self.assertEqual(handler.status, HTTPStatus.CONFLICT)
         self.assertIn("Bildesamlingen er låst", handler.body)

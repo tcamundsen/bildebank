@@ -163,7 +163,7 @@
     countThumbnailsButton.textContent = "Teller thumbnails...";
     if (status) status.textContent = "Teller thumbnails...";
     try {
-      const response = await csrfFetch("/api/maintenance/thumbnails");
+      const response = await csrfFetch("/api/maintenance/thumbnails", {method: "POST"});
       const payload = await response.json();
       if (!response.ok || !payload.ok) throw new Error(payload.error || "Kunne ikke telle thumbnails.");
       if (current) current.textContent = String(payload.current);
@@ -831,7 +831,7 @@
   function preloadSearchModel() {
     if (searchPreloadStarted) return;
     searchPreloadStarted = true;
-    fetch("/api/search-preload", {keepalive: true}).catch(() => {});
+    csrfFetch("/api/search-preload", {method: "POST", keepalive: true}).catch(() => {});
   }
   document.querySelectorAll("[data-search-preload]").forEach(link => {
     link.addEventListener("pointerdown", preloadSearchModel);

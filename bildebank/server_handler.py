@@ -22,11 +22,11 @@ from .server_pages import (
     dashboard_page_html,
     error_html,
     h3_cells_page_html,
-    index_html,
     markdown_doc_page_html,
     people_page_html,
     removed_files_page_html,
     search_html,
+    search_start_html,
     sources_page_html,
     tags_page_html,
 )
@@ -371,25 +371,19 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 params = urllib.parse.parse_qs(parsed.query)
                 query = first_param(params, "q").strip()
                 limit = positive_int_param(params, "limit", DEFAULT_SEARCH_LIMIT)
-                if not query:
-                    self.server.search_cache.preload_model_async()
-                    self.respond_html(
-                        index_html(self.server, message="Skriv inn et søk.")
+                message = (
+                    "Trykk Søk for å kjøre dette søket."
+                    if query
+                    else "Skriv inn et søk."
+                )
+                self.respond_html(
+                    search_start_html(
+                        self.server,
+                        query=query,
+                        limit=limit,
+                        message=message,
                     )
-                    return
-                try:
-                    stats = search_server_images(self.server, query=query, limit=limit)
-                except TargetLockError as exc:
-                    self.respond_html(
-                        error_html(
-                            exc,
-                            face_enabled=self.server.face_enabled,
-                            openclip_enabled=self.server.openclip_enabled,
-                        ),
-                        status=HTTPStatus.CONFLICT,
-                    )
-                    return
-                self.respond_html(search_html(self.server, stats, limit))
+                )
                 return
             if parsed.path == "/api/item-info":
                 self.respond_item_info(parsed.query)
@@ -401,10 +395,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 self.respond_item_face_matches(parsed.query)
                 return
             if parsed.path == "/api/search-preload":
-                self.respond_search_preload()
+                self.respond_json(
+                    {"ok": False, "error": "Endepunktet krever POST."},
+                    status=HTTPStatus.METHOD_NOT_ALLOWED,
+                )
                 return
             if parsed.path == "/api/maintenance/thumbnails":
-                self.respond_thumbnail_maintenance()
+                self.respond_json(
+                    {"ok": False, "error": "Endepunktet krever POST."},
+                    status=HTTPStatus.METHOD_NOT_ALLOWED,
+                )
                 return
             if parsed.path == "/api/maintenance/statuses":
                 self.respond_maintenance_statuses()
@@ -488,6 +488,66 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         if not validate_csrf_request(self, body):
             return
         try:
+            if parsed.path == "/search":
+                if not self.server.openclip_enabled:
+                    self.respond_text(
+                        "Tekstbasert bildesøk er av.",
+                        status=HTTPStatus.NOT_FOUND,
+                    )
+                    return
+                params = server_request.read_form_params(
+                    self.headers,
+                    self.rfile,
+                )
+                query = first_param(params, "q").strip()
+                limit = positive_int_param(
+                    params,
+                    "limit",
+                    DEFAULT_SEARCH_LIMIT,
+                )
+                if not query:
+                    self.respond_html(
+                        search_start_html(
+                            self.server,
+                            limit=limit,
+                            message="Skriv inn et søk.",
+                        )
+                    )
+                    return
+                try:
+                    stats = search_server_images(
+                        self.server,
+                        query=query,
+                        limit=limit,
+                    )
+                except TargetLockError as exc:
+                    self.respond_html(
+                        error_html(
+                            exc,
+                            face_enabled=self.server.face_enabled,
+                            openclip_enabled=self.server.openclip_enabled,
+                        ),
+                        status=HTTPStatus.CONFLICT,
+                    )
+                    return
+                except Exception as exc:  # noqa: BLE001 - form response should remain HTML
+                    self.respond_html(
+                        error_html(
+                            exc,
+                            face_enabled=self.server.face_enabled,
+                            openclip_enabled=self.server.openclip_enabled,
+                        ),
+                        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    )
+                    return
+                self.respond_html(search_html(self.server, stats, limit))
+                return
+            if parsed.path == "/api/search-preload":
+                self.respond_search_preload()
+                return
+            if parsed.path == "/api/maintenance/thumbnails":
+                self.respond_thumbnail_maintenance()
+                return
             if parsed.path == "/people/face-suggest":
                 server_endpoints_faces.respond_face_suggest(self)
                 return

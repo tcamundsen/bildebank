@@ -858,7 +858,10 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertIn('href="/geo">Steder</a>', body)
         self.assertIn('href="/dashboard">Dashboard</a>', body)
         self.assertIn('href="/search" data-search-preload>Bildesøk</a>', enabled_body)
-        self.assertIn('fetch("/api/search-preload", {keepalive: true})', SERVER_JS)
+        self.assertIn(
+            'csrfFetch("/api/search-preload", {method: "POST", keepalive: true})',
+            SERVER_JS,
+        )
         self.assertIn('link.addEventListener("pointerdown", preloadSearchModel)', SERVER_JS)
         self.assertNotIn('href="/people">Personer</a>', body)
         self.assertNotIn('href="/search">Bildesøk</a>', body)

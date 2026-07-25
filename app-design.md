@@ -371,6 +371,14 @@ den komplette schemasjekken én gang. Senere read-only-tilkoblinger i samme
 prosess skal fortsatt kontrollere `schema_version`, men skal ikke gjenta hele
 strukturkontrollen for hver browserforespørsel.
 
+OpenCLIP-søk laster en kostbar modell og registrerer søkekjøring og resultater
+i OpenCLIP-databasen. Selve søket og eksplisitt forhåndslasting av modellen
+skal derfor bare kunne startes med CSRF-beskyttet POST. GET `/search` skal
+bare vise søkeskjemaet, også når en gammel URL inneholder søkeparametre.
+Eksplisitt telling av thumbnails skal av samme grunn bruke beskyttet POST.
+Automatisk vedlikeholdsstatus kan forbli GET fordi den bare gjør read-only
+databaseoppslag og også skal fungere i read-only-modus.
+
 ## Lokal status for snapshots
 
 Et publisert snapshot kan registreres i programmets lokale programdatabase

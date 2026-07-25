@@ -50,6 +50,10 @@ server
   aktiv/slettet layout og databaseført stinøkkel, avviser symlinker og Windows
   reparse points i hele stien og åpner den kontrollerte filen med en stabil
   fil-deskriptor før responsheaderne sendes.
+- GET `/search` viser bare skjemaet. OpenCLIP-søk, modell-preload og eksplisitt
+  thumbnailtelling rutes som CSRF-beskyttet POST fordi de skriver til database
+  eller kan utløse betydelig CPU-/filskanningsarbeid. Read-only
+  vedlikeholdsstatus forblir GET.
 - `server_slideshow.py` bygger det faste slideshowutvalget og eier den minimale
   slideshow-siden. Når modusen er aktiv, bruker handleren en egen allowlist og
   slipper ikke forespørsler videre til de vanlige browserrutene.
