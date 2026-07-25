@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any
 BENCHMARK_HEADER = "X-Bildebank-Benchmark"
 SECURITY_RESPONSE_HEADERS = (
     ("X-Content-Type-Options", "nosniff"),
-    ("Referrer-Policy", "no-referrer"),
+    ("Referrer-Policy", "same-origin"),
     ("X-Frame-Options", "DENY"),
 )
 POST_FORM_RE = re.compile(

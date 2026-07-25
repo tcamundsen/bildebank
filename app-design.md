@@ -372,10 +372,12 @@ tillegg fortsatt gyldig CSRF-token.
 
 Alle ferdige HTTP-responser, også redirects, direkte medier og tidlige
 feilresponser, skal ha `X-Content-Type-Options: nosniff`,
-`Referrer-Policy: no-referrer` og `X-Frame-Options: DENY`. Bildebank har ingen
-dokumentert iframe-integrasjon, og serveren bruker ikke `Referer` som del av
-funksjonaliteten. `Server`-headeren skal identifisere Bildebank uten å røpe
-Python-versjonen. CSP skal ikke legges til som del av denne pakken; inline
+`Referrer-Policy: same-origin` og `X-Frame-Options: DENY`. `same-origin` skal
+beholde en presis `Origin` på Bildebanks egne POST-skjemaer, samtidig som
+Bildebank-adressen ikke sendes som referrer til eksterne nettsteder. Bildebank
+har ingen dokumentert iframe-integrasjon, og serveren bruker ikke `Referer` som
+del av funksjonaliteten. `Server`-headeren skal identifisere Bildebank uten å
+røpe Python-versjonen. CSP skal ikke legges til som del av denne pakken; inline
 HTML, CSS og JavaScript må kartlegges og tilpasses før en bred CSP innføres.
 
 Dashboard- og maintenance-status er rene statusoppslag, også når den vanlige

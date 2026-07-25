@@ -14,7 +14,7 @@ from unittest.mock import patch
 from bildebank import db, server_request
 from bildebank.cli import build_parser, main, should_recover_pending_file_moves
 from bildebank.cli_server import lan_share_urls, run_server_command
-from bildebank.config import AppConfig, FaceRecognitionConfig, OpenClipConfig
+from bildebank.config import AppConfig, BrowserConfig, FaceRecognitionConfig, OpenClipConfig
 from bildebank.db import init_database
 from bildebank.server_handler import (
     BildebankRequestHandler,
@@ -159,6 +159,7 @@ class ServerCoreCliTests(unittest.TestCase):
         send_security_response_headers(handler)
 
         self.assertEqual(handler.headers, list(SECURITY_RESPONSE_HEADERS))
+        self.assertIn(("Referrer-Policy", "same-origin"), handler.headers)
 
     def test_run_server_preview_images_is_explicit_and_defaults_to_false(self) -> None:
         default_args = build_parser().parse_args(["run-server"])
@@ -450,8 +451,7 @@ class ServerCoreCliTests(unittest.TestCase):
                 server = BildebankServer(
                     ("127.0.0.1", 0),
                     target,
-                    AppConfig(),
-                    read_only=True,
+                    AppConfig(browser=BrowserConfig(hide_out_of_focus=True)),
                 )
             except PermissionError as exc:
                 self.skipTest(f"Miljøet tillater ikke lokal HTTP-socket: {exc}")
@@ -462,6 +462,9 @@ class ServerCoreCliTests(unittest.TestCase):
             def request(
                 path: str,
                 headers: dict[str, str],
+                *,
+                method: str = "GET",
+                body: bytes = b"",
             ) -> tuple[int, dict[str, str], bytes]:
                 connection = http.client.HTTPConnection(
                     "127.0.0.1",
@@ -469,11 +472,15 @@ class ServerCoreCliTests(unittest.TestCase):
                     timeout=5,
                 )
                 try:
-                    connection.putrequest("GET", path, skip_host=True)
+                    connection.putrequest(method, path, skip_host=True)
                     for name, value in headers.items():
                         connection.putheader(name, value)
+                    if body:
+                        connection.putheader("Content-Length", str(len(body)))
                     connection.putheader("Connection", "close")
                     connection.endheaders()
+                    if body:
+                        connection.send(body)
                     response = connection.getresponse()
                     return (
                         response.status,
@@ -510,6 +517,23 @@ class ServerCoreCliTests(unittest.TestCase):
                         "Origin": f"http://attacker.example:{port}",
                     }
                 )
+                settings_body = (
+                    f"csrf_token={server.csrf_token}&enabled=false"
+                ).encode("ascii")
+                with patch(
+                    "bildebank.server_app.server_program_repo_root",
+                    return_value=self.program_root,
+                ):
+                    settings_status, settings_headers, settings_body_response = request(
+                        "/settings/hide-out-of-focus",
+                        {
+                            "Host": f"127.0.0.1:{port}",
+                            "Origin": f"http://127.0.0.1:{port}",
+                            "Content-Type": "application/x-www-form-urlencoded",
+                        },
+                        method="POST",
+                        body=settings_body,
+                    )
             finally:
                 server.shutdown()
                 thread.join(timeout=5)
@@ -525,12 +549,16 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertIn(b"Host-headeren er ikke tillatt", rebinding_body)
         self.assertEqual(cross_origin_status, HTTPStatus.FORBIDDEN)
         self.assertIn(b"Origin-headeren stemmer ikke", cross_origin_body)
+        self.assertEqual(settings_status, HTTPStatus.FOUND)
+        self.assertEqual(settings_body_response, b"")
+        self.assertFalse(server.config.browser.hide_out_of_focus)
         for response_headers in (
             valid_headers,
             file_headers,
             redirect_headers,
             rebinding_headers,
             cross_origin_headers,
+            settings_headers,
         ):
             with self.subTest(response_headers=response_headers):
                 self.assertEqual(response_headers["Server"], "Bildebank")
