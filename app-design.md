@@ -343,6 +343,12 @@ filopplasting. Request body skal derfor ha en fast maksimumsgrense på 1 MiB,
 endepunktbehandling, og forbindelsen skal lukkes uten at en for stor body
 leses.
 
+Read-only-serveren skal heller ikke endre tilstand under oppstart. Den skal
+lese config uten legacy-migrering, ikke registrere samlingen som sist brukt i
+den lokale programdatabasen og åpne hoveddatabasen read-only for å kontrollere
+gjeldende schema. Dette gjelder også `--lan-share` og `--slideshow`. Vanlig
+skrivbar server beholder den ordinære databaseforberedelsen.
+
 ## Lokal status for snapshots
 
 Et publisert snapshot kan registreres i programmets lokale programdatabase

@@ -1257,11 +1257,7 @@ def run(args: argparse.Namespace) -> int:
             migrate_legacy=False,
         ).face_recognition
         recover_pending_file_moves(target, face_config=face_config)
-    if args.command not in {
-        "check-source",
-        "repair-missing-file",
-        "snapshot",
-    }:
+    if should_record_target(args):
         record_target_best_effort(program_repo_root(), target)
 
     if args.command in TARGET_COMMANDS or (
@@ -1388,6 +1384,20 @@ def should_recover_pending_file_moves(args: argparse.Namespace) -> bool:
     if getattr(args, "dry_run", False):
         return False
     if args.command == "snapshot":
+        return False
+    return True
+
+
+def should_record_target(args: argparse.Namespace) -> bool:
+    if args.command in {
+        "check-source",
+        "repair-missing-file",
+        "snapshot",
+    }:
+        return False
+    if args.command == "run-server" and (
+        args.read_only or args.lan_share or args.slideshow
+    ):
         return False
     return True
 

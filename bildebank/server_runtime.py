@@ -375,7 +375,11 @@ def run_server(
             "fra andre maskiner på nettverket.",
             file=sys.stderr,
         )
-    db.prepare_database(target)
+    if read_only:
+        conn = db.connect_read_only(target)
+        conn.close()
+    else:
+        db.prepare_database(target)
     slideshow = (
         build_slideshow(
             target,

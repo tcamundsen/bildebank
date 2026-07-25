@@ -172,6 +172,26 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         run_server.assert_called_once()
 
+    def test_read_only_server_does_not_record_target_in_program_database(self) -> None:
+        for option in ("--read-only", "--lan-share", "--slideshow"):
+            with self.subTest(option=option), tempfile.TemporaryDirectory() as tmp:
+                target = Path(tmp) / "target"
+                init_database(target)
+
+                with patch("bildebank.cli.run_server_command", return_value=0):
+                    code = main(
+                        [
+                            "--target",
+                            str(target),
+                            "run-server",
+                            option,
+                            "--no-browser",
+                        ]
+                    )
+
+                self.assertEqual(code, 0)
+        self.assertFalse((self.program_root / ".bildebank-program.sqlite3").exists())
+
     def test_read_only_item_media_does_not_fill_missing_metadata_cache(self) -> None:
         item = {
             "id": 1,
@@ -239,7 +259,7 @@ class ServerCoreCliTests(unittest.TestCase):
     def test_run_server_command_forwards_remote_permission(self) -> None:
         config = AppConfig()
         with (
-            patch("bildebank.cli_server.load_config", return_value=config),
+            patch("bildebank.cli_server.load_config", return_value=config) as load_config,
             patch("bildebank.cli_server.lan_share_urls", return_value=["http://192.168.86.11:8765/"]),
             patch("bildebank.cli_server.run_local_server") as run_local_server,
             redirect_stdout(StringIO()) as stdout,
@@ -258,6 +278,7 @@ class ServerCoreCliTests(unittest.TestCase):
             )
 
         self.assertEqual(result, 0)
+        load_config.assert_called_once_with(self.program_root, migrate_legacy=False)
         run_local_server.assert_called_once()
         self.assertEqual(run_local_server.call_args.kwargs["host"], "0.0.0.0")
         self.assertTrue(run_local_server.call_args.kwargs["allow_remote"])
@@ -294,6 +315,31 @@ class ServerCoreCliTests(unittest.TestCase):
         self.assertEqual(result, 0)
         open_browser.assert_called_once_with("http://127.0.0.1:8766/")
 
+    def test_read_only_server_does_not_migrate_legacy_config(self) -> None:
+        config_path = self.program_root / "bildebank-config.toml"
+        config_path.write_text(
+            "[openclip]\n"
+            "enabled = false\n"
+            'model_name = "ViT-B-32"\n',
+            encoding="utf-8",
+        )
+        original = config_path.read_bytes()
+        with (
+            patch("bildebank.cli_server.run_local_server"),
+            redirect_stdout(StringIO()),
+        ):
+            result = run_server_command(
+                Path("C:/Users/Tom/Bilder"),
+                host="127.0.0.1",
+                port=8765,
+                repo_root=self.program_root,
+                browser=False,
+                read_only=True,
+            )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(config_path.read_bytes(), original)
+
     def test_run_server_warns_before_allowed_remote_bind(self) -> None:
         fake_server = SimpleNamespace(
             server_address=("0.0.0.0", 8765),
@@ -302,7 +348,9 @@ class ServerCoreCliTests(unittest.TestCase):
         )
         stderr = StringIO()
         with (
-            patch("bildebank.server_runtime.db.prepare_database"),
+            patch(
+                "bildebank.server_runtime.db.prepare_database"
+            ) as prepare_database,
             patch("bildebank.server_runtime.BildebankServer", return_value=fake_server) as server_class,
             redirect_stderr(stderr),
         ):
@@ -313,6 +361,7 @@ class ServerCoreCliTests(unittest.TestCase):
                 allow_remote=True,
             )
 
+        prepare_database.assert_called_once_with(Path("."))
         server_class.assert_called_once_with(
             ("0.0.0.0", 8765),
             Path("."),
@@ -330,12 +379,19 @@ class ServerCoreCliTests(unittest.TestCase):
             serve_forever=lambda: None,
             server_close=lambda: None,
         )
+        fake_connection = SimpleNamespace(close=lambda: None)
         with (
-            patch("bildebank.server_runtime.db.prepare_database"),
+            patch("bildebank.server_runtime.db.prepare_database") as prepare_database,
+            patch(
+                "bildebank.server_runtime.db.connect_read_only",
+                return_value=fake_connection,
+            ) as connect_read_only,
             patch("bildebank.server_runtime.BildebankServer", return_value=fake_server) as server_class,
         ):
             run_http_server(Path("."), AppConfig(), read_only=True)
 
+        prepare_database.assert_not_called()
+        connect_read_only.assert_called_once_with(Path("."))
         server_class.assert_called_once_with(
             ("127.0.0.1", 8765),
             Path("."),
@@ -344,6 +400,35 @@ class ServerCoreCliTests(unittest.TestCase):
             read_only=True,
             slideshow=None,
         )
+
+    def test_read_only_server_start_leaves_collection_files_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            before = {
+                path.relative_to(target): path.read_bytes()
+                for path in target.rglob("*")
+                if path.is_file()
+            }
+            fake_server = SimpleNamespace(
+                server_address=("127.0.0.1", 8765),
+                serve_forever=lambda: None,
+                server_close=lambda: None,
+            )
+
+            with patch(
+                "bildebank.server_runtime.BildebankServer",
+                return_value=fake_server,
+            ):
+                run_http_server(target, AppConfig(), read_only=True)
+
+            after = {
+                path.relative_to(target): path.read_bytes()
+                for path in target.rglob("*")
+                if path.is_file()
+            }
+
+        self.assertEqual(after, before)
 
     def test_read_only_blocks_admin_gets_and_posts_before_csrf(self) -> None:
         handler = object.__new__(BildebankRequestHandler)

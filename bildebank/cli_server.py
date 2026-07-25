@@ -23,7 +23,7 @@ def run_server_command(
     slideshow_delay_seconds: int | None = None,
     slideshow_filter: str | None = None,
 ) -> int:
-    config = load_config(repo_root)
+    config = load_config(repo_root, migrate_legacy=not read_only)
     print("Starter Bildebank-server. Dette kan ta noen sekunder.")
     print(f"Bildesamling: {target}")
 

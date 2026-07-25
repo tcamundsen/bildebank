@@ -17,6 +17,10 @@ server
   bare serverens offentlige API.
 - `server_runtime.py` eier oppstart, sikker bind-validering,
   `BildebankServer`, servertilstand og browsernavigasjonscache.
+  Read-only-oppstart validerer hoveddatabasen gjennom en read-only-tilkobling.
+  CLI-laget leser samtidig config uten legacy-migrering og hopper over
+  oppdatering av lokal programstatus. Dette gjelder også LAN-share og
+  slideshow.
 - `server_handler.py` eier HTTP-livssyklus, read-only- og CSRF-kontroll,
   eksplisitt GET/POST-ruting samt generelle ressurser som filer, preview og
   dokumentasjon. Før CSRF-kontroll leser handleren POST-body gjennom den
