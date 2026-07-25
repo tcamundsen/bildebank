@@ -19,12 +19,15 @@ from bildebank.config import (
     load_config,
 )
 from bildebank.db import init_database
+from bildebank.face import connect_face_db, face_db_path
 from bildebank.geo import h3_cells_for_point
-from bildebank.openclip import connect_openclip_db, embedding_blob
+from bildebank.openclip import connect_openclip_db, embedding_blob, openclip_db_path
 from bildebank import server_endpoints_admin
 from bildebank.server_handler import BildebankRequestHandler
 from bildebank.server_app import (
     MaintenanceStatus,
+    face_scan_maintenance_status,
+    image_scan_maintenance_status,
     maintenance_statuses,
     thumbnail_maintenance_status,
 )
@@ -420,6 +423,158 @@ class ServerSettingsTests(unittest.TestCase):
         self.assertEqual(statuses["image-scan"].total, 2)
         self.assertEqual(statuses["image-scan"].scanned, 1)
         self.assertEqual(statuses["image-scan"].missing, 1)
+
+    def test_image_scan_status_does_not_update_openclip_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = insert_test_file(
+                target, "2024/01/current.png", sha256="sha-current"
+            )
+            config = AppConfig(
+                openclip=OpenClipConfig(
+                    model_name="Test-Model", pretrained="test-weights"
+                )
+            )
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO image_embeddings(
+                        file_id, target_path, target_path_key, sha256,
+                        model_name, pretrained, embedding
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        file_id,
+                        "2024/01/current.png",
+                        "2024/01/current.png",
+                        "sha-current",
+                        "Test-Model",
+                        "test-weights",
+                        embedding_blob([1.0, 0.0]),
+                    ),
+                )
+                conn.execute(
+                    "UPDATE meta SET value = ? WHERE key = 'target_path'",
+                    ("C:/old/collection",),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            database_path = openclip_db_path(target)
+            original = database_path.read_bytes()
+
+            status = image_scan_maintenance_status(target, config)
+
+            self.assertEqual(database_path.read_bytes(), original)
+            self.assertEqual(status.scanned, 1)
+            self.assertEqual(status.missing, 0)
+
+    def test_image_scan_status_does_not_adopt_unversioned_openclip_database(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            insert_test_file(target, "2024/01/current.png", sha256="sha-current")
+            conn = connect_openclip_db(target)
+            try:
+                conn.execute("DELETE FROM meta WHERE key = 'schema_version'")
+                conn.commit()
+            finally:
+                conn.close()
+            database_path = openclip_db_path(target)
+            original = database_path.read_bytes()
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "mangler eksplisitt schema_version",
+            ):
+                image_scan_maintenance_status(target, AppConfig())
+
+            self.assertEqual(database_path.read_bytes(), original)
+
+    def test_face_scan_status_reads_current_database_without_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            file_id = insert_test_file(
+                target, "2024/01/current.png", sha256="sha-current"
+            )
+            config = AppConfig()
+            conn = connect_face_db(target, config.face_recognition)
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO scanned_files(
+                        file_id, target_path, target_path_key, sha256, status,
+                        face_count
+                    ) VALUES(?, ?, ?, ?, 'ok', 0)
+                    """,
+                    (
+                        file_id,
+                        "2024/01/current.png",
+                        "2024/01/current.png",
+                        "sha-current",
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            database_path = face_db_path(target, config.face_recognition)
+            original = database_path.read_bytes()
+
+            status = face_scan_maintenance_status(target, config)
+
+            self.assertEqual(database_path.read_bytes(), original)
+            self.assertEqual(status.total, 1)
+            self.assertEqual(status.scanned, 1)
+            self.assertEqual(status.missing, 0)
+
+    def test_face_scan_status_does_not_migrate_older_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            insert_test_file(target, "2024/01/current.png", sha256="sha-current")
+            config = AppConfig()
+            conn = connect_face_db(target, config.face_recognition)
+            try:
+                conn.execute(
+                    "UPDATE meta SET value = '4' WHERE key = 'schema_version'"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            database_path = face_db_path(target, config.face_recognition)
+            database_dir = database_path.parent
+            original = {
+                path.name: path.read_bytes()
+                for path in database_dir.iterdir()
+                if path.is_file()
+            }
+
+            face_scan_maintenance_status(target, config)
+
+            after = {
+                path.name: path.read_bytes()
+                for path in database_dir.iterdir()
+                if path.is_file()
+            }
+            self.assertEqual(after, original)
+
+    def test_maintenance_statuses_open_main_database_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+
+            with patch(
+                "bildebank.server_app.db.connect",
+                side_effect=AssertionError("maintenance skal åpne hoveddatabasen read-only"),
+            ):
+                statuses = maintenance_statuses(target, AppConfig())
+
+        self.assertEqual({status.name for status in statuses}, {"face-scan", "geo-scan", "image-scan"})
 
     def test_run_server_settings_maintenance_status_shows_updated_when_current(
         self,

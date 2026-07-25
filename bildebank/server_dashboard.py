@@ -96,7 +96,7 @@ def dashboard_summary(
     *,
     program_root: Path | None = None,
 ) -> DashboardSummary:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         status_counts = db.status_counts(conn)
         total_active = cast(int, status_counts["total"])
@@ -350,7 +350,13 @@ def dashboard_snapshot_repositories(
     collection_id: str,
 ) -> tuple[KnownSnapshotRepository, ...]:
     try:
-        return tuple(known_snapshot_repositories(program_root, collection_id))
+        return tuple(
+            known_snapshot_repositories(
+                program_root,
+                collection_id,
+                read_only=True,
+            )
+        )
     except (OSError, sqlite3.Error):
         return ()
 

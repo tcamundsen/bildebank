@@ -165,6 +165,16 @@ def connect_openclip_db(target: Path) -> sqlite3.Connection:
         raise
 
 
+def connect_openclip_db_read_only(target: Path) -> sqlite3.Connection:
+    conn = connect_database_read_only(openclip_db_path(target))
+    try:
+        require_current_openclip_schema_read_only(conn)
+        return conn
+    except BaseException:
+        conn.close()
+        raise
+
+
 def ensure_openclip_schema_path(path: Path) -> None:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
@@ -329,7 +339,7 @@ def require_current_openclip_schema_read_only(
     if version is None:
         raise ValueError(
             "OpenCLIP-databasen mangler eksplisitt schema_version. "
-            "Doctor adopterer eller migrerer ikke databasen."
+            "Read-only-åpning adopterer eller migrerer ikke databasen."
         )
     if version != OPENCLIP_SCHEMA_VERSION:
         reject_unknown_openclip_schema_version(version)
@@ -434,8 +444,13 @@ def active_embedding_table(conn: sqlite3.Connection) -> str:
     return "image_embeddings"
 
 
-def active_image_files(target: Path, *, limit: int | None = None) -> list[sqlite3.Row]:
-    conn = db.connect(target)
+def active_image_files(
+    target: Path,
+    *,
+    limit: int | None = None,
+    read_only: bool = False,
+) -> list[sqlite3.Row]:
+    conn = db.connect_read_only(target) if read_only else db.connect(target)
     try:
         rows: list[sqlite3.Row] = []
         for row in conn.execute(

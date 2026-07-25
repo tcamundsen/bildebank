@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 
+from .db_core import connect_database_read_only
+
 
 PROGRAM_DB_FILENAME = ".bildebank-program.sqlite3"
 
@@ -221,15 +223,22 @@ def known_targets(program_root: Path) -> list[KnownTarget]:
 def known_snapshot_repositories(
     program_root: Path,
     collection_id: str,
+    *,
+    read_only: bool = False,
 ) -> list[KnownSnapshotRepository]:
     db_path = program_db_path(program_root)
     if not db_path.exists():
         return []
-    conn = sqlite3.connect(db_path)
+    conn = (
+        connect_database_read_only(db_path)
+        if read_only
+        else sqlite3.connect(db_path)
+    )
     conn.row_factory = sqlite3.Row
     try:
-        ensure_schema(conn)
-        conn.commit()
+        if not read_only:
+            ensure_schema(conn)
+            conn.commit()
         rows = conn.execute(
             """
             SELECT

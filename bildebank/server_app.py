@@ -140,7 +140,11 @@ def face_scan_maintenance_status(target: Path, config: AppConfig) -> Maintenance
     try:
         from .server_faces import people_face_summary
 
-        summary = people_face_summary(target, config.face_recognition)
+        summary = people_face_summary(
+            target,
+            config.face_recognition,
+            read_only=True,
+        )
         total = summary.total_images
         scanned = summary.scanned_images
         missing = summary.unscanned_images
@@ -150,7 +154,7 @@ def face_scan_maintenance_status(target: Path, config: AppConfig) -> Maintenance
 
 
 def geo_scan_maintenance_status(target: Path) -> MaintenanceStatus:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         stats = db.geo_stats(conn)
     finally:
@@ -161,15 +165,20 @@ def geo_scan_maintenance_status(target: Path) -> MaintenanceStatus:
 
 
 def image_scan_maintenance_status(target: Path, config: AppConfig) -> MaintenanceStatus:
-    from .openclip import active_image_files, connect_openclip_db, has_current_embedding, openclip_db_path
+    from .openclip import (
+        active_image_files,
+        connect_openclip_db_read_only,
+        has_current_embedding,
+        openclip_db_path,
+    )
 
-    image_rows = active_image_files(target)
+    image_rows = active_image_files(target, read_only=True)
     total = len(image_rows)
     if total == 0:
         return MaintenanceStatus("image-scan", 0, 0, 0, "/help/image-scan.md")
     if not openclip_db_path(target).is_file():
         return MaintenanceStatus("image-scan", total, 0, total, "/help/image-scan.md")
-    conn = connect_openclip_db(target)
+    conn = connect_openclip_db_read_only(target)
     try:
         scanned = sum(
             1

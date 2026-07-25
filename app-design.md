@@ -349,6 +349,13 @@ den lokale programdatabasen og åpne hoveddatabasen read-only for å kontrollere
 gjeldende schema. Dette gjelder også `--lan-share` og `--slideshow`. Vanlig
 skrivbar server beholder den ordinære databaseforberedelsen.
 
+Dashboard- og maintenance-status er rene statusoppslag, også når den vanlige
+serveren er skrivbar. De skal åpne hoveddatabasen og eksisterende OpenCLIP- og
+InsightFace-databaser read-only. Dashboardet skal ikke opprette eller migrere
+tabeller i den lokale programdatabasen. Et statusoppslag skal heller ikke
+adoptere eller migrere et eldre sidecar-schema eller oppdatere sidecarens
+metadata.
+
 ## Lokal status for snapshots
 
 Et publisert snapshot kan registreres i programmets lokale programdatabase

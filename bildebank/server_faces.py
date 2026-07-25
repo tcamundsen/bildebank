@@ -12,6 +12,7 @@ from typing import Any, Callable, Iterable
 from . import db
 from .config import FaceRecognitionConfig
 from .face import (
+    connect_face_db_read_only,
     embedding_array_from_blob,
     ensure_face_schema_path,
     face_db_path,
@@ -765,9 +766,18 @@ def registered_people_rows(target: Path, face_config: FaceRecognitionConfig | No
         face_conn.close()
 
 
-def people_face_summary(target: Path, face_config: FaceRecognitionConfig | None = None) -> PeopleFaceSummary:
-    db_path = current_face_db_path(target, face_config)
-    main_conn = db.connect(target)
+def people_face_summary(
+    target: Path,
+    face_config: FaceRecognitionConfig | None = None,
+    *,
+    read_only: bool = False,
+) -> PeopleFaceSummary:
+    db_path = (
+        face_db_path(target, face_config)
+        if read_only
+        else current_face_db_path(target, face_config)
+    )
+    main_conn = db.connect_read_only(target) if read_only else db.connect(target)
     try:
         active_rows = list(
             main_conn.execute(
@@ -789,6 +799,12 @@ def people_face_summary(target: Path, face_config: FaceRecognitionConfig | None 
             unscanned_images=total_images,
             total_faces=0,
             faces_with_suggestions=0,
+        )
+
+    if read_only:
+        return people_face_summary_read_only(
+            target,
+            face_config,
         )
 
     face_conn = sqlite3.connect(db_path)
@@ -833,6 +849,79 @@ def people_face_summary(target: Path, face_config: FaceRecognitionConfig | None 
                 FROM face_suggestions
                 JOIN faces ON faces.id = face_suggestions.face_id
                 JOIN active_people_summary_images ON active_people_summary_images.file_id = faces.file_id
+                """
+            ).fetchone()[0]
+        )
+        return PeopleFaceSummary(
+            total_images=total_images,
+            scanned_images=scanned_images,
+            unscanned_images=max(total_images - scanned_images, 0),
+            total_faces=total_faces,
+            faces_with_suggestions=faces_with_suggestions,
+        )
+    finally:
+        face_conn.close()
+
+
+def people_face_summary_read_only(
+    target: Path,
+    face_config: FaceRecognitionConfig | None,
+) -> PeopleFaceSummary:
+    face_conn = connect_face_db_read_only(target, face_config)
+    try:
+        main_db_uri = (
+            f"{db.db_path_for_target(target).resolve().as_uri()}?mode=ro"
+        )
+        face_conn.execute(
+            "ATTACH DATABASE ? AS people_main",
+            (main_db_uri,),
+        )
+        active_image_sql = (
+            "people_main.files.deleted_at IS NULL "
+            f"AND {image_extension_sql('people_main.files.stored_filename')}"
+        )
+        face_conn.execute("BEGIN")
+        total_images = int(
+            face_conn.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM people_main.files
+                WHERE {active_image_sql}
+                """
+            ).fetchone()[0]
+        )
+        scanned_images = int(
+            face_conn.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM scanned_files
+                JOIN people_main.files
+                  ON people_main.files.id = scanned_files.file_id
+                 AND people_main.files.sha256 = scanned_files.sha256
+                WHERE {active_image_sql}
+                """
+            ).fetchone()[0]
+        )
+        total_faces = int(
+            face_conn.execute(
+                f"""
+                SELECT COUNT(*)
+                FROM faces
+                JOIN people_main.files
+                  ON people_main.files.id = faces.file_id
+                WHERE {active_image_sql}
+                """
+            ).fetchone()[0]
+        )
+        faces_with_suggestions = int(
+            face_conn.execute(
+                f"""
+                SELECT COUNT(DISTINCT face_suggestions.face_id)
+                FROM face_suggestions
+                JOIN faces ON faces.id = face_suggestions.face_id
+                JOIN people_main.files
+                  ON people_main.files.id = faces.file_id
+                WHERE {active_image_sql}
                 """
             ).fetchone()[0]
         )

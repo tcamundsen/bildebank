@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 import uuid
+import sqlite3
 from http import HTTPStatus
 from pathlib import Path
 from types import SimpleNamespace
@@ -212,6 +213,53 @@ class ServerDashboardTests(unittest.TestCase):
         self.assertIn("complete – uten kjente avvik", body)
         self.assertIn("degraded – publisert med problemer", body)
         self.assertIn("recovery – kan ikke brukes som vanlig hel restore", body)
+
+    def test_dashboard_does_not_migrate_legacy_program_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            program_root = root / "program"
+            program_root.mkdir()
+            init_database(target)
+            program_db = program_root / ".bildebank-program.sqlite3"
+            conn = sqlite3.connect(program_db)
+            try:
+                conn.execute(
+                    """
+                    CREATE TABLE targets (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        path TEXT NOT NULL,
+                        path_key TEXT NOT NULL UNIQUE,
+                        created_at TEXT,
+                        last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            original = program_db.read_bytes()
+
+            summary = dashboard_summary(target, program_root=program_root)
+
+            self.assertEqual(program_db.read_bytes(), original)
+            self.assertEqual(summary.snapshot_repositories, ())
+
+    def test_dashboard_opens_main_database_read_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            program_root = root / "program"
+            program_root.mkdir()
+            init_database(target)
+
+            with patch(
+                "bildebank.server_dashboard.db.connect",
+                side_effect=AssertionError("dashboard skal åpne hoveddatabasen read-only"),
+            ):
+                summary = dashboard_summary(target, program_root=program_root)
+
+        self.assertEqual(summary.total_active, 0)
 
     def test_run_server_dashboard_actions_defer_scan_counts_to_browser(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

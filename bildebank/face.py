@@ -254,6 +254,20 @@ def connect_face_db(target: Path, config: FaceRecognitionConfig | None = None) -
         raise
 
 
+def connect_face_db_read_only(
+    target: Path,
+    config: FaceRecognitionConfig | None = None,
+) -> sqlite3.Connection:
+    model_name = config.model_name if config is not None else DEFAULT_FACE_MODEL_NAME
+    conn = connect_database_read_only(face_db_path(target, config))
+    try:
+        require_current_face_schema_read_only(conn, model_name)
+        return conn
+    except BaseException:
+        conn.close()
+        raise
+
+
 def ensure_face_schema_path(path: Path) -> None:
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
@@ -390,7 +404,7 @@ def require_current_face_schema_read_only(
     if not db.table_exists(conn, "meta"):
         raise ValueError(
             "InsightFace-databasen mangler eksplisitt schema_version. "
-            "Doctor adopterer eller migrerer ikke databasen."
+            "Read-only-åpning adopterer eller migrerer ikke databasen."
         )
     row = conn.execute(
         "SELECT value FROM meta WHERE key = 'schema_version'"
@@ -398,7 +412,7 @@ def require_current_face_schema_read_only(
     if row is None:
         raise ValueError(
             "InsightFace-databasen mangler eksplisitt schema_version. "
-            "Doctor adopterer eller migrerer ikke databasen."
+            "Read-only-åpning adopterer eller migrerer ikke databasen."
         )
     value = row[0]
     try:
@@ -410,8 +424,8 @@ def require_current_face_schema_read_only(
     if version != FACE_SCHEMA_VERSION:
         raise ValueError(
             f"InsightFace-databasen bruker schema_version={version}, men "
-            f"doctor krever schema_version={FACE_SCHEMA_VERSION}. "
-            "Doctor migrerer ikke databasen."
+            f"read-only-åpning krever schema_version={FACE_SCHEMA_VERSION}. "
+            "Databasen migreres ikke."
         )
 
     validate_current_face_schema(conn)
@@ -421,7 +435,7 @@ def require_current_face_schema_read_only(
             return
         raise ValueError(
             "InsightFace-databasen mangler eksplisitt model_name. "
-            "Doctor adopterer ikke databasen."
+            "Read-only-åpning adopterer ikke databasen."
         )
     if stored_model != model_name:
         raise ValueError(
