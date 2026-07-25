@@ -209,6 +209,27 @@ class ServerCoreCliTests(unittest.TestCase):
 
         self.assertIn('src="/preview/1"', body)
 
+    def test_browser_request_connection_is_always_read_only(self) -> None:
+        handler = object.__new__(BildebankRequestHandler)
+        handler.server = SimpleNamespace(target=Path("target"))
+        fake_connection = object()
+
+        with (
+            patch(
+                "bildebank.server_handler.db.connect",
+                side_effect=AssertionError("browser-GET skal ikke åpne skrivbart"),
+            ),
+            patch(
+                "bildebank.server_handler.db.connect_read_only",
+                return_value=fake_connection,
+            ) as connect_read_only,
+        ):
+            connection, close_connection = handler.browser_db_connection()
+
+        self.assertIs(connection, fake_connection)
+        self.assertTrue(close_connection)
+        connect_read_only.assert_called_once_with(Path("target"))
+
     def test_run_server_lan_share_is_explicit_and_rejects_host(self) -> None:
         args = build_parser().parse_args(["run-server", "--lan-share", "--port", "8766"])
         self.assertTrue(args.lan_share)

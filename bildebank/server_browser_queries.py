@@ -100,7 +100,7 @@ def first_sql_filtered_source_item(
     )
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         attach_source_sql_filter_databases(conn, target, source, face_config)
         return conn.execute(
@@ -119,7 +119,7 @@ def first_sql_filtered_source_item(
 
 
 def first_unfiltered_source_item(target: Path, *, hide_out_of_focus: bool = False) -> Any | None:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
         return conn.execute(
@@ -191,7 +191,7 @@ def first_sql_filtered_source_day_item(
 ) -> Any | None:
     where_sql, params = source_sql_filter(source)
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     if not source_shows_motion_videos(source):
         hidden_ids = sorted(hidden_sidecar_file_ids_for_day(conn, day_key))
@@ -227,7 +227,7 @@ def first_unfiltered_source_day_item(
     conn: sqlite3.Connection | None = None,
 ) -> Any | None:
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         where_sql = "deleted_at IS NULL"
         params: tuple[object, ...] = ()
@@ -268,7 +268,7 @@ def sql_filtered_source_item_by_id(
 ) -> Any | None:
     where_sql, params = source_sql_filter(source)
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     where_sql, params = with_motion_video_filter(
         target,
         where_sql,
@@ -303,7 +303,7 @@ def unfiltered_source_item_by_id(
     conn: sqlite3.Connection | None = None,
 ) -> Any | None:
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
         return conn.execute(
@@ -326,7 +326,7 @@ def item_by_id(
     conn: sqlite3.Connection | None = None,
 ) -> Any | None:
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         return conn.execute(
             f"""
@@ -348,7 +348,7 @@ def active_item_by_id_including_hidden(
     conn: sqlite3.Connection | None = None,
 ) -> Any | None:
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         return conn.execute(
             f"""
@@ -408,7 +408,7 @@ def sql_filtered_source_item_count(
 ) -> int:
     where_sql, params = source_sql_filter(source)
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     where_sql, params = with_motion_video_filter(
         target,
         where_sql,
@@ -547,7 +547,7 @@ def filter_motion_video_items(target: Path, items: list[Any], *, include_motion:
 
 
 def out_of_focus_file_ids(target: Path) -> set[int]:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         rows = conn.execute(
             """
@@ -600,7 +600,7 @@ def adjacent_unfiltered_source_items(
 ) -> tuple[Any | None, Any | None]:
     order_key = item_order_key(item)
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
         previous_item = conn.execute(
@@ -642,7 +642,7 @@ def adjacent_sql_filtered_source_items(
 ) -> tuple[Any | None, Any | None]:
     where_sql, params = source_sql_filter(source)
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     where_sql, params = with_motion_video_filter(
         target,
         where_sql,
@@ -701,7 +701,7 @@ def browser_item_ids(
     conn: sqlite3.Connection | None = None,
 ) -> list[int]:
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus, conn=conn)
         return [
@@ -752,7 +752,7 @@ def sql_filtered_source_item_ids(
 ) -> list[int]:
     where_sql, params = source_sql_filter(source)
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     where_sql, params = with_motion_video_filter(
         target,
         where_sql,
@@ -830,7 +830,7 @@ def valid_day_key(value: str) -> bool:
 def cached_browser_month_keys(target_path: str, db_mtime_ns: int, hide_out_of_focus: bool) -> tuple[str, ...]:
     target = Path(target_path)
     where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         rows = conn.execute(
             f"""
@@ -857,7 +857,7 @@ def sql_filtered_source_month_keys(
 ) -> list[str]:
     where_sql, params = source_sql_filter(source)
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     where_sql, params = with_motion_video_filter(
         target,
         where_sql,
@@ -900,7 +900,7 @@ def image_extension_sql(column: str) -> str:
 
 
 def browser_year_summaries(target: Path, *, hide_out_of_focus: bool = False) -> list[dict[str, int | str]]:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
         month_rows = conn.execute(
@@ -1057,7 +1057,7 @@ def sql_filtered_source_year_cards(
     hide_out_of_focus: bool = False,
 ) -> list[dict[str, Any]]:
     where_sql, params = source_sql_filter(source)
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         where_sql, params = with_motion_video_filter(
             target,
@@ -1242,7 +1242,7 @@ def imported_source_items(target: Path, source_id: int, *, hide_out_of_focus: bo
     if hide_out_of_focus:
         filter_sql += f" AND {OUT_OF_FOCUS_FILTER_SQL}"
         filter_params = (*filter_params, *OUT_OF_FOCUS_FILTER_PARAMS)
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         return list(
             conn.execute(
@@ -1283,7 +1283,7 @@ def imported_source_items(target: Path, source_id: int, *, hide_out_of_focus: bo
 
 
 def tagged_items(target: Path, tag_name: str) -> list[Any]:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         return db.tagged_files(conn, tag_name)
     finally:
@@ -1291,7 +1291,7 @@ def tagged_items(target: Path, tag_name: str) -> list[Any]:
 
 
 def imported_source_by_id(target: Path, source_id: int) -> db.Source | None:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         try:
             return db.get_source(conn, source_id)
@@ -1302,7 +1302,7 @@ def imported_source_by_id(target: Path, source_id: int) -> db.Source | None:
 
 
 def source_summary_rows(target: Path) -> list[sqlite3.Row]:
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         return list(
             conn.execute(
@@ -1337,7 +1337,7 @@ def source_summary_rows(target: Path) -> list[sqlite3.Row]:
         conn.close()
 def all_source_items(target: Path, *, hide_out_of_focus: bool = False) -> list[Any]:
     where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         return list(
             conn.execute(
@@ -1359,7 +1359,7 @@ def items_by_file_ids(target: Path, file_ids: list[int], *, hide_out_of_focus: b
         return []
     placeholders = ",".join("?" for _ in file_ids)
     where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         return list(
             conn.execute(
@@ -1534,7 +1534,7 @@ def sql_filtered_source_month_items(
     )
     where_sql, params = with_out_of_focus_filter(source, where_sql, params, hide_out_of_focus)
     deleted_sql = "1 = 1" if source_includes_deleted(source) else "deleted_at IS NULL"
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         attach_source_sql_filter_databases(conn, target, source, face_config)
         return list(
@@ -1637,7 +1637,7 @@ def browser_month_items(target: Path, month_key: str, *, hide_out_of_focus: bool
     if not valid_month_key(month_key):
         return []
     where_sql, params = all_source_where(target, hide_out_of_focus=hide_out_of_focus)
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         return list(
             conn.execute(

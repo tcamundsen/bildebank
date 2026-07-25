@@ -363,6 +363,11 @@ read-only. En personfiltrering uten face-database kan feile uten å opprette en
 tom database. Migrering hører til en eksplisitt face-operasjon i skrivbar
 modus.
 
+Browserqueries og sidecaroppslag som kan vedlegge face-databasen, skal åpne
+hoveddatabasen gjennom den felles read-only-tilkoblingen. Dette håndhever
+`query_only` og aktiverer SQLite URI-støtte som kreves for at et vedlegg med
+`mode=ro` skal fungere likt på Windows og Linux.
+
 ## Lokal status for snapshots
 
 Et publisert snapshot kan registreres i programmets lokale programdatabase

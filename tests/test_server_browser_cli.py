@@ -56,6 +56,7 @@ from bildebank.server_browser_sources import (
     all_browser_source,
     imported_source_browser_source,
     parse_source_path,
+    person_browser_source,
     source_has_sql_filter,
     tag_browser_source,
 )
@@ -133,6 +134,36 @@ class ServerBrowserCliTests(unittest.TestCase):
                 if path.is_file()
             }
             self.assertEqual(after, original)
+
+    def test_person_queries_open_uri_enabled_read_only_main_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            conn = connect_face_db(target)
+            try:
+                conn.execute("INSERT INTO persons(name) VALUES('Viljar')")
+                conn.commit()
+            finally:
+                conn.close()
+
+            with patch(
+                "bildebank.server_browser_queries.db.connect",
+                side_effect=AssertionError("personquery skal ikke åpne skrivbart"),
+            ):
+                person_items = source_items(
+                    target,
+                    person_browser_source(
+                        "Viljar",
+                        include_suggestions=True,
+                    ),
+                )
+                filtered_items = source_items(
+                    target,
+                    text_filter_browser_source("person:Viljar"),
+                )
+
+        self.assertEqual(person_items, [])
+        self.assertEqual(filtered_items, [])
 
     def test_browser_selections_delegate_to_common_source_responder(self) -> None:
         handler = object.__new__(BildebankRequestHandler)

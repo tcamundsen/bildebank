@@ -68,7 +68,7 @@ def sidecar_cache_signature(target: Path, *, conn: sqlite3.Connection | None = N
     if cached is not None:
         return cached
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         files_row = conn.execute(
             """
@@ -197,7 +197,7 @@ def motion_video_file_ids(target: Path, *, conn: sqlite3.Connection | None = Non
 @lru_cache(maxsize=8)
 def cached_motion_video_file_ids(target_path: str, sidecar_signature: tuple[object, ...]) -> tuple[int, ...]:
     target = Path(target_path)
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         return query_motion_video_file_ids(conn)
     finally:
@@ -286,7 +286,7 @@ def raw_sidecar_ids_by_image_id(
 @lru_cache(maxsize=8)
 def cached_raw_sidecar_ids_by_image_id(target_path: str, sidecar_signature: tuple[object, ...]) -> dict[int, int]:
     target = Path(target_path)
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         return query_raw_sidecar_ids_by_image_id(conn)
     finally:
@@ -368,7 +368,7 @@ def motion_video_for_image(target: Path, item: Any, *, conn: sqlite3.Connection 
         return None
     motion_original_filename = original_filename[:-4]
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         return conn.execute(
             f"""
@@ -396,7 +396,7 @@ def raw_sidecar_for_image(target: Path, item: Any, *, conn: sqlite3.Connection |
     except (KeyError, IndexError, TypeError, ValueError):
         return None
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         raw_id = raw_sidecar_id_by_image_id(target, image_id, conn=conn)
         if raw_id is None:
@@ -429,7 +429,7 @@ def motion_video_main_image(target: Path, item: Any, *, conn: sqlite3.Connection
         return None
     image_original_filename = f"{original_filename}.jpg"
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         return conn.execute(
             f"""
@@ -460,7 +460,7 @@ def raw_sidecar_main_image(target: Path, item: Any, *, conn: sqlite3.Connection 
     if Path(original_filename).suffix.casefold() not in RAW_SIDECAR_EXTENSIONS:
         return None
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         image_id = raw_sidecar_image_id_by_sidecar_id(target, raw_id, conn=conn)
         if image_id is None:
@@ -485,7 +485,7 @@ def original_filename_for_item(target: Path, item: Any, *, conn: sqlite3.Connect
     except (KeyError, IndexError):
         pass
     owned_conn = conn is None
-    conn = conn or db.connect(target)
+    conn = conn or db.connect_read_only(target)
     try:
         row = conn.execute("SELECT original_filename FROM files WHERE id = ?", (int(item["id"]),)).fetchone()
         return str(row["original_filename"]) if row is not None else None

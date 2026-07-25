@@ -1112,7 +1112,7 @@ def text_filter_items(target: Path, text_filter: BrowserTextFilter, *, hide_out_
     deleted_sql = "1 = 1" if text_filter.deleted else "deleted_at IS NULL"
     focus_sql = f"AND {OUT_OF_FOCUS_FILTER_SQL}" if hide_out_of_focus else ""
     focus_params = OUT_OF_FOCUS_FILTER_PARAMS if hide_out_of_focus else ()
-    conn = db.connect(target)
+    conn = db.connect_read_only(target)
     try:
         attach_text_filter_databases(conn, target, text_filter)
         return list(

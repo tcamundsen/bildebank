@@ -113,10 +113,10 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
 
     def browser_db_connection(self) -> tuple[Any, bool]:
         if not hasattr(self, "request"):
-            return db.connect(self.server.target), True
+            return db.connect_read_only(self.server.target), True
         conn = getattr(self, "_browser_db_connection", None)
         if conn is None:
-            conn = db.connect(self.server.target)
+            conn = db.connect_read_only(self.server.target)
             self._browser_db_connection = conn
         return conn, False
 
