@@ -357,6 +357,10 @@ snapshotstatus kan vises. Denne redigeringen gjelder den uttrykkelige
 LAN-share-profilen; vanlig lokal read-only og en manuelt sammensatt
 `--host`/`--allow-remote`-modus beholder den ordinære detaljvisningen.
 Slideshow beholder sin strengere, separate rutegrense.
+LAN-share og slideshow skal heller ikke sende rå exception-tekster til
+klienten, fordi feil fra filsystem, SQLite og sidecar-biblioteker kan inneholde
+maskinspesifikke stier. De skal vise en kort feil som beskriver operasjonen.
+Vanlig lokal server kan fortsatt vise den detaljerte exception-teksten.
 
 Alle ekte HTTP-forespørsler skal valideres før GET-/POST-ruting. De skal ha
 nøyaktig én gyldig `Host`-header. Hvis `Host` oppgir en port, skal den være

@@ -46,6 +46,7 @@ from bildebank.server_response import (
     SECURITY_RESPONSE_HEADERS,
     ServerResponseMixin,
     add_csrf_to_html,
+    error_message_for_client,
     read_only_html,
     send_security_response_headers,
 )
@@ -160,6 +161,86 @@ class ServerCoreCliTests(unittest.TestCase):
 
         self.assertEqual(handler.headers, list(SECURITY_RESPONSE_HEADERS))
         self.assertIn(("Referrer-Policy", "same-origin"), handler.headers)
+
+    def test_shared_profiles_hide_exception_details_from_clients(self) -> None:
+        details = OSError(r"unable to open C:\Users\Tom\Bilder\.bilder.sqlite3")
+        local_server = SimpleNamespace(lan_share=False, slideshow=None)
+        lan_share_server = SimpleNamespace(lan_share=True, slideshow=None)
+        slideshow_server = SimpleNamespace(lan_share=False, slideshow=object())
+
+        self.assertEqual(
+            error_message_for_client(
+                local_server,
+                details,
+                shared_message="Kunne ikke vise siden.",
+            ),
+            str(details),
+        )
+        for profile, server in (
+            ("lan-share", lan_share_server),
+            ("slideshow", slideshow_server),
+        ):
+            with self.subTest(profile=profile):
+                self.assertEqual(
+                    error_message_for_client(
+                        server,
+                        details,
+                        shared_message="Kunne ikke vise siden.",
+                    ),
+                    "Kunne ikke vise siden.",
+                )
+
+    def test_lan_share_hides_unexpected_get_exception_details(self) -> None:
+        private_path = r"C:\Users\Tom\Bilder\.bilder.sqlite3"
+        handler = object.__new__(BildebankRequestHandler)
+        handler.path = "/"
+        handler.server = SimpleNamespace(
+            face_enabled=False,
+            lan_share=True,
+            openclip_enabled=False,
+            read_only=True,
+            slideshow=None,
+        )
+        response: dict[str, object] = {}
+        handler.respond_html = lambda content, *, status=HTTPStatus.OK: response.update(
+            content=content,
+            status=status,
+        )
+
+        with patch(
+            "bildebank.server_endpoints_browser.respond_browser_root",
+            side_effect=OSError(f"unable to open {private_path}"),
+        ):
+            BildebankRequestHandler.do_GET(handler)
+
+        self.assertEqual(response["status"], HTTPStatus.INTERNAL_SERVER_ERROR)
+        self.assertIn("Kunne ikke vise siden.", str(response["content"]))
+        self.assertNotIn(private_path, str(response["content"]))
+
+    def test_lan_share_hides_file_exception_details(self) -> None:
+        private_path = r"C:\Users\Tom\Bilder\2024\01\privat.jpg"
+        handler = object.__new__(BildebankRequestHandler)
+        handler.server = SimpleNamespace(
+            lan_share=True,
+            read_only=True,
+            slideshow=None,
+            target=Path("target"),
+        )
+        response: dict[str, object] = {}
+        handler.respond_text = lambda content, *, status=HTTPStatus.OK: response.update(
+            content=content,
+            status=status,
+        )
+
+        with patch(
+            "bildebank.server_files.resolve_server_file",
+            side_effect=FileNotFoundError(f"Filen finnes ikke: {private_path}"),
+        ):
+            BildebankRequestHandler.respond_file(handler, "1")
+
+        self.assertEqual(response["status"], HTTPStatus.NOT_FOUND)
+        self.assertEqual(response["content"], "Filen finnes ikke.")
+        self.assertNotIn(private_path, str(response["content"]))
 
     def test_run_server_preview_images_is_explicit_and_defaults_to_false(self) -> None:
         default_args = build_parser().parse_args(["run-server"])

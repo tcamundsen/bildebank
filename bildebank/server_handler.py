@@ -48,7 +48,12 @@ from .server_search import (
     search_server_images,
 )
 from .target_lock import TargetLockError
-from .server_response import ServerResponseMixin, send_security_response_headers
+from .server_response import (
+    ServerResponseMixin,
+    error_message_for_client,
+    respond_exception_text,
+    send_security_response_headers,
+)
 from . import server_request
 from .server_request import (
     first_param,
@@ -450,11 +455,15 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             self.respond_file(parsed.path.lstrip("/"))
         except TargetLockError as exc:
             if getattr(self.server, "slideshow", None) is not None:
-                self.respond_text(str(exc), status=HTTPStatus.CONFLICT)
+                respond_exception_text(self, exc, "Bildesamlingen er opptatt.", HTTPStatus.CONFLICT)
                 return
             self.respond_html(
                 error_html(
-                    exc,
+                    error_message_for_client(
+                        self.server,
+                        exc,
+                        shared_message="Bildesamlingen er opptatt.",
+                    ),
                     face_enabled=self.server.face_enabled,
                     openclip_enabled=self.server.openclip_enabled,
                 ),
@@ -462,14 +471,20 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             )
         except Exception as exc:  # noqa: BLE001 - local server should show readable errors
             if getattr(self.server, "slideshow", None) is not None:
-                self.respond_text(
+                respond_exception_text(
+                    self,
                     f"Kunne ikke vise slideshowet: {exc}",
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    "Kunne ikke vise slideshowet.",
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
                 )
                 return
             self.respond_html(
                 error_html(
-                    exc,
+                    error_message_for_client(
+                        self.server,
+                        exc,
+                        shared_message="Kunne ikke vise siden.",
+                    ),
                     face_enabled=self.server.face_enabled,
                     openclip_enabled=self.server.openclip_enabled,
                 ),
@@ -812,17 +827,19 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 require_active=require_active,
             )
         except PermissionError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            respond_exception_text(self, exc, "Filen kan ikke åpnes.", HTTPStatus.FORBIDDEN)
             return False
         except (FileNotFoundError, OSError) as exc:
-            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            respond_exception_text(self, exc, "Filen finnes ikke.", HTTPStatus.NOT_FOUND)
             return False
         try:
             from PIL import Image, ImageOps, UnidentifiedImageError
         except ImportError as exc:
-            self.respond_text(
+            respond_exception_text(
+                self,
                 f"Pillow mangler, kan ikke lage preview-bilde: {exc}",
-                status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                "Preview-bildet kan ikke lages fordi Pillow mangler.",
+                HTTPStatus.INTERNAL_SERVER_ERROR,
             )
             return False
         try:
@@ -842,16 +859,16 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                     output = BytesIO()
                     preview.save(output, format="JPEG", quality=85)
         except PermissionError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            respond_exception_text(self, exc, "Filen kan ikke åpnes.", HTTPStatus.FORBIDDEN)
             return False
         except FileNotFoundError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            respond_exception_text(self, exc, "Filen finnes ikke.", HTTPStatus.NOT_FOUND)
             return False
         except UnidentifiedImageError:
             self.respond_text("Filen er ikke et bilde.", status=HTTPStatus.BAD_REQUEST)
             return False
         except OSError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            respond_exception_text(self, exc, "Filen kunne ikke leses.", HTTPStatus.INTERNAL_SERVER_ERROR)
             return False
         self.respond_bytes(output.getvalue(), "image/jpeg")
         return True
@@ -864,13 +881,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 require_active=getattr(self.server, "read_only", False),
             )
         except PermissionError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            respond_exception_text(self, exc, "Filen kan ikke åpnes.", HTTPStatus.FORBIDDEN)
             return
         except FileNotFoundError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            respond_exception_text(self, exc, "Filen finnes ikke.", HTTPStatus.NOT_FOUND)
             return
         except OSError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            respond_exception_text(self, exc, "Filen kunne ikke åpnes.", HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         # Keep the small handler doubles used by callers/tests working while the
         # real HTTP handler streams files and supports Range requests.
@@ -879,16 +896,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 with server_files.open_server_file(served_file) as stream:
                     content = stream.read()
             except PermissionError as exc:
-                self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+                respond_exception_text(self, exc, "Filen kan ikke åpnes.", HTTPStatus.FORBIDDEN)
                 return
             except FileNotFoundError as exc:
-                self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+                respond_exception_text(self, exc, "Filen finnes ikke.", HTTPStatus.NOT_FOUND)
                 return
             except OSError as exc:
-                self.respond_text(
-                    str(exc),
-                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
-                )
+                respond_exception_text(self, exc, "Filen kunne ikke leses.", HTTPStatus.INTERNAL_SERVER_ERROR)
                 return
             self.respond_bytes(content, served_file.content_type)
             return
@@ -898,13 +912,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             served_file = server_files.resolve_video_preview_file(self.server.target, raw_file_id)
         except PermissionError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            respond_exception_text(self, exc, "Videoen kan ikke åpnes.", HTTPStatus.FORBIDDEN)
             return
         except FileNotFoundError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            respond_exception_text(self, exc, "Videoen finnes ikke.", HTTPStatus.NOT_FOUND)
             return
         except OSError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            respond_exception_text(self, exc, "Videoen kunne ikke åpnes.", HTTPStatus.INTERNAL_SERVER_ERROR)
             return
         self.respond_server_file(served_file)
 
@@ -916,13 +930,28 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
                 require_active=getattr(self.server, "read_only", False),
             )
         except PermissionError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            respond_exception_text(
+                self,
+                exc,
+                "Miniatyrbildet kan ikke åpnes.",
+                HTTPStatus.FORBIDDEN,
+            )
             return
         except FileNotFoundError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            respond_exception_text(
+                self,
+                exc,
+                "Miniatyrbildet finnes ikke.",
+                HTTPStatus.NOT_FOUND,
+            )
             return
         except OSError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            respond_exception_text(
+                self,
+                exc,
+                "Miniatyrbildet kunne ikke åpnes.",
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
             return
         self.respond_server_file(served_file)
 
@@ -930,16 +959,13 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             stream = server_files.open_server_file(served_file)
         except PermissionError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.FORBIDDEN)
+            respond_exception_text(self, exc, "Filen kan ikke åpnes.", HTTPStatus.FORBIDDEN)
             return
         except FileNotFoundError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.NOT_FOUND)
+            respond_exception_text(self, exc, "Filen finnes ikke.", HTTPStatus.NOT_FOUND)
             return
         except OSError as exc:
-            self.respond_text(
-                str(exc),
-                status=HTTPStatus.INTERNAL_SERVER_ERROR,
-            )
+            respond_exception_text(self, exc, "Filen kunne ikke åpnes.", HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
         with stream:
@@ -1003,7 +1029,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             try:
                 content = doc_asset_path.read_bytes()
             except OSError as exc:
-                self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                respond_exception_text(
+                    self, exc, "Hjelpebildet kunne ikke leses.", HTTPStatus.INTERNAL_SERVER_ERROR
+                )
                 return
             self.respond_bytes(content, content_type)
             return
@@ -1021,7 +1049,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             markdown = doc_path.read_text(encoding="utf-8")
         except OSError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            respond_exception_text(
+                self, exc, "Hjelpesiden kunne ikke leses.", HTTPStatus.INTERNAL_SERVER_ERROR
+            )
             return
         self.respond_html(
             markdown_doc_page_html(
@@ -1040,7 +1070,9 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
         try:
             markdown = readme_path.read_text(encoding="utf-8")
         except OSError as exc:
-            self.respond_text(str(exc), status=HTTPStatus.INTERNAL_SERVER_ERROR)
+            respond_exception_text(
+                self, exc, "README-siden kunne ikke leses.", HTTPStatus.INTERNAL_SERVER_ERROR
+            )
             return
         self.respond_html(
             markdown_doc_page_html(
@@ -1145,7 +1177,14 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             )
         except Exception as exc:  # noqa: BLE001 - API should return JSON errors
             self.respond_json(
-                {"ok": False, "error": f"Kunne ikke beregne ansiktstreff: {exc}"},
+                {
+                    "ok": False,
+                    "error": error_message_for_client(
+                        self.server,
+                        f"Kunne ikke beregne ansiktstreff: {exc}",
+                        shared_message="Kunne ikke beregne ansiktstreff.",
+                    ),
+                },
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
             return
@@ -1182,12 +1221,27 @@ class BildebankRequestHandler(ServerResponseMixin, BaseHTTPRequestHandler):
             )
         except ValueError as exc:
             self.respond_json(
-                {"ok": False, "error": str(exc)}, status=HTTPStatus.BAD_REQUEST
+                {
+                    "ok": False,
+                    "error": error_message_for_client(
+                        self.server,
+                        exc,
+                        shared_message="Kunne ikke lese vedlikeholdsstatus.",
+                    ),
+                },
+                status=HTTPStatus.BAD_REQUEST,
             )
             return
         except Exception as exc:  # noqa: BLE001 - API should return JSON errors
             self.respond_json(
-                {"ok": False, "error": str(exc)},
+                {
+                    "ok": False,
+                    "error": error_message_for_client(
+                        self.server,
+                        exc,
+                        shared_message="Kunne ikke lese vedlikeholdsstatus.",
+                    ),
+                },
                 status=HTTPStatus.INTERNAL_SERVER_ERROR,
             )
             return

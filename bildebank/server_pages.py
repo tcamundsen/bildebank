@@ -187,7 +187,7 @@ def geo_area_page_html(
     )
 
 
-def error_html(exc: Exception, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
+def error_html(exc: Exception | str, *, face_enabled: bool = True, openclip_enabled: bool = True) -> str:
     return server_shell.error_html(
         exc,
         shell_page_html=shell_page_html,

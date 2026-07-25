@@ -51,7 +51,7 @@ def shell_page_html(
 
 
 def error_html(
-    exc: Exception,
+    exc: Exception | str,
     *,
     shell_page_html: Callable[..., str],
     face_enabled: bool = True,

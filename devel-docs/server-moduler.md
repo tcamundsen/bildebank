@@ -46,7 +46,10 @@ server
   `BildebankRequestHandler.end_headers()` legger den felles, faste
   sikkerhetspakken fra `server_response.py` på alle ferdige responser,
   inkludert filer, redirects og tidlige HTTP-feil. Handlerens `Server`-header
-  røper ikke Python-versjonen. Før CSRF-kontroll leser handleren POST-body
+  røper ikke Python-versjonen. `server_response.py` velger også generiske
+  feiltekster for LAN-share og slideshow, slik at rå exceptions med lokale
+  stier ikke sendes til delte klienter; vanlig lokal server beholder detaljer.
+  Før CSRF-kontroll leser handleren POST-body
   gjennom den
   felles, tekstbaserte 1 MiB-grensen i `server_request.py`. Ugyldig eller
   duplisert `Content-Length`, ufullstendig eller ugyldig UTF-8 og enhver

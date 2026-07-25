@@ -107,6 +107,8 @@ og snapshot-repositories. Kildenavn og snapshotstatus vises fortsatt.
 Originalbilder, nøyaktig GPS, kommentarer, personer og tagger er også
 tilgjengelige. LAN-share er derfor en full visning av samlingen for personer
 du stoler på, ikke en offentlig eller anonymisert deling.
+Hvis en intern feil oppstår, viser LAN-share en kort feilmelding uten
+maskinspesifikke stier.
 
 Hvis du skriver den lange kommandoen manuelt, får du ikke denne skjulingen av
 lokale stier. Bruk `--lan-share` når samlingen skal deles read-only på LAN.

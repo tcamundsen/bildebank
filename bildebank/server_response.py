@@ -24,6 +24,33 @@ SETTINGS_LINK_HTML = (
 )
 
 
+def error_message_for_client(
+    server: Any,
+    details: Exception | str,
+    *,
+    shared_message: str,
+) -> str:
+    if getattr(server, "lan_share", False) or getattr(server, "slideshow", None) is not None:
+        return shared_message
+    return str(details)
+
+
+def respond_exception_text(
+    handler: Any,
+    details: Exception | str,
+    shared_message: str,
+    status: Any,
+) -> None:
+    handler.respond_text(
+        error_message_for_client(
+            handler.server,
+            details,
+            shared_message=shared_message,
+        ),
+        status=status,
+    )
+
+
 def add_csrf_to_html(content: str, token: str) -> str:
     escaped = html.escape(token, quote=True)
     meta = f'<meta name="csrf-token" content="{escaped}">'
