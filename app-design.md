@@ -355,6 +355,9 @@ recovery og databaseforberedelse. Ekstern read-only, LAN-share, slideshow og
 lokal skrivbar server krever ikke dette ekstra flagget. Flagget er en
 uttrykkelig risikobekreftelse, ikke autentisering; alle klienter som kan nå en
 skrivbar server, kan hente CSRF-token og utføre tillatte endringer.
+Wildcard-adressene `0.0.0.0` og `::` er bare lytteadresser. Klar-meldingen og
+automatisk nettleseråpning skal bruke henholdsvis `127.0.0.1` og `[::1]`
+lokalt, uten å endre hvilken adresse serveren lytter på.
 
 `--lan-share` er en egen presentasjonsprofil i tillegg til å være read-only.
 Den deler aktive originalfiler, nøyaktig GPS, kommentarer, personer og tagger,

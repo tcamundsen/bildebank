@@ -19,7 +19,11 @@ from bildebank.cli import (
     should_recover_pending_file_moves,
     validate_parsed_args,
 )
-from bildebank.cli_server import lan_share_urls, run_server_command
+from bildebank.cli_server import (
+    lan_share_urls,
+    local_access_url,
+    run_server_command,
+)
 from bildebank.config import AppConfig, BrowserConfig, FaceRecognitionConfig, OpenClipConfig
 from bildebank.db import init_database
 from bildebank.server_handler import (
@@ -357,6 +361,20 @@ class ServerCoreCliTests(unittest.TestCase):
     def test_lan_share_urls_use_private_ipv4_addresses(self) -> None:
         with patch("bildebank.cli_server.local_lan_ipv4_addresses", return_value=["192.168.86.11"]):
             self.assertEqual(lan_share_urls(8766), ["http://192.168.86.11:8766/"])
+
+    def test_wildcard_bind_uses_loopback_url_for_local_access(self) -> None:
+        cases = (
+            ("0.0.0.0", "http://0.0.0.0:8765/", "http://127.0.0.1:8765/"),
+            ("", "http://0.0.0.0:8765/", "http://127.0.0.1:8765/"),
+            ("::", "http://:::8765/", "http://[::1]:8765/"),
+            ("192.168.1.10", "http://192.168.1.10:8765/", "http://192.168.1.10:8765/"),
+        )
+        for host, server_url, expected in cases:
+            with self.subTest(host=host):
+                self.assertEqual(
+                    local_access_url(host, 8765, server_url),
+                    expected,
+                )
 
     def test_run_server_local_bind_host_detection(self) -> None:
         cases = {
@@ -822,6 +840,34 @@ class ServerCoreCliTests(unittest.TestCase):
 
         load_config.assert_not_called()
         run_local_server.assert_not_called()
+
+    def test_remote_writable_server_opens_loopback_url_in_browser(self) -> None:
+        config = AppConfig()
+        with (
+            patch("bildebank.cli_server.load_config", return_value=config),
+            patch("bildebank.cli_server.run_local_server") as run_local_server,
+            patch("bildebank.cli_server.webbrowser.open") as open_browser,
+            redirect_stdout(StringIO()) as stdout,
+        ):
+            run_local_server.side_effect = lambda *args, **kwargs: kwargs["ready"](
+                "http://0.0.0.0:8765/"
+            )
+            result = run_server_command(
+                Path("C:/Users/Tom/Bilder"),
+                host="0.0.0.0",
+                port=8765,
+                repo_root=self.program_root,
+                browser=True,
+                allow_remote=True,
+                allow_remote_write=True,
+            )
+
+        self.assertEqual(result, 0)
+        open_browser.assert_called_once_with("http://127.0.0.1:8765/")
+        self.assertIn(
+            "Bildebank-serveren er klar: http://127.0.0.1:8765/",
+            stdout.getvalue(),
+        )
 
     def test_run_server_lan_share_opens_localhost_in_browser(self) -> None:
         config = AppConfig()

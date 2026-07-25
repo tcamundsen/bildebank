@@ -13,6 +13,14 @@ from .server_runtime import (
 )
 
 
+def local_access_url(host: str, port: int, server_url: str) -> str:
+    if host in {"", "0.0.0.0"}:
+        return f"http://127.0.0.1:{port}/"
+    if host == "::":
+        return f"http://[::1]:{port}/"
+    return server_url
+
+
 def run_server_command(
     target: Path,
     *,
@@ -39,14 +47,14 @@ def run_server_command(
     print(f"Bildesamling: {target}")
 
     def on_ready(url: str) -> None:
-        print(f"Bildebank-serveren er klar: {url}")
+        access_url = local_access_url(host, port, url)
+        print(f"Bildebank-serveren er klar: {access_url}")
         if lan_share:
             print_lan_share_warning(port)
         print("Trykk Ctrl-C for å stoppe serveren.")
         if browser:
-            browser_url = f"http://127.0.0.1:{port}/" if lan_share else url
             print("Åpner nettleser.")
-            webbrowser.open(browser_url)
+            webbrowser.open(access_url)
 
     run_local_server(
         target,

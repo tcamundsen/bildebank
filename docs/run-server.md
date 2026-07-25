@@ -78,6 +78,10 @@ Og så må du finne IP-adressen til PC-en som kjører serveren med `ipconfig`.
 Hvis adressen er 192.168.86.11, så skriver du `http://192.168.86.11:8765/` i
 adressefeltet til nettleseren.
 
+`0.0.0.0` er en lytteadresse, ikke en nettadresse som kan åpnes. På PC-en som
+kjører Bildebank, åpner programmet derfor `http://127.0.0.1:8765/`
+automatisk. Andre enheter bruker PC-ens LAN-adresse fra `ipconfig`.
+
 En ekstern server er ikke skrivbar med bare `--allow-remote`. Hvis klientene
 uttrykkelig skal kunne endre metadata og flytte bilder til `deleted/`, kreves
 også `--allow-remote-write`:

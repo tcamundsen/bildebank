@@ -26,6 +26,9 @@ server
   slideshow. Den uttrykkelige LAN-share-profilen følger med som servertilstand
   og brukes av visningslaget til å utelate lokale kilde- og
   snapshot-repositorystier. Vanlig lokal read-only påvirkes ikke.
+- `cli_server.py` presenterer en lokal, brukbar loopback-URL når runtime
+  lytter på IPv4- eller IPv6-wildcard. Lytteadressen videresendes uendret til
+  runtime.
 - Dashboard og maintenance-status bruker read-only-tilkoblinger uavhengig av
   servermodus. Dashboardets snapshotoversikt sikrer eller migrerer ikke lokal
   programdatabase. OpenCLIP- og InsightFace-status krever gjeldende eksplisitt
