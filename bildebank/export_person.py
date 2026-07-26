@@ -7,12 +7,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import db
+from .collection_paths import (
+    COLLECTION_FILE_OK,
+    hash_stable_collection_file,
+    inspect_collection_file,
+)
 from .config import AppConfig
 from .face import face_database_dir, face_model_db_filename
 from .html_export import render_html
 from .html_paths import path_to_url
 from .importer import safe_copy
-from .media import media_kind, sha256_file
+from .media import media_kind
 from .server_browser_queries import browser_date_for_item, source_items
 from .server_browser_sources import person_browser_source
 from .server_faces import person_by_name
@@ -39,7 +44,7 @@ EXPORT_FINALIZE_RETRY_SECONDS = 0.25
 class PersonExportEntry:
     source: Path
     destination: Path
-    expected_hash: str
+    expected_hash: str | None
 
 
 @dataclass(frozen=True)
@@ -74,7 +79,7 @@ def export_person(
     with TargetLock(target, command="export-person"):
         validate_export_destination(target, destination)
         plan = build_export_plan(target, canonical_name, destination, config)
-        copy_export_plan(plan)
+        copy_export_plan(target, plan)
         return plan
 
 
@@ -166,7 +171,7 @@ def build_export_plan(
                     PersonExportEntry(
                         source=preview_source,
                         destination=destination / preview_relative,
-                        expected_hash=sha256_file(preview_source),
+                        expected_hash=None,
                     )
                 )
                 playback_url = path_to_url(preview_relative)
@@ -231,7 +236,7 @@ def valid_export_date(value: str) -> dt.date | None:
         return None
 
 
-def copy_export_plan(plan: PersonExportPlan) -> None:
+def copy_export_plan(target: Path, plan: PersonExportPlan) -> None:
     temporary = plan.destination.with_name(
         f".bildebank-export-person-{plan.person_name}-incomplete-{uuid.uuid4().hex}"
     )
@@ -241,7 +246,8 @@ def copy_export_plan(plan: PersonExportPlan) -> None:
             relative_destination = entry.destination.relative_to(plan.destination)
             temporary_destination = temporary / relative_destination
             temporary_destination.parent.mkdir(parents=True, exist_ok=True)
-            safe_copy(entry.source, temporary_destination, entry.expected_hash)
+            expected_hash = validated_export_source_hash(target, entry)
+            safe_copy(entry.source, temporary_destination, expected_hash)
         write_export_browser(plan, temporary)
         finalize_export_directory(temporary, plan.destination)
     except KeyboardInterrupt as exc:
@@ -252,6 +258,29 @@ def copy_export_plan(plan: PersonExportPlan) -> None:
         raise RuntimeError(
             f"Eksporten feilet. Ufullstendig eksport er beholdt i: {temporary}. {exc}"
         ) from exc
+
+
+def validated_export_source_hash(
+    target: Path,
+    entry: PersonExportEntry,
+) -> str:
+    try:
+        relative_source = entry.source.relative_to(target)
+    except ValueError as exc:
+        raise OSError(
+            f"Eksportkilden ligger utenfor bildesamlingen: {entry.source}"
+        ) from exc
+    inspection = inspect_collection_file(target, relative_source)
+    if inspection.status != COLLECTION_FILE_OK:
+        reason = inspection.message or inspection.status
+        raise OSError(f"Kan ikke eksportere kildefilen {entry.source}: {reason}")
+    if entry.expected_hash is not None:
+        return entry.expected_hash
+    source_hash, _size_bytes = hash_stable_collection_file(
+        target,
+        relative_source,
+    )
+    return source_hash
 
 
 def finalize_export_directory(temporary: Path, destination: Path) -> None:

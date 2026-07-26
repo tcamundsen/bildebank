@@ -455,6 +455,41 @@ class ExportPersonTests(unittest.TestCase):
             self.assertIn(f"Statisk browser: {destination_root / 'Kari' / 'index.html'}", stdout)
             self.assertTrue((destination_root / "Kari" / "index.html").is_file())
 
+    def test_export_person_dry_run_plans_link_but_real_export_rejects_it(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, config, _ids = self.make_collection(root)
+            source = target / "2024/01/same.jpg"
+            victim = root / "privat.jpg"
+            victim.write_bytes(b"privat")
+            source.unlink()
+            try:
+                source.symlink_to(victim)
+            except OSError as exc:
+                self.skipTest(f"Kan ikke opprette symlink på denne plattformen: {exc}")
+            destination_root = root / "exports"
+            destination_root.mkdir()
+
+            plan = export_person(
+                target,
+                "Kari",
+                destination_root,
+                config=config,
+                dry_run=True,
+            )
+
+            self.assertIn(source, [entry.source for entry in plan.entries])
+            self.assertFalse((destination_root / "Kari").exists())
+            with self.assertRaisesRegex(RuntimeError, "vanlig fil uten lenker"):
+                export_person(
+                    target,
+                    "Kari",
+                    destination_root,
+                    config=config,
+                )
+            self.assertEqual(victim.read_bytes(), b"privat")
+            self.assertFalse((destination_root / "Kari").exists())
+
     def test_export_person_includes_video_original_and_existing_mp4_preview(self) -> None:
         for extension in (".avi", ".3gp"):
             with self.subTest(extension=extension), tempfile.TemporaryDirectory() as tmp:
@@ -538,6 +573,67 @@ class ExportPersonTests(unittest.TestCase):
                     f'"playbackUrl": "{video_preview_relative_path(video_hash).as_posix()}"',
                     html,
                 )
+
+    def test_export_person_rejects_linked_video_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, config, _ids = self.make_collection(root)
+            video_relative = Path("2024/06/familiefilm.3gp")
+            video_path = target / video_relative
+            video_path.parent.mkdir(parents=True, exist_ok=True)
+            video_path.write_bytes(b"3GP original")
+            video_id = register_target_file(target, video_relative)
+            conn = db.connect(target)
+            try:
+                row = conn.execute(
+                    "SELECT sha256 FROM files WHERE id = ?",
+                    (video_id,),
+                ).fetchone()
+                assert row is not None
+                video_hash = str(row["sha256"])
+            finally:
+                conn.close()
+            face_conn = connect_face_db(target)
+            try:
+                face_conn.execute(
+                    "INSERT INTO person_files(person_id, file_id) VALUES(1, ?)",
+                    (video_id,),
+                )
+                face_conn.commit()
+            finally:
+                face_conn.close()
+            private_file = root / "privat.mp4"
+            private_file.write_bytes(b"privat video")
+            preview = video_preview_absolute_path(target, video_hash)
+            preview.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                preview.symlink_to(private_file)
+            except OSError as exc:
+                self.skipTest(f"Kan ikke opprette symlink på denne plattformen: {exc}")
+            destination_root = root / "exports"
+            destination_root.mkdir()
+
+            plan = export_person(
+                target,
+                "Kari",
+                destination_root,
+                config=config,
+                dry_run=True,
+            )
+
+            preview_entry = next(
+                entry for entry in plan.entries if entry.source == preview
+            )
+            self.assertIsNone(preview_entry.expected_hash)
+            with self.assertRaisesRegex(RuntimeError, "vanlig fil uten lenker"):
+                export_person(
+                    target,
+                    "Kari",
+                    destination_root,
+                    config=config,
+                )
+            self.assertEqual(private_file.read_bytes(), b"privat video")
+            self.assertFalse((destination_root / "Kari").exists())
 
     def test_export_person_rejects_invalid_inputs_and_keeps_failed_export(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

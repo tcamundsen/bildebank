@@ -40,12 +40,17 @@ bildevisning i den statiske browseren. De skrives ikke inn i bildefilene.
 Stien øverst i browseren kan brukes til å gå mellom oversikter for år, måneder
 og filer.
 
-Bruk `--dry-run` for å kontrollere alle originalfiler og eksportfiler uten å opprette
-mapper eller kopiere filer:
+Bruk `--dry-run` for å se hvilke filer som er valgt og hvor de skal eksporteres,
+uten å opprette mapper, lese hele filinnholdet eller kopiere filer:
 
 ```powershell
 bildebank export-person "Tom" --dest "D:\Eksport" --dry-run
 ```
+
+Dry-run bygger planen fra databasen. Manglende eller endrede originalfiler kan
+derfor først oppdages under den reelle eksporten. Da avviser Bildebank lenker og
+Windows reparse points, og kontrollerer hver kopiert original mot databaseført
+SHA-256 før personmappen publiseres.
 
 Eksporten bruker en midlertidig mappe ved siden av den ferdige personmappen.
 Personmappen får navnet sitt først når alle filer er kopiert og kontrollert.
