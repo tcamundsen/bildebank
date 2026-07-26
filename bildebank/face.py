@@ -17,6 +17,19 @@ from pathlib import Path
 from typing import Any, Concatenate, ParamSpec, TypeVar
 
 from . import db
+from .browser_output import (
+    PEOPLE_INDEX_FILENAME,
+    cleanup_legacy_people_files,
+    create_people_staging_directory,
+    discard_people_staging_directory,
+    people_index_path,
+    person_page_filename,
+    person_page_path,
+    publish_people_directory,
+    publish_person_page,
+    validate_legacy_people_files,
+    write_new_text_file,
+)
 from .config import DEFAULT_FACE_MODEL_NAME, FaceRecognitionConfig
 from .db_core import connect_database_read_only
 from .html_paths import path_to_url, relative_to_target
@@ -1254,7 +1267,6 @@ def face_report(
 def export_person_browser(
     target: Path,
     person_name: str,
-    output: Path | None = None,
     *,
     month_preview_limit: int | None = None,
     hide_out_of_focus: bool = False,
@@ -1262,24 +1274,36 @@ def export_person_browser(
     target_locked: bool = False,
 ) -> Path:
     clean_name = normalize_person_name(person_name)
-    output_path = output or (target / f"person-{safe_filename(clean_name)}.html")
     path = face_db_path(target, config)
     if not path.exists():
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target, config)
     try:
-        person = conn.execute("SELECT id, name FROM persons WHERE name = ?", (clean_name,)).fetchone()
+        person = conn.execute(
+            "SELECT id, name FROM persons WHERE name = ?",
+            (clean_name,),
+        ).fetchone()
         if person is None:
             raise ValueError(f"Fant ikke person: {clean_name}")
     finally:
         conn.close()
-    items = person_source_browser_items(target, clean_name, config, hide_out_of_focus=hide_out_of_focus)
-    output_path.write_text(
-        render_html(items, title=clean_name, month_preview_limit=month_preview_limit),
-        encoding="utf-8",
-        newline="\n",
+    canonical_name = str(person["name"])
+    items = person_source_browser_items(
+        target,
+        canonical_name,
+        config,
+        hide_out_of_focus=hide_out_of_focus,
+        target_url_prefix=Path("../.."),
     )
-    return output_path
+    return publish_person_page(
+        target,
+        int(person["id"]),
+        render_html(
+            items,
+            title=canonical_name,
+            month_preview_limit=month_preview_limit,
+        ),
+    )
 
 
 def person_source_browser_items(
@@ -1288,6 +1312,7 @@ def person_source_browser_items(
     face_config: FaceRecognitionConfig | None = None,
     *,
     hide_out_of_focus: bool = False,
+    target_url_prefix: Path = Path(),
 ) -> list[dict[str, object]]:
     from .server_browser_queries import source_items
     from .server_browser_sources import person_browser_source
@@ -1298,6 +1323,7 @@ def person_source_browser_items(
             item,
             relative_to_target(target, Path(str(item["target_path"]))),
             target=target,
+            target_url_prefix=target_url_prefix,
         )
         for item in source_items(target, source, face_config, hide_out_of_focus=hide_out_of_focus)
     ]
@@ -1311,41 +1337,67 @@ def export_people_browser(
     config: FaceRecognitionConfig | None = None,
     target_locked: bool = False,
 ) -> PeopleBrowserResult:
-    output_path = target / "personer.html"
+    output_path = people_index_path(target)
     path = face_db_path(target, config)
     if not path.exists():
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
-    conn = connect_face_db(target, config)
+    validate_legacy_people_files(target)
+    staging = create_people_staging_directory(target)
     try:
-        people = list(conn.execute("SELECT id, name FROM persons ORDER BY name"))
-        index_people: list[dict[str, Any]] = []
-        person_pages: list[Path] = []
-        for person in people:
-            name = str(person["name"])
-            page_path = target / f"person-{safe_filename(name)}.html"
-            items = person_source_browser_items(target, name, config, hide_out_of_focus=hide_out_of_focus)
-            page_path.write_text(
-                render_html(
-                    items,
-                    title=name,
-                    month_preview_limit=month_preview_limit,
-                ),
-                encoding="utf-8",
-                newline="\n",
+        conn = connect_face_db(target, config)
+        try:
+            people = list(conn.execute("SELECT id, name FROM persons ORDER BY name"))
+            index_people: list[dict[str, Any]] = []
+            person_pages: list[Path] = []
+            for person in people:
+                person_id = int(person["id"])
+                name = str(person["name"])
+                page_filename = person_page_filename(person_id)
+                items = person_source_browser_items(
+                    target,
+                    name,
+                    config,
+                    hide_out_of_focus=hide_out_of_focus,
+                    target_url_prefix=Path("../.."),
+                )
+                write_new_text_file(
+                    staging / page_filename,
+                    render_html(
+                        items,
+                        title=name,
+                        month_preview_limit=month_preview_limit,
+                    ),
+                )
+                person_pages.append(person_page_path(target, person_id))
+                index_people.append(
+                    people_index_item(
+                        conn,
+                        name,
+                        page_filename,
+                        items,
+                    )
+                )
+            write_new_text_file(
+                staging / PEOPLE_INDEX_FILENAME,
+                render_people_index_html(index_people),
             )
-            person_pages.append(page_path)
-            index_people.append(people_index_item(target, conn, name, page_path, items))
-    finally:
-        conn.close()
-    output_path.write_text(render_people_index_html(index_people), encoding="utf-8", newline="\n")
-    return PeopleBrowserResult(index_path=output_path, person_pages=tuple(person_pages))
+        finally:
+            conn.close()
+        publish_people_directory(target, staging)
+        cleanup_legacy_people_files(target)
+        return PeopleBrowserResult(
+            index_path=output_path,
+            person_pages=tuple(person_pages),
+        )
+    except BaseException:
+        discard_people_staging_directory(staging)
+        raise
 
 
 def people_index_item(
-    target: Path,
     conn: sqlite3.Connection,
     name: str,
-    page_path: Path,
+    page_filename: str,
     items: list[dict[str, Any]],
 ) -> dict[str, Any]:
     file_ids = [int(item["fileId"]) for item in items]
@@ -1354,7 +1406,7 @@ def people_index_item(
     thumbnail_rotation = items[0].get("viewRotation", 0) if items else 0
     return {
         "name": name,
-        "pageUrl": path_to_url(relative_to_target(target, page_path)),
+        "pageUrl": path_to_url(Path(page_filename)),
         "thumbnailUrl": thumbnail_url,
         "viewRotation": thumbnail_rotation,
         "imageCount": len(items),
@@ -1618,12 +1670,6 @@ def html_escape(value: object) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
-
-
-def safe_filename(value: str) -> str:
-    safe = "".join(char if char.isalnum() or char in ("-", "_") else "-" for char in value.strip())
-    safe = "-".join(part for part in safe.split("-") if part)
-    return safe or "person"
 
 
 def count_scanned_files(conn: sqlite3.Connection, where_sql: str) -> int:

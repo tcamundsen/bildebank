@@ -284,7 +284,7 @@ class ToolsTab:
         static_browser_button.grid(row=2, column=1, padx=self.padx, pady=self.pady, sticky="ew")
         self._add_tooltip(
             static_browser_button,
-            "Lag en statisk index.html i bildesamlingen som kan åpnes uten Bildebank-server.",
+            r"Lag browser\index.html i bildesamlingen, som kan åpnes uten Bildebank-server.",
         )
 
         static_person_browser_button = self._button(

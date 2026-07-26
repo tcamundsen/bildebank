@@ -241,7 +241,7 @@ bildebank make-person-browser "Tom"
 ```
 
 Du kan også lage statiske bildebrowsere for alle personer, sammen med
-oversiktsfilen `personer.html` med kommandoen
+oversiktsfilen `browser\people\index.html`, med kommandoen
 [`make-people-browser`](../make-people-browser.md):
 
 ```powershell

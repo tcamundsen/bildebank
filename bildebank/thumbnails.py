@@ -52,12 +52,16 @@ def thumbnail_url(original_relative_path: Path) -> str:
 
 
 def existing_thumbnail_url(target: Path, original_relative_path: Path) -> str:
+    return path_to_url(existing_thumbnail_relative_path(target, original_relative_path))
+
+
+def existing_thumbnail_relative_path(target: Path, original_relative_path: Path) -> Path:
     original_path = db.absolute_target_path(target, original_relative_path)
     thumb_rel = thumbnail_relative_path(original_relative_path)
     thumb_path = target / thumb_rel
     if thumbnail_is_current(original_path, thumb_path):
-        return path_to_url(thumb_rel)
-    return path_to_url(original_relative_path)
+        return thumb_rel
+    return original_relative_path
 
 
 def thumbnail_is_current(original_path: Path, thumb_path: Path) -> bool:

@@ -1174,8 +1174,7 @@ model_name = "buffalo_l"
             self.assertNotIn("Forslag:", stdout)
             self.assertNotIn("Kari\tface-id=2", stdout)
             self.assertNotIn("Skrev person-index", stdout)
-            self.assertFalse((target / "personer.html").exists())
-            self.assertFalse((target / "person-Kari.html").exists())
+            self.assertFalse((target / "browser").exists())
 
             code, stdout, stderr = capture_cli(["--target", str(target), "face-report"])
 
@@ -1241,7 +1240,7 @@ model_name = "buffalo_l"
             self.assertEqual(run_cli(["--target", str(target), "face-person-create", "Kari"]), 0)
             self.assertEqual(run_cli(["--target", str(target), "face-person-add-face", "Kari", "1"]), 0)
             self.assertEqual(run_cli(["--target", str(target), "face-suggest", "--threshold", "0.9"]), 0)
-            self.assertFalse((target / "personer.html").exists())
+            self.assertFalse((target / "browser").exists())
             main_conn = db.connect(target)
             try:
                 main_conn.execute(
@@ -1256,7 +1255,7 @@ model_name = "buffalo_l"
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser for person", stdout)
-            html = (target / "person-Kari.html").read_text(encoding="utf-8")
+            html = (target / "browser" / "people" / "person-3.html").read_text(encoding="utf-8")
             self.assertIn("<title>Kari</title>", html)
             self.assertIn('id="title" class="title"', html)
             self.assertIn('<nav class="breadcrumb" aria-label="Plassering">', html)
@@ -1279,10 +1278,10 @@ model_name = "buffalo_l"
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev person-index", stdout)
             self.assertIn("Skrev personsider: 1", stdout)
-            index_html = (target / "personer.html").read_text(encoding="utf-8")
+            index_html = (target / "browser" / "people" / "index.html").read_text(encoding="utf-8")
             self.assertIn("<h1>Personer (1)</h1>", index_html)
-            self.assertIn("person-Kari.html", index_html)
-            self.assertIn('href="person-Kari.html"', index_html)
+            self.assertIn("person-3.html", index_html)
+            self.assertIn('href="person-3.html"', index_html)
             self.assertNotIn(str(target), index_html)
             self.assertIn("Kari", index_html)
             self.assertIn("1 bilder", index_html)

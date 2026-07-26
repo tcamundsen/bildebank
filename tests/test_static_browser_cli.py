@@ -63,8 +63,8 @@ class StaticBrowserCliTests(unittest.TestCase):
             )
             self.assertEqual(code, 0, stderr)
 
-            output = root / "index.html"
-            self.assertEqual(run_cli(["--target", str(target), "make-browser", "--output", str(output)]), 0)
+            output = target / "browser" / "index.html"
+            self.assertEqual(run_cli(["--target", str(target), "make-browser"]), 0)
             html = output.read_text(encoding="utf-8")
 
         self.assertIn('"monthKey": "2004-07"', html)
@@ -93,8 +93,8 @@ class StaticBrowserCliTests(unittest.TestCase):
             finally:
                 conn.close()
 
-            output = root / "index.html"
-            self.assertEqual(run_cli(["--target", str(target), "make-browser", "--output", str(output)]), 0)
+            output = target / "browser" / "index.html"
+            self.assertEqual(run_cli(["--target", str(target), "make-browser"]), 0)
             html = output.read_text(encoding="utf-8")
             items_start = html.index("const embeddedItems = ") + len("const embeddedItems = ")
             items_end = html.index(";\n    const MONTH_PREVIEW_LIMIT", items_start)
@@ -126,9 +126,9 @@ class StaticBrowserCliTests(unittest.TestCase):
             finally:
                 conn.close()
 
-            output = root / "index.html"
+            output = target / "browser" / "index.html"
             self.assertEqual(
-                run_cli(["--target", str(target), "make-browser", "--hide-out-of-focus", "--output", str(output)]),
+                run_cli(["--target", str(target), "make-browser", "--hide-out-of-focus"]),
                 0,
             )
             html = output.read_text(encoding="utf-8")
@@ -158,7 +158,49 @@ class StaticBrowserCliTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
             self.assertIn("Bildesamlingen er låst", stderr)
-            self.assertFalse((target / "index.html").exists())
+            self.assertFalse((target / "browser").exists())
+
+    def test_make_browser_replaces_legacy_index_only_after_new_browser_is_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            legacy = target / "index.html"
+            legacy.write_text("gammel browser", encoding="utf-8")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "make-browser"]
+            )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Skrev HTML-browser", stdout)
+            self.assertFalse(legacy.exists())
+            self.assertTrue((target / "browser" / "index.html").is_file())
+
+    def test_make_browser_refuses_legacy_index_symlink_without_touching_database(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            database = target / DB_FILENAME
+            legacy = target / "index.html"
+            try:
+                legacy.symlink_to(database)
+            except OSError as exc:
+                self.skipTest(f"Kan ikke opprette symlink på denne plattformen: {exc}")
+
+            code, stdout, stderr = capture_cli(
+                ["--target", str(target), "make-browser"]
+            )
+
+            self.assertEqual(code, 1)
+            self.assertEqual(stdout, "")
+            self.assertIn("uten lenker", stderr)
+            conn = sqlite3.connect(database)
+            try:
+                self.assertEqual(conn.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+            finally:
+                conn.close()
+            self.assertTrue(legacy.is_symlink())
+            self.assertFalse((target / "browser").exists())
 
     def test_server_month_thumbnails_clip_rotated_images(self) -> None:
         self.assertIn(".thumb-link {", SERVER_CSS)
@@ -309,9 +351,9 @@ class StaticBrowserCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser", stdout)
-            html = (target / "index.html").read_text(encoding="utf-8")
+            html = (target / "browser" / "index.html").read_text(encoding="utf-8")
             self.assertIn('"path": "2024/01/IMG 20240102.jpg"', html)
-            self.assertIn('"url": "2024/01/IMG%2020240102.jpg"', html)
+            self.assertIn('"url": "../2024/01/IMG%2020240102.jpg"', html)
             self.assertIn('"sizeText": "9 bytes"', html)
             self.assertIn('"viewRotation": 90', html)
             self.assertIn('applyImageViewRotation(img, item, "contain");', html)
@@ -352,7 +394,6 @@ class StaticBrowserCliTests(unittest.TestCase):
             self.assertNotIn("navigator.clipboard.writeText", html)
             self.assertNotIn("fallbackCopyCommand", html)
 
-            limited_output = root / "limited.html"
             code, stdout, stderr = capture_cli(
                 [
                     "--target",
@@ -360,18 +401,16 @@ class StaticBrowserCliTests(unittest.TestCase):
                     "make-browser",
                     "--month-preview-limit",
                     "40",
-                    "--output",
-                    str(limited_output),
                 ]
             )
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser", stdout)
-            limited_html = limited_output.read_text(encoding="utf-8")
+            limited_html = (target / "browser" / "index.html").read_text(encoding="utf-8")
             self.assertIn("const MONTH_PREVIEW_LIMIT = 40;", limited_html)
             self.assertIn("if (limit === 1) return [items[0]];", limited_html)
 
-    def test_make_browser_writes_custom_output_without_filters(self) -> None:
+    def test_make_browser_writes_only_to_managed_browser_directory(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "target"
@@ -384,21 +423,19 @@ class StaticBrowserCliTests(unittest.TestCase):
             self.assertEqual(run_cli(["create", str(target)]), 0)
             self.assertEqual(run_cli(["--target", str(target), "import", "--name", source.name, "--quiet", str(source)]), 0)
 
-            custom_output = root / "filtered.html"
             code, stdout, stderr = capture_cli(
                 [
                     "--target",
                     str(target),
                     "make-browser",
-                    "--output",
-                    str(custom_output),
                 ]
             )
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser", stdout)
-            self.assertTrue(custom_output.exists())
-            html = custom_output.read_text(encoding="utf-8")
+            output = target / "browser" / "index.html"
+            self.assertTrue(output.exists())
+            html = output.read_text(encoding="utf-8")
             self.assertIn('"path": "2010/07/video.mp4"', html)
             self.assertIn('"path": "2024/01/IMG_20240102.jpg"', html)
             self.assertIn('"path": "2024/01/IMG_20240103.nef"', html)
@@ -461,7 +498,7 @@ class StaticBrowserCliTests(unittest.TestCase):
         stdout = stdout_buffer.getvalue()
         self.assertIn("make-browser", stdout)
         self.assertIn("--month-preview-limit", stdout)
-        self.assertIn("--output", stdout)
+        self.assertNotIn("--output", stdout)
         self.assertNotIn("--media", stdout)
         self.assertNotIn("--date-source", stdout)
         self.assertEqual(stderr_buffer.getvalue(), "")
@@ -563,8 +600,8 @@ class StaticBrowserCliTests(unittest.TestCase):
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev HTML-browser", stdout)
-            html = (target / "index.html").read_text(encoding="utf-8")
-            self.assertIn('"thumbnailSrc": "thumbs/2024/01/image.jpg"', html)
+            html = (target / "browser" / "index.html").read_text(encoding="utf-8")
+            self.assertIn('"thumbnailSrc": "../thumbs/2024/01/image.jpg"', html)
             self.assertIn("item.thumbnailSrc || item.url", html)
 
     def test_server_month_uses_current_thumbnail_via_file_thumbs_url(self) -> None:

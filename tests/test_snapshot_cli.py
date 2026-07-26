@@ -828,16 +828,24 @@ class SnapshotCliTests(unittest.TestCase):
             (target / "image-search.html").write_text("generert\n", encoding="utf-8")
             (target / "personer.html").write_text("generert\n", encoding="utf-8")
             (target / "person-Ola.html").write_text("generert\n", encoding="utf-8")
+            browser = target / "browser"
+            browser.mkdir()
+            (browser / ".bildebank-generated.json").write_text("generert\n", encoding="utf-8")
+            (browser / "index.html").write_text("generert\n", encoding="utf-8")
+            people = browser / "people"
+            people.mkdir()
+            (people / "index.html").write_text("generert\n", encoding="utf-8")
+            (people / "person-1.html").write_text("generert\n", encoding="utf-8")
             thumbnail = target / "thumbs" / "2024" / "01" / "bilde.jpg"
             thumbnail.parent.mkdir(parents=True)
             thumbnail.write_bytes(b"thumb")
 
             plan = plan_snapshot(target, repository)
 
-            self.assertEqual(plan.inventory.excluded_files, 7)
+            self.assertEqual(plan.inventory.excluded_files, 11)
             self.assertEqual(
                 {item.reason: item.files for item in plan.inventory.exclusions},
-                {"thumbnails": 1, "generated_html": 4, "runtime": 2},
+                {"thumbnails": 1, "generated_html": 8, "runtime": 2},
             )
             self.assertTrue(lock_path.exists())
             self.assertFalse(repository.exists())
@@ -847,7 +855,7 @@ class SnapshotCliTests(unittest.TestCase):
             )
             self.assertEqual(code, 0, stderr)
             self.assertIn("thumbnails: 1", stdout)
-            self.assertIn("generert HTML: 4", stdout)
+            self.assertIn("generert HTML: 8", stdout)
             self.assertIn("runtime-filer: 2", stdout)
 
     def test_snapshot_dry_run_only_excludes_generated_names_at_standard_locations(self) -> None:

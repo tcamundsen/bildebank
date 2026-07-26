@@ -716,10 +716,12 @@ lages én eksplisitt og testet liste over eksklusjoner. Ukjente filer skal som
 hovedregel tas med og rapporteres, ikke ignoreres.
 
 Eksklusjonslisten gjelder bare de programgenererte standardplasseringene:
-`thumbs/` i roten, samt `.bildebank.lock`, `.bildebank.log`, `index.html`,
-`image-search.html`, `personer.html` og `person-*.html` direkte i roten. Filer
+`thumbs/`, `browser/` og `video-previews/` i roten, samt `.bildebank.lock`,
+`.bildebank.log`, `index.html`, `image-search.html`, `personer.html` og
+`person-*.html` direkte i roten. Filer
 med de samme navnene andre steder i samlingen skal tas med. Brukeren må regne
-navnene og rotmappen `thumbs/` som reserverte for regenererbart innhold.
+navnene og rotmappene `thumbs/`, `browser/` og `video-previews/` som reserverte
+for regenererbart innhold.
 
 Databasefiler og SQLite-sidefiler som er klassifisert av databasekatalogen,
 skal heller ikke kopieres en gang til av det vanlige filinventaret. Den

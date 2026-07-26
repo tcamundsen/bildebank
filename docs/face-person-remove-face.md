@@ -10,8 +10,7 @@ bildebank face-person-remove-face "Kari" 798
 
 Tallet `798` er `face-id`.
 
-Du finner `face-id` i personsidene, `face-suggest` eller vanlig `index.html`
-med knappen `Ansikter i bildet`.
+Du finner `face-id` i `face-suggest` eller på personsidene i `run-server`.
 
 ```text
 face-id 798, deteksjon 0.931

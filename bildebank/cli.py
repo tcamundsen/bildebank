@@ -566,14 +566,7 @@ def build_parser() -> argparse.ArgumentParser:
         subparsers,
         "make-browser",
         usage="bildebank make-browser [valg]",
-        help="Lag index.html for å bla i importerte bilder og videoer",
-    )
-    browser.add_argument(
-        "-o",
-        "--output",
-        dest="output",
-        type=Path,
-        help="Skriv HTML-filen hit. Standard: index.html i bildesamlingsmappen.",
+        help=r"Lag browser\index.html for å bla i importerte bilder og videoer",
     )
     browser.add_argument(
         "--hide-out-of-focus",
@@ -1056,13 +1049,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Lag HTML-side for en person",
     )
     person_browser.add_argument("name", metavar="navn", help="Personnavn")
-    person_browser.add_argument(
-        "-o",
-        "--output",
-        dest="output",
-        type=Path,
-        help="Skriv HTML-filen hit. Standard: person-Navn.html i bildesamlingen.",
-    )
     person_browser.add_argument(
         "--month-preview-limit",
         type=positive_int_arg,
@@ -1871,7 +1857,6 @@ def run_refresh_metadata_command(args: argparse.Namespace, target: Path) -> int:
 
 
 def run_make_browser_command(args: argparse.Namespace, target: Path) -> int:
-    output = args.output.resolve() if args.output else None
     with TargetLock(target, command="make-browser"):
         conn = db.connect(target)
         try:
@@ -1881,7 +1866,6 @@ def run_make_browser_command(args: argparse.Namespace, target: Path) -> int:
             conn.close()
         output_path = export_html(
             target,
-            output,
             month_preview_limit=args.month_preview_limit,
             hide_out_of_focus=args.hide_out_of_focus,
             debug_timing=args.debug,

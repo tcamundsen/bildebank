@@ -124,12 +124,10 @@ def run_face_command(args: argparse.Namespace, target: Path, *, repo_root: Path)
         return run_face_suggest(target, repo_root=repo_root, threshold=args.threshold, model=args.model)
 
     if args.command == "make-person-browser":
-        output = args.output.resolve() if args.output else None
         with TargetLock(target, command="make-person-browser"):
             output_path = export_person_browser(
                 target,
                 args.name,
-                output,
                 month_preview_limit=args.month_preview_limit,
                 hide_out_of_focus=args.hide_out_of_focus,
                 config=load_config(repo_root).face_recognition,

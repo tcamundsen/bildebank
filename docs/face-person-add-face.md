@@ -8,7 +8,6 @@
 bildebank face-person-add-face "Kari" 798
 ```
 
-`798` er ansikt-id fra `face-suggest`, `person-Kari.html` eller vanlig
-`index.html` med knappen `Ansikter i bildet`.
+`798` er ansikt-id fra `face-suggest` eller en personside i `run-server`.
 
 Personen må være opprettet først med `face-person-create`.

@@ -8,8 +8,6 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  -o, --output OUTPUT   Skriv HTML-filen hit. Standard: person-Navn.html i
-                        bildesamlingen.
   --month-preview-limit MONTH_PREVIEW_LIMIT
                         Maks antall bilder i månedsoversikten. Standard: vis
                         alle.
@@ -27,12 +25,23 @@ Se [InsightFace](web/insightface.md).
 Siden viser bilder der personen enten er:
 
 - bekreftet med `face-person-add-face`
+- koblet manuelt til personen i bildebrowseren
 - foreslått med `face-suggest`
 
 Selve HTML-browseren er enkel og viser bildene uten ansiktsbokser eller
 redigeringsfunksjoner. Bruk [`run-server`](run-server.md) hvis du vil bekrefte
 ansikter eller arbeide videre med personforslag. Tanken er at den skal kunne brukes
 til å vise bilder på PC-er som ikke har Bildebank installert.
+
+Filen får et fast navn basert på personens interne ID og legges under
+`browser\people`, for eksempel:
+
+```text
+C:\Bilder\browser\people\person-17.html
+```
+
+Kommandoen skriver den nøyaktige filstien når den er ferdig. Navnet endres ikke
+om personen får et nytt navn.
 
 Stien øverst, for eksempel `År / 2024 / Januar / IMG_1234.jpg`, kan brukes til
 å gå tilbake til oversikter for år, måneder og filer.
@@ -60,14 +69,6 @@ Lager HTML-filen uten bilder som er tagget `Ute av fokus`:
 
 ```powershell
 bildebank make-person-browser "Tom" --hide-out-of-focus
-```
-
-### `--output`
-
-`-o` eller `--output` skriver HTML-filen til et annet filnavn:
-
-```powershell
-bildebank make-person-browser "Tom" -o "tom.html"
 ```
 
 ## Hurtigtaster

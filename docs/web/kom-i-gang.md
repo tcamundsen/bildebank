@@ -163,7 +163,7 @@ blir bevart når et nytt snapshot opprettes. Bruk likevel flere separate disker,
 og oppbevar minst én kopi frakoblet og gjerne utenfor boligen.
 
 Ikke slett originalkilder etter import bare fordi Bildebank har kopiert filene.
-Kontroller først at importen ser riktig ut, at `index.html` viser det du
+Kontroller først at importen ser riktig ut, at `browser\index.html` viser det du
 forventer, og at bildesamlingen er sikkerhetskopiert til mer enn ett trygt sted.
 
 En enkel regel er 3-2-1-regelen: ha minst 3 kopier av viktige filer, på minst

@@ -127,8 +127,11 @@ class ExportPersonTests(unittest.TestCase):
             server_ids = source_item_ids(target, source, config.face_recognition)
             browser_items = person_source_browser_items(target, "Kari", config.face_recognition)
 
-            output = root / "kari.html"
-            output_path = export_person_browser(target, "Kari", output, config=config.face_recognition)
+            output_path = export_person_browser(
+                target,
+                "Kari",
+                config=config.face_recognition,
+            )
             html = output_path.read_text(encoding="utf-8")
             items_start = html.index("const embeddedItems = ") + len("const embeddedItems = ")
             items_end = html.index(";\n    const MONTH_PREVIEW_LIMIT", items_start)
@@ -154,11 +157,9 @@ class ExportPersonTests(unittest.TestCase):
             source = person_browser_source("Kari", include_suggestions=True, show_faces=False)
             server_ids = source_item_ids(target, source, config.face_recognition, hide_out_of_focus=True)
 
-            output = root / "kari.html"
             output_path = export_person_browser(
                 target,
                 "Kari",
-                output,
                 config=config.face_recognition,
                 hide_out_of_focus=True,
             )
@@ -167,7 +168,6 @@ class ExportPersonTests(unittest.TestCase):
             items_end = html.index(";\n    const MONTH_PREVIEW_LIMIT", items_start)
             html_items = json.loads(html[items_start:items_end])
 
-            cli_output = root / "kari-cli.html"
             with (
                 patch("bildebank.cli.load_config", return_value=config),
                 patch("bildebank.cli_face.load_config", return_value=config),
@@ -179,11 +179,9 @@ class ExportPersonTests(unittest.TestCase):
                         "make-person-browser",
                         "Kari",
                         "--hide-out-of-focus",
-                        "--output",
-                        str(cli_output),
                     ]
                 )
-            cli_html = cli_output.read_text(encoding="utf-8")
+            cli_html = output_path.read_text(encoding="utf-8")
 
         self.assertEqual(code, 0, stderr)
         self.assertEqual([int(item["fileId"]) for item in html_items], server_ids)
@@ -232,7 +230,7 @@ class ExportPersonTests(unittest.TestCase):
                 face_conn.close()
 
             result = export_people_browser(target, config=config.face_recognition, target_locked=True)
-            person_html = (target / "person-Kari.html").read_text(encoding="utf-8")
+            person_html = (target / "browser" / "people" / "person-1.html").read_text(encoding="utf-8")
             items_start = person_html.index("const embeddedItems = ") + len("const embeddedItems = ")
             items_end = person_html.index(";\n    const MONTH_PREVIEW_LIMIT", items_start)
             person_items = json.loads(person_html[items_start:items_end])
@@ -261,11 +259,11 @@ class ExportPersonTests(unittest.TestCase):
                         "--hide-out-of-focus",
                     ]
                 )
-            person_html = (target / "person-Kari.html").read_text(encoding="utf-8")
+            person_html = (target / "browser" / "people" / "person-1.html").read_text(encoding="utf-8")
             items_start = person_html.index("const embeddedItems = ") + len("const embeddedItems = ")
             items_end = person_html.index(";\n    const MONTH_PREVIEW_LIMIT", items_start)
             person_items = json.loads(person_html[items_start:items_end])
-            index_html = (target / "personer.html").read_text(encoding="utf-8")
+            index_html = (target / "browser" / "people" / "index.html").read_text(encoding="utf-8")
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("Skrev person-index", stdout)
@@ -282,6 +280,63 @@ class ExportPersonTests(unittest.TestCase):
             self.assertNotIn("hidden.jpg", person_html)
             self.assertIn("3 bilder", index_html)
             self.assertIn("1 bekreftet, 2 forslag", index_html)
+
+    def test_make_people_browser_uses_ids_and_removes_legacy_and_stale_pages(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target, config, _ids = self.make_collection(root)
+            face_conn = connect_face_db(target, config.face_recognition)
+            try:
+                face_conn.execute(
+                    "UPDATE persons SET name = 'Anne Marie' WHERE id = 1"
+                )
+                face_conn.execute(
+                    "INSERT INTO persons(id, name) VALUES(2, 'Anne-Marie')"
+                )
+                face_conn.commit()
+            finally:
+                face_conn.close()
+            legacy_index = target / "personer.html"
+            legacy_first = target / "person-Anne-Marie.html"
+            legacy_stale = target / "person-Tidligere.html"
+            unrelated = target / "index.html"
+            for path in (legacy_index, legacy_first, legacy_stale):
+                path.write_text("gammel", encoding="utf-8")
+            unrelated.write_text("annen browser", encoding="utf-8")
+
+            result = export_people_browser(
+                target,
+                config=config.face_recognition,
+                target_locked=True,
+            )
+
+            first = target / "browser" / "people" / "person-1.html"
+            second = target / "browser" / "people" / "person-2.html"
+            self.assertEqual(result.person_pages, (first, second))
+            self.assertIn("<title>Anne Marie</title>", first.read_text(encoding="utf-8"))
+            self.assertIn("<title>Anne-Marie</title>", second.read_text(encoding="utf-8"))
+            index_html = result.index_path.read_text(encoding="utf-8")
+            self.assertIn('href="person-1.html"', index_html)
+            self.assertIn('href="person-2.html"', index_html)
+            self.assertFalse(legacy_index.exists())
+            self.assertFalse(legacy_first.exists())
+            self.assertFalse(legacy_stale.exists())
+            self.assertEqual(unrelated.read_text(encoding="utf-8"), "annen browser")
+
+            face_conn = connect_face_db(target, config.face_recognition)
+            try:
+                face_conn.execute("DELETE FROM persons WHERE id = 2")
+                face_conn.commit()
+            finally:
+                face_conn.close()
+            export_people_browser(
+                target,
+                config=config.face_recognition,
+                target_locked=True,
+            )
+
+            self.assertTrue(first.is_file())
+            self.assertFalse(second.exists())
 
     def test_export_person_uses_browser_selection_dates_collisions_and_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -14,7 +14,7 @@ from .browser_dates import (
 from .formatting import format_bytes
 from .html_paths import path_to_url
 from .media import media_kind
-from .thumbnails import existing_thumbnail_url
+from .thumbnails import existing_thumbnail_relative_path
 from .video_previews import VIDEO_PREVIEW_SOURCE_EXTENSIONS, existing_video_preview_path
 
 
@@ -31,13 +31,29 @@ def static_browser_item(
     month_key: str | None = None,
     browser_date: str | None = None,
     view_rotation: object | None = None,
+    target_url_prefix: Path = Path(),
 ) -> dict[str, object]:
     kind = kind or media_kind(relative_path)
-    url = url if url is not None else path_to_url(relative_path)
+    url = url if url is not None else path_to_url(target_url_prefix / relative_path)
     browser_date = browser_date if browser_date is not None else browser_date_from_item(item)
     month_key = month_key or month_key_from_browser_date_value(browser_date) or month_key_from_path(relative_path)
-    thumbnail_src = browser_thumbnail_src(target, relative_path, kind, url, thumbnail_src)
-    playback_url = browser_playback_url(target, item, relative_path, kind, url, playback_url)
+    thumbnail_src = browser_thumbnail_src(
+        target,
+        relative_path,
+        kind,
+        url,
+        thumbnail_src,
+        target_url_prefix=target_url_prefix,
+    )
+    playback_url = browser_playback_url(
+        target,
+        item,
+        relative_path,
+        kind,
+        url,
+        playback_url,
+        target_url_prefix=target_url_prefix,
+    )
     view_rotation = view_rotation if view_rotation is not None else item_view_rotation(item)
     return {
         "fileId": item_int(item, "id", item_int(item, "fileId", 0)),
@@ -69,6 +85,8 @@ def browser_playback_url(
     kind: str,
     original_url: str,
     playback_url: str | None,
+    *,
+    target_url_prefix: Path,
 ) -> str | None:
     if playback_url is not None:
         return playback_url
@@ -81,7 +99,7 @@ def browser_playback_url(
     preview_path = existing_video_preview_path(target, item)
     if preview_path is None:
         return None
-    return path_to_url(preview_path.relative_to(target))
+    return path_to_url(target_url_prefix / preview_path.relative_to(target))
 
 
 def browser_thumbnail_src(
@@ -90,6 +108,8 @@ def browser_thumbnail_src(
     kind: str,
     url: str,
     thumbnail_src: str | None,
+    *,
+    target_url_prefix: Path,
 ) -> str:
     if thumbnail_src is not None:
         return thumbnail_src
@@ -97,7 +117,10 @@ def browser_thumbnail_src(
         return ""
     if target is None:
         return url
-    return existing_thumbnail_url(target, relative_path)
+    return path_to_url(
+        target_url_prefix
+        / existing_thumbnail_relative_path(target, relative_path)
+    )
 
 
 def item_view_rotation(item: Any) -> object:

@@ -876,6 +876,8 @@ def snapshot_plan_warnings(
 def snapshot_exclusion_reason(relative_path: str) -> str | None:
     parts = relative_path.split("/")
     root_name = parts[0].casefold()
+    if root_name == "browser":
+        return EXCLUSION_GENERATED_HTML
     if root_name == "thumbs":
         return EXCLUSION_THUMBNAILS
     if root_name == "video-previews":

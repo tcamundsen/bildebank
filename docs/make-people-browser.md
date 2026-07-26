@@ -15,9 +15,20 @@ options:
 ```
 <!-- CLI-HELP-END -->
 
-`make-people-browser` lager statiske HTML-sider med `make-person-browser` for alle
-personer som er registrert i ansiktsdatabasen samt filen `personer.html` som
-lenker alle person-sidene.
+`make-people-browser` lager statiske HTML-sider for alle personer som er
+registrert i ansiktsdatabasen. Åpne personoversikten her:
+
+```text
+C:\Bilder\browser\people\index.html
+```
+
+Personsidene får faste navn basert på interne person-ID-er, for eksempel
+`person-17.html`. Hele `browser\people` publiseres samlet. Hvis genereringen
+feiler eller avbrytes, beholdes forrige ferdige generasjon.
+
+Etter første vellykkede generering fjernes eldre `personer.html` og
+`person-*.html` som ligger direkte i bildesamlingsmappen. Dermed blir ikke
+utdaterte personsider liggende igjen.
 
 Personoversikten og personsidene følger visningsrotasjonen som er lagret i
 Bildebank. Bildefilene endres ikke.

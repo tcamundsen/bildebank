@@ -14,6 +14,12 @@ from .browser_dates import (
     manual_date_midpoint as shared_manual_date_midpoint,
     month_key_from_path as shared_month_key_from_path,
 )
+from .browser_output import (
+    browser_index_path,
+    cleanup_legacy_browser_index,
+    publish_browser_index,
+    validate_legacy_browser_index,
+)
 from .html_paths import relative_to_target
 from .static_browser import static_browser_item
 
@@ -334,7 +340,6 @@ class BrowserExportTiming:
 
 def export_html(
     target: Path,
-    output: Path | None = None,
     *,
     month_preview_limit: int | None = None,
     hide_out_of_focus: bool = False,
@@ -342,24 +347,23 @@ def export_html(
 ) -> Path:
     timing = BrowserExportTiming() if debug_timing else None
     start = perf_counter()
-    output_path = output or (target / "index.html")
+    output_path = browser_index_path(target)
+    validate_legacy_browser_index(target)
     if timing is not None:
         start = timing.measure("resolve_output", start)
     items = browser_items(
         target,
         hide_out_of_focus=hide_out_of_focus,
         timing=timing,
+        target_url_prefix=Path(".."),
     )
     if timing is not None:
         start = timing.measure("browser_items", start)
     html_text = render_html(items, month_preview_limit=month_preview_limit)
     if timing is not None:
         start = timing.measure("render_html", start)
-    output_path.write_text(
-        html_text,
-        encoding="utf-8",
-        newline="\n",
-    )
+    publish_browser_index(target, html_text)
+    cleanup_legacy_browser_index(target)
     if timing is not None:
         timing.measure("write_file", start)
         print_browser_export_timing(timing, item_count=len(items))
@@ -371,11 +375,18 @@ def browser_items(
     *,
     hide_out_of_focus: bool = False,
     timing: BrowserExportTiming | None = None,
+    target_url_prefix: Path = Path(),
 ) -> list[dict[str, object]]:
     from .server_browser_queries import all_source_items
 
     start = perf_counter()
-    items = [row_to_item(target, row) for row in all_source_items(target, hide_out_of_focus=hide_out_of_focus)]
+    items = [
+        row_to_item(target, row, target_url_prefix=target_url_prefix)
+        for row in all_source_items(
+            target,
+            hide_out_of_focus=hide_out_of_focus,
+        )
+    ]
     if timing is not None:
         timing.measure("rows_to_items", start)
     return items
@@ -391,10 +402,17 @@ def print_browser_export_timing(timing: BrowserExportTiming, *, item_count: int)
 def row_to_item(
     target: Path,
     row,
+    *,
+    target_url_prefix: Path = Path(),
 ) -> dict[str, object]:
     stored_path = Path(str(row["target_path"]))
     relative_path = relative_to_target(target, stored_path)
-    return static_browser_item(row, relative_path, target=target)
+    return static_browser_item(
+        row,
+        relative_path,
+        target=target,
+        target_url_prefix=target_url_prefix,
+    )
 
 
 def browser_date_text(row) -> str:

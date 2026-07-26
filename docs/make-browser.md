@@ -5,8 +5,6 @@ usage: bildebank make-browser [valg]
 
 options:
   -h, --help            show this help message and exit
-  -o, --output OUTPUT   Skriv HTML-filen hit. Standard: index.html i
-                        bildesamlingsmappen.
   --hide-out-of-focus   Ikke ta med bilder tagget "Ute av fokus" i den
                         statiske HTML-browseren.
   --month-preview-limit MONTH_PREVIEW_LIMIT
@@ -16,8 +14,14 @@ options:
 <!-- CLI-HELP-END -->
 
 `make-browser` skriver en statisk HTML-fil med alle aktive bilder, videoer og
-andre importerte bildefiler i bildesamlingen. Standardfilen heter `index.html` og legges i
-bildesamlingsmappen.
+andre importerte bildefiler i bildesamlingen. Åpne denne filen:
+
+```text
+C:\Bilder\browser\index.html
+```
+
+Mappen `browser` inneholder bare filer som Bildebank genererer. Ikke legg egne
+filer i denne mappen. Den tas ikke med i snapshots.
 
 Google/Pixel motion-videoer skjules fra de vanlige måneds- og årslistene når de
 hører til et bilde med samme navn. De er fortsatt bevart og kan vises med
@@ -44,10 +48,15 @@ endret, slik at HTML-filen får den nye teksten.
 Hvis du importerer flere filer senere, må du kjøre `make-browser` på nytt for å
 oppdatere HTML-filen.
 
-Ideen bak å lage en statistk HTML-fil er at den kan brukes hvis man har
+Ideen bak å lage en statisk HTML-fil er at den kan brukes hvis man har
 bildesamlingen på en ekstern disk og vil vise bildene på en PC som ikke har
 Bildebank installert.  For vanlig arbeid i bildesamlingen er
 [`run-server`](run-server.md) anbefalt.
+
+Første gang denne versjonen av `make-browser` fullfører, fjernes en eldre
+`index.html` som ligger direkte i bildesamlingsmappen. Den nye browseren
+publiseres først, slik at en feil ikke fjerner den gamle browseren uten at en ny
+er klar.
 
 ## Valg
 
@@ -69,14 +78,6 @@ bildebank make-browser --hide-out-of-focus
 
 I Bildebank-vinduet er dette valget checkboxen `Skjul "Ute av fokus"` ved
 knappen `Lag HTML-browser`.
-
-### `--output`
-
-`-o` eller `--output` skriver HTML-filen til et annet filnavn:
-
-```powershell
-bildebank make-browser -o "familiebilder.html"
-```
 
 ## Hurtigtaster
 

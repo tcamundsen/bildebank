@@ -54,7 +54,7 @@ class RemoveUndeleteCliTests(unittest.TestCase):
                 conn.close()
 
             self.assertEqual(run_cli(["--target", str(target), "make-browser"]), 0)
-            html = (target / "index.html").read_text(encoding="utf-8")
+            html = (target / "browser" / "index.html").read_text(encoding="utf-8")
             self.assertNotIn("IMG_20240102.jpg", html)
 
             code, stdout, stderr = capture_cli(["--target", str(target), "list-removed"])
