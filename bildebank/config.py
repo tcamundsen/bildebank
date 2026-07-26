@@ -13,6 +13,7 @@ from .value_parsing import require_float
 CONFIG_FILENAME = "bildebank-config.toml"
 ENABLED_CONFIG_SECTIONS = frozenset({"face_recognition", "image_search"})
 DEFAULT_FACE_MODEL_NAME = "antelopev2"
+FACE_DATABASE_DIR = Path(".bildebank-faces")
 HOTKEY_KEYS = ("1", "2", "3", "4", "5")
 HOTKEY_ACTIONS = frozenset({"", "h3", "manual_date", "person", "tag"})
 
@@ -22,7 +23,6 @@ class FaceRecognitionConfig:
     enabled: bool = False
     provider: str = "cpu"
     model_root: Path = Path(".bildebank-insightface")
-    database_dir: Path = Path(".bildebank-faces")
     model_name: str = DEFAULT_FACE_MODEL_NAME
     suggest_threshold: float = 0.6
 
@@ -109,7 +109,6 @@ def load_config(repo_root: Path, *, migrate_legacy: bool = True) -> AppConfig:
         return AppConfig(
             face_recognition=FaceRecognitionConfig(
                 model_root=repo_root / ".bildebank-insightface",
-                database_dir=Path(".bildebank-faces"),
             ),
             openclip=OpenClipConfig(model_root=repo_root / ".bildebank-openclip"),
         )
@@ -117,6 +116,7 @@ def load_config(repo_root: Path, *, migrate_legacy: bool = True) -> AppConfig:
         migrate_legacy_openclip_section(config_path)
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     face_data = _section(data, "face_recognition")
+    validate_fixed_face_database_dir(face_data.get("database_dir"))
     suggest_threshold = validate_face_suggest_threshold(face_data.get("suggest_threshold", 0.6))
     model_root = Path(str(face_data.get("model_root", ".bildebank-insightface")))
     if not model_root.is_absolute():
@@ -131,7 +131,6 @@ def load_config(repo_root: Path, *, migrate_legacy: bool = True) -> AppConfig:
             enabled=bool(face_data.get("enabled", False)),
             provider=str(face_data.get("provider", "cpu")),
             model_root=model_root,
-            database_dir=Path(str(face_data.get("database_dir", ".bildebank-faces"))),
             model_name=str(face_data.get("model_name", DEFAULT_FACE_MODEL_NAME)),
             suggest_threshold=suggest_threshold,
         ),
@@ -150,6 +149,19 @@ def load_config(repo_root: Path, *, migrate_legacy: bool = True) -> AppConfig:
             hotkeys=parse_browser_hotkeys(browser_data.get("hotkeys", {})),
         ),
     )
+
+
+def validate_fixed_face_database_dir(value: object) -> None:
+    if value is None:
+        return
+    configured = Path(str(value))
+    if configured != FACE_DATABASE_DIR:
+        raise ValueError(
+            "face_recognition.database_dir kan ikke endres. "
+            "Ansiktsdatabasene skal ligge i .bildebank-faces under "
+            "bildesamlingen. Flytt eventuelle eksisterende databaser dit og "
+            "fjern database_dir fra bildebank-config.toml."
+        )
 
 
 def parse_browser_hotkeys(value: object) -> dict[str, BrowserHotkeyConfig]:

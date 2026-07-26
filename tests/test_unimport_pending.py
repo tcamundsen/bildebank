@@ -273,11 +273,9 @@ def test_unimport_keeps_sidecars_until_last_source_reference(
 
     face_configs = (
         FaceRecognitionConfig(
-            database_dir=Path(".custom-faces"),
             model_name="buffalo_l",
         ),
         FaceRecognitionConfig(
-            database_dir=Path(".custom-faces"),
             model_name="antelopev2",
         ),
     )

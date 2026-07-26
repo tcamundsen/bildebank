@@ -83,11 +83,9 @@ def test_remove_cleans_all_item_sidecars_and_undelete_does_not_restore(
 
     face_configs = (
         FaceRecognitionConfig(
-            database_dir=Path(".custom-faces"),
             model_name="buffalo_l",
         ),
         FaceRecognitionConfig(
-            database_dir=Path(".custom-faces"),
             model_name="antelopev2",
         ),
     )
@@ -299,7 +297,6 @@ def test_remove_recovery_finishes_sidecar_cleanup(tmp_path: Path) -> None:
     target, rows = create_two_file_import(tmp_path)
     removed_row = rows[0]
     face_config = FaceRecognitionConfig(
-        database_dir=Path(".custom-faces"),
         model_name="antelopev2",
     )
     insert_basic_item_sidecar_fixture(
@@ -356,10 +353,10 @@ def test_remove_recovery_finishes_sidecar_cleanup(tmp_path: Path) -> None:
 def test_remove_rejects_invalid_sidecar_before_moving_file(tmp_path: Path) -> None:
     target, rows = create_two_file_import(tmp_path)
     removed_row = rows[0]
-    invalid_dir = target / ".custom-faces"
+    invalid_dir = target / ".bildebank-faces"
     invalid_dir.mkdir()
     (invalid_dir / "broken.sqlite3").write_bytes(b"not a database")
-    face_config = FaceRecognitionConfig(database_dir=Path(".custom-faces"))
+    face_config = FaceRecognitionConfig()
 
     with pytest.raises(sqlite3.DatabaseError):
         remove_file(

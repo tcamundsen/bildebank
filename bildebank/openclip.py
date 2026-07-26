@@ -3,6 +3,7 @@ from __future__ import annotations
 import array
 import html
 import math
+import os
 import sqlite3
 import stat
 import uuid
@@ -12,16 +13,28 @@ from typing import Any, Callable
 
 from . import db
 from .collection_paths import (
+    COLLECTION_FILE_OK,
     CollectionFileHashError,
     hash_stable_collection_file,
+    inspect_collection_file,
+    is_active_collection_file_path,
     is_reparse_stat,
+    open_stable_collection_file,
     parse_collection_relative_path,
+    same_collection_file_version,
 )
 from .config import OpenClipConfig
 from .db_core import connect_database_read_only
 from .html_paths import display_relative_path, path_to_url, relative_to_target
-from .media import IMAGE_EXTENSIONS
+from .media import IMAGE_EXTENSIONS, require_safe_pillow_image_size
 from .media_cache import cached_image_dimensions
+from .sidecar_paths import (
+    create_or_validate_database_file,
+    regular_database_file_exists,
+    sqlite_read_write_uri,
+    validate_existing_path_components_without_links,
+    validate_regular_database_file,
+)
 from .target_lock import TargetLock, TargetLockError
 from .value_parsing import optional_int
 
@@ -152,7 +165,8 @@ def openclip_db_path(target: Path) -> Path:
 
 
 def connect_openclip_db(target: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(openclip_db_path(target))
+    path = create_or_validate_database_file(openclip_db_path(target))
+    conn = sqlite3.connect(sqlite_read_write_uri(path), uri=True)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -166,7 +180,9 @@ def connect_openclip_db(target: Path) -> sqlite3.Connection:
 
 
 def connect_openclip_db_read_only(target: Path) -> sqlite3.Connection:
-    conn = connect_database_read_only(openclip_db_path(target))
+    path = openclip_db_path(target)
+    validate_regular_database_file(path)
+    conn = connect_database_read_only(path)
     try:
         require_current_openclip_schema_read_only(conn)
         return conn
@@ -176,7 +192,8 @@ def connect_openclip_db_read_only(target: Path) -> sqlite3.Connection:
 
 
 def ensure_openclip_schema_path(path: Path) -> None:
-    conn = sqlite3.connect(path)
+    validate_regular_database_file(path)
+    conn = sqlite3.connect(sqlite_read_write_uri(path), uri=True)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -461,10 +478,17 @@ def active_image_files(
             ORDER BY imported_at, id
             """
         ):
-            if Path(str(row["stored_filename"])).suffix.lower() in IMAGE_EXTENSIONS:
-                rows.append(row)
-                if limit is not None and len(rows) >= limit:
-                    break
+            if Path(str(row["stored_filename"])).suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            relative_path = active_image_scan_relative_path(row)
+            if relative_path.suffix.lower() not in IMAGE_EXTENSIONS:
+                raise ValueError(
+                    f"files #{int(row['id'])} har bildefilnavn som ikke stemmer "
+                    "med target_path."
+                )
+            rows.append(row)
+            if limit is not None and len(rows) >= limit:
+                break
         return rows
     finally:
         conn.close()
@@ -495,7 +519,7 @@ def scan_images(
             scan_run_id = str(uuid.uuid4())
             set_meta(conn, IMAGE_SCAN_RUN_META_KEY, scan_run_id)
             conn.commit()
-            rows_to_scan = []
+            rows_to_scan: list[tuple[sqlite3.Row, Path]] = []
             skipped = 0
             for index, row in enumerate(image_rows, start=1):
                 file_id = int(row["id"])
@@ -503,7 +527,7 @@ def scan_images(
                 if has_current_embedding(conn, file_id, sha256, config):
                     skipped += 1
                 else:
-                    rows_to_scan.append(row)
+                    rows_to_scan.append((row, active_image_scan_relative_path(row)))
                 stats = ImageScanStats(
                     total=total,
                     checked=index,
@@ -511,7 +535,13 @@ def scan_images(
                     skipped=skipped,
                 )
                 if progress is not None:
-                    progress("check", index, total, stats, db.absolute_target_path(target, Path(str(row["target_path"]))))
+                    progress(
+                        "check",
+                        index,
+                        total,
+                        stats,
+                        target / active_image_scan_relative_path(row),
+                    )
         finally:
             conn.close()
 
@@ -526,12 +556,22 @@ def scan_images(
     errors = 0
     last_error_path = None
     last_error_message = None
-    for index, row in enumerate(rows_to_scan, start=1):
-        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+    for index, (row, relative_path) in enumerate(rows_to_scan, start=1):
+        target_path = target / relative_path
         try:
-            vector = image_embedding(model, preprocess, target_path)
+            with open_stable_collection_file(target, relative_path) as source:
+                source_version = os.fstat(source.fileno())
+                vector = image_embedding(model, preprocess, source)
             try:
-                stored = store_image_scan_embedding(target, config, row, vector, scan_run_id)
+                stored = store_image_scan_embedding(
+                    target,
+                    config,
+                    row,
+                    relative_path,
+                    vector,
+                    scan_run_id,
+                    source_version,
+                )
             except TargetLockError:
                 stored = False
             if stored:
@@ -576,14 +616,29 @@ def store_image_scan_embedding(
     target: Path,
     config: OpenClipConfig,
     original_row: sqlite3.Row,
+    relative_path: Path,
     vector: list[float],
     scan_run_id: str,
+    source_version: os.stat_result,
 ) -> bool:
     with TargetLock(target, command="image-scan"):
         main_conn = db.connect(target)
         try:
             current_row = active_file_for_image_scan(main_conn, original_row)
             if current_row is None:
+                return False
+            current_relative_path = active_image_scan_relative_path(current_row)
+            if current_relative_path != relative_path:
+                return False
+            current_file = inspect_collection_file(target, current_relative_path)
+            if (
+                current_file.status != COLLECTION_FILE_OK
+                or current_file.path_stat is None
+                or not same_collection_file_version(
+                    source_version,
+                    current_file.path_stat,
+                )
+            ):
                 return False
             conn = connect_openclip_db(target)
             try:
@@ -610,7 +665,7 @@ def store_image_scan_embedding(
 def active_file_for_image_scan(conn: sqlite3.Connection, original_row: sqlite3.Row) -> sqlite3.Row | None:
     return conn.execute(
         """
-        SELECT id, target_path, target_path_key, sha256
+        SELECT id, target_path, target_path_key, sha256, stored_filename
         FROM files
         WHERE id = ?
           AND sha256 = ?
@@ -618,6 +673,21 @@ def active_file_for_image_scan(conn: sqlite3.Connection, original_row: sqlite3.R
         """,
         (int(original_row["id"]), str(original_row["sha256"])),
     ).fetchone()
+
+
+def active_image_scan_relative_path(row: sqlite3.Row) -> Path:
+    relative_path = parse_collection_relative_path(str(row["target_path"]))
+    if not is_active_collection_file_path(relative_path):
+        raise ValueError(
+            f"files #{int(row['id'])} har ugyldig aktiv target_path: "
+            f"{relative_path.as_posix()}"
+        )
+    if str(row["target_path_key"]) != db.relative_path_key(relative_path):
+        raise ValueError(
+            f"files #{int(row['id'])} har target_path_key som ikke stemmer "
+            "med target_path."
+        )
+    return relative_path
 
 
 def search_images(
@@ -717,7 +787,7 @@ def _search_images_unlocked(
 
 def openclip_db_summary(target: Path) -> OpenClipDbSummary:
     path = openclip_db_path(target)
-    if not path.exists():
+    if not regular_database_file_exists(path):
         return OpenClipDbSummary(False, 0, 0, 0)
     conn = connect_database_read_only(path)
     try:
@@ -733,9 +803,9 @@ def openclip_db_summary(target: Path) -> OpenClipDbSummary:
 
 def cleanup_image_search(target: Path, *, apply: bool = False) -> OpenClipCleanupStats:
     path = openclip_db_path(target)
-    if not path.exists():
+    if not regular_database_file_exists(path):
         return OpenClipCleanupStats(exists=False, applied=apply)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(sqlite_read_write_uri(path), uri=True)
     conn.row_factory = sqlite3.Row
     try:
         validate_openclip_cleanup_schema(conn)
@@ -869,6 +939,7 @@ def validate_repair_database_path(
     label: str,
     allow_missing: bool = False,
 ) -> bool:
+    validate_existing_path_components_without_links(path)
     try:
         path_stat = path.stat(follow_symlinks=False)
     except FileNotFoundError:
@@ -881,6 +952,7 @@ def validate_repair_database_path(
         stat.S_ISLNK(path_stat.st_mode)
         or is_reparse_stat(path_stat)
         or not stat.S_ISREG(path_stat.st_mode)
+        or getattr(path_stat, "st_nlink", 1) != 1
     ):
         raise ValueError(
             f"{label} er ikke en vanlig fil uten lenker: {path}"
@@ -1262,13 +1334,14 @@ def import_open_clip():
     return open_clip
 
 
-def image_embedding(model: Any, preprocess: Any, path: Path) -> list[float]:
+def image_embedding(model: Any, preprocess: Any, source: Any) -> list[float]:
     try:
         from PIL import Image, ImageOps
         import torch
     except ImportError as exc:
         raise ValueError("OpenCLIP/Pillow mangler. Kjør install-openclip.ps1 fra programmappen.") from exc
-    with Image.open(path) as image_file:
+    with Image.open(source) as image_file:
+        require_safe_pillow_image_size(image_file)
         normalized_image = ImageOps.exif_transpose(image_file).convert("RGB")
         tensor = preprocess(normalized_image).unsqueeze(0).to(model_device(model))
     with torch.no_grad():

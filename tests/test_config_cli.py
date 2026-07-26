@@ -64,7 +64,6 @@ class ConfigCliTests(unittest.TestCase):
 enabled = true
 provider = "cpu"
 model_root = "models/insightface"
-database_dir = ".faces-by-model"
 model_name = "buffalo_s"
 
 [openclip]
@@ -120,7 +119,6 @@ pretrained = "laion2b_s32b_b82k"
 enabled = true
 provider = "cpu"
 model_root = "models/insightface"
-database_dir = "faces"
 model_name = "buffalo_s"
 
 [openclip]
@@ -138,7 +136,6 @@ pretrained = "laion2b_s32b_b82k"
             self.assertTrue(config.face_recognition.enabled)
             self.assertEqual(config.face_recognition.provider, "cpu")
             self.assertEqual(config.face_recognition.model_root, root / "models" / "insightface")
-            self.assertEqual(config.face_recognition.database_dir, Path("faces"))
             self.assertEqual(config.face_recognition.model_name, "buffalo_s")
             self.assertTrue(config.openclip.enabled)
             self.assertEqual(config.openclip.model_root, root / "models" / "openclip")
@@ -148,6 +145,38 @@ pretrained = "laion2b_s32b_b82k"
             config_text = (root / "bildebank-config.toml").read_text(encoding="utf-8")
             self.assertIn("[image_search]", config_text)
             self.assertNotIn("[openclip]", config_text)
+
+    def test_load_config_rejects_custom_face_database_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "bildebank-config.toml").write_text(
+                """
+[face_recognition]
+database_dir = "../shared-faces"
+""",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "Ansiktsdatabasene skal ligge i .bildebank-faces",
+            ):
+                load_config(root)
+
+    def test_load_config_accepts_legacy_explicit_fixed_face_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "bildebank-config.toml").write_text(
+                """
+[face_recognition]
+database_dir = ".bildebank-faces"
+""",
+                encoding="utf-8",
+            )
+
+            config = load_config(root)
+
+        self.assertEqual(config.face_recognition.model_name, "antelopev2")
 
     def test_load_config_reads_person_reference_links_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -190,4 +219,3 @@ enabled = false
             self.assertEqual(config.openclip.device, "cpu")
             self.assertEqual(config.openclip.model_name, "ViT-L-14")
             self.assertEqual(config.openclip.pretrained, "laion2b_s32b_b82k")
-

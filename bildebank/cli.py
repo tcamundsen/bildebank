@@ -86,6 +86,12 @@ from .snapshot_restore import (
     restore_full_snapshot,
     restore_single_file,
 )
+from .sidecar_paths import (
+    regular_database_file_exists,
+    regular_directory_exists_without_links,
+    sqlite_read_write_uri,
+    validate_regular_database_file,
+)
 from .target_lock import TargetLock
 from .thumbnails import (
     LegacyThumbnailCleanupStats,
@@ -967,6 +973,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="Scan valgte bilder på nytt selv om de allerede er scannet",
+    )
+    face_scan.add_argument(
+        "--discard-confirmed-person-links",
+        action="store_true",
+        help=(
+            "Tillat at bekreftede ansiktskoblinger for bilder som scannes på "
+            "nytt blir slettet. Krever --force og nøyaktig bekreftelse."
+        ),
     )
     face_scan.add_argument(
         "--show-model-output",
@@ -2321,8 +2335,6 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
             "Kjør først dry-run uten bekreftelsesvalget."
         )
 
-    config = load_config(program_repo_root(), migrate_legacy=False)
-    configured_face_dir = config.face_recognition.database_dir
     if not args.dry_run:
         confirmed_binding_change = None
         if args.confirm_moved_collection:
@@ -2330,7 +2342,6 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
             confirmation_plan = plan_snapshot(
                 target,
                 args.repository,
-                configured_face_database_dir=configured_face_dir,
                 note=args.note,
             )
             confirmed_binding_change = confirmation_plan.binding_change
@@ -2387,7 +2398,6 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
             result = create_snapshot(
                 target,
                 args.repository,
-                face_config=config.face_recognition,
                 note=args.note,
                 confirmed_binding_change=confirmed_binding_change,
                 progress=show_progress,
@@ -2467,7 +2477,6 @@ def run_snapshot_command(args: argparse.Namespace, target: Path) -> int:
             plan = plan_snapshot(
                 target,
                 args.repository,
-                configured_face_database_dir=configured_face_dir,
                 note=args.note,
                 progress=show_plan_progress,
             )
@@ -2876,17 +2885,20 @@ def vacuum_databases(target: Path) -> list[VacuumDatabase]:
     databases = [VacuumDatabase("Hoveddatabase", db.db_path_for_target(target))]
 
     openclip_path = openclip_db_path(target)
-    if openclip_path.is_file():
+    if regular_database_file_exists(openclip_path):
         databases.append(VacuumDatabase("Bildesøkdatabase", openclip_path))
 
     legacy_face_path = target / LEGACY_FACE_DB_FILENAME
-    if legacy_face_path.is_file():
+    if regular_database_file_exists(legacy_face_path):
         databases.append(VacuumDatabase("Ansiktsdatabase", legacy_face_path))
 
     face_dir = face_database_dir(target, config.face_recognition)
-    if face_dir.is_dir():
-        for face_path in sorted(face_dir.glob("*.sqlite3")):
-            if face_path.is_file():
+    if regular_directory_exists_without_links(face_dir):
+        for face_path in sorted(face_dir.iterdir()):
+            if (
+                face_path.suffix == ".sqlite3"
+                and regular_database_file_exists(face_path)
+            ):
                 databases.append(VacuumDatabase("Ansiktsdatabase", face_path))
 
     seen: set[Path] = set()
@@ -2901,13 +2913,13 @@ def vacuum_databases(target: Path) -> list[VacuumDatabase]:
 
 
 def vacuum_sqlite_database(database_path: Path) -> tuple[int, int]:
-    before = database_path.stat().st_size
-    conn = sqlite3.connect(database_path)
+    before = validate_regular_database_file(database_path).st_size
+    conn = sqlite3.connect(sqlite_read_write_uri(database_path), uri=True)
     try:
         conn.execute("VACUUM")
     finally:
         conn.close()
-    after = database_path.stat().st_size
+    after = validate_regular_database_file(database_path).st_size
     return before, after
 
 

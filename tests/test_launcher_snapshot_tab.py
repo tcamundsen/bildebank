@@ -130,8 +130,6 @@ def test_snapshot_plan_log_lines_show_capacity_and_warnings(tmp_path: Path) -> N
 def test_launcher_snapshot_helpers_use_shared_plan_and_create_functions(tmp_path: Path) -> None:
     collection = tmp_path / "samling"
     repository = tmp_path / "repository"
-    face_config = SimpleNamespace(database_dir=Path(".bildebank-faces"))
-    config = SimpleNamespace(face_recognition=face_config)
     expected_plan = object()
     expected_result = object()
     progress_events: list[SnapshotPlanProgress] = []
@@ -140,8 +138,6 @@ def test_launcher_snapshot_helpers_use_shared_plan_and_create_functions(tmp_path
         return False
 
     with (
-        patch("bildebank.launcher_snapshot_tab.load_config", return_value=config) as load,
-        patch("bildebank.launcher_snapshot_tab.program_repo_root", return_value=tmp_path),
         patch("bildebank.launcher_snapshot_tab.plan_snapshot", return_value=expected_plan) as planner,
         patch("bildebank.launcher_snapshot_tab.create_snapshot", return_value=expected_result) as creator,
     ):
@@ -157,19 +153,16 @@ def test_launcher_snapshot_helpers_use_shared_plan_and_create_functions(tmp_path
         )
         assert create_launcher_snapshot(collection, repository) is expected_result
 
-    assert load.call_count == 3
     assert planner.call_args_list[0].args == (collection, repository)
     planner.assert_called_with(
         collection,
         repository,
-        configured_face_database_dir=face_config.database_dir,
         progress=progress_events.append,
         should_cancel=cancel_requested,
     )
     creator.assert_called_once_with(
         collection,
         repository,
-        face_config=face_config,
         confirmed_binding_change=None,
         progress=None,
         should_cancel=None,
@@ -179,13 +172,8 @@ def test_launcher_snapshot_helpers_use_shared_plan_and_create_functions(tmp_path
 def test_launcher_snapshot_plan_uses_read_only_recovery_preflight(tmp_path: Path) -> None:
     collection = tmp_path / "samling"
     repository = tmp_path / "repository"
-    config = SimpleNamespace(
-        face_recognition=SimpleNamespace(database_dir=Path(".bildebank-faces"))
-    )
 
     with (
-        patch("bildebank.launcher_snapshot_tab.load_config", return_value=config),
-        patch("bildebank.launcher_snapshot_tab.program_repo_root", return_value=tmp_path),
         patch(
             "bildebank.launcher_snapshot_tab.plan_snapshot",
             side_effect=MainDatabaseSourceError("integrity_check feilet"),
@@ -211,18 +199,8 @@ def test_launcher_snapshot_plan_accepts_missing_main_database_for_bound_reposito
     create_snapshot(collection, repository)
     (collection / db.DB_FILENAME).unlink()
     repository_before = tree_file_bytes(repository)
-    config = SimpleNamespace(
-        face_recognition=SimpleNamespace(database_dir=Path(".bildebank-faces"))
-    )
 
-    with (
-        patch("bildebank.launcher_snapshot_tab.load_config", return_value=config),
-        patch(
-            "bildebank.launcher_snapshot_tab.program_repo_root",
-            return_value=tmp_path,
-        ),
-    ):
-        plan = plan_launcher_snapshot(collection, repository)
+    plan = plan_launcher_snapshot(collection, repository)
 
     assert isinstance(plan, LauncherRecoveryPlan)
     assert "hoveddatabasen" in plan.database_error.lower()

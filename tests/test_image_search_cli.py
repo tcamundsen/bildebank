@@ -1,24 +1,29 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+
+import pytest
+from PIL import Image
 
 from bildebank import db
 from bildebank.cli import main
 from bildebank.cli_image import print_image_search_progress
 from bildebank.config import AppConfig, OpenClipConfig
 from bildebank.db import init_database
-from bildebank.media import sha256_file
+from bildebank.media import ImageDecodeLimitError, sha256_file
 from bildebank.openclip import (
     IMAGE_SCAN_RUN_META_KEY,
     connect_openclip_db,
     embedding_blob,
+    image_embedding,
     openclip_db_path,
     resolve_torch_device,
     scan_images,
@@ -874,6 +879,45 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual(stats.skipped, 1)
         self.assertEqual(embedding_rows, 0)
 
+    def test_image_scan_discards_embedding_when_file_changes_during_processing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "target"
+            init_database(target)
+            relative_path = Path("2024/01/image.png")
+            insert_test_file(target, relative_path.as_posix(), sha256="sha-image")
+            image_path = target / relative_path
+            config = OpenClipConfig()
+
+            def fake_embedding(_model, _preprocess, _source):
+                image_path.write_bytes(b"changed while model was running")
+                return [0.1, 0.2, 0.3]
+
+            with (
+                patch(
+                    "bildebank.openclip.load_image_model",
+                    return_value=(object(), object()),
+                ),
+                patch(
+                    "bildebank.openclip.image_embedding",
+                    side_effect=fake_embedding,
+                ),
+            ):
+                stats = scan_images(target, config)
+
+            conn = connect_openclip_db(target)
+            try:
+                embedding_rows = conn.execute(
+                    "SELECT COUNT(*) FROM image_embeddings"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+
+        self.assertEqual(stats.scanned, 0)
+        self.assertEqual(stats.errors, 1)
+        self.assertEqual(embedding_rows, 0)
+
     def test_image_scan_does_not_store_result_after_newer_scan_starts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             target = Path(tmp) / "target"
@@ -908,6 +952,89 @@ pretrained = "laion2b_s34b_b79k"
         self.assertEqual(stats.scanned, 0)
         self.assertEqual(stats.skipped, 1)
         self.assertEqual(embedding_rows, 0)
+
+    def test_image_scan_rejects_symlinked_original(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            init_database(target)
+            relative_path = Path("2024/01/image.png")
+            insert_test_file(target, relative_path.as_posix(), sha256="sha-image")
+            image_path = target / relative_path
+            outside = root / "outside.png"
+            outside.write_bytes(b"outside must stay unchanged")
+            image_path.unlink()
+            try:
+                image_path.symlink_to(outside)
+            except OSError as exc:
+                self.skipTest(
+                    f"symlink kan ikke opprettes på dette filsystemet: {exc}"
+                )
+
+            with (
+                patch(
+                    "bildebank.openclip.load_image_model",
+                    return_value=(object(), object()),
+                ),
+                patch(
+                    "bildebank.openclip.image_embedding",
+                    side_effect=AssertionError("symlinken skal ikke åpnes"),
+                ),
+            ):
+                stats = scan_images(target, OpenClipConfig())
+
+            self.assertEqual(stats.scanned, 0)
+            self.assertEqual(stats.errors, 1)
+            self.assertEqual(outside.read_bytes(), b"outside must stay unchanged")
+
+    def test_image_scan_rejects_target_path_outside_collection(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            init_database(target)
+            file_id = insert_test_file(
+                target,
+                "2024/01/image.png",
+                sha256="sha-image",
+            )
+            conn = db.connect(target)
+            try:
+                conn.execute(
+                    """
+                    UPDATE files
+                    SET target_path = '../../outside.png',
+                        target_path_key = '../../outside.png'
+                    WHERE id = ?
+                    """,
+                    (file_id,),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            with patch(
+                "bildebank.openclip.load_image_model",
+                side_effect=AssertionError("modellen skal ikke lastes"),
+            ):
+                with self.assertRaisesRegex(ValueError, "kan ikke inneholde"):
+                    scan_images(target, OpenClipConfig())
+
+    def test_image_embedding_checks_pixel_limit_before_preprocessing(self) -> None:
+        image_buffer = BytesIO()
+        Image.new("RGB", (1, 1)).save(image_buffer, format="PNG")
+        image_buffer.seek(0)
+
+        with (
+            patch.dict(sys.modules, {"torch": SimpleNamespace()}),
+            patch(
+                "bildebank.openclip.require_safe_pillow_image_size",
+                side_effect=ImageDecodeLimitError("for stort"),
+            ) as require_safe_size,
+            pytest.raises(ImageDecodeLimitError, match="for stort"),
+        ):
+            image_embedding(object(), object(), image_buffer)
+
+        require_safe_size.assert_called_once()
 
     def test_image_search_passes_browser_option_to_runner(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

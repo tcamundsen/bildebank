@@ -29,7 +29,7 @@ at bildet ikke skal brukes.
 Migreringen bruker samme oppdagelse som ordinær sletting og `unimport`:
 
 - legacy-databasen `.bilder-faces.sqlite3`, hvis den finnes
-- alle `*.sqlite3` i konfigurert `face_recognition.database_dir`
+- alle `*.sqlite3` i den faste samlingsmappen `.bildebank-faces`
 - `.bilder-openclip.sqlite3`, hvis den finnes
 
 Manglende sidecar-databaser opprettes ikke. InsightFace-modeller lastes ikke.

@@ -169,7 +169,6 @@ def plan_snapshot(
     source_dir: Path,
     repository_arg: Path,
     *,
-    configured_face_database_dir: Path | None = None,
     note: str | None = None,
     progress: SnapshotPlanProgressCallback | None = None,
     should_cancel: SnapshotCancelCallback | None = None,
@@ -237,19 +236,12 @@ def plan_snapshot(
                 total_bytes=inventory_bytes,
             )
         )
-    external_database_files = inventory_external_face_databases(
-        source,
-        repository,
-        configured_face_database_dir,
-        should_cancel=should_cancel,
-    )
     inventory, storage, warnings = build_snapshot_statistics(
         source,
         repository,
         repository_state,
         database_rows,
         inventory_files,
-        external_database_files,
         progress=progress,
         should_cancel=should_cancel,
     )
@@ -635,38 +627,12 @@ def inventory_tree(
     return tuple(sorted(files, key=lambda item: item.relative_path.casefold()))
 
 
-def inventory_external_face_databases(
-    source: Path,
-    repository: Path,
-    configured_database_dir: Path | None,
-    *,
-    should_cancel: SnapshotCancelCallback | None = None,
-) -> tuple[InventoryFile, ...]:
-    raise_if_snapshot_cancelled(should_cancel)
-    if configured_database_dir is None or not configured_database_dir.is_absolute():
-        return ()
-    validate_non_network_path(configured_database_dir, label="Absolutt face-databasekatalog")
-    validate_existing_path_components(configured_database_dir)
-    database_dir = configured_database_dir.resolve()
-    if is_relative_to(database_dir, repository) or is_relative_to(repository, database_dir):
-        raise ValueError("Absolutt face-databasekatalog og repository kan ikke ligge i hverandre.")
-    if is_relative_to(database_dir, source):
-        return ()
-    if not database_dir.exists():
-        return ()
-    if not database_dir.is_dir():
-        raise ValueError(f"Absolutt face-databasekatalog er ikke en mappe: {database_dir}")
-    files = inventory_tree(database_dir, should_cancel=should_cancel)
-    return tuple(file for file in files if file.relative_path.lower().endswith(".sqlite3"))
-
-
 def build_snapshot_statistics(
     source: Path,
     repository: Path,
     repository_state: str,
     database_rows: tuple[DatabaseFileRow, ...],
     inventory_files: tuple[InventoryFile, ...],
-    external_database_files: tuple[InventoryFile, ...],
     *,
     progress: SnapshotPlanProgressCallback | None = None,
     should_cancel: SnapshotCancelCallback | None = None,
@@ -775,7 +741,7 @@ def build_snapshot_statistics(
         if file.relative_path not in database_paths and not is_migration_backup_file(file.relative_path)
     ]
     recovery_only_files, path_collisions = count_recovery_only_paths([*candidates, *database_storage])
-    database_candidates = [*database_storage, *external_database_files]
+    database_candidates = database_storage
     new_known_keys.difference_update(reusable_keys)
     known_new_bytes = sum(size for _sha256, size in new_known_keys)
     estimated_new_objects = (
@@ -816,9 +782,8 @@ def build_snapshot_statistics(
         raise ValueError(f"Kunne ikke lese ledig plass for repositoryet: {disk_usage_path}: {exc}") from exc
 
     stats = SnapshotInventoryStats(
-        total_files=len(inventory_files) + len(external_database_files),
-        total_bytes=sum(file.size_bytes for file in inventory_files)
-        + sum(file.size_bytes for file in external_database_files),
+        total_files=len(inventory_files),
+        total_bytes=sum(file.size_bytes for file in inventory_files),
         excluded_files=sum(exclusion.files for exclusion in exclusions),
         excluded_bytes=sum(exclusion.bytes for exclusion in exclusions),
         exclusions=exclusions,

@@ -6,6 +6,9 @@ OpenCLIP-data lagres separat fra hoveddatabasen i:
 .bilder-openclip.sqlite3
 ```
 
+Plasseringen er fast i roten av samlingen. Databasefilen skal være en vanlig
+fil uten symlink, hardlink eller Windows reparse point.
+
 Databasen inneholder regenererbare data, men embeddings kan være svært
 tidkrevende å beregne på nytt. Eksisterende data skal derfor valideres og
 bevares fremfor å repareres eller overskrives automatisk.
@@ -83,6 +86,19 @@ gjeldende database.
 `unimport` validerer eller adopterer OpenCLIP-schemaet før databasen festes til
 hovedtransaksjonen. Dermed stopper et ukjent eller mangelfullt schema før
 bildesamlingen endres.
+
+## Sikker skanning
+
+`image-scan` bruker bare aktive, relative `files.target_path`-verdier uten
+`..`. Originalen åpnes uten å følge symlinker eller Windows reparse points og
+holdes åpen mens Pillow og OpenCLIP behandler den. Pillow kontrollerer
+dimensjonene mot den felles pikselgrensen før full dekoding.
+
+Før en embedding lagres, tar koden target-låsen på nytt og kontrollerer både
+databaseposten og originalfilens identitet, størrelse og endringstid.
+Resultatet forkastes hvis filen ble byttet, endret, fjernet eller markert
+slettet mens modellen arbeidet. En intern skanneidentitet hindrer også en
+eldre skanning i å skrive etter at en nyere er startet.
 
 ## Reparasjon av kopierte embedding-stier
 

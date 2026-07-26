@@ -7,11 +7,10 @@ import sqlite3
 import uuid
 
 from . import db
-from .config import FaceRecognitionConfig
+from .config import FACE_DATABASE_DIR, FaceRecognitionConfig
 from .face import LEGACY_FACE_DB_FILENAME, LEGACY_FACE_DB_MODEL_NAME
 from .openclip import OPENCLIP_DB_FILENAME
 from .snapshot import (
-    ABSOLUTE_FACE_DATABASE_RESTORE_WARNING,
     DatabaseFileRow,
     InventoryFile,
     MainDatabaseSourceError,
@@ -26,7 +25,6 @@ from .snapshot import (
     sqlite_database_path_for_side_file,
     inventory_tree,
     validate_existing_path_components,
-    validate_non_network_path,
     validate_repository_metadata,
     validate_regular_file_without_links,
 )
@@ -67,7 +65,6 @@ class DatabaseSource:
     required: bool
     regenerable: bool
     model_name: str | None
-    configured_absolute: bool = False
 
 
 @dataclass(frozen=True)
@@ -112,9 +109,7 @@ def build_normal_snapshot(
     inventory = inventory_tree(source, should_cancel=should_cancel)
     database_sources = build_database_catalog(
         source,
-        repository,
         inventory,
-        face_config=face_config,
         should_cancel=should_cancel,
     )
     candidates, exclusions = classify_collection_files(
@@ -188,9 +183,7 @@ def build_recovery_snapshot(
     inventory = inventory_tree(source, should_cancel=should_cancel)
     database_sources = build_database_catalog(
         source,
-        repository,
         inventory,
-        face_config=face_config,
         allow_missing_main=True,
         should_cancel=should_cancel,
     )
@@ -601,14 +594,12 @@ def warn_if_expected_object_missing(
 
 def build_database_catalog(
     source: Path,
-    repository: Path,
     inventory: tuple[InventoryFile, ...],
     *,
-    face_config: FaceRecognitionConfig | None,
     allow_missing_main: bool = False,
     should_cancel: SnapshotCancelCallback | None = None,
 ) -> tuple[DatabaseSource, ...]:
-    face_dir = configured_face_database_dir(source, repository, face_config)
+    face_dir = fixed_face_database_dir(source)
     sources: list[DatabaseSource] = []
     for file in inventory:
         raise_if_snapshot_cancelled(should_cancel)
@@ -640,10 +631,6 @@ def build_database_catalog(
                     required=False,
                     regenerable=False,
                     model_name=model_name,
-                    configured_absolute=(
-                        face_config is not None
-                        and face_config.database_dir.is_absolute()
-                    ),
                 )
             )
         else:
@@ -657,29 +644,6 @@ def build_database_catalog(
                 )
             )
 
-    if (
-        face_dir is not None
-        and face_config is not None
-        and face_config.database_dir.is_absolute()
-        and not is_relative_to(face_dir, source)
-    ):
-        for file in inventory_tree(face_dir, should_cancel=should_cancel):
-            if not is_sqlite_database_file(file.relative_path):
-                continue
-            model_name = Path(file.relative_path).stem
-            restore_path = f".bildebank-faces/{Path(file.relative_path).name}"
-            sources.append(
-                database_source(
-                    f"face:{model_name}",
-                    file,
-                    restore_path,
-                    required=False,
-                    regenerable=False,
-                    model_name=model_name,
-                    source_path_display=str(file.absolute_path),
-                    configured_absolute=True,
-                )
-            )
     roles = [item.role for item in sources]
     if allow_missing_main and "main" not in roles:
         sources.append(
@@ -701,22 +665,9 @@ def build_database_catalog(
     return tuple(sorted(sources, key=lambda item: item.role))
 
 
-def configured_face_database_dir(
-    source: Path,
-    repository: Path,
-    face_config: FaceRecognitionConfig | None,
-) -> Path | None:
-    if face_config is None:
-        return None
-    configured = face_config.database_dir
-    face_dir = configured.resolve() if configured.is_absolute() else (source / configured).resolve()
+def fixed_face_database_dir(source: Path) -> Path | None:
+    face_dir = (source / FACE_DATABASE_DIR).absolute()
     validate_existing_path_components(face_dir)
-    if configured.is_absolute():
-        validate_non_network_path(face_dir, label="Absolutt face-databasekatalog")
-        if is_relative_to(face_dir, repository) or is_relative_to(repository, face_dir):
-            raise SnapshotStorageError("Absolutt face-databasekatalog og repository kan ikke ligge i hverandre.")
-        if face_dir != source and is_relative_to(source, face_dir):
-            raise SnapshotStorageError("Absolutt face-databasekatalog kan ikke være en overmappe til samlingen.")
     if not face_dir.exists():
         return None
     if not face_dir.is_dir():
@@ -733,7 +684,6 @@ def database_source(
     regenerable: bool,
     model_name: str | None = None,
     source_path_display: str | None = None,
-    configured_absolute: bool = False,
 ) -> DatabaseSource:
     if portable_path_key(restore_path) is None:
         raise SnapshotStorageError(f"Databasen har utrygg restore-sti: {restore_path}")
@@ -745,7 +695,6 @@ def database_source(
         required=required,
         regenerable=regenerable,
         model_name=model_name,
-        configured_absolute=configured_absolute,
     )
 
 
@@ -766,7 +715,6 @@ def capture_databases(
     raw_files: list[SnapshotFileRecord] = []
     schema_versions: dict[str, int | None] = {}
     warnings: list[str] = []
-    absolute_face_database_captured = False
     database_progress = _DatabaseProgressReporter(sources, progress)
     database_progress.start()
     for source in sources:
@@ -830,13 +778,9 @@ def capture_databases(
             )
         )
         schema_versions[source.role] = backup.schema_version
-        if source.configured_absolute:
-            absolute_face_database_captured = True
         if source.role.startswith("auxiliary:"):
             warnings.append(f"Ukjent SQLite-database ble tatt med: {source.source_path_display}")
         database_progress.finish(source)
-    if absolute_face_database_captured:
-        warnings.append(ABSOLUTE_FACE_DATABASE_RESTORE_WARNING)
     return tuple(records), tuple(raw_files), schema_versions, tuple(warnings)
 
 

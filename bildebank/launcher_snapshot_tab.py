@@ -7,7 +7,6 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Protocol
 
-from .config import load_config
 from .formatting import format_bytes
 from .launcher_status import program_repo_root
 from .program_state import (
@@ -127,27 +126,23 @@ def plan_launcher_snapshot(
     progress: SnapshotPlanProgressCallback | None = None,
     should_cancel: SnapshotCancelCallback | None = None,
 ) -> SnapshotPlan | LauncherRecoveryPlan:
-    config = load_config(program_repo_root(), migrate_legacy=False)
     try:
         if progress is not None and should_cancel is None:
             return plan_snapshot(
                 collection,
                 repository,
-                configured_face_database_dir=config.face_recognition.database_dir,
                 progress=progress,
             )
         if progress is not None or should_cancel is not None:
             return plan_snapshot(
                 collection,
                 repository,
-                configured_face_database_dir=config.face_recognition.database_dir,
                 progress=progress,
                 should_cancel=should_cancel,
             )
         return plan_snapshot(
             collection,
             repository,
-            configured_face_database_dir=config.face_recognition.database_dir,
         )
     except MainDatabaseSourceError as exc:
         raise_if_snapshot_cancelled(should_cancel)
@@ -167,11 +162,9 @@ def create_launcher_snapshot(
     progress: SnapshotCreateProgressCallback | None = None,
     should_cancel: SnapshotCancelCallback | None = None,
 ) -> SnapshotCreationResult:
-    config = load_config(program_repo_root(), migrate_legacy=False)
     return create_snapshot(
         collection,
         repository,
-        face_config=config.face_recognition,
         confirmed_binding_change=confirmed_binding_change,
         progress=progress,
         should_cancel=should_cancel,

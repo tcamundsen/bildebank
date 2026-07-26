@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import importlib
+import io
 import os
 import re
 import shutil
@@ -30,7 +31,16 @@ from .browser_output import (
     validate_legacy_people_files,
     write_new_text_file,
 )
-from .config import DEFAULT_FACE_MODEL_NAME, FaceRecognitionConfig
+from .collection_paths import (
+    COLLECTION_FILE_OK,
+    ensure_collection_directory_without_links,
+    inspect_collection_file,
+    is_active_collection_file_path,
+    open_stable_collection_file,
+    parse_collection_relative_path,
+    same_collection_file_version,
+)
+from .config import DEFAULT_FACE_MODEL_NAME, FACE_DATABASE_DIR, FaceRecognitionConfig
 from .db_core import connect_database_read_only
 from .html_paths import path_to_url, relative_to_target
 from .html_export import render_html
@@ -38,14 +48,22 @@ from .insightface_models import (
     ensure_insightface_model,
     insightface_model_files_exist,
 )
-from .media import IMAGE_EXTENSIONS
+from .media import IMAGE_EXTENSIONS, require_safe_pillow_image_size
+from .sidecar_paths import (
+    create_new_database_file,
+    create_or_validate_database_file,
+    ensure_directory_without_links,
+    regular_database_file_exists,
+    sqlite_read_write_uri,
+    validate_regular_database_file,
+)
 from .static_browser import static_browser_item
 from .target_lock import TargetLock, TargetLockError
 
 
 LEGACY_FACE_DB_FILENAME = ".bilder-faces.sqlite3"
 LEGACY_FACE_DB_MODEL_NAME = "buffalo_l"
-FACE_DB_DIRNAME = ".bildebank-faces"
+FACE_DB_DIRNAME = FACE_DATABASE_DIR.name
 FACE_SCHEMA_VERSION = 5
 FACE_MODEL_FILENAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 FACE_SUGGEST_BATCH_SIZE = 5000
@@ -202,6 +220,13 @@ class FaceSuggestProgressStats:
 FaceSuggestProgress = Callable[[str, int, int, FaceSuggestProgressStats, Path | None], None]
 
 
+@dataclass(frozen=True)
+class FaceScanCandidate:
+    row: sqlite3.Row
+    relative_path: Path
+    confirmed_face_links: tuple[tuple[int, int, str], ...]
+
+
 def target_locked_face_write(
     command: str,
 ) -> Callable[
@@ -220,10 +245,8 @@ def target_locked_face_write(
 
 
 def face_database_dir(target: Path, config: FaceRecognitionConfig | None = None) -> Path:
-    database_dir = config.database_dir if config is not None else Path(FACE_DB_DIRNAME)
-    if database_dir.is_absolute():
-        return database_dir
-    return target / database_dir
+    del config
+    return target / FACE_DATABASE_DIR
 
 
 def face_model_db_filename(model_name: str) -> str:
@@ -244,19 +267,23 @@ def move_legacy_face_db_if_needed(target: Path, new_path: Path, model_name: str)
     if model_name != LEGACY_FACE_DB_MODEL_NAME:
         return
     legacy_path = target / LEGACY_FACE_DB_FILENAME
-    if not legacy_path.exists() or new_path.exists():
+    if not regular_database_file_exists(legacy_path):
         return
-    new_path.parent.mkdir(parents=True, exist_ok=True)
+    if regular_database_file_exists(new_path):
+        return
+    ensure_collection_directory_without_links(target, FACE_DATABASE_DIR)
     # KOMPATIBILITET: den gamle face-databasen ble laget før modellvalg og regnes som buffalo_l.
     shutil.move(str(legacy_path), str(new_path))
+    validate_regular_database_file(new_path)
 
 
 def connect_face_db(target: Path, config: FaceRecognitionConfig | None = None) -> sqlite3.Connection:
     model_name = config.model_name if config is not None else DEFAULT_FACE_MODEL_NAME
     path = face_db_path(target, config)
+    ensure_collection_directory_without_links(target, FACE_DATABASE_DIR)
     move_legacy_face_db_if_needed(target, path, model_name)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    create_or_validate_database_file(path)
+    conn = sqlite3.connect(sqlite_read_write_uri(path), uri=True)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -276,7 +303,9 @@ def connect_face_db_read_only(
     config: FaceRecognitionConfig | None = None,
 ) -> sqlite3.Connection:
     model_name = config.model_name if config is not None else DEFAULT_FACE_MODEL_NAME
-    conn = connect_database_read_only(face_db_path(target, config))
+    path = face_db_path(target, config)
+    validate_regular_database_file(path)
+    conn = connect_database_read_only(path)
     try:
         require_current_face_schema_read_only(conn, model_name)
         return conn
@@ -286,7 +315,9 @@ def connect_face_db_read_only(
 
 
 def ensure_face_schema_path(path: Path) -> None:
-    conn = sqlite3.connect(path)
+    ensure_directory_without_links(path.parent)
+    create_or_validate_database_file(path)
+    conn = sqlite3.connect(sqlite_read_write_uri(path), uri=True)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -309,8 +340,14 @@ def backup_face_database(conn: sqlite3.Connection, path: Path) -> Path:
         f"{path.name}.backup-before-schema-{FACE_SCHEMA_VERSION}-"
         f"{stamp}-{uuid.uuid4().hex}"
     )
+    backup_created = False
     try:
-        backup_conn = sqlite3.connect(backup_path)
+        create_new_database_file(backup_path)
+        backup_created = True
+        backup_conn = sqlite3.connect(
+            sqlite_read_write_uri(backup_path),
+            uri=True,
+        )
         try:
             conn.backup(backup_conn)
             integrity = backup_conn.execute("PRAGMA integrity_check").fetchone()[0]
@@ -321,7 +358,9 @@ def backup_face_database(conn: sqlite3.Connection, path: Path) -> Path:
         finally:
             backup_conn.close()
     except BaseException:
-        backup_path.unlink(missing_ok=True)
+        if backup_created:
+            validate_regular_database_file(backup_path)
+            backup_path.unlink(missing_ok=True)
         raise
     return backup_path
 
@@ -688,8 +727,9 @@ def set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
 
 def face_db_summary(target: Path, config: FaceRecognitionConfig | None = None) -> tuple[bool, int, int]:
     path = face_db_path(target, config)
-    if not path.exists():
+    if not regular_database_file_exists(path):
         return False, 0, 0
+    validate_regular_database_file(path)
     conn = connect_database_read_only(path)
     try:
         scanned = count_rows(conn, "scanned_files")
@@ -956,7 +996,7 @@ def delete_face_database(
     config: FaceRecognitionConfig | None = None,
 ) -> Path | None:
     path = face_db_path(target, config)
-    if not path.exists():
+    if not regular_database_file_exists(path):
         return None
     path.unlink()
     return path
@@ -971,7 +1011,7 @@ def suggest_faces(
     progress: FaceSuggestProgress | None = None,
 ) -> FaceSuggestStats:
     path = face_db_path(target, config)
-    if not path.exists():
+    if not regular_database_file_exists(path):
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target, config)
     try:
@@ -1130,7 +1170,7 @@ def normalized_embedding_matrix(blobs, np: Any) -> Any:
 
 def list_persons(target: Path, config: FaceRecognitionConfig | None = None) -> list[sqlite3.Row]:
     path = face_db_path(target, config)
-    if not path.exists():
+    if not regular_database_file_exists(path):
         return []
     conn = connect_face_db(target, config)
     try:
@@ -1217,7 +1257,7 @@ def face_report(
     config: FaceRecognitionConfig | None = None,
 ) -> FaceReport:
     path = face_db_path(target, config)
-    if not path.exists():
+    if not regular_database_file_exists(path):
         return FaceReport(database_exists=False)
     conn = connect_face_db(target, config)
     try:
@@ -1275,7 +1315,7 @@ def export_person_browser(
 ) -> Path:
     clean_name = normalize_person_name(person_name)
     path = face_db_path(target, config)
-    if not path.exists():
+    if not regular_database_file_exists(path):
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     conn = connect_face_db(target, config)
     try:
@@ -1339,7 +1379,7 @@ def export_people_browser(
 ) -> PeopleBrowserResult:
     output_path = people_index_path(target)
     path = face_db_path(target, config)
-    if not path.exists():
+    if not regular_database_file_exists(path):
         raise ValueError("Face-database finnes ikke. Kjør bildebank face-scan først.")
     validate_legacy_people_files(target)
     staging = create_people_staging_directory(target)
@@ -1756,7 +1796,12 @@ def scan_faces(
     progress: FaceScanProgress | None = None,
     show_model_output: bool = False,
     force: bool = False,
+    discard_confirmed_face_links: bool = False,
 ) -> FaceScanStats:
+    if discard_confirmed_face_links and not force:
+        raise ValueError(
+            "Bekreftede ansiktskoblinger kan bare forkastes ved tvungen ny skanning."
+        )
     stats = FaceScanStats()
     with TargetLock(target, command="face-scan"):
         main_conn = db.connect(target)
@@ -1769,18 +1814,33 @@ def scan_faces(
             stats.total = len(rows)
             if progress is not None:
                 progress("start", 0, stats.total, stats, None)
-            rows_to_scan = []
+            rows_to_scan: list[FaceScanCandidate] = []
             for row in rows:
                 stats.checked += 1
                 file_id = int(row["id"])
                 sha256 = str(row["sha256"])
-                target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+                relative_path = active_face_scan_relative_path(row)
+                target_path = target / relative_path
                 if not force and is_file_scanned(face_conn, file_id, sha256):
                     stats.skipped += 1
                     if progress is not None:
                         progress("check", stats.checked, stats.total, stats, target_path)
                     continue
-                rows_to_scan.append(row)
+                confirmed_face_links = confirmed_face_link_state(face_conn, file_id)
+                if confirmed_face_links and not discard_confirmed_face_links:
+                    raise ValueError(
+                        "Face-scan vil erstatte bekreftede ansiktskoblinger for "
+                        f"{relative_path.as_posix()}. Kjør på nytt med både "
+                        "--force og --discard-confirmed-person-links hvis disse "
+                        "koblingene skal slettes."
+                    )
+                rows_to_scan.append(
+                    FaceScanCandidate(
+                        row=row,
+                        relative_path=relative_path,
+                        confirmed_face_links=confirmed_face_links,
+                    )
+                )
                 if progress is not None:
                     progress("check", stats.checked, stats.total, stats, target_path)
         finally:
@@ -1798,16 +1858,26 @@ def scan_faces(
             progress("download_model", 0, len(rows_to_scan), stats, None)
     with suppress_model_output(enabled=not show_model_output):
         app = load_face_app(config)
-    for scan_index, row in enumerate(rows_to_scan, start=1):
-        target_path = db.absolute_target_path(target, Path(str(row["target_path"])))
+    for scan_index, candidate in enumerate(rows_to_scan, start=1):
+        row = candidate.row
+        target_path = target / candidate.relative_path
         try:
-            image = read_image(target_path)
-            if image is None:
-                raise ValueError(f"Kunne ikke lese bildefil: {target_path}")
-            with suppress_model_output(enabled=not show_model_output):
-                faces = app.get(image)
+            with open_stable_collection_file(target, candidate.relative_path) as source:
+                source_version = os.fstat(source.fileno())
+                image = read_image(source.read(), target_path)
+                if image is None:
+                    raise ValueError(f"Kunne ikke lese bildefil: {target_path}")
+                with suppress_model_output(enabled=not show_model_output):
+                    faces = app.get(image)
             try:
-                stored = store_face_scan_result(target, config, row, faces, scan_run_id)
+                stored = store_face_scan_result(
+                    target,
+                    config,
+                    candidate,
+                    faces,
+                    scan_run_id,
+                    source_version,
+                )
             except TargetLockError:
                 stored = False
             if stored:
@@ -1838,20 +1908,42 @@ def scan_faces(
 def store_face_scan_result(
     target: Path,
     config: FaceRecognitionConfig,
-    original_row: sqlite3.Row,
+    candidate: FaceScanCandidate,
     faces: list[Any],
     scan_run_id: str,
+    source_version: os.stat_result,
 ) -> bool:
     """Store one result only if the scanned file is still the same active file."""
     with TargetLock(target, command="face-scan"):
         main_conn = db.connect(target)
         try:
-            current_row = active_file_for_face_scan(main_conn, original_row)
+            current_row = active_file_for_face_scan(main_conn, candidate.row)
             if current_row is None:
+                return False
+            current_relative_path = active_face_scan_relative_path(current_row)
+            if current_relative_path != candidate.relative_path:
+                return False
+            current_file = inspect_collection_file(target, current_relative_path)
+            if (
+                current_file.status != COLLECTION_FILE_OK
+                or current_file.path_stat is None
+                or not same_collection_file_version(
+                    source_version,
+                    current_file.path_stat,
+                )
+            ):
                 return False
             face_conn = connect_face_db(target, config)
             try:
                 if db.get_meta(face_conn, FACE_SCAN_RUN_META_KEY) != scan_run_id:
+                    return False
+                if (
+                    confirmed_face_link_state(
+                        face_conn,
+                        int(current_row["id"]),
+                    )
+                    != candidate.confirmed_face_links
+                ):
                     return False
                 replace_file_faces(
                     face_conn,
@@ -1908,7 +2000,7 @@ def store_face_scan_error(
 def active_file_for_face_scan(conn: sqlite3.Connection, original_row: sqlite3.Row) -> sqlite3.Row | None:
     return conn.execute(
         """
-        SELECT id, target_path, target_path_key, sha256
+        SELECT id, target_path, target_path_key, sha256, stored_filename
         FROM files
         WHERE id = ?
           AND sha256 = ?
@@ -1938,11 +2030,57 @@ def active_image_files(conn: sqlite3.Connection, *, limit: int | None = None) ->
     """
     rows = []
     for row in conn.execute(sql):
-        if Path(str(row["stored_filename"])).suffix.lower() in IMAGE_EXTENSIONS:
-            rows.append(row)
-            if limit is not None and len(rows) >= limit:
-                break
+        if Path(str(row["stored_filename"])).suffix.lower() not in IMAGE_EXTENSIONS:
+            continue
+        relative_path = active_face_scan_relative_path(row)
+        if relative_path.suffix.lower() not in IMAGE_EXTENSIONS:
+            raise ValueError(
+                f"files #{int(row['id'])} har bildefilnavn som ikke stemmer "
+                "med target_path."
+            )
+        rows.append(row)
+        if limit is not None and len(rows) >= limit:
+            break
     return rows
+
+
+def active_face_scan_relative_path(row: sqlite3.Row) -> Path:
+    relative_path = parse_collection_relative_path(str(row["target_path"]))
+    if not is_active_collection_file_path(relative_path):
+        raise ValueError(
+            f"files #{int(row['id'])} har ugyldig aktiv target_path: "
+            f"{relative_path.as_posix()}"
+        )
+    if str(row["target_path_key"]) != db.relative_path_key(relative_path):
+        raise ValueError(
+            f"files #{int(row['id'])} har target_path_key som ikke stemmer "
+            "med target_path."
+        )
+    return relative_path
+
+
+def confirmed_face_link_state(
+    conn: sqlite3.Connection,
+    file_id: int,
+) -> tuple[tuple[int, int, str], ...]:
+    return tuple(
+        (
+            int(row["person_id"]),
+            int(row["face_id"]),
+            str(row["confirmed_at"]),
+        )
+        for row in conn.execute(
+            """
+            SELECT person_faces.person_id, person_faces.face_id,
+                   person_faces.confirmed_at
+            FROM person_faces
+            JOIN faces ON faces.id = person_faces.face_id
+            WHERE faces.file_id = ?
+            ORDER BY person_faces.person_id, person_faces.face_id
+            """,
+            (file_id,),
+        )
+    )
 
 
 def is_file_scanned(conn: sqlite3.Connection, file_id: int, sha256: str) -> bool:
@@ -2014,7 +2152,12 @@ def mark_file_scan_error(
     sha256: str,
     message: str,
 ) -> None:
-    delete_file_face_data(conn, file_id)
+    existing = conn.execute(
+        "SELECT 1 FROM scanned_files WHERE file_id = ?",
+        (file_id,),
+    ).fetchone()
+    if existing is not None:
+        return
     conn.execute(
         """
         INSERT INTO scanned_files(
@@ -2128,20 +2271,22 @@ def normalize_insightface_model_layout(config: FaceRecognitionConfig) -> bool:
     return True
 
 
-def read_image(path: Path):
+def read_image(data: bytes, path: Path):
     try:
         import cv2
         import numpy as np
+        from PIL import Image
     except ImportError as exc:
-        raise ValueError("OpenCV mangler. Installer InsightFace-komponenten på nytt.") from exc
-    try:
-        data = np.fromfile(str(path), dtype=np.uint8)
-    except OSError as exc:
-        raise ValueError(f"Kunne ikke lese bildefil: {path}") from exc
-    if data.size == 0:
+        raise ValueError(
+            "OpenCV eller Pillow mangler. Installer InsightFace-komponenten på nytt."
+        ) from exc
+    if not data:
         return None
+    with Image.open(io.BytesIO(data)) as image_file:
+        require_safe_pillow_image_size(image_file)
+    encoded = np.frombuffer(data, dtype=np.uint8)
     ignore_orientation = getattr(cv2, "IMREAD_IGNORE_ORIENTATION", 0)
-    return cv2.imdecode(data, cv2.IMREAD_COLOR | ignore_orientation)
+    return cv2.imdecode(encoded, cv2.IMREAD_COLOR | ignore_orientation)
 
 
 def face_bbox(face: Any) -> tuple[float, float, float, float]:

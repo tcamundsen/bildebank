@@ -221,11 +221,11 @@ def test_migrate_v16_cleans_all_existing_item_sidecars_and_backs_up_faces(
         active_id=ids["active_id"],
         deleted_id=ids["deleted_id"],
     )
-    face_config = FaceRecognitionConfig(database_dir=Path(".custom-faces"))
+    face_config = FaceRecognitionConfig()
     face_paths = (
         target / LEGACY_FACE_DB_FILENAME,
-        target / ".custom-faces" / "antelopev2.sqlite3",
-        target / ".custom-faces" / "buffalo_l.sqlite3",
+        target / ".bildebank-faces" / "antelopev2.sqlite3",
+        target / ".bildebank-faces" / "buffalo_l.sqlite3",
     )
     for face_path in face_paths:
         create_face_cleanup_fixture(
@@ -330,8 +330,8 @@ def test_migrate_v16_rolls_back_main_and_sidecars_after_late_failure(
     target = tmp_path / "target"
     db.init_database(target)
     ids = insert_openclip_cleanup_fixture(target)
-    face_config = FaceRecognitionConfig(database_dir=Path(".custom-faces"))
-    face_path = target / ".custom-faces" / "antelopev2.sqlite3"
+    face_config = FaceRecognitionConfig()
+    face_path = target / ".bildebank-faces" / "antelopev2.sqlite3"
     create_face_cleanup_fixture(
         face_path,
         active_id=ids["active_id"],
@@ -390,8 +390,8 @@ def test_migrate_v17_only_cleans_file_move_journal(
     target = tmp_path / "target"
     db.init_database(target)
     ids = insert_openclip_cleanup_fixture(target)
-    face_config = FaceRecognitionConfig(database_dir=Path(".custom-faces"))
-    face_path = target / ".custom-faces" / "antelopev2.sqlite3"
+    face_config = FaceRecognitionConfig()
+    face_path = target / ".bildebank-faces" / "antelopev2.sqlite3"
     create_face_cleanup_fixture(
         face_path,
         active_id=ids["active_id"],

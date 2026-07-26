@@ -12,6 +12,13 @@ from .face import (
     face_database_dir,
 )
 from .openclip import ensure_openclip_schema_path, openclip_db_path
+from .sidecar_paths import (
+    create_new_database_file,
+    regular_database_file_exists,
+    regular_directory_exists_without_links,
+    sqlite_read_write_uri,
+    validate_regular_database_file,
+)
 
 
 def attach_existing_item_databases(
@@ -45,7 +52,10 @@ def attach_existing_item_databases(
         face_index += 1
 
     openclip_path = openclip_db_path(target)
-    if openclip_path.is_file() and openclip_path.resolve() not in attached_paths:
+    if (
+        regular_database_file_exists(openclip_path)
+        and openclip_path.resolve() not in attached_paths
+    ):
         ensure_openclip_schema_path(openclip_path)
         if "openclip_db" in attached_names:
             raise ValueError(
@@ -61,16 +71,16 @@ def existing_face_database_paths(
 ) -> tuple[Path, ...]:
     paths: list[Path] = []
     legacy_path = target / LEGACY_FACE_DB_FILENAME
-    if legacy_path.is_file():
+    if regular_database_file_exists(legacy_path):
         paths.append(legacy_path)
 
     database_dir = face_database_dir(target, face_config)
-    if database_dir.is_dir():
-        paths.extend(
-            path
-            for path in sorted(database_dir.glob("*.sqlite3"))
-            if path.is_file()
-        )
+    if regular_directory_exists_without_links(database_dir):
+        for path in sorted(database_dir.iterdir()):
+            if path.suffix != ".sqlite3":
+                continue
+            if regular_database_file_exists(path):
+                paths.append(path)
 
     unique_paths: list[Path] = []
     seen: set[Path] = set()
@@ -111,9 +121,13 @@ def _backup_face_database_for_main_schema(
         f"{path.name}.backup-before-main-schema-{target_schema_version}-"
         f"{stamp}-{uuid.uuid4().hex}"
     )
-    source_conn = sqlite3.connect(path)
+    validate_regular_database_file(path)
+    source_conn = sqlite3.connect(sqlite_read_write_uri(path), uri=True)
+    backup_created = False
     try:
-        backup_conn = sqlite3.connect(backup_path)
+        create_new_database_file(backup_path)
+        backup_created = True
+        backup_conn = sqlite3.connect(sqlite_read_write_uri(backup_path), uri=True)
         try:
             source_conn.backup(backup_conn)
             integrity = backup_conn.execute("PRAGMA integrity_check").fetchone()[0]
@@ -125,7 +139,9 @@ def _backup_face_database_for_main_schema(
         finally:
             backup_conn.close()
     except BaseException:
-        backup_path.unlink(missing_ok=True)
+        if backup_created:
+            validate_regular_database_file(backup_path)
+            backup_path.unlink(missing_ok=True)
         raise
     finally:
         source_conn.close()

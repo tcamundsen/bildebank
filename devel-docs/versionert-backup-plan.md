@@ -705,8 +705,6 @@ Snapshotet skal inkludere:
 - `.bilder.sqlite3`
 - andre Bildebank-databaser som ligger i samlingen, blant annet databaser for
   søk og ansiktsmodeller
-- kontrollerte ansiktsdatabaser i konfigurert absolutt `database_dir`, lagret
-  med trygg restore-sti inne i den gjenopprettede samlingen
 - nødvendige konfigurasjons- og metadatafiler i samlingen
 - andre vanlige filer med mindre de er eksplisitt klassifisert som
   regenererbare eller runtime-filer
@@ -838,8 +836,8 @@ Før kopiering skal Bildebank bygge én databasekatalog med disse rollene:
 - `main` for `.bilder.sqlite3`; denne er nødvendig for normal hel restore
 - `openclip` for `.bilder-openclip.sqlite3` når den finnes; innholdet er
   regenererbart, men skal likevel tas med
-- `face:<model_name>` for hver kontrollert modellfil i den konfigurerte
-  face-databasemappen; personer, bekreftelser og andre manuelle data gjør disse
+- `face:<model_name>` for hver kontrollert modellfil i den faste
+  `.bildebank-faces`-mappen; personer, bekreftelser og andre manuelle data gjør disse
   databasene ikke-regenererbare
 - `auxiliary:<relative-path>` for andre SQLite-databaser som oppdages i
   samlingsmappen; ukjent rolle skal vises som en advarsel
@@ -849,17 +847,13 @@ restore-sti, schema-versjon eller modellnavn når det finnes,
 nødvendig/regenererbar-status og forventet restore-policy. Den fysiske
 kildestien skal aldri brukes direkte som restore-mål.
 
-Hvis `face_recognition.database_dir` er relativ, skal alle kontrollerte
-modellfiler under den katalogen gjenopprettes til samme relative katalog. Hvis
-den er absolutt, skal første versjon fortsatt sikre alle kontrollerte
-modellfiler med SQLite backup-API, men gi dem restore-stier under
-`.bildebank-faces/` i den gjenopprettede samlingen. Restore skal aldri skrive
-til den gamle absolutte stien eller endre brukerens konfigurasjon automatisk.
-Rapporten skal forklare at en fortsatt absolutt `database_dir` må vurderes og
-eventuelt endres før face-funksjonene tas i bruk. En absolutt databasekatalog
-skal være en vanlig lokal katalog uten lenker eller reparse points. Den og
-repositoryet skal heller ikke ligge i hverandre. Hvis en av disse kontrollene
-feiler, skal snapshotet avbryte før repositorydata skrives.
+Alle kontrollerte modellfiler under `.bildebank-faces/` skal gjenopprettes til
+samme relative katalog. Katalogen og filene skal være vanlige lokale
+filsystemobjekter uten symlinker, hardlinker eller reparse points. Eldre
+format-v1-snapshots kan inneholde en historisk advarsel og absolutt
+visningssti fra perioden da en ekstern face-databasekatalog ble godtatt.
+Restore beholder bakoverkompatibilitet for disse snapshotene, men skriver
+fortsatt bare til `.bildebank-faces/` i den gjenopprettede samlingen.
 
 SQLite-databaser skal ikke kopieres som vanlige åpne filer. Det skal opprettes
 en konsistent kopi gjennom SQLite backup-API til et stagingområde. Kopien skal
@@ -1423,10 +1417,10 @@ Minstekrav til automatiserte tester:
   allerede bundet repository på samme arbeidssted, kontroll av ID-likhet når
   den kan leses, samt avvisning mot nytt/tomt repository og mot endret
   arbeidssted
-- databasekatalog med hoveddatabase, OpenCLIP, flere face-modeller, ukjent
-  SQLite-database og absolutt `face_recognition.database_dir`
-- avvisning av absolutt face-databasekatalog på nettverksmål, gjennom lenke
-  eller i overlapp med repositoryet
+- databasekatalog med hoveddatabase, OpenCLIP, flere face-modeller og ukjent
+  SQLite-database
+- avvisning av `.bildebank-faces` og modellfiler som går gjennom lenke eller
+  reparse point
 - kontroll av at en konsistent databasekopi får normal restore-sti, mens rå
   database- og sidefiler ved feil bare blir `recovery_only`
 - path traversal, absolutt sti, UNC-/device-sti, NTFS alternativ datastrøm,
@@ -1663,7 +1657,8 @@ Inntil punktene over er avgjort, er anbefalt retning:
 - `degraded` ved feil i tilleggsdatabase, med rå databasefiler bevart for
   undersøkelse
 - eksplisitt databasekatalog for hoveddatabase, OpenCLIP, alle face-modeller og
-  andre SQLite-databaser, også med trygg policy for absolutt face-databasesti
+  andre SQLite-databaser, med face-modeller fra den faste samlingsmappen
+  `.bildebank-faces`
 - SQLite backup-API og target-lås for konsistente snapshots, uten at aktive
   database- eller sidefiler samtidig behandles som vanlige restorefiler
 - portabel Windows-sikker stikontrakt og `recovery_only`-bevaring av lesbare

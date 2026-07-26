@@ -37,6 +37,34 @@ skal bare kopiere filer fra kildemapper til målmappen.
 - **Databasen**: En fil i målmappen som holder oversikt over importerte bilder, 
   importerte kilder, filhash, duplikatfunn, feil og kommandologg.
 
+## Selvstendig bildesamling
+
+Bildesamlingen skal være selvstendig og flyttbar som én mappe. Alle varige
+data som tilhører samlingen, skal ligge inne i samlingsmappen. Det omfatter
+originaler, `deleted/`, hoveddatabasen, OpenCLIP-databasen,
+InsightFace-databasene under den faste mappen `.bildebank-faces/` og andre
+samlingsspesifikke metadata. To samlinger skal aldri dele en sidecar-database.
+
+Stier som peker på innhold inne i samlingen, skal lagres relativt til
+samlingsroten, bruke `/` som skilletegn og ikke inneholde `..`. De skal kunne
+brukes etter at hele samlingsmappen er flyttet. Samlingsinterne databaser og
+mediefiler skal ikke nås gjennom symlinker, hardlinker eller Windows reparse
+points når de åpnes for skriving.
+
+Importproveniens er det tilsiktede unntaket: `sources.path`,
+`file_sources.source_path` og `errors.source_path` kan inneholde absolutte
+stier eller relative stier som peker utenfor samlingen, fordi de beskriver
+stedet filene ble importert fra. Programinstallasjon, modellfiler, lokal
+programstatus og eksplisitt valgte mål for eksport og snapshot-repositories
+er heller ikke deler av samlingen.
+
+Databasen kan også inneholde absolutte stier som ren historikk, ikke som
+avhengigheter: `meta.target_path` er en ikke-autoritativ opplysning om hvor
+samlingen sist ble åpnet, og `command_log.args_json` kan gjengi stier brukeren
+oppga til en kommando. Ingen av disse verdiene skal brukes til å finne
+samlingsinnhold. Aktiv samlingsrot er alltid mappen som inneholder
+`.bilder.sqlite3`.
+
 ## Sikkerhetskrav ved import og unimport
 
 Hvis brukeren trykker ctrl-C, skal programmet forsøke å stoppe kontrollert:

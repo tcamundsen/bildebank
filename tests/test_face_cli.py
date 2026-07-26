@@ -8,9 +8,11 @@ import unittest
 import warnings
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stderr, redirect_stdout
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from unittest.mock import patch
+
+from PIL import Image
 
 from bildebank import db
 from bildebank.cli import main
@@ -468,6 +470,115 @@ model_name = "buffalo_l"
         self.assertEqual(stats.skipped, 1)
         self.assertEqual(scanned_rows, 0)
 
+    def test_face_scan_discards_result_if_confirmed_links_change_during_processing(
+        self,
+    ) -> None:
+        class FakeFace:
+            bbox = [1.0, 2.0, 11.0, 22.0]
+            det_score = 0.9
+            embedding = [0.1, 0.2, 0.3]
+
+        class InitialApp:
+            def get(self, _image):
+                return [FakeFace()]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            target = root / "target"
+            source = root / "source"
+            source.mkdir()
+            (source / "IMG_20240102.jpg").write_bytes(b"image")
+            self.enable_face_recognition_config()
+            self.assertEqual(run_cli(["create", str(target)]), 0)
+            self.assertEqual(
+                run_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "import",
+                        "--name",
+                        source.name,
+                        "--quiet",
+                        str(source),
+                    ]
+                ),
+                0,
+            )
+            config = load_config(self.program_root).face_recognition
+
+            with (
+                patch("bildebank.face.load_face_app", return_value=InitialApp()),
+                patch("bildebank.face.read_image", return_value=object()),
+            ):
+                self.assertEqual(scan_faces(target, config).scanned, 1)
+
+            face_conn = connect_face_db(target, config)
+            try:
+                old_face_id = int(
+                    face_conn.execute("SELECT id FROM faces").fetchone()[0]
+                )
+                file_id = int(
+                    face_conn.execute("SELECT file_id FROM faces").fetchone()[0]
+                )
+            finally:
+                face_conn.close()
+
+            class ConcurrentConfirmationApp:
+                def get(self, _image):
+                    with TargetLock(target, command="confirm-person"):
+                        conn = connect_face_db(target, config)
+                        try:
+                            person_id = int(
+                                conn.execute(
+                                    "INSERT INTO persons(name) VALUES('Kari') RETURNING id"
+                                ).fetchone()[0]
+                            )
+                            conn.execute(
+                                "INSERT INTO person_faces(person_id, face_id) VALUES(?, ?)",
+                                (person_id, old_face_id),
+                            )
+                            conn.commit()
+                        finally:
+                            conn.close()
+                    return [FakeFace()]
+
+            with (
+                patch(
+                    "bildebank.face.load_face_app",
+                    return_value=ConcurrentConfirmationApp(),
+                ),
+                patch("bildebank.face.read_image", return_value=object()),
+            ):
+                stats = scan_faces(
+                    target,
+                    config,
+                    force=True,
+                    discard_confirmed_face_links=True,
+                )
+
+            face_conn = connect_face_db(target, config)
+            try:
+                face_ids = [
+                    int(row[0])
+                    for row in face_conn.execute(
+                        "SELECT id FROM faces WHERE file_id = ?",
+                        (file_id,),
+                    )
+                ]
+                confirmed_face_ids = [
+                    int(row[0])
+                    for row in face_conn.execute(
+                        "SELECT face_id FROM person_faces"
+                    )
+                ]
+            finally:
+                face_conn.close()
+
+        self.assertEqual(stats.scanned, 0)
+        self.assertEqual(stats.skipped, 1)
+        self.assertEqual(face_ids, [old_face_id])
+        self.assertEqual(confirmed_face_ids, [old_face_id])
+
     def test_face_scan_writes_faces_to_separate_database(self) -> None:
         class FakeFace:
             bbox = [1.0, 2.0, 11.0, 22.0]
@@ -640,15 +751,118 @@ model_name = "buffalo_l"
                     "INSERT INTO face_suggestions(person_id, face_id, similarity) VALUES(?, ?, 0.8)",
                     (person_id, old_face_id),
                 )
+                conn.execute(
+                    "INSERT INTO person_files(person_id, file_id) VALUES(?, 1)",
+                    (person_id,),
+                )
                 conn.commit()
+            finally:
+                conn.close()
+
+            with patch(
+                "bildebank.face.load_face_app",
+                side_effect=AssertionError("modellen skal ikke lastes"),
+            ):
+                code, _stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "face-scan",
+                        "--force",
+                        "--limit",
+                        "1",
+                    ]
+                )
+
+            self.assertEqual(code, 1)
+            self.assertIn("--discard-confirmed-person-links", stderr)
+
+            with (
+                patch(
+                    "bildebank.face.load_face_app",
+                    side_effect=AssertionError("modellen skal ikke lastes"),
+                ),
+                patch("builtins.input", return_value="nei"),
+            ):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "face-scan",
+                        "--force",
+                        "--discard-confirmed-person-links",
+                        "--limit",
+                        "1",
+                    ]
+                )
+
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("Avbrutt. Ingen ansiktsdata er endret.", stdout)
+
+            with (
+                patch(
+                    "bildebank.face.load_face_app",
+                    return_value=FakeApp(FakeFace([3.0, 4.0, 13.0, 24.0])),
+                ),
+                patch(
+                    "bildebank.face.read_image",
+                    side_effect=ValueError("simulert bildefeil"),
+                ),
+                patch(
+                    "builtins.input",
+                    return_value="ja, slett bekreftede ansiktskoblinger",
+                ),
+            ):
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "face-scan",
+                        "--force",
+                        "--discard-confirmed-person-links",
+                        "--limit",
+                        "1",
+                    ]
+                )
+
+            self.assertEqual(code, 2, stderr)
+            self.assertIn("simulert bildefeil", stdout)
+            conn = sqlite3.connect(face_db)
+            try:
+                self.assertEqual(
+                    conn.execute("SELECT id FROM faces").fetchall(),
+                    [(old_face_id,)],
+                )
+                self.assertEqual(
+                    conn.execute("SELECT person_id, face_id FROM person_faces").fetchall(),
+                    [(person_id, old_face_id)],
+                )
+                self.assertEqual(
+                    conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0],
+                    1,
+                )
             finally:
                 conn.close()
 
             with (
                 patch("bildebank.face.load_face_app", return_value=FakeApp(FakeFace([3.0, 4.0, 13.0, 24.0]))),
                 patch("bildebank.face.read_image", return_value=object()),
+                patch(
+                    "builtins.input",
+                    return_value="ja, slett bekreftede ansiktskoblinger",
+                ),
             ):
-                code, stdout, stderr = capture_cli(["--target", str(target), "face-scan", "--force", "--limit", "1"])
+                code, stdout, stderr = capture_cli(
+                    [
+                        "--target",
+                        str(target),
+                        "face-scan",
+                        "--force",
+                        "--discard-confirmed-person-links",
+                        "--limit",
+                        "1",
+                    ]
+                )
 
             self.assertEqual(code, 0, stderr)
             self.assertIn("hoppet_over=0", stdout)
@@ -661,6 +875,7 @@ model_name = "buffalo_l"
                 self.assertEqual(face[1:], (3.0, 4.0, 10.0, 20.0))
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_faces").fetchone()[0], 0)
                 self.assertEqual(conn.execute("SELECT COUNT(*) FROM face_suggestions").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT COUNT(*) FROM person_files").fetchone()[0], 1)
             finally:
                 conn.close()
 
@@ -1044,17 +1259,20 @@ model_name = "buffalo_l"
     def test_read_image_uses_unicode_safe_file_reading(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "utenrødeøyne.jpg"
-            path.write_bytes(b"image-bytes")
+            image_buffer = BytesIO()
+            Image.new("RGB", (1, 1)).save(image_buffer, format="PNG")
+            image_bytes = image_buffer.getvalue()
+            path.write_bytes(image_bytes)
 
             class FakeData:
-                size = 11
+                size = len(image_bytes)
 
             class FakeNp:
                 uint8 = object()
 
                 @staticmethod
-                def fromfile(filename, dtype):
-                    self.assertEqual(filename, str(path))
+                def frombuffer(data, dtype):
+                    self.assertEqual(data, image_bytes)
                     self.assertIs(dtype, FakeNp.uint8)
                     return FakeData()
 
@@ -1069,8 +1287,17 @@ model_name = "buffalo_l"
                     return {"decoded": True}
 
             modules = {"cv2": FakeCv2, "numpy": FakeNp}
-            with patch.dict(sys.modules, modules):
-                self.assertEqual(read_image(path), {"decoded": True})
+            with (
+                patch.dict(sys.modules, modules),
+                patch(
+                    "bildebank.face.require_safe_pillow_image_size"
+                ) as require_safe_size,
+            ):
+                self.assertEqual(
+                    read_image(image_bytes, path),
+                    {"decoded": True},
+                )
+            require_safe_size.assert_called_once()
 
     def test_face_box_percent_accounts_for_exif_rotation(self) -> None:
         face = {"x": 10.0, "y": 20.0, "width": 30.0, "height": 40.0}

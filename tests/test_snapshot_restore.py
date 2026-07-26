@@ -88,13 +88,12 @@ class SnapshotRestorePlanTests(unittest.TestCase):
             self.assertEqual(tree_file_bytes(repository), repository_before)
             self.assertFalse((repository / REPOSITORY_LOCK_FILENAME).exists())
 
-    def test_absolute_face_database_restore_warns_without_changing_old_location(self) -> None:
+    def test_face_database_is_restored_inside_collection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "collection"
             repository = root / "repository"
-            face_dir = root / "external-faces"
-            face_database = face_dir / "antelopev2.sqlite3"
+            face_database = target / ".bildebank-faces" / "antelopev2.sqlite3"
             db.init_database(target)
             create_sqlite_database(face_database, schema_version=5)
             face_database_before = face_database.read_bytes()
@@ -102,18 +101,16 @@ class SnapshotRestorePlanTests(unittest.TestCase):
             created = create_snapshot(
                 target,
                 repository,
-                face_config=FaceRecognitionConfig(database_dir=face_dir),
-            )
-            warning_fragment = "absolutt database_dir"
-            config_fragment = "face_recognition.database_dir"
-            self.assertTrue(
-                any(warning_fragment in warning for warning in created.build.warnings)
+                face_config=FaceRecognitionConfig(),
             )
             manifest = json.loads(
                 (created.published.snapshot_dir / "manifest.json").read_bytes()
             )
-            self.assertTrue(
-                any(warning_fragment in warning for warning in manifest["warnings"])
+            self.assertFalse(
+                any(
+                    "absolutt database_dir" in warning
+                    for warning in manifest["warnings"]
+                )
             )
 
             dry_target = root / "dry-restored"
@@ -122,7 +119,7 @@ class SnapshotRestorePlanTests(unittest.TestCase):
                 created.published.snapshot_id,
                 dry_target,
             )
-            self.assertTrue(any(config_fragment in warning for warning in plan.warnings))
+            self.assertEqual(plan.warnings, ())
 
             dry_code, _dry_stdout, dry_stderr = capture_cli(
                 [
@@ -147,9 +144,7 @@ class SnapshotRestorePlanTests(unittest.TestCase):
             )
 
             self.assertEqual(dry_code, 0, dry_stderr)
-            self.assertIn(config_fragment, dry_stderr)
             self.assertEqual(restore_code, 0, restore_stderr)
-            self.assertIn(config_fragment, restore_stderr)
             self.assertTrue(
                 (restored / ".bildebank-faces" / "antelopev2.sqlite3").is_file()
             )

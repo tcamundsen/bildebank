@@ -1,6 +1,7 @@
 # Face-database
 
-Dette dokumentet beskriver den separate face-databasen `.bilder-faces.sqlite3`.
+Dette dokumentet beskriver de separate, modellspesifikke face-databasene under
+`.bildebank-faces/`.
 Den vanlige bildesamlingsdatabasen er `.bilder.sqlite3` og har egen
 schema-versjon i `bildebank/db.py`.
 
@@ -84,6 +85,10 @@ bilder”, fordi den visningen brukes som grunnlag for forslag.
 
 ## Stier
 
+Face-databasene ligger alltid under `.bildebank-faces/` i den samlingen de
+tilhører. Plasseringen kan ikke konfigureres. Katalogen og databasefilene skal
+ikke være symlinker, hardlinker eller Windows reparse points.
+
 Stier til filer inne i bildesamlingen skal lagres relativt til aktiv
 samlingsrot.
 
@@ -108,9 +113,22 @@ mappenavn uten at face-databasen slutter å virke.
 
 `connect_face_db(target)` gjør dette:
 
-- åpner `.bilder-faces.sqlite3`
+- åpner `.bildebank-faces/<model_name>.sqlite3`
 - sørger for gjeldende face-schema
 - oppdaterer `meta.target_path` til aktiv samlingsrot
+
+`face-scan --force` erstatter ansiktsradene for et bilde først etter en
+vellykket ny modellkjøring. En modell- eller bildefeil skal beholde tidligere
+vellykket scan, bekreftede ansiktskoblinger og forslag. Bekreftede
+`person_faces` kan bare erstattes når brukeren i tillegg velger den særskilte
+destruktive handlingen og skriver eksakt bekreftelsestekst. `person_files`
+tilhører bildet, ikke et bestemt ansikt, og beholdes ved ny scan.
+
+Skanningen bruker bare aktive, relative `files.target_path`-verdier uten
+`..`. Originalen åpnes uten å følge symlinker eller Windows reparse points,
+holdes åpen gjennom modellkjøringen og kontrolleres på nytt før resultatet
+lagres. Pillow kontrollerer bildets dimensjoner mot den felles pikselgrensen
+før OpenCV dekoder innholdet.
 
 Face-databasen skal allerede lagre samlingsinterne bildestier relativt. Koden
 skal ikke forsøke å reparere gamle absolutte `target_path`-verdier ved åpning av
@@ -230,7 +248,7 @@ Dette følger samme prinsipp som hoveddatabasen:
 
 Face-databasen migreres ikke av `bildebank migrate`.
 
-Den migreres når face-kode åpner `.bilder-faces.sqlite3` med
+Den migreres når face-kode åpner den valgte modellens database med
 `connect_face_db()`. Migreringen er beskyttet av egen backup og én
 SQLite-transaksjon. Samtidige åpninger leser schema-versjonen på nytt etter
 skrivelåsen, slik at bare den første åpningen utfører migreringen.

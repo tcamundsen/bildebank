@@ -57,10 +57,13 @@ opp under operasjonen skal aldri overskrives. `remove`, `undelete` og
 - `face-scan` holder låsen mens den velger hvilke aktive filer som skal
   scannes, og kort for hver lagring i ansiktsdatabasen. InsightFace-kjøringen
   mellom disse periodene skjer uten target-lås. Før resultatet lagres,
-  kontrolleres det at filen fortsatt er aktiv og har samme SHA-256. Resultatet
-  forkastes hvis filen er endret eller fjernet i mellomtiden. En intern
-  skanneidentitet gjør også at en eldre scan ikke kan skrive resultater etter
-  `face-reset --all` eller etter at en ny scan er startet.
+  kontrolleres det at filen fortsatt er aktiv, at databaseposten er den samme,
+  og at identitet, størrelse og endringstid på originalfilen er uendret.
+  Resultatet forkastes hvis filen er endret, byttet eller fjernet i
+  mellomtiden. Tilstanden for bekreftede ansiktskoblinger kontrolleres også
+  på nytt, slik at en samtidig personendring ikke overskrives. En intern
+  skanneidentitet gjør dessuten at en eldre scan ikke kan skrive resultater
+  etter `face-reset --all` eller etter at en ny scan er startet.
 - `face-suggest`, `face-reset` og alle endringer av personer, ansiktskoblinger
   og manuelle person-i-bilde-koblinger holder låsen gjennom hele operasjonen.
   Den sammensatte weboperasjonen som oppretter en person og kobler et ansikt
@@ -73,9 +76,10 @@ opp under operasjonen skal aldri overskrives. `remove`, `undelete` og
   og commit.
 - `image-scan` holder låsen mens aktive bilder velges, og kort for hver
   embedding som lagres. OpenCLIP-kjøringen mellom disse periodene skjer uten
-  target-lås. Før lagring kontrolleres det at filen fortsatt er aktiv og har
-  samme SHA-256. En intern skanneidentitet hindrer at en eldre scan skriver
-  etter at en ny scan er startet.
+  target-lås. Før lagring kontrolleres det at filen fortsatt er aktiv, at
+  databaseposten er den samme, og at identitet, størrelse og endringstid på
+  originalfilen er uendret. En intern skanneidentitet hindrer at en eldre
+  scan skriver etter at en ny scan er startet.
 - `image-search` fra CLI og web holder låsen mens embeddings leses og
   søkeresultater lagres. CLI holder den også til `image-search.html` er skrevet.
 - oppretting, endring og sletting av brukertaggdefinisjoner holder låsen fra

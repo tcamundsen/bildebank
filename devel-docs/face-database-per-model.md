@@ -5,17 +5,19 @@ InsightFace-modeller uten å blande embeddings fra ulike modeller.
 
 ## Config
 
-Legg til et eget felt for face-databaser:
+Brukeren velger modell, men ikke plassering for face-databasene:
 
 ```toml
 [face_recognition]
 model_name = "buffalo_l"
-database_dir = ".bildebank-faces"
 ```
 
-`database_dir` er relativ til aktiv bildesamling/target hvis den ikke er
-absolutt. Face-databasene inneholder resultater for én bestemt bildesamling og
-skal derfor ligge sammen med bildesamlingen, ikke i programrepoet.
+Face-databasene ligger alltid i `.bildebank-faces` under aktiv
+bildesamling. De inneholder resultater og manuelt kuraterte persondata for
+nøyaktig én samling og skal aldri deles mellom samlinger eller plasseres i
+programrepoet. Eldre config kan fortsatt inneholde den eksakte standardverdien
+`database_dir = ".bildebank-faces"`, men andre verdier avvises og feltet skal
+ikke brukes i ny config.
 
 ## Fil per modell
 
@@ -100,6 +102,10 @@ bekreftede personkoblinger og forslag for hver modell bevares. Det betyr at
 `buffalo_l.sqlite3` og `antelopev2.sqlite3` kan ha hver sine personer,
 bekreftelser og forslag, slik at modellene kan sammenlignes uten at data
 overskrives.
+
+Alle modellfilene oppdages i den faste `.bildebank-faces`-mappen ved
+`remove`, `unimport`, migrering og snapshots. Mappen og databasefilene skal
+være vanlige filer uten symlinker, hardlinker eller Windows reparse points.
 
 ## Kompatibilitet
 

@@ -128,9 +128,7 @@ def create_snapshot(
                 )
             build_database_catalog(
                 source,
-                repository,
                 inventory,
-                face_config=face_config,
                 allow_missing_main=True,
                 should_cancel=should_cancel,
             )

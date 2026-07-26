@@ -65,6 +65,7 @@ def run_face_command(args: argparse.Namespace, target: Path, *, repo_root: Path)
             repo_root=repo_root,
             limit=args.limit,
             force=args.force,
+            discard_confirmed_person_links=args.discard_confirmed_person_links,
             show_model_output=args.show_model_output,
         )
 
@@ -165,10 +166,27 @@ def run_face_scan(
     repo_root: Path,
     limit: int | None,
     force: bool = False,
+    discard_confirmed_person_links: bool = False,
     show_model_output: bool = False,
 ) -> int:
     config = load_config(repo_root).face_recognition
     require_face_enabled(config.enabled)
+    if discard_confirmed_person_links and not force:
+        raise ValueError(
+            "--discard-confirmed-person-links kan bare brukes sammen med --force."
+        )
+    if discard_confirmed_person_links:
+        phrase = "ja, slett bekreftede ansiktskoblinger"
+        print(
+            "Dette kan slette bekreftede ansiktskoblinger for bildene som "
+            "scannes på nytt. Manuelle person-i-bilde-koblinger beholdes."
+        )
+        answer = input(
+            f'Skriv "{phrase}" for å tillate sletting av koblingene: '
+        )
+        if answer != phrase:
+            print("Avbrutt. Ingen ansiktsdata er endret.")
+            return 0
     stats = scan_faces(
         target,
         config,
@@ -176,6 +194,7 @@ def run_face_scan(
         progress=print_face_scan_progress,
         show_model_output=show_model_output,
         force=force,
+        discard_confirmed_face_links=discard_confirmed_person_links,
     )
     print(
         "Oppsummering: "

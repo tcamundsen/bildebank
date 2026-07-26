@@ -223,7 +223,7 @@ class SnapshotBuilderTests(unittest.TestCase):
             create_sqlite_database(target / ".bilder-openclip.sqlite3", schema_version=3)
             create_sqlite_database(target / ".bildebank-faces" / "antelopev2.sqlite3", schema_version=5)
             create_sqlite_database(target / "metadata" / "extra.sqlite3", schema_version=9)
-            face_config = FaceRecognitionConfig(database_dir=Path(".bildebank-faces"))
+            face_config = FaceRecognitionConfig()
 
             result, _published = build_and_publish(target, repository, face_config=face_config)
 
@@ -494,26 +494,31 @@ class SnapshotBuilderTests(unittest.TestCase):
             manifest = json.loads(published.snapshot_dir.joinpath("manifest.json").read_bytes())
             self.assertEqual(manifest["status"], "degraded")
 
-    def test_absolute_face_database_parent_of_collection_is_rejected_before_object_storage(self) -> None:
+    def test_linked_face_database_directory_is_rejected_before_object_storage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             target = root / "collection"
             repository = root / "repository"
+            external_faces = root / "external-faces"
             repository.mkdir()
+            external_faces.mkdir()
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            face_config = FaceRecognitionConfig(database_dir=root)
+            (target / ".bildebank-faces").symlink_to(
+                external_faces,
+                target_is_directory=True,
+            )
 
             with RepositoryLock(repository, command="snapshot create"):
                 with TargetLock(target, command="snapshot create"):
                     collection_id = read_collection_id(target)
                     initialize_repository(repository, target, collection_id)
                     staging = create_staging_run(repository)
-                    with self.assertRaisesRegex(SnapshotStorageError, "ligge i hverandre"):
+                    with self.assertRaisesRegex(ValueError, "Symbolske lenker"):
                         build_normal_snapshot(
                             target,
                             repository,
                             staging,
-                            face_config=face_config,
+                            face_config=FaceRecognitionConfig(),
                         )
 
             object_files = [path for path in (repository / "objects").rglob("*") if path.is_file()]
