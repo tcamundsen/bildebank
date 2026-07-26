@@ -19,7 +19,7 @@ På Debian/Ubuntu/WSL kan det typisk installeres slik:
 
 ```bash
 sudo apt update
-sudo apt install git python3 python3-venv
+sudo apt install git python3 python3-venv python3-tk
 python3 --version
 ```
 
