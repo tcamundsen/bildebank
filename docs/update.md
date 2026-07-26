@@ -14,11 +14,13 @@ options:
 `update` oppdaterer Bildebank-programmet til siste versjon fra GitHub
 og laster ned eventuelle nye biblioteker som brukes.
 
-Oppdateringen starter bare når programmappen ikke har lokale Git-endringer.
-Før nedlasting lagres gjeldende programversjon. Den nye versjonen installeres
-og kontrolleres før oppdateringen regnes som ferdig. Hvis installasjonen
-feiler, gjenoppretter Bildebank den gamle programversjonen og kontrollerer at
-den fortsatt starter.
+Oppdateringen starter bare når programmappen ikke har lokale endringer i filer
+som følges av Git. Andre lokale filer blir liggende og blokkerer ikke
+oppdateringen. Hvis en slik fil har samme navn som en ny programfil, stopper
+Git oppdateringen uten å overskrive filen. Før nedlasting lagres gjeldende
+programversjon. Den nye versjonen installeres og kontrolleres før oppdateringen
+regnes som ferdig. Hvis installasjonen feiler, gjenoppretter Bildebank den
+gamle programversjonen og kontrollerer at den fortsatt starter.
 
 Hvis maskinen slås av eller oppdateringen avbrytes, oppdager neste
 oppdateringsforsøk recovery-markøren. Bildebank forsøker da først å

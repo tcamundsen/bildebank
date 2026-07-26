@@ -102,13 +102,13 @@ def run_update_linux(repo_root: Path) -> int:
 
 def require_clean_update_repo(repo_root: Path) -> None:
     status = run_update_output(
-        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        ["git", "status", "--porcelain=v1", "--untracked-files=no"],
         cwd=repo_root,
     )
     if status:
         raise ValueError(
-            "Programrepoet har lokale endringer. Commit, flytt eller fjern dem "
-            f"før oppdatering:\n{status}"
+            "Programrepoet har lokale endringer i Git-sporede filer. "
+            f"Commit eller tilbakestill dem før oppdatering:\n{status}"
         )
 
 

@@ -36,7 +36,7 @@ def fake_linux_update_run(
         stdout = ""
         stderr = ""
         returncode = 0
-        if command == ["git", "status", "--porcelain=v1", "--untracked-files=all"]:
+        if command == ["git", "status", "--porcelain=v1", "--untracked-files=no"]:
             stdout = status
         elif command == ["git", "rev-parse", "--verify", "HEAD"]:
             stdout = OLD_COMMIT + "\n"
@@ -119,7 +119,7 @@ class UpdateCliTests(unittest.TestCase):
             self.assertEqual(
                 calls,
                 [
-                    ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+                    ["git", "status", "--porcelain=v1", "--untracked-files=no"],
                     ["git", "rev-parse", "--verify", "HEAD"],
                     ["git", "pull", "--ff-only"],
                     [str(venv_python), "-m", "pip", "install", "-e", "."],
@@ -154,7 +154,9 @@ class UpdateCliTests(unittest.TestCase):
                 calls,
             )
 
-    def test_update_refuses_dirty_linux_repo_before_writing_state(self) -> None:
+    def test_update_refuses_modified_tracked_linux_file_before_writing_state(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             (repo / ".git").mkdir()
@@ -168,7 +170,7 @@ class UpdateCliTests(unittest.TestCase):
                     "bildebank.cli_update.subprocess.run",
                     side_effect=fake_linux_update_run(
                         calls,
-                        status="?? lokale-notater.txt\n",
+                        status=" M README.md\n",
                     ),
                 ),
             ):
@@ -176,11 +178,11 @@ class UpdateCliTests(unittest.TestCase):
 
             self.assertEqual(code, 1)
             self.assertEqual(stdout, "")
-            self.assertIn("lokale endringer", stderr)
-            self.assertIn("lokale-notater.txt", stderr)
+            self.assertIn("Git-sporede filer", stderr)
+            self.assertIn("README.md", stderr)
             self.assertEqual(
                 calls,
-                [["git", "status", "--porcelain=v1", "--untracked-files=all"]],
+                [["git", "status", "--porcelain=v1", "--untracked-files=no"]],
             )
             self.assertFalse((repo / UPDATE_STATE_RELATIVE_PATH).exists())
 
@@ -372,6 +374,7 @@ class UpdateCliTests(unittest.TestCase):
         )
 
         self.assertIn("Assert-CleanRepo", script)
+        self.assertIn('"--untracked-files=no"', script)
         self.assertIn("bildebank-tools\\update-pending.txt", script)
         self.assertIn("Write-UpdateState -OldCommit $oldCommit", script)
         self.assertIn(
@@ -451,6 +454,8 @@ exit 0
                 encoding="utf-8",
             )
             venv_python.chmod(0o755)
+            local_note = repo / "lokale-notater.txt"
+            local_note.write_text("skal bevares\n", encoding="utf-8")
 
             (seed / "pyproject.toml").write_text(
                 '[project]\nname = "update-test"\nversion = "2.0"\n',
@@ -465,6 +470,7 @@ exit 0
 
             self.assertEqual(git(repo, "rev-parse", "HEAD"), old_commit)
             self.assertIn('version = "1.0"', (repo / "pyproject.toml").read_text())
+            self.assertEqual(local_note.read_text(encoding="utf-8"), "skal bevares\n")
             self.assertFalse((repo / UPDATE_STATE_RELATIVE_PATH).exists())
 
     def test_update_reports_missing_update_script(self) -> None:

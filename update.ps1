@@ -48,12 +48,12 @@ function Assert-CleanRepo {
     $status = Invoke-GitCapture -ArgumentList @(
         "status",
         "--porcelain=v1",
-        "--untracked-files=all"
+        "--untracked-files=no"
     )
     if ($status) {
         throw (
-            "Programrepoet har lokale endringer. Commit, flytt eller fjern dem " +
-            "før oppdatering:`n$status"
+            "Programrepoet har lokale endringer i Git-sporede filer. " +
+            "Commit eller tilbakestill dem før oppdatering:`n$status"
         )
     }
 }
