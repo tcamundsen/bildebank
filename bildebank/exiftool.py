@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import hashlib
-import ntpath
 import shutil
-import stat
 import subprocess
 import tempfile
-import urllib.request
 import uuid
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from .downloaded_artifacts import (
+    download_https_file,
+    ensure_directory_without_links,
+    reject_directory_link,
+    safe_extract_zip,
+)
 
 
 EXIFTOOL_VERSION = "13.58"
@@ -20,6 +23,10 @@ EXIFTOOL_ZIP_URL = (
     f"{EXIFTOOL_ARCHIVE_NAME}/download"
 )
 EXIFTOOL_ARCHIVE_SHA256 = "fd3b407a01e6ffc6160f2d5fde5ff0c003f6c4c2ba85eee1ce8928ccb51fa3e6"
+EXIFTOOL_ARCHIVE_MAX_BYTES = 128 * 1024 * 1024
+EXIFTOOL_EXTRACT_MAX_BYTES = 512 * 1024 * 1024
+EXIFTOOL_EXTRACT_MAX_MEMBERS = 10_000
+EXIFTOOL_VALIDATION_TIMEOUT_SECONDS = 30
 TOOLS_DIRNAME = "bildebank-tools"
 EXIFTOOL_DIRNAME = "exiftool"
 
@@ -60,14 +67,23 @@ def validate_exiftool_install(
 
 
 def exiftool_version(path: Path | str) -> str:
-    result = subprocess.run(
-        [str(path), "-ver"],
-        check=False,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        result = subprocess.run(
+            [str(path), "-ver"],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=EXIFTOOL_VALIDATION_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            "ExifTool-kontrollen brukte mer enn "
+            f"{EXIFTOOL_VALIDATION_TIMEOUT_SECONDS} sekunder."
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(f"Kunne ikke starte ExifTool: {exc}") from exc
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"exiftool feilet med exitkode {result.returncode}")
     return result.stdout.strip()
@@ -98,8 +114,7 @@ def resolve_exiftool_path(repo_root: Path, explicit_path: Path | str | None = No
 def install_managed_exiftool(repo_root: Path, *, force: bool = False) -> ExifToolInstallResult:
     destination = managed_exiftool_dir(repo_root)
     tool_path = destination / "exiftool.exe"
-    if (destination.exists() or destination.is_symlink()) and _is_directory_link(destination):
-        raise RuntimeError(f"ExifTool-mappen kan ikke være en lenke: {destination}")
+    reject_directory_link(destination, label="ExifTool-mappen")
     if destination.exists() and not force:
         try:
             version = validate_exiftool_install(
@@ -111,12 +126,18 @@ def install_managed_exiftool(repo_root: Path, *, force: bool = False) -> ExifToo
         else:
             return ExifToolInstallResult(path=tool_path, version=version, installed=False)
 
-    tools_root = destination.parent
-    tools_root.mkdir(parents=True, exist_ok=True)
+    tools_root = ensure_directory_without_links(
+        destination.parent,
+        label="ExifTool-verktøymappen",
+    )
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         zip_path = tmp_dir / EXIFTOOL_ARCHIVE_NAME
-        _download_file(EXIFTOOL_ZIP_URL, zip_path)
+        _download_file(
+            EXIFTOOL_ZIP_URL,
+            zip_path,
+            max_bytes=EXIFTOOL_ARCHIVE_MAX_BYTES,
+        )
         actual_hash = _sha256_file(zip_path)
         if actual_hash != EXIFTOOL_ARCHIVE_SHA256:
             raise RuntimeError(
@@ -157,10 +178,7 @@ def install_managed_exiftool(repo_root: Path, *, force: bool = False) -> ExifToo
             replaced = False
             try:
                 if destination.exists() or destination.is_symlink():
-                    if _is_directory_link(destination):
-                        raise RuntimeError(
-                            f"ExifTool-mappen kan ikke være en lenke: {destination}"
-                        )
+                    reject_directory_link(destination, label="ExifTool-mappen")
                     destination.rename(backup)
                     replaced = True
                 staging.rename(destination)
@@ -193,16 +211,13 @@ def find_extracted_exiftool(root: Path) -> Path:
     return candidates[0]
 
 
-def _download_file(url: str, destination: Path) -> None:
-    request = urllib.request.Request(
+def _download_file(url: str, destination: Path, *, max_bytes: int) -> None:
+    download_https_file(
         url,
-        headers={"User-Agent": "Bildebank ExifTool installer"},
+        destination,
+        user_agent="Bildebank ExifTool installer",
+        max_bytes=max_bytes,
     )
-    with (
-        urllib.request.urlopen(request, timeout=60) as response,
-        destination.open("wb") as output,
-    ):
-        shutil.copyfileobj(response, output)
 
 
 def _sha256_file(path: Path) -> str:
@@ -214,37 +229,10 @@ def _sha256_file(path: Path) -> str:
 
 
 def _safe_extract_zip(archive_path: Path, destination: Path) -> None:
-    destination_resolved = destination.resolve()
-    with zipfile.ZipFile(archive_path) as archive:
-        for member in archive.infolist():
-            normalized_name = member.filename.replace("\\", "/")
-            drive, _tail = ntpath.splitdrive(normalized_name)
-            path_parts = normalized_name.split("/")
-            if (
-                drive
-                or normalized_name.startswith("/")
-                or ".." in path_parts
-            ):
-                raise RuntimeError(
-                    f"ExifTool-arkivet har en utrygg filsti: {member.filename}"
-                )
-            mode = member.external_attr >> 16
-            if stat.S_ISLNK(mode):
-                raise RuntimeError(
-                    f"ExifTool-arkivet inneholder en symbolsk lenke: {member.filename}"
-                )
-            resolved = (destination / normalized_name).resolve()
-            try:
-                resolved.relative_to(destination_resolved)
-            except ValueError as exc:
-                raise RuntimeError(
-                    f"ExifTool-arkivet har en utrygg filsti: {member.filename}"
-                ) from exc
-        archive.extractall(destination)
-
-
-def _is_directory_link(path: Path) -> bool:
-    if path.is_symlink():
-        return True
-    is_junction = getattr(path, "is_junction", None)
-    return bool(is_junction is not None and is_junction())
+    safe_extract_zip(
+        archive_path,
+        destination,
+        label="ExifTool",
+        max_members=EXIFTOOL_EXTRACT_MAX_MEMBERS,
+        max_uncompressed_bytes=EXIFTOOL_EXTRACT_MAX_BYTES,
+    )

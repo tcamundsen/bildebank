@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -31,7 +32,8 @@ def test_install_managed_ffmpeg_verifies_archive_and_installs_complete_tree(tmp_
     expected_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
     repo_root = tmp_path / "repo"
 
-    def download(_url: str, destination: Path) -> None:
+    def download(_url: str, destination: Path, *, max_bytes: int) -> None:
+        assert max_bytes == ffmpeg_tools.FFMPEG_ARCHIVE_MAX_BYTES
         shutil.copyfile(archive, destination)
 
     def validate(ffmpeg: Path | str, ffprobe: Path | str, *, managed: bool = False) -> FFmpegTools:
@@ -54,7 +56,11 @@ def test_install_managed_ffmpeg_verifies_archive_and_installs_complete_tree(tmp_
 
 
 def test_install_managed_ffmpeg_rejects_wrong_archive_hash(tmp_path: Path) -> None:
-    with patch.object(ffmpeg_tools, "_download_file", side_effect=lambda _url, path: path.write_bytes(b"wrong")):
+    with patch.object(
+        ffmpeg_tools,
+        "_download_file",
+        side_effect=lambda _url, path, **_kwargs: path.write_bytes(b"wrong"),
+    ):
         with pytest.raises(RuntimeError, match="feil SHA-256"):
             ffmpeg_tools.install_managed_ffmpeg(tmp_path / "repo")
 
@@ -66,6 +72,39 @@ def test_safe_extract_rejects_parent_path(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="utrygg filsti"):
         ffmpeg_tools._safe_extract_zip(archive, tmp_path / "extract")
+
+
+def test_validation_timeout_is_reported() -> None:
+    with (
+        patch.object(
+            ffmpeg_tools.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired(
+                ["ffmpeg"],
+                ffmpeg_tools.FFMPEG_VALIDATION_TIMEOUT_SECONDS,
+            ),
+        ),
+        pytest.raises(RuntimeError, match="brukte mer enn"),
+    ):
+        ffmpeg_tools._run_tool(["ffmpeg", "-version"], "FFmpeg")
+
+
+def test_install_rejects_linked_tools_parent(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        (repo_root / "bildebank-tools").symlink_to(
+            outside,
+            target_is_directory=True,
+        )
+    except OSError as exc:
+        pytest.skip(f"Kan ikke opprette symlink: {exc}")
+
+    with pytest.raises(RuntimeError, match="lenker"):
+        ffmpeg_tools.install_managed_ffmpeg(repo_root)
+    assert list(outside.iterdir()) == []
 
 
 def test_invalid_existing_install_is_replaced(tmp_path: Path) -> None:
@@ -86,7 +125,11 @@ def test_invalid_existing_install_is_replaced(tmp_path: Path) -> None:
 
     with (
         patch.object(ffmpeg_tools, "FFMPEG_ARCHIVE_SHA256", expected_hash),
-        patch.object(ffmpeg_tools, "_download_file", side_effect=lambda _url, path: shutil.copyfile(archive, path)),
+        patch.object(
+            ffmpeg_tools,
+            "_download_file",
+            side_effect=lambda _url, path, **_kwargs: shutil.copyfile(archive, path),
+        ),
         patch.object(ffmpeg_tools, "validate_ffmpeg_tools", side_effect=validate),
     ):
         result = ffmpeg_tools.install_managed_ffmpeg(repo_root)
@@ -133,7 +176,7 @@ def test_install_restores_existing_ffmpeg_when_interrupted_after_backup_rename(
         patch.object(
             ffmpeg_tools,
             "_download_file",
-            side_effect=lambda _url, path: shutil.copyfile(archive, path),
+            side_effect=lambda _url, path, **_kwargs: shutil.copyfile(archive, path),
         ),
         patch.object(
             ffmpeg_tools,

@@ -116,7 +116,7 @@ class InsightFaceModelTests(unittest.TestCase):
                 patch.object(
                     insightface_models,
                     "_download_file",
-                    side_effect=lambda _url, path: shutil.copyfile(archive, path),
+                    side_effect=lambda _url, path, **_kwargs: shutil.copyfile(archive, path),
                 ),
             ):
                 destination = insightface_models.install_insightface_model(config)
@@ -153,7 +153,7 @@ class InsightFaceModelTests(unittest.TestCase):
                 patch.object(
                     insightface_models,
                     "_download_file",
-                    side_effect=lambda _url, path: shutil.copyfile(archive, path),
+                    side_effect=lambda _url, path, **_kwargs: shutil.copyfile(archive, path),
                 ),
                 self.assertRaisesRegex(ValueError, "feil SHA-256"),
             ):
@@ -215,7 +215,7 @@ class InsightFaceModelTests(unittest.TestCase):
                 patch.object(
                     insightface_models,
                     "_download_file",
-                    side_effect=lambda _url, path: shutil.copyfile(archive, path),
+                    side_effect=lambda _url, path, **_kwargs: shutil.copyfile(archive, path),
                 ),
                 self.assertRaisesRegex(ValueError, "uventet fil"),
             ):
@@ -257,7 +257,7 @@ class InsightFaceModelTests(unittest.TestCase):
                 patch.object(
                     insightface_models,
                     "_download_file",
-                    side_effect=lambda _url, path: shutil.copyfile(archive, path),
+                    side_effect=lambda _url, path, **_kwargs: shutil.copyfile(archive, path),
                 ),
                 patch.object(
                     Path,
@@ -294,6 +294,42 @@ class InsightFaceModelTests(unittest.TestCase):
                 insightface_models.install_insightface_model(config)
 
             download.assert_not_called()
+
+    def test_install_rejects_linked_model_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            outside = root / "outside"
+            outside.mkdir()
+            linked = root / "linked"
+            try:
+                linked.symlink_to(outside, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"Kan ikke opprette symlink: {exc}")
+            spec = InsightFaceModelSpec(
+                name="test",
+                archive_sha256="0" * 64,
+                archive_size_bytes=1,
+                archive_prefix="",
+                files=TEST_FILES,
+            )
+            config = FaceRecognitionConfig(
+                model_root=linked,
+                model_name="test",
+            )
+
+            with (
+                patch.object(
+                    insightface_models,
+                    "INSIGHTFACE_MODEL_SPECS",
+                    {"test": spec},
+                ),
+                patch.object(insightface_models, "_download_file") as download,
+                self.assertRaisesRegex(ValueError, "lenker"),
+            ):
+                insightface_models.install_insightface_model(config)
+
+            download.assert_not_called()
+            self.assertEqual(list(outside.iterdir()), [])
 
 
 if __name__ == "__main__":

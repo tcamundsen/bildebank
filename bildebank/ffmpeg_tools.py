@@ -2,14 +2,18 @@ from __future__ import annotations
 
 import hashlib
 import shutil
-import stat
 import subprocess
 import tempfile
-import urllib.request
 import uuid
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+
+from .downloaded_artifacts import (
+    download_https_file,
+    ensure_directory_without_links,
+    reject_directory_link,
+    safe_extract_zip,
+)
 
 
 FFMPEG_VERSION = "8.1.2"
@@ -19,6 +23,10 @@ FFMPEG_ARCHIVE_URL = (
     f"{FFMPEG_VERSION}/{FFMPEG_ARCHIVE_NAME}"
 )
 FFMPEG_ARCHIVE_SHA256 = "db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec"
+FFMPEG_ARCHIVE_MAX_BYTES = 512 * 1024 * 1024
+FFMPEG_EXTRACT_MAX_BYTES = 2 * 1024 * 1024 * 1024
+FFMPEG_EXTRACT_MAX_MEMBERS = 10_000
+FFMPEG_VALIDATION_TIMEOUT_SECONDS = 30
 TOOLS_DIRNAME = "bildebank-tools"
 FFMPEG_DIRNAME = "ffmpeg"
 
@@ -86,6 +94,7 @@ def resolve_ffmpeg_tools(repo_root: Path) -> FFmpegTools:
 def install_managed_ffmpeg(repo_root: Path, *, force: bool = False) -> FFmpegInstallResult:
     destination = managed_ffmpeg_dir(repo_root)
     ffmpeg_path, ffprobe_path = managed_ffmpeg_paths(repo_root)
+    reject_directory_link(destination, label="FFmpeg-mappen")
     if destination.exists() and not force:
         try:
             tools = validate_ffmpeg_tools(ffmpeg_path, ffprobe_path, managed=True)
@@ -94,12 +103,18 @@ def install_managed_ffmpeg(repo_root: Path, *, force: bool = False) -> FFmpegIns
         else:
             return FFmpegInstallResult(tools, installed=False)
 
-    tools_root = destination.parent
-    tools_root.mkdir(parents=True, exist_ok=True)
+    tools_root = ensure_directory_without_links(
+        destination.parent,
+        label="FFmpeg-verktøymappen",
+    )
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = Path(tmp)
         archive_path = tmp_dir / FFMPEG_ARCHIVE_NAME
-        _download_file(FFMPEG_ARCHIVE_URL, archive_path)
+        _download_file(
+            FFMPEG_ARCHIVE_URL,
+            archive_path,
+            max_bytes=FFMPEG_ARCHIVE_MAX_BYTES,
+        )
         actual_hash = _sha256_file(archive_path)
         if actual_hash != FFMPEG_ARCHIVE_SHA256:
             raise RuntimeError(
@@ -148,7 +163,13 @@ def _run_tool(command: list[str], label: str) -> subprocess.CompletedProcess[str
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=FFMPEG_VALIDATION_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"{label}-kontrollen brukte mer enn "
+            f"{FFMPEG_VALIDATION_TIMEOUT_SECONDS} sekunder."
+        ) from exc
     except OSError as exc:
         raise RuntimeError(f"Kunne ikke starte {label}: {exc}") from exc
     if result.returncode != 0:
@@ -157,10 +178,13 @@ def _run_tool(command: list[str], label: str) -> subprocess.CompletedProcess[str
     return result
 
 
-def _download_file(url: str, destination: Path) -> None:
-    request = urllib.request.Request(url, headers={"User-Agent": "Bildebank FFmpeg installer"})
-    with urllib.request.urlopen(request, timeout=60) as response, destination.open("wb") as output:
-        shutil.copyfileobj(response, output)
+def _download_file(url: str, destination: Path, *, max_bytes: int) -> None:
+    download_https_file(
+        url,
+        destination,
+        user_agent="Bildebank FFmpeg installer",
+        max_bytes=max_bytes,
+    )
 
 
 def _sha256_file(path: Path) -> str:
@@ -172,21 +196,13 @@ def _sha256_file(path: Path) -> str:
 
 
 def _safe_extract_zip(archive_path: Path, destination: Path) -> None:
-    destination_resolved = destination.resolve()
-    with zipfile.ZipFile(archive_path) as archive:
-        for member in archive.infolist():
-            member_path = Path(member.filename)
-            if member_path.is_absolute() or ".." in member_path.parts:
-                raise RuntimeError(f"FFmpeg-arkivet har en utrygg filsti: {member.filename}")
-            mode = member.external_attr >> 16
-            if stat.S_ISLNK(mode):
-                raise RuntimeError(f"FFmpeg-arkivet inneholder en symbolsk lenke: {member.filename}")
-            resolved = (destination / member_path).resolve()
-            try:
-                resolved.relative_to(destination_resolved)
-            except ValueError as exc:
-                raise RuntimeError(f"FFmpeg-arkivet har en utrygg filsti: {member.filename}") from exc
-        archive.extractall(destination)
+    safe_extract_zip(
+        archive_path,
+        destination,
+        label="FFmpeg",
+        max_members=FFMPEG_EXTRACT_MAX_MEMBERS,
+        max_uncompressed_bytes=FFMPEG_EXTRACT_MAX_BYTES,
+    )
 
 
 def _find_ffmpeg_root(extracted: Path) -> Path:

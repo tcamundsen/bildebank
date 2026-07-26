@@ -127,6 +127,20 @@ class ExiftoolCliTests(unittest.TestCase):
                     expected_version="13.58",
                 )
 
+    def test_exiftool_validation_timeout_is_reported(self) -> None:
+        with (
+            patch.object(
+                exiftool.subprocess,
+                "run",
+                side_effect=subprocess.TimeoutExpired(
+                    ["exiftool"],
+                    exiftool.EXIFTOOL_VALIDATION_TIMEOUT_SECONDS,
+                ),
+            ),
+            self.assertRaisesRegex(RuntimeError, "brukte mer enn"),
+        ):
+            exiftool.exiftool_version("exiftool.exe")
+
     def test_exiftool_install_downloads_zip_to_managed_tools_folder(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -135,7 +149,13 @@ class ExiftoolCliTests(unittest.TestCase):
             write_exiftool_archive(source_zip)
             expected_hash = hashlib.sha256(source_zip.read_bytes()).hexdigest()
 
-            def fake_download(_url: str, destination: Path) -> None:
+            def fake_download(
+                _url: str,
+                destination: Path,
+                *,
+                max_bytes: int,
+            ) -> None:
+                self.assertEqual(max_bytes, exiftool.EXIFTOOL_ARCHIVE_MAX_BYTES)
                 shutil.copyfile(source_zip, destination)
 
             with (
@@ -166,7 +186,7 @@ class ExiftoolCliTests(unittest.TestCase):
             with patch.object(
                 exiftool,
                 "_download_file",
-                side_effect=lambda _url, path: path.write_bytes(b"wrong"),
+                side_effect=lambda _url, path, **_kwargs: path.write_bytes(b"wrong"),
             ):
                 with self.assertRaisesRegex(RuntimeError, "feil SHA-256"):
                     exiftool.install_managed_exiftool(repo, force=True)
@@ -192,7 +212,7 @@ class ExiftoolCliTests(unittest.TestCase):
                 patch.object(
                     exiftool,
                     "_download_file",
-                    side_effect=lambda _url, path: shutil.copyfile(archive, path),
+                    side_effect=lambda _url, path, **_kwargs: shutil.copyfile(archive, path),
                 ),
                 patch.object(
                     exiftool,
@@ -237,7 +257,7 @@ class ExiftoolCliTests(unittest.TestCase):
                 patch.object(
                     exiftool,
                     "_download_file",
-                    side_effect=lambda _url, path: shutil.copyfile(archive, path),
+                    side_effect=lambda _url, path, **_kwargs: shutil.copyfile(archive, path),
                 ),
                 patch.object(
                     exiftool,
@@ -266,7 +286,11 @@ class ExiftoolCliTests(unittest.TestCase):
             destination.mkdir(parents=True)
 
             with (
-                patch.object(exiftool, "_is_directory_link", return_value=True),
+                patch.object(
+                    exiftool,
+                    "reject_directory_link",
+                    side_effect=RuntimeError("ExifTool-mappen kan ikke være en lenke"),
+                ),
                 self.assertRaisesRegex(RuntimeError, "kan ikke være en lenke"),
             ):
                 exiftool.install_managed_exiftool(repo, force=True)

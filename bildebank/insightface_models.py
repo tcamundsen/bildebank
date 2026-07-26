@@ -4,13 +4,17 @@ import hashlib
 import shutil
 import stat
 import tempfile
-import urllib.request
 import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 from .config import FaceRecognitionConfig
+from .downloaded_artifacts import (
+    download_https_file,
+    ensure_directory_without_links,
+    reject_directory_link,
+)
 
 
 INSIGHTFACE_MODEL_RELEASE_URL = (
@@ -103,8 +107,10 @@ def install_insightface_model(config: FaceRecognitionConfig) -> Path:
         )
 
     destination = insightface_model_dir(config)
-    if (destination.exists() or destination.is_symlink()) and _is_directory_link(destination):
-        raise ValueError(f"InsightFace-modellmappen kan ikke være en lenke: {destination}")
+    try:
+        reject_directory_link(destination, label="InsightFace-modellmappen")
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
     if destination.exists():
         if not destination.is_dir():
             raise ValueError(
@@ -123,11 +129,23 @@ def install_insightface_model(config: FaceRecognitionConfig) -> Path:
                 "flytt den til et trygt sted før du prøver nedlasting på nytt."
             )
 
-    models_root = destination.parent
-    models_root.mkdir(parents=True, exist_ok=True)
+    try:
+        models_root = ensure_directory_without_links(
+            destination.parent,
+            label="InsightFace-modellroten",
+        )
+    except RuntimeError as exc:
+        raise ValueError(str(exc)) from exc
     with tempfile.TemporaryDirectory() as tmp:
         archive_path = Path(tmp) / f"{spec.name}.zip"
-        _download_file(spec.archive_url, archive_path)
+        try:
+            _download_file(
+                spec.archive_url,
+                archive_path,
+                expected_size=spec.archive_size_bytes,
+            )
+        except RuntimeError as exc:
+            raise ValueError(str(exc)) from exc
         archive_size = archive_path.stat().st_size
         if archive_size != spec.archive_size_bytes:
             raise ValueError(
@@ -154,10 +172,13 @@ def install_insightface_model(config: FaceRecognitionConfig) -> Path:
             replaced = False
             try:
                 if destination.exists() or destination.is_symlink():
-                    if _is_directory_link(destination):
-                        raise ValueError(
-                            f"InsightFace-modellmappen kan ikke være en lenke: {destination}"
+                    try:
+                        reject_directory_link(
+                            destination,
+                            label="InsightFace-modellmappen",
                         )
+                    except RuntimeError as exc:
+                        raise ValueError(str(exc)) from exc
                     destination.rename(backup)
                     replaced = True
                 staging.rename(destination)
@@ -199,16 +220,14 @@ def _model_files_match_spec(model_dir: Path, spec: InsightFaceModelSpec) -> bool
     return True
 
 
-def _download_file(url: str, destination: Path) -> None:
-    request = urllib.request.Request(
+def _download_file(url: str, destination: Path, *, expected_size: int) -> None:
+    download_https_file(
         url,
-        headers={"User-Agent": "Bildebank InsightFace model installer"},
+        destination,
+        user_agent="Bildebank InsightFace model installer",
+        max_bytes=expected_size,
+        expected_size=expected_size,
     )
-    with (
-        urllib.request.urlopen(request, timeout=60) as response,
-        destination.open("xb") as output,
-    ):
-        shutil.copyfileobj(response, output)
 
 
 def _sha256_file(path: Path) -> str:
