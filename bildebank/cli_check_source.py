@@ -365,12 +365,14 @@ def check_source_database_errors(
         errors.append(f"SQLite foreign_key_check kunne ikke kjøres: {exc}")
     else:
         if foreign_key_errors:
-            first = foreign_key_errors[0]
+            first_foreign_key_error = foreign_key_errors[0]
             errors.append(
                 "SQLite foreign_key_check fant "
                 f"{len(foreign_key_errors)} ugyldig(e) referanse(r); "
-                f"første: table={first['table']} rowid={first['rowid']} "
-                f"parent={first['parent']} foreign_key={first['fkid']}"
+                f"første: table={first_foreign_key_error['table']} "
+                f"rowid={first_foreign_key_error['rowid']} "
+                f"parent={first_foreign_key_error['parent']} "
+                f"foreign_key={first_foreign_key_error['fkid']}"
             )
 
     if (
@@ -395,11 +397,12 @@ def check_source_database_errors(
         ]
 
     if path_issues:
-        first = path_issues[0]
+        first_path_issue = path_issues[0]
         errors.append(
             f"{len(path_issues)} databaseført(e) stifeil; første: "
-            f"file #{first.file_id} {first.field}={first.value!r}: "
-            f"{first.message}"
+            f"file #{first_path_issue.file_id} "
+            f"{first_path_issue.field}={first_path_issue.value!r}: "
+            f"{first_path_issue.message}"
         )
 
     component_issues: list[tuple[int, str, object, Path, str]] = []

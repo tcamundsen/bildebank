@@ -905,18 +905,18 @@ def doctor_check_file_paths(target: Path) -> bool:
                 relative_path = parse_collection_relative_path(value)
             except InvalidCollectionRelativePath:
                 continue
-            issue = inspect_existing_collection_path_components(
+            component_issue = inspect_existing_collection_path_components(
                 target,
                 relative_path,
             )
-            if issue is not None:
+            if component_issue is not None:
                 component_issues.append(
                     (
                         int(row["id"]),
                         field,
                         value,
-                        issue.path,
-                        issue.reason,
+                        component_issue.path,
+                        component_issue.reason,
                     )
                 )
 
@@ -928,15 +928,18 @@ def doctor_check_file_paths(target: Path) -> bool:
         return True
 
     if database_issues:
-        affected_files = len({issue.file_id for issue in database_issues})
+        affected_files = len(
+            {database_issue.file_id for database_issue in database_issues}
+        )
         doctor_error(
             f"{len(database_issues)} databaseført(e) stifeil i "
             f"{affected_files} files-rad(er)."
         )
-        for issue in database_issues[:20]:
+        for database_issue in database_issues[:20]:
             doctor_info(
-                f"file #{issue.file_id} {issue.field}={issue.value!r}: "
-                f"{issue.message}"
+                f"file #{database_issue.file_id} "
+                f"{database_issue.field}={database_issue.value!r}: "
+                f"{database_issue.message}"
             )
         doctor_report_omitted_details(len(database_issues))
 

@@ -265,10 +265,13 @@ def _run_browser_file_move(
     face_config: FaceRecognitionConfig | None,
 ) -> Path:
     try:
-        operation_kwargs = {"file_id": file_id}
         if operation_name == "remove":
-            operation_kwargs["face_config"] = face_config
-        return operation(target, **operation_kwargs)
+            return operation(
+                target,
+                file_id=file_id,
+                face_config=face_config,
+            )
+        return operation(target, file_id=file_id)
     except TargetLockError:
         raise
     except Exception:
