@@ -34,6 +34,12 @@ serverprosessen eies av hovedfanen fordi den kan leve videre etter at knappen
 som startet den er ferdig. Både hovedfanen og **Nettleser og deling** bruker den
 samme startmekanismen.
 
+På Windows starter det korte `bildebank.exe`-inngangspunktet launcheren på nytt
+med `python.exe -m bildebank start` og avslutter før Tk-vinduet åpnes. En intern
+miljømarkør hindrer restartsløyfe. Dette gjør at launcherens oppdateringsknapp
+kan erstatte `bildebank.exe`; Windows tillater ikke at `pip` erstatter en
+kjørende `.exe`-fil.
+
 Snapshotfanen bruker den eksisterende snapshotkjernen direkte. Liste- og
 browseoperasjoner leser validerte, publiserte manifester under repositorylås.
 Enkeltfiler planlegges og eksporteres med de samme funksjonene som

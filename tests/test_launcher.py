@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 from unittest.mock import Mock, patch
 
 from bildebank import launcher
@@ -15,8 +17,51 @@ def test_launcher_module_is_a_thin_public_entrypoint() -> None:
 def test_launcher_main_runs_launcher_app() -> None:
     app = Mock()
 
-    with patch("bildebank.launcher_app.LauncherApp", return_value=app) as app_class:
+    with (
+        patch("bildebank.launcher.sys.platform", "linux"),
+        patch("bildebank.launcher_app.LauncherApp", return_value=app) as app_class,
+    ):
         assert launcher.main() == 0
 
     app_class.assert_called_once_with()
+    app.run.assert_called_once_with()
+
+
+def test_launcher_restarts_under_python_before_opening_window_on_windows() -> None:
+    child = Mock()
+    environment = {"PATH": "test-path"}
+
+    with (
+        patch("bildebank.launcher.sys.platform", "win32"),
+        patch("bildebank.launcher.os.environ", environment),
+        patch("bildebank.launcher.subprocess.Popen", return_value=child) as popen,
+        patch("bildebank.launcher_app.LauncherApp") as app_class,
+    ):
+        assert launcher.main() == 0
+
+    popen.assert_called_once_with(
+        [sys.executable, "-m", "bildebank", "start"],
+        env={
+            **environment,
+            launcher.WINDOWS_LAUNCHER_CHILD_ENV: "1",
+        },
+    )
+    app_class.assert_not_called()
+
+
+def test_windows_launcher_child_opens_window_without_restart_loop() -> None:
+    app = Mock()
+
+    with (
+        patch("bildebank.launcher.sys.platform", "win32"),
+        patch.dict(
+            os.environ,
+            {launcher.WINDOWS_LAUNCHER_CHILD_ENV: "1"},
+        ),
+        patch("bildebank.launcher.subprocess.Popen") as popen,
+        patch("bildebank.launcher_app.LauncherApp", return_value=app),
+    ):
+        assert launcher.main() == 0
+
+    popen.assert_not_called()
     app.run.assert_called_once_with()

@@ -141,6 +141,11 @@ fil kolliderer med en fil som skal hentes. Før kildekoden oppdateres, skal
 gjeldende commit lagres i en recovery-markør utenfor Git-sporede filer. Etter
 oppdateringen skal Python-miljøet oppdateres og en enkel importtest kjøres.
 
+På Windows skal det varige launcher-vinduet kjøre under Python-tolken, etter at
+det korte `bildebank.exe`-inngangspunktet har startet det og avsluttet. Dermed
+skal launcheren ikke holde `bildebank.exe` låst mens programoppdateringen eller
+en rollback-installasjon må erstatte filen.
+
 Hvis installasjonen eller importtesten feiler, skal kildekoden rulles tilbake
 til den lagrede commit-en. Python-installasjonen skal deretter installeres på
 nytt fra den gamle kildekoden og kontrolleres før recovery-markøren fjernes.
