@@ -24,13 +24,20 @@ filsikkerhet, dataintegritet og forsiktig feilbehandling:
 - låsehåndtering rundt muterende operasjoner og recovery
 - browser/server, inkludert reelt read-only oppsett, trygg filservering,
   søk, LAN-share, ekstern binding og skrivetilgang
-- programoppdatering, installasjon og eksterne nedlastinger, inkludert fastlåste kilder, SHA-256, trygg
-  arkivutpakking, staging og rollback
-- eksport og statisk generering, inkludert målkonflikter, lenker/reparse points, HTML-escaping og personvern
-- regenererbare mediefiler og eksterne medieprogrammer, inkludert trygg behandling av databaseførte stier, tempfiler,
-  atomisk publisering, ressursgrenser og validering av cachefiler
-- skrivende InsightFace-, OpenCLIP-, sidecar- og personoperasjoner, inkludert låsing, samtidighet, modellbytte og vern
-  av manuelt kuraterte data
+- programoppdatering, installasjon og eksterne nedlastinger, inkludert
+  fastlåste kilder, SHA-256, komplette avhengighetslåser, validering av
+  plattform/repository/branch, trygg arkivutpakking, staging og rollback
+- eksport og statisk generering, inkludert avgrensning av output,
+  målkonflikter, eksisterende filer, lenker/reparse points, avbrudd,
+  HTML-escaping og personvern
+- regenererbare mediefiler og eksterne medieprogrammer, inkludert
+  databaseførte stier, lenker/hardlinks/reparse points, entydige cachefilnavn,
+  eksklusive tempfiler, atomisk publisering, tidsgrenser, prosessopprydding og
+  validering av cachefiler
+- skrivende InsightFace-, OpenCLIP-, sidecar- og personoperasjoner, inkludert
+  fast samlingslokal plassering, sti-/lenkevalidering, kontroll av originalens
+  identitet før lagring, låsing, samtidighet, modellbytte, opprydding i alle
+  modelldatabaser og vern av manuelt kuraterte data
 - launcherens prosesshåndtering, inkludert samsvar med CLI-ens dry-run, bekreftelser og låser, samt kontrollert
   avbrudd og serverlivsløp
 - Windows-spesifikk fil- og prosessoppførsel, særlig åpne filer ved opprydding, symlink/reparse-rettigheter, store/små
