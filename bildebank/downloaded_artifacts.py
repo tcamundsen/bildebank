@@ -97,6 +97,11 @@ def download_https_file(
             )
         return downloaded
     except BaseException:
+        if file_descriptor >= 0:
+            try:
+                os.close(file_descriptor)
+            finally:
+                file_descriptor = -1
         if destination_created:
             destination.unlink(missing_ok=True)
         raise

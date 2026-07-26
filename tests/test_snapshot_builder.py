@@ -503,10 +503,13 @@ class SnapshotBuilderTests(unittest.TestCase):
             repository.mkdir()
             external_faces.mkdir()
             self.assertEqual(run_cli(["create", str(target)]), 0)
-            (target / ".bildebank-faces").symlink_to(
-                external_faces,
-                target_is_directory=True,
-            )
+            try:
+                (target / ".bildebank-faces").symlink_to(
+                    external_faces,
+                    target_is_directory=True,
+                )
+            except OSError as exc:
+                self.skipTest(f"Kan ikke opprette symlink: {exc}")
 
             with RepositoryLock(repository, command="snapshot create"):
                 with TargetLock(target, command="snapshot create"):
