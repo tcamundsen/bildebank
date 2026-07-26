@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import subprocess
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,6 +14,7 @@ from bildebank.launcher_main_tab import (
     open_server_browser_window,
     server_browser_url,
 )
+from bildebank.launcher_runner import interruptible_command_creationflags
 from bildebank.launcher_status import LauncherUpdateStatus
 
 
@@ -368,6 +370,7 @@ def test_start_server_uses_advanced_options(tmp_path: Path) -> None:
         tab.start_server(port=9000, read_only=True)
 
     assert popen.call_args.args[0][-3:] == ["--port", "9000", "--read-only"]
+    assert popen.call_args.kwargs["creationflags"] == interruptible_command_creationflags()
     assert tab.server_port == 9000
     assert tab.server_launch_options == ServerLaunchOptions(
         port=9000,
@@ -504,7 +507,6 @@ def test_changed_configuration_stops_before_starting_slideshow(tmp_path: Path) -
     events: list[str] = []
     process = SimpleNamespace(
         poll=lambda: None,
-        terminate=lambda: events.append("terminate"),
         wait=lambda *, timeout: events.append(f"wait:{timeout}"),
     )
     tab.server_process = process
@@ -512,8 +514,9 @@ def test_changed_configuration_stops_before_starting_slideshow(tmp_path: Path) -
     tab.update_migration_status = lambda: None
     tab._log = events.append
 
-    def start_process(command: list[str]) -> SimpleNamespace:
+    def start_process(command: list[str], **kwargs: object) -> SimpleNamespace:
         events.append("popen")
+        assert kwargs["creationflags"] == interruptible_command_creationflags()
         assert command[-5:] == [
             "--slideshow",
             "--delay",
@@ -528,6 +531,10 @@ def test_changed_configuration_stops_before_starting_slideshow(tmp_path: Path) -
             "tkinter.messagebox.askokcancel",
             side_effect=lambda *_args, **_kwargs: events.append("restart-confirm") or True,
         ),
+        patch(
+            "bildebank.launcher_main_tab.interrupt_process",
+            side_effect=lambda _process: events.append("interrupt"),
+        ),
         patch("bildebank.launcher_main_tab.subprocess.Popen", side_effect=start_process),
     ):
         tab.start_server(
@@ -538,8 +545,8 @@ def test_changed_configuration_stops_before_starting_slideshow(tmp_path: Path) -
         )
 
     assert events.index("restart-confirm") < events.index("lan-confirm")
-    assert events.index("lan-confirm") < events.index("terminate")
-    assert events.index("terminate") < events.index("popen")
+    assert events.index("lan-confirm") < events.index("interrupt")
+    assert events.index("interrupt") < events.index("popen")
     assert tab.server_process is not process
     assert tab.server_launch_options == normalize_server_launch_options(
         port=8765,
@@ -548,23 +555,73 @@ def test_changed_configuration_stops_before_starting_slideshow(tmp_path: Path) -
     )
 
 
-def test_stop_server_process_terminates_running_server(tmp_path: Path) -> None:
+def test_stop_server_process_interrupts_running_server(tmp_path: Path) -> None:
     tab = bare_main_tab(tmp_path / "samling")
     logged: list[str] = []
     process = SimpleNamespace(
         poll=lambda: None,
-        terminate=lambda: logged.append("terminate"),
         wait=lambda *, timeout: logged.append(f"wait:{timeout}"),
     )
     tab.server_process = process
     tab._log = logged.append
 
-    tab.stop_server_process()
+    with patch(
+        "bildebank.launcher_main_tab.interrupt_process",
+        side_effect=lambda _process: logged.append("interrupt"),
+    ):
+        tab.stop_server_process()
 
     assert tab.server_process is None
     assert logged == [
         "Stopper Bildebank-server ...",
+        "interrupt",
+        "wait:5",
+        "Bildebank-server stoppet.",
+    ]
+
+
+def test_stop_server_process_escalates_after_timeouts(tmp_path: Path) -> None:
+    tab = bare_main_tab(tmp_path / "samling")
+    logged: list[str] = []
+    waits = iter(
+        [
+            subprocess.TimeoutExpired("bildebank", 5),
+            subprocess.TimeoutExpired("bildebank", 5),
+            None,
+        ]
+    )
+
+    def wait(*, timeout: int) -> None:
+        logged.append(f"wait:{timeout}")
+        result = next(waits)
+        if isinstance(result, Exception):
+            raise result
+
+    process = SimpleNamespace(
+        poll=lambda: None,
+        terminate=lambda: logged.append("terminate"),
+        kill=lambda: logged.append("kill"),
+        wait=wait,
+    )
+    tab.server_process = process
+    tab._log = logged.append
+
+    with patch(
+        "bildebank.launcher_main_tab.interrupt_process",
+        side_effect=lambda _process: logged.append("interrupt"),
+    ):
+        tab.stop_server_process()
+
+    assert tab.server_process is None
+    assert logged == [
+        "Stopper Bildebank-server ...",
+        "interrupt",
+        "wait:5",
+        "Bildebank-serveren svarte ikke på kontrollert stopp, avslutter prosessen ...",
         "terminate",
+        "wait:5",
+        "Bildebank-serveren svarte fortsatt ikke, avslutter hardt ...",
+        "kill",
         "wait:5",
         "Bildebank-server stoppet.",
     ]

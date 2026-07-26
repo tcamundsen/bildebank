@@ -23,8 +23,9 @@
      samtidighet, avbrudd og beskyttelse av manuelt kuraterte persondata. Schema, doctor, migrering, remove/unimport og
      serverlesing var allerede gjennomgått.
 
-  ÅPEN – Som et sekundært punkt kan også launcherens kommandooppstart og avbrudd gjennomgås: at GUI-en alltid beholder
-  CLI-ens dry-run, bekreftelser, låsing og kontrollerte Ctrl+C-behandling.
+  UTFØRT – Launcherens kommandooppstart og avbrudd er gjennomgått. GUI-en beholder CLI-ens dry-run, bekreftelser og
+  låsing. Tidlig lukket stdin låser ikke lenger launcheren, import og begge unimport-faser kan avbrytes kontrollert,
+  og launcher-serveren stoppes med Ctrl+C-behandling før terminate/kill brukes som reserve.
 
   Punktene ble opprinnelig lagt til som mulige gjennomgangsområder, ikke som bekreftede åpne feil. rescan-source og
   refresh-metadata trenger ikke egne punkter nå; de var med i henholdsvis import- og

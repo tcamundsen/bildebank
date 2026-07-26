@@ -83,6 +83,7 @@ def test_import_flow_runs_import_with_selected_folder_and_trimmed_name(tmp_path:
     ]
     assert options["running_message"] == "Importerer bilder ..."
     assert options["on_success"] is tab._refresh_launcher
+    assert options["cancellable"] is True
 
 
 def test_import_flow_rejects_collection_as_source(tmp_path: Path) -> None:
@@ -144,6 +145,7 @@ def test_unimport_starts_with_dry_run_and_target_change_report(tmp_path: Path) -
     assert report_path.name.startswith("bildebank-unimport-")
     assert options["success_message"] == "Unimport dry-run fullført. Se planen i loggen."
     assert callable(options["on_success"])
+    assert options["cancellable"] is True
     report_path.unlink(missing_ok=True)
 
 
@@ -229,3 +231,4 @@ def test_unimport_passes_both_cli_confirmations_on_stdin(tmp_path: Path) -> None
     assert command[-5:] == ["--target", str(collection), "unimport", "--name", "Sommer 2024"]
     assert options["stdin_text"] == "ja, det vil jeg\nja\n"
     assert options["on_success"] is tab._refresh_launcher
+    assert options["cancellable"] is True

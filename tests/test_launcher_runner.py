@@ -124,3 +124,59 @@ def test_command_runner_reports_output_and_completion_on_ui_callback() -> None:
     ]
     assert runner.process is None
     assert not runner.cancellable
+
+
+def test_command_runner_finishes_when_child_closes_stdin_early() -> None:
+    events: list[object] = []
+    runner = CommandRunner(
+        post_to_ui=lambda callback: (callback(), True)[1],
+        on_output=lambda message: events.append(("output", message)),
+    )
+
+    class ClosedStdin:
+        def write(self, _text: str) -> None:
+            raise BrokenPipeError
+
+        def flush(self) -> None:
+            raise AssertionError("flush should not run after failed write")
+
+        def close(self) -> None:
+            events.append("stdin-lukket")
+
+    class FakeProcess:
+        stdin = ClosedStdin()
+        stdout = ["kommandoen avsluttet tidlig\n"]
+
+        def wait(self) -> int:
+            return 2
+
+    class ImmediateThread:
+        def __init__(self, *, target, daemon: bool) -> None:
+            self.target = target
+            assert daemon
+
+        def start(self) -> None:
+            self.target()
+
+    with (
+        patch("bildebank.launcher_runner.subprocess.Popen", return_value=FakeProcess()),
+        patch("bildebank.launcher_runner.threading.Thread", ImmediateThread),
+    ):
+        runner.start(
+            ["bildebank", "unimport"],
+            on_start=lambda: events.append("start"),
+            on_start_failed=lambda exc: events.append(("start-feil", exc)),
+            on_finished=lambda return_code, cancelled: events.append(("ferdig", return_code, cancelled)),
+            stdin_text="ja, det vil jeg\nnei\n",
+            cancellable=True,
+        )
+
+    assert events == [
+        "start",
+        "stdin-lukket",
+        ("output", "kommandoen avsluttet tidlig"),
+        ("ferdig", 2, False),
+    ]
+    assert runner.process is None
+    assert not runner.cancel_requested
+    assert not runner.cancellable

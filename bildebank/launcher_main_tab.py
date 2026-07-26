@@ -18,6 +18,7 @@ from .launcher_commands import (
     server_browser_url,
     update_command,
 )
+from .launcher_runner import interrupt_process, interruptible_command_creationflags
 from .server_runtime import DEFAULT_PORT
 from .server_slideshow import DEFAULT_SLIDESHOW_DELAY_SECONDS
 from .launcher_status import (
@@ -286,13 +287,21 @@ class MainTab:
             self.server_launch_options = None
             return
         self._log("Stopper Bildebank-server ...")
-        process.terminate()
+        try:
+            interrupt_process(process)
+        except OSError:
+            pass
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            self._log("Bildebank-serveren svarte ikke på stopp, avslutter hardt ...")
-            process.kill()
-            process.wait(timeout=5)
+            self._log("Bildebank-serveren svarte ikke på kontrollert stopp, avslutter prosessen ...")
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self._log("Bildebank-serveren svarte fortsatt ikke, avslutter hardt ...")
+                process.kill()
+                process.wait(timeout=5)
         self.server_process = None
         self.server_launch_options = None
         self._log("Bildebank-server stoppet.")
@@ -627,7 +636,8 @@ class MainTab:
                         else DEFAULT_SLIDESHOW_DELAY_SECONDS
                     ),
                     filter=options.filter,
-                )
+                ),
+                creationflags=interruptible_command_creationflags(),
             )
         except OSError as exc:
             messagebox.showerror("Kunne ikke starte Bildebank", "Bildebank-serveren kunne ikke startes.")

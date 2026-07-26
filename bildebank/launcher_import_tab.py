@@ -205,6 +205,7 @@ class ImportTab:
             success_message="Import fullført.",
             failure_message="Import feilet.",
             on_success=self._refresh_launcher,
+            cancellable=True,
         )
 
     def _start_rescan_source_flow(self) -> None:
@@ -304,6 +305,7 @@ class ImportTab:
             success_message="Unimport dry-run fullført. Se planen i loggen.",
             failure_message="Unimport dry-run feilet.",
             on_success=lambda: self._confirm_unimport_source(source, report_path),
+            cancellable=True,
         )
 
     def _confirm_unimport_source(self, source: db.Source, report_path: Path) -> None:
@@ -369,6 +371,7 @@ class ImportTab:
             failure_message="Unimport feilet.",
             stdin_text=f"ja, det vil jeg\n{target_change_answer}\n",
             on_success=self._refresh_launcher,
+            cancellable=True,
         )
 
     def _load_registered_sources(self) -> list[db.Source] | None:

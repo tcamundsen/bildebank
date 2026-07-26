@@ -140,9 +140,18 @@ class CommandRunner:
 
             if stdin_text is not None:
                 assert process.stdin is not None
-                process.stdin.write(stdin_text)
-                process.stdin.flush()
-                process.stdin.close()
+                try:
+                    process.stdin.write(stdin_text)
+                    process.stdin.flush()
+                except OSError:
+                    # Prosessen kan ha avsluttet etter oppstart, eller som følge
+                    # av et avbrudd, før launcheren rekker å sende stdin.
+                    pass
+                finally:
+                    try:
+                        process.stdin.close()
+                    except OSError:
+                        pass
 
             assert process.stdout is not None
             for line in process.stdout:
