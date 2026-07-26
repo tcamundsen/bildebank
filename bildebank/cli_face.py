@@ -169,6 +169,7 @@ def run_face_scan(
     discard_confirmed_person_links: bool = False,
     show_model_output: bool = False,
 ) -> int:
+    global FACE_SCAN_PROGRESS
     config = load_config(repo_root).face_recognition
     require_face_enabled(config.enabled)
     if discard_confirmed_person_links and not force:
@@ -187,15 +188,20 @@ def run_face_scan(
         if answer != phrase:
             print("Avbrutt. Ingen ansiktsdata er endret.")
             return 0
-    stats = scan_faces(
-        target,
-        config,
-        limit=limit,
-        progress=print_face_scan_progress,
-        show_model_output=show_model_output,
-        force=force,
-        discard_confirmed_face_links=discard_confirmed_person_links,
-    )
+    try:
+        stats = scan_faces(
+            target,
+            config,
+            limit=limit,
+            progress=print_face_scan_progress,
+            show_model_output=show_model_output,
+            force=force,
+            discard_confirmed_face_links=discard_confirmed_person_links,
+        )
+    finally:
+        if FACE_SCAN_PROGRESS is not None:
+            FACE_SCAN_PROGRESS.done()
+            FACE_SCAN_PROGRESS = None
     print(
         "Oppsummering: "
         f"sjekket={stats.checked}, hoppet_over={stats.skipped}, "

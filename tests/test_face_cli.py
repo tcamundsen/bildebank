@@ -15,6 +15,7 @@ from unittest.mock import patch
 from PIL import Image
 
 from bildebank import db
+from bildebank import cli_face as cli_face_module
 from bildebank.cli import main
 from bildebank.config import FaceRecognitionConfig, load_config
 from bildebank.db import DB_FILENAME
@@ -759,11 +760,20 @@ model_name = "buffalo_l"
             finally:
                 conn.close()
 
-            with patch(
-                "bildebank.face.load_face_app",
-                side_effect=AssertionError("modellen skal ikke lastes"),
+            class InteractiveBuffer(StringIO):
+                def isatty(self) -> bool:
+                    return True
+
+            terminal = InteractiveBuffer()
+            with (
+                patch(
+                    "bildebank.face.load_face_app",
+                    side_effect=AssertionError("modellen skal ikke lastes"),
+                ),
+                redirect_stdout(terminal),
+                redirect_stderr(terminal),
             ):
-                code, _stdout, stderr = capture_cli(
+                code = main(
                     [
                         "--target",
                         str(target),
@@ -773,9 +783,17 @@ model_name = "buffalo_l"
                         "1",
                     ]
                 )
+            output = terminal.getvalue()
 
             self.assertEqual(code, 1)
-            self.assertIn("--discard-confirmed-person-links", stderr)
+            self.assertIn("--discard-confirmed-person-links", output)
+            self.assertIn(
+                "Ingen ansikter eller personkoblinger er erstattet.",
+                output,
+            )
+            self.assertIn("\nFeil:", output)
+            self.assertNotIn("beregnerFeil:", output)
+            self.assertIsNone(cli_face_module.FACE_SCAN_PROGRESS)
 
             with (
                 patch(

@@ -1832,7 +1832,8 @@ def scan_faces(
                         "Face-scan vil erstatte bekreftede ansiktskoblinger for "
                         f"{relative_path.as_posix()}. Kjør på nytt med både "
                         "--force og --discard-confirmed-person-links hvis disse "
-                        "koblingene skal slettes."
+                        "koblingene skal slettes. Ingen ansikter eller "
+                        "personkoblinger er erstattet."
                     )
                 rows_to_scan.append(
                     FaceScanCandidate(
