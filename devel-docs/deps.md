@@ -136,6 +136,14 @@ være nødvendige for noen funksjoner.
 - Installeres av `setup-windows.ps1` til `bildebank-tools\exiftool` i
   programmappen.
 - Kan repareres eller installeres på nytt med `bildebank exiftool-install`.
+- Windows-installasjonen bruker den fastlåste 64-bit-utgaven `13.58` og
+  verifiserer arkivet mot SHA-256
+  `fd3b407a01e6ffc6160f2d5fde5ff0c003f6c4c2ba85eee1ce8928ccb51fa3e6`
+  før utpakking eller kjøring.
+- Arkivet pakkes ut med kontroll av medlemsstier og lenker. Den nye
+  installasjonen bygges og versjonskontrolleres i staging før publisering.
+  En eksisterende installasjon gjenopprettes ved feil eller kontrollert
+  avbrudd under utskifting.
 - Bildebank bruker managed ExifTool først, og faller tilbake til `PATH` hvis
   managed ExifTool ikke finnes.
 - Brukeren kan angi sti eksplisitt som nødventil, for eksempel:

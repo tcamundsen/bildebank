@@ -38,5 +38,10 @@ Hvis installasjonen ser ødelagt ut, kan du installere på nytt:
 bildebank exiftool-install --force
 ```
 
+Før ExifTool installeres, kontrollerer Bildebank at den nedlastede filen har
+forventet SHA-256. Den nye installasjonen pakkes ut og testes i en midlertidig
+mappe før den tas i bruk. En eksisterende, fungerende installasjon beholdes
+dersom nedlasting, kontroll eller installasjon feiler eller avbrytes.
+
 ExifTool skal ikke ligge i bildesamlingen. Bildesamlingen skal bare inneholde
 bildene, Bildebank-databasen og filer Bildebank lager for samlingen.

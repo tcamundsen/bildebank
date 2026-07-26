@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -11,12 +13,42 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
+from bildebank import exiftool
 from bildebank.cli import main
 from bildebank.exiftool import managed_exiftool_path, resolve_exiftool_path
 from tests.cli_helpers import capture_cli, run_cli, write_fake_exiftool
 
 
+def write_exiftool_archive(path: Path, *, version: str = "13.58") -> None:
+    script = f"""#!/usr/bin/env python3
+import sys
+if "-ver" in sys.argv:
+    print("{version}")
+"""
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr(
+            f"exiftool-{version}_64/exiftool(-k).exe",
+            script,
+        )
+        archive.writestr(
+            f"exiftool-{version}_64/exiftool_files/ExifTool_config",
+            "config",
+        )
+
+
 class ExiftoolCliTests(unittest.TestCase):
+    def test_exiftool_archive_is_version_and_hash_pinned(self) -> None:
+        self.assertEqual(exiftool.EXIFTOOL_VERSION, "13.58")
+        self.assertTrue(
+            exiftool.EXIFTOOL_ZIP_URL.endswith(
+                "/exiftool-13.58_64.zip/download"
+            )
+        )
+        self.assertEqual(
+            exiftool.EXIFTOOL_ARCHIVE_SHA256,
+            "fd3b407a01e6ffc6160f2d5fde5ff0c003f6c4c2ba85eee1ce8928ccb51fa3e6",
+        )
+
     def test_exiftool_install_help_documents_force(self) -> None:
         stdout_buffer = StringIO()
         stderr_buffer = StringIO()
@@ -63,28 +95,37 @@ class ExiftoolCliTests(unittest.TestCase):
             with self.assertRaisesRegex(FileNotFoundError, "exiftool_files"):
                 resolve_exiftool_path(repo)
 
+    def test_exiftool_validation_can_require_exact_version(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tool = Path(tmp) / "exiftool.exe"
+            write_fake_exiftool(tool)
+            (tool.parent / "exiftool_files").mkdir()
+
+            with (
+                patch.object(exiftool, "exiftool_version", return_value="13.57"),
+                self.assertRaisesRegex(RuntimeError, "forventet '13.58'"),
+            ):
+                exiftool.validate_exiftool_install(
+                    tool,
+                    expected_version="13.58",
+                )
+
     def test_exiftool_install_downloads_zip_to_managed_tools_folder(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             repo = root / "repo"
             source_zip = root / "exiftool.zip"
-            script = """#!/usr/bin/env python3
-import sys
-if "-ver" in sys.argv:
-    print("13.58")
-"""
-            with zipfile.ZipFile(source_zip, "w") as archive:
-                archive.writestr("exiftool-13.58_64/exiftool(-k).exe", script)
-                archive.writestr("exiftool-13.58_64/exiftool_files/ExifTool_config", "config")
+            write_exiftool_archive(source_zip)
+            expected_hash = hashlib.sha256(source_zip.read_bytes()).hexdigest()
 
-            def fake_urlretrieve(url: str, filename: str | Path):
-                shutil.copyfile(source_zip, filename)
-                return (str(filename), None)
+            def fake_download(_url: str, destination: Path) -> None:
+                shutil.copyfile(source_zip, destination)
 
             with (
                 patch("bildebank.cli.sys.platform", "win32"),
                 patch("bildebank.cli.program_repo_root", return_value=repo),
-                patch("bildebank.exiftool.urllib.request.urlretrieve", side_effect=fake_urlretrieve),
+                patch.object(exiftool, "EXIFTOOL_ARCHIVE_SHA256", expected_hash),
+                patch.object(exiftool, "_download_file", side_effect=fake_download),
                 patch("bildebank.exiftool.validate_exiftool_install", return_value="13.58"),
             ):
                 code, stdout, stderr = capture_cli(["exiftool-install"])
@@ -94,6 +135,153 @@ if "-ver" in sys.argv:
             self.assertIn("Installerte ExifTool 13.58", stdout)
             self.assertTrue((installed / "exiftool.exe").exists())
             self.assertTrue((installed / "exiftool_files").is_dir())
+
+    def test_exiftool_install_rejects_wrong_hash_and_preserves_existing_install(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            destination = exiftool.managed_exiftool_dir(repo)
+            destination.mkdir(parents=True)
+            existing = destination / "existing.txt"
+            existing.write_text("behold", encoding="utf-8")
+
+            with patch.object(
+                exiftool,
+                "_download_file",
+                side_effect=lambda _url, path: path.write_bytes(b"wrong"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "feil SHA-256"):
+                    exiftool.install_managed_exiftool(repo, force=True)
+
+            self.assertEqual(existing.read_text(encoding="utf-8"), "behold")
+
+    def test_exiftool_install_preserves_existing_install_when_staging_is_invalid(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            destination = exiftool.managed_exiftool_dir(repo)
+            destination.mkdir(parents=True)
+            existing = destination / "existing.txt"
+            existing.write_text("behold", encoding="utf-8")
+            archive = root / "exiftool.zip"
+            write_exiftool_archive(archive)
+            expected_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
+
+            with (
+                patch.object(exiftool, "EXIFTOOL_ARCHIVE_SHA256", expected_hash),
+                patch.object(
+                    exiftool,
+                    "_download_file",
+                    side_effect=lambda _url, path: shutil.copyfile(archive, path),
+                ),
+                patch.object(
+                    exiftool,
+                    "validate_exiftool_install",
+                    side_effect=RuntimeError("ugyldig staging"),
+                ),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "ugyldig staging"):
+                    exiftool.install_managed_exiftool(repo, force=True)
+
+            self.assertEqual(existing.read_text(encoding="utf-8"), "behold")
+            self.assertEqual(
+                list(destination.parent.glob(".exiftool.installing-*")),
+                [],
+            )
+
+    def test_exiftool_install_rolls_back_on_interrupt_during_publication(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            repo = root / "repo"
+            destination = exiftool.managed_exiftool_dir(repo)
+            destination.mkdir(parents=True)
+            existing = destination / "existing.txt"
+            existing.write_text("behold", encoding="utf-8")
+            archive = root / "exiftool.zip"
+            write_exiftool_archive(archive)
+            expected_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
+            original_rename = Path.rename
+
+            def interrupt_staging_publication(path: Path, target: Path) -> Path:
+                if (
+                    path.name.startswith(".exiftool.installing-")
+                    and Path(target) == destination
+                ):
+                    raise KeyboardInterrupt
+                return original_rename(path, target)
+
+            with (
+                patch.object(exiftool, "EXIFTOOL_ARCHIVE_SHA256", expected_hash),
+                patch.object(
+                    exiftool,
+                    "_download_file",
+                    side_effect=lambda _url, path: shutil.copyfile(archive, path),
+                ),
+                patch.object(
+                    exiftool,
+                    "validate_exiftool_install",
+                    return_value=exiftool.EXIFTOOL_VERSION,
+                ),
+                patch.object(Path, "rename", autospec=True, side_effect=interrupt_staging_publication),
+            ):
+                with self.assertRaises(KeyboardInterrupt):
+                    exiftool.install_managed_exiftool(repo, force=True)
+
+            self.assertEqual(existing.read_text(encoding="utf-8"), "behold")
+            self.assertEqual(
+                list(destination.parent.glob(".exiftool.installing-*")),
+                [],
+            )
+            self.assertEqual(
+                list(destination.parent.glob(".exiftool.previous-*")),
+                [],
+            )
+
+    def test_exiftool_install_rejects_link_as_managed_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            destination = exiftool.managed_exiftool_dir(repo)
+            destination.mkdir(parents=True)
+
+            with (
+                patch.object(exiftool, "_is_directory_link", return_value=True),
+                self.assertRaisesRegex(RuntimeError, "kan ikke være en lenke"),
+            ):
+                exiftool.install_managed_exiftool(repo, force=True)
+
+    def test_exiftool_safe_extract_rejects_parent_path_and_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            extract = root / "extract"
+            extract.mkdir()
+            parent_archive = root / "parent.zip"
+            with zipfile.ZipFile(parent_archive, "w") as archive:
+                archive.writestr("../exiftool.exe", b"bad")
+
+            with self.assertRaisesRegex(RuntimeError, "utrygg filsti"):
+                exiftool._safe_extract_zip(parent_archive, extract)
+
+            symlink_archive = root / "symlink.zip"
+            link = zipfile.ZipInfo("exiftool-13.58_64/exiftool.exe")
+            link.create_system = 3
+            link.external_attr = (stat.S_IFLNK | 0o777) << 16
+            with zipfile.ZipFile(symlink_archive, "w") as archive:
+                archive.writestr(link, "target")
+
+            with self.assertRaisesRegex(RuntimeError, "symbolsk lenke"):
+                exiftool._safe_extract_zip(symlink_archive, extract)
+
+            drive_archive = root / "drive.zip"
+            with zipfile.ZipFile(drive_archive, "w") as archive:
+                archive.writestr("C:/outside/exiftool.exe", b"bad")
+
+            with self.assertRaisesRegex(RuntimeError, "utrygg filsti"):
+                exiftool._safe_extract_zip(drive_archive, extract)
 
     def test_exiftool_install_fails_on_linux(self) -> None:
         with patch("bildebank.cli.sys.platform", "linux"):
